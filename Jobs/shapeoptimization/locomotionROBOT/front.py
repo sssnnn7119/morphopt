@@ -34,7 +34,7 @@ class Params(_Params):
                                                                 flip=True, 
                                                                 r0=4, 
                                                                 length=64, 
-                                                                init_location=[0,6,35],
+                                                                init_location=[-6,0,35],
                                                                 symmetric=[1, [1]], 
                                                                 MaxC=1.5))
 
@@ -42,7 +42,7 @@ class Params(_Params):
                                                                 flip=True, 
                                                                 r0=4, 
                                                                 length=64, 
-                                                                init_location=[0,-6,35],
+                                                                init_location=[6,0,35],
                                                                 symmetric=[1, [1]], 
                                                                 MaxC=1.5))
             
@@ -55,7 +55,7 @@ class Params(_Params):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.04]])
+                self.pressure = torch.Tensor([[0.10, 0.0]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -78,7 +78,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(solvers.Morph):
     """
@@ -104,9 +104,9 @@ class Updater(Updaters):
     @staticmethod
     def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
 
-        
+        loss = (U[0, -2]-2.0)**2
 
-        return 
+        return loss
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """

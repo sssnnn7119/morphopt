@@ -66,7 +66,7 @@ class Params(_Params):
                     flip=True,
                     r0=8,
                     init_location=[0, 0, 40],
-                    MaxC=1.2
+                    MaxC=1.5
                 ))
             
         def initialize(self, iteration):
@@ -116,7 +116,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=2.0,
+        super().__init__(seed_size=1.5,
                          surfaces=surfaces,
                          path_output=path_output,
                          path_queue=path_queue)
@@ -160,7 +160,7 @@ class Updater(Updaters):
                            **kwargs):
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
 
-        return -U[0, 4]+ (UdF**2).sum() / 1000
+        return -U[0, 4]+ (UdF**2).sum() / 10000
 
     class UpdaterMaterials(update_materials.UpdaterMaterials):
         """

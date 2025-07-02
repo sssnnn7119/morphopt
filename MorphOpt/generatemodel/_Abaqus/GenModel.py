@@ -178,7 +178,7 @@ for i in range(len(surface_type)):
             face0_index = Find_Surf(surface_info[i][0], f)[0].index
             surf_index = Find_Connected_Surfaces(f, face0_index)
             faces_array = part.FaceArray([f[faceIndex] for faceIndex in surf_index])
-            Merge_Surface(p, faces_array)
+            # Merge_Surface(p, faces_array)
         f = p.faces
         face0_index = Find_Surf(surface_info[i][0], f)[0].index
         surf_index = Find_Connected_Surfaces(f, face0_index)

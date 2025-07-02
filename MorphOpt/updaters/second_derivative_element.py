@@ -153,6 +153,11 @@ class SensitivityElement(FEA.elements.C3.Element_3D):
                 elems_index=elems._elems_index,
                 elems=elems._elems,
                 fea=fe)
+        elif elems.__class__.__name__ == 'C3D15Transition12':
+            element_sensitive = C3D15_Sensitivity(
+                elems_index=elems._elems_index,
+                elems=elems._elems,
+                fea=fe)
         elif elems.__class__.__name__ == 'C3D4':
             element_sensitive = C3D4_Sensitivity(
                 elems_index=elems._elems_index,
@@ -266,6 +271,114 @@ class C3D15_Sensitivity(SensitivityElement):
                               0, 0, 0, 0, 0
                           ]]),
         ]
+        gaussian_weight_triangle = torch.tensor([1 / 6, 1 / 6, 1 / 6])
+        gaussian_points_triangle = torch.tensor([[1 / 6, 1 / 6],
+                                                    [2 / 3, 1 / 6],
+                                                    [1 / 6, 2 / 3]])
+
+        gaussian_weight_height = torch.tensor([5 / 9, 8 / 9, 5 / 9])
+        gaussian_points_height = torch.tensor(
+            [-np.sqrt(3 / 5), 0, np.sqrt(3 / 5)])
+
+        # Combine weights and points for 3D integration
+        self.gaussian_weight = torch.einsum(
+            'i,j->ij', gaussian_weight_triangle,
+            gaussian_weight_height).flatten()
+        self.point_request_ref = torch.cat([
+            gaussian_points_triangle,
+            torch.zeros([gaussian_points_triangle.shape[0], 1])
+        ],
+                        dim=1)
+        self.point_request_ref = self.point_request_ref.reshape([-1, 1, 3
+                            ]).repeat([1, gaussian_points_height.shape[0], 1])
+        self.point_request_ref[:, :, 2] = gaussian_points_height.reshape([1, -1])
+
+        self.point_request_ref = self.point_request_ref.reshape([-1, 3])
+        # Gauss integration points setup
+        self.num_nodes_per_elem = 15
+        self._num_gaussian = 9
+
+        self.initialize_from_p0(fea)
+
+class C3D15Transition12_Sensitivity(SensitivityElement):
+
+    def __init__(self, elems_index: np.ndarray, elems: np.ndarray,
+                 fea) -> None:
+        super().__init__(elems, elems_index)
+
+        self.shape_function = [
+            torch.tensor([[
+                0, -1.0, -1.0, -0.5, 2.0, 1.5, 1.5, 1.0, 1.0, 0.5, 0, 0, -1.0,
+                -0.5, -0.5, -1.0, -2.0, 0, 0, 0
+            ],
+                          [
+                              0, -1.0, 0, 0, 0, 0, 0.5, 1.0, 0, 0, 0, 0, 0, 0,
+                              0.5, -1.0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, -1.0, 0, 0, 0.5, 0, 0, 1.0, 0, 0, 0, -1.0,
+                              0.5, 0, 0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, -1.0, -1.0, 0.5, 2.0, -1.5, -1.5, 1.0, 1.0,
+                              0.5, 0, 0, 1.0, -0.5, -0.5, 1.0, 2.0, 0, 0, 0
+                          ],
+                          [
+                              0, -1.0, 0, 0, 0, 0, -0.5, 1.0, 0, 0, 0, 0, 0, 0,
+                              0.5, 1.0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, -1.0, 0, 0, -0.5, 0, 0, 1.0, 0, 0, 0, 1.0,
+                              0.5, 0, 0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, 2.0, 0, 0, -2.0, 0, -2.0, -2.0, 0, 0, 0, 0, 0,
+                              0, 0, 2.0, 2.0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, 0, 0, 2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                              -2.0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, 2.0, 0, -2.0, -2.0, 0, 0, -2.0, 0, 0, 0,
+                              2.0, 0, 0, 0, 2.0, 0, 0, 0
+                          ],
+                          [
+                              0, 2.0, 0, 0, -2.0, 0, 2.0, -2.0, 0, 0, 0, 0, 0,
+                              0, 0, -2.0, -2.0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, 0, 0, 2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                              2.0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, 2.0, 0, -2.0, 2.0, 0, 0, -2.0, 0, 0, 0,
+                              -2.0, 0, 0, 0, -2.0, 0, 0, 0
+                          ],
+                          [
+                              1.0, -1.0, -1.0, 0, 0, 0, 0, 0, 0, -1.0, 0, 0, 0,
+                              1.0, 1.0, 0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.0,
+                              0, 0, 0, 0, 0
+                          ],
+                          [
+                              0, 0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1.0, 0,
+                              0, 0, 0, 0, 0
+                          ]]),
+        ]
+
+        self.shape_function[0][0] += 0.5 * self.shape_function[0][6]
+        self.shape_function[0][0] += 0.5 * self.shape_function[0][8]
+        self.shape_function[0][1] += 0.5 * self.shape_function[0][7]
+        self.shape_function[0][1] += 0.5 * self.shape_function[0][6]
+        self.shape_function[0][2] += 0.5 * self.shape_function[0][8]
+        self.shape_function[0][2] += 0.5 * self.shape_function[0][7]
+        self.shape_function[0][6] = 0.
+        self.shape_function[0][7] = 0.
+        self.shape_function[0][8] = 0.
+
         gaussian_weight_triangle = torch.tensor([1 / 6, 1 / 6, 1 / 6])
         gaussian_points_triangle = torch.tensor([[1 / 6, 1 / 6],
                                                     [2 / 3, 1 / 6],

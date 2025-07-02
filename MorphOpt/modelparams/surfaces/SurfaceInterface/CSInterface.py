@@ -163,8 +163,8 @@ class CsInterface(BaseInterface):
             alpha (float): The transparency of the surface.
             color (tuple): The color of the surface in RGB format.
         """
-
-        r = self.model.map(self.model.knots.T).tolist()
+        knots = self.model.symmetrize_knots_CPs()[1]
+        r = self.model.map(knots.T).tolist()
         coo = self.model.knots_element.tolist()
         mlab.triangular_mesh(r[0], r[1], r[2], coo, color=color, opacity=alpha)
 

@@ -219,7 +219,7 @@ class MorphMaterialShell(BaseSolver):
 
         fe.maximum_iteration = 100
 
-        num_thick_element = 1
+        num_thick_element = 2
 
         surface_names_list = [surface_names]
         for i in range(num_thick_element):
@@ -237,32 +237,32 @@ class MorphMaterialShell(BaseSolver):
             fe = FEA.elements.add_shell_elements_to_model(
                 fe=fe, nodes_new=nodes_new, c3d6_elements=c3d6_elements,c3d6_indices= c3d6_indices, name_new_elements='shell_elements%d'%i, offset_surface_sets=offset_surface_sets)
         
-        if num_thick_element > 1:
-            fe.merge_elements(element_name_list=['shell_elements%d'%i for i in range(num_thick_element)], element_name_new='shell_elements')
-        else:
-            fe.elems['shell_elements'] = fe.elems['shell_elements0']
-            del fe.elems['shell_elements0']
+        # if num_thick_element > 2:
+        #     fe.merge_elements(element_name_list=['shell_elements%d'%i for i in range(num_thick_element-1)], element_name_new='shell_elements')
+        # else:
+        #     fe.elems['shell_elements'] = fe.elems['shell_elements0']
+        #     del fe.elems['shell_elements0']
 
-        # find the surface elements
-        # for surf_ind in range(len(surface_names)):
-        #     surface_name = surface_names[surf_ind]
-        #     if surface_name not in fe.surface_sets.keys():
-        #         continue
-        #     # get the surface elements
-        #     surface_elements = fe.get_surface_elements(surface_name)
-        #     if len(surface_elements) == 0:
-        #         continue
 
-        #     # add the surface elements to the model
-        #     fe.add_surface_set(
-        #         name='surface_%d_All' % (surf_ind + 1),
-        #         elements=surface_elements,
-        #         offset=True)
+        
+        fe.elems['shell_elements'] = fe.elems['shell_elements0']
+        del fe.elems['shell_elements0']
+        fe.elems['pressure_elements'] = fe.elems['shell_elements1']
+        del fe.elems['shell_elements1']
+
 
         # convert the elements to C3D10 and C3D15
-        element_names_to_convert = list(fe.elems.keys())
-        fe = FEA.elements.convert_to_second_order(fe,
-                                         element_names_to_convert)
+        # element_names_to_convert = list(fe.elems.keys())
+        # fe = FEA.elements.convert_to_second_order(fe,
+        #                                  element_names_to_convert)
+
+        
+        # fe = FEA.elements.convert_to_second_order(
+        #     fe, element_names=['pressure_elements'])
+        
+        # new_elems = FEA.elements.C3.C3D15Transition12(elems=fe.elems['pressure_elements']._elems,
+        #                                               elems_index=fe.elems['pressure_elements']._elems_index,)
+        # fe.elems['pressure_elements'] = new_elems
 
         # assign the materials to the elements
         if mu is not None and kappa is not None and density is not None:
@@ -294,6 +294,12 @@ class MorphMaterialShell(BaseSolver):
                          device=fe.nodes.device))
         fe.elems['shell_elements'].set_materials(materials_shell)
 
+        fe.elems['pressure_elements'].set_density(
+            torch.tensor(shell_density,
+                         dtype=torch.float64,
+                         device=fe.nodes.device))
+        fe.elems['pressure_elements'].set_materials(materials_shell)
+        
         # add loads
         i = 0
         while True:

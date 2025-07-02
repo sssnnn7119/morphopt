@@ -58,6 +58,9 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
         Ldot_shell = Ldot['shell_elements']
         points_request_shell = points_request['shell_elements']
 
+        Ldot_pressure = Ldot['pressure_elements']
+        points_request_pressure = points_request['pressure_elements']
+
         # interpolate the sensitivity into the structral grids
         output_senNodes = []
         for surf_index in range(len(interpolated_points)):
@@ -83,8 +86,8 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
                 rescale=True)
 
             part_shell_plus = interpolate.griddata(
-                points_request_shell.reshape([-1, 3]).detach().cpu().numpy(),
-                Ldot_shell[:, surf_index].flatten().detach().cpu().numpy(),
+                points_request_pressure.reshape([-1, 3]).detach().cpu().numpy(),
+                Ldot_pressure[:, surf_index].flatten().detach().cpu().numpy(),
                 (interpolated_points[surf_index][1][0],
                  interpolated_points[surf_index][1][1],
                  interpolated_points[surf_index][1][2]),

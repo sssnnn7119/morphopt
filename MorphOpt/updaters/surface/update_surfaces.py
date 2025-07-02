@@ -127,8 +127,9 @@ class UpdaterSurfaces(BaseUpdater):
         # initialize the objective function
         r0, rdu0, rdu20 = self.params_update.get_geometry_values()
         self._r0 = [r0[i].detach().clone().cpu() for i in range(len(r0))]
-        self._normal0 = [torch.cross(rdu0[i][:, 1], rdu0[i][:, 1]).detach().clone().cpu() 
+        self._normal0 = [torch.cross(rdu0[i][:, 1], rdu0[i][:, 0]).detach().clone().cpu() 
                             for i in range(len(rdu0))]  
+        self._normal0 = [normal / normal.norm(dim=0) for normal in self._normal0]
 
         for obj_func in self.obj_funcs.values():
             obj_func.initialize(r0=r0, rdu0=rdu0, sensitivity=sensitivity)
