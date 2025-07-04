@@ -154,7 +154,7 @@ class SensitivityElement(FEA.elements.C3.Element_3D):
                 elems=elems._elems,
                 fea=fe)
         elif elems.__class__.__name__ == 'C3D15Transition12':
-            element_sensitive = C3D15_Sensitivity(
+            element_sensitive = C3D15Transition12_Sensitivity(
                 elems_index=elems._elems_index,
                 elems=elems._elems,
                 fea=fe)

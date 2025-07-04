@@ -2,6 +2,8 @@ import sys
 import os
 import importlib.util
 import numpy as np
+from sympy.polys.subresultants_qq_zz import res
+from traits.adaptation.tests.benchmark import target
 
 # Add the path to your MorphOpt module
 sys.path.append(os.getcwd())
@@ -40,20 +42,15 @@ def restart_optimization(restart_path, target_iteration=None):
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
-    generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
-                                                  path_output=GLOBAL.PATH.path_Result + '/Cache/', 
-                                                  path_queue=GLOBAL.PATH.path_Queue)
-    solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
-    updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
-    controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
-                                                    generator=generator, 
-                                                    solver=solver, 
-                                                    updater=updater)
 
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
-    controller.opt_loop()
+
+    return params
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/T20250703181801_MaterialShell/", 
-                         target_iteration = None)
-    
+    # Read the parameters from the restart path
+    restart_path = "Z:/Results/T20250702202809_DefaultLabel/"
+    target_iteration = None
+
+    restart_optimization(restart_path = restart_path, 
+                         target_iteration = target_iteration)

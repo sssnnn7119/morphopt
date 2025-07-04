@@ -101,6 +101,28 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
 
         return output_senNodes
     
+        """
+        r0, rdu0 = self.params_update.get_geometry_values()[:2]
+        interpolated_points = []
+        for sf in range(self.params_update.num_surface):
+
+            normal = torch.cross(rdu0[sf][:, 1], rdu0[sf][:, 0], dim=0)
+
+            normal = normal / torch.norm(normal, dim=0, keepdim=True)
+
+            r_init = r0[sf]
+            r_offset = r_init + self.params_update.thickness * normal
+
+            interpolated_points.append(
+                (r0[sf].cpu().numpy(), r_offset.cpu().numpy()))
+        def show_quiver3d(R, N):
+            from mayavi import mlab
+            r = R.detach().cpu().numpy()
+            n = N.detach().cpu().numpy()
+            mlab.quiver3d(r[0], r[1], r[2], n[0], n[1], n[2])
+            mlab.show()
+        """
+
     def _get_shape_derivative(
             self, fe_result: FE_result, LdU: torch.Tensor,
             LdUdp: torch.Tensor, LdUdF: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

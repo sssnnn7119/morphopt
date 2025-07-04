@@ -178,13 +178,12 @@ class Morph(BaseSolver):
         return fe
 
     @staticmethod
-    def _solve_FEA(current_class: 'Morph', path_result, pressure_list: list[float], mu: np.ndarray, kappa: np.ndarray, density: np.ndarray, U_dim: list[int]) -> tuple[list, list, list, list]:
+    def _solve_FEA(current_class: 'Morph', path_result, pressure_list: list[float], mu: np.ndarray, kappa: np.ndarray, density: np.ndarray, U_dim: list[int]):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
         import torch
         sys.path.append(os.getcwd())
-        sys.path.append('..//Modules/FEA')
         import FEA
         import pypardiso
         import scipy.sparse as sp
@@ -221,7 +220,7 @@ class Morph(BaseSolver):
         # solve displacement 0
 
         # fe.elems['element-0'].set_order(1)
-        result = fe.solve(tol_error=1e-6)
+        result = fe.solve(tol_error=1e-3)
 
         # fe.elems['element-0'].set_order(2)
         # fe.refine_RGC()
@@ -250,17 +249,26 @@ class Morph(BaseSolver):
         # endregion
 
         # region for Udp calculate the jacobian
-        R = torch.zeros([num_pressure, fe.RGC_list_indexStart[-1]])
+
+        def get_Rdp(dim_now: int):
+            def function_p0dot(p):
+                p0 = fe.loads['Pressure_%d' % dim_now].pressure
+                fe.loads['Pressure_%d' % dim_now].pressure = p
+                result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(fe.GC))[0]
+                fe.loads['Pressure_%d' % dim_now].pressure = p0
+                return result
+            _, Rdp = torch.autograd.functional.jvp(
+                function_p0dot,
+                torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
+                torch.ones([1]))
+            return Rdp
+        
+
+        Rdp = torch.zeros([num_pressure, fe.GC.shape[0]])
         for p in range(num_pressure):
-            F = torch.zeros([R.shape[1]])
-            F_indice, F_values = fe.loads['Pressure_%d' % p]._get_K0_F0(
-                fe._GC2RGC(GC0)[0])[:2]
-            F.scatter_add_(0, F_indice, F_values)
-            R[p, :F.numel()] = F.view([-1])
-        R0 = fe.assemble_force(force=R, GC0=GC0)
-        Udp0 = K_solver.solve(K_sp, R0.T.cpu().numpy())
-        Udp0 = torch.from_numpy(Udp0).to(R.device).to(R.dtype).T
-        # Udp0 = fe.solve_linear_perturbation(GC0=GC0, R0=R)
+            Rdp[p] = get_Rdp(p)
+        Udp0 = -K_solver.solve(K_sp, Rdp.T.cpu().numpy())
+        Udp0 = torch.from_numpy(Udp0).to(Rdp.device).to(Rdp.dtype).T
         # endregion
 
 

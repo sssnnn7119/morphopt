@@ -280,7 +280,7 @@ class BspInterface(BaseInterface):
 
 
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, symmetric: list[int], flip: bool, degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2) -> BSP_Surf:
+    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, symmetric: list[int], flip: bool, degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
         """
         Initialize the B-spline surface for the optimization process.
 
@@ -293,6 +293,9 @@ class BspInterface(BaseInterface):
             degree (int, optional): The degree of the B-spline surface. Default is 4.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
             maxR (float, optional): The maximum radius for the pre-loading. Default is 0.2.
+            maxC (float, optional): The maximum curvature for the pre-loading. Default is 1.0.
+            maxFF (float, optional): The maximum fairness factor for the pre-loading. Default is 0.2.
+            perturbation_L (float, optional): The perturbation length for the surface. Default is -1. If < 0, no perturbation is applied.
 
         Returns:
             BSP (BSP_Surf): The initialized B-spline surface object.
@@ -320,10 +323,12 @@ class BspInterface(BaseInterface):
         P0[1] = torch.sin(theta) * r0
         P0[2] = length * y
 
-        r = torch.sqrt(P0[0]**2 + P0[1]**2)
-        r_new = (1 + 0.04*torch.sin(2*P0[2] / length * np.pi * (length/15))) * r0
-        P0[0] *= r_new / r
-        P0[1] *= r_new / r
+        # Apply perturbation if specified
+        if perturbation_L > 0:
+            r = torch.sqrt(P0[0]**2 + P0[1]**2)
+            r_new = (1 + 0.04*torch.sin(2*(P0[2] / length) * np.pi * (length/perturbation_L))) * r0
+            P0[0] *= r_new / r
+            P0[1] *= r_new / r
 
         bsp = BSP_Surf(P0, degree, [[0, 0], [2, 2]])
         

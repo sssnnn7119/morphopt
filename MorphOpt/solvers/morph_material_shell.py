@@ -135,8 +135,8 @@ class MorphMaterialShell(BaseSolver):
                     fe.nodes.dtype))
             fe.elems[str_now].set_materials(materials_now)
 
-        fe.export_to_inp(
-            PATH.path_Result + '/Log/Deformation/Data/%d.inp'% History.iteration)
+        # fe.export_to_inp(
+        #     PATH.path_Result + '/Log/Deformation/Data/%d.inp'% History.iteration)
 
         # multiprocess FEA
 
@@ -257,12 +257,12 @@ class MorphMaterialShell(BaseSolver):
         #                                  element_names_to_convert)
 
         
-        # fe = FEA.elements.convert_to_second_order(
-        #     fe, element_names=['pressure_elements'])
+        fe = FEA.elements.convert_to_second_order(
+            fe, element_names=['pressure_elements'])
         
-        # new_elems = FEA.elements.C3.C3D15Transition12(elems=fe.elems['pressure_elements']._elems,
-        #                                               elems_index=fe.elems['pressure_elements']._elems_index,)
-        # fe.elems['pressure_elements'] = new_elems
+        new_elems = FEA.elements.C3.C3D15Transition12(elems=fe.elems['pressure_elements']._elems,
+                                                      elems_index=fe.elems['pressure_elements']._elems_index,)
+        fe.elems['pressure_elements'] = new_elems
 
         # assign the materials to the elements
         if mu is not None and kappa is not None and density is not None:
@@ -344,7 +344,6 @@ class MorphMaterialShell(BaseSolver):
         import sys
         import torch
         sys.path.append(os.getcwd())
-        sys.path.append('..//Modules/FEA')
         import FEA
         import pypardiso
         import scipy.sparse as sp
@@ -410,17 +409,26 @@ class MorphMaterialShell(BaseSolver):
         # endregion
 
         # region for Udp calculate the jacobian
-        R = torch.zeros([num_pressure, fe.RGC_list_indexStart[-1]])
+
+        def get_Rdp(dim_now: int):
+            def function_p0dot(p):
+                p0 = fe.loads['Pressure_%d' % dim_now].pressure
+                fe.loads['Pressure_%d' % dim_now].pressure = p
+                result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(fe.GC))[0]
+                fe.loads['Pressure_%d' % dim_now].pressure = p0
+                return result
+            _, Rdp = torch.autograd.functional.jvp(
+                function_p0dot,
+                torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
+                torch.ones([1]))
+            return Rdp
+        
+
+        Rdp = torch.zeros([num_pressure, fe.GC.shape[0]])
         for p in range(num_pressure):
-            F = torch.zeros([R.shape[1]])
-            F_indice, F_values = fe.loads['Pressure_%d' % p]._get_K0_F0(
-                fe._GC2RGC(GC0)[0])[:2]
-            F.scatter_add_(0, F_indice, F_values)
-            R[p, :F.numel()] = F.view([-1])
-        R0 = fe.assemble_force(force=R, GC0=GC0)
-        Udp0 = K_solver.solve(K_sp, R0.T.cpu().numpy())
-        Udp0 = torch.from_numpy(Udp0).to(R.device).to(R.dtype).T
-        # Udp0 = fe.solve_linear_perturbation(GC0=GC0, R0=R)
+            Rdp[p] = get_Rdp(p)
+        Udp0 = -K_solver.solve(K_sp, Rdp.T.cpu().numpy())
+        Udp0 = torch.from_numpy(Udp0).to(Rdp.device).to(Rdp.dtype).T
         # endregion
 
 
@@ -495,12 +503,6 @@ class MorphMaterialShell(BaseSolver):
         # region for the UdF
 
         R_F = torch.zeros([len(U_dim), GC0.shape[0]])
-        # R_F[0, -6] = 1
-        # R_F[1, -5] = 1
-        # R_F[2, -4] = 1
-        # R_F[3, -3] = 1
-        # R_F[4, -2] = 1
-        # R_F[5, -1] = 1
         for i in range(len(U_dim)):
             R_F[i, U_dim[i]] = 1
         UdF = K_solver.solve(K_sp, R_F.T.cpu().numpy())

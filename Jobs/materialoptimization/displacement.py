@@ -2,6 +2,7 @@ import os
 import re
 import sys
 
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 sys.path.append(os.getcwd())
 
@@ -66,7 +67,7 @@ class Params(_Params):
                     flip=True,
                     r0=8,
                     init_location=[0, 0, 40],
-                    MaxC=1.5
+                    MaxC=1.0
                 ))
             
         def initialize(self, iteration):
@@ -116,7 +117,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.5,
+        super().__init__(seed_size=1.2,
                          surfaces=surfaces,
                          path_output=path_output,
                          path_queue=path_queue)
@@ -160,7 +161,7 @@ class Updater(Updaters):
                            **kwargs):
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
 
-        return -U[0, 4]+ (UdF**2).sum() / 10000
+        return -U[0, 4]+ (UdF**2).sum() / 2000
 
     class UpdaterMaterials(update_materials.UpdaterMaterials):
         """
@@ -212,9 +213,10 @@ if __name__ == '__main__':
     torch.set_default_device('cpu')
 
     path_result = 'Z:/Results'
+    opt_label = 'MaterialShell'
 
     # region Initialize the workflow
-    initializer.initialize_path(result_path=path_result)
+    initializer.initialize_path(result_path=path_result, opt_label=opt_label)
     initializer.initialize_history()
 
     params = Params()

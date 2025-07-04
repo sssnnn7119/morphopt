@@ -104,7 +104,12 @@ class UpdaterSurfaces(BaseUpdater):
         self.scaler = []
         for i in range(len(sensitivity)):
             scaler_now = sensitivity[i].abs()
+
+            scaler_now[scaler_now < 1e-15] = scaler_now[scaler_now > 1e-15].min()
+
             self.scaler.append(scaler_now)
+
+            
 
     def initialize(self, iter_now: int, sensitivity: list[torch.Tensor], *args,
                    **kwargs) -> None:
@@ -135,7 +140,7 @@ class UpdaterSurfaces(BaseUpdater):
             obj_func.initialize(r0=r0, rdu0=rdu0, sensitivity=sensitivity)
 
         # initialize the optimizer
-        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=15, tol_error=1e-10)
+        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=100, tol_error=1e-10)
 
         self.iteration_total = 0
 

@@ -101,7 +101,7 @@ class FE_result:
         num_tasks = self.pressure_list.shape[0]
 
         for i in range(num_tasks):
-            result.append(f"========Task {i+1}========")
+            result.append(f"=================================Task {i+1}=================================")
             
             # 格式化压力向量（一维）
             pressure = self.pressure_list[i].tolist()
@@ -127,6 +127,8 @@ class FE_result:
                 result.append(f"  UdF:")
                 formatted = format_matrix(matrix, indent=4)
                 result.extend(formatted)
+
+            result.append(f"============================================================================")
         
         return "\n".join(result)
         
@@ -156,9 +158,10 @@ class FE_result:
             filepath (str): The path to save the figures.
             iteration (int): The current iteration number.
         """
-        surfaces = ['surface_0_All'] + ['surface_%d_All_offset' % i for i in range(1, self.pressure_list.shape[1])]
-        surface_triangles = sum([self.fe.get_surface_triangles(surf) for surf in surfaces], [])
-        surface_triangles = torch.cat(surface_triangles, dim=0).cpu().numpy()
+        surfaces = ['surface_0_All'] + ['surface_%d_All' % i for i in range(1, self.pressure_list.shape[1]+1)]
+        surface_elements = [self.fe.get_surface_elements(surf)[0]._elems[:, :3] for surf in surfaces]
+        
+        surface_triangles = torch.cat(surface_elements, dim=0).cpu().numpy()
 
         for case in range(self.pressure_list.shape[0]):
             deformed_nodes = (self.fe.nodes + self.fe._GC2RGC(self.U[case].to(self.fe.nodes.device))[0]).detach().cpu().numpy()
@@ -167,7 +170,7 @@ class FE_result:
             fig = mlab.figure(size=(800, 800), bgcolor=(1, 1, 1))
             fig.scene.parallel_projection = True
 
-            mlab.triangular_mesh(deformed_nodes[:, 0], deformed_nodes[:, 1], deformed_nodes[:, 2], surface_triangles, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
+            mlab.triangular_mesh(deformed_nodes[:, 0], deformed_nodes[:, 1], deformed_nodes[:, 2], surface_triangles, color=(40.0 / 255, 120.0 / 255, 181.0 / 255), opacity=0.6)
             mlab.title(f"Deformed Mesh - Task {case}", size=0.5, color=(0, 0, 0))
 
             mlab.view(azimuth=210, elevation=70, distance=300)

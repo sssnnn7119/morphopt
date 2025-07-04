@@ -97,8 +97,8 @@ class Distance(BaseObj):
     def __call__(self, weight, r, rdu, rdu2, *args, **kwargs):
 
         R = torch.cat(r, dim=1).type(torch.float32)
-        thre = 0.05
-        degree = 3
+        thre = 0.02
+        degree = 5
         loss_distance = torch.tensor(0.0, dtype=torch.float32)
         weight_flatten = torch.cat(weight, dim=0).type(torch.float32)
         if torch.numel(self.neighbor_points) != 0:

@@ -75,7 +75,7 @@ class ShellOffsetCurvature(BaseObj):
 
             thre = safe_radius / 20
             p=5
-            indexl, l = self.barrier_function(-safe_radius*0.85-k2, thre, 0, p)
+            indexl, l = self.barrier_function(-safe_radius*0.6-k2, thre, 0, p)
             if len(indexl) > 0:
                 penalty += (l * weight[surf_ind][indexl]).sum()
 
