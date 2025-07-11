@@ -136,7 +136,7 @@ class Controller:
         #                     GLOBAL.PATH.path_Result + '/Log/Deformation/Data/TopAbqLS_%d.cae' % (GLOBAL.History.iteration-1))
         # except:
         #     pass
-        GLOBAL.History.save(path=GLOBAL.PATH.path_Result + '/Log/')
+        GLOBAL.History.save_csv(path=GLOBAL.PATH.path_Result + '/Log/')
         
     def save_figure(self) -> None:
         """

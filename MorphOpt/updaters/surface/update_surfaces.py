@@ -106,7 +106,7 @@ class UpdaterSurfaces(BaseUpdater):
             for sensitivity_surf in sensitivity:
                 max_sensitivity = max(max_sensitivity,
                                       sensitivity_surf.abs().max())
-            self.scaler = 100 / max_sensitivity
+            self.scaler = 1 / max_sensitivity
 
         return sensitivity
 
@@ -136,7 +136,7 @@ class UpdaterSurfaces(BaseUpdater):
         self._normal0 = [normal / normal.norm(dim=0) for normal in self._normal0]
 
         for obj_func in self.obj_funcs.values():
-            obj_func.initialize(r0=r0, rdu0=rdu0, sensitivity=sensitivity)
+            obj_func.initialize(r0=r0, rdu0=rdu0, sensitivity=sensitivity, weight=self._weight_points)
 
         # initialize the optimizer
         self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)

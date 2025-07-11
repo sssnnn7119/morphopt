@@ -29,7 +29,7 @@ def restart_optimization(restart_path, target_iteration=None):
     GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/GenerateModel/_Rhino/TaskQueue/'
     GLOBAL.PATH.path_Result = restart_path
 
-    GLOBAL.History.load(restart_path + '/log/')
+    GLOBAL.History.load_csv(restart_path + '/log/')
     if target_iteration is None:
         target_iteration = GLOBAL.History.iteration
     GLOBAL.History.iteration = target_iteration
@@ -54,5 +54,5 @@ def restart_optimization(restart_path, target_iteration=None):
     controller.opt_loop()
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/T20250710123939_FRONT/", 
+    restart_optimization(restart_path = "Z:/Results/T20250711160535_FRONT/", 
                          target_iteration = None)  

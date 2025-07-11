@@ -73,7 +73,7 @@ class Morph(BaseSolver):
             str_now = list(fe.elems.keys())[i]
             if not str_now.startswith('element-'):
                 continue
-            gaussian_points = fe.elems[str_now].get_gaussian_points(fe.nodes)
+            gaussian_points = fe.elems[str_now].get_gaussian_points(fe.nodes.cpu())
             density_now = self.params.materials.get_density(gaussian_points).cpu().numpy()
             module = self.params.materials.get_modules(gaussian_points)
             mu_now = module[0].cpu().numpy()

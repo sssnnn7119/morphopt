@@ -205,7 +205,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=2.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(solvers.Morph):
     """
@@ -232,7 +232,7 @@ class Updater(Updaters):
     def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
         
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
-        loss = (U[0, -2]-2.0)**2 - U[0, 0] / 100 + (UdF**2).sum() / 3000
+        loss = (U[0, -2]-2.0)**2 - U[0, 0] / 1000 + (UdF**2).sum() / 3000
 
         return loss
 
@@ -263,7 +263,7 @@ class Updater(Updaters):
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
+    torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
     opt_label = 'FRONT'
