@@ -164,11 +164,11 @@ class CPGEOSurfaceInterface(BaseInterface):
 
         penalty = torch.tensor(0., dtype=torch.float64)
 
-        indexl, l = self.barrier_function(k1, self.MaxC, 0.1, p)
+        indexl, l = self.barrier_function(k1, self.MaxC, 0.4, p)
         if len(indexl) > 0:
             penalty += (l * weight[indexl]).sum()
 
-        indexl, l = self.barrier_function(-k2, self.MaxC, 0.1, p)
+        indexl, l = self.barrier_function(-k2, self.MaxC, 0.4, p)
         if len(indexl) > 0:
             penalty += (l * weight[indexl]).sum()
 

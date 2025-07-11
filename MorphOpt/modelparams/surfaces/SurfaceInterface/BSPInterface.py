@@ -155,8 +155,8 @@ class BspInterface(BaseInterface):
         
         x_change[:, 0, :] = 0
         x_change[:, -1, :] = 0
-        x_change[2, 1:3, :] = 0
-        x_change[2, -3:-1, :] = 0
+        x_change[2, 1:5, :] = 0
+        x_change[2, -5:-1, :] = 0
         
         self.model.control_points = self.model.control_points + x_change.reshape(self.model.control_points.shape)
     
@@ -202,7 +202,7 @@ class BspInterface(BaseInterface):
         RRvu0 = Iu[1, 1, 0]**2 / G**2
         RRvv0 = Iu[1, 1, 1]**2 / G**2
 
-        indexC, C = self.barrier_function(C0, self.MaxC, 0.2,
+        indexC, C = self.barrier_function(C0, self.MaxC, 0.8,
                                                     3)
         
         indexFF, FF = self.barrier_function(

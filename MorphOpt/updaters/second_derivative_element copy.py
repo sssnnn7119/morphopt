@@ -88,7 +88,6 @@ class SensitivityElement(FEA.elements.C3.Element_3D):
             inv_Jacobian2_now = -torch.einsum(
                 'gemj,gepk,genl,gejnp->gemlk', inv_Jacobian1_now,
                 inv_Jacobian1_now, inv_Jacobian1_now, self.Jacobian2[:, elem_index])
-            
             self.inv_Jacobian2[:, elem_index] = inv_Jacobian2_now
 
             Nksi1 = torch.einsum('gb,mab->gma', self.pp, shape1_now)
@@ -207,31 +206,6 @@ class C3D10_Sensitivity(SensitivityElement):
         self.initialize_from_p0(fea)
 
 
-    def get_2nd_order_point_index_surface(self, surface_ind: int):
-        """
-        Get the 2nd order point index for the specified surface.
-        This is used to identify the mid-edge nodes for the surface elements.
-        """
-        if surface_ind == 0:
-            return torch.tensor([[6, 0, 2],
-                                    [5, 1, 2],
-                                    [4, 0, 1]], dtype=torch.long, device='cpu')
-        elif surface_ind == 1:
-            return torch.tensor([[4, 0, 1],
-                    [8, 1, 3],
-                    [7, 0, 3]], dtype=torch.long, device='cpu')
-        elif surface_ind == 2:
-            return torch.tensor([[5, 1, 2],
-                    [9, 2, 3],
-                    [8, 1, 3]], dtype=torch.long, device='cpu')
-        elif surface_ind == 3:
-            return torch.tensor([[7, 0, 3],
-                    [9, 2, 3],
-                    [6, 0, 2]], dtype=torch.long, device='cpu')
-
-        else:
-            raise ValueError(f"Invalid surface index: {surface_ind}")
-
 class C3D15_Sensitivity(SensitivityElement):
 
     def __init__(self, elems_index: np.ndarray, elems: np.ndarray, surf_order: torch.Tensor,
@@ -329,36 +303,6 @@ class C3D15_Sensitivity(SensitivityElement):
         self._num_gaussian = 9
 
         self.initialize_from_p0(fea)
-    def get_2nd_order_point_index_surface(self, surface_ind: int):
-        """
-        Get the 2nd order point index for the specified surface.
-        This is used to identify the mid-edge nodes for the surface elements.
-        """
-        if surface_ind == 0:
-            return torch.tensor([[8, 0, 2],
-                                    [7, 1, 2],
-                                    [6, 0, 1]], dtype=torch.long, device='cpu')
-        if surface_ind == 1:
-            return torch.tensor([[9, 3, 4],
-                                    [10, 4, 5],
-                                    [11, 3, 5]], dtype=torch.long, device='cpu')
-        if surface_ind == 2:
-            return torch.tensor([[6, 0, 1],
-                                    [13, 1, 4],
-                                    [9, 3, 4],
-                                    [12, 0, 3]], dtype=torch.long, device='cpu')
-        if surface_ind == 3:
-            return torch.tensor([[7, 1, 2],
-                                    [14, 2, 5],
-                                    [10, 4, 5],
-                                    [13, 1, 4]], dtype=torch.long, device='cpu')
-        if surface_ind == 4:
-            return torch.tensor([[8, 0, 2],
-                                    [12, 0, 3],
-                                    [11, 3, 5],
-                                    [14, 2, 5]], dtype=torch.long, device='cpu')
-        else:
-            raise ValueError(f"Invalid surface index: {surface_ind}")
 
 
 class C3D6_Sensitivity(SensitivityElement):

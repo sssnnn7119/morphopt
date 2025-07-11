@@ -31,7 +31,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(thickness=1.5, max_step_length=[0.4, 0.4], reinitialize_per_iter=5)
+            super().__init__(thickness=2.0, max_step_length=[0.4, 0.4], reinitialize_per_iter=5)
 
             self.add_surface(
                 Surfaces_offset.BSP.initialize_cylinder(r0=15.,
@@ -63,11 +63,11 @@ class Params(_Params):
 
             self.add_surface(
                 Surfaces_offset.CPGEO.initialize_Sphere(
-                    seed_size=1.0,
+                    seed_size=1.2,
                     flip=True,
-                    r0=8,
+                    r0=10,
                     init_location=[0, 0, 40],
-                    MaxC=1.0
+                    MaxC=1.5
                 ))
             
         def initialize(self, iteration):
@@ -89,7 +89,7 @@ class Params(_Params):
 
         def __init__(self):
             super().__init__(mu=1.22,
-                             kappa=12.2,
+                             kappa=12.20,
                              min_ratio=0.001,
                              density=1.08e-9,
                              boundary=[[-20, 20], [-20, 20], [0, 80]],
@@ -102,6 +102,45 @@ class Params(_Params):
                          loads=self.LoadParams(),
                          materials=self.MaterialParams())
         self.surfaces: Surfaces_offset = self.surfaces
+
+    def save_figure(self, filepath: str) -> None:
+        """
+        Save the figures of the parameters to a file.
+        
+        Args:
+            filepath (str): The path to save the figures.
+        """
+        super().save_figure(filepath=filepath)
+
+        # plot the morphology
+        from mayavi import mlab
+
+        fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
+        fig.scene.parallel_projection = True
+
+
+        self.surfaces.plot()
+        self.materials.plot()
+        
+        # 添加轮廓和坐标轴
+        mlab.outline()
+        axes = mlab.axes(xlabel='X', ylabel='Y', zlabel='Z')
+        axes.label_text_property.color = (0, 0, 0)  # Set text color to black
+        axes.axes.property.color = (0, 0, 0)       # Set axes lines color to black
+
+        # colorbar
+        colorbar = mlab.colorbar(orientation='vertical', title='Density', label_fmt='%.2f',
+                  nb_labels=5)
+        # Make colorbar text color black
+        colorbar.label_text_property.color = (0, 0, 0)
+        colorbar.title_text_property.color = (0, 0, 0)
+
+        if not os.path.exists(filepath + 'Morph'):
+            initializer.initialize_path_log('Morph')
+
+        mlab.view(azimuth=210, elevation=70, distance=300)
+        mlab.savefig(filepath + '/Morph/Figures' + '%d.jpg'%GLOBAL.History.iteration)
+        mlab.close()
 
 class Generator(generatemodel.Genetrator):
 
@@ -117,7 +156,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.2,
+        super().__init__(seed_size=1.5,
                          surfaces=surfaces,
                          path_output=path_output,
                          path_queue=path_queue)
@@ -161,7 +200,7 @@ class Updater(Updaters):
                            **kwargs):
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
 
-        return -U[0, 4]+ (UdF**2).sum() / 2000
+        return -U[0, 4]+ (UdF**2).sum() / 1000
 
     class UpdaterMaterials(update_materials.UpdaterMaterials):
         """

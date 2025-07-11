@@ -122,8 +122,8 @@ class CsInterface(BaseInterface):
 
         C0 = 4 * H**2 - 2 * K
 
-        indexC, C = self.barrier_function(C0, self.MaxC, 0.2,
-                                                    3)
+        indexC, C = self.barrier_function(C0, self.MaxC, 0.8,
+                                                    1)
 
         return (weight[indexC] * C).sum()
 

@@ -8,3 +8,5 @@ from .Path import Path as __Path
 
 PATH = __Path()
 History = __History()
+
+objective_function: callable

@@ -54,6 +54,5 @@ def restart_optimization(restart_path, target_iteration=None):
     controller.opt_loop()
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/T20250703181801_MaterialShell/", 
-                         target_iteration = None)
-    
+    restart_optimization(restart_path = "Z:/Results/T20250710123939_FRONT/", 
+                         target_iteration = None)  

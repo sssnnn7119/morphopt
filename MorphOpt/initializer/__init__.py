@@ -4,6 +4,10 @@ from .. import GLOBAL
 import os
 import __main__
 
+def initialize_path_log(name: str):
+    os.makedirs(GLOBAL.PATH.path_Result + '/Log/%s/Data'%(name))
+    os.makedirs(GLOBAL.PATH.path_Result + '/Log/%s/Figures'%(name))
+
 def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) -> None:
     """
     Initialize the workflow by importing necessary modules and setting up the environment.
@@ -22,24 +26,15 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
         
     # create the result path if it does not exist
     os.makedirs(GLOBAL.PATH.path_Result + '/Cache/')
-    
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Objective')
 
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Surfaces/Data')
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Surfaces/Figures')
-
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Loads/Data')
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Loads/Figures')
-    
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Materials/Data')
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Materials/Figures')
-
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Deformation/Data')
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/Deformation/Figures')
+    initialize_path_log('Surfaces')
+    initialize_path_log('Loads')
+    initialize_path_log('Materials')
+    initialize_path_log('Deformation')
 
     os.makedirs(GLOBAL.PATH.path_Result + '/FEA')
 
-
+    # copy the scripts to the result path
     def ignore_folder(dir, contents):
         """忽略指定的文件夹"""
         return [item for item in contents if item == ".conda"]  # 替换为你要排除的文件夹名
@@ -47,6 +42,8 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
     shutil.copytree(os.getcwd(), GLOBAL.PATH.path_Result + '/scripts/', ignore=ignore_folder)
 
     shutil.copy(__main__.__file__, GLOBAL.PATH.path_Result + '/scripts/Jobs/MAIN_SCRIPT_FOR_RESTART.py')
+
+
 
 def initialize_history() -> None:
     """

@@ -219,7 +219,7 @@ class MorphMaterialShell(BaseSolver):
 
         fe.maximum_iteration = 100
 
-        num_thick_element = 2
+        num_thick_element = 4
 
         surface_names_list = [surface_names]
         for i in range(num_thick_element):
@@ -237,18 +237,18 @@ class MorphMaterialShell(BaseSolver):
             fe = FEA.elements.add_shell_elements_to_model(
                 fe=fe, nodes_new=nodes_new, c3d6_elements=c3d6_elements,c3d6_indices= c3d6_indices, name_new_elements='shell_elements%d'%i, offset_surface_sets=offset_surface_sets)
         
-        # if num_thick_element > 2:
-        #     fe.merge_elements(element_name_list=['shell_elements%d'%i for i in range(num_thick_element-1)], element_name_new='shell_elements')
-        # else:
-        #     fe.elems['shell_elements'] = fe.elems['shell_elements0']
-        #     del fe.elems['shell_elements0']
+        if num_thick_element > 2:
+            fe.merge_elements(element_name_list=['shell_elements%d'%i for i in range(num_thick_element-1)], element_name_new='shell_elements')
+        else:
+            fe.elems['shell_elements'] = fe.elems['shell_elements0']
+            del fe.elems['shell_elements0']
 
 
         
-        fe.elems['shell_elements'] = fe.elems['shell_elements0']
-        del fe.elems['shell_elements0']
-        fe.elems['pressure_elements'] = fe.elems['shell_elements1']
-        del fe.elems['shell_elements1']
+        # fe.elems['shell_elements'] = fe.elems['shell_elements0']
+        # del fe.elems['shell_elements0']
+        fe.elems['pressure_elements'] = fe.elems['shell_elements%d' % (num_thick_element - 1)]
+        del fe.elems['shell_elements%d' % (num_thick_element - 1)]
 
 
         # convert the elements to C3D10 and C3D15
@@ -259,10 +259,8 @@ class MorphMaterialShell(BaseSolver):
         
         fe = FEA.elements.convert_to_second_order(
             fe, element_names=['pressure_elements'])
-        
-        new_elems = FEA.elements.C3.C3D15Transition12(elems=fe.elems['pressure_elements']._elems,
-                                                      elems_index=fe.elems['pressure_elements']._elems_index,)
-        fe.elems['pressure_elements'] = new_elems
+        elem_pressure: FEA.elements.C3D15 = fe.elems['pressure_elements']
+        elem_pressure.surf_order = torch.tensor([1, 2, 2, 2, 2]).reshape([1, -1]).repeat([elem_pressure._elems.shape[0], 1])
 
         # assign the materials to the elements
         if mu is not None and kappa is not None and density is not None:

@@ -428,7 +428,21 @@ class Updater(Updaters):
                 update_surfaces.objectivefuncs.Boundary.Cylinder(radius=20.,
                                                                height=150.,
                                                                bottom=0.))
-            
+        
+        def _reset_scaler(self, iter_now, sensitivity):
+            # reset the scaler
+            if (iter_now % 3 == 0 and iter_now < 60) or (iter_now % 1 == 0) or self.scaler is None:
+                # get the maximum sensitivity value
+                print('Reset the scaler')
+                max_sensitivity = 0
+                for sensitivity_surf in sensitivity:
+                    max_sensitivity = max(max_sensitivity,
+                                        sensitivity_surf.abs().max())
+                if iter_now < 110:
+                    self.scaler = 100 / max_sensitivity
+                else:
+                    self.scaler = 1000000 / max_sensitivity
+
         def initialize(self, iter_now, sensitivity, *args, **kwargs):
             if iter_now < 60:
                 self.params_update._max_step_length[0] = 0.06
@@ -438,18 +452,6 @@ class Updater(Updaters):
                 self.params_update._max_step_length[0] = 0.2
                 for i in range(1, len(self.params_update._max_step_length)):
                     self.params_update._max_step_length[i] = 0.2
-
-            # reset the scaler
-            if (iter_now % 3 == 0 and iter_now < 60) or (iter_now % 10 == 0) or self.scaler is None:
-                # get the maximum sensitivity value
-                max_sensitivity = 0
-                for sensitivity_surf in sensitivity:
-                    max_sensitivity = max(max_sensitivity,
-                                        sensitivity_surf.abs().max())
-                self.scaler = 1 / max_sensitivity
-            sensitivity = [
-                sensitivity_surf * self.scaler for sensitivity_surf in sensitivity
-            ]
 
             super().initialize(iter_now=iter_now, sensitivity=sensitivity, *args, **kwargs)
 

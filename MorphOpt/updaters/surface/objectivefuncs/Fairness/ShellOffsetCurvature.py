@@ -73,9 +73,9 @@ class ShellOffsetCurvature(BaseObj):
             # Penalize negative curvatures that cause self-intersection
             safe_radius = 1.0 / self.shell_thickness if self.shell_thickness > 0 else torch.tensor(float('inf'))
 
-            thre = safe_radius / 20
+            thre = safe_radius / 50
             p=5
-            indexl, l = self.barrier_function(-safe_radius*0.6-k2, thre, 0, p)
+            indexl, l = self.barrier_function(-safe_radius*0.8-k2, thre, 0, p)
             if len(indexl) > 0:
                 penalty += (l * weight[surf_ind][indexl]).sum()
 

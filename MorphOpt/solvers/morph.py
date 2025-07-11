@@ -70,8 +70,8 @@ class Morph(BaseSolver):
         kappa = {}
         density = {}
         for i in range(len(fe.elems)):
-            str_now = 'element-%d' % i
-            if str_now not in fe.elems.keys():
+            str_now = list(fe.elems.keys())[i]
+            if not str_now.startswith('element-'):
                 continue
             gaussian_points = fe.elems[str_now].get_gaussian_points(fe.nodes)
             density_now = self.params.materials.get_density(gaussian_points).cpu().numpy()
@@ -133,7 +133,39 @@ class Morph(BaseSolver):
             
         """
         fe = FEA.from_inp(inp)
-        
+
+        # convert to the second order elements
+        str_now = 'element-0'
+        # fe = FEA.elements.convert_to_second_order(fe, [str_now])
+        ind_surf = 0
+        elems_name_list = []
+        surf_name_list = []
+        while True:
+            surf_name = 'surface_%d_All'%ind_surf
+            if not surf_name in fe.surface_sets.keys():
+                break
+            elems_surface, elems_other = FEA.elements.divide_surface_elements(fe=fe, name_element=str_now, name_surface=surf_name)
+
+            fe.delete_element(str_now)
+            fe.add_element(elems_other, name='element-0')
+            fe.add_element(elems_surface, name='element-surf-%d'%ind_surf)
+            elems_name_list.append('element-surf-%d'%ind_surf)
+            surf_name_list.append(surf_name)
+
+            ind_surf+=1
+
+        fe.merge_elements(element_name_list=elems_name_list, element_name_new='element-sensitivity')
+
+        fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity'])
+
+        element: FEA.elements.Element_3D = fe.elems['element-sensitivity']
+        element.surf_order = torch.ones([element._elems.shape[0], 4], dtype=torch.int8, device='cpu')
+
+        for surf_name in surf_name_list:
+            fe.elems['element-sensitivity'] = FEA.elements.set_surface_2order(fe=fe, name_elems='element-sensitivity', name_surface=surf_name)
+
+        # fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity', 'element-0'])
+
         # assign the materials
         if mu is not None and kappa is not None and density is not None:
             for str_now in mu.keys():
@@ -141,15 +173,7 @@ class Morph(BaseSolver):
                                                         kappa=torch.from_numpy(kappa[str_now]).to(fe.nodes.device).to(fe.nodes.dtype),)
 
                 fe.elems[str_now].set_density(torch.from_numpy(density[str_now]).to(fe.nodes.device).to(fe.nodes.dtype))
-                fe.elems[str_now].set_materials(materials_now)        # convert the C3D4 elements to C3D10 elements
-        ## find all edges of the elements
-        str_now = 'element-0'
-        nodes_now = fe.nodes.clone()
-        # nodes_new, elems_new = fe.elems[str_now].to_C3D10(nodes_now=nodes_now)
-        
-        # Update the element in FEA
-        # fe.elems[str_now] = elems_new
-        # fe.nodes = nodes_new
+                fe.elems[str_now].set_materials(materials_now) 
         
         # add loads
         i=0
@@ -218,15 +242,7 @@ class Morph(BaseSolver):
             fe.loads['Pressure_%d' % j].pressure = pressure_list[j]
 
         # solve displacement 0
-
-        # fe.elems['element-0'].set_order(1)
         result = fe.solve(tol_error=1e-3)
-
-        # fe.elems['element-0'].set_order(2)
-        # fe.refine_RGC()
-
-        
-        # result = fe.solve(tol_error=1e-3)
 
         if not result:
             raise RuntimeError(

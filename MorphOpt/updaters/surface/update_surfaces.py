@@ -1,4 +1,3 @@
-from math import e
 from socketserver import UDPServer
 from scipy import interpolate
 import torch
@@ -101,15 +100,15 @@ class UpdaterSurfaces(BaseUpdater):
         Parameters:
             iter_now (int): The current iteration number.
         """
-        self.scaler = []
-        for i in range(len(sensitivity)):
-            scaler_now = sensitivity[i].abs()
+        if iter_now % self.reset_per_iter == 0 or self.scaler is None:
+            # get the maximum sensitivity value
+            max_sensitivity = 0
+            for sensitivity_surf in sensitivity:
+                max_sensitivity = max(max_sensitivity,
+                                      sensitivity_surf.abs().max())
+            self.scaler = 100 / max_sensitivity
 
-            scaler_now[scaler_now < 1e-15] = scaler_now[scaler_now > 1e-15].min()
-
-            self.scaler.append(scaler_now)
-
-            
+        return sensitivity
 
     def initialize(self, iter_now: int, sensitivity: list[torch.Tensor], *args,
                    **kwargs) -> None:
@@ -122,9 +121,9 @@ class UpdaterSurfaces(BaseUpdater):
 
         # reset the scaler
         self._reset_scaler(iter_now, sensitivity=sensitivity)
-        # sensitivity = [
-        #     sensitivity_surf * self.scaler for sensitivity_surf in sensitivity
-        # ]
+        sensitivity = [
+            sensitivity_surf * self.scaler for sensitivity_surf in sensitivity
+        ]
 
         # get the weights for the points in the optimization process
         self._weight_points = self.params_update.get_points_weight()
@@ -140,7 +139,7 @@ class UpdaterSurfaces(BaseUpdater):
             obj_func.initialize(r0=r0, rdu0=rdu0, sensitivity=sensitivity)
 
         # initialize the optimizer
-        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=100, tol_error=1e-10)
+        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
 
         self.iteration_total = 0
 
@@ -165,12 +164,7 @@ class UpdaterSurfaces(BaseUpdater):
 
         obj_value = []
         for obj_func in self.obj_funcs.values():
-            if obj_func.__class__.__name__ != 'Sensitivity':
-                # Calculate the objective function value
-                weight_now = [self.scaler[i] * self._weight_points[i] for i in range(len(self._weight_points))]
-                obj_value.append(obj_func(weight_now, r, rdu, rdu2))
-            else:
-                obj_value.append(obj_func(self._weight_points, r, rdu, rdu2))
+            obj_value.append(obj_func(self._weight_points, r, rdu, rdu2))
 
         # enroll the design variables
         self.params_update.set_parameters(xlist=x0)
@@ -286,7 +280,7 @@ class UpdaterSurfaces(BaseUpdater):
         Ldot = torch.cat(
             [Ldot[element_str] for element_str in points_request.keys()], dim=0)
         points_request = torch.cat(
-            [points_request[element_str] for element_str in points_request.keys()],
+            [points_request[element_str].reshape([-1, 3]) for element_str in points_request.keys()],
             dim=0)
 
         # interpolate the sensitivity into the structral grids
@@ -405,7 +399,8 @@ class UpdaterSurfaces(BaseUpdater):
         Ldot = {}
 
         for element_str in fe_result.fe.elems.keys():
-
+            if element_str != 'element-sensitivity':
+                continue
             elems = fe_result.fe.elems[element_str]
             element_sensitive = SensitivityElement.get_sensitivity_element(elems=elems, fe=fe_result.fe)
             
@@ -445,11 +440,11 @@ class UpdaterSurfaces(BaseUpdater):
                 index0 = (
                     self.params_update.surface_list[i].model.coordinates[0]
                     < self.params_update.surface_list[i].model.interval_size[0]
-                    * 2
+                    * 3
                 ) | (self.params_update.surface_list[i].model.coordinates[0]
                      > 1 -
                      self.params_update.surface_list[i].model.interval_size[0]
-                     * 2)
+                     * 3)
                 sensitivity[i].data[index0.view(-1)] = 0
 
         return sensitivity
@@ -496,8 +491,10 @@ class UpdaterSurfaces(BaseUpdater):
         num_U = ADJu.shape[0]
 
         # # prepare the data
+        RGC = fe._GC2RGC(GC0)
+        RGC = fe.refine_RGC(RGC)
         J, F, invF, Ugrad, Ugrad2, s, C = element_sensitive.sensitivity_conponent(
-            fe._GC2RGC(GC0)[0])
+            RGC[0])
         invFdual = torch.einsum('geij, gekl-> geijkl', invF, invF)
         invFdual2 = invFdual - invFdual.transpose(3, 5)
 
@@ -630,7 +627,7 @@ class UpdaterSurfaces(BaseUpdater):
                     torch.einsum('s, ge, geij, geji->ges', pressure_list, JdF, invF, adjuGrad) + \
                     torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invFdF, adjuGrad) + \
                     torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjudFGrad)
-
+ 
         return sen_U, sen_Udp, sen_UdF
 
     # endregion

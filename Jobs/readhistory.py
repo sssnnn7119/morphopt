@@ -45,12 +45,20 @@ def restart_optimization(restart_path, target_iteration=None):
 
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
 
-    return params
+    generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
+                                                  path_output=GLOBAL.PATH.path_Result + '/Cache/', 
+                                                  path_queue=GLOBAL.PATH.path_Queue)
+
+    return params, generator
 
 if __name__ == "__main__":
     # Read the parameters from the restart path
-    restart_path = "Z:/Results/T20250702202809_DefaultLabel/"
-    target_iteration = None
+    restart_path = "Z:/Results/T20250709184206_FRONT/"
+    target_iteration = 31
 
-    restart_optimization(restart_path = restart_path, 
+    params, generator = restart_optimization(restart_path = restart_path, 
                          target_iteration = target_iteration)
+    
+    generator.generate(material_para=[params.materials.density, 1, 
+                                                           params.materials.mu, 
+                                                           params.materials.kappa])

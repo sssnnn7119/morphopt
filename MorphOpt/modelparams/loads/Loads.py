@@ -3,8 +3,6 @@ import numpy as np
 import torch
 
 
-from FEA.FEA_INP import FEA_INP
-from FEA.Main import loads
 from ..base_params import BaseParams
 from ... import GLOBAL
 
