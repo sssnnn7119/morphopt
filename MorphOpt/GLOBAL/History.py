@@ -21,6 +21,11 @@ class History:
         The history of the deformation values.
         """
 
+        self.history_compliance: list[np.ndarray] = []
+        """
+        The history of the compliance values.
+        """
+
         self.iteration: int = 0
         """
         The current iteration number.
@@ -50,7 +55,7 @@ class History:
         Save the history to a CSV file.
         CSV format:
         - Row 1: Current iteration pointer
-        - Row 2: Column headers (iteration, objective, time-0, time-1, ..., deformation0-0, deformation0-1, ...)
+        - Row 2: Column headers (iteration, objective, T0, T1, ..., U0-0, U0-1, ..., UdF0-0-0, UdF0-0-1, ...)
         - Row 3+: Data records
         """
         filepath = path + '/history_record.csv'
@@ -68,7 +73,7 @@ class History:
             if self.history_time:
                 time_dim = len(self.history_time[0]) if self.history_time[0] else 0
                 for i in range(time_dim):
-                    headers.append(f'time-{i}')
+                    headers.append(f'T{i}')
             
             # Add deformation history column headers
             if self.history_deformation:
@@ -77,10 +82,22 @@ class History:
                     rows, cols = deform_array.shape
                     for i in range(rows):
                         for j in range(cols):
-                            headers.append(f'deformation{i}-{j}')
+                            headers.append(f'U{i}-{j}')
                 elif deform_array.ndim == 1:  # Vector
                     for i in range(len(deform_array)):
-                        headers.append(f'deformation0-{i}')
+                        headers.append(f'U0-{i}')
+
+            # Add UdF history column headers
+            if len(self.history_compliance) > 0:
+                for i in range(len(self.history_compliance[0])):
+                    for j in range(len(self.history_compliance[0][i])):
+                        headers.append(f'UdF{i}-{j}-0')
+                        headers.append(f'UdF{i}-{j}-1')
+                        headers.append(f'UdF{i}-{j}-2')
+                        headers.append(f'UdF{i}-{j}-3')
+                        headers.append(f'UdF{i}-{j}-4')
+                        headers.append(f'UdF{i}-{j}-5')
+
             
             # Row 2: Column headers
             writer.writerow(headers)
@@ -115,7 +132,26 @@ class History:
                         deform_size = np.array(self.history_deformation[0]).size
                         row.extend([''] * deform_size)
                 
-                writer.writerow(row)
+                # UdF history
+                if i < len(self.history_compliance):
+                    UdF_flat = np.array(self.history_compliance[i]).flatten()
+                    row.extend(UdF_flat.tolist())
+                else:
+                    # Fill empty values to maintain column consistency
+                    if self.history_compliance and self.history_compliance[0] is not None:
+                        UdF_size = np.array(self.history_compliance[0]).size
+                        row.extend([''] * UdF_size)
+
+                # Format numbers to 4 decimal places in scientific notation, except for iteration
+                formatted_row = []
+                for idx, val in enumerate(row):
+                    if idx == 0:  # Iteration column
+                        formatted_row.append(val)
+                    elif isinstance(val, float):
+                        formatted_row.append(f"{val:.4e}")
+                    else:
+                        formatted_row.append(val)
+                writer.writerow(formatted_row)
 
     def load_csv(self, path: str) -> None:
         """
@@ -134,77 +170,106 @@ class History:
             # Row 2: Column headers
             headers = next(reader)
             
-            # Find the position of each section in columns
-            time_start_idx = None
-            time_end_idx = None
-            deform_start_idx = None
-            deform_cols = 0
+            # Find the indices where different data types start
+            objective_idx = headers.index('objective') if 'objective' in headers else 1
+            
+            # Find time columns
+            time_indices = [i for i, h in enumerate(headers) if h.startswith('T')]
+            time_start_idx = min(time_indices) if time_indices else None
+            time_end_idx = max(time_indices) + 1 if time_indices else None
+            
+            # Find deformation columns (start with U but not UdF)
+            deform_indices = [i for i, h in enumerate(headers) if h.startswith('U') and not h.startswith('UdF')]
+            deform_start_idx = min(deform_indices) if deform_indices else None
+            deform_end_idx = max(deform_indices) + 1 if deform_indices else None
+            
+            # Find compliance columns
+            compliance_indices = [i for i, h in enumerate(headers) if h.startswith('UdF')]
+            compliance_start_idx = min(compliance_indices) if compliance_indices else None
+            compliance_end_idx = max(compliance_indices) + 1 if compliance_indices else None
+            
+            # Determine deformation shape from headers
             deform_shape = None
+            if deform_indices:
+                u_headers = [headers[i] for i in deform_indices]
+                u_indices = [list(map(int, h.replace('U', '').split('-'))) for h in u_headers]
+                max_row = max(idx[0] for idx in u_indices) + 1
+                max_col = max(idx[1] for idx in u_indices) + 1
+                deform_shape = (max_row, max_col)
             
-            for i, header in enumerate(headers):
-                if header.startswith('time-') and time_start_idx is None:
-                    time_start_idx = i
-                elif header.startswith('deformation') and time_start_idx is not None and time_end_idx is None:
-                    time_end_idx = i
-                    deform_start_idx = i
-                    deform_cols += 1
-                elif header.startswith('deformation'):
-                    if deform_start_idx is None:
-                        deform_start_idx = i
-                    deform_cols += 1
-            
-            if time_start_idx is not None and time_end_idx is None:
-                time_end_idx = deform_start_idx if deform_start_idx else len(headers)
-            
-            # Determine deformation matrix shape
-            if deform_cols > 0:
-                # Infer matrix shape from column headers
-                max_row_idx = 0
-                max_col_idx = 0
-                for header in headers[deform_start_idx:]:
-                    if header.startswith('deformation'):
-                        parts = header.replace('deformation', '').split('-')
-                        if len(parts) == 2:
-                            row_idx = int(parts[0])
-                            col_idx = int(parts[1])
-                            max_row_idx = max(max_row_idx, row_idx)
-                            max_col_idx = max(max_col_idx, col_idx)
-                deform_shape = (max_row_idx + 1, max_col_idx + 1)
+            # Determine compliance shape from headers
+            compliance_shape = None
+            if compliance_indices:
+                udf_headers = [headers[i] for i in compliance_indices]
+                udf_parts = [h.replace('UdF', '').split('-') for h in udf_headers]
+                if udf_parts:
+                    max_i = max(int(parts[0]) for parts in udf_parts) + 1
+                    max_j = max(int(parts[1]) for parts in udf_parts) + 1
+                    compliance_shape = (max_i, max_j, 6)  # Assuming 6 components per element
             
             # Initialize lists
             self.history_objective = []
             self.history_time = []
             self.history_deformation = []
+            self.history_compliance = []
             
             # Read data rows
             for row in reader:
-                if not row or row[0] == '':  # Skip empty rows
+                if not row or len(row) <= objective_idx:  # Skip empty rows
                     continue
                 
                 # Objective function value
-                if len(row) > 1 and row[1] != '':
-                    self.history_objective.append(float(row[1]))
+                if row[objective_idx] and row[objective_idx] != '':
+                    self.history_objective.append(float(row[objective_idx]))
+                else:
+                    self.history_objective.append(None)
                 
                 # Time consumption
                 if time_start_idx is not None and time_end_idx is not None:
                     time_data = []
                     for i in range(time_start_idx, time_end_idx):
-                        if i < len(row) and row[i] != '':
+                        if i < len(row) and row[i] and row[i] != '':
                             time_data.append(float(row[i]))
-                    if time_data:
-                        self.history_time.append(time_data)
+                        else:
+                            time_data.append(0.0)
+                    self.history_time.append(time_data)
                 
                 # Deformation history
-                if deform_start_idx is not None and deform_cols > 0:
+                if deform_start_idx is not None and deform_end_idx is not None:
                     deform_data = []
-                    for i in range(deform_start_idx, deform_start_idx + deform_cols):
-                        if i < len(row) and row[i] != '':
+                    for i in range(deform_start_idx, deform_end_idx):
+                        if i < len(row) and row[i] and row[i] != '':
                             deform_data.append(float(row[i]))
+                        else:
+                            deform_data.append(0.0)
                     
                     if deform_data and deform_shape:
                         # Reshape to matrix
-                        deform_matrix = np.array(deform_data).reshape(deform_shape)
-                        self.history_deformation.append(deform_matrix.tolist())
-                    elif deform_data:
-                        # If shape cannot be determined, save as vector
-                        self.history_deformation.append(deform_data)
+                        try:
+                            deform_matrix = np.array(deform_data).reshape(deform_shape)
+                            self.history_deformation.append(deform_matrix.tolist())
+                        except ValueError:
+                            # If reshape fails, save as is
+                            self.history_deformation.append(deform_data)
+                    else:
+                        self.history_deformation.append(None)
+                
+                # Compliance history
+                if compliance_start_idx is not None and compliance_end_idx is not None:
+                    compliance_data = []
+                    for i in range(compliance_start_idx, compliance_end_idx):
+                        if i < len(row) and row[i] and row[i] != '':
+                            compliance_data.append(float(row[i]))
+                        else:
+                            compliance_data.append(0.0)
+                    
+                    if compliance_data and compliance_shape:
+                        # Reshape to 3D array
+                        try:
+                            compliance_matrix = np.array(compliance_data).reshape(compliance_shape)
+                            self.history_compliance.append(compliance_matrix.tolist())
+                        except ValueError:
+                            # If reshape fails, save as is
+                            self.history_compliance.append(compliance_data)
+                    else:
+                        self.history_compliance.append([])

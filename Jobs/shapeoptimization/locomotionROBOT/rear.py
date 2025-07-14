@@ -23,39 +23,59 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.4, 0.4, 0.4])
+            super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.0])
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=21.,
                                                         length=70.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.5, maxFF=0.2, perturbation_L=10.))
+                                                        flip=False, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=6.,
+            Surfaces.BSP.initialize_cylinder(r0=5.,
                                                     length=64.,
                                                     seed_size=1.0,
-                                                    symmetric=[0, [1]],
-                                                    init_location=[-11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.5, maxFF=0.2, perturbation_L=10.))
-        
-            self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=6.,
-                                                    length=64.,
-                                                    seed_size=1.0,
-                                                    symmetric=[0, [1]],
-                                                    init_location=[11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.5, maxFF=0.2, perturbation_L=10.))
+                                                    symmetric=[1, [1]],
+                                                    init_location=[-10, -10, 3],
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=2.,
+            Surfaces.BSP.initialize_cylinder(r0=5.,
                                                     length=64.,
                                                     seed_size=1.0,
-                                                    symmetric=[0, [1]],
+                                                    symmetric=[1, [1]],
+                                                    init_location=[-10, 10, 3],
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
+            
+            self.add_surface(
+            Surfaces.BSP.initialize_cylinder(r0=5.,
+                                                    length=64.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[10, 10, 3],
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
+            
+            self.add_surface(
+            Surfaces.BSP.initialize_cylinder(r0=5.,
+                                                    length=64.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[10, -10, 3],
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
+
+            
+            self.add_surface(
+            Surfaces.BSP.initialize_cylinder(r0=3.,
+                                                    length=64.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
                                                     flip=True, maxR=0.1, maxC=0.8, maxFF=0.2,))
             
+            self.if_update = [True, True, True, False]
+
+
         def initialize(self, iteration):
             super().initialize(iteration)
             # self.if_update[0] = False
@@ -67,46 +87,38 @@ class Params(_Params):
             self.surface_list[2].model.control_points = control_points_
 
             # for the surface 0
-            control_points_ = self.surface_list[0].model.control_points.clone()
-            
-            control_points_1 = control_points_[:, :, :round(control_points_.shape[2] / 4)]
-            control_points_2 = control_points_[:, :, round(control_points_.shape[2] / 4):round(control_points_.shape[2] / 2)]
-            control_points_3 = control_points_[:, :, round(control_points_.shape[2] / 2):round(3 * control_points_.shape[2] / 4)]
-            control_points_4 = control_points_[:, :, round(3 * control_points_.shape[2] / 4):]
+            # rotation symmetric
+            s1 = int(self.surface_list[0].model.control_points.shape[2] / 4)
+            part1 = self.surface_list[0].model.control_points[:, :, 0:s1]
+            part2 = self.surface_list[0].model.control_points[:, :, s1:s1*2]
+            part3 = self.surface_list[0].model.control_points[:, :, s1*2:s1*3]
+            part4 = self.surface_list[0].model.control_points[:, :, s1*3:s1*4]
 
-            _control_points_1 = control_points_1.clone()
-            _control_points_2 = control_points_2.clone()
-            _control_points_3 = control_points_3.clone()
-            _control_points_4 = control_points_4.clone()
+            part2 = part2.flip(dims = [2])
+            part2[0] *= -1
+            part3[0] *= -1
+            part3[1] *= -1
+            part4 = part4.flip(dims = [2])
+            part4[1] *= -1
 
-            _control_points_2[0] = control_points_2[1]
-            _control_points_2[1] = -control_points_2[0]
-            _control_points_3[0] = -control_points_3[0]
-            _control_points_3[1] = -control_points_3[1]
-            _control_points_4[0] = -control_points_4[1]
-            _control_points_4[1] = control_points_4[0]
+            part1 = (part1 + part2 + part3 + part4) / 4
+            part2 = part1.flip(dims = [2])
+            part2[0] *= -1
+            part3 = part1.clone()
+            part3[0] *= -1
+            part3[1] *= -1
+            part4 = part1.flip(dims = [2])
+            part4[1] *= -1
 
-            _control_points_ = (control_points_1 + _control_points_2 + _control_points_3 + _control_points_4) / 4
-
-            _control_points_2 = _control_points_.clone()
-            _control_points_2[0] = -_control_points_[1]
-            _control_points_2[1] = _control_points_[0]
-
-            _control_points_3 = _control_points_2.clone()
-            _control_points_3[0] = -_control_points_2[1]
-            _control_points_3[1] = _control_points_2[0]
-
-            _control_points_4 = _control_points_3.clone()
-            _control_points_4[0] = -_control_points_3[1]
-            _control_points_4[1] = _control_points_3[0]
-
-            self.surface_list[0].model.control_points = torch.cat(
-                [_control_points_, _control_points_2, _control_points_3, _control_points_4], dim=2)
+            self.surface_list[0].model.control_points = torch.cat([part1, part2, part3, part4], dim=2)
+ 
 
         def get_geometry_values(self):
             r0, r0du, r0du2 = self.surface_list[0].get_geometry_values()
 
             r1, r1du, r1du2 = self.surface_list[1].get_geometry_values()
+
+            r3, r3du, r3du2 = self.surface_list[3].get_geometry_values()
             
             r2 = r1.clone()
             r2[0] *= -1
@@ -120,9 +132,9 @@ class Params(_Params):
             r2du2[0] *= -1
             r2du2[1] *= -1
 
-            r = [r0, r1, r2]
-            rdu = [r0du, r1du, r2du]
-            rdu2 = [r0du2, r1du2, r2du2]
+            r = [r0, r1, r2, r3]
+            rdu = [r0du, r1du, r2du, r3du]
+            rdu2 = [r0du2, r1du2, r2du2, r3du2]
 
             return r, rdu, rdu2
 
@@ -187,7 +199,7 @@ class Params(_Params):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.08, 0.0]])
+                self.pressure = torch.Tensor([[0.06, 0.0, 0.0]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -210,7 +222,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=3.0, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=2.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(solvers.Morph):
     """
@@ -237,7 +249,7 @@ class Updater(Updaters):
     def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
         
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
-        loss = (U[0, -2]-2.0)**2 + (UdF**2).sum() / 3000
+        loss = (U[0, -2]-2.0)**2 - U[0, 0] / 1000 + (UdF**2).sum() / 500
 
         return loss
 
@@ -258,16 +270,17 @@ class Updater(Updaters):
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=
-                                                            [[2.0, 2.5, 2.5],
-                                                             [2.5, 2.0, 2.5],
-                                                             [2.5, 2.5, 2.0],]))
+                                                            [[2.0, 3.0, 3.0, 3.0],
+                                                             [3.0, 2.0, 3.0, 3.0],
+                                                             [3.0, 3.0, 2.0, 3.0],
+                                                             [3.0, 3.0, 3.0, 2.0]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=15., height=70., bottom=0.))
+                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=22., height=70., bottom=0.))
     
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
+    torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
     opt_label = 'FRONT'

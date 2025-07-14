@@ -507,12 +507,12 @@ class UpdaterSurfaces(BaseUpdater):
         sen_UdF = torch.zeros(
             [J.shape[0], J.shape[1], num_surface, num_U, num_U])
 
-        ADJu_gaussian = []
-        ADJuGrad_gaussian = []
-        ADJudp_gaussian = []
-        ADJudpGrad_gaussian = []
-        ADJudf_gaussian = []
-        ADJudfGrad_gaussian = []
+        ADJu_gaussian: list[list[torch.Tensor]] = []
+        ADJuGrad_gaussian: list[list[torch.Tensor]] = []
+        ADJudp_gaussian: list[list[torch.Tensor]] = []
+        ADJudpGrad_gaussian: list[list[torch.Tensor]] = []
+        ADJudf_gaussian: list[list[torch.Tensor]] = []
+        ADJudfGrad_gaussian: list[list[torch.Tensor]] = []
         for ind_target in range(num_U):
             ADJu_now = fe._GC2RGC_linear(ADJu[ind_target])[0]
             ADJu_gaussian.append(element_sensitive.displacement(ADJu_now))

@@ -67,7 +67,7 @@ class Controller:
             
             
             while True:
-                # try:
+                try:
                     t0 = time.time()
                     
                     # clean the .inp files
@@ -100,13 +100,14 @@ class Controller:
                     t3 = time.time()
                     
                     break
-                # except Exception as e:
-                #     print('Error occurred during optimization step: %s' % str(e))
-                #     self.generator.seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
-                #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
-                #     self.params.initialize(iteration = 0)
+                except Exception as e:
+                    print('Error occurred during optimization step: %s' % str(e))
+                    self.generator.seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
+                    self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
+                    self.params.initialize(iteration = 0)
                     
             GLOBAL.History.history_deformation.append([self.fe_result.U[i][-6:].tolist() for i in range(len(self.fe_result.U))])
+            GLOBAL.History.history_compliance.append([self.fe_result.UdF[i][:, -6:].tolist() for i in range(len(self.fe_result.U))])
             GLOBAL.History.history_objective.append(loss)
             GLOBAL.History.history_time.append([t1-t0, t2-t1, t3-t2])
             self.generator.seed_size = seed_size0

@@ -264,133 +264,135 @@ class Morph(BaseSolver):
         K_solver.factorize(K_sp)
         # endregion
 
-        # region for Udp calculate the jacobian
+        def calculate_Udp(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
 
-        def get_Rdp(dim_now: int):
-            def function_p0dot(p):
-                p0 = fe.loads['Pressure_%d' % dim_now].pressure
-                fe.loads['Pressure_%d' % dim_now].pressure = p
-                result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(fe.GC))[0]
-                fe.loads['Pressure_%d' % dim_now].pressure = p0
-                return result
-            _, Rdp = torch.autograd.functional.jvp(
-                function_p0dot,
-                torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
-                torch.ones([1]))
-            return Rdp
-        
+            # for Udp calculate the jacobian
 
-        Rdp = torch.zeros([num_pressure, fe.GC.shape[0]])
-        for p in range(num_pressure):
-            Rdp[p] = get_Rdp(p)
-        Udp0 = -K_solver.solve(K_sp, Rdp.T.cpu().numpy())
-        Udp0 = torch.from_numpy(Udp0).to(Rdp.device).to(Rdp.dtype).T
-        # endregion
-
-
-        # region for GCu define the adjoint problem
-        R = torch.zeros([len(U_dim), fe.RGC_list_indexStart[-1]])
-        for i in range(len(U_dim)):
-            R[i, U_dim[i]] = 1
-
-        # solve adjoint problem with displacement 0
-        R0 = fe.assemble_force(force=R, GC0=GC0)
-        GCv = K_solver.solve(K_sp, -R0.T.cpu().numpy())
-        GCv = torch.from_numpy(GCv).to(R.device).to(R.dtype).T
-        # GCv = fe.solve_linear_perturbation(GC0=GC0, R0=-R)
-        # endregion
-
-        # get the derivative of the stiffness matrix with respect to the pressure
-        # region for GCudp
-
-        Kdp_indices = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[1]
-
-        function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
-            2]
-
-        def get_Kdp(dim_now: int):
-
-            def function_p0dot(p):
-                p0 = fe.loads['Pressure_%d' % dim_now].pressure
-                fe.loads['Pressure_%d' % dim_now].pressure = p
-                result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(fe.GC))[2]
-                fe.loads['Pressure_%d' % dim_now].pressure = p0
-                return result
-
-            # \partial K / \partial u \cdot \partial u / \partial p
-            K0_values, Kdp1_values = torch.autograd.functional.jvp(
-                function_udot, GC0, Udp0[dim_now])
-
-            # \partial K / \partial p
-            _, Kdp2_values = torch.autograd.functional.jvp(
-                function_p0dot,
-                torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
-                torch.ones([1]))
-
-            Kdp0_values = Kdp1_values + Kdp2_values
-            Kdp0 = torch.sparse_coo_tensor(Kdp_indices, Kdp0_values).coalesce()
-            return Kdp0
-
-        Kdp = []
-        for i in range(len(pressure_list)):
-            Kdp.append(get_Kdp(i))
-
-        # combine the results
-        adjForce = torch.zeros(
-            [len(U_dim),
-             len(pressure_list), fe.RGC_list_indexStart[-1]])
-        for i in range(len(U_dim)):
-            for j in range(len(pressure_list)):
-                adjForce[i, j, fe.RGC_remain_index_flatten] = Kdp[j] @ GCv[i]
-
-        # solve the second adjoint problem
-        for i in range(len(pressure_list)):
-            fe.loads['Pressure_%d' % i].pressure = pressure_list[i]
-        f = -adjForce.reshape([len(U_dim) * len(pressure_list), -1])
-
-        R0 = fe.assemble_force(force=f, GC0=GC0)
-        GCw = K_solver.solve(K_sp, R0.T.cpu().numpy())
-        GCw = torch.from_numpy(GCw).to(f.device).to(f.dtype).T
-        # GCw = fe.solve_linear_perturbation(GC0=GC0, R0=f)
-        GCw = GCw.reshape([len(U_dim), len(pressure_list), -1])  # u,p
-        # endregion
-
-
-        # region for the UdF
-
-        R_F = torch.zeros([len(U_dim), GC0.shape[0]])
-        for i in range(len(U_dim)):
-            R_F[i, U_dim[i]] = 1
-        UdF = K_solver.solve(K_sp, R_F.T.cpu().numpy())
-        UdF = torch.from_numpy(UdF).to(R_F.device).to(R_F.dtype).T
-
-        # endregion
-
-        # region for the GCudf
-
-        # calculate the KdF
-        function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
-            2]
-
-        GCudf = torch.zeros([len(U_dim), len(U_dim), GC0.shape[0]])
-
-        for f_ind in range(len(U_dim)):
-            _, KdF1_values = torch.autograd.functional.jvp(
-                    function_udot, GC0, UdF[f_ind])
-            KdF1_indices = fe._assemble_Stiffness_Matrix(RGC0)[1]
-
-            KdF_values = KdF1_values
-            KdF_indices = KdF1_indices
-            KdF = torch.sparse_coo_tensor(KdF_indices, KdF_values).coalesce()
+            def get_Rdp(dim_now: int):
+                def function_p0dot(p):
+                    p0 = fe.loads['Pressure_%d' % dim_now].pressure
+                    fe.loads['Pressure_%d' % dim_now].pressure = p
+                    result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[0]
+                    fe.loads['Pressure_%d' % dim_now].pressure = p0
+                    return result
+                _, Rdp = torch.autograd.functional.jvp(
+                    function_p0dot,
+                    torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
+                    torch.ones([1]))
+                return Rdp
             
-            for u_ind in range(len(U_dim)):
-                # calculate the GCudf
-                adjForceW = torch.zeros([fe.RGC_list_indexStart[-1]])
-                adjForceW[fe.RGC_remain_index_flatten] = -KdF @ GCv[u_ind]
-                R0 = fe.assemble_force(force=adjForceW, GC0=GC0)
-                GCudf_now = K_solver.solve(K_sp, R0.T.cpu().numpy())
-                GCudf[i,j] = torch.from_numpy(GCudf_now).to(R0.device).to(R0.dtype).flatten()
 
-        # endregion
+            Rdp = torch.zeros([num_pressure, GC0.shape[0]])
+            for p in range(num_pressure):
+                Rdp[p] = get_Rdp(p)
+            Udp0 = -K_solver.solve(K_sp, Rdp.T.cpu().numpy())
+            Udp0 = torch.from_numpy(Udp0).to(Rdp.device).to(Rdp.dtype).T
 
-        return GC0.tolist(), Udp0.tolist(), UdF.tolist(), GCv.tolist(), GCw.tolist(), GCudf.tolist()
+            return Udp0
+        
+        def calculate_ADJu(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor) -> torch.Tensor:
+            # for GCu define the adjoint problem
+            R = torch.zeros([len(U_dim), fe.RGC_list_indexStart[-1]])
+            for i in range(len(U_dim)):
+                R[i, U_dim[i]] = 1
+
+            # solve adjoint problem with displacement 0
+            R0 = fe.assemble_force(force=R, GC0=GC0)
+            ADJu = K_solver.solve(K_sp, -R0.T.cpu().numpy())
+            ADJu = torch.from_numpy(ADJu).to(R.device).to(R.dtype).T
+            
+            return ADJu
+        
+        def calculate_ADJudp(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, ADJu: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
+            #  for GCudp
+
+            Kdp_indices = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[1]
+
+            function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
+                2]
+
+            def get_Kdp(dim_now: int):
+
+                def function_p0dot(p):
+                    p0 = fe.loads['Pressure_%d' % dim_now].pressure
+                    fe.loads['Pressure_%d' % dim_now].pressure = p
+                    result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[2]
+                    fe.loads['Pressure_%d' % dim_now].pressure = p0
+                    return result
+
+                # \partial K / \partial u \cdot \partial u / \partial p
+                K0_values, Kdp1_values = torch.autograd.functional.jvp(
+                    function_udot, GC0, Udp0[dim_now])
+
+                # \partial K / \partial p
+                _, Kdp2_values = torch.autograd.functional.jvp(
+                    function_p0dot,
+                    torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
+                    torch.ones([1]))
+
+                Kdp0_values = Kdp1_values + Kdp2_values
+                Kdp0 = torch.sparse_coo_tensor(Kdp_indices, Kdp0_values).coalesce()
+                return Kdp0
+
+            Kdp = []
+            for i in range(len(pressure_list)):
+                Kdp.append(get_Kdp(i))
+
+            # combine the results
+            adjForce = torch.zeros(
+                [len(U_dim),
+                len(pressure_list), fe.RGC_list_indexStart[-1]])
+            for i in range(len(U_dim)):
+                for j in range(len(pressure_list)):
+                    adjForce[i, j, fe.RGC_remain_index_flatten] = Kdp[j] @ ADJu[i]
+
+            # solve the second adjoint problem
+            for i in range(len(pressure_list)):
+                fe.loads['Pressure_%d' % i].pressure = pressure_list[i]
+            f = -adjForce.reshape([len(U_dim) * len(pressure_list), -1])
+
+            R0 = fe.assemble_force(force=f, GC0=GC0)
+            ADJudp = K_solver.solve(K_sp, R0.T.cpu().numpy())
+            ADJudp = torch.from_numpy(ADJudp).to(f.device).to(f.dtype).T
+            # GCw = fe.solve_linear_perturbation(GC0=GC0, R0=f)
+            ADJudp = ADJudp.reshape([len(U_dim), len(pressure_list), -1])  # u,p
+            return ADJudp
+
+        def calculate_ADJudf(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, ADJu: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
+            # for the GCudf
+
+            # calculate the KdF
+            function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
+                2]
+
+            GCudf = torch.zeros([len(U_dim), len(U_dim), GC0.shape[0]])
+
+            for f_ind in range(len(U_dim)):
+                _, KdF1_values = torch.autograd.functional.jvp(
+                        function_udot, GC0, UdF[f_ind])
+                KdF1_indices = fe._assemble_Stiffness_Matrix(RGC0)[1]
+
+                KdF_values = KdF1_values
+                KdF_indices = KdF1_indices
+                KdF = torch.sparse_coo_tensor(KdF_indices, KdF_values).coalesce()
+                
+                for u_ind in range(len(U_dim)):
+                    # calculate the GCudf
+                    adjForceW = torch.zeros([fe.RGC_list_indexStart[-1]])
+                    adjForceW[fe.RGC_remain_index_flatten] = -KdF @ ADJu[u_ind]
+                    R0 = fe.assemble_force(force=adjForceW, GC0=GC0)
+                    GCudf_now = K_solver.solve(K_sp, R0.T.cpu().numpy())
+                    GCudf[u_ind, f_ind] = torch.from_numpy(GCudf_now).to(R0.device).to(R0.dtype).flatten()
+            return GCudf
+
+        ADJu = calculate_ADJu(fe=fe, K_solver=K_solver, GC0=GC0)
+
+
+        Udp0 = calculate_Udp(fe=fe, K_solver=K_solver, GC0=GC0, pressure_list=pressure_list)
+        UdF = -ADJu.clone()
+
+        ADJudp = calculate_ADJudp(fe=fe, K_solver=K_solver, GC0=GC0, ADJu=ADJu, pressure_list=pressure_list)
+
+        ADJudf = calculate_ADJudf(fe=fe, K_solver=K_solver, GC0=GC0, ADJu=ADJu, pressure_list=pressure_list)
+
+        return GC0.tolist(), Udp0.tolist(), UdF.tolist(), ADJu.tolist(), ADJudp.tolist(), ADJudf.tolist()

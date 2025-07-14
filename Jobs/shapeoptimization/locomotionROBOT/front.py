@@ -23,14 +23,14 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.0])
+            super().__init__(max_step_length=[0.1, 0.1, 0.1, 0.1])
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=21.,
                                                         length=70.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.3, maxFF=0.2, perturbation_L=14.))
+                                                        flip=False, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
@@ -38,7 +38,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[-11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.3, maxFF=0.2, perturbation_L=14.))
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
         
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
@@ -46,7 +46,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.3, maxFF=0.2, perturbation_L=14.))
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=2.,
@@ -56,8 +56,39 @@ class Params(_Params):
                                                     init_location=[0, 0, 3],
                                                     flip=True, maxR=0.1, maxC=0.8, maxFF=0.2,))
             
-            self.if_update = [True, True, True, False]
+            self.if_update = [True, True, True, True]
 
+
+        def _symmetry(self, control_points: torch.Tensor):
+            # for the surface 0
+            # rotation symmetric
+            s1 = int(control_points.shape[2] / 4)
+            part1 = control_points[:, :, 0:s1].clone()
+            part2 = control_points[:, :, s1:s1*2].clone()
+            part3 = control_points[:, :, s1*2:s1*3].clone()
+            part4 = control_points[:, :, s1*3:s1*4].clone()
+
+            part2_flipped = part2.flip(dims=[2]).clone()
+            part2_flipped = torch.cat([part2_flipped[0:1] * -1, part2_flipped[1:]], dim=0)
+            
+            part3_mod = part3.clone()
+            part3_mod = torch.cat([part3_mod[0:1] * -1, part3_mod[1:2] * -1, part3_mod[2:]], dim=0)
+            
+            part4_flipped = part4.flip(dims=[2]).clone()
+            part4_flipped = torch.cat([part4_flipped[0:1], part4_flipped[1:2] * -1, part4_flipped[2:]], dim=0)
+
+            part1_avg = (part1 + part2_flipped + part3_mod + part4_flipped) / 4
+            
+            part2_result = part1_avg.flip(dims=[2]).clone()
+            part2_result = torch.cat([part2_result[0:1] * -1, part2_result[1:]], dim=0)
+            
+            part3_result = part1_avg.clone()
+            part3_result = torch.cat([part3_result[0:1] * -1, part3_result[1:2] * -1, part3_result[2:]], dim=0)
+            
+            part4_result = part1_avg.flip(dims=[2]).clone()
+            part4_result = torch.cat([part4_result[0:1], part4_result[1:2] * -1, part4_result[2:]], dim=0)
+
+            return torch.cat([part1_avg, part2_result, part3_result, part4_result], dim=2)
 
         def initialize(self, iteration):
             super().initialize(iteration)
@@ -69,31 +100,9 @@ class Params(_Params):
 
             self.surface_list[2].model.control_points = control_points_
 
-            # for the surface 0
-            # rotation symmetric
-            s1 = int(self.surface_list[0].model.control_points.shape[2] / 4)
-            part1 = self.surface_list[0].model.control_points[:, :, 0:s1]
-            part2 = self.surface_list[0].model.control_points[:, :, s1:s1*2]
-            part3 = self.surface_list[0].model.control_points[:, :, s1*2:s1*3]
-            part4 = self.surface_list[0].model.control_points[:, :, s1*3:s1*4]
 
-            part2 = part2.flip(dims = [2])
-            part2[0] *= -1
-            part3[0] *= -1
-            part3[1] *= -1
-            part4 = part4.flip(dims = [2])
-            part4[1] *= -1
-
-            part1 = (part1 + part2 + part3 + part4) / 4
-            part2 = part1.flip(dims = [2])
-            part2[0] *= -1
-            part3 = part1.clone()
-            part3[0] *= -1
-            part3[1] *= -1
-            part4 = part1.flip(dims = [2])
-            part4[1] *= -1
-
-            self.surface_list[0].model.control_points = torch.cat([part1, part2, part3, part4], dim=2)
+            self.surface_list[0].model.control_points = self._symmetry(self.surface_list[0].model.control_points)
+            self.surface_list[3].model.control_points = self._symmetry(self.surface_list[3].model.control_points)
  
 
         def get_geometry_values(self):
@@ -134,6 +143,8 @@ class Params(_Params):
                 ).clone(),
                 self.surface_list[1].get_surface_parameters().flatten().detach(
                 ).clone(),
+                self.surface_list[3].get_surface_parameters().flatten().detach(
+                ).clone(),
             ]
             return xlist
 
@@ -148,6 +159,8 @@ class Params(_Params):
                     xlist[0].detach().clone())
             self.surface_list[1].set_surface_parameters(
                     xlist[1].detach().clone())
+            self.surface_list[3].set_surface_parameters(
+                    xlist[2].detach().clone())
 
         def update_variables(self, x_change: torch.Tensor) -> None:
             """
@@ -159,16 +172,19 @@ class Params(_Params):
             
             params = self.get_parameters()
 
-            x_change_list = []
+            x_change_list: list[torch.Tensor] = []
             start = 0
             for i in range(len(params)):
                 end = start + params[i].numel()
                 x_change_list.append(x_change[start:end].reshape([3, -1]))
                 start = end
 
+            x_change_list[0] = self._symmetry(x_change_list[0].reshape_as(self.surface_list[0].model.control_points)).reshape([3, -1])
+            x_change_list[2] = self._symmetry(x_change_list[2].reshape_as(self.surface_list[3].model.control_points)).reshape([3, -1])
+
             x_new = []
             surf_ind = [0, 1]
-            for i in range(len(params)):
+            for i in range(len(surf_ind)):
 
                 r = x_change_list[i].norm(dim=0)
 
@@ -176,13 +192,20 @@ class Params(_Params):
                     r + 1e-15) * self._max_step_length[i]
 
                 self.surface_list[surf_ind[i]].update_variables(dx)
+
+            r = x_change_list[2].norm(dim=0)
+
+            dx = 2 / torch.pi * torch.atan(r) * x_change_list[2] / (
+                r + 1e-15) * self._max_step_length[3]
+
+            self.surface_list[3].update_variables(dx)
             
 
     class LoadParams(Loads):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.06, 0.0, 0.0]])
+                self.pressure = torch.Tensor([[0.06, 0.0, 0.0], [0.06, 0.06, 0.0]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -232,9 +255,10 @@ class Updater(Updaters):
     def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
         
         UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
-        loss = (U[0, -2]-2.0)**2 - U[0, 0] / 1000 + (UdF**2).sum() / 3000
-
-        return loss
+        loss1 = (U[0, -2]-1.8)**2
+        loss2 = (U[1, 2] - 16)**2 / 1000
+        loss3 = (UdF**2).sum() / 200000
+        return loss1 + loss2 + loss3
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """
@@ -253,12 +277,14 @@ class Updater(Updaters):
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=
-                                                            [[2.0, 3.0, 3.0, 3.0],
-                                                             [3.0, 2.0, 3.0, 3.0],
-                                                             [3.0, 3.0, 2.0, 3.0],
-                                                             [3.0, 3.0, 3.0, 2.0]]))
+                                                            [[2.0, 2.0, 2.0, 2.0],
+                                                             [2.0, 2.0, 2.0, 2.0],
+                                                             [2.0, 2.0, 2.0, 2.0],
+                                                             [2.0, 2.0, 2.0, 2.0]]))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Boundary.Cylinder(radius=22., height=70., bottom=0.))
+            self.add_objective_function(
+                update_surfaces.objectivefuncs.Boundary.MinRadius(radius=1.9))
     
     
 if __name__ == '__main__':

@@ -1,1 +1,1 @@
-from .Cylinder import Cylinder
+from .Cylinder import Cylinder, MinRadius
