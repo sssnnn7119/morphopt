@@ -640,7 +640,7 @@ class BSP_Surf(BSP, Surface_Base):
         return result
 
     def symmetric_reinitialize(self):
-        Pout = self.control_points.data.clone()
+        Pout = self.control_points.clone()
         Zoffset = (Pout[2].max() + Pout[2].min()) / 2
         Pout[2] = Pout[2] - Zoffset
         if self._symmetric[0] == 1:
@@ -657,7 +657,7 @@ class BSP_Surf(BSP, Surface_Base):
                         Pout[i] = (Pout[i] +
                                    torch.flip(Pout[i], dims=[flipdim])) / 2
         Pout[2] = Pout[2] + Zoffset
-        self.control_points.data = Pout
+        self.control_points = Pout
 
     @ staticmethod
     def load_from_file(file_name):

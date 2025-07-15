@@ -200,11 +200,12 @@ class UpdaterSurfaces(BaseUpdater):
 
 
         low_step_length_iter = 0
+        gk_new = None
         for iteration in range(self.max_step_iter):
             self.iteration_total += 1
 
             # get the current variables of the surfaces
-            alpha, delta_var = self.optimizer.step(x_now=variables)
+            alpha, delta_var, gk_new = self.optimizer.step(x_now=variables, gk_now= gk_new)
             variables.data += delta_var * alpha
 
             # check if the step length is too small

@@ -44,15 +44,15 @@ class ObjectiveFunction:
 
         """
         # Get the sensitivity of the elements
-        U0_ = U.detach().to('cpu').requires_grad_()
-        Udp0_ = Udp.detach().to('cpu').requires_grad_()
-        UdF0_ = UdF.detach().to('cpu').requires_grad_()
+        U0_ = U.detach().to('cpu')
+        Udp0_ = Udp.detach().to('cpu')
+        UdF0_ = UdF.detach().to('cpu')
         
-        Loss = self.get_objective(U=U0_, Udp=Udp0_, UdF=UdF0_, pressure_list=pressure_list, *args, **kwargs)
-        grads = torch.autograd.grad(Loss, 
-                       [U0_, Udp0_, UdF0_], 
-                       retain_graph=False, 
-                       allow_unused=True)
+        def objective_wrapper(*inputs):
+            return self.get_objective(U=inputs[0], Udp=inputs[1], UdF=inputs[2], pressure_list=pressure_list, *args, **kwargs)
+        
+        Loss = objective_wrapper(U0_, Udp0_, UdF0_)
+        grads = torch.func.jacrev(objective_wrapper, argnums=(0, 1, 2))(U0_, Udp0_, UdF0_)
         LdU, LdUdp, LdUdF = grads
 
         if LdU is None:

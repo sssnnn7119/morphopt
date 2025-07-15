@@ -164,11 +164,11 @@ class CPGEOSurfaceInterface(BaseInterface):
 
         penalty = torch.tensor(0., dtype=torch.float64)
 
-        indexl, l = self.barrier_function(k1, self.MaxC, 0.4, p)
+        indexl, l = self.barrier_function(k1, self.MaxC, 0.7, p)
         if len(indexl) > 0:
             penalty += (l * weight[indexl]).sum()
 
-        indexl, l = self.barrier_function(-k2, self.MaxC, 0.4, p)
+        indexl, l = self.barrier_function(-k2, self.MaxC, 0.7, p)
         if len(indexl) > 0:
             penalty += (l * weight[indexl]).sum()
 
@@ -244,7 +244,7 @@ class CPGEOSurfaceInterface(BaseInterface):
 
         cpgeo = CPGEO.surface.sphere(num_points=num_points, radius=r0)
         cpgeo.cp_vertices = cpgeo.cp_vertices + torch.tensor(init_location).reshape([3, 1])
-        cpgeo.k_neighbors=15
+        cpgeo.k_neighbors=12
         cpgeo.pre_load(1)
         #, surface: CPGEO.surface.Sphere, seed_size: float, symmetric = [0], MaxC = 1., flip: bool = False
         return cls(cpgeo, seed_size, symmetric, MaxC, flip)
@@ -329,7 +329,7 @@ class CPGEOSurfaceInterface(BaseInterface):
         triangularcenter_ = (cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 0]] +
                             cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 1]] +
                             cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 2]]).T / 3
-        cpgeo.k_neighbors=15
+        cpgeo.k_neighbors=12
         cpgeo.initialize()
         cpgeo.pre_load(1)
         # cpgeo.reconstruction(seed_size=seed_size)

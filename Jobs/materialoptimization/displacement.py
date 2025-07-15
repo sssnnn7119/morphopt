@@ -75,6 +75,15 @@ class Params(_Params):
                     init_location=[0, 0, 40],
                     MaxC=2.5
                 ))
+
+            # self.add_surface(
+            #     Surfaces_offset.CPGEO.initialize_Sphere(
+            #         seed_size=1.2,
+            #         flip=True,
+            #         r0=10,
+            #         init_location=[0, 0, 40],
+            #         MaxC=2.5
+            #     ))
             
         def initialize(self, iteration):
             super().initialize(iteration)
@@ -236,7 +245,7 @@ class Updater(Updaters):
 
         def __init__(self, params: Params):
 
-            super().__init__(params=params, max_step_iter=500, reset_per_iter=3)
+            super().__init__(params=params, max_step_iter=100, reset_per_iter=3)
 
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.Sensitivity())
@@ -258,7 +267,7 @@ class Updater(Updaters):
 
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
+    torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
     opt_label = 'MaterialShell'

@@ -156,7 +156,7 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
                 sen_U, sen_Udp, sen_UdF = self._cal_shape_derivative_displacement_jacobian(
                     fe=fe_result.fe,
                     element_sensitive=element_sensitive,
-                    pressure_list=pressure_list[p],
+                    pressure_list=pressure_list[p].to(device),
                     GC0=fe_result.U[p].to(device),
                     Udp0=fe_result.Udp[p].to(device),
                     UdF0=fe_result.UdF[p].to(device),

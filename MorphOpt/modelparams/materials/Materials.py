@@ -187,7 +187,7 @@ class BsplineMaterials(Materials):
         """
 
         dp = 2 / torch.pi * torch.atan(x_change) * self.max_step_length
-        self.bspline.control_points += dp.reshape_as(
+        self.bspline.control_points = self.bspline.control_points + dp.reshape_as(
             self.bspline.control_points)
         self.bspline.control_points[self.bspline.control_points < 0] = 0
         self.bspline.control_points[self.bspline.control_points > 1] = 1

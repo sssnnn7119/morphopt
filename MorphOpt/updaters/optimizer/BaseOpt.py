@@ -8,6 +8,10 @@ class BaseOpt():
         the objective function to be optimized, which should return the objective value
         """
 
+        self.grad = torch.func.jacrev(self.closure)
+        """        the gradient of the objective function, which should return the gradient vector
+        """
+
         # params for line search
         self._c1 = 1e-4
         self._rou1 = 0.2
@@ -59,7 +63,7 @@ class BaseOpt():
             if (alpha * direction).abs().max() < 1e-14:
                 return 0.
 
-    def step(x_now: torch.Tensor) -> torch.Tensor:
+    def step(x_now: torch.Tensor, gk_now: torch.Tensor=None) -> torch.Tensor:
         """
         Perform a single optimization step.
         """
@@ -111,12 +115,11 @@ class LBFGS(BaseOpt):
             
         return y
     
-    def step(self, x_now: torch.Tensor):
+    def step(self, x_now: torch.Tensor, gk_now: torch.Tensor=None):
         
-        
-        x_now_ = x_now.detach().requires_grad_()
-        obj_now = self.closure(x_now_)
-        gk_now = torch.autograd.grad(obj_now, x_now_)[0]
+        obj_now = self.closure(x_now)
+        if gk_now is None:
+            gk_now: torch.Tensor = self.grad(x_now).flatten()
 
         gk_now.view(-1)[gk_now.view(-1).isnan()] = 0
         
@@ -142,8 +145,7 @@ class LBFGS(BaseOpt):
 
         x_new = x_now + alpha * dk
         
-        x_new_ = x_new.detach().requires_grad_()
-        obj_new = self.closure(x_new_)
+        obj_new = self.closure(x_new)
 
         if obj_new>obj_now:
             self.SK = []
@@ -151,7 +153,7 @@ class LBFGS(BaseOpt):
             self.rhok = []
             return torch.zeros_like(x_now)
         
-        gk_new = torch.autograd.grad(obj_new, x_new_)[0]
+        gk_new: torch.Tensor =self.grad(x_new).flatten()
 
         yk = gk_new.flatten() - gk_now.flatten()
         sk = alpha * dk.flatten()
@@ -167,6 +169,6 @@ class LBFGS(BaseOpt):
                 self.YK = self.YK[1:]
                 self.rhok = self.rhok[1:]
         
-        return alpha, dk
+        return alpha, dk, gk_new
 
 

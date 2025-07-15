@@ -117,7 +117,7 @@ class UpdaterMaterials(BaseUpdater):
 
         # update the objective function
         variables = self.params_update.get_variables().detach().clone()
-
+        gk_now = None
         # print the information
         print("\n\n")
         print("Start updating the materials parameters.")
@@ -126,7 +126,7 @@ class UpdaterMaterials(BaseUpdater):
             self.iteration_total += 1
 
             # get the current variables of the optimization problem
-            alpha, delta_var = self.optimizer.step(x_now=variables)
+            alpha, delta_var, gk_now = self.optimizer.step(x_now=variables, gk_now=gk_now)
             variables.data += delta_var * alpha
 
             # get current objective function value
