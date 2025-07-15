@@ -5,8 +5,8 @@ It includes classes for defining the parameters for the Finite Element Method (F
 
 from .History import History as __History
 from .Path import Path as __Path
+from .ObjFun import ObjectiveFunction
 
 PATH = __Path()
 History = __History()
-
-objective_function: callable
+OBJFUN = ObjectiveFunction()

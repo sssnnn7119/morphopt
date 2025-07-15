@@ -98,13 +98,13 @@ class UpdaterLoads(BaseUpdater):
         else:
             return sum(obj_value)
         
-    def update(self, fe_result: FE_result, obj_fun: callable) -> torch.Tensor:
+    def update(self, fe_result: FE_result) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """
 
         # sensitivity analysis
-        Loss, sensitivity = self._get_sensitivity(fe_result, obj_fun=obj_fun)
+        Loss, sensitivity = self._get_sensitivity(fe_result)
         sensitivity = self._refine_sensitivity(iter_now=History.iteration,
                                                sensitivity=sensitivity)
 
@@ -149,7 +149,7 @@ class UpdaterLoads(BaseUpdater):
         return Loss, variables.detach().clone()
     # region sensitivity
 
-    def _get_sensitivity(self, fe_result: FE_result, obj_fun: callable):
+    def _get_sensitivity(self, fe_result: FE_result):
         """
         Get the sensitivity of the design variables.
 

@@ -13,7 +13,8 @@ from ...solvers import Morph
 from ..second_derivative_element import SensitivityElement
 from ..base_updater import BaseUpdater
 from ...solvers.FE_result import FE_result
-
+from MorphOpt import GLOBAL
+from ..adjoints import Adjoints
 
 class UpdaterSurfaces(BaseUpdater):
     """
@@ -174,13 +175,13 @@ class UpdaterSurfaces(BaseUpdater):
         else:
             return sum(obj_value)
 
-    def update(self, fe_result: FE_result, obj_fun: callable) -> torch.Tensor:
+    def update(self, fe_result: FE_result, adjoint: Adjoints) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """
 
         # sensitivity analysis
-        Loss, sensitivity = self._get_sensitivity(fe_result, obj_fun=obj_fun)
+        sensitivity = self._get_sensitivity(fe_result=fe_result, adjoint=adjoint)
         sensitivity = self._refine_sensitivity(iter_now=History.iteration,
                                                sensitivity=sensitivity)
         for sensitivity_surf in sensitivity:
@@ -234,7 +235,7 @@ class UpdaterSurfaces(BaseUpdater):
             string = tabulate(data, headers=headers, tablefmt="grid")
             print(string, end="\r")
 
-        return Loss, variables.detach().clone()
+        return variables.detach().clone()
 
     # region sensitivity
 
@@ -304,7 +305,7 @@ class UpdaterSurfaces(BaseUpdater):
 
     def _get_sensitivity(
             self, fe_result: FE_result,
-            obj_fun: callable) -> tuple[float, list[torch.Tensor]]:
+            adjoint: Adjoints) -> tuple[float, list[torch.Tensor]]:
         """
         Get the sensitivity of the design variables.
 
@@ -318,65 +319,18 @@ class UpdaterSurfaces(BaseUpdater):
         # Get the interpolated points for the design variables
         interpolated_points = self._get_interpolate_points()
 
-        # Get the derivative of the objective function with respect to the displacement and Jacobian
-        Loss, LdU, LdUdp, LdUdF = self._get_LdU_LdUdp(fe_result=fe_result,
-                                               obj_fun=obj_fun)
-
         # Get the sensitivity of the design variables
         points_request, Ldot = self._get_shape_derivative(fe_result=fe_result,
-                                                          LdU=LdU,
-                                                          LdUdp=LdUdp,
-                                                          LdUdF=LdUdF)
+                                                          adjoint=adjoint)
 
         # Interpolate the sensitivity into the structural grids
         sensitivity = self._sensitivity_interpolation(Ldot, points_request,
                                                       interpolated_points)
 
-        return Loss, sensitivity
-
-    def _get_LdU_LdUdp(self, fe_result: FE_result,
-                       obj_fun: callable) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Get the sensitivity of the design variables.
-        Parameters:
-            fe_result (FE_result): The result of the finite element analysis.
-            obj_fun (callable): The objective function to be optimized.
-        Returns:
-            tuple: A tuple containing:
-                - loss (float): The loss function
-                - LdU (torch.Tensor): The sensitivity of the displacement vector.
-                - LdUdp (torch.Tensor): The sensitivity of the Jacobian vector.
-                - LdUdF (torch.Tensor): The sensitivity of the derivative of the displacement vector with respect to the external force on the end-effector.
-        """
-        device = torch.zeros(1).device
-
-        # Get the sensitivity of the elements
-        GC0_ = fe_result.U[:, self.U_dim].detach().to(device).requires_grad_()
-        Udp0_ = fe_result.Udp[:, :, self.U_dim].permute(
-            [0, 2, 1]).detach().to(device).requires_grad_()
-        UdF0_ = fe_result.UdF[:, :, self.U_dim].permute(
-            [0, 2, 1]).detach().to(device).requires_grad_()
-        
-        Loss = obj_fun(U=GC0_, Udp=Udp0_, UdF=UdF0_)
-        LdU = torch.autograd.grad(Loss,
-                                  GC0_,
-                                  retain_graph=True,
-                                  allow_unused=True)[0]
-        LdUdp = torch.autograd.grad(Loss, Udp0_, retain_graph=True, allow_unused=True)[0]
-        LdUdF = torch.autograd.grad(Loss, UdF0_, retain_graph=True, allow_unused=True)[0]
-
-        if LdU is None:
-            LdU = torch.zeros_like(GC0_)
-        if LdUdp is None:
-            LdUdp = torch.zeros_like(Udp0_)
-        if LdUdF is None:
-            LdUdF = torch.zeros_like(UdF0_)
-
-        return Loss, LdU, LdUdp, LdUdF
+        return sensitivity
 
     def _get_shape_derivative(
-            self, fe_result: FE_result, LdU: torch.Tensor,
-            LdUdp: torch.Tensor, LdUdF: torch.Tensor
+            self, fe_result: FE_result, adjoint: Adjoints
             ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the shape derivative of the design variables.
@@ -406,25 +360,23 @@ class UpdaterSurfaces(BaseUpdater):
             
 
             for p in range(len(pressure_list)):
-                sen_U_now, sen_Udp_now, sen_UdF_now = self._cal_shape_derivative_displacement_jacobian(
+                sen_U, sen_Udp, sen_UdF = self._cal_shape_derivative_displacement_jacobian(
                     fe=fe_result.fe,
                     element_sensitive=element_sensitive,
                     pressure_list=pressure_list[p],
                     GC0=fe_result.U[p].to(device),
                     Udp0=fe_result.Udp[p].to(device),
                     UdF0=fe_result.UdF[p].to(device),
-                    ADJu=fe_result.ADJu[p].to(device),
-                    ADJudp=fe_result.ADJudp[p].to(device),
-                    ADJudf=fe_result.ADJudf[p].to(device))
+                    ADJu=adjoint.ADJu[p].to(device),
+                    ADJudp=adjoint.ADJudp[p].to(device),
+                    ADJu_udp=adjoint.ADJu_udp[p].to(device),
+                    ADJudf=adjoint.ADJudf[p].to(device),
+                    ADJu_udf=adjoint.ADJu_udf[p].to(device))
 
                 if p == 0:
-                    Ldot_now = torch.einsum('u, gesu->ges', LdU[p], sen_U_now) + \
-                        torch.einsum('up, gesup->ges', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, gesuf->ges', LdUdF[p], sen_UdF_now)
+                    Ldot_now = sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
                 else:
-                    Ldot_now += torch.einsum('u, gesu->ges', LdU[p], sen_U_now) + \
-                        torch.einsum('up, gesup->ges', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, gesuf->ges', LdUdF[p], sen_UdF_now)
+                    Ldot_now += sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
 
             points_request[element_str] = (element_sensitive.points_request)
             Ldot[element_str] = (Ldot_now.reshape([-1, Ldot_now.shape[-1]]))
@@ -456,7 +408,9 @@ class UpdaterSurfaces(BaseUpdater):
     def _cal_shape_derivative_displacement_jacobian(
             self, fe: FEA.Main.FEA_Main, element_sensitive: SensitivityElement,
             pressure_list: list[float], GC0: torch.Tensor, Udp0: torch.Tensor, UdF0: torch.Tensor,
-            ADJu: torch.Tensor, ADJudp: torch.Tensor, ADJudf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            ADJu: torch.Tensor, 
+            ADJudp: torch.Tensor, ADJu_udp: torch.Tensor,
+            ADJudf: torch.Tensor, ADJu_udf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         calculate the shape derivative of the design variables.
         
@@ -471,24 +425,22 @@ class UpdaterSurfaces(BaseUpdater):
             UdF0 (torch.Tensor): The derivative of the displacement vector with respect to the external force on the end-effector.
               [F, DoF]
             ADJu (torch.Tensor): The sensitivity of velocity vector.
-              [U, DoF]
+              [DoF]
             ADJudp (torch.Tensor): The sensitivity of Jacobian vector.
-              [U, p, DoF]
+              [num_pressure, DoF]
+            ADJu_udp (torch.Tensor): The sensitivity of Jacobian vector_ displacement term.
+                [num_pressure, DoF]
             ADJudf (torch.Tensor): The sensitivity of compliance.
-                [U, F, DoF]
+                [F, DoF]
+            ADJu_udf (torch.Tensor): The sensitivity of compliance_ displacement term.
+                [F, DoF]
 
         Returns:
-            tuple: A tuple containing:
-                sen_U (torch.Tensor): The sensitivity of the displacement vector.
-                    [num_gauss, num_element, num_surface, U]
-                sen_Udp (torch.Tensor): The sensitivity of the Jacobian vector.
-                    [num_gauss, num_element, num_surface, U, p]
-                sen_Udf (torch.Tensor): The sensitivity of the derivative of the displacement vector with respect to the external force on the end-effector.
-                    [num_gauss, num_element, num_surface, U, F]
+            sensitivity (torch.Tensor): The sensitivity of the design variables.
+                [g, e, s]
         """
-
         num_surface = self.params_update.num_surface
-        num_U = ADJu.shape[0]
+        num_U = UdF0.shape[0]
 
         # # prepare the data
         RGC = fe._GC2RGC(GC0)
@@ -499,59 +451,65 @@ class UpdaterSurfaces(BaseUpdater):
         invFdual2 = invFdual - invFdual.transpose(3, 5)
 
         # prepare the sensitivity tensors
-        sen_U = torch.zeros([J.shape[0], J.shape[1], num_surface,
-                             num_U])  # surface, u
+        sen_U = torch.zeros([J.shape[0], J.shape[1], num_surface])  # surface
         sen_Udp = torch.zeros(
-            [J.shape[0], J.shape[1], num_surface, num_U,
-             len(pressure_list)])  # surface, u, p
+            [J.shape[0], J.shape[1], num_surface, len(pressure_list)])  # surface, p
         sen_UdF = torch.zeros(
-            [J.shape[0], J.shape[1], num_surface, num_U, num_U])
+            [J.shape[0], J.shape[1], num_surface, num_U]) # surface, F
 
-        ADJu_gaussian: list[list[torch.Tensor]] = []
-        ADJuGrad_gaussian: list[list[torch.Tensor]] = []
-        ADJudp_gaussian: list[list[torch.Tensor]] = []
-        ADJudpGrad_gaussian: list[list[torch.Tensor]] = []
-        ADJudf_gaussian: list[list[torch.Tensor]] = []
-        ADJudfGrad_gaussian: list[list[torch.Tensor]] = []
-        for ind_target in range(num_U):
-            ADJu_now = fe._GC2RGC_linear(ADJu[ind_target])[0]
-            ADJu_gaussian.append(element_sensitive.displacement(ADJu_now))
-            ADJuGrad_gaussian.append(
-                element_sensitive.gradient_displacement(ADJu_now))
 
-            ADJudp_gaussian.append([])
-            ADJudpGrad_gaussian.append([])
+        ADJudp_gaussian: list[torch.Tensor] = []
+        ADJudpGrad_gaussian: list[torch.Tensor] = []
+        ADJu_udp_gaussian: list[torch.Tensor] = []
+        ADJu_udpGrad_gaussian: list[torch.Tensor] = []
+
+        ADJudf_gaussian: list[torch.Tensor] = []
+        ADJudfGrad_gaussian: list[torch.Tensor] = []
+        ADJu_udf_gaussian: list[torch.Tensor] = []
+        ADJu_udfGrad_gaussian: list[torch.Tensor] = []
+
+        ADJu_now = fe._GC2RGC_linear(ADJu)[0]
+        ADJu_gaussian=(element_sensitive.displacement(ADJu_now))
+        ADJuGrad_gaussian=(
+            element_sensitive.gradient_displacement(ADJu_now))
+        
+        for ind_pressure in range(len(pressure_list)):
+            ADJudp_now = fe._GC2RGC_linear(ADJudp[ind_pressure])[0]
+            ADJudp_gaussian.append(
+                element_sensitive.displacement(ADJudp_now))
+            ADJudpGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJudp_now))
             
-            ADJudf_gaussian.append([])
-            ADJudfGrad_gaussian.append([])
-
-            for ind_pressure in range(len(pressure_list)):
-                ADJudp_now = fe._GC2RGC_linear(ADJudp[ind_target, ind_pressure])[0]
-                ADJudp_gaussian[ind_target].append(
-                    element_sensitive.displacement(ADJudp_now))
-                ADJudpGrad_gaussian[ind_target].append(
-                    element_sensitive.gradient_displacement(ADJudp_now))
-                
-            for ind_F in range(num_U):
-                ADJudf_now = fe._GC2RGC_linear(ADJudf[ind_target, ind_F])[0]
-                ADJudf_gaussian[ind_target].append(
-                    element_sensitive.displacement(ADJudf_now))
-                ADJudfGrad_gaussian[ind_target].append(
-                    element_sensitive.gradient_displacement(ADJudf_now))
+            ADJu_udp_now = fe._GC2RGC_linear(ADJu_udp[ind_pressure])[0]
+            ADJu_udp_gaussian.append(
+                element_sensitive.displacement(ADJu_udp_now))
+            ADJu_udpGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJu_udp_now))
+            
+        for ind_F in range(num_U):
+            ADJudf_now = fe._GC2RGC_linear(ADJudf[ind_F])[0]
+            ADJudf_gaussian.append(
+                element_sensitive.displacement(ADJudf_now))
+            ADJudfGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJudf_now))
+            
+            ADJu_udf_now = fe._GC2RGC_linear(ADJu_udf[ind_F])[0]
+            ADJu_udf_gaussian.append(
+                element_sensitive.displacement(ADJu_udf_now))
+            ADJu_udfGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJu_udf_now))
                 
 
         # calculate the sensitivity of U
-        for ind_target in range(num_U):
-
-            adju = ADJu_gaussian[ind_target]
-            adjuGrad = ADJuGrad_gaussian[ind_target]
-            sen_U[:, :, :, ind_target] = \
-                torch.einsum('geij, geji->ge', s, adjuGrad).unsqueeze(-1)
-            sen_U[:, :, 1:, ind_target] += \
-                    \
-                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2) + \
-                    \
-                torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjuGrad)
+        adju = ADJu_gaussian
+        adjuGrad = ADJuGrad_gaussian
+        sen_U[:, :, :] = \
+            torch.einsum('geij, geji->ge', s, adjuGrad).unsqueeze(-1)
+        sen_U[:, :, 1:] += \
+                \
+            torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2) + \
+                \
+            torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjuGrad)
 
         # calculate the sensitivity of Udp
         for ind_pressure in range(len(pressure_list)):
@@ -567,32 +525,32 @@ class UpdaterSurfaces(BaseUpdater):
             invFdualdp = invFdualdp + invFdualdp.transpose(2, 4).transpose(
                 3, 5)
             invFdual2dp = invFdualdp - invFdualdp.transpose(3, 5)
-            for ind_target in range(num_U):
-                adju = ADJu_gaussian[ind_target]
-                adjudp = ADJudp_gaussian[ind_target][ind_pressure]
-                adjuGrad = ADJuGrad_gaussian[ind_target]
-                adjudpGrad = ADJudpGrad_gaussian[ind_target][ind_pressure]
 
-                sen_Udp[:, :, :, ind_target, ind_pressure] = \
-                    torch.einsum('geij, geji->ge', s, adjudpGrad).unsqueeze(-1) + \
-                    torch.einsum('geij, geji->ge', sdp, adjuGrad).unsqueeze(-1)
+            adju = ADJu_udp_gaussian[ind_pressure]
+            adjudp = ADJudp_gaussian[ind_pressure]
+            adjuGrad = ADJu_udpGrad_gaussian[ind_pressure]
+            adjudpGrad = ADJudpGrad_gaussian[ind_pressure]
 
-                sen_Udp[:, :, ind_pressure + 1, ind_target, ind_pressure] += \
-                        \
-                    torch.einsum('ge, geijnm, gej, gemni->ge', J, invFdual2, adju, Ugrad2) + \
-                        \
-                    torch.einsum('ge, geij, geji->ge', J, invF, adjuGrad)
+            sen_Udp[:, :, :, ind_pressure] = \
+                torch.einsum('geij, geji->ge', s, adjudpGrad).unsqueeze(-1) + \
+                torch.einsum('geij, geji->ge', sdp, adjuGrad).unsqueeze(-1)
 
-                sen_Udp[:, :, 1:, ind_target, ind_pressure] += \
-                        \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, Jdp, invFdual2, adju, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2dp, adju, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adjudp, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2_dp) + \
-                        \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, Jdp, invF, adjuGrad) + \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invFdp, adjuGrad) + \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjudpGrad)
+            sen_Udp[:, :, ind_pressure + 1, ind_pressure] += \
+                    \
+                torch.einsum('ge, geijnm, gej, gemni->ge', J, invFdual2, adju, Ugrad2) + \
+                    \
+                torch.einsum('ge, geij, geji->ge', J, invF, adjuGrad)
+
+            sen_Udp[:, :, 1:, ind_pressure] += \
+                    \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, Jdp, invFdual2, adju, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2dp, adju, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adjudp, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2_dp) + \
+                    \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, Jdp, invF, adjuGrad) + \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invFdp, adjuGrad) + \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjudpGrad)
 
         for ind_F in range(num_U):
             UdF_now = fe._GC2RGC_linear(UdF0[ind_F])[0]
@@ -607,26 +565,26 @@ class UpdaterSurfaces(BaseUpdater):
             invFdualdF = invFdualdF + invFdualdF.transpose(2, 4).transpose(
                 3, 5)
             invFdual2dF = invFdualdF - invFdualdF.transpose(3, 5)
-            for ind_target in range(num_U):
-                adju = ADJu_gaussian[ind_target]
-                adjudF = ADJudf_gaussian[ind_target][ind_F]
-                adjuGrad = ADJuGrad_gaussian[ind_target]
-                adjudFGrad = ADJudfGrad_gaussian[ind_target][ind_F]
 
-                sen_UdF[:, :, :, ind_target, ind_F] = \
-                    torch.einsum('geij, geji->ge', s, adjudFGrad).unsqueeze(-1) + \
-                    torch.einsum('geij, geji->ge', sdF, adjuGrad).unsqueeze(-1)
+            adju = ADJu_udf_gaussian[ind_F]
+            adjudF = ADJudf_gaussian[ind_F]
+            adjuGrad = ADJu_udfGrad_gaussian[ind_F]
+            adjudFGrad = ADJudfGrad_gaussian[ind_F]
 
-                sen_UdF[:, :, 1:, ind_target, ind_F] += \
-                        \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, JdF, invFdual2, adju, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2dF, adju, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adjudF, Ugrad2) + \
-                    torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2_dF) + \
-                        \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, JdF, invF, adjuGrad) + \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invFdF, adjuGrad) + \
-                    torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjudFGrad)
+            sen_UdF[:, :, :, ind_F] = \
+                torch.einsum('geij, geji->ge', s, adjudFGrad).unsqueeze(-1) + \
+                torch.einsum('geij, geji->ge', sdF, adjuGrad).unsqueeze(-1)
+
+            sen_UdF[:, :, 1:, ind_F] += \
+                    \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, JdF, invFdual2, adju, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2dF, adju, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adjudF, Ugrad2) + \
+                torch.einsum('s, ge, geijnm, gej, gemni->ges', pressure_list, J, invFdual2, adju, Ugrad2_dF) + \
+                    \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, JdF, invF, adjuGrad) + \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invFdF, adjuGrad) + \
+                torch.einsum('s, ge, geij, geji->ges', pressure_list, J, invF, adjudFGrad)
  
         return sen_U, sen_Udp, sen_UdF
 

@@ -1,8 +1,13 @@
+from re import A
 import torch
+
+from MorphOpt import GLOBAL
 from .surface.update_surfaces import UpdaterSurfaces
 from .load.update_loads import UpdaterLoads
 from .material.update_materials import UpdaterMaterials
 from ..solvers.FE_result import FE_result
+from .adjoints import Adjoints
+
 
 class Updaters:
     """
@@ -66,7 +71,7 @@ class Updaters:
         """var_material: The updated material variables.
         """
 
-        
+
     def initialize(self, iteration: int) -> None:
         """
         Initialize the Updaters class.
@@ -74,42 +79,55 @@ class Updaters:
         """
         pass
 
-    def objective_function(self, U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def _adjoint_problem(self, fe_result: FE_result) -> Adjoints:
         """
-        Get the sensitivity of the elements.
+        Solve the adjoint problem according to the objective function
 
-        Parameters:
-            U (torch.Tensor): The displacement vector.
-                [num_task, U]
-            Udp (torch.Tensor): The Jacobian vector.
-                [num_task, U, pressure]
 
-        Returns:
-            tuple: A tuple containing:
-                Loss (float): The loss value.
         """
-        raise NotImplementedError(
-            "This method should be implemented in a subclass.")
 
+        # evaluate the adjoint displacement
+        # Get the sensitivity of the elements
+        GC0_ = fe_result.U[:, -6:].detach()
+        Udp0_ = fe_result.Udp[:, :, -6:].permute(
+            [0, 2, 1]).detach()
+        UdF0_ = fe_result.UdF[:, :, -6:].permute(
+            [0, 2, 1]).detach()
+        Loss, LdU, LdUdp, LdUdF = GLOBAL.OBJFUN.get_derivative(
+            U=GC0_,
+            Udp=Udp0_,
+            UdF=UdF0_, pressure_list=fe_result.pressure_list)
+        
+        adjoint = Adjoints()
+
+        # first, get the adjoint displacement for each pressure
+        adjoint.ADJu = torch.einsum('tuD, tu->tD', fe_result.ADJu, LdU)
+
+        adjoint.ADJu_udp = torch.einsum('tuD, tup->tpD', fe_result.ADJu, LdUdp)
+        adjoint.ADJudp = torch.einsum('tupD, tup->tpD', fe_result.ADJudp, LdUdp)
+
+        adjoint.ADJu_udf = torch.einsum('tuD, tuf->tfD', fe_result.ADJu, LdUdF)
+        adjoint.ADJudf = torch.einsum('tufD, tuf->tfD', fe_result.ADJudf, LdUdF)
+
+        return Loss, adjoint
 
     def update(self, fe_result: FE_result) -> torch.Tensor:
         """
         Update the morphology of the neuron.
         """
         
-        obj_fun = lambda U, Udp, UdF, *args, **kwargs: self.objective_function(U=U, Udp=Udp, UdF=UdF, FE_result = fe_result, *args, **kwargs)
+        loss, adjoint = self._adjoint_problem(fe_result=fe_result)
 
-        loss = 0.
         if self.if_update_surface:
-            loss, self._var_surface = self._surface.update(fe_result, obj_fun=obj_fun)
+            self._var_surface = self._surface.update(fe_result=fe_result, adjoint=adjoint)
 
 
         if self.if_update_load:
-            loss, self._var_load = self._load.update(fe_result, obj_fun=obj_fun)
+            self._var_load = self._load.update(fe_result, adjoint=adjoint)
 
             
         if self.if_update_material:
-            loss, self._var_material = self._material.update(fe_result, obj_fun=obj_fun)
+            self._var_material = self._material.update(fe_result, adjoint=adjoint)
 
 
         return loss

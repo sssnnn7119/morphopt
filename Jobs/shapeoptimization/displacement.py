@@ -16,7 +16,10 @@ from MorphOpt.modelparams import Params as _Params
 
 
 
-U_dim=[-6, -5, -4, -3, -2, -1]
+class ObjectiveFunction(GLOBAL.ObjectiveFunction):
+    def get_objective(self, U: torch.Tensor, Udp: torch.Tensor, UdF: torch.Tensor, *args, **kwargs):
+        return UdF[0][2,2]
+GLOBAL.OBJFUN = ObjectiveFunction()
 
 class Params(_Params):
     class SurfaceParams(Surfaces):
@@ -27,14 +30,14 @@ class Params(_Params):
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=8.,
-                                                        length=20.,
+                                                        length=40.,
                                                         seed_size=1.,
                                                         symmetric=[0],
-                                                        flip=False, maxR=0.2, maxC=1., maxFF=0.2))
+                                                        flip=False, maxR=0.2, maxC=1., maxFF=0.2, perturbation_L=14))
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(
                     r0=4.,
-                    length=14.,
+                    length=34.,
                     seed_size=1.,
                     symmetric=[0],
                     flip=True,
@@ -95,7 +98,7 @@ class Solver(solvers.Morph):
 
     def __init__(self, params: Params):
 
-        super().__init__(params=params, U_dim=U_dim,
+        super().__init__(params=params,
                          num_process=1)
 
 class Updater(Updaters):
@@ -105,13 +108,9 @@ class Updater(Updaters):
     """
 
     def __init__(self, params: Params, *args, **kwargs):
-        super().__init__(U_dim=U_dim,
+        super().__init__(
                          surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
-
-    @staticmethod
-    def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
-        return -U[0, -2]
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """

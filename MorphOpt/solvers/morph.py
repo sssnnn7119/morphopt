@@ -13,6 +13,8 @@ from .base_solver import BaseSolver
 from .FE_result import FE_result
 from FEA.elements import materials
 
+from MorphOpt import GLOBAL
+
 class Morph(BaseSolver):
     """
     This class is responsible for solving the FEA and get the displacement of the soft robot.
@@ -102,21 +104,21 @@ class Morph(BaseSolver):
         pools.join()
 
         # get the result
-        GC0 = torch.tensor([i.get()[0] for i in result], device='cpu')
+        U0 = torch.tensor([i.get()[0] for i in result], device='cpu')
         Udp0 = torch.tensor([i.get()[1] for i in result], device='cpu')
         UdF0 = torch.tensor([i.get()[2] for i in result], device='cpu')
-        GCv = torch.tensor([i.get()[3] for i in result], device='cpu')
-        GCw = torch.tensor([i.get()[4] for i in result], device='cpu')
-        GCudf = torch.tensor([i.get()[5] for i in result], device='cpu')
+        ADJu = torch.tensor([i.get()[3] for i in result], device='cpu')
+        ADJudp = torch.tensor([i.get()[4] for i in result], device='cpu')
+        ADJudf = torch.tensor([i.get()[5] for i in result], device='cpu')
 
         fe_result = FE_result(fe=fe,
                               pressure_list=torch.tensor(pressure_list,
                                                          device='cpu'),
-                              U=GC0,
+                              U=U0,
                               Udp=Udp0,
                               UdF=UdF0,
-                              GCv=GCv,
-                              GCw=GCw, GCudf=GCudf)
+                              GCv=ADJu,
+                              GCw=ADJudp, GCudf=ADJudf)
 
         return fe_result
     

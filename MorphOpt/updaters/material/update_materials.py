@@ -12,6 +12,7 @@ from ..second_derivative_element import SensitivityElement
 from ..base_updater import BaseUpdater
 from ...solvers.FE_result import FE_result
 from FEA.elements.materials import NeoHookean
+from ..adjoints import Adjoints
 
 class UpdaterMaterials(BaseUpdater):
     """
@@ -98,13 +99,13 @@ class UpdaterMaterials(BaseUpdater):
         else:
             return sum(obj_value)
     
-    def update(self, fe_result: FE_result, obj_fun: callable) -> torch.Tensor:
+    def update(self, fe_result: FE_result, adjoint: Adjoints) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """
 
         # sensitivity analysis
-        Loss, sensitivity, points_request = self._get_sensitivity(fe_result, obj_fun=obj_fun)
+        sensitivity, points_request = self._get_sensitivity(fe_result=fe_result, adjoint=adjoint)
         sensitivity = self._refine_sensitivity(iter_now=History.iteration,
                                                sensitivity=sensitivity)
 
@@ -146,12 +147,11 @@ class UpdaterMaterials(BaseUpdater):
             string = tabulate(data, headers=headers, tablefmt="grid")
             print(string, end="\r")
 
-        return Loss, variables.detach().clone()
+        return variables.detach().clone()
     # region sensitivity
 
     def _get_sensitivity(
-            self, fe_result: FE_result,
-            obj_fun: callable) -> tuple[float, torch.Tensor]:
+            self, fe_result: FE_result, adjoint: Adjoints) -> tuple[float, torch.Tensor]:
         """
         Get the sensitivity of the design variables.
 
@@ -171,26 +171,6 @@ class UpdaterMaterials(BaseUpdater):
         device = torch.zeros(1).device
 
         # Get the sensitivity of the elements
-        GC0_ = fe_result.U[:, self.U_dim].detach().to(device).requires_grad_()
-        Udp0_ = fe_result.Udp[:, :, self.U_dim].permute(
-            [0, 2, 1]).detach().to(device).requires_grad_()
-        UdF0_ = fe_result.UdF[:, :, self.U_dim].permute(
-            [0, 2, 1]).detach().to(device).requires_grad_()
-        Loss = obj_fun(U=GC0_, Udp=Udp0_, UdF=UdF0_)
-        LdU = torch.autograd.grad(Loss,
-                                  GC0_,
-                                  retain_graph=True,
-                                  allow_unused=True)[0]
-        LdUdp = torch.autograd.grad(Loss, Udp0_, retain_graph=True, allow_unused=True)[0]
-        LdUdF = torch.autograd.grad(Loss, UdF0_, allow_unused=True)[0]
-
-        if LdU is None:
-            LdU = torch.zeros_like(GC0_)
-        if LdUdp is None:
-            LdUdp = torch.zeros_like(Udp0_)
-        if LdUdF is None:
-            LdUdF = torch.zeros_like(UdF0_)
-
         points_request = []
         Ldot = []
 
@@ -204,25 +184,23 @@ class UpdaterMaterials(BaseUpdater):
             
             
             for p in range(len(pressure_list)):
-                sen_U_now, sen_Udp_now, sen_UdF_now = self._cal_shape_derivative_displacement_jacobian(
+                sen_U, sen_Udp, sen_UdF = self._cal_shape_derivative_displacement_jacobian(
                     fe=fe_result.fe,
                     element_sensitive=element_sensitive,
                     pressure_list=pressure_list[p],
                     GC0=fe_result.U[p].to(device),
                     Udp0=fe_result.Udp[p].to(device),
                     UdF0=fe_result.UdF[p].to(device),
-                    ADJu=fe_result.ADJu[p].to(device),
-                    ADJudp=fe_result.ADJudp[p].to(device),
-                    ADJudF=fe_result.ADJudf[p].to(device))
+                    ADJu=adjoint.ADJu[p].to(device),
+                    ADJudp=adjoint.ADJudp[p].to(device),
+                    ADJu_udp=adjoint.ADJu_udp[p].to(device),
+                    ADJudf=adjoint.ADJudf[p].to(device),
+                    ADJu_udf=adjoint.ADJu_udf[p].to(device))
 
                 if p == 0:
-                    Ldot_now = torch.einsum('u, geu->ge', LdU[p], sen_U_now) + \
-                        torch.einsum('up, geup->ge', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, geuf->ge', LdUdF[p], sen_UdF_now)
+                    Ldot_now = sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
                 else:
-                    Ldot_now += torch.einsum('u, geu->ge', LdU[p], sen_U_now) + \
-                        torch.einsum('up, geup->ge', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, gef->ge', LdUdF[p], sen_UdF_now)
+                    Ldot_now += sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
 
             points_request.append(element_sensitive.points_request.reshape(-1, 3))
             Ldot.append(Ldot_now.flatten())
@@ -230,7 +208,7 @@ class UpdaterMaterials(BaseUpdater):
         points_request = torch.cat(points_request, dim=0)
         Ldot = torch.cat(Ldot, dim=0)
 
-        return Loss, Ldot, points_request
+        return Ldot, points_request
 
     def _refine_sensitivity(self, iter_now: int,
                             sensitivity: torch.Tensor) -> torch.Tensor:
@@ -241,16 +219,18 @@ class UpdaterMaterials(BaseUpdater):
 
     # region derivatives
 
-    def _cal_shape_derivative_displacement_jacobian(self, fe: FEA.Main.FEA_Main, element_sensitive: SensitivityElement,
-                              pressure_list: list[float], GC0: torch.Tensor,
-                              Udp0: torch.Tensor, UdF0: torch.Tensor, ADJu: torch.Tensor,
-                              ADJudp: torch.Tensor, ADJudF: torch.Tensor):
+    def _cal_shape_derivative_displacement_jacobian(
+            self, fe: FEA.Main.FEA_Main, element_sensitive: SensitivityElement,
+            pressure_list: list[float], GC0: torch.Tensor, Udp0: torch.Tensor, UdF0: torch.Tensor,
+            ADJu: torch.Tensor, 
+            ADJudp: torch.Tensor, ADJu_udp: torch.Tensor,
+            ADJudf: torch.Tensor, ADJu_udf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         calculate the shape derivative of the design variables.
         
         Parameters:
             fe (FEA.Main.FEA_Main): The finite element analysis object.
-            element_sensitive (C3D10_Sensitivity): The element sensitivity object.
+            element_sensitive (SensitivityElement): The element sensitivity object.
             pressure_list (list[float]): The list of pressure values.
             GC0 (torch.Tensor): The displacement vector.
               [DoF]
@@ -259,72 +239,70 @@ class UpdaterMaterials(BaseUpdater):
             UdF0 (torch.Tensor): The derivative of the displacement vector with respect to the external force on the end-effector.
               [F, DoF]
             ADJu (torch.Tensor): The sensitivity of velocity vector.
-              [U, DoF]
+              [DoF]
             ADJudp (torch.Tensor): The sensitivity of Jacobian vector.
-              [U, p, DoF]
-            ADJudF (torch.Tensor): The sensitivity of compliance.
-                [U, F, DoF]
+              [num_pressure, DoF]
+            ADJu_udp (torch.Tensor): The sensitivity of Jacobian vector_ displacement term.
+                [num_pressure, DoF]
+            ADJudf (torch.Tensor): The sensitivity of compliance.
+                [F, DoF]
+            ADJu_udf (torch.Tensor): The sensitivity of compliance_ displacement term.
+                [F, DoF]
 
         Returns:
-            tuple: A tuple containing:
-                sen_U (torch.Tensor): The sensitivity of the displacement vector.
-                    [num_gauss, num_element, U]
-                sen_Udp (torch.Tensor): The sensitivity of the Jacobian vector.
-                    [num_gauss, num_element, U, p]
-                sen_Udf (torch.Tensor): The sensitivity of the derivative of the displacement vector with respect to the external force on the end-effector.
-                    [num_gauss, num_element, U, F]
+            sensitivity (torch.Tensor): The sensitivity of the design variables.
+                [g, e]
         """
         
-        num_U = ADJu.shape[0]
-        
-
+        num_U = UdF0.shape[0]
         
         
         J, F, invF, Ugrad, Ugrad2, s, C = element_sensitive.sensitivity_conponent(
             fe._GC2RGC(GC0)[0])
         
         
-        sen_U = torch.zeros([J.shape[0], J.shape[1],
-                             num_U])
-        sen_Udp = torch.zeros([J.shape[0], J.shape[1],
-                                   num_U, len(pressure_list)])
-        sen_UdF = torch.zeros([J.shape[0], J.shape[1],
-                                   num_U, num_U])
+        sen_U = torch.zeros([J.shape[0], J.shape[1]])
+        sen_Udp = torch.zeros([J.shape[0], J.shape[1], len(pressure_list)])
+        sen_UdF = torch.zeros([J.shape[0], J.shape[1], num_U])
         gaussian_weights = element_sensitive.gaussian_weight
         
 
 
         # prepare the sensitivity of the adjoint variables
-        ADJuGrad_gaussian = []
+
         ADJudpGrad_gaussian = []
         ADJudFGrad_gaussian = []
-        for ind_target in range(num_U):
-            ADJu_now = fe._GC2RGC_linear(ADJu[ind_target])[0]
+        ADJu_udpGrad_gaussian = []
+        ADJu_udfGrad_gaussian = []
 
-            ADJuGrad_gaussian.append(
-                element_sensitive.gradient_displacement(ADJu_now))
+        ADJu_now = fe._GC2RGC_linear(ADJu)[0]
 
-            ADJudpGrad_gaussian.append([])
-            ADJudFGrad_gaussian.append([])
+        ADJuGrad_gaussian=(
+            element_sensitive.gradient_displacement(ADJu_now))
+        
+        for ind_pressure in range(len(pressure_list)):
+            ADJudp_now = fe._GC2RGC_linear(ADJudp[ind_pressure])[0]
+            ADJudpGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJudp_now))
             
-            for ind_pressure in range(len(pressure_list)):
-                ADJudp_now = fe._GC2RGC_linear(ADJudp[ind_target, ind_pressure])[0]
-
-                ADJudpGrad_gaussian[ind_target].append(
-                    element_sensitive.gradient_displacement(ADJudp_now))
-                
-            for ind_F in range(num_U):
-                ADJudF_now = fe._GC2RGC_linear(ADJudF[ind_target, ind_F])[0]
-
-                ADJudFGrad_gaussian[ind_target].append(
-                    element_sensitive.gradient_displacement(ADJudF_now))
+            ADJu_udp_now = fe._GC2RGC_linear(ADJu_udp[ind_pressure])[0]
+            ADJu_udpGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJu_udp_now))
+            
+        for ind_F in range(num_U):
+            ADJudF_now = fe._GC2RGC_linear(ADJudf[ind_F])[0]
+            ADJudFGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJudF_now))
+            
+            ADJu_udf_now = fe._GC2RGC_linear(ADJu_udf[ind_F])[0]
+            ADJu_udfGrad_gaussian.append(
+                element_sensitive.gradient_displacement(ADJu_udf_now))
                 
 
         # calculate the sensitivity of U
-        for ind_target in range(num_U):
-            ADJuGrad = ADJuGrad_gaussian[ind_target]
-            sen_U[:, :, ind_target] = \
-                torch.einsum('geij, geji->ge', s, ADJuGrad)
+        ADJuGrad = ADJuGrad_gaussian
+        sen_U[:, :] = \
+            torch.einsum('geij, geji->ge', s, ADJuGrad)
             
         # calculate the sensitivity of Udp
         for ind_pressure in range(len(pressure_list)):
@@ -333,12 +311,12 @@ class UpdaterMaterials(BaseUpdater):
             
             sdp = torch.einsum('geijkl, gekl->geij', C, Ugrad_dp)
             
-            for ind_target in range(num_U):
-                ADJuGrad = ADJuGrad_gaussian[ind_target]
-                ADJudpGrad = ADJudpGrad_gaussian[ind_target][ind_pressure]
-                sen_Udp[:, :, ind_target, ind_pressure] = \
-                    torch.einsum('geij, geji->ge', s, ADJudpGrad) + \
-                    torch.einsum('geij, geji->ge', sdp, ADJuGrad)
+
+            ADJuGrad = ADJu_udpGrad_gaussian[ind_pressure]
+            ADJudpGrad = ADJudpGrad_gaussian[ind_pressure]
+            sen_Udp[:, :, ind_pressure] = \
+                torch.einsum('geij, geji->ge', s, ADJudpGrad) + \
+                torch.einsum('geij, geji->ge', sdp, ADJuGrad)
         
         # calculate the sensitivity of UdF
         for ind_F in range(num_U):
@@ -347,16 +325,16 @@ class UpdaterMaterials(BaseUpdater):
             
             sdF = torch.einsum('geijkl, gekl->geij', C, Ugrad_dF)
             
-            for ind_target in range(num_U):
-                ADJuGrad = ADJuGrad_gaussian[ind_target]
-                ADJudFGrad = ADJudFGrad_gaussian[ind_target][ind_F]
-                sen_UdF[:, :, ind_target, ind_F] = \
-                    torch.einsum('geij, geji->ge', s, ADJudFGrad) + \
-                    torch.einsum('geij, geji->ge', sdF, ADJuGrad)
+
+            ADJuGrad = ADJu_udfGrad_gaussian[ind_F]
+            ADJudFGrad = ADJudFGrad_gaussian[ind_F]
+            sen_UdF[:, :, ind_F] = \
+                torch.einsum('geij, geji->ge', s, ADJudFGrad) + \
+                torch.einsum('geij, geji->ge', sdF, ADJuGrad)
         
-        sen_U*= gaussian_weights.unsqueeze(-1)
-        sen_Udp *= gaussian_weights.unsqueeze(-1).unsqueeze(-1)
-        sen_UdF *= gaussian_weights.unsqueeze(-1).unsqueeze(-1)
+        sen_U*= gaussian_weights
+        sen_Udp *= gaussian_weights.unsqueeze(-1)
+        sen_UdF *= gaussian_weights.unsqueeze(-1)
 
 
         return sen_U, sen_Udp, sen_UdF

@@ -260,7 +260,7 @@ class MorphMaterialShell(BaseSolver):
         fe = FEA.elements.convert_to_second_order(
             fe, element_names=['pressure_elements'])
         elem_pressure: FEA.elements.C3D15 = fe.elems['pressure_elements']
-        elem_pressure.surf_order = torch.tensor([1, 2, 2, 2, 2]).reshape([1, -1]).repeat([elem_pressure._elems.shape[0], 1])
+        elem_pressure.surf_order = torch.tensor([1, 0, 0, 0, 0], device='cpu').reshape([1, -1]).repeat([elem_pressure._elems.shape[0], 1])
 
         # assign the materials to the elements
         if mu is not None and kappa is not None and density is not None:

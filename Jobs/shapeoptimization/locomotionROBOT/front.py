@@ -17,13 +17,20 @@ from MorphOpt.updaters.updaters import Updaters
 from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
+class ObjectiveFunction(GLOBAL.ObjectiveFunction):
+    def get_objective(self, U, Udp, UdF, *args, **kwargs):
+        loss1 = (U[0, -2]-1.8)**2
+        loss2 = (U[1, 2] - 16)**2 / 1000
+        loss3 = (UdF**2).sum() / 200000
+        return loss1 + loss2 + loss3
+GLOBAL.OBJFUN = ObjectiveFunction()
 
 class Params(_Params):
     class SurfaceParams(Surfaces):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.1, 0.1, 0.1, 0.1])
+            super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4])
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=21.,
@@ -250,15 +257,6 @@ class Updater(Updaters):
     def __init__(self, params: Params, *args, **kwargs):
         super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
-
-    @staticmethod
-    def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs):
-        
-        UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
-        loss1 = (U[0, -2]-1.8)**2
-        loss2 = (U[1, 2] - 16)**2 / 1000
-        loss3 = (UdF**2).sum() / 200000
-        return loss1 + loss2 + loss3
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """

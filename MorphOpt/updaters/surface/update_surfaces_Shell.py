@@ -9,6 +9,7 @@ from .update_surfaces import UpdaterSurfaces
 from ...modelparams.surfaces.Surfaces_offset import Surfaces_offset
 from ..second_derivative_element import SensitivityElement
 from . import objectivefuncs
+from ..adjoints import Adjoints
 
 class UpdaterSurface_Shell(UpdaterSurfaces):
     """
@@ -124,8 +125,7 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
         """
 
     def _get_shape_derivative(
-            self, fe_result: FE_result, LdU: torch.Tensor,
-            LdUdp: torch.Tensor, LdUdF: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            self, fe_result: FE_result, adjoint: Adjoints) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the shape derivative of the design variables.
         
@@ -153,25 +153,23 @@ class UpdaterSurface_Shell(UpdaterSurfaces):
             element_sensitive = SensitivityElement.get_sensitivity_element(elems=elems, fe=fe_result.fe)
 
             for p in range(len(pressure_list)):
-                sen_U_now, sen_Udp_now, sen_UdF_now = self._cal_shape_derivative_displacement_jacobian(
+                sen_U, sen_Udp, sen_UdF = self._cal_shape_derivative_displacement_jacobian(
                     fe=fe_result.fe,
                     element_sensitive=element_sensitive,
-                    pressure_list=pressure_list[p].to(device),
+                    pressure_list=pressure_list[p],
                     GC0=fe_result.U[p].to(device),
                     Udp0=fe_result.Udp[p].to(device),
                     UdF0=fe_result.UdF[p].to(device),
-                    ADJu=fe_result.ADJu[p].to(device),
-                    ADJudp=fe_result.ADJudp[p].to(device),
-                    ADJudf=fe_result.ADJudf[p].to(device),)
+                    ADJu=adjoint.ADJu[p].to(device),
+                    ADJudp=adjoint.ADJudp[p].to(device),
+                    ADJu_udp=adjoint.ADJu_udp[p].to(device),
+                    ADJudf=adjoint.ADJudf[p].to(device),
+                    ADJu_udf=adjoint.ADJu_udf[p].to(device))
 
                 if p == 0:
-                    Ldot_now = torch.einsum('u, gesu->ges', LdU[p], sen_U_now) + \
-                        torch.einsum('up, gesup->ges', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, gesuf->ges', LdUdF[p], sen_UdF_now)
+                    Ldot_now = sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
                 else:
-                    Ldot_now += torch.einsum('u, gesu->ges', LdU[p], sen_U_now) + \
-                        torch.einsum('up, gesup->ges', LdUdp[p], sen_Udp_now) + \
-                        torch.einsum('uf, gesuf->ges', LdUdF[p], sen_UdF_now)
+                    Ldot_now += sen_U + sen_Udp.sum(-1) + sen_UdF.sum(-1)
 
             points_request[element_str] = (element_sensitive.points_request)
             Ldot[element_str] = (Ldot_now.reshape([-1, Ldot_now.shape[-1]]))

@@ -23,6 +23,11 @@ from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
 U_dim = [-6,-5,-4,-3,-2,-1]
+ 
+class ObjectiveFunction(GLOBAL.ObjectiveFunction):
+    def get_objective(self, U, Udp, UdF, *args, **kwargs):
+        return -U[0, 4]+ (UdF**2).sum() / 4000
+GLOBAL.OBJFUN = ObjectiveFunction()
 
 
 class Params(_Params):
@@ -62,12 +67,13 @@ class Params(_Params):
             #                                                     MaxC=1.))
 
             self.add_surface(
-                Surfaces_offset.CPGEO.initialize_Sphere(
+                Surfaces_offset.CPGEO.initialize_Cylinder(
                     seed_size=1.2,
                     flip=True,
                     r0=10,
+                    length=74,
                     init_location=[0, 0, 40],
-                    MaxC=1.5
+                    MaxC=2.5
                 ))
             
         def initialize(self, iteration):
@@ -118,10 +124,18 @@ class Params(_Params):
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
         fig.scene.parallel_projection = True
 
-
-        self.surfaces.plot()
         self.materials.plot()
+        for sf in range(1, self.surfaces.num_surface):
+            if sf == 0:
+                alpha = 0.6
+            else:
+                alpha = 1
+            self.surfaces.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
         
+        self.materials.plot()
+
+
+
         # 添加轮廓和坐标轴
         mlab.outline()
         axes = mlab.axes(xlabel='X', ylabel='Y', zlabel='Z')
@@ -195,12 +209,7 @@ class Updater(Updaters):
         # self.if_update_surface = False
         # self.if_update_material = False
 
-    @staticmethod
-    def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args,
-                           **kwargs):
-        UdF: torch.Tensor = kwargs.get('UdF', torch.zeros([U.shape[0], U.shape[1], U.shape[1]]))
 
-        return -U[0, 4]+ (UdF**2).sum() / 1000
 
     class UpdaterMaterials(update_materials.UpdaterMaterials):
         """
@@ -227,7 +236,7 @@ class Updater(Updaters):
 
         def __init__(self, params: Params):
 
-            super().__init__(params=params, max_step_iter=200, reset_per_iter=3)
+            super().__init__(params=params, max_step_iter=500, reset_per_iter=3)
 
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.Sensitivity())
