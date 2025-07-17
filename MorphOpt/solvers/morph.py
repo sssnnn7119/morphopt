@@ -91,7 +91,7 @@ class Morph(BaseSolver):
             fe.elems[str_now].set_materials(materials_now)
 
         # multiprocess FEA
-        # self.__class__._solve_FEA(self.__class__, PATH.path_Result, pressure_list[1], 
+        # self.__class__._solve_FEA(self.__class__, PATH.path_Result, pressure_list[0], 
         #                            mu, kappa, density, self.U_dim,)
         pools = mp.Pool(processes=self.num_process)
         result = []

@@ -531,7 +531,7 @@ class MorphMaterialShell(BaseSolver):
                 adjForceW[fe.RGC_remain_index_flatten] = -KdF @ GCv[u_ind]
                 R0 = fe.assemble_force(force=adjForceW, GC0=GC0)
                 GCudf_now = K_solver.solve(K_sp, R0.T.cpu().numpy())
-                GCudf[i,j] = torch.from_numpy(GCudf_now).to(R0.device).to(R0.dtype).flatten()
+                GCudf[u_ind,f_ind] = torch.from_numpy(GCudf_now).to(R0.device).to(R0.dtype).flatten()
 
         # endregion
 

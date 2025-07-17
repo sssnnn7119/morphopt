@@ -151,7 +151,7 @@ class LBFGS(BaseOpt):
             self.SK = []
             self.YK = []
             self.rhok = []
-            return torch.zeros_like(x_now)
+            return 0., torch.zeros_like(x_now), gk_now
         
         gk_new: torch.Tensor =self.grad(x_new).flatten()
 

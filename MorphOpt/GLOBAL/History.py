@@ -21,11 +21,6 @@ class History:
         The history of the deformation values.
         """
 
-        self.history_compliance: list[np.ndarray] = []
-        """
-        The history of the compliance values.
-        """
-
         self.iteration: int = 0
         """
         The current iteration number.
@@ -54,17 +49,13 @@ class History:
         """
         Save the history to a CSV file.
         CSV format:
-        - Row 1: Current iteration pointer
-        - Row 2: Column headers (iteration, objective, T0, T1, ..., U0-0, U0-1, ..., UdF0-0-0, UdF0-0-1, ...)
-        - Row 3+: Data records
+        - Row 1: Column headers (iteration, objective, T0, T1, ..., U0-0, U0-1, ..., UdF0-0-0, UdF0-0-1, ...)
+        - Row 2+: Data records
         """
         filepath = path + '/history_record.csv'
 
         with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
-            
-            # Row 1: Current iteration pointer
-            writer.writerow([self.iteration])
             
             # Build column headers
             headers = ['iteration', 'objective']
@@ -86,26 +77,15 @@ class History:
                 elif deform_array.ndim == 1:  # Vector
                     for i in range(len(deform_array)):
                         headers.append(f'U0-{i}')
-
-            # Add UdF history column headers
-            if len(self.history_compliance) > 0:
-                for i in range(len(self.history_compliance[0])):
-                    for j in range(len(self.history_compliance[0][i])):
-                        headers.append(f'UdF{i}-{j}-0')
-                        headers.append(f'UdF{i}-{j}-1')
-                        headers.append(f'UdF{i}-{j}-2')
-                        headers.append(f'UdF{i}-{j}-3')
-                        headers.append(f'UdF{i}-{j}-4')
-                        headers.append(f'UdF{i}-{j}-5')
-
             
-            # Row 2: Column headers
+            # Row 1: Column headers
             writer.writerow(headers)
             
-            # Row 3+: Data records
+            # Row 2+: Data records
             max_iterations = self.iteration
             
             for i in range(max_iterations):
+
                 row = [i+1]  # Iteration step
                 
                 # Objective function value
@@ -131,16 +111,6 @@ class History:
                     if self.history_deformation and self.history_deformation[0] is not None:
                         deform_size = np.array(self.history_deformation[0]).size
                         row.extend([''] * deform_size)
-                
-                # UdF history
-                if i < len(self.history_compliance):
-                    UdF_flat = np.array(self.history_compliance[i]).flatten()
-                    row.extend(UdF_flat.tolist())
-                else:
-                    # Fill empty values to maintain column consistency
-                    if self.history_compliance and self.history_compliance[0] is not None:
-                        UdF_size = np.array(self.history_compliance[0]).size
-                        row.extend([''] * UdF_size)
 
                 # Format numbers to 4 decimal places in scientific notation, except for iteration
                 formatted_row = []
@@ -162,12 +132,8 @@ class History:
         
         with open(filepath, 'r', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
-            
-            # Row 1: Current iteration pointer
-            first_row = next(reader)
-            self.iteration = int(first_row[0])
-            
-            # Row 2: Column headers
+
+            # Row 1: Column headers
             headers = next(reader)
             
             # Find the indices where different data types start
@@ -215,6 +181,10 @@ class History:
             
             # Read data rows
             for row in reader:
+                # skip headers and empty rows
+                if not row or len(row) == 0 or row[0] == 'iteration':
+                    continue
+
                 if not row or len(row) <= objective_idx:  # Skip empty rows
                     continue
                 
@@ -253,23 +223,6 @@ class History:
                             self.history_deformation.append(deform_data)
                     else:
                         self.history_deformation.append(None)
-                
-                # Compliance history
-                if compliance_start_idx is not None and compliance_end_idx is not None:
-                    compliance_data = []
-                    for i in range(compliance_start_idx, compliance_end_idx):
-                        if i < len(row) and row[i] and row[i] != '':
-                            compliance_data.append(float(row[i]))
-                        else:
-                            compliance_data.append(0.0)
-                    
-                    if compliance_data and compliance_shape:
-                        # Reshape to 3D array
-                        try:
-                            compliance_matrix = np.array(compliance_data).reshape(compliance_shape)
-                            self.history_compliance.append(compliance_matrix.tolist())
-                        except ValueError:
-                            # If reshape fails, save as is
-                            self.history_compliance.append(compliance_data)
-                    else:
-                        self.history_compliance.append([])
+
+            # read how many iterations are recorded
+            self.iteration = len(self.history_objective)

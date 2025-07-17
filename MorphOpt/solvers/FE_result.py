@@ -159,20 +159,64 @@ class FE_result:
             iteration (int): The current iteration number.
         """
         surfaces = ['surface_0_All'] + ['surface_%d_All' % i for i in range(1, self.pressure_list.shape[1]+1)]
-        surface_elements = [self.fe.get_surface_elements(surf)[0]._elems[:, :3] for surf in surfaces]
+        surface_elements: list[FEA.elements.BaseSurface] = []
+        for i in range(len(surfaces)):
+            surface_elements = surface_elements + self.fe.get_surface_elements(surfaces[i])
         
-        surface_triangles = torch.cat(surface_elements, dim=0).cpu().numpy()
+        surface_connections = [surface_elements[i].surf_elems_circ.cpu().numpy() for i in range(len(surface_elements))]
 
         for case in range(self.pressure_list.shape[0]):
             deformed_nodes = (self.fe.nodes + self.fe._GC2RGC(self.U[case].to(self.fe.nodes.device))[0]).detach().cpu().numpy()
 
             from mayavi import mlab
+            from matplotlib.tri import Triangulation
+            from tvtk.api import tvtk
+            from tvtk.common import configure_input_data
+
             fig = mlab.figure(size=(800, 800), bgcolor=(1, 1, 1))
             fig.scene.parallel_projection = True
+            
+            # Draw all surface connections using TVTK
 
-            mlab.triangular_mesh(deformed_nodes[:, 0], deformed_nodes[:, 1], deformed_nodes[:, 2], surface_triangles, color=(40.0 / 255, 120.0 / 255, 181.0 / 255), opacity=0.6)
-            mlab.title(f"Deformed Mesh - Task {case}", size=0.5, color=(0, 0, 0))
+            # Create a dataset with points and cells
+            points = tvtk.Points()
+            points.from_array(deformed_nodes)
+
+            polys = tvtk.CellArray()
+            mesh = tvtk.PolyData()
+            mesh.points = points
+
+            # Add all surface connections as polygons - optimized version
+            # Pre-calculate the total number of cells and points for pre-allocation
+            total_cells = sum(len(connection) for connection in surface_connections)
+            polys.allocate(total_cells)
+
+            # Process all faces more efficiently
+            for connection in surface_connections:
+                for face in connection:
+                    # Skip if any node is -1 (placeholder)
+                    if -1 in face:
+                        continue
+                    
+                    # More efficient cell insertion
+                    n_points = len(face)
+                    # Convert face to a list/array compatible with VTK
+                    polys.insert_next_cell(n_points)
+                    for point_idx in face:
+                        polys.insert_cell_point(point_idx)
+
+            mesh.polys = polys
+
+            # Create a mapper and actor
+            mapper = tvtk.PolyDataMapper()
+            configure_input_data(mapper, mesh)
+            actor = tvtk.Actor(mapper=mapper)
+            actor.property.color = (40.0/255, 120.0/255, 181.0/255)
+            actor.property.opacity = 0.6
+
+            # Add the actor to the scene
+            fig.scene.add_actor(actor)
 
             mlab.view(azimuth=210, elevation=70, distance=300)
-            mlab.savefig(f"{filepath}/iter_{iteration}_task_{case}.png")
+            mlab.savefig(f"{filepath}/task_{case}_iter_{iteration}.png")
             mlab.close(fig)

@@ -26,7 +26,7 @@ U_dim = [-6,-5,-4,-3,-2,-1]
  
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        return -U[0, 4]+ (UdF**2).sum() / 4000
+        return -U[0, 5]+ (UdF**2).sum() / 4000
 GLOBAL.OBJFUN = ObjectiveFunction()
 
 
@@ -66,24 +66,24 @@ class Params(_Params):
             #                                                     symmetric=[0],
             #                                                     MaxC=1.))
 
-            self.add_surface(
-                Surfaces_offset.CPGEO.initialize_Cylinder(
-                    seed_size=1.2,
-                    flip=True,
-                    r0=10,
-                    length=74,
-                    init_location=[0, 0, 40],
-                    MaxC=2.5
-                ))
-
             # self.add_surface(
-            #     Surfaces_offset.CPGEO.initialize_Sphere(
+            #     Surfaces_offset.CPGEO.initialize_Cylinder(
             #         seed_size=1.2,
             #         flip=True,
             #         r0=10,
+            #         length=74,
             #         init_location=[0, 0, 40],
             #         MaxC=2.5
             #     ))
+
+            self.add_surface(
+                Surfaces_offset.CPGEO.initialize_Sphere(
+                    seed_size=1.2,
+                    flip=True,
+                    r0=10,
+                    init_location=[0, 0, 40],
+                    MaxC=2.5
+                ))
             
         def initialize(self, iteration):
             super().initialize(iteration)
@@ -105,7 +105,7 @@ class Params(_Params):
         def __init__(self):
             super().__init__(mu=1.22,
                              kappa=12.20,
-                             min_ratio=0.001,
+                             min_ratio=0.00001,
                              density=1.08e-9,
                              boundary=[[-20, 20], [-20, 20], [0, 80]],
                              seed_size=1.5, 
@@ -162,7 +162,7 @@ class Params(_Params):
             initializer.initialize_path_log('Morph')
 
         mlab.view(azimuth=210, elevation=70, distance=300)
-        mlab.savefig(filepath + '/Morph/Figures' + '%d.jpg'%GLOBAL.History.iteration)
+        mlab.savefig(filepath + '/Morph/' + '%d.jpg'%GLOBAL.History.iteration)
         mlab.close()
 
 class Generator(generatemodel.Genetrator):

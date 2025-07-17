@@ -172,12 +172,6 @@ class CPGEOSurfaceInterface(BaseInterface):
         if len(indexl) > 0:
             penalty += (l * weight[indexl]).sum()
 
-        # C0 = 4 * H**2 - 2 * K
-
-        # indexC, C = self.barrier_function(C0, self.MaxC, 0.,
-        #                                             3)
-
-        # return (weight[indexC] * C).sum()
 
         return penalty
 

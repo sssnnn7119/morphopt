@@ -4,6 +4,8 @@ import sys
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 sys.path.append(os.getcwd())
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 import numpy as np
 import torch
@@ -17,7 +19,57 @@ from MorphOpt.updaters.updaters import Updaters
 from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
-U_dim = [-6, -5, -4, -3, -2, -1]
+
+class ObjectiveFunction(GLOBAL.ObjectiveFunction):
+    def get_objective(self, U: torch.Tensor, Udp: torch.Tensor, UdF: torch.Tensor, *args, **kwargs):
+        objective = torch.tensor(0.).cpu()
+
+        normal_list = []
+        Udp_loss_list = []  
+        for i in range(U.shape[0]):
+
+            ratio = ((i // 32) % 2) == 0
+            ratio = -1 if ratio else 1
+
+            U_now = U[i].clone()
+
+            U1 = U_now.clone() / 3
+            U1[3] = (-1 / 36 * U_now[3]**3)
+            U1[4] = (-1 / 36 * U_now[4]**3)
+            U1[5] = (-1 / 36 * U_now[5]**3)
+
+            Udp_now = Udp[i].clone()
+
+            if i < 64:
+                Udp_left = Udp_now[1:]
+                Udp_loss = Udp_now[0]
+            else:
+                ratio *= -1
+                Udp_left = Udp_now[[4, 5, 0, 1, 2]]
+                Udp_loss = Udp_now[3]
+
+            normal = torch.zeros(6, device='cpu')
+            normal[0] = torch.det(Udp_left[:, 1:])
+            normal[1] = torch.det(Udp_left[:, [0, 2, 3, 4, 5]]) * -1
+            normal[2] = torch.det(Udp_left[:, [0, 1, 3, 4, 5]])
+            normal[3] = torch.det(Udp_left[:, [0, 1, 2, 4, 5]]) * -1
+            normal[4] = torch.det(Udp_left[:, [0, 1, 2, 3, 5]])
+            normal[5] = torch.det(Udp_left[:, :-1]) * -1
+            normal *= ratio
+
+            print(i, (normal.cpu() * Udp_loss).sum().item())
+            normal_list.append(normal)
+            Udp_loss_list.append(Udp_loss)
+
+            objective += (normal.cpu() * U1).sum()
+
+        if objective > 0:
+            objective *= -1
+        return objective
+
+    
+    
+GLOBAL.OBJFUN = ObjectiveFunction()
 
 
 class Params(_Params):
@@ -43,7 +95,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2,0.2, 0.2,0.2, 0.2,0.2])
+            super().__init__(max_step_length=[0.2, 0.2,0.2, 0.2,0.2, 0.2,0.2], reinitialize_per_iter=4)
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=15.,
@@ -52,48 +104,50 @@ class Params(_Params):
                                                  symmetric=[0],
                                                  flip=False,
                                                  maxR=0.2,
-                                                 maxC=1.,
+                                                 maxC=0.8,
                                                  maxFF=0.2))
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[8, 0, 50]))
+                                                 init_location=[8, 0, 50], MaxC=2.0))
 
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[-4, 7, 50]))
+                                                 init_location=[-4, 7, 50], MaxC=2.0))
 
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[-4, -7, 50]))
+                                                 init_location=[-4, -7, 50], MaxC=2.0))
 
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[8, 0, 100]))
+                                                 init_location=[8, 0, 100], MaxC=2.0))
 
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[-4, 7, 100]))
+                                                 init_location=[-4, 7, 100], MaxC=2.0))
 
             self.add_surface(
                 Surfaces.CPGEO.initialize_Sphere(seed_size=1.0,
                                                  flip=True,
                                                  r0=4.,
-                                                 init_location=[-4, -7, 100]))
+                                                 init_location=[-4, -7, 100], MaxC=2.0))
 
-        def initialize(self):
-            self.surface_list[0].initialize()
-            self.surface_list[1].initialize()
-            self.surface_list[4].initialize()
+        def initialize(self, iteration: int):
+
+            if iteration % self.reinitialize_per_iter == 0:
+                self.surface_list[0].initialize()
+                self.surface_list[1].initialize()
+                self.surface_list[4].initialize()
 
             # rotate the exterior surface
             num_points = self.surface_list[0].model.control_points.shape[2] / 3
@@ -101,10 +155,10 @@ class Params(_Params):
             r0 = self.surface_list[0].model.control_points[:, :, :num_points]
             r0_120, r0_240 = self.__rotate120_240(r0)
             self.surface_list[0].model.control_points[:, :,
-                                                      num_points:num_points *
-                                                      2] = r0_120
+                                                    num_points:num_points *
+                                                    2] = r0_120
             self.surface_list[0].model.control_points[:, :,
-                                                      num_points * 2:] = r0_240
+                                                    num_points * 2:] = r0_240
 
             # rotate the bottom surface
             r1 = self.surface_list[1].model.cp_vertices
@@ -292,7 +346,6 @@ class Params(_Params):
                                                   2] = guassian_points[P3]
 
                 self.pressure = self.pressure.reshape([-1, 6])
-
                 print(self.pressure.shape)
 
         def __init__(self):
@@ -333,7 +386,7 @@ class Generator(generatemodel.Genetrator):
                          path_queue=path_queue)
 
 
-class Solver(solvers.morph):
+class Solver(solvers.Morph):
     """
     Solver class for MorphOpt.
     This class is responsible for solving the finite element analysis (FEA) problem.
@@ -341,7 +394,7 @@ class Solver(solvers.morph):
 
     def __init__(self, params: Params):
 
-        super().__init__(params=params, U_dim=U_dim,
+        super().__init__(params=params,
                          num_process=5)
 
 
@@ -352,60 +405,10 @@ class Updater(Updaters):
     """
 
     def __init__(self, params: Params, *args, **kwargs):
-        super().__init__(surfaces=self.UpdaterSurfaces(U_dim=U_dim,
-            params=params),
+        super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None,
                          *args,
                          **kwargs)
-
-    @staticmethod
-    def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args,
-                           **kwargs):
-
-        objective = torch.tensor(0.)
-
-        normal_list = []
-        Udp_loss_list = []  
-        for i in range(U.shape[0]):
-
-            ratio = ((i // 32) % 2) == 0
-            ratio = -1 if ratio else 1
-
-            U_now = U[i].clone()
-
-            U1 = U_now.clone() / 3
-            U1[3] = (-1 / 36 * U_now[3]**3)
-            U1[4] = (-1 / 36 * U_now[4]**3)
-            U1[5] = (-1 / 36 * U_now[5]**3)
-
-            Udp_now = Udp[i].clone()
-
-            if i < 64:
-                Udp_left = Udp_now[1:]
-                Udp_loss = Udp_now[0]
-            else:
-                ratio *= -1
-                Udp_left = Udp_now[[4, 5, 0, 1, 2]]
-                Udp_loss = Udp_now[3]
-
-            normal = torch.zeros(6)
-            normal[0] = torch.det(Udp_left[:, 1:])
-            normal[1] = torch.det(Udp_left[:, [0, 2, 3, 4, 5]]) * -1
-            normal[2] = torch.det(Udp_left[:, [0, 1, 3, 4, 5]])
-            normal[3] = torch.det(Udp_left[:, [0, 1, 2, 4, 5]]) * -1
-            normal[4] = torch.det(Udp_left[:, [0, 1, 2, 3, 5]])
-            normal[5] = torch.det(Udp_left[:, :-1]) * -1
-            normal *= ratio
-
-            print(i, (normal * Udp_loss).sum().item())
-            normal_list.append(normal)
-            Udp_loss_list.append(Udp_loss)
-
-            objective += (normal * U1).sum()
-
-        if objective > 0:
-            objective *= -1
-        return objective
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """
@@ -428,20 +431,6 @@ class Updater(Updaters):
                 update_surfaces.objectivefuncs.Boundary.Cylinder(radius=20.,
                                                                height=150.,
                                                                bottom=0.))
-        
-        def _reset_scaler(self, iter_now, sensitivity):
-            # reset the scaler
-            if (iter_now % 3 == 0 and iter_now < 60) or (iter_now % 1 == 0) or self.scaler is None:
-                # get the maximum sensitivity value
-                print('Reset the scaler')
-                max_sensitivity = 0
-                for sensitivity_surf in sensitivity:
-                    max_sensitivity = max(max_sensitivity,
-                                        sensitivity_surf.abs().max())
-                if iter_now < 110:
-                    self.scaler = 100 / max_sensitivity
-                else:
-                    self.scaler = 1000000 / max_sensitivity
 
         def initialize(self, iter_now, sensitivity, *args, **kwargs):
             if iter_now < 60:
@@ -468,7 +457,7 @@ if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cuda')
 
-    path_result = 'Z:/Results'
+    path_result = 'D:/Songzenan/Results'
     opt_label = '6A3R3T'
 
     # region Initialize the workflow
