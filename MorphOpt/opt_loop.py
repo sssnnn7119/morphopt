@@ -4,17 +4,16 @@ import torch
 import numpy as np
 from . import GLOBAL
 from . import initializer
-from . import generatemodel
+from .generatemodel import Genetrator
 from . import solvers
 from . import updaters
-from . import generatemodel
 from .modelparams import Params
 import time
 
 
 class Controller:
 
-    def __init__(self, params: Params, generator: generatemodel.Genetrator, solver: solvers.BaseSolver,
+    def __init__(self, params: Params, generator: Genetrator, solver: solvers.BaseSolver,
                 updater: updaters.Updaters) -> None:
         """
         Initialize the Controller class.
@@ -67,7 +66,7 @@ class Controller:
             
             
             while True:
-                # try:
+                try:
                     t0 = time.time()
                     
                     # clean the .inp files
@@ -100,11 +99,11 @@ class Controller:
                     t3 = time.time()
                     
                     break
-                # except Exception as e:
-                #     print('Error occurred during optimization step: %s' % str(e))
-                #     self.generator.seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
-                #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
-                #     self.params.initialize(iteration = 0)
+                except Exception as e:
+                    print('Error occurred during optimization step: %s' % str(e))
+                    self.generator.seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
+                    self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
+                    self.params.initialize(iteration = 0)
                     
             GLOBAL.History.history_deformation.append([self.fe_result.U[i][-6:].tolist() for i in range(len(self.fe_result.U))])
             GLOBAL.History.history_objective.append(loss)

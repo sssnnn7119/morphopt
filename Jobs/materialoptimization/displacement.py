@@ -26,7 +26,7 @@ U_dim = [-6,-5,-4,-3,-2,-1]
  
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        return -U[0, 5]+ (UdF**2).sum() / 4000
+        return -U[0, 5]+ (UdF**2).sum() / 60
 GLOBAL.OBJFUN = ObjectiveFunction()
 
 
@@ -39,8 +39,8 @@ class Params(_Params):
             super().__init__(thickness=2.0, max_step_length=[0.4, 0.4], reinitialize_per_iter=5)
 
             self.add_surface(
-                Surfaces_offset.BSP.initialize_cylinder(r0=15.,
-                                                 length=80.,
+                Surfaces_offset.BSP.initialize_cylinder(r0=20.,
+                                                 length=40.,
                                                  seed_size=2.,
                                                  symmetric=[0],
                                                  flip=False,
@@ -78,10 +78,10 @@ class Params(_Params):
 
             self.add_surface(
                 Surfaces_offset.CPGEO.initialize_Sphere(
-                    seed_size=1.2,
+                    seed_size=1.0,
                     flip=True,
-                    r0=10,
-                    init_location=[0, 0, 40],
+                    r0=13,
+                    init_location=[0, 0, 20],
                     MaxC=2.5
                 ))
             
@@ -105,10 +105,10 @@ class Params(_Params):
         def __init__(self):
             super().__init__(mu=1.22,
                              kappa=12.20,
-                             min_ratio=0.00001,
+                             min_ratio=1e-8,
                              density=1.08e-9,
-                             boundary=[[-20, 20], [-20, 20], [0, 80]],
-                             seed_size=1.5, 
+                             boundary=[[-25, 25], [-25, 25], [-5, 45]],
+                             seed_size=1.0, 
                              max_step_length=0.05,
                              init_density=0.5)
 
@@ -179,7 +179,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.5,
+        super().__init__(seed_size=1.2,
                          surfaces=surfaces,
                          path_output=path_output,
                          path_queue=path_queue)
@@ -257,11 +257,11 @@ class Updater(Updaters):
                     shell_thickness=params.surfaces.thickness, surf_index=[1]))
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.DistanceShell(min_distance=
-                                                            [[0., 0.],
-                                                             [0., 3.]], shell_thickness=params.surfaces.thickness))
+                                                            [[0., 5.],
+                                                             [5., 2.]], shell_thickness=params.surfaces.thickness))
             self.add_objective_function(
-                update_surfaces_Shell.objectivefuncs.Boundary.Cylinder(radius=10.,
-                                                               height=77.,
+                update_surfaces_Shell.objectivefuncs.Boundary.Cylinder(radius=100.,
+                                                               height=37.,
                                                                bottom=3.))
 
 

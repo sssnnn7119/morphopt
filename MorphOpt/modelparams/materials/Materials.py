@@ -81,8 +81,6 @@ class BsplineMaterials(Materials):
             density (float): The density of the material.
         """
         import sys
-        sys.path.append("..")
-        sys.path.append('..//Modules/bspline')
         from Bspline.bspline import BSP
 
         num_U = (boundary[0][1] - boundary[0][0]) // seed_size + 1
@@ -271,7 +269,6 @@ class BsplineMaterials(Materials):
 
         # 定义标量场和透明度场
         density = self.bspline.map(torch.stack([x, y, z], dim=-1).reshape(-1, 3).T).reshape(x.shape).cpu().numpy()
-        density = density**3
 
         density[0,0,0] = 0.0  # 确保密度场的最小值为0，避免透明度问题
         density[0,0,-1] = 1  # 确保密度场的最大值为1，避免透明度问题
