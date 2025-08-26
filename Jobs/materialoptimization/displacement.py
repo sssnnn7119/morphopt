@@ -26,7 +26,7 @@ U_dim = [-6,-5,-4,-3,-2,-1]
  
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        return -U[0, 5]+ (UdF**2).sum() / 60
+        return -U[0, 5]+ (UdF**2).sum() / 10
 GLOBAL.OBJFUN = ObjectiveFunction()
 
 
@@ -36,7 +36,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(thickness=2.0, max_step_length=[0.4, 0.4], reinitialize_per_iter=5)
+            super().__init__(thickness=1.5, max_step_length=[0.4, 0.4], reinitialize_per_iter=5)
 
             self.add_surface(
                 Surfaces_offset.BSP.initialize_cylinder(r0=20.,
@@ -80,10 +80,11 @@ class Params(_Params):
                 Surfaces_offset.CPGEO.initialize_Sphere(
                     seed_size=1.0,
                     flip=True,
-                    r0=13,
+                    r0=10,
                     init_location=[0, 0, 20],
-                    MaxC=2.5
+                    MaxC=1.5
                 ))
+
             
         def initialize(self, iteration):
             super().initialize(iteration)
@@ -105,7 +106,7 @@ class Params(_Params):
         def __init__(self):
             super().__init__(mu=1.22,
                              kappa=12.20,
-                             min_ratio=1e-8,
+                             min_ratio=1e-6,
                              density=1.08e-9,
                              boundary=[[-25, 25], [-25, 25], [-5, 45]],
                              seed_size=1.0, 
@@ -257,8 +258,9 @@ class Updater(Updaters):
                     shell_thickness=params.surfaces.thickness, surf_index=[1]))
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.DistanceShell(min_distance=
-                                                            [[0., 5.],
-                                                             [5., 2.]], shell_thickness=params.surfaces.thickness))
+                                                            [[0., 5., 5.],
+                                                             [5., 2., 2.],
+                                                             [5., 2., 2.]], shell_thickness=params.surfaces.thickness))
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.Boundary.Cylinder(radius=100.,
                                                                height=37.,

@@ -91,14 +91,14 @@ class Morph(BaseSolver):
             fe.elems[str_now].set_materials(materials_now)
 
         # multiprocess FEA
-        # self.__class__._solve_FEA(self.__class__, PATH.path_Result, pressure_list[0], 
-        #                            mu, kappa, density, self.U_dim,)
+        # self._solve_FEA(PATH.path_Result, pressure_list[0], 
+        #                  mu, kappa, density, self.U_dim,)
         pools = mp.Pool(processes=self.num_process)
         result = []
         for i in range(len(pressure_list)):
             result.append(
-                pools.apply_async(self.__class__._solve_FEA,
-                                args=(self.__class__, PATH.path_Result, pressure_list[i], 
+                pools.apply_async(self._solve_FEA,
+                                args=(PATH.path_Result, pressure_list[i], 
                                        mu, kappa, density, self.U_dim,)))
         pools.close()
         pools.join()
@@ -158,13 +158,13 @@ class Morph(BaseSolver):
 
         fe.merge_elements(element_name_list=elems_name_list, element_name_new='element-sensitivity')
 
-        fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity'])
+        # fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity'])
 
-        element: FEA.elements.Element_3D = fe.elems['element-sensitivity']
-        element.surf_order = torch.ones([element._elems.shape[0], 4], dtype=torch.int8, device='cpu')
+        # element: FEA.elements.Element_3D = fe.elems['element-sensitivity']
+        # element.surf_order = torch.ones([element._elems.shape[0], 4], dtype=torch.int8, device='cpu')
 
-        for surf_name in surf_name_list:
-            fe.elems['element-sensitivity'] = FEA.elements.set_surface_2order(fe=fe, name_elems='element-sensitivity', name_surface=surf_name)
+        # for surf_name in surf_name_list:
+        #     fe.elems['element-sensitivity'] = FEA.elements.set_surface_2order(fe=fe, name_elems='element-sensitivity', name_surface=surf_name)
 
         # fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity', 'element-0'])
 
@@ -201,10 +201,11 @@ class Morph(BaseSolver):
         fe.add_constraint(FEA.constraints.Couple(indexNodes=indexNodes, rp_name=rp_name)
         )
 
+        
         return fe
 
-    @staticmethod
-    def _solve_FEA(current_class: 'Morph', path_result, pressure_list: list[float], mu: np.ndarray, kappa: np.ndarray, density: np.ndarray, U_dim: list[int]):
+    @classmethod
+    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], mu: np.ndarray, kappa: np.ndarray, density: np.ndarray, U_dim: list[int]):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -244,6 +245,7 @@ class Morph(BaseSolver):
             fe.loads['Pressure_%d' % j].pressure = pressure_list[j]
 
         # solve displacement 0
+        fe.maximum_iteration = 100000
         result = fe.solve(tol_error=1e-3)
 
         if not result:

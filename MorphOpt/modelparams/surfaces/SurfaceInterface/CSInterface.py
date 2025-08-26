@@ -41,7 +41,10 @@ class CsInterface(BaseInterface):
         # points3d, coo = self.Sphere_Mesh(5000, 3)
         R = self.model.map(knots)
         r = R.tolist()
-        
+
+        # record the output knots and coordinates
+        self.surface_out_knots = knots
+        self.surface_out_coo = coo
 
         surface = mlab.pipeline.triangular_mesh_source(r[0], r[1], r[2], coo)
         surface_vtk = surface.outputs[0]._vtk_obj

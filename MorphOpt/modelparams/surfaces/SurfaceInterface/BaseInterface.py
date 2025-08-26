@@ -7,6 +7,9 @@ class BaseInterface():
     Class to handle the surface of the morphable model.
     """
     
+    def __init__(self):
+        pass
+
     def __init__(self, surface: Surface_Base, symmetric: list[int] = None) -> None:
         """
         Initialize the Surface class.
@@ -38,6 +41,11 @@ class BaseInterface():
             ## 1: y-axis symmetry
             ## 2: z-axis symmetry
         """
+
+        self.surface_out_knots: torch.Tensor
+        """record the output knots of the surface"""
+        self.surface_out_coo: torch.Tensor
+        """record the output coordinates of the surface"""
     
     def initialize(self) -> None:
         """

@@ -8,12 +8,7 @@ from mayavi import mlab
 
 
 from .BaseInterface import BaseInterface
-from ..SurfaceModel.ClosedSurface.CS import ClosedSurface
-from .... import GLOBAL
 
-import sys
-
-sys.path.append(os.getcwd())
 
 import CPGEO
 import CPGEO.utils
@@ -60,7 +55,11 @@ class CPGEOSurfaceInterface(BaseInterface):
         # points3d, coo = self.Sphere_Mesh(5000, 3)
         R = self.model.map(knots)
         Coo = CPGEO.utils.mesh.refine_triangular_mesh(R.T, Coo)
-        
+
+        # record the output knots and coordinates
+        self.surface_out_knots = knots
+        self.surface_out_coo = Coo
+
         r = R.tolist()
         coo = Coo.tolist()
 

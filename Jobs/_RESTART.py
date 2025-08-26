@@ -13,7 +13,7 @@ from MorphOpt import GLOBAL
 
 import torch
 torch.set_default_dtype(torch.float64)
-torch.set_default_device('cpu')
+torch.set_default_device('cuda')
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 def restart_optimization(restart_path, target_iteration=None):
@@ -54,5 +54,5 @@ def restart_optimization(restart_path, target_iteration=None):
     controller.opt_loop()
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/T20250716103015_MaterialShell/", 
+    restart_optimization(restart_path = "Z:/Results/T20250811160136_MaterialShell/", 
                          target_iteration = None)  
