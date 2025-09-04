@@ -1,6 +1,6 @@
 from .BaseObj import BaseObj
-from .Sensitivity import Sensitivity
+from .sensitivity import ShapeDerivativePneumatic, ShapeDerivativeContactSelf
 from .Fairness.ShellOffsetCurvature import ShellOffsetCurvature
 from .Fairness.Fairness import Fairness
 from .Distance import Distance, DistanceShell
-from . import Boundary
+from . import boundarys

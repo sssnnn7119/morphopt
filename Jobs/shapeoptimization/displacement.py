@@ -3,6 +3,9 @@ import sys
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 import torch
 from MorphOpt import GLOBAL
 from MorphOpt.opt_loop import Controller
@@ -14,11 +17,10 @@ from MorphOpt.updaters.updaters import Updaters
 from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
-
-
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
-    def get_objective(self, U: torch.Tensor, Udp: torch.Tensor, UdF: torch.Tensor, *args, **kwargs):
-        return UdF[0][2,2]
+    def get_objective(self, U, Udp, UdF, *args, **kwargs):
+        loss1 = -U[0, -2]
+        return loss1
 GLOBAL.OBJFUN = ObjectiveFunction()
 
 class Params(_Params):
@@ -26,46 +28,32 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2])
+            super().__init__(max_step_length=[0.4, 0.4])
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=8.,
-                                                        length=40.,
-                                                        seed_size=1.,
-                                                        symmetric=[0],
-                                                        flip=False, maxR=0.2, maxC=1., maxFF=0.2, perturbation_L=14))
+                                                        length=80.,
+                                                        seed_size=1.0,
+                                                        symmetric=[1, [1]],
+                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+            
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(
-                    r0=4.,
-                    length=34.,
-                    seed_size=1.,
-                    symmetric=[0],
-                    flip=True,
-                    init_location=[0., 0., 3.], maxR=0.2, maxC=1., maxFF=0.2))
+            Surfaces.BSP.initialize_cylinder(r0=4.,
+                                                    length=74.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[0, 0, 3],
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
 
-            # self.add_surface(Surfaces.CPGEO.initialize_Cylinder(seed_size=1., 
-            #                                                     flip=True, 
-            #                                                     r0=4, 
-            #                                                     length=14, 
-            #                                                     init_location=[0,0,10],
-            #                                                     symmetric=[0], 
-            #                                                     MaxC=1.))
             
-            # self.add_surface(Surfaces.CPGEO.initialize_Sphere(seed_size=1.,
-            #                                                   flip=True,
-            #                                                   r0=4,
-            #                                                   init_location=[0, 0, 15], MaxC=1.))
-            
-        def initialize(self, iteration):
-            super().initialize(iteration)
-            # self.if_update[0] = False
-            
+            self.if_update = [True, True]
+
 
     class LoadParams(Loads):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.04]])
+                self.pressure = torch.Tensor([[0.06]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -73,7 +61,7 @@ class Params(_Params):
     class MaterialParams(Materials):
         
         def __init__(self):
-            super().__init__(mu=0.482, kappa=48., density=1.08e-9,)
+            super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
@@ -88,7 +76,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(solvers.Morph):
     """
@@ -108,8 +96,7 @@ class Updater(Updaters):
     """
 
     def __init__(self, params: Params, *args, **kwargs):
-        super().__init__(
-                         surfaces=self.UpdaterSurfaces(params=params),
+        super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
@@ -122,17 +109,18 @@ class Updater(Updaters):
 
             super().__init__(
                 params=params,
-                max_step_iter=50)
+                max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.Sensitivity())
+            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativePneumatic()
+            self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
+                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=10., height=80., bottom=0.))
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
     
     
 if __name__ == '__main__':
@@ -140,9 +128,10 @@ if __name__ == '__main__':
     torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
+    opt_label = 'FRONT'
 
     # region Initialize the workflow
-    initializer.initialize_path(result_path=path_result)
+    initializer.initialize_path(result_path=path_result, opt_label=opt_label)
     initializer.initialize_history()
 
     params = Params()

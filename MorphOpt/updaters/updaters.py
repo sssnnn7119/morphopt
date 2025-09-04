@@ -71,6 +71,8 @@ class Updaters:
         """var_material: The updated material variables.
         """
 
+        self.adjoint: Adjoints = None
+        """Adjoints: An instance of the Adjoints class for storing the adjoint variables."""
 
     def initialize(self, iteration: int) -> None:
         """
@@ -117,6 +119,8 @@ class Updaters:
         """
         
         loss, adjoint = self._adjoint_problem(fe_result=fe_result)
+
+        self.adjoint = adjoint
 
         if self.if_update_surface:
             self._var_surface = self._surface.update(fe_result=fe_result, adjoint=adjoint)

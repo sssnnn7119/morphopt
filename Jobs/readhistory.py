@@ -31,7 +31,7 @@ def restart_optimization(restart_path, target_iteration=None):
     GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/GenerateModel/_Rhino/TaskQueue/'
     GLOBAL.PATH.path_Result = restart_path
 
-    GLOBAL.History.load(restart_path + '/log/')
+    GLOBAL.History.load_csv(restart_path + '/log/')
     if target_iteration is None:
         target_iteration = GLOBAL.History.iteration
     GLOBAL.History.iteration = target_iteration
@@ -42,19 +42,24 @@ def restart_optimization(restart_path, target_iteration=None):
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
-
-    params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
-
     generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
                                                   path_output=GLOBAL.PATH.path_Result + '/Cache/', 
                                                   path_queue=GLOBAL.PATH.path_Queue)
+    solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
+    updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
+    controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
+                                                    generator=generator, 
+                                                    solver=solver, 
+                                                    updater=updater)
+
+    params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
 
     return params, generator
 
 if __name__ == "__main__":
     # Read the parameters from the restart path
-    restart_path = "Z:/Results/T20250709184206_FRONT/"
-    target_iteration = 31
+    restart_path = "Z:/Results/T20250903192104_FRONT/"
+    target_iteration = 83
 
     params, generator = restart_optimization(restart_path = restart_path, 
                          target_iteration = target_iteration)

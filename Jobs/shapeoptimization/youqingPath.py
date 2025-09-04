@@ -120,13 +120,13 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.Sensitivity())
+            self.add_objective_function(update_surfaces.objectivefuncs.ShapeDerivativePneumatic())
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=np.ones([params.surfaces.num_surface, params.surfaces.num_surface]) * 2.5))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=12., height=80., bottom=0.))
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
             
         
         def initialize(self, iter_now: int, sensitivity: list[torch.Tensor], *args,

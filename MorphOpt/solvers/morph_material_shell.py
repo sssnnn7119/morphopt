@@ -50,6 +50,8 @@ class MorphMaterialShell(BaseSolver):
             num_process (int): The number of processes to use for parallel computation.
         """
 
+        super().__init__()
+
         self.params: Params = params
         """
         Pressures: An instance of the params of the optimization problem.
@@ -161,6 +163,7 @@ class MorphMaterialShell(BaseSolver):
                               GCv=GCv,
                               GCw=GCw, GCudf=GCudf)
 
+        self.fe_result = fe_result
         return fe_result
 
     def _initialize(self):
@@ -287,10 +290,8 @@ class MorphMaterialShell(BaseSolver):
             unique_nodes = torch.unique(surface_elems)
             nodes_fea = fe.nodes[unique_nodes]
             nodes_surface = surfmodel.map_c(knots0).T
-
             distance_mat = torch.norm(nodes_fea[:, None, :] - nodes_surface[None, :, :], dim=-1)
             index_map = distance_mat.argmin(dim=-1)
-        
             nodes_new = nodes_new[index_map]
 
             # insert the offseted shell nodes for each layer

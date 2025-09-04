@@ -265,7 +265,7 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.Sensitivity())
+            self.add_objective_function(update_surfaces.objectivefuncs.ShapeDerivativePneumatic())
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
@@ -275,7 +275,7 @@ class Updater(Updaters):
                                                              [3.0, 3.0, 2.0, 3.0],
                                                              [3.0, 3.0, 3.0, 2.0]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=22., height=70., bottom=0.))
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=22., height=70., bottom=0.))
     
     
 if __name__ == '__main__':

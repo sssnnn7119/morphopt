@@ -2,6 +2,7 @@ import os
 import sys
 
 import numpy as np
+from sympy.printing.pretty.pretty_symbology import sup
 import torch
 
 import FEA
@@ -31,7 +32,9 @@ class Morph(BaseSolver):
             p_dim (list[int]): The dimensions of the pressure for the optimization problem.
             num_process (int): The number of processes to use for parallel computation.
         """
-        
+
+        super().__init__()
+
         self.params: Params = params
         """
         Pressures: An instance of the params of the optimization problem.
@@ -119,7 +122,8 @@ class Morph(BaseSolver):
                               UdF=UdF0,
                               GCv=ADJu,
                               GCw=ADJudp, GCudf=ADJudf)
-
+        self.fe_result = fe_result
+        
         return fe_result
     
     @staticmethod
@@ -184,6 +188,15 @@ class Morph(BaseSolver):
                 break
             fe.add_load(FEA.loads.Pressure(surface_set='surface_%d_All' % (i + 1), pressure=0.),
                         name='Pressure_%d' % i)
+            i += 1
+        
+        # add contact self
+        i = 0
+        while True:
+            if 'surface_%d_All' % (i) not in fe.surface_sets.keys():
+                break
+            fe.add_load(FEA.loads.ContactSelf(surface_name='surface_%d_All' % (i)),
+                        name='ContactSelf_%d' % i)
             i += 1
 
         # add boundary condition

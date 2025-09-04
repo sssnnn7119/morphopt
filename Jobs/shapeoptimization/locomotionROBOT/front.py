@@ -19,10 +19,10 @@ from MorphOpt.modelparams import Params as _Params
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        # loss1 = (U[0, -2]-1.8)**2
-        loss2 = (U[0, 2] - 50)**2 / 1000
+        loss1 = (U[0, -2]-1.8)**2*10
+        # loss2 = -U[1, 2]
         # loss3 = (UdF**2).sum() / 200000
-        return loss2
+        return loss1
 GLOBAL.OBJFUN = ObjectiveFunction()
 
 class Params(_Params):
@@ -37,7 +37,7 @@ class Params(_Params):
                                                         length=70.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.6, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
@@ -45,7 +45,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[-11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.6, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
         
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
@@ -53,7 +53,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.6, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=2.,
@@ -61,7 +61,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.6, maxFF=0.2,))
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2,))
             
             self.if_update = [True, True, True, True]
 
@@ -212,7 +212,7 @@ class Params(_Params):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.06, 0.06, 0.0]])
+                self.pressure = torch.Tensor([[0.06, 0.0, 0.0]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -235,7 +235,7 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(solvers.Morph):
     """
@@ -270,9 +270,12 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.Sensitivity())
+            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativePneumatic()
+            self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
+                update_surfaces.objectivefuncs.ShapeDerivativeContactSelf(shapederivative_pneumatic=shape_derivative))
+            self.add_objective_function(
+                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5, 2.5, 2.5],
@@ -280,9 +283,9 @@ class Updater(Updaters):
                                                              [2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=22., height=70., bottom=0.))
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=22., height=70., bottom=0.))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.MinRadius(radius=1.9))
+                update_surfaces.objectivefuncs.boundarys.MinRadius(radius=1.9))
     
     
 if __name__ == '__main__':

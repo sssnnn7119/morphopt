@@ -14,7 +14,8 @@ class BaseSolver:
     """
 
     def __init__(self, *args, **kwargs):
-        pass
+
+        self.fe_result: FE_result = None
 
     def initialize(self, iteration: int) -> None:
         """

@@ -249,7 +249,7 @@ class Updater(Updaters):
             super().__init__(params=params, max_step_iter=100, reset_per_iter=3)
 
             self.add_objective_function(
-                update_surfaces_Shell.objectivefuncs.Sensitivity())
+                update_surfaces_Shell.objectivefuncs.ShapeDerivativePneumatic())
             self.add_objective_function(
                 update_surfaces_Shell.objectivefuncs.Fairness(
                     surfaces=params.surfaces))
@@ -262,7 +262,7 @@ class Updater(Updaters):
                                                              [5., 2., 2.],
                                                              [5., 2., 2.]], shell_thickness=params.surfaces.thickness))
             self.add_objective_function(
-                update_surfaces_Shell.objectivefuncs.Boundary.Cylinder(radius=100.,
+                update_surfaces_Shell.objectivefuncs.boundarys.Cylinder(radius=100.,
                                                                height=37.,
                                                                bottom=3.))
 

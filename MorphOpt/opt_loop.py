@@ -31,6 +31,7 @@ class Controller:
         """
         Genetrator: An instance of the Genetrator class from the GenerateModel module.
         """
+
         self.solver = solver
         """
         Solver: An instance of the Solver class from the Solve module.
@@ -41,18 +42,13 @@ class Controller:
         Updaters: An instance of the Updaters class from the Update module.
         """
 
-        self.fe_result: solvers.FE_result = None
-        """
-        FE_result: An instance of the FE_result class from the solvers module.
-        This will store the results of the finite element analysis (FEA).
-        """
-
-
     def opt_loop(self) -> None:
         """
         This function runs the optimization loop for a specified number of iterations.
         It calls the opt_step function in each iteration.
         """
+
+        GLOBAL.controller = self
 
         while True:
             # Save the current parameters and plot the figures
@@ -88,12 +84,12 @@ class Controller:
                     t1 = time.time()
 
                     # Perform finite element analysis (FEA)
-                    self.fe_result = self.solver.solve()
+                    self.solver.solve()
 
                     t2 = time.time()
 
                     # Update the surfaces based on the FEA results
-                    loss = self.updater.update(self.fe_result).item()
+                    loss = self.updater.update(self.solver.fe_result).item()
                     self.updater.update_variables()
 
                     t3 = time.time()
@@ -104,15 +100,15 @@ class Controller:
                 #     self.generator.seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
                 #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
                 #     self.params.initialize(iteration = 0)
-                    
-            GLOBAL.History.history_deformation.append([self.fe_result.U[i][-6:].tolist() for i in range(len(self.fe_result.U))])
+
+            GLOBAL.History.history_deformation.append([self.solver.fe_result.U[i][-6:].tolist() for i in range(len(self.solver.fe_result.U))])
             GLOBAL.History.history_objective.append(loss)
             GLOBAL.History.history_time.append([t1-t0, t2-t1, t3-t2])
             self.generator.seed_size = seed_size0
             
             # Print the information
             print(f"Iteration: {GLOBAL.History.iteration}")
-            print(self.fe_result)
+            print(self.solver.fe_result)
             print(f"Loss: {loss:.6f}")
             print("Time Breakdown:")
             print(f"  Initialization Time: {t1 - t0:.2f} seconds")
@@ -142,6 +138,6 @@ class Controller:
         Save the figures generated during the optimization process.
         """
         self.params.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/')
-        if self.fe_result is not None:
-            self.fe_result.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/Deformation/Figures/', iteration=GLOBAL.History.iteration)
-        
+        if self.solver.fe_result is not None:
+            self.solver.fe_result.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/Deformation/Figures/', iteration=GLOBAL.History.iteration)
+

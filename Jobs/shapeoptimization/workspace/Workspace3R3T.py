@@ -422,13 +422,13 @@ class Updater(Updaters):
                              max_step_iter=300)
 
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Sensitivity())
+                update_surfaces.objectivefuncs.ShapeDerivativePneumatic())
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Distance(min_distance=np.ones([params.surfaces.num_surface, params.surfaces.num_surface]) * 2.5))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Boundary.Cylinder(radius=20.,
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=20.,
                                                                height=150.,
                                                                bottom=0.))
 
