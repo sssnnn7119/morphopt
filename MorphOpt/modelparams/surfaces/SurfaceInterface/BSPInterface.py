@@ -153,8 +153,8 @@ class BspInterface(BaseInterface):
         
         x_change = x_change.reshape_as(self.model.control_points)
         
-        x_change[:, 0, :] = 0
-        x_change[:, -1, :] = 0
+        x_change[:, [0,1,2], :] = 0
+        x_change[:, [-1,-2,-3], :] = 0
         x_change[2, 1:5, :] = 0
         x_change[2, -5:-1, :] = 0
         

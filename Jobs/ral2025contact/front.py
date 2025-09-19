@@ -1,5 +1,8 @@
 import os
 import sys
+
+import FEA
+import numpy as np
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
@@ -8,7 +11,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
 from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import Controller
+from MorphOpt.opt_loop import Controller as _Controller
 from MorphOpt.modelparams import Surfaces, Loads, Materials
 from MorphOpt import initializer
 from MorphOpt import solvers
@@ -18,12 +21,10 @@ from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
-    def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        loss1 = (U[0, -2]-1.8)**2*10
-        # loss2 = -U[1, 2]
-        # loss3 = (UdF**2).sum() / 200000
-        return loss1
-GLOBAL.OBJFUN = ObjectiveFunction()
+    def get_objective(self, *args, **kwargs):
+        loss = self.U[0, -2]
+        return loss
+GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
     class SurfaceParams(Surfaces):
@@ -34,36 +35,29 @@ class Params(_Params):
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=21.,
-                                                        length=70.,
+                                                        length=50.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
-                                                    length=64.,
+                                                    length=44.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[-11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
         
             self.add_surface(
             Surfaces.BSP.initialize_cylinder(r0=6.,
-                                                    length=64.,
+                                                    length=44.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
             
-            self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=2.,
-                                                    length=64.,
-                                                    seed_size=1.0,
-                                                    symmetric=[1, [1]],
-                                                    init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2,))
             
-            self.if_update = [True, True, True, True]
+            self.if_update = [True, True, True]
 
 
         def _symmetry(self, control_points: torch.Tensor):
@@ -109,7 +103,6 @@ class Params(_Params):
 
 
             self.surface_list[0].model.control_points = self._symmetry(self.surface_list[0].model.control_points)
-            self.surface_list[3].model.control_points = self._symmetry(self.surface_list[3].model.control_points)
  
 
         def get_geometry_values(self):
@@ -117,7 +110,6 @@ class Params(_Params):
 
             r1, r1du, r1du2 = self.surface_list[1].get_geometry_values()
 
-            r3, r3du, r3du2 = self.surface_list[3].get_geometry_values()
             
             r2 = r1.clone()
             r2[0] *= -1
@@ -131,9 +123,9 @@ class Params(_Params):
             r2du2[0] *= -1
             r2du2[1] *= -1
 
-            r = [r0, r1, r2, r3]
-            rdu = [r0du, r1du, r2du, r3du]
-            rdu2 = [r0du2, r1du2, r2du2, r3du2]
+            r = [r0, r1, r2,]
+            rdu = [r0du, r1du, r2du,]
+            rdu2 = [r0du2, r1du2, r2du2,]
 
             return r, rdu, rdu2
 
@@ -150,8 +142,6 @@ class Params(_Params):
                 ).clone(),
                 self.surface_list[1].get_surface_parameters().flatten().detach(
                 ).clone(),
-                self.surface_list[3].get_surface_parameters().flatten().detach(
-                ).clone(),
             ]
             return xlist
 
@@ -166,8 +156,6 @@ class Params(_Params):
                     xlist[0].detach().clone())
             self.surface_list[1].set_surface_parameters(
                     xlist[1].detach().clone())
-            self.surface_list[3].set_surface_parameters(
-                    xlist[2].detach().clone())
 
         def update_variables(self, x_change: torch.Tensor) -> None:
             """
@@ -187,7 +175,6 @@ class Params(_Params):
                 start = end
 
             x_change_list[0] = self._symmetry(x_change_list[0].reshape_as(self.surface_list[0].model.control_points)).reshape([3, -1])
-            x_change_list[2] = self._symmetry(x_change_list[2].reshape_as(self.surface_list[3].model.control_points)).reshape([3, -1])
 
             x_new = []
             surf_ind = [0, 1]
@@ -199,20 +186,12 @@ class Params(_Params):
                     r + 1e-15) * self._max_step_length[i]
 
                 self.surface_list[surf_ind[i]].update_variables(dx)
-
-            r = x_change_list[2].norm(dim=0)
-
-            dx = 2 / torch.pi * torch.atan(r) * x_change_list[2] / (
-                r + 1e-15) * self._max_step_length[3]
-
-            self.surface_list[3].update_variables(dx)
             
-
     class LoadParams(Loads):
         class _Pressure(Loads.Pressures):
             def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.06, 0.0, 0.0]])
+                self.pressure = torch.Tensor([[0.0, 0.06]])
         
         def __init__(self):
             self.pressure = self._Pressure()
@@ -247,7 +226,8 @@ class Solver(solvers.Morph):
 
         super().__init__(params=params,
                          num_process=1)
-
+   
+    
 class Updater(Updaters):
     """
     Updater class for MorphOpt.
@@ -270,10 +250,8 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativePneumatic()
+            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
-            self.add_objective_function(
-                update_surfaces.objectivefuncs.ShapeDerivativeContactSelf(shapederivative_pneumatic=shape_derivative))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
@@ -283,10 +261,17 @@ class Updater(Updaters):
                                                              [2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=22., height=70., bottom=0.))
-            self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.MinRadius(radius=1.9))
-    
+                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=22., height=50., bottom=0.))
+
+class Controller(_Controller):
+    def save(self):
+        super().save()
+        import shutil
+        try:
+            shutil.copyfile(GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp',
+                            GLOBAL.PATH.path_Result + '/Log/Deformation/Data/TopOptRun_%d.inp' % (GLOBAL.History.iteration-1))
+        except:
+            pass
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
@@ -303,9 +288,9 @@ if __name__ == '__main__':
     
     generator = Generator(surfaces=params.surfaces,path_output=GLOBAL.PATH.path_Result + '/Cache/', path_queue=GLOBAL.PATH.path_Queue)
 
-    solvers = Solver(params=params)
+    solver = Solver(params=params)
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solvers, updater=updater)
+    controller = Controller(params=params, generator=generator, solver=solver, updater=updater)
     controller.opt_loop()

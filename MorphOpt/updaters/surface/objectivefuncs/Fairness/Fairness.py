@@ -1,13 +1,13 @@
 import torch
 from ..BaseObj import BaseObj
 from .....modelparams import Surfaces
-from .. import ShapeDerivativePneumatic
+from .. import ShapeDerivativeDirect
 class Fairness(BaseObj):
     """
     Fairness objective function for MorphOpt.
     """
 
-    def __init__(self, surfaces: Surfaces, sensitivity: ShapeDerivativePneumatic):
+    def __init__(self, surfaces: Surfaces, sensitivity: ShapeDerivativeDirect):
         """
         Initialize the fairness objective function with a name.
         """
@@ -29,7 +29,7 @@ class Fairness(BaseObj):
         
         self.scaler = []
         for i in range(len(self.sensitivity.sensitivity)):
-            sen_now = self.sensitivity.sensitivity[i].abs()
+            sen_now = self.sensitivity.sensitivity[i].reshape([-1, weight[i].shape[0]]).norm(dim=0)
             sen_now[sen_now==0] = sen_now[sen_now!=0].min()
             self.scaler.append(weight[i] * sen_now)
 

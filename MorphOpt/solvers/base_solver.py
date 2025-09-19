@@ -1,12 +1,5 @@
-import os
-import sys
-
-import numpy as np
-import torch
 
 import FEA
-
-from .FE_result import FE_result
 
 class BaseSolver:
     """
@@ -14,8 +7,7 @@ class BaseSolver:
     """
 
     def __init__(self, *args, **kwargs):
-
-        self.fe_result: FE_result = None
+        pass
 
     def initialize(self, iteration: int) -> None:
         """
@@ -23,7 +15,7 @@ class BaseSolver:
         """
         pass
 
-    def solve(self) -> FE_result:
+    def solve(self):
         """
         Solve the given problem.
         """
@@ -31,7 +23,7 @@ class BaseSolver:
             "This method should be overridden by subclasses.")
 
     @staticmethod
-    def init_FEA(inp: FEA.FEA_INP) -> FEA.Main.FEA_Main:
+    def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         """
         Initialize the FEA solver.
         """

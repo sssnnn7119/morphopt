@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
 from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import Controller
+from MorphOpt.opt_loop import _Controller
 from MorphOpt.modelparams import Surfaces, Loads, Materials
 from MorphOpt import initializer
 from MorphOpt import solvers
@@ -265,7 +265,7 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.ShapeDerivativePneumatic())
+            self.add_objective_function(update_surfaces.objectivefuncs.ShapeDerivativeContinuation())
             self.add_objective_function(
                 update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
             self.add_objective_function(
@@ -297,5 +297,5 @@ if __name__ == '__main__':
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solvers, updater=updater)
+    controller = _Controller(params=params, generator=generator, solver=solvers, updater=updater)
     controller.opt_loop()

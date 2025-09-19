@@ -9,7 +9,7 @@ from . import solvers
 from . import updaters
 from .modelparams import Params
 import time
-
+import gc
 
 class Controller:
 
@@ -57,6 +57,7 @@ class Controller:
 
             # clean the cache
             torch.cuda.empty_cache()
+            gc.collect()
 
             seed_size0 = self.generator.seed_size
             
@@ -89,8 +90,10 @@ class Controller:
                     t2 = time.time()
 
                     # Update the surfaces based on the FEA results
-                    loss = self.updater.update(self.solver.fe_result).item()
+                    self.updater.update()
                     self.updater.update_variables()
+
+                    loss = GLOBAL.obj_fun.get_objective()
 
                     t3 = time.time()
                     
@@ -101,14 +104,14 @@ class Controller:
                 #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
                 #     self.params.initialize(iteration = 0)
 
-            GLOBAL.History.history_deformation.append([self.solver.fe_result.U[i][-6:].tolist() for i in range(len(self.solver.fe_result.U))])
+            GLOBAL.History.history_deformation.append([GLOBAL.obj_fun.U[i][-6:].tolist() for i in range(len(GLOBAL.obj_fun.U))])
             GLOBAL.History.history_objective.append(loss)
             GLOBAL.History.history_time.append([t1-t0, t2-t1, t3-t2])
             self.generator.seed_size = seed_size0
             
             # Print the information
             print(f"Iteration: {GLOBAL.History.iteration}")
-            print(self.solver.fe_result)
+            print(GLOBAL.obj_fun)
             print(f"Loss: {loss:.6f}")
             print("Time Breakdown:")
             print(f"  Initialization Time: {t1 - t0:.2f} seconds")
@@ -138,6 +141,6 @@ class Controller:
         Save the figures generated during the optimization process.
         """
         self.params.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/')
-        if self.solver.fe_result is not None:
-            self.solver.fe_result.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/Deformation/Figures/', iteration=GLOBAL.History.iteration)
+        if GLOBAL.obj_fun.fe is not None:
+            GLOBAL.obj_fun.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/Deformation/Figures/', iteration=GLOBAL.History.iteration)
 

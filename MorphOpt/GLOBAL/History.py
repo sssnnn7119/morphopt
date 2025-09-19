@@ -35,7 +35,6 @@ class History:
         np.savetxt(path + '/iteration.txt', [self.iteration], delimiter=',')
         np.save(path + '/history_deformation.npy', self.history_deformation)
         
-
     def load(self, path: str) -> None:
         """
         Load the history from a file.
@@ -149,11 +148,6 @@ class History:
             deform_start_idx = min(deform_indices) if deform_indices else None
             deform_end_idx = max(deform_indices) + 1 if deform_indices else None
             
-            # Find compliance columns
-            compliance_indices = [i for i, h in enumerate(headers) if h.startswith('UdF')]
-            compliance_start_idx = min(compliance_indices) if compliance_indices else None
-            compliance_end_idx = max(compliance_indices) + 1 if compliance_indices else None
-            
             # Determine deformation shape from headers
             deform_shape = None
             if deform_indices:
@@ -162,16 +156,6 @@ class History:
                 max_row = max(idx[0] for idx in u_indices) + 1
                 max_col = max(idx[1] for idx in u_indices) + 1
                 deform_shape = (max_row, max_col)
-            
-            # Determine compliance shape from headers
-            compliance_shape = None
-            if compliance_indices:
-                udf_headers = [headers[i] for i in compliance_indices]
-                udf_parts = [h.replace('UdF', '').split('-') for h in udf_headers]
-                if udf_parts:
-                    max_i = max(int(parts[0]) for parts in udf_parts) + 1
-                    max_j = max(int(parts[1]) for parts in udf_parts) + 1
-                    compliance_shape = (max_i, max_j, 6)  # Assuming 6 components per element
             
             # Initialize lists
             self.history_objective = []

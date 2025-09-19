@@ -537,192 +537,192 @@ DATA;"""
             stp_content.append(f"#{point2_id}=CARTESIAN_POINT('',({v2_coords[0]},{v2_coords[1]},{v2_coords[2]}));")
 
 
-def mesh_operation(input_files, output_file, mesh_size=1.5):
-    """
-    Perform boolean operations on multiple STP files and generate mesh
+# def mesh_operation(input_files, output_file, mesh_size=1.5):
+#     """
+#     Perform boolean operations on multiple STP files and generate mesh
     
-    Args:
-        input_files: List of STP file names, first one is main body, others are subtracted
-        output_file: Output INP file name
-        mesh_size: Mesh element size
-    """
+#     Args:
+#         input_files: List of STP file names, first one is main body, others are subtracted
+#         output_file: Output INP file name
+#         mesh_size: Mesh element size
+#     """
 
-    import gmsh
-    import time
-    # Initialize gmsh
-    gmsh.initialize()
+#     import gmsh
+#     import time
+#     # Initialize gmsh
+#     gmsh.initialize()
     
-    # Set gmsh to quiet mode - reduce output
-    gmsh.option.setNumber("General.Terminal", 0)
-    gmsh.option.setNumber("General.Verbosity", 1)
-    gmsh.option.setNumber("General.NumThreads", 0)
-    gmsh.option.setNumber("Geometry.OCCParallel", 1)
+#     # Set gmsh to quiet mode - reduce output
+#     gmsh.option.setNumber("General.Terminal", 0)
+#     gmsh.option.setNumber("General.Verbosity", 1)
+#     gmsh.option.setNumber("General.NumThreads", 0)
+#     gmsh.option.setNumber("Geometry.OCCParallel", 1)
     
-    start_time = time.time()
+#     start_time = time.time()
     
-    try:
-        # Import all STEP files
-        print("Importing STEP files........", end="")
-        import_start = time.time()
-        for file in input_files:
-            gmsh.merge(file)
-        import_time = time.time() - import_start
-        print(f" done ({import_time:.2f}s)")
+#     try:
+#         # Import all STEP files
+#         print("Importing STEP files........", end="")
+#         import_start = time.time()
+#         for file in input_files:
+#             gmsh.merge(file)
+#         import_time = time.time() - import_start
+#         print(f" done ({import_time:.2f}s)")
         
-        # Get all volumes after import
-        volumes = gmsh.model.getEntities(3)
+#         # Get all volumes after import
+#         volumes = gmsh.model.getEntities(3)
         
-        if len(volumes) >= 2:
-            # Optimize boolean operations
-            gmsh.option.setNumber("Geometry.Tolerance", 1e-2)
-            gmsh.option.setNumber("Geometry.ToleranceBoolean", 1e-2)
+#         if len(volumes) >= 2:
+#             # Optimize boolean operations
+#             gmsh.option.setNumber("Geometry.Tolerance", 1e-2)
+#             gmsh.option.setNumber("Geometry.ToleranceBoolean", 1e-2)
             
-            # Perform boolean subtraction: volume 0 - (volume 1 + volume 2 + ...)
-            print("Boolean operation...........", end="")
-            boolean_start = time.time()
-            main_volume = [(3, volumes[0][1])]
-            subtract_volumes = [(3, vol[1]) for vol in volumes[1:]]
+#             # Perform boolean subtraction: volume 0 - (volume 1 + volume 2 + ...)
+#             print("Boolean operation...........", end="")
+#             boolean_start = time.time()
+#             main_volume = [(3, volumes[0][1])]
+#             subtract_volumes = [(3, vol[1]) for vol in volumes[1:]]
             
-            result = gmsh.model.occ.cut(main_volume, subtract_volumes)
-            gmsh.model.occ.synchronize()
-            boolean_time = time.time() - boolean_start
-            print(f" done ({boolean_time:.2f}s)")
+#             result = gmsh.model.occ.cut(main_volume, subtract_volumes)
+#             gmsh.model.occ.synchronize()
+#             boolean_time = time.time() - boolean_start
+#             print(f" done ({boolean_time:.2f}s)")
             
     
-        # Set mesh parameters for faster meshing
-        gmsh.option.setNumber("Mesh.ElementOrder", 1)  # Linear elements
-        gmsh.option.setNumber("Mesh.Algorithm", 1)     # MeshAdapt (faster than Frontal-Delaunay)
-        gmsh.option.setNumber("Mesh.Algorithm3D", 1)   # Delaunay (faster option)
-        gmsh.option.setNumber("Mesh.Optimize", 1)      # Enable optimization
-        gmsh.option.setNumber("Mesh.QualityType", 1)   # Enable quality checks
+#         # Set mesh parameters for faster meshing
+#         gmsh.option.setNumber("Mesh.ElementOrder", 1)  # Linear elements
+#         gmsh.option.setNumber("Mesh.Algorithm", 1)     # MeshAdapt (faster than Frontal-Delaunay)
+#         gmsh.option.setNumber("Mesh.Algorithm3D", 1)   # Delaunay (faster option)
+#         gmsh.option.setNumber("Mesh.Optimize", 1)      # Enable optimization
+#         gmsh.option.setNumber("Mesh.QualityType", 1)   # Enable quality checks
         
-        # Control mesh size (triangle size)
-        gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_size)    # Minimum element size
-        gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size)    # Maximum element size
-        gmsh.option.setNumber("Mesh.MeshSizeFactor", mesh_size) # Global mesh size factor
+#         # Control mesh size (triangle size)
+#         gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_size)    # Minimum element size
+#         gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size)    # Maximum element size
+#         gmsh.option.setNumber("Mesh.MeshSizeFactor", mesh_size) # Global mesh size factor
         
-        # Use faster meshing options
-        gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 1)
-        gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 0)
+#         # Use faster meshing options
+#         gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 1)
+#         gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 0)
         
-        # Don't generate 2D surface elements, only 3D volume elements
-        gmsh.option.setNumber("Mesh.SaveAll", 0)
-        gmsh.option.setNumber("Mesh.MeshOnlyVisible", 0)
+#         # Don't generate 2D surface elements, only 3D volume elements
+#         gmsh.option.setNumber("Mesh.SaveAll", 0)
+#         gmsh.option.setNumber("Mesh.MeshOnlyVisible", 0)
         
-        # Generate only 3D mesh (skip 2D generation)
-        print("Mesh generation.............", end="")
-        mesh_start = time.time()
-        gmsh.model.mesh.generate(3)
-        mesh_time = time.time() - mesh_start
-        print(f" done ({mesh_time:.2f}s)")
+#         # Generate only 3D mesh (skip 2D generation)
+#         print("Mesh generation.............", end="")
+#         mesh_start = time.time()
+#         gmsh.model.mesh.generate(3)
+#         mesh_time = time.time() - mesh_start
+#         print(f" done ({mesh_time:.2f}s)")
         
-        # Export to INP format
-        print("Exporting...................", end="")
-        export_start = time.time()
-        gmsh.write(output_file)
-        export_time = time.time() - export_start
-        print(f" done ({export_time:.2f}s)")
+#         # Export to INP format
+#         print("Exporting...................", end="")
+#         export_start = time.time()
+#         gmsh.write(output_file)
+#         export_time = time.time() - export_start
+#         print(f" done ({export_time:.2f}s)")
         
-        # Post-process INP file to remove 2D elements
-        post_process_inp(output_file)
+#         # Post-process INP file to remove 2D elements
+#         post_process_inp(output_file)
         
-        total_time = time.time() - start_time
-        print(f"Total: {total_time:.2f}s | Output: {output_file}")
-        # Print mesh statistics
-        node_count = len(gmsh.model.mesh.getNodes()[0])
-        element_count = len(gmsh.model.mesh.getElements(3)[1][0])
-        print(f"Mesh statistics: {node_count} nodes, {element_count} elements")
+#         total_time = time.time() - start_time
+#         print(f"Total: {total_time:.2f}s | Output: {output_file}")
+#         # Print mesh statistics
+#         node_count = len(gmsh.model.mesh.getNodes()[0])
+#         element_count = len(gmsh.model.mesh.getElements(3)[1][0])
+#         print(f"Mesh statistics: {node_count} nodes, {element_count} elements")
         
-    except Exception as e:
-        print(f"Error: {e}")
+#     except Exception as e:
+#         print(f"Error: {e}")
     
-    finally:
-        gmsh.finalize()
+#     finally:
+#         gmsh.finalize()
 
-def post_process_inp(inp_file):
-    """
-    Post-process INP file to remove all 2D elements and renumber 3D elements
+# def post_process_inp(inp_file):
+#     """
+#     Post-process INP file to remove all 2D elements and renumber 3D elements
     
-    Args:
-        inp_file: Path to the INP file to process
-    """
+#     Args:
+#         inp_file: Path to the INP file to process
+#     """
 
-    import time
-    print("Post-processing INP file....", end="")
-    post_start = time.time()
+#     import time
+#     print("Post-processing INP file....", end="")
+#     post_start = time.time()
     
-    try:
-        with open(inp_file, 'r') as f:
-            lines = f.readlines()
+#     try:
+#         with open(inp_file, 'r') as f:
+#             lines = f.readlines()
         
-        processed_lines = []
-        in_elements = False
-        skip_current_element_section = False
-        element_counter = 1
+#         processed_lines = []
+#         in_elements = False
+#         skip_current_element_section = False
+#         element_counter = 1
         
-        for line in lines:
-            line = line.strip()
+#         for line in lines:
+#             line = line.strip()
             
-            # Check if we're entering elements section
-            if line.startswith('*ELEMENT'):
-                in_elements = True
-                skip_current_element_section = False
+#             # Check if we're entering elements section
+#             if line.startswith('*ELEMENT'):
+#                 in_elements = True
+#                 skip_current_element_section = False
                 
-                # Check if this is a 2D element type that should be skipped
-                line_upper = line.upper()
-                # Common 2D element types in Abaqus
-                if any(elem_type in line_upper for elem_type in [
-                    'CPS3', 'CPS4', 'CPS6', 'CPS8',  # Plane stress
-                    'CPE3', 'CPE4', 'CPE6', 'CPE8',  # Plane strain
-                    'CAX3', 'CAX4', 'CAX6', 'CAX8',  # Axisymmetric
-                    'S3', 'S4', 'S6', 'S8',          # Shell elements
-                    'M3D3', 'M3D4', 'M3D6', 'M3D8',  # Membrane
-                    'STRI3', 'STRI65', 'S3R', 'S4R', # Shell/membrane variants
-                    'DS3', 'DS4', 'DS6', 'DS8',       # Cohesive surface
-                    'T3D2'
-                ]):
-                    skip_current_element_section = True
-                    continue
+#                 # Check if this is a 2D element type that should be skipped
+#                 line_upper = line.upper()
+#                 # Common 2D element types in Abaqus
+#                 if any(elem_type in line_upper for elem_type in [
+#                     'CPS3', 'CPS4', 'CPS6', 'CPS8',  # Plane stress
+#                     'CPE3', 'CPE4', 'CPE6', 'CPE8',  # Plane strain
+#                     'CAX3', 'CAX4', 'CAX6', 'CAX8',  # Axisymmetric
+#                     'S3', 'S4', 'S6', 'S8',          # Shell elements
+#                     'M3D3', 'M3D4', 'M3D6', 'M3D8',  # Membrane
+#                     'STRI3', 'STRI65', 'S3R', 'S4R', # Shell/membrane variants
+#                     'DS3', 'DS4', 'DS6', 'DS8',       # Cohesive surface
+#                     'T3D2'
+#                 ]):
+#                     skip_current_element_section = True
+#                     continue
                 
-                # If it's a 3D element type or unspecified, keep it
-                processed_lines.append(line + '\n')
-                continue
+#                 # If it's a 3D element type or unspecified, keep it
+#                 processed_lines.append(line + '\n')
+#                 continue
             
-            # Check if we're leaving elements section
-            if line.startswith('*') and in_elements and not line.startswith('*ELEMENT'):
-                in_elements = False
-                skip_current_element_section = False
-                processed_lines.append(line + '\n')
-                continue
+#             # Check if we're leaving elements section
+#             if line.startswith('*') and in_elements and not line.startswith('*ELEMENT'):
+#                 in_elements = False
+#                 skip_current_element_section = False
+#                 processed_lines.append(line + '\n')
+#                 continue
             
-            # Skip lines if we're in a 2D element section
-            if skip_current_element_section:
-                continue
+#             # Skip lines if we're in a 2D element section
+#             if skip_current_element_section:
+#                 continue
             
-            # Process element lines
-            if in_elements and line and not line.startswith('*'):
-                # Parse element line
-                parts = line.split(',')
-                if len(parts) > 1:
-                    node_count = len(parts) - 1  # Subtract 1 for element ID
+#             # Process element lines
+#             if in_elements and line and not line.startswith('*'):
+#                 # Parse element line
+#                 parts = line.split(',')
+#                 if len(parts) > 1:
+#                     node_count = len(parts) - 1  # Subtract 1 for element ID
                     
-                    # Keep only 3D elements
-                    if node_count in [4, 6, 8, 10, 13, 14, 15, 20, 27]:
-                        # Renumber the element
-                        parts[0] = str(element_counter)
-                        processed_lines.append(','.join(parts) + '\n')
-                        element_counter += 1
-                continue
+#                     # Keep only 3D elements
+#                     if node_count in [4, 6, 8, 10, 13, 14, 15, 20, 27]:
+#                         # Renumber the element
+#                         parts[0] = str(element_counter)
+#                         processed_lines.append(','.join(parts) + '\n')
+#                         element_counter += 1
+#                 continue
             
-            # Keep all other lines
-            processed_lines.append(line + '\n' if line else '\n')
+#             # Keep all other lines
+#             processed_lines.append(line + '\n' if line else '\n')
         
-        # Write processed content back to file
-        with open(inp_file, 'w') as f:
-            f.writelines(processed_lines)
+#         # Write processed content back to file
+#         with open(inp_file, 'w') as f:
+#             f.writelines(processed_lines)
         
-        post_time = time.time() - post_start
-        print(f" done ({post_time:.2f}s)")
+#         post_time = time.time() - post_start
+#         print(f" done ({post_time:.2f}s)")
         
-    except Exception as e:
-        print(f"Error in post-processing: {e}")
+#     except Exception as e:
+#         print(f"Error in post-processing: {e}")

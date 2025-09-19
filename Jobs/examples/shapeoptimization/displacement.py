@@ -3,10 +3,12 @@ import sys
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
-import numpy as np
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 import torch
 from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import Controller
+from MorphOpt.opt_loop import _Controller
 from MorphOpt.modelparams import Surfaces, Loads, Materials
 from MorphOpt import initializer
 from MorphOpt import solvers
@@ -15,50 +17,51 @@ from MorphOpt.updaters.updaters import Updaters
 from MorphOpt import generatemodel
 from MorphOpt.modelparams import Params as _Params
 
-
-
-U_dim=[-6, -4]
+class ObjectiveFunction(GLOBAL.ObjectiveFunction):
+    def get_objective(self, U, Udp, UdF, *args, **kwargs):
+        loss1 = -U[0, -2]
+        return loss1
+GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
     class SurfaceParams(Surfaces):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.1, 0.1])
+            super().__init__(max_step_length=[0.4, 0.4])
 
             self.add_surface(
                 Surfaces.BSP.initialize_cylinder(r0=8.,
-                                                        length=80,
-                                                        seed_size=1.,
+                                                        length=80.,
+                                                        seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.2, maxC=2., maxFF=0.4))
+                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+            
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(
-                    r0=4.,
-                    length=74.,
-                    seed_size=1.,
-                    symmetric=[1, [1]],
-                    flip=True,
-                    init_location=[0., 0., 3.], maxR=0.2, maxC=2., maxFF=0.4))
+            Surfaces.BSP.initialize_cylinder(r0=4.,
+                                                    length=74.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[0, 0, 3],
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
 
             
-        def initialize(self, iteration):
-            super().initialize(iteration)
-            
+            self.if_update = [True, True]
+
 
     class LoadParams(Loads):
         class _Pressure(Loads.Pressures):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.pressure = torch.Tensor([[0.05], [0.09]])
+                self.pressure = torch.Tensor([[0.06]])
         
-        def __init__(self) -> None:
+        def __init__(self):
             self.pressure = self._Pressure()
             
     class MaterialParams(Materials):
         
         def __init__(self):
-            super().__init__(mu=0.482, kappa=48., density=1.08e-9,)
+            super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
@@ -73,9 +76,9 @@ class Generator(generatemodel.Genetrator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=2.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
-class Solver(solvers.morph):
+class Solver(solvers.Morph):
     """
     Solver class for MorphOpt.
     This class is responsible for solving the finite element analysis (FEA) problem.
@@ -83,7 +86,7 @@ class Solver(solvers.morph):
 
     def __init__(self, params: Params):
 
-        super().__init__(params=params, U_dim=U_dim,
+        super().__init__(params=params,
                          num_process=1)
 
 class Updater(Updaters):
@@ -93,20 +96,8 @@ class Updater(Updaters):
     """
 
     def __init__(self, params: Params, *args, **kwargs):
-        super().__init__(U_dim=U_dim,
-                         surfaces=self.UpdaterSurfaces(params=params),
+        super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
-    extra_target = False
-    @staticmethod
-    def objective_function(U: torch.Tensor, Udp: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        
-
-        target = (U[0, 1] + 10)**2 + (U[0, 0] - 30)**2
-
-        if target < 20 or Updater.extra_target:
-            Updater.extra_target = True
-            target += (U[1, 1] - 10)**2
-        return target
 
     class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
         """
@@ -120,44 +111,24 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            self.add_objective_function(update_surfaces.objectivefuncs.ShapeDerivativePneumatic())
+            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativeContinuation()
+            self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces))
+                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Distance(min_distance=np.ones([params.surfaces.num_surface, params.surfaces.num_surface]) * 2.5))
+                update_surfaces.objectivefuncs.Distance(min_distance=
+                                                            [[2.5, 2.5],
+                                                             [2.5, 2.5]]))
             self.add_objective_function(
                 update_surfaces.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
-            
-        
-        def initialize(self, iter_now: int, sensitivity: list[torch.Tensor], *args,
-                    **kwargs) -> None:
-            """
-            Initialize the parameters of the optimization process.
-
-            Parameters:
-                iter_now (int): The current iteration number.
-            """
-
-            # reset the scaler
-            if iter_now % 1 == 0 or self.scaler is None:
-                # get the maximum sensitivity value
-                max_sensitivity = 0
-                for sensitivity_surf in sensitivity:
-                    max_sensitivity = max(max_sensitivity,
-                                        sensitivity_surf.abs().max())
-                self.scaler = 10 / max_sensitivity
-            sensitivity = [
-                sensitivity_surf * self.scaler for sensitivity_surf in sensitivity
-            ]
-
-            super().initialize(iter_now=iter_now, sensitivity=sensitivity, *args, **kwargs)
+    
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
-    opt_label = 'youqingPath'
+    opt_label = 'FRONT'
 
     # region Initialize the workflow
     initializer.initialize_path(result_path=path_result, opt_label=opt_label)
@@ -171,5 +142,5 @@ if __name__ == '__main__':
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solvers, updater=updater)
+    controller = _Controller(params=params, generator=generator, solver=solvers, updater=updater)
     controller.opt_loop()

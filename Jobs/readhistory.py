@@ -39,7 +39,7 @@ def restart_optimization(restart_path, target_iteration=None):
     GLOBAL.History.history_time = GLOBAL.History.history_time[:target_iteration]
     
     sys.path.append(restart_path + '/scripts/Jobs/')
-    import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART
+    import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
     generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
@@ -58,11 +58,11 @@ def restart_optimization(restart_path, target_iteration=None):
 
 if __name__ == "__main__":
     # Read the parameters from the restart path
-    restart_path = "Z:/Results/T20250903192104_FRONT/"
+    restart_path = "Z:/Results/T20250905154812_FRONT_ref/"
     target_iteration = 83
 
     params, generator = restart_optimization(restart_path = restart_path, 
-                         target_iteration = target_iteration)
+                         target_iteration = 248)
     
     generator.generate(material_para=[params.materials.density, 1, 
                                                            params.materials.mu, 

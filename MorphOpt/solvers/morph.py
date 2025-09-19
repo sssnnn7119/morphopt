@@ -1,8 +1,4 @@
-import os
-import sys
 
-import numpy as np
-from sympy.printing.pretty.pretty_symbology import sup
 import torch
 
 import FEA
@@ -11,8 +7,6 @@ import multiprocessing as mp
 from ..modelparams import Params
 from ..GLOBAL import PATH
 from .base_solver import BaseSolver
-from .FE_result import FE_result
-from FEA.elements import materials
 
 from MorphOpt import GLOBAL
 
@@ -50,13 +44,13 @@ class Morph(BaseSolver):
         list[int]: The dimensions of the interest for the optimization problem.
         """
         
-    def solve(self) -> FE_result:
+    def solve(self):
         """
         Solve the optimization problem using the specified solver.
 
         Returns:
             tuple: the displacement field and its derivatives:
-                - fe (FEA.Main.FEA_Main): An instance of the FEA_Main class with the given input parameters.
+                - fe (FEA.FEAController): An instance of the FEA_Main class with the given input parameters.
                 - GC0 (list[torch.Tensor]): The displacement field at the reference point.
                 - Udp0 (list[torch.Tensor]): The displacement field at the reference point with respect to the pressure.
                 - GCv (list[torch.Tensor]): The first adjoint displacement field.
@@ -71,63 +65,26 @@ class Morph(BaseSolver):
         fe = self.init_FEA(FE_inp)
         fe.initialize()
         
-        mu = {}
-        kappa = {}
-        density = {}
-        for i in range(len(fe.elems)):
-            str_now = list(fe.elems.keys())[i]
-            if not str_now.startswith('element-'):
-                continue
-            gaussian_points = fe.elems[str_now].get_gaussian_points(fe.nodes.cpu())
-            density_now = self.params.materials.get_density(gaussian_points).cpu().numpy()
-            module = self.params.materials.get_modules(gaussian_points)
-            mu_now = module[0].cpu().numpy()
-            kappa_now = module[1].cpu().numpy()
-            mu[str_now] = mu_now
-            kappa[str_now] = kappa_now
-            density[str_now] = density_now
-        
-            materials_now = materials.NeoHookean(mu=torch.from_numpy(mu[str_now]).to(fe.nodes.device).to(fe.nodes.dtype),
-                                                    kappa=torch.from_numpy(kappa[str_now]).to(fe.nodes.device).to(fe.nodes.dtype),)
-
-            fe.elems[str_now].set_density(torch.from_numpy(density[str_now]).to(fe.nodes.device).to(fe.nodes.dtype))
-            fe.elems[str_now].set_materials(materials_now)
 
         # multiprocess FEA
-        # self._solve_FEA(PATH.path_Result, pressure_list[0], 
-        #                  mu, kappa, density, self.U_dim,)
+        # self._solve_FEA(PATH.path_Result, pressure_list[0], self.U_dim,)
         pools = mp.Pool(processes=self.num_process)
         result = []
         for i in range(len(pressure_list)):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, pressure_list[i], 
-                                       mu, kappa, density, self.U_dim,)))
+                                args=(PATH.path_Result, pressure_list[i], self.U_dim,)))
         pools.close()
         pools.join()
 
         # get the result
-        U0 = torch.tensor([i.get()[0] for i in result], device='cpu')
-        Udp0 = torch.tensor([i.get()[1] for i in result], device='cpu')
-        UdF0 = torch.tensor([i.get()[2] for i in result], device='cpu')
-        ADJu = torch.tensor([i.get()[3] for i in result], device='cpu')
-        ADJudp = torch.tensor([i.get()[4] for i in result], device='cpu')
-        ADJudf = torch.tensor([i.get()[5] for i in result], device='cpu')
+        U0 = torch.tensor([i.get() for i in result])
 
-        fe_result = FE_result(fe=fe,
-                              pressure_list=torch.tensor(pressure_list,
-                                                         device='cpu'),
-                              U=U0,
-                              Udp=Udp0,
-                              UdF=UdF0,
-                              GCv=ADJu,
-                              GCw=ADJudp, GCudf=ADJudf)
-        self.fe_result = fe_result
-        
-        return fe_result
+        GLOBAL.obj_fun.set_results(fe=fe, pressure_list=torch.tensor(pressure_list), U=U0)
+        GLOBAL.obj_fun.calculate_adjoint_problem()
     
     @staticmethod
-    def init_FEA(inp: FEA.FEA_INP, mu: dict[str,np.ndarray]=None, kappa: dict[str,np.ndarray]=None, density: dict[str,np.ndarray]=None) -> FEA.Main.FEA_Main:
+    def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         """
         Initialize the FEA class with the given input parameters.
 
@@ -135,98 +92,57 @@ class Morph(BaseSolver):
             inp (FEA.FEA_INP): The input parameters for the FEA class.
 
         Returns:
-            FEA.Main.FEA_Main: An instance of the FEA_Main class with the given input parameters.
+            FEA.FEAController: An instance of the FEA_Main class with the given input parameters.
             
         """
         fe = FEA.from_inp(inp)
-
+        fe.solver = FEA.solver.StaticImplicitSolver()
+        ins_name = 'final_model'
+        ins = fe.assembly.get_instance(ins_name)
         # convert to the second order elements
-        str_now = 'element-0'
-        # fe = FEA.elements.convert_to_second_order(fe, [str_now])
-        ind_surf = 0
-        elems_name_list = []
-        surf_name_list = []
-        while True:
-            surf_name = 'surface_%d_All'%ind_surf
-            if not surf_name in fe.surface_sets.keys():
-                break
-            elems_surface, elems_other = FEA.elements.divide_surface_elements(fe=fe, name_element=str_now, name_surface=surf_name)
-
-            fe.delete_element(str_now)
-            fe.add_element(elems_other, name='element-0')
-            fe.add_element(elems_surface, name='element-surf-%d'%ind_surf)
-            elems_name_list.append('element-surf-%d'%ind_surf)
-            surf_name_list.append(surf_name)
-
-            ind_surf+=1
-
-        fe.merge_elements(element_name_list=elems_name_list, element_name_new='element-sensitivity')
-
-        # fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity'])
-
-        # element: FEA.elements.Element_3D = fe.elems['element-sensitivity']
-        # element.surf_order = torch.ones([element._elems.shape[0], 4], dtype=torch.int8, device='cpu')
-
-        # for surf_name in surf_name_list:
-        #     fe.elems['element-sensitivity'] = FEA.elements.set_surface_2order(fe=fe, name_elems='element-sensitivity', name_surface=surf_name)
-
-        # fe = FEA.elements.convert_to_second_order(fe, ['element-sensitivity', 'element-0'])
-
-        # assign the materials
-        if mu is not None and kappa is not None and density is not None:
-            for str_now in mu.keys():
-                materials_now = materials.NeoHookean(mu=torch.from_numpy(mu[str_now]).to(fe.nodes.device).to(fe.nodes.dtype),
-                                                        kappa=torch.from_numpy(kappa[str_now]).to(fe.nodes.device).to(fe.nodes.dtype),)
-
-                fe.elems[str_now].set_density(torch.from_numpy(density[str_now]).to(fe.nodes.device).to(fe.nodes.dtype))
-                fe.elems[str_now].set_materials(materials_now) 
+        # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
         
         # add loads
         i=0
         while True:
-            if 'surface_%d_All' % (i + 1) not in fe.surface_sets.keys():
+            if 'surface_%d_All' % (i + 1) not in ins.surfaces.keys():
                 break
-            fe.add_load(FEA.loads.Pressure(surface_set='surface_%d_All' % (i + 1), pressure=0.),
+            fe.assembly.add_load(FEA.loads.Pressure(instance_name=ins_name, surface_set='surface_%d_All' % (i + 1), pressure=0.),
                         name='Pressure_%d' % i)
             i += 1
         
         # add contact self
         i = 0
         while True:
-            if 'surface_%d_All' % (i) not in fe.surface_sets.keys():
+            if 'surface_%d_All' % (i) not in ins.surfaces.keys():
                 break
-            fe.add_load(FEA.loads.ContactSelf(surface_name='surface_%d_All' % (i)),
+            fe.assembly.add_load(FEA.loads.ContactSelf(instance_name=ins_name, surface_name='surface_%d_All' % (i)),
                         name='ContactSelf_%d' % i)
             i += 1
 
         # add boundary condition
-        bc_dof = np.where((abs(fe.nodes[:, 2] - 0)
-                                < 0.1).cpu().numpy())[0] * 3
-        bc_dof = np.concatenate([bc_dof, bc_dof + 1, bc_dof + 2])
-        fe.add_constraint(FEA.constraints.Boundary_Condition(indexDOF=bc_dof, dispValue=0.),
+        bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
+        fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
                         name='BC')        # add reference point and constraints
         
         
-        rp = FEA.ReferencePoint([0., 0., fe.nodes[:, 2].max()],)
-        rp_name = fe.add_reference_point(rp=rp)
-        indexNodes = np.where((abs(fe.nodes[:, 2] - rp.node[2])
-                                < 0.1).cpu().numpy())[0]
-        fe.add_constraint(FEA.constraints.Couple(indexNodes=indexNodes, rp_name=rp_name)
+        rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
+        rp_name = fe.assembly.add_reference_point(rp=rp)
+        indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
+        fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
         )
 
         
         return fe
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], mu: np.ndarray, kappa: np.ndarray, density: np.ndarray, U_dim: list[int]):
+    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], U_dim: list[int]):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
         import torch
         sys.path.append(os.getcwd())
         import FEA
-        import pypardiso
-        import scipy.sparse as sp
 
         current_process_name = mp.current_process().name
         try:
@@ -248,168 +164,21 @@ class Morph(BaseSolver):
         FE_inp = FEA.FEA_INP()
         FE_inp.Read_INP(path_result + '/Cache/' + '/TopOptRun.inp')
 
-        fe = current_class.init_FEA(FE_inp, mu=mu, kappa=kappa, density=density)
-
-        num_pressure = len(pressure_list)
-        num_surface = num_pressure + 1
+        fe = current_class.init_FEA(FE_inp)
 
         # change the load
         for j in range(len(pressure_list)):
-            fe.loads['Pressure_%d' % j].pressure = pressure_list[j]
+            fe.assembly._loads['Pressure_%d' % j].pressure = pressure_list[j]
 
         # solve displacement 0
-        fe.maximum_iteration = 100000
+        fe.solver.maximum_iteration = 100000
         result = fe.solve(tol_error=1e-3)
 
-        if not result:
-            raise RuntimeError(
-                "FEA solver failed to converge. Please check the input parameters."
-            )
+        # if not result:
+        #     raise RuntimeError(
+        #         "FEA solver failed to converge. Please check the input parameters."
+        #     )
 
-        GC0 = fe.GC.clone().detach()
-        RGC0 = fe._GC2RGC(GC0)
+        GC0 = fe.assembly.GC.clone().detach()
 
-        # region get the decomposed stiffness matrix
-        K_indices, K_values = fe._assemble_Stiffness_Matrix(
-            RGC=RGC0)[1:]
-
-        K_sp = sp.coo_matrix(
-            (K_values.cpu().numpy(),
-             (K_indices[0].cpu().numpy(), K_indices[1].cpu().numpy())),
-            shape=(fe.GC.shape[0], fe.GC.shape[0])).tocsr()
-        K_solver = pypardiso.PyPardisoSolver()
-        K_solver.factorize(K_sp)
-        # endregion
-
-        def calculate_Udp(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
-
-            # for Udp calculate the jacobian
-
-            def get_Rdp(dim_now: int):
-                def function_p0dot(p):
-                    p0 = fe.loads['Pressure_%d' % dim_now].pressure
-                    fe.loads['Pressure_%d' % dim_now].pressure = p
-                    result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[0]
-                    fe.loads['Pressure_%d' % dim_now].pressure = p0
-                    return result
-                _, Rdp = torch.autograd.functional.jvp(
-                    function_p0dot,
-                    torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
-                    torch.ones([1]))
-                return Rdp
-            
-
-            Rdp = torch.zeros([num_pressure, GC0.shape[0]])
-            for p in range(num_pressure):
-                Rdp[p] = get_Rdp(p)
-            Udp0 = -K_solver.solve(K_sp, Rdp.T.cpu().numpy())
-            Udp0 = torch.from_numpy(Udp0).to(Rdp.device).to(Rdp.dtype).T
-
-            return Udp0
-        
-        def calculate_ADJu(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor) -> torch.Tensor:
-            # for GCu define the adjoint problem
-            R = torch.zeros([len(U_dim), fe.RGC_list_indexStart[-1]])
-            for i in range(len(U_dim)):
-                R[i, U_dim[i]] = 1
-
-            # solve adjoint problem with displacement 0
-            R0 = fe.assemble_force(force=R, GC0=GC0)
-            ADJu = K_solver.solve(K_sp, -R0.T.cpu().numpy())
-            ADJu = torch.from_numpy(ADJu).to(R.device).to(R.dtype).T
-            
-            return ADJu
-        
-        def calculate_ADJudp(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, ADJu: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
-            #  for GCudp
-
-            Kdp_indices = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[1]
-
-            function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
-                2]
-
-            def get_Kdp(dim_now: int):
-
-                def function_p0dot(p):
-                    p0 = fe.loads['Pressure_%d' % dim_now].pressure
-                    fe.loads['Pressure_%d' % dim_now].pressure = p
-                    result = fe._assemble_Stiffness_Matrix(fe._GC2RGC(GC0))[2]
-                    fe.loads['Pressure_%d' % dim_now].pressure = p0
-                    return result
-
-                # \partial K / \partial u \cdot \partial u / \partial p
-                K0_values, Kdp1_values = torch.autograd.functional.jvp(
-                    function_udot, GC0, Udp0[dim_now])
-
-                # \partial K / \partial p
-                _, Kdp2_values = torch.autograd.functional.jvp(
-                    function_p0dot,
-                    torch.tensor([pressure_list[dim_now]], dtype=torch.float64),
-                    torch.ones([1]))
-
-                Kdp0_values = Kdp1_values + Kdp2_values
-                Kdp0 = torch.sparse_coo_tensor(Kdp_indices, Kdp0_values).coalesce()
-                return Kdp0
-
-            Kdp = []
-            for i in range(len(pressure_list)):
-                Kdp.append(get_Kdp(i))
-
-            # combine the results
-            adjForce = torch.zeros(
-                [len(U_dim),
-                len(pressure_list), fe.RGC_list_indexStart[-1]])
-            for i in range(len(U_dim)):
-                for j in range(len(pressure_list)):
-                    adjForce[i, j, fe.RGC_remain_index_flatten] = Kdp[j] @ ADJu[i]
-
-            # solve the second adjoint problem
-            for i in range(len(pressure_list)):
-                fe.loads['Pressure_%d' % i].pressure = pressure_list[i]
-            f = -adjForce.reshape([len(U_dim) * len(pressure_list), -1])
-
-            R0 = fe.assemble_force(force=f, GC0=GC0)
-            ADJudp = K_solver.solve(K_sp, R0.T.cpu().numpy())
-            ADJudp = torch.from_numpy(ADJudp).to(f.device).to(f.dtype).T
-            # GCw = fe.solve_linear_perturbation(GC0=GC0, R0=f)
-            ADJudp = ADJudp.reshape([len(U_dim), len(pressure_list), -1])  # u,p
-            return ADJudp
-
-        def calculate_ADJudf(fe: FEA.Main.FEA_Main, K_solver: pypardiso.PyPardisoSolver, GC0: torch.Tensor, ADJu: torch.Tensor, pressure_list: list[float]) -> torch.Tensor:
-            # for the GCudf
-
-            # calculate the KdF
-            function_udot = lambda u: fe._assemble_Stiffness_Matrix(fe._GC2RGC(u))[
-                2]
-
-            GCudf = torch.zeros([len(U_dim), len(U_dim), GC0.shape[0]])
-
-            for f_ind in range(len(U_dim)):
-                _, KdF1_values = torch.autograd.functional.jvp(
-                        function_udot, GC0, UdF[f_ind])
-                KdF1_indices = fe._assemble_Stiffness_Matrix(RGC0)[1]
-
-                KdF_values = KdF1_values
-                KdF_indices = KdF1_indices
-                KdF = torch.sparse_coo_tensor(KdF_indices, KdF_values).coalesce()
-                
-                for u_ind in range(len(U_dim)):
-                    # calculate the GCudf
-                    adjForceW = torch.zeros([fe.RGC_list_indexStart[-1]])
-                    adjForceW[fe.RGC_remain_index_flatten] = -KdF @ ADJu[u_ind]
-                    R0 = fe.assemble_force(force=adjForceW, GC0=GC0)
-                    GCudf_now = K_solver.solve(K_sp, R0.T.cpu().numpy())
-                    GCudf[u_ind, f_ind] = torch.from_numpy(GCudf_now).to(R0.device).to(R0.dtype).flatten()
-            return GCudf
-
-        ADJu = calculate_ADJu(fe=fe, K_solver=K_solver, GC0=GC0)
-
-
-        Udp0 = calculate_Udp(fe=fe, K_solver=K_solver, GC0=GC0, pressure_list=pressure_list)
-        UdF = -ADJu.clone()
-
-        ADJudp = calculate_ADJudp(fe=fe, K_solver=K_solver, GC0=GC0, ADJu=ADJu, pressure_list=pressure_list)
-
-        ADJudf = calculate_ADJudf(fe=fe, K_solver=K_solver, GC0=GC0, ADJu=ADJu, pressure_list=pressure_list)
-
-        return GC0.tolist(), Udp0.tolist(), UdF.tolist(), ADJu.tolist(), ADJudp.tolist(), ADJudf.tolist()
+        return GC0.tolist()

@@ -35,9 +35,10 @@ def restart_optimization(restart_path, target_iteration=None):
     GLOBAL.History.iteration = target_iteration
     GLOBAL.History.history_objective = GLOBAL.History.history_objective[:target_iteration]
     GLOBAL.History.history_time = GLOBAL.History.history_time[:target_iteration]
+    GLOBAL.History.history_deformation = GLOBAL.History.history_deformation[:target_iteration]
     
     sys.path.append(restart_path + '/scripts/Jobs/')
-    import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART
+    import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
     generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
@@ -54,5 +55,5 @@ def restart_optimization(restart_path, target_iteration=None):
     controller.opt_loop()
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/T20250903192104_FRONT/", 
+    restart_optimization(restart_path = "Z:/Results/T20250918160828_FRONT/", 
                          target_iteration = None)  

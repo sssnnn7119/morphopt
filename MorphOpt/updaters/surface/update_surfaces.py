@@ -3,18 +3,13 @@ from scipy import interpolate
 import torch
 from torch.nn.init import normal_
 from ...GLOBAL import PATH, History
-import FEA
 from .. import optimizer
 from . import objectivefuncs
 from ...modelparams.params import Params
 from ...modelparams import Surfaces, Loads, Materials
 from tabulate import tabulate
-from ...solvers import Morph
-from ..second_derivative_element import SensitivityElement
 from ..base_updater import BaseUpdater
-from ...solvers.FE_result import FE_result
 from MorphOpt import GLOBAL
-from ..adjoints import Adjoints
 
 class UpdaterSurfaces(BaseUpdater):
     """
@@ -127,7 +122,7 @@ class UpdaterSurfaces(BaseUpdater):
         else:
             return sum(obj_value)
 
-    def update(self, fe_result: FE_result, adjoint: Adjoints) -> torch.Tensor:
+    def update(self) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """

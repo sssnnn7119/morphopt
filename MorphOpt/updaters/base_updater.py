@@ -6,7 +6,6 @@ from ..GLOBAL import History
 from ..modelparams.base_params import BaseParams
 from ..modelparams.params import Params
 from . import optimizer
-from ..solvers.FE_result import FE_result
 
 
 class BaseUpdater:
@@ -58,7 +57,7 @@ class BaseUpdater:
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
-    def _get_sensitivity(self, fe_result: FE_result, obj_fun: callable) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    def _get_sensitivity(self) -> tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Get the sensitivity of the elements based on the provided objective function.
         
