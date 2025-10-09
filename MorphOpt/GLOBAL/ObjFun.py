@@ -49,10 +49,6 @@ class ObjectiveFunction:
         Get the value of the objective function.
 
         Args:
-            U (torch.Tensor): The displacement field.
-            Udp (torch.Tensor): The partial derivatives of the displacement field.
-            UdF (torch.Tensor): The compliance matrix.
-            pressure_list (torch.Tensor): The pressure.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
 
@@ -68,8 +64,8 @@ class ObjectiveFunction:
         """
         del self.fe
         self.fe = fe
-        self.pressure_list = pressure_list
-        self.U = U
+        self.pressure_list = pressure_list.cpu()
+        self.U = U.cpu()
 
     @property
     def num_tasks(self) -> int:
@@ -90,17 +86,26 @@ class ObjectiveFunction:
         """
 
         def closure_JdU(U: torch.Tensor) -> torch.Tensor:
+            U0 = self.U
             self.U = U
             obj = self.get_objective()
+            self.U = U0
             return obj
+        
+        ADJFu_now: torch.Tensor = -torch.autograd.functional.jacobian(closure_JdU, self.U.detach().clone())
 
         ADJu = []
         K_sp_list = []
         K_solver_list = []
         for i in range(self.num_tasks):
+
+            # set the loads
+            for p_ind in range(self.pressure_list.shape[1]):
+                pressure_value = self.pressure_list[i,p_ind].to(self.fe.assembly.device)
+                self.fe.assembly._loads['Pressure_%d' % p_ind].pressure = pressure_value
             
             # region get the decomposed stiffness matrix
-            K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.fe.assembly.GC)[1:]
+            K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[i].to(self.fe.assembly.device))[1:]
             K_values = K_values.cpu().numpy()
             K_indices = K_indices.cpu().numpy()
             K_sp = sp.coo_matrix(
@@ -116,12 +121,12 @@ class ObjectiveFunction:
             # endregion
 
             # region calculate the adjoint variable
-            ADJFu_now: torch.Tensor = -torch.autograd.functional.jacobian(closure_JdU, self.U)
-            ADJu_now = torch.from_numpy(K_solver.solve(K_sp, ADJFu_now[i].cpu().numpy())).to(self.U.device).to(self.U.dtype)
+            
+            ADJu_now = torch.from_numpy(K_solver.solve(K_sp, ADJFu_now[i].cpu().numpy())).cpu()
             ADJu.append(ADJu_now)
             # endregion
 
-        self.ADJu = torch.stack(ADJu, dim=0)
+        self.ADJu = torch.stack(ADJu, dim=0).cpu()
         self.K_sp = K_sp_list
         self.K_solver = K_solver_list
 

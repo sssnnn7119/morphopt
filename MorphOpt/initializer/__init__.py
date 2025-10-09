@@ -22,8 +22,8 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
     if result_path is None:
         result_path = os.getcwd() + '/Results/'
     
-    GLOBAL.PATH.path_Result = result_path + '/T' + datetime.datetime.now().strftime(
-        "%Y%m%d%H%M%S") + '_' + opt_label + '/'
+    GLOBAL.PATH.path_Result = result_path + '/' + opt_label + '_' + 'T' + datetime.datetime.now().strftime(
+        "%Y%m%d%H%M%S") + '/'
         
     # create the result path if it does not exist
     os.makedirs(GLOBAL.PATH.path_Result + '/Cache/')
@@ -38,7 +38,12 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
     # copy the scripts to the result path
     def ignore_folder(dir, contents):
         """忽略指定的文件夹"""
-        return [item for item in contents if item == ".conda"]  # 替换为你要排除的文件夹名
+        ignore_list = ['.conda', '.git']
+        result = []
+        for item in contents:
+            if item in ignore_list:
+                result.append(item)
+        return result
 
     shutil.copytree(os.getcwd(), GLOBAL.PATH.path_Result + '/scripts/', ignore=ignore_folder)
 

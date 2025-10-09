@@ -32,7 +32,7 @@ class BaseSolver:
 
     @staticmethod
     def _solve_FEA(current_class: 'BaseSolver', path_result,
-                   pressure_list: list[float], U_dim: list[int]):
+                   pressure_list: list[float], task_index: int):
         """
         Solve the FEA problem.
         """

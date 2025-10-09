@@ -47,6 +47,7 @@ class ShapeDerivativeDirect(BaseObj):
         grad_pos = torch.zeros_like(ins.nodes)
 
         def closure_work(nodes_diff: torch.Tensor):
+            nodes0 = part.nodes
             part.nodes = nodes_diff
             fe.initialize()
 
@@ -65,9 +66,10 @@ class ShapeDerivativeDirect(BaseObj):
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)
                 work = work + (R*ADJu).sum()
-
+            part.nodes = nodes0
+            fe.initialize()
             return work
-        grad_pos += torch.autograd.functional.jacobian(closure_work, part.nodes)
+        grad_pos += torch.autograd.functional.jacobian(closure_work, part.nodes.detach().clone())
 
         i=0
 

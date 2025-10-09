@@ -16,7 +16,7 @@ class Morph(BaseSolver):
     """
 
     
-    def __init__(self, params: Params, U_dim: list[int] = [-6, -5, -4, -3, -2, -1], num_process: int = 4):
+    def __init__(self, params: Params, num_process: int = 4):
         """
         Initialize the Solver class with a list of pressure values.
 
@@ -39,11 +39,6 @@ class Morph(BaseSolver):
         int: The number of processes to use for parallel computation.
         """
         
-        self.U_dim: list[int] = U_dim
-        """
-        list[int]: The dimensions of the interest for the optimization problem.
-        """
-        
     def solve(self):
         """
         Solve the optimization problem using the specified solver.
@@ -60,7 +55,7 @@ class Morph(BaseSolver):
         pressure_list = self.params.loads.pressure.get_pressure().tolist()
                 
         FE_inp = FEA.FEA_INP()
-        FE_inp.Read_INP(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
+        FE_inp.read_inp(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
 
         fe = self.init_FEA(FE_inp)
         fe.initialize()
@@ -73,14 +68,14 @@ class Morph(BaseSolver):
         for i in range(len(pressure_list)):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, pressure_list[i], self.U_dim,)))
+                                args=(PATH.path_Result, pressure_list[i], i,)))
         pools.close()
         pools.join()
 
         # get the result
-        U0 = torch.tensor([i.get() for i in result])
+        U0 = torch.tensor([i.get() for i in result], device='cpu')
 
-        GLOBAL.obj_fun.set_results(fe=fe, pressure_list=torch.tensor(pressure_list), U=U0)
+        GLOBAL.obj_fun.set_results(fe=fe, pressure_list=torch.tensor(pressure_list, device='cpu'), U=U0)
         GLOBAL.obj_fun.calculate_adjoint_problem()
     
     @staticmethod
@@ -136,7 +131,7 @@ class Morph(BaseSolver):
         return fe
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], U_dim: list[int]):
+    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], task_index: int):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -162,7 +157,7 @@ class Morph(BaseSolver):
         torch.cuda.empty_cache()
         # construct the FEA
         FE_inp = FEA.FEA_INP()
-        FE_inp.Read_INP(path_result + '/Cache/' + '/TopOptRun.inp')
+        FE_inp.read_inp(path_result + '/Cache/' + '/TopOptRun.inp')
 
         fe = current_class.init_FEA(FE_inp)
 
@@ -171,14 +166,14 @@ class Morph(BaseSolver):
             fe.assembly._loads['Pressure_%d' % j].pressure = pressure_list[j]
 
         # solve displacement 0
-        fe.solver.maximum_iteration = 100000
-        result = fe.solve(tol_error=1e-3)
+        fe.solver.maximum_iteration = 200
+        result = fe.solve(tol_error=1e-4)
 
-        # if not result:
-        #     raise RuntimeError(
-        #         "FEA solver failed to converge. Please check the input parameters."
-        #     )
+        if type(result) == bool:
+            raise RuntimeError(
+                "FEA solver failed to converge. Please check the input parameters."
+            )
 
-        GC0 = fe.assembly.GC.clone().detach()
+        GC0 = fe.solver.GC.clone().detach()
 
         return GC0.tolist()

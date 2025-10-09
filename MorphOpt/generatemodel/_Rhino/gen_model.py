@@ -113,7 +113,7 @@ def Task():
 
     workdir = os.path.dirname(os.path.abspath(__file__))
     
-    f = open(workdir + "\\check.txt", 'w')
+    f = open(workdir + "/check.txt", 'w')
     f.write('0')
     f.close()
     
@@ -121,7 +121,7 @@ def Task():
         time.sleep(0.1)
 
         try:
-            f = open(workdir + "\\check.txt", 'r')
+            f = open(workdir + "/check.txt", 'r')
             check = f.readline()
             f.close()
             if check == '-1':
@@ -130,7 +130,7 @@ def Task():
             continue
 
 
-        Queue = os.listdir(workdir + "\\TaskQueue")
+        Queue = os.listdir(workdir + "/TaskQueue")
 
         # information data:
         # 1. procession type (1:nurbs, 2:stl)
@@ -139,17 +139,22 @@ def Task():
 
 
         if len(Queue)>0:
-            f = open(workdir + "\\TaskQueue\\" + Queue[0], 'r')
-            surf_type = int(f.readline().split()[0])
-            path_data = f.readline().split()[0]
-            path_output = f.readline().split()[0]
+            f = open(workdir + "/TaskQueue/" + Queue[0], 'r')
+            data = f.readlines()
             f.close()
-
-            a = Import_Data(path_data, surf_type)
-            a = Surface_Process(a, surf_type)
-            Export_Data(a, path_output)
-
-            os.remove(workdir + "\\TaskQueue\\" + Queue[0])
+            try:
+                surf_type = int(data[0].rstrip())
+                path_data = data[1].rstrip()
+                path_output = data[2].rstrip()
+                f.close()
+    
+                a = Import_Data(path_data, surf_type)
+                a = Surface_Process(a, surf_type)
+                Export_Data(a, path_output)
+    
+                os.remove(workdir + "/TaskQueue/" + Queue[0])
+            except:
+                continue
 
     
 if __name__ == '__main__':

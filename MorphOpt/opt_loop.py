@@ -105,7 +105,7 @@ class Controller:
                 #     self.params.initialize(iteration = 0)
 
             GLOBAL.History.history_deformation.append([GLOBAL.obj_fun.U[i][-6:].tolist() for i in range(len(GLOBAL.obj_fun.U))])
-            GLOBAL.History.history_objective.append(loss)
+            GLOBAL.History.history_objective.append(loss.item())
             GLOBAL.History.history_time.append([t1-t0, t2-t1, t3-t2])
             self.generator.seed_size = seed_size0
             
