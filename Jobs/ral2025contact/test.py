@@ -17,7 +17,7 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         
     """
     inp_cylinder = FEA.FEA_INP()
-    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/cylinder.inp")
+    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/ellipsebian.inp")
     fe_cylinder = FEA.from_inp(inp_cylinder)
     part_cylinder = fe_cylinder.assembly.get_part('cylinder')
 
@@ -31,7 +31,7 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
     ins_cylinder = fe.assembly.get_instance('cylinder')
     # convert to the second order elements
     # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-    ins_cylinder._translation = torch.tensor([0,0,0.])
+    ins_cylinder._translation = torch.tensor([0,0,-10.])
     
     # add contact between cylinder and model
     fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2='cylinder', 
@@ -89,12 +89,12 @@ except:
 
 
 
-torch.set_default_device(torch.device('cuda:0'))
+torch.set_default_device(torch.device('cuda'))
 torch.set_default_dtype(torch.float64)
 torch.cuda.empty_cache()
 # construct the FEA
 FE_inp = FEA.FEA_INP()
-FE_inp.read_inp('Z:/Results/GRASP_T20250930085457/Log/Deformation/Data/TopOptRun_296.inp')
+FE_inp.read_inp('Z:/Results/GRASP_T20251014224621/Cache/TopOptRun.inp')
 
 fe = init_FEA(FE_inp)
 

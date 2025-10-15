@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from ..modelparams import Surfaces
 
-class Genetrator:
+class Generator:
     """
     This class is responsible for generating the geometric model of the soft robot.
     It uses Rhino for 3D modeling and Abaqus for finite element analysis (FEA).

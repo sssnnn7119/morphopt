@@ -21,6 +21,15 @@ class History:
         The history of the deformation values.
         """
 
+        self.history_num_elements: list[int] = []
+        """
+        The history of the number of elements.
+        """
+        self.history_num_nodes: list[int] = []
+        """
+        The history of the number of nodes.
+        """
+        
         self.iteration: int = 0
         """
         The current iteration number.
@@ -64,6 +73,10 @@ class History:
                 time_dim = len(self.history_time[0]) if self.history_time[0] else 0
                 for i in range(time_dim):
                     headers.append(f'T{i}')
+
+            # Add number of elements and nodes column headers
+            headers.append('num_elements')
+            headers.append('num_nodes')
             
             # Add deformation history column headers
             if self.history_deformation:
@@ -100,6 +113,17 @@ class History:
                     # Fill empty values to maintain column consistency
                     time_dim = len(self.history_time[0]) if self.history_time and self.history_time[0] else 0
                     row.extend([''] * time_dim)
+
+                # Number of elements and nodes
+                if i < len(self.history_num_elements):
+                    row.append(self.history_num_elements[i])
+                else:
+                    row.append('')
+
+                if i < len(self.history_num_nodes):
+                    row.append(self.history_num_nodes[i])
+                else:
+                    row.append('')
                 
                 # Deformation history (flattened matrix)
                 if i < len(self.history_deformation) and self.history_deformation[i] is not None:
@@ -142,7 +166,16 @@ class History:
             time_indices = [i for i, h in enumerate(headers) if h.startswith('T')]
             time_start_idx = min(time_indices) if time_indices else None
             time_end_idx = max(time_indices) + 1 if time_indices else None
-            
+
+            # Find element and node columns
+            element_indices = [i for i, h in enumerate(headers) if h.startswith('E')]
+            element_start_idx = min(element_indices) if element_indices else None
+            element_end_idx = max(element_indices) + 1 if element_indices else None
+
+            node_indices = [i for i, h in enumerate(headers) if h.startswith('N')]
+            node_start_idx = min(node_indices) if node_indices else None
+            node_end_idx = max(node_indices) + 1 if node_indices else None
+
             # Find deformation columns (start with U but not UdF)
             deform_indices = [i for i, h in enumerate(headers) if h.startswith('U') and not h.startswith('UdF')]
             deform_start_idx = min(deform_indices) if deform_indices else None
@@ -187,6 +220,17 @@ class History:
                         else:
                             time_data.append(0.0)
                     self.history_time.append(time_data)
+
+                if element_start_idx is not None and element_end_idx is not None:
+                    if element_start_idx < len(row) and row[element_start_idx] and row[element_start_idx] != '':
+                        self.history_num_elements.append(int(float(row[element_start_idx])))
+                    else:
+                        self.history_num_elements.append(0)
+                if node_start_idx is not None and node_end_idx is not None:
+                    if node_start_idx < len(row) and row[node_start_idx] and row[node_start_idx] != '':
+                        self.history_num_nodes.append(int(float(row[node_start_idx])))
+                    else:
+                        self.history_num_nodes.append(0)
                 
                 # Deformation history
                 if deform_start_idx is not None and deform_end_idx is not None:

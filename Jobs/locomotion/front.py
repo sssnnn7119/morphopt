@@ -282,7 +282,7 @@ class Params(_Params):
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
 
-class Generator(generatemodel.Genetrator):
+class Generator(generatemodel.Generator):
     def __init__(self, surfaces: Surfaces, path_output: str = None, path_queue: str = None) -> None:
         """
         Initialize the Genetrator class.

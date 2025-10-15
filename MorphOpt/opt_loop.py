@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from . import GLOBAL
 from . import initializer
-from .generatemodel import Genetrator
+from .generatemodel import Generator
 from . import solvers
 from . import updaters
 from .modelparams import Params
@@ -13,7 +13,7 @@ import gc
 
 class Controller:
 
-    def __init__(self, params: Params, generator: Genetrator, solver: solvers.BaseSolver,
+    def __init__(self, params: Params, generator: Generator, solver: solvers.BaseSolver,
                 updater: updaters.Updaters) -> None:
         """
         Initialize the Controller class.
@@ -107,6 +107,8 @@ class Controller:
             GLOBAL.History.history_deformation.append([GLOBAL.obj_fun.U[i][-6:].tolist() for i in range(len(GLOBAL.obj_fun.U))])
             GLOBAL.History.history_objective.append(loss.item())
             GLOBAL.History.history_time.append([t1-t0, t2-t1, t3-t2])
+            GLOBAL.History.history_num_elements.append(GLOBAL.obj_fun.fe.assembly.get_instance('final_model').elems['element-0']._elems.shape[0])
+            GLOBAL.History.history_num_nodes.append(GLOBAL.obj_fun.fe.assembly.get_instance('final_model').nodes.shape[0])
             self.generator.seed_size = seed_size0
             
             # Print the information

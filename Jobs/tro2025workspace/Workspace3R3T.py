@@ -366,7 +366,7 @@ class Params(_Params):
                          materials=self.MaterialParams())
 
 
-class Generator(generatemodel.Genetrator):
+class Generator(generatemodel.Generator):
 
     def __init__(self,
                  surfaces: Surfaces,
