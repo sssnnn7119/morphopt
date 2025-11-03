@@ -1,2 +1,2 @@
-from .morph import Morph
+from .morph import MorphSolver
 from .base_solver import BaseSolver

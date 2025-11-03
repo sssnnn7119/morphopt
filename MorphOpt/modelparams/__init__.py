@@ -1,4 +1,4 @@
-from .surfaces.Surfaces import Surfaces
-from .loads.Loads import Loads
-from .materials.Materials import Materials
+from .surfaces.surfaceparams import SurfacesParams
+from .loads.loadparams import LoadsParams, LoadStep
+from .materials.materialparams import Materials
 from .params import Params

@@ -4,13 +4,13 @@ import torch
 import FEA
 import multiprocessing as mp
 
-from ..modelparams import Params
+from ..modelparams import Params, LoadStep
 from ..GLOBAL import PATH
 from .base_solver import BaseSolver
 
 from MorphOpt import GLOBAL
 
-class Morph(BaseSolver):
+class MorphSolver(BaseSolver):
     """
     This class is responsible for solving the FEA and get the displacement of the soft robot.
     """
@@ -52,8 +52,7 @@ class Morph(BaseSolver):
                 - GCw (list[torch.Tensor]): The second adjoint displacement field.
         """
 
-        pressure_list = self.params.loads.pressure.get_pressure().tolist()
-                
+
         FE_inp = FEA.FEA_INP()
         FE_inp.read_inp(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
 
@@ -65,17 +64,17 @@ class Morph(BaseSolver):
         # self._solve_FEA(PATH.path_Result, pressure_list[0], self.U_dim,)
         pools = mp.Pool(processes=self.num_process)
         result = []
-        for i in range(len(pressure_list)):
+        for i in range(self.params.loads.num_load_steps):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, pressure_list[i], i,)))
+                                args=(PATH.path_Result, self.params.loads.load_steps[i], i,)))
         pools.close()
         pools.join()
 
         # get the result
         U0 = torch.tensor([i.get() for i in result], device='cpu')
 
-        GLOBAL.obj_fun.set_results(fe=fe, pressure_list=torch.tensor(pressure_list, device='cpu'), U=U0)
+        GLOBAL.obj_fun.set_results(fe=fe, U=U0)
         GLOBAL.obj_fun.calculate_adjoint_problem()
     
     @staticmethod
@@ -96,24 +95,6 @@ class Morph(BaseSolver):
         ins = fe.assembly.get_instance(ins_name)
         # convert to the second order elements
         # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-        
-        # add loads
-        i=0
-        while True:
-            if 'surface_%d_All' % (i + 1) not in ins.surfaces.keys():
-                break
-            fe.assembly.add_load(FEA.loads.Pressure(instance_name=ins_name, surface_set='surface_%d_All' % (i + 1), pressure=0.),
-                        name='Pressure_%d' % i)
-            i += 1
-        
-        # add contact self
-        i = 0
-        while True:
-            if 'surface_%d_All' % (i) not in ins.surfaces.keys():
-                break
-            fe.assembly.add_load(FEA.loads.ContactSelf(instance_name=ins_name, surface_name='surface_%d_All' % (i)),
-                        name='ContactSelf_%d' % i)
-            i += 1
 
         # add boundary condition
         bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
@@ -126,12 +107,11 @@ class Morph(BaseSolver):
         indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
         fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
         )
-
         
         return fe
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, pressure_list: list[float], task_index: int):
+    def _solve_FEA(current_class, path_result: str, loadstep: LoadStep, step_index: int):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -161,9 +141,11 @@ class Morph(BaseSolver):
 
         fe = current_class.init_FEA(FE_inp)
 
-        # change the load
-        for j in range(len(pressure_list)):
-            fe.assembly._loads['Pressure_%d' % j].pressure = pressure_list[j]
+        # Reset and set loads for this step
+        fe.assembly.delete_all_loads()
+
+        # Add step-defined loads (pressure, external contacts, etc.)
+        fe.assembly.add_loads(loads_dict=loadstep.get_loads())
 
         # solve displacement 0
         fe.solver.maximum_iteration = 200

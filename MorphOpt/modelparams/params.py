@@ -1,12 +1,12 @@
 
-from .loads.Loads import Loads
-from .surfaces.Surfaces import Surfaces
-from .materials.Materials import Materials
+from .loads.loadparams import LoadsParams
+from .surfaces.surfaceparams import SurfacesParams
+from .materials.materialparams import Materials
 class Params:
     """
     Class to handle the parameters of the model.
     """
-    def __init__(self, surfaces: Surfaces, loads: Loads, materials: Materials) -> None:
+    def __init__(self, surfaces: SurfacesParams, loads: LoadsParams, materials: Materials) -> None:
         """
         Initialize the Params class.
         """

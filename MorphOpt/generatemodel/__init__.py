@@ -9,7 +9,7 @@ import shutil
 import time
 import numpy as np
 import torch
-from ..modelparams import Surfaces
+from ..modelparams import SurfacesParams
 
 class Generator:
     """
@@ -17,7 +17,7 @@ class Generator:
     It uses Rhino for 3D modeling and Abaqus for finite element analysis (FEA).
     """
     
-    def __init__(self, seed_size: float, surfaces: Surfaces, path_output: str, path_queue: str, ) -> None:
+    def __init__(self, seed_size: float, surfaces: SurfacesParams, path_output: str, path_queue: str, ) -> None:
         """
         Initialize the Genetrator class.
         
@@ -55,7 +55,7 @@ class Generator:
         """
         pass
     
-    def export_data(self, surfaces: Surfaces, path_output: str, path_queue: str) -> list[str]:
+    def export_data(self, surfaces: SurfacesParams, path_output: str, path_queue: str) -> list[str]:
         """
         This function export the data of each surfaces
         """
@@ -106,7 +106,7 @@ class Generator:
                 time.sleep(0.1)
 
     @staticmethod
-    def _call_Abaqus(surfaces: Surfaces, path_output: str, material_para: list[float], seed_size: float) -> None:
+    def _call_Abaqus(surfaces: SurfacesParams, path_output: str, material_para: list[float], seed_size: float) -> None:
         
         current_path = os.getcwd()
 

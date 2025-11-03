@@ -1,2 +1,3 @@
-from .BaseInterface import BaseInterface
-from .Pressures import Pressures
+from .baseloadinterface import BaseLoadInterface
+from .pressureinterface import PressureInterface
+from .contactinterface import ContactInterface, ContactSelfInterface

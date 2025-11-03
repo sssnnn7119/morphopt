@@ -4,9 +4,9 @@ import torch
 from torch.nn.init import normal_
 from ...GLOBAL import PATH, History
 from .. import optimizer
-from . import objectivefuncs
+
 from ...modelparams.params import Params
-from ...modelparams import Surfaces, Loads, Materials
+from ...modelparams import SurfacesParams, LoadsParams, Materials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
 from MorphOpt import GLOBAL
@@ -16,6 +16,7 @@ class UpdaterSurfaces(BaseUpdater):
     The Updater class is responsible for updating the parameters of the optimization process.
     It contains methods to update the parameters based on the optimization algorithm used.
     """
+    from . import objectivefuncs
 
     def __init__(self, params: Params, max_step_iter: int) -> None:
         """
@@ -34,7 +35,7 @@ class UpdaterSurfaces(BaseUpdater):
         The maximum number of iterations for the sub-optimization process.
         """
 
-        self.obj_funcs: dict[str, objectivefuncs.BaseObj] = {}
+        self.obj_funcs: dict[str, UpdaterSurfaces.objectivefuncs.BaseObj] = {}
         """
         A list of penalty functions to be optimized. \n
         L = \sum_{i=1}^{n} w_i * f_i(x)
@@ -45,7 +46,7 @@ class UpdaterSurfaces(BaseUpdater):
         The weights for the points in the optimization process.
         """
 
-        self.params_update: Surfaces = params.surfaces
+        self.params_update: SurfacesParams = params.surfaces
         """
         The surfaces object that contains the design variables.
         """

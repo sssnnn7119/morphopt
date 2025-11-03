@@ -7,38 +7,31 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
-from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import _Controller
-from MorphOpt.modelparams import Surfaces, Loads, Materials
-from MorphOpt import initializer
-from MorphOpt import solvers
-from MorphOpt.updaters.surface import update_surfaces
-from MorphOpt.updaters.updaters import Updaters
-from MorphOpt import generatemodel
-from MorphOpt.modelparams import Params as _Params
+from MorphOpt import *
+
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
-    def get_objective(self, U, Udp, UdF, *args, **kwargs):
-        loss1 = -U[0, -2]
+    def get_objective(self):
+        loss1 = -self.U[0][-2]
         return loss1
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(Surfaces):
+    class SurfaceParams(_SurfacesParams):
 
         def __init__(self):
 
             super().__init__(max_step_length=[0.4, 0.4])
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(r0=8.,
+                self.BSP.initialize_cylinder(r0=8.,
                                                         length=80.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
                                                         flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=4.,
+                self.BSP.initialize_cylinder(r0=4.,
                                                     length=74.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
@@ -49,16 +42,20 @@ class Params(_Params):
             self.if_update = [True, True]
 
 
-    class LoadParams(Loads):
-        class _Pressure(Loads.Pressures):
-            def __init__(self):
-                super().__init__()
-                self.pressure = torch.Tensor([[0.06]])
-        
+    class LoadParams(_LoadsParams):
+        class LoadStep(_LoadStep):
+            pass
+
         def __init__(self):
-            self.pressure = self._Pressure()
+            super().__init__()
+
+            load_step0 = self.LoadStep()
+            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.06))
+            self.load_steps.append(load_step0)
+
+
             
-    class MaterialParams(Materials):
+    class MaterialParams(_Materials):
         
         def __init__(self):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
@@ -66,8 +63,8 @@ class Params(_Params):
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
 
-class Generator(generatemodel.Generator):
-    def __init__(self, surfaces: Surfaces, path_output: str = None, path_queue: str = None) -> None:
+class Generator(_Generator):
+    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
         """
         Initialize the Genetrator class.
         
@@ -78,7 +75,7 @@ class Generator(generatemodel.Generator):
         """
         super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
-class Solver(solvers.Morph):
+class Solver(_MorphSolver):
     """
     Solver class for MorphOpt.
     This class is responsible for solving the finite element analysis (FEA) problem.
@@ -89,7 +86,7 @@ class Solver(solvers.Morph):
         super().__init__(params=params,
                          num_process=1)
 
-class Updater(Updaters):
+class Updater(_Updaters):
     """
     Updater class for MorphOpt.
     This class is responsible for updating the design variables based on the results of the optimization process.
@@ -99,7 +96,7 @@ class Updater(Updaters):
         super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
 
-    class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
+    class UpdaterSurfaces(_UpdaterSurfaces):
         """
         Updater class for MorphOpt.
         This class is responsible for updating the design variables based on the results of the optimization process.
@@ -111,17 +108,26 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativeContinuation()
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect(reset_per_iter=5)
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Distance(min_distance=
+                self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
-    
+                self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
+class Controller(_Controller):
+    def save(self):
+        super().save()
+        import shutil
+        try:
+            shutil.copyfile(GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp',
+                            GLOBAL.PATH.path_Result + '/Log/Deformation/Data/TopOptRun_%d.inp' % (GLOBAL.History.iteration-1))
+        except:
+            pass
+
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
@@ -142,5 +148,5 @@ if __name__ == '__main__':
 
     updater = Updater(params=params)
 
-    controller = _Controller(params=params, generator=generator, solver=solvers, updater=updater)
+    controller = Controller(params=params, generator=generator, solver=solvers, updater=updater)
     controller.opt_loop()

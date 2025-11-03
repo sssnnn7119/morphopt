@@ -1,13 +1,15 @@
 
 
 import torch
+from FEA.assemble.loads.base import BaseLoad
 
-
-class BaseInterface:
+class BaseLoadInterface:
     """
     Base class for load interfaces.
     This class is not meant to be instantiated directly.
     It provides a common interface for all load interfaces.
+
+    all data cannot be cuda tensors
     """
 
     def __init__(self):
@@ -22,6 +24,15 @@ class BaseInterface:
 
         Returns:
             int: The number of load variables.
+        """
+        raise NotImplementedError("This method should be implemented in subclasses.")
+    
+    def get_fea_load(self) -> BaseLoad:
+        """
+        Get the load object for FEA.
+
+        Returns:
+            BaseLoad: The load object for FEA.
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
 

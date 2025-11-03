@@ -1,3 +1,4 @@
+from json import load
 import os
 import sys
 
@@ -10,15 +11,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
-from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import Controller as _Controller
-from MorphOpt.modelparams import Surfaces, Loads, Materials
-from MorphOpt import initializer
-from MorphOpt import solvers
-from MorphOpt.updaters.surface import update_surfaces
-from MorphOpt.updaters.updaters import Updaters
-from MorphOpt import generatemodel
-from MorphOpt.modelparams import Params as _Params
+from MorphOpt import *
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, *args, **kwargs):
@@ -29,7 +22,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(Surfaces):
+    class SurfaceParams(_SurfacesParams):
 
         def __rotate120_240(self, r0):
             r0_120 = torch.zeros_like(r0)
@@ -53,7 +46,7 @@ class Params(_Params):
             super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4)
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(r0=21.,
+                self.BSP.initialize_cylinder(r0=21.,
                                                  length=70.,
                                                  seed_size=1.0,
                                                  flip=False,
@@ -61,7 +54,7 @@ class Params(_Params):
                                                  maxC=0.6,
                                                  maxFF=0.2, perturbation_L=14))
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(seed_size=1.0,
+                self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
                                                  r0=6.,
                                                  length=64.,
@@ -70,7 +63,7 @@ class Params(_Params):
                                                  init_location=[12, 0, 3], perturbation_L=14))
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(seed_size=1.0,
+                self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
                                                  r0=6.,
                                                  length=64.,
@@ -79,7 +72,7 @@ class Params(_Params):
                                                  init_location=[-6, 10.5, 3], perturbation_L=14))
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(seed_size=1.0,
+                self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
                                                  r0=6.,
                                                  length=64.,
@@ -88,7 +81,7 @@ class Params(_Params):
                                                  init_location=[-6, -10.5, 3], perturbation_L=14))
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(seed_size=1.0,
+                self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
                                                  r0=3.,
                                                  length=64.,
@@ -264,26 +257,50 @@ class Params(_Params):
             weight = [w0, w1, w1, w1, w4]
             return weight
           
-    class LoadParams(Loads):
-        class _Pressure(Loads.Pressures):
-            def __init__(self):
-                super().__init__()
-                self.pressure = torch.Tensor([[0.00, 0.06, 0.06, 0.00],
-                                              [0.06, 0.06, 0.06, 0.00]])
+    class LoadParams(_LoadsParams):
+        class LoadStep(_LoadStep):
+            pass
         
         def __init__(self):
-            self.pressure = self._Pressure()
+            super().__init__()
+
+            contact_set = [self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'),
+                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'),
+                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'),
+                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'),
+                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_4_All')]
+
+            load_step0 = self.LoadStep()
+            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=-0.06))
+            load_step0.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=0.12))
+            load_step0.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=0.12))
+            load_step0.load_set.extend(contact_set)
+            self.load_steps.append(load_step0)
+
+            load_step1 = self.LoadStep()
+            load_step1.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.12))
+            load_step1.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=0.12))
+            load_step1.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=0.12))
+            load_step1.load_set.extend(contact_set)
+            self.load_steps.append(load_step1)
+
+            load_step2 = self.LoadStep()
+            load_step2.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=-0.06))
+            load_step2.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=-0.06))
+            load_step2.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=-0.06))
+            load_step2.load_set.extend(contact_set)
+            self.load_steps.append(load_step2)
             
-    class MaterialParams(Materials):
+    class MaterialParams(_Materials):
         
         def __init__(self):
-            super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
+            super().__init__(mu=0.7, kappa=7.0, density=1.08e-9,)
     
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
 
-class Generator(generatemodel.Generator):
-    def __init__(self, surfaces: Surfaces, path_output: str = None, path_queue: str = None) -> None:
+class Generator(_Generator):
+    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
         """
         Initialize the Genetrator class.
         
@@ -294,19 +311,18 @@ class Generator(generatemodel.Generator):
         """
         super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
-class Solver(solvers.Morph):
+class Solver(_MorphSolver):
     """
     Solver class for MorphOpt.
     This class is responsible for solving the finite element analysis (FEA) problem.
     """
 
     def __init__(self, params: Params):
-
         super().__init__(params=params,
                          num_process=2)
    
     
-class Updater(Updaters):
+class Updater(_Updaters):
     """
     Updater class for MorphOpt.
     This class is responsible for updating the design variables based on the results of the optimization process.
@@ -316,7 +332,7 @@ class Updater(Updaters):
         super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
 
-    class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
+    class UpdaterSurfaces(_UpdaterSurfaces):
         """
         Updater class for MorphOpt.
         This class is responsible for updating the design variables based on the results of the optimization process.
@@ -328,21 +344,21 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativeDirect()
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Distance(min_distance=
+                self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5, 2.5],
                                                              [2.5, 2.5, 2.5, 2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=22.5, height=70., bottom=0.))
+                self.objectivefuncs.boundarys.Cylinder(radius=22.5, height=70., bottom=0.))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.MinRadius(radius=2.9))
+                self.objectivefuncs.boundarys.MinRadius(radius=2.9))
 
 
 class Controller(_Controller):

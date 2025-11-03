@@ -10,15 +10,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
-from MorphOpt import GLOBAL
-from MorphOpt.opt_loop import Controller as _Controller
-from MorphOpt.modelparams import Surfaces, Loads, Materials
-from MorphOpt import initializer
-from MorphOpt import solvers
-from MorphOpt.updaters.surface import update_surfaces
-from MorphOpt.updaters.updaters import Updaters
-from MorphOpt import generatemodel
-from MorphOpt.modelparams import Params as _Params
+from MorphOpt import *
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self):
@@ -86,7 +78,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
         f = MM**3 * (6*MM**2 - 15*MM + 10)
 
         D = (dn * dy).sum(dim=-1) / 2
-
+                                                                                                                                                             
         Rf = R_now.sum(dim=0)
 
         loss0 = -self.U[0][-2]
@@ -174,21 +166,21 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(Surfaces):
+    class SurfaceParams(_SurfacesParams):
 
         def __init__(self):
 
             super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2])
 
             self.add_surface(
-                Surfaces.BSP.initialize_cylinder(r0=8.,
+                self.BSP.initialize_cylinder(r0=8.,
                                                         length=80.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
                                                         flip=False, maxR=0.1, maxC=0.4, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
-            Surfaces.BSP.initialize_cylinder(r0=4.,
+            self.BSP.initialize_cylinder(r0=4.,
                                                     length=74.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
@@ -199,16 +191,22 @@ class Params(_Params):
             
             self.if_update = [True, True]
             
-    class LoadParams(Loads):
-        class _Pressure(Loads.Pressures):
-            def __init__(self):
-                super().__init__()
-                self.pressure = torch.Tensor([[0.08]])
+    class LoadParams(_LoadsParams):
+        class LoadStep(_LoadStep):
+            pass
         
         def __init__(self):
-            self.pressure = self._Pressure()
+            super().__init__()
+            load_step0 = self.LoadStep()
+            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.08))
+            load_step0.load_set.append(self.ContactInterface(
+                instance_name1='final_model', surface_name1='surface_0_All',
+                instance_name2='cylinder', surface_name2='contact',
+                penalty_threshold_h=3.0
+            ))
+            self.load_steps.append(load_step0)
             
-    class MaterialParams(Materials):
+    class MaterialParams(_Materials):
         
         def __init__(self):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
@@ -216,8 +214,8 @@ class Params(_Params):
     def __init__(self):
         super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
 
-class Generator(generatemodel.Generator):
-    def __init__(self, surfaces: Surfaces, path_output: str = None, path_queue: str = None) -> None:
+class Generator(_Generator):
+    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
         """
         Initialize the Genetrator class.
         
@@ -228,14 +226,13 @@ class Generator(generatemodel.Generator):
         """
         super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
-class Solver(solvers.Morph):
+class Solver(_MorphSolver):
     """
     Solver class for MorphOpt.
     This class is responsible for solving the finite element analysis (FEA) problem.
     """
 
     def __init__(self, params: Params):
-
         super().__init__(params=params,
                          num_process=1)
         
@@ -272,31 +269,9 @@ class Solver(solvers.Morph):
         # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
         ins_cylinder._translation = torch.tensor([-1,0,-5.])
         
-        # add contact between cylinder and model
-        fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2=name, 
-                                                surface_name1='surface_0_All', surface_name2='contact',
-                                                penalty_threshold_h = 3.))
-        
         # boundary condition on cylinder
         fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=name, index_nodes=np.arange(0, ins_cylinder.nodes.shape[0])))
-
-        # add loads
-        i=0
-        while True:
-            if 'surface_%d_All' % (i + 1) not in ins.surfaces.keys():
-                break
-            fe.assembly.add_load(FEA.loads.Pressure(instance_name=ins_name, surface_set='surface_%d_All' % (i + 1), pressure=0.),
-                        name='Pressure_%d' % i)
-            i += 1
-        
-        # add contact self
-        i = 0
-        while True:
-            if 'surface_%d_All' % (i) not in ins.surfaces.keys():
-                break
-            fe.assembly.add_load(FEA.loads.ContactSelf(instance_name=ins_name, surface_name='surface_%d_All' % (i)),
-                        name='ContactSelf_%d' % i)
-            i += 1
+        # Loads are injected per step by the solver from Params.Loads
 
         # add boundary condition
         bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
@@ -314,7 +289,7 @@ class Solver(solvers.Morph):
         return fe
  
 
-class Updater(Updaters):
+class Updater(_Updaters):
     """
     Updater class for MorphOpt.
     This class is responsible for updating the design variables based on the results of the optimization process.
@@ -324,7 +299,7 @@ class Updater(Updaters):
         super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                          loads=None, *args, **kwargs)
 
-    class UpdaterSurfaces(update_surfaces.UpdaterSurfaces):
+    class UpdaterSurfaces(_UpdaterSurfaces):
         """
         Updater class for MorphOpt.
         This class is responsible for updating the design variables based on the results of the optimization process.
@@ -336,16 +311,16 @@ class Updater(Updaters):
                 params=params,
                 max_step_iter=100)
 
-            shape_derivative = update_surfaces.objectivefuncs.ShapeDerivativeDirect()
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.Distance(min_distance=
+                self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
             self.add_objective_function(
-                update_surfaces.objectivefuncs.boundarys.Cylinder(radius=10., height=80., bottom=0.))
+                self.objectivefuncs.boundarys.Cylinder(radius=10., height=80., bottom=0.))
     
 class Controller(_Controller):
     def save(self):

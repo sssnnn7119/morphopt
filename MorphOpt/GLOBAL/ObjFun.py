@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import scipy.sparse as sp
 import pypardiso
+
+from MorphOpt import GLOBAL
 class ObjectiveFunction:
     """
     The objective functions in MorphOpt.
@@ -24,12 +26,6 @@ class ObjectiveFunction:
         """
         The first adjoint displacement field.
         [shape: (num_tasks, num_dofs)]
-        """
-
-        self.pressure_list: torch.Tensor
-        """
-        The pressure.
-        [shape: (num_tasks, num_pressure_dofs)]
         """
 
         self.K_sp: list[sp.csr_matrix]
@@ -57,14 +53,13 @@ class ObjectiveFunction:
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
     
-    def set_results(self, fe: FEA.FEAController, pressure_list: torch.Tensor,
+    def set_results(self, fe: FEA.FEAController,
                     U: torch.Tensor) -> None:
         """
         Update the results of the FEA solver.
         """
         del self.fe
         self.fe = fe
-        self.pressure_list = pressure_list.cpu()
         self.U = U.cpu()
 
     @property
@@ -100,9 +95,9 @@ class ObjectiveFunction:
         for i in range(self.num_tasks):
 
             # set the loads
-            for p_ind in range(self.pressure_list.shape[1]):
-                pressure_value = self.pressure_list[i,p_ind].to(self.fe.assembly.device)
-                self.fe.assembly._loads['Pressure_%d' % p_ind].pressure = pressure_value
+            self.fe.assembly.delete_all_loads()
+            self.fe.assembly.add_loads(loads_dict=GLOBAL.controller.params.loads.get_loads(step_index=i))
+            self.fe.initialize()
             
             # region get the decomposed stiffness matrix
             K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[i].to(self.fe.assembly.device))[1:]
@@ -134,15 +129,9 @@ class ObjectiveFunction:
 
         result = ["FE_result Summary:"]
         
-        num_tasks = self.pressure_list.shape[0]
-
-        for i in range(num_tasks):
+        for i in range(self.num_tasks):
             result.append(f"=================================Task {i+1}=================================")
             
-            # 格式化压力向量（一维）
-            pressure = self.pressure_list[i].tolist()
-            pressure_str = " ".join([f"{x:.6f}" for x in pressure])
-            result.append(f"  Pressure:    {pressure_str}")
             
             # 格式化位移向量（一维）
             u_vector = self.U[i][-6:].tolist()
@@ -202,7 +191,7 @@ class ObjectiveFunction:
         
         surface_connections = [surface_elements[i].surf_elems_circ.cpu().numpy() for i in range(len(surface_elements))]
 
-        for case in range(self.pressure_list.shape[0]):
+        for case in range(self.num_tasks):
             deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.U[case].to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
 
             from mayavi import mlab

@@ -4,7 +4,7 @@ from .SurfaceInterface.BaseInterface import BaseInterface
 from ..base_params import BaseParams
 from ... import GLOBAL
 
-class Surfaces(BaseParams):
+class SurfacesParams(BaseParams):
     """
     Class to handle the surfaces of the morphable model.
     """

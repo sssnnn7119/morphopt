@@ -58,10 +58,9 @@ class ShapeDerivativeDirect(BaseObj):
                 fe.assembly.GC = GC0
                 fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
 
-                for p_ind in range(objfun.pressure_list.shape[1]):
-                    pressure_value = objfun.pressure_list[i,p_ind].to(part.nodes.device)
-                    fe.assembly._loads['Pressure_%d' % p_ind].pressure = pressure_value
-
+                fe.assembly.delete_all_loads()
+                fe.assembly.add_loads(loads_dict=GLOBAL.controller.params.loads.get_loads(step_index=i))
+                fe.initialize()
                 
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)

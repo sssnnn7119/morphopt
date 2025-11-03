@@ -17,7 +17,7 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         
     """
     inp_cylinder = FEA.FEA_INP()
-    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/ellipsebian.inp")
+    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/hulu.inp")
     fe_cylinder = FEA.from_inp(inp_cylinder)
     part_cylinder = fe_cylinder.assembly.get_part('cylinder')
 
@@ -31,7 +31,7 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
     ins_cylinder = fe.assembly.get_instance('cylinder')
     # convert to the second order elements
     # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-    ins_cylinder._translation = torch.tensor([0,0,-10.])
+    ins_cylinder._translation = torch.tensor([5,0,0.])
     
     # add contact between cylinder and model
     fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2='cylinder', 
@@ -94,12 +94,12 @@ torch.set_default_dtype(torch.float64)
 torch.cuda.empty_cache()
 # construct the FEA
 FE_inp = FEA.FEA_INP()
-FE_inp.read_inp('Z:/Results/GRASP_T20251014224621/Cache/TopOptRun.inp')
+FE_inp.read_inp('Z:/Results/GRASP_T20251016110721/Cache/TopOptRun.inp')
 
 fe = init_FEA(FE_inp)
 
 # change the load
-fe.assembly._loads['Pressure_%d' % 0].pressure = 0.06
+fe.assembly._loads['Pressure_%d' % 0].pressure = 0.08
 
 # solve displacement 0
 fe.solver.maximum_iteration = 100000
