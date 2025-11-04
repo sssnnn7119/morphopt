@@ -4,7 +4,7 @@ import torch
 import FEA
 import multiprocessing as mp
 
-from ..modelparams import Params, LoadStep
+from ..modelparams import Params, LoadsParams
 from ..GLOBAL import PATH
 from .base_solver import BaseSolver
 
@@ -56,18 +56,18 @@ class MorphSolver(BaseSolver):
         FE_inp = FEA.FEA_INP()
         FE_inp.read_inp(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
 
-        fe = self.init_FEA(FE_inp)
+        fe = self.init_FEA(FE_inp, load_params=self.params.loads)
         fe.initialize()
         
 
         # multiprocess FEA
-        # self._solve_FEA(PATH.path_Result, pressure_list[0], self.U_dim,)
+        # self._solve_FEA(PATH.path_Result, self.params.loads, 0)
         pools = mp.Pool(processes=self.num_process)
         result = []
         for i in range(self.params.loads.num_load_steps):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, self.params.loads.load_steps[i], i,)))
+                                args=(PATH.path_Result, self.params.loads, i,)))
         pools.close()
         pools.join()
 
@@ -78,7 +78,7 @@ class MorphSolver(BaseSolver):
         GLOBAL.obj_fun.calculate_adjoint_problem()
     
     @staticmethod
-    def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
+    def init_FEA(inp: FEA.FEA_INP, load_params: LoadsParams) -> FEA.FEAController:
         """
         Initialize the FEA class with the given input parameters.
 
@@ -96,6 +96,9 @@ class MorphSolver(BaseSolver):
         # convert to the second order elements
         # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
 
+        # Add loads
+        fe.assembly.add_loads(loads_dict=load_params.get_loads_fea())
+
         # add boundary condition
         bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
         fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
@@ -103,7 +106,7 @@ class MorphSolver(BaseSolver):
         
         
         rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
-        rp_name = fe.assembly.add_reference_point(rp=rp)
+        rp_name = fe.assembly.add_reference_point(rp=rp, name='RP_head')
         indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
         fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
         )
@@ -111,7 +114,7 @@ class MorphSolver(BaseSolver):
         return fe
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, loadstep: LoadStep, step_index: int):
+    def _solve_FEA(current_class, path_result: str, load_params: LoadsParams, step_index: int):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -121,14 +124,15 @@ class MorphSolver(BaseSolver):
 
         current_process_name = mp.current_process().name
         try:
-            pool_id = int(current_process_name.split("-")[-1]) % 4
+            pool_id = int(current_process_name.split("-")[-1])
         except:
             pool_id = 0
 
+        available_gpus = ['cuda:0']
         if torch.cuda.is_available():
-            
-            cuda_now = (pool_id-1) % torch.cuda.device_count()
-            torch.set_default_device('cuda:%d' % cuda_now)
+            cuda_now = (pool_id+1) % len(available_gpus)
+            torch.set_default_device(available_gpus[cuda_now])
+            print("Process %s use GPU: %s" % (current_process_name, available_gpus[cuda_now]))
         else:
             torch.set_default_device('cpu')
 
@@ -139,13 +143,8 @@ class MorphSolver(BaseSolver):
         FE_inp = FEA.FEA_INP()
         FE_inp.read_inp(path_result + '/Cache/' + '/TopOptRun.inp')
 
-        fe = current_class.init_FEA(FE_inp)
-
-        # Reset and set loads for this step
-        fe.assembly.delete_all_loads()
-
-        # Add step-defined loads (pressure, external contacts, etc.)
-        fe.assembly.add_loads(loads_dict=loadstep.get_loads())
+        fe = current_class.init_FEA(FE_inp, load_params=load_params)
+        load_params.process_fea(fea=fe, step_index=step_index)
 
         # solve displacement 0
         fe.solver.maximum_iteration = 200

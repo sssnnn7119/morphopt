@@ -1,13 +1,16 @@
 import torch
 
-a=torch.randn([3]).requires_grad_()
+a=torch.randn([40000,40000])
 
-b=(a**2).sum()
+print(a)
 
-c=b**2
-a.requires_grad=False
+del a
 
-c.backward()
+import gc
+gc.collect()
 
-print(b.grad)
-'as '.rstrip()
+print("done")
+
+torch.cuda.empty_cache()
+
+print("done2")

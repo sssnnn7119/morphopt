@@ -16,8 +16,8 @@ class Generator:
     This class is responsible for generating the geometric model of the soft robot.
     It uses Rhino for 3D modeling and Abaqus for finite element analysis (FEA).
     """
-    
-    def __init__(self, seed_size: float, surfaces: SurfacesParams, path_output: str, path_queue: str, ) -> None:
+
+    def __init__(self, seed_size: float, surfaces: SurfacesParams, path_output: str, path_queue: str, mesh_order: int = 1) -> None:
         """
         Initialize the Genetrator class.
         
@@ -47,6 +47,12 @@ class Generator:
         """
         float: The seed size for the finite element analysis (FEA).
         """
+
+        self.mesh_order = mesh_order
+        """
+        int: The mesh order for the finite element analysis (FEA).
+        """
+
         
     def initialize(self, iteration: int) -> None:
         """
@@ -93,7 +99,7 @@ class Generator:
         self.__class__._call_rhino(que_Names=que_names)
 
         # call Abaqus for FEA
-        self.__class__._call_Abaqus(self.surfaces, self.path_output, material_para, self.seed_size)
+        self.__class__._call_Abaqus(self.surfaces, self.path_output, material_para, self.seed_size, self.mesh_order)
         
     @staticmethod
     def _call_rhino(que_Names: list[str]) -> None:
@@ -106,7 +112,7 @@ class Generator:
                 time.sleep(0.1)
 
     @staticmethod
-    def _call_Abaqus(surfaces: SurfacesParams, path_output: str, material_para: list[float], seed_size: float) -> None:
+    def _call_Abaqus(surfaces: SurfacesParams, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
         
         current_path = os.getcwd()
 
@@ -127,6 +133,9 @@ class Generator:
 
             # Seed size
             f.write('SeedSize*\t%e\n' % seed_size)
+
+            # mesh order
+            f.write('MeshOrder*\t%d\n' % mesh_order)
         
         os.chdir(path_output)
         os.system('abaqus cae noGUI=' + path_output + '/GenModel.py')

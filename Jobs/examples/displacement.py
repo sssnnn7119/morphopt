@@ -38,23 +38,20 @@ class Params(_Params):
                                                     init_location=[0, 0, 3],
                                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
 
-            
-            self.if_update = [True, True]
-
 
     class LoadParams(_LoadsParams):
-        class LoadStep(_LoadStep):
-            pass
 
         def __init__(self):
             super().__init__()
 
-            load_step0 = self.LoadStep()
-            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.06))
-            self.load_steps.append(load_step0)
+            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'),
+                                    name='pressure_1')
+    
+            self.set_step_num(1)
 
-
+            self.set_step_params(0, "pressure_1", [0.06])
             
+
     class MaterialParams(_Materials):
         
         def __init__(self):
@@ -131,10 +128,10 @@ class Controller(_Controller):
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cuda')
+    torch.set_default_device('cpu')
 
     path_result = 'Z:/Results'
-    opt_label = 'FRONT'
+    opt_label = 'EXAMPLE'
 
     # region Initialize the workflow
     initializer.initialize_path(result_path=path_result, opt_label=opt_label)

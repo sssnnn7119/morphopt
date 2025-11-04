@@ -1,5 +1,5 @@
 import torch
-from ..BaseObj import BaseObj
+from ..baseobjfun import BaseObj
 from .....modelparams import SurfacesParams
 from .....dlls import interface
 

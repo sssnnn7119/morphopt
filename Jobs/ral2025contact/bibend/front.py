@@ -180,19 +180,17 @@ class Params(_Params):
                 self.surface_list[surf_ind[i]].update_variables(dx)
             
     class LoadParams(_LoadsParams):
-        class LoadStep(_LoadStep):
-            pass
-        
         def __init__(self):
             super().__init__()
-            # Define a single pressure load step as default
-            load_step0 = self.LoadStep()
-            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.06))
-            load_step0.load_set.append(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'))
-            load_step0.load_set.append(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'))
-            load_step0.load_set.append(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'))
-            
-            self.load_steps.append(load_step0)
+            # Define interfaces
+            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
+
+            # One step amplitudes
+            self.set_step_num(1)
+            self.set_step_params(0, 'P_s1', [0.06])
             
     class MaterialParams(_Materials):
         

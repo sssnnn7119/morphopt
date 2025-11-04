@@ -1,6 +1,6 @@
 from . import GLOBAL
 from .opt_loop import Controller as _Controller
-from .modelparams import SurfacesParams as _SurfacesParams, LoadsParams as _LoadsParams, LoadStep as _LoadStep, Materials as _Materials
+from .modelparams import SurfacesParams as _SurfacesParams, LoadsParams as _LoadsParams, Materials as _Materials
 from . import initializer 
 from .solvers import MorphSolver as _MorphSolver
 from .updaters.surface import UpdaterSurfaces as _UpdaterSurfaces
@@ -13,7 +13,6 @@ __all__ = [
     "_Controller",
     "_SurfacesParams",
     "_LoadsParams",
-    "_LoadStep",
     "_Materials",
     "initializer",
     "_MorphSolver",

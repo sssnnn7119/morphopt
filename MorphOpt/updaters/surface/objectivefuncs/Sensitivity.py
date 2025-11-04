@@ -2,7 +2,7 @@
 
 from scipy import interpolate
 import torch
-from .BaseObj import BaseObj
+from .baseobjfun import BaseObj
 from .... import GLOBAL
 
 class ShapeDerivativeDirect(BaseObj):
@@ -57,10 +57,7 @@ class ShapeDerivativeDirect(BaseObj):
                 GC0 = objfun.U[i].to(part.nodes.device)
                 fe.assembly.GC = GC0
                 fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
-
-                fe.assembly.delete_all_loads()
-                fe.assembly.add_loads(loads_dict=GLOBAL.controller.params.loads.get_loads(step_index=i))
-                fe.initialize()
+                GLOBAL.controller.params.loads.process_fea(fea=fe, step_index=i)
                 
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)

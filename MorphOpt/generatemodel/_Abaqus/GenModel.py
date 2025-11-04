@@ -40,7 +40,9 @@ def Read_Para_Base():
             material += [tmp[1].split()]
         if tmp[0] == 'SeedSize':
             seed_size = float(tmp[1])
-    return surface_type, material, seed_size
+        if tmp[0] == 'MeshOrder':
+            mesh_order = int(tmp[1])
+    return surface_type, material, seed_size, mesh_order
 
 # load model from file
 def Import_Part(path, part_name):
@@ -116,7 +118,7 @@ JOBNAME = 'TopOptRun'
 
 os.chdir(workdir)
 
-surface_type, material, seed_size = Read_Para_Base()
+surface_type, material, seed_size, mesh_order = Read_Para_Base()
 
 # get the sample points of each surface
 surface_info = []
@@ -249,15 +251,17 @@ c = p.cells
 
 p.setMeshControls(regions=c, elemShape=TET, technique=FREE, sizeGrowthRate=1.2)
 
-# for quadratic element
-# elemType1 = mesh.ElemType(elemCode=C3D20R, elemLibrary=STANDARD)
-# elemType2 = mesh.ElemType(elemCode=C3D15, elemLibrary=STANDARD)
-# elemType3 = mesh.ElemType(elemCode=C3D10, elemLibrary=STANDARD)
 
-# for linear element
-elemType1 = mesh.ElemType(elemCode=C3D8R, elemLibrary=STANDARD)
-elemType2 = mesh.ElemType(elemCode=C3D6, elemLibrary=STANDARD)
-elemType3 = mesh.ElemType(elemCode=C3D4, elemLibrary=STANDARD)
+if mesh_order == 2:
+    # for quadratic element
+    elemType1 = mesh.ElemType(elemCode=C3D20R, elemLibrary=STANDARD)
+    elemType2 = mesh.ElemType(elemCode=C3D15, elemLibrary=STANDARD)
+    elemType3 = mesh.ElemType(elemCode=C3D10, elemLibrary=STANDARD)
+else:
+    # for linear element
+    elemType1 = mesh.ElemType(elemCode=C3D8R, elemLibrary=STANDARD)
+    elemType2 = mesh.ElemType(elemCode=C3D6, elemLibrary=STANDARD)
+    elemType3 = mesh.ElemType(elemCode=C3D4, elemLibrary=STANDARD)
 
 p = mdb.models['Model-1'].parts['final_model']
 c = p.cells

@@ -1,6 +1,6 @@
 
 import torch
-from .BaseObj import BaseObj
+from .baseobjfun import BaseObj
 
 
 class MinRadius(BaseObj):

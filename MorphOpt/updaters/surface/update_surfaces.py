@@ -52,7 +52,7 @@ class UpdaterSurfaces(BaseUpdater):
         """
 
     def add_objective_function(self,
-                               obj_func: objectivefuncs.BaseObj,
+                               obj_func: objectivefuncs.baseobjfun,
                                name: str = None) -> None:
         """
         Add an objective function to the list of objective functions.

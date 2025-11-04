@@ -1,4 +1,4 @@
-from json import load
+
 import os
 import sys
 
@@ -15,10 +15,10 @@ from MorphOpt import *
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, *args, **kwargs):
-        loss1 = (self.U[0, -2]-2.0)**2*100
-        loss2 = -self.U[1, -4]
-
-        return loss1 + loss2
+        loss1 = torch.exp(1 - self.U[0, -2]/2.0)
+        loss2 = torch.exp(1 - (self.U[1, -4] - self.U[2, -4])/21)
+        loss3 = self.U[3, -2]
+        return loss1 + loss2 + loss3
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
@@ -51,33 +51,33 @@ class Params(_Params):
                                                  seed_size=1.0,
                                                  flip=False,
                                                  maxR=0.2,
-                                                 maxC=0.6,
+                                                 maxC=2.0,
                                                  maxFF=0.2, perturbation_L=14))
             self.add_surface(
                 self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
-                                                 r0=6.,
+                                                 r0=5.,
                                                  length=64.,
                                                  maxR=0.2,
-                                                 maxC=0.6,
+                                                 maxC=2.0,
                                                  init_location=[12, 0, 3], perturbation_L=14))
 
             self.add_surface(
                 self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
-                                                 r0=6.,
+                                                 r0=5.,
                                                  length=64.,
                                                  maxR=0.2,
-                                                 maxC=0.6,
+                                                 maxC=2.0,
                                                  init_location=[-6, 10.5, 3], perturbation_L=14))
 
             self.add_surface(
                 self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
-                                                 r0=6.,
+                                                 r0=5.,
                                                  length=64.,
                                                  maxR=0.2,
-                                                 maxC=0.6,
+                                                 maxC=2.0,
                                                  init_location=[-6, -10.5, 3], perturbation_L=14))
 
             self.add_surface(
@@ -85,6 +85,8 @@ class Params(_Params):
                                                  flip=True,
                                                  r0=3.,
                                                  length=64.,
+                                                maxR=0.2,
+                                                maxC=2.0,
                                                  init_location=[0, 0, 3], perturbation_L=14))
             
 
@@ -258,38 +260,41 @@ class Params(_Params):
             return weight
           
     class LoadParams(_LoadsParams):
-        class LoadStep(_LoadStep):
-            pass
-        
         def __init__(self):
             super().__init__()
+            # Define all load interfaces once
+            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
+            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
+            self.add_load_interface(self.ConcentratedMomentInterface(rp_name='RP_head'), name='M_head')
+            # Contact self (no amplitude, but needs to exist in FEA)
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'), name='CS_s3')
+            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_4_All'), name='CS_s4')
 
-            contact_set = [self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'),
-                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'),
-                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'),
-                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'),
-                           self.ContactSelfInterface(instance_name='final_model', surface_name='surface_4_All')]
+            # Define step amplitudes
+            self.set_step_num(4)
+            self.set_step_params(0, 'P_s1', [-0.06])
+            self.set_step_params(0, 'P_s2', [0.12])
+            self.set_step_params(0, 'P_s3', [0.12])
+            self.set_step_params(0, 'M_head', [0.0, 0.0, 0.0])
 
-            load_step0 = self.LoadStep()
-            load_step0.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=-0.06))
-            load_step0.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=0.12))
-            load_step0.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=0.12))
-            load_step0.load_set.extend(contact_set)
-            self.load_steps.append(load_step0)
+            self.set_step_params(1, 'P_s1', [0.12])
+            self.set_step_params(1, 'P_s2', [0.12])
+            self.set_step_params(1, 'P_s3', [0.12])
+            self.set_step_params(1, 'M_head', [0.0, 0.0, 0.0])
 
-            load_step1 = self.LoadStep()
-            load_step1.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=0.12))
-            load_step1.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=0.12))
-            load_step1.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=0.12))
-            load_step1.load_set.extend(contact_set)
-            self.load_steps.append(load_step1)
+            self.set_step_params(2, 'P_s1', [-0.06])
+            self.set_step_params(2, 'P_s2', [-0.06])
+            self.set_step_params(2, 'P_s3', [-0.06])
+            self.set_step_params(2, 'M_head', [0.0, 0.0, 0.0])
 
-            load_step2 = self.LoadStep()
-            load_step2.load_set.append(self.PressureInterface(surface_name='surface_1_All', pressure=-0.06))
-            load_step2.load_set.append(self.PressureInterface(surface_name='surface_2_All', pressure=-0.06))
-            load_step2.load_set.append(self.PressureInterface(surface_name='surface_3_All', pressure=-0.06))
-            load_step2.load_set.extend(contact_set)
-            self.load_steps.append(load_step2)
+            self.set_step_params(3, 'P_s1', [-0.06])
+            self.set_step_params(3, 'P_s2', [-0.06])
+            self.set_step_params(3, 'P_s3', [-0.06])
+            self.set_step_params(3, 'M_head', [0.0, -60.0, 0.0])
             
     class MaterialParams(_Materials):
         
@@ -309,7 +314,7 @@ class Generator(_Generator):
             path_output (str): The path to the output directory.
             path_queue (str): The path to the queue directory.
         """
-        super().__init__(seed_size=1.5, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(seed_size=1.5, mesh_order=1, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(_MorphSolver):
     """
@@ -319,7 +324,7 @@ class Solver(_MorphSolver):
 
     def __init__(self, params: Params):
         super().__init__(params=params,
-                         num_process=2)
+                         num_process=1)
    
     
 class Updater(_Updaters):

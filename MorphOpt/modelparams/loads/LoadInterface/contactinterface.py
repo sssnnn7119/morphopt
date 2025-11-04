@@ -29,6 +29,7 @@ class ContactInterface(BaseLoadInterface):
 		penalty_start_f: float | None = None,
 		penalty_end_f: float | None = None,
 	) -> None:
+		super().__init__()
 		self.instance_name1 = instance_name1
 		self.surface_name1 = surface_name1
 		self.instance_name2 = instance_name2
@@ -36,12 +37,6 @@ class ContactInterface(BaseLoadInterface):
 		self.penalty_threshold_h = float(penalty_threshold_h)
 		self.penalty_start_f = None if penalty_start_f is None else float(penalty_start_f)
 		self.penalty_end_f = None if penalty_end_f is None else float(penalty_end_f)
-
-	@property
-	def num_variables(self) -> int:
-	# Currently, contact parameters are not exposed as optimizable variables.
-	# If needed, expose penalty factors here and implement get/set/update.
-		return 0
 
 	def get_fea_load(self):
 		# Lazy import to be robust to different package layouts
@@ -63,17 +58,6 @@ class ContactInterface(BaseLoadInterface):
 			kwargs["penalty_end_f"] = self.penalty_end_f
 		return Contact(**kwargs)  # type: ignore
 
-	def get_parameters(self) -> torch.Tensor:
-	# No optimizable parameters yet
-		return torch.empty(0)
-
-	def set_parameters(self, xlist: torch.Tensor) -> None:
-	# Not supported yet
-		return None
-
-	def update_variables(self, x_change: torch.Tensor) -> None:
-	# Not supported yet
-		return None
 
 
 class ContactSelfInterface(BaseLoadInterface):
@@ -89,13 +73,11 @@ class ContactSelfInterface(BaseLoadInterface):
 		surface_name: str,
 		penalty_threshold_h: float | None = None,
 	) -> None:
+		super().__init__()
 		self.instance_name = instance_name
 		self.surface_name = surface_name
 		self.penalty_threshold_h = None if penalty_threshold_h is None else float(penalty_threshold_h)
 
-	@property
-	def num_variables(self) -> int:
-		return 0
 
 	def get_fea_load(self):
 		from FEA.assemble.loads.contact import ContactSelf
@@ -107,13 +89,3 @@ class ContactSelfInterface(BaseLoadInterface):
 		if self.penalty_threshold_h is not None:
 			kwargs["penalty_threshold_h"] = self.penalty_threshold_h
 		return ContactSelf(**kwargs)  # type: ignore
-
-	def get_parameters(self) -> torch.Tensor:
-		return torch.empty(0)
-
-	def set_parameters(self, xlist: torch.Tensor) -> None:
-		return None
-
-	def update_variables(self, x_change: torch.Tensor) -> None:
-		return None
-

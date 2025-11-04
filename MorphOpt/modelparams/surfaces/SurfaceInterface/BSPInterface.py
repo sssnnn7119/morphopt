@@ -280,7 +280,7 @@ class BspInterface(BaseInterface):
 
 
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, symmetric: list[int], flip: bool, degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
+    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, symmetric: list[int] = [0], degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
         """
         Initialize the B-spline surface for the optimization process.
 

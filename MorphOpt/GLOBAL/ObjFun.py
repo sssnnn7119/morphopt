@@ -92,20 +92,18 @@ class ObjectiveFunction:
         ADJu = []
         K_sp_list = []
         K_solver_list = []
-        for i in range(self.num_tasks):
+        for step_index in range(self.num_tasks):
 
             # set the loads
-            self.fe.assembly.delete_all_loads()
-            self.fe.assembly.add_loads(loads_dict=GLOBAL.controller.params.loads.get_loads(step_index=i))
-            self.fe.initialize()
+            GLOBAL.controller.params.loads.process_fea(fea=self.fe, step_index=step_index)
             
             # region get the decomposed stiffness matrix
-            K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[i].to(self.fe.assembly.device))[1:]
+            K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))[1:]
             K_values = K_values.cpu().numpy()
             K_indices = K_indices.cpu().numpy()
             K_sp = sp.coo_matrix(
                 (K_values,
-                (K_indices[0], K_indices[1])),
+                (K_indices[0], K_indices[1])), dtype=np.float64,
                 shape=(self.fe.assembly.GC.shape[0], self.fe.assembly.GC.shape[0])).tocsr()
             K_solver = pypardiso.PyPardisoSolver()
             K_solver.factorize(K_sp)
@@ -117,7 +115,7 @@ class ObjectiveFunction:
 
             # region calculate the adjoint variable
             
-            ADJu_now = torch.from_numpy(K_solver.solve(K_sp, ADJFu_now[i].cpu().numpy())).cpu()
+            ADJu_now = torch.from_numpy(K_solver.solve(K_sp, ADJFu_now[step_index].cpu().numpy())).cpu()
             ADJu.append(ADJu_now)
             # endregion
 
