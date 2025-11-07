@@ -192,17 +192,40 @@ class Params(_Params):
             
             self.if_update = [True, True]
             
-    class LoadParams(_LoadsParams):
+    class FEAParams(_FEAParams):
         def __init__(self):
             super().__init__()
-            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
-            self.add_load_interface(self.ContactInterface(
+
+        def define_interface(self):
+            # Common BC / RP / Couple
+            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+            self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+
+            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+            self.add_fea_interface(self.ContactInterface(
                 instance_name1='final_model', surface_name1='surface_0_All',
                 instance_name2='cylinder', surface_name2='contact',
                 penalty_threshold_h=3.0
             ), name='Contact_ext')
+
+        def define_steps(self):
             self.set_step_num(1)
             self.set_step_params(0, 'P_s1', [0.08])
+        def create_fea(self, inp: FEA.FEA_INP) -> FEA.FEAController:
+            fe = FEA.from_inp(inp)
+            fe.solver = FEA.solver.StaticImplicitSolver()
+            # Add cylinder instance
+            self.add_instance_from_inp(
+                fe,
+                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/hulu.inp",
+                part_name='cylinder',
+                instance_name='cylinder',
+                translation=[5.0, 0.0, 0.0]
+            )
+            for name, interface in self.feainterfaces.items():
+                interface.modify_fea(fe, name)
+            return fe
             
     class MaterialParams(_Materials):
         
@@ -210,7 +233,7 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
 
 class Generator(_Generator):
     def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
@@ -234,56 +257,7 @@ class Solver(_MorphSolver):
         super().__init__(params=params,
                          num_process=1)
         
-    @staticmethod
-    def init_FEA(inp: FEA.FEA_INP, load_params: Params.LoadParams) -> FEA.FEAController:
-        """
-        Initialize the FEA class with the given input parameters.
-
-        Parameters:
-            inp (FEA.FEA_INP): The input parameters for the FEA class.
-
-        Returns:
-            FEA.FEAController: An instance of the FEA_Main class with the given input parameters.
-            
-        """
-        inp_cylinder = FEA.FEA_INP()
-
-        # name = 'rec'
-        name = 'cylinder'
-        file_name = 'hulu'
-        inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/%s.inp" % file_name)
-        fe_cylinder = FEA.from_inp(inp_cylinder)
-        part_cylinder = fe_cylinder.assembly.get_part(name)
-
-        fe = FEA.from_inp(inp)
-        fe.assembly.add_part(part_cylinder, name=name)
-        fe.assembly.add_instance(FEA.Instance(part=part_cylinder), name=name)
-
-        fe.solver = FEA.solver.StaticImplicitSolver()
-        ins_name = 'final_model'
-        ins = fe.assembly.get_instance(ins_name)
-        ins_cylinder = fe.assembly.get_instance(name)
-        # convert to the second order elements
-        # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-        ins_cylinder._translation = torch.tensor([5,0,0.])
-        
-        # Add loads
-        fe.assembly.add_loads(loads_dict=load_params.get_loads_fea())
-
-        # add boundary condition
-        bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
-        fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
-                        name='BC')        # add reference point and constraints
-        
-        
-        rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
-        rp_name = fe.assembly.add_reference_point(rp=rp, name='RP_head')
-        indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
-        fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
-        )
-
-        
-        return fe
+    # init_FEA no longer needed; functionality moved into FEA interfaces
  
 
 class Updater(_Updaters):

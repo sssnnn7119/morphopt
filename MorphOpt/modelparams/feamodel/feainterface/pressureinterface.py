@@ -1,11 +1,15 @@
 
+from FEA import FEAController
 import numpy as np
 import torch
-from .baseloadinterface import BaseLoadInterface
+from .basefeainterface import BaseFEAInterface
 from FEA.assemble.loads.pressure import Pressure
-class PressureInterface(BaseLoadInterface):
+class PressureInterface(BaseFEAInterface):
     """
-    Class to hold the pressure values for the MorphOpt model.
+    Surface pressure load interface.
+
+    Values (list[float], length=1):
+    - [0] pressure (scalar)
     """
 
     def __init__(self, surface_name: str, instance_name: str = 'final_model'):
@@ -55,9 +59,10 @@ class PressureInterface(BaseLoadInterface):
         """
         return 1
     
-    def get_fea_load(self):
+    def modify_fea(self, fe: FEAController, name: str) -> None:
         pressure_load = Pressure(instance_name=self.instance_name,surface_set=self.surface_name,pressure=self.pressure)
-        return pressure_load
+        fe.assembly.add_load(pressure_load, name)
     
-    def apply_load(self, load_fea: Pressure):
-        load_fea.pressure = self.pressure
+    def apply_fea_value(self, fe: FEAController, name: str) -> None:
+        pressure_load: Pressure = fe.assembly.get_load(name)
+        pressure_load.pressure = self.pressure

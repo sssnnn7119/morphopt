@@ -1,4 +1,0 @@
-from .baseloadinterface import BaseLoadInterface
-from .pressureinterface import PressureInterface
-from .contactinterface import ContactInterface, ContactSelfInterface
-from .pointinterface import ConcentratedForceInterface, ConcentratedMomentInterface

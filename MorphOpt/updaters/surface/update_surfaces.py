@@ -6,7 +6,7 @@ from ...GLOBAL import PATH, History
 from .. import optimizer
 
 from ...modelparams.params import Params
-from ...modelparams import SurfacesParams, LoadsParams, Materials
+from ...modelparams import SurfacesParams, FEAParams, Materials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
 from MorphOpt import GLOBAL

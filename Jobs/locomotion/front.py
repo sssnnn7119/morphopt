@@ -259,21 +259,28 @@ class Params(_Params):
             weight = [w0, w1, w1, w1, w4]
             return weight
           
-    class LoadParams(_LoadsParams):
+    class FEAParams(_FEAParams):
         def __init__(self):
             super().__init__()
-            # Define all load interfaces once
-            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
-            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
-            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
-            self.add_load_interface(self.ConcentratedMomentInterface(rp_name='RP_head'), name='M_head')
-            # Contact self (no amplitude, but needs to exist in FEA)
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'), name='CS_s3')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_4_All'), name='CS_s4')
 
+        def define_interface(self):
+            # Common BC / RP / Couple
+            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 70.]), name='RP_head')
+            self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+            # Define all load interfaces once
+            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
+            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
+            self.add_fea_interface(self.ConcentratedMomentInterface(rp_name='RP_head'), name='M_head')
+            # Contact self (no amplitude, but needs to exist in FEA)
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'), name='CS_s3')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_4_All'), name='CS_s4')
+
+        def define_steps(self):
             # Define step amplitudes
             self.set_step_num(4)
             self.set_step_params(0, 'P_s1', [-0.06])
@@ -302,7 +309,7 @@ class Params(_Params):
             super().__init__(mu=0.7, kappa=7.0, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
 
 class Generator(_Generator):
     def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:

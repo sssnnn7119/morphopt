@@ -16,6 +16,11 @@ class ObjectiveFunction:
         The FEA solver instance.
         """
 
+        self.inp: FEA.FEA_INP = None
+        """
+        The FEA input instance.
+        """
+
         self.U: torch.Tensor
         """
         The displacement field.
@@ -53,7 +58,7 @@ class ObjectiveFunction:
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
     
-    def set_results(self, fe: FEA.FEAController,
+    def set_results(self, fe: FEA.FEAController, inp: FEA.FEA_INP,
                     U: torch.Tensor) -> None:
         """
         Update the results of the FEA solver.
@@ -61,7 +66,7 @@ class ObjectiveFunction:
         del self.fe
         self.fe = fe
         self.U = U.cpu()
-
+        self.inp = inp
     @property
     def num_tasks(self) -> int:
         """
@@ -95,7 +100,7 @@ class ObjectiveFunction:
         for step_index in range(self.num_tasks):
 
             # set the loads
-            GLOBAL.controller.params.loads.process_fea(fea=self.fe, step_index=step_index)
+            GLOBAL.controller.params.loads.process_fea(fe=self.fe, step_index=step_index)
             
             # region get the decomposed stiffness matrix
             K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))[1:]

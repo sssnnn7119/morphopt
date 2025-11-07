@@ -1,5 +1,7 @@
 import os
 import sys
+
+import FEA
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
@@ -8,12 +10,18 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
 from MorphOpt import *
-
+import multiprocessing as mp
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self):
-        loss1 = -self.U[0][-2]
-        return loss1
+
+        GLOBAL.controller.params.loads.process_fea(self.fe, step_index=0)
+        total_energy_0 = self.fe.assembly._total_Potential_Energy(GC=self.U[0])
+
+        GLOBAL.controller.params.loads.process_fea(self.fe, step_index=1)
+        total_energy_1 = self.fe.assembly._total_Potential_Energy(GC=self.U[1])
+
+        return total_energy_1 - total_energy_0
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
@@ -24,36 +32,48 @@ class Params(_Params):
             super().__init__(max_step_length=[0.4, 0.4])
 
             self.add_surface(
-                self.BSP.initialize_cylinder(r0=8.,
-                                                        length=80.,
+                self.BSP.initialize_cylinder(r0=10.,
+                                                        length=50.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
-                self.BSP.initialize_cylinder(r0=4.,
-                                                    length=74.,
+                self.BSP.initialize_cylinder(r0=6.,
+                                                    length=44.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.))
 
 
     class FEAParams(_FEAParams):
 
+        def __init__(self):
+            super().__init__()
+
         def define_interface(self):
             # Common BC / RP / Couple
             self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
             self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
             self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'),
                                     name='pressure_1')
+            self.add_fea_interface(self.SpringToGroundInterface(rp_name='RP_head'),
+                                    name='spring_1')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All',),
+                                    name='contact_0')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All',),
+                                    name='contact_1')
 
         def define_steps(self):
-            self.set_step_num(1)
-            self.set_step_params(0, "pressure_1", [0.06])
-            
+            self.set_step_num(2)
+            self.set_step_params(0, "pressure_1", [-0.06])
+            self.set_step_params(0, "spring_1", [1000., 0., 0., 0., 50.])
+            self.set_step_params(1, "pressure_1", [-0.06])
+            self.set_step_params(1, "spring_1", [0., 0., 0., 0., 50.])
+
 
     class MaterialParams(_Materials):
         
@@ -117,7 +137,7 @@ class Updater(_Updaters):
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
             self.add_objective_function(
-                self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
+                self.objectivefuncs.boundarys.Cylinder(radius=12., height=50., bottom=0.))
 class Controller(_Controller):
     def save(self):
         super().save()
@@ -134,7 +154,7 @@ if __name__ == '__main__':
     torch.set_default_device('cpu')
 
     path_result = 'Z:/Results'
-    opt_label = 'EXAMPLE'
+    opt_label = 'JUMP'
 
     # region Initialize the workflow
     initializer.initialize_path(result_path=path_result, opt_label=opt_label)

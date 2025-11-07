@@ -16,12 +16,14 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 
     def __init__(self):
         super().__init__()
-        self.target_displacement = torch.tensor([5.0, 20.0, 130.0])
+        self.target_displacement = torch.tensor([10.0, 0.0, 120.0])
     def get_objective(self):
-        
-        U = self.U[0][[-6, -5, -4]]
+        end_surf = np.array(list(self.inp.part['final_model'].sets_nodes['surface_0_Head']))
+        RGC = self.fe.assembly._GC2RGC(self.U[0])
+        ins_ind = self.fe.assembly.get_instance('final_model')._RGC_index
+        end_pos = RGC[ins_ind][end_surf].mean(dim=0) + torch.tensor([0., 0., 80.0], device=RGC[0].device)
 
-        loss0 = (U - self.target_displacement.to(U.device))**2
+        loss0 = (end_pos - self.target_displacement.to(end_pos.device))**2
 
         return loss0.sum()
  
@@ -130,28 +132,32 @@ class Params(_Params):
                 self.BSP.initialize_cylinder(r0=8.,
                                                         length=80.,
                                                         seed_size=1.0,
-                                                        flip=False, maxR=0.1, maxC=0.4, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=4.,
                                                     length=74.,
                                                     seed_size=1.0,
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.4, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.))
         
             
             
             self.if_update = [True, True]
             
-    class LoadParams(_LoadsParams):
-        def __init__(self):
-            super().__init__()
+    class FEAParams(_FEAParams):
+        def define_interface(self):
+            # Common BC / RP / Couple
+            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+            self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+
             # Define interfaces
-            self.add_load_interface(
+            self.add_fea_interface(
                 self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'),
                 name='P_s1'
             )
-            self.add_load_interface(
+            self.add_fea_interface(
                 self.ContactInterface(
                     instance_name1='final_model', surface_name1='surface_0_All',
                     instance_name2='block', surface_name2='contact',
@@ -160,9 +166,26 @@ class Params(_Params):
                 name='Contact_ext'
             )
 
+        def define_steps(self):
             # Single step amplitudes
             self.set_step_num(1)
             self.set_step_params(0, 'P_s1', [0.08])
+
+            
+        def create_fea(self, inp: FEA.FEA_INP) -> FEA.FEAController:
+            fe = FEA.from_inp(inp)
+            fe.solver = FEA.solver.StaticImplicitSolver()
+            # Add external block instance before registering interfaces
+            self.add_instance_from_inp(
+                fe,
+                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/locomotion/rec.inp",
+                part_name='block',
+                instance_name='block',
+                translation=[0.0, 0.0, 0.0]
+            )
+            for name, interface in self.feainterfaces.items():
+                interface.modify_fea(fe, name)
+            return fe
             
     class MaterialParams(_Materials):
         
@@ -170,7 +193,7 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
 
 class Generator(_Generator):
     def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
@@ -194,51 +217,7 @@ class Solver(_MorphSolver):
         super().__init__(params=params,
                          num_process=1)
 
-    @staticmethod
-    def init_FEA(inp, load_params) -> FEA.FEAController:
-        """
-        Initialize the FEA class with the given input parameters.
-
-        Parameters:
-            inp (FEA.FEA_INP): The input parameters for the FEA class.
-
-        Returns:
-            FEA.FEAController: An instance of the FEA_Main class with the given input parameters.
-            
-        """
-        inp_cylinder = FEA.FEA_INP()
-
-        # name = 'rec'
-        name = 'block'
-        file_name = 'rec'
-        inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/locomotion/%s.inp" % file_name)
-        fe_cylinder = FEA.from_inp(inp_cylinder)
-        part_cylinder = fe_cylinder.assembly.get_part(name)
-
-        fe = FEA.from_inp(inp)
-        fe.assembly.add_part(part_cylinder, name=name)
-        fe.assembly.add_instance(FEA.Instance(part=part_cylinder), name=name)
-
-        fe.solver = FEA.solver.StaticImplicitSolver()
-        ins_name = 'final_model'
-        ins = fe.assembly.get_instance(ins_name)
-
-        # Add loads
-        fe.assembly.add_loads(loads_dict=load_params.get_loads_fea())
-
-        # add boundary condition
-        bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
-        fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
-                        name='BC')        # add reference point and constraints
-        
-        
-        rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
-        rp_name = fe.assembly.add_reference_point(rp=rp, name='RP_head')
-        indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
-        fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
-        )
-        
-        return fe
+    # init_FEA no longer needed; functionality moved into FEA interfaces
  
 
 class Updater(_Updaters):

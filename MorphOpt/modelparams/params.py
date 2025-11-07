@@ -1,12 +1,12 @@
 
-from .loads.loadparams import LoadsParams
+from .feamodel.feaparams import FEAParams
 from .surfaces.surfaceparams import SurfacesParams
 from .materials.materialparams import Materials
 class Params:
     """
     Class to handle the parameters of the model.
     """
-    def __init__(self, surfaces: SurfacesParams, loads: LoadsParams, materials: Materials) -> None:
+    def __init__(self, surfaces: SurfacesParams, loads: FEAParams, materials: Materials) -> None:
         """
         Initialize the Params class.
         """

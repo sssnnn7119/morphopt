@@ -1,4 +1,4 @@
 from .surfaces.surfaceparams import SurfacesParams
-from .loads.loadparams import LoadsParams
+from .feamodel.feaparams import FEAParams
 from .materials.materialparams import Materials
 from .params import Params

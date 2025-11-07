@@ -1,10 +1,11 @@
 
+from scipy.signal import step
 import torch
 
 import FEA
 import multiprocessing as mp
 
-from ..modelparams import Params, LoadsParams
+from ..modelparams import Params, FEAParams
 from ..GLOBAL import PATH
 from .base_solver import BaseSolver
 
@@ -16,7 +17,7 @@ class MorphSolver(BaseSolver):
     """
 
     
-    def __init__(self, params: Params, num_process: int = 4):
+    def __init__(self, params: Params, num_process: int = 4, available_gpus: list[str] = None):
         """
         Initialize the Solver class with a list of pressure values.
 
@@ -38,6 +39,10 @@ class MorphSolver(BaseSolver):
         """
         int: The number of processes to use for parallel computation.
         """
+
+        if available_gpus is None:
+            self.available_gpus = ['cuda:%d' % i for i in range(torch.cuda.device_count())]
+
         
     def solve(self):
         """
@@ -56,65 +61,29 @@ class MorphSolver(BaseSolver):
         FE_inp = FEA.FEA_INP()
         FE_inp.read_inp(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
 
-        fe = self.init_FEA(FE_inp, load_params=self.params.loads)
+        fe = self.params.loads.create_fea(FE_inp)
         fe.initialize()
         
 
         # multiprocess FEA
-        # self._solve_FEA(PATH.path_Result, self.params.loads, 0)
+        # self._solve_FEA(PATH.path_Result, self.params.loads, 0, self.available_gpus)
         pools = mp.Pool(processes=self.num_process)
         result = []
         for i in range(self.params.loads.num_load_steps):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, self.params.loads, i,)))
+                                args=(PATH.path_Result, self.params.loads, i, self.available_gpus)))
         pools.close()
         pools.join()
 
         # get the result
         U0 = torch.tensor([i.get() for i in result], device='cpu')
 
-        GLOBAL.obj_fun.set_results(fe=fe, U=U0)
+        GLOBAL.obj_fun.set_results(fe=fe, U=U0, inp=FE_inp)
         GLOBAL.obj_fun.calculate_adjoint_problem()
-    
-    @staticmethod
-    def init_FEA(inp: FEA.FEA_INP, load_params: LoadsParams) -> FEA.FEAController:
-        """
-        Initialize the FEA class with the given input parameters.
-
-        Parameters:
-            inp (FEA.FEA_INP): The input parameters for the FEA class.
-
-        Returns:
-            FEA.FEAController: An instance of the FEA_Main class with the given input parameters.
-            
-        """
-        fe = FEA.from_inp(inp)
-        fe.solver = FEA.solver.StaticImplicitSolver()
-        ins_name = 'final_model'
-        ins = fe.assembly.get_instance(ins_name)
-        # convert to the second order elements
-        # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-
-        # Add loads
-        fe.assembly.add_loads(loads_dict=load_params.get_loads_fea())
-
-        # add boundary condition
-        bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
-        fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
-                        name='BC')        # add reference point and constraints
-        
-        
-        rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
-        rp_name = fe.assembly.add_reference_point(rp=rp, name='RP_head')
-        indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
-        fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
-        )
-        
-        return fe
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, load_params: LoadsParams, step_index: int):
+    def _solve_FEA(current_class, path_result: str, load_params: FEAParams, step_index: int, available_gpus):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -128,13 +97,13 @@ class MorphSolver(BaseSolver):
         except:
             pool_id = 0
 
-        available_gpus = ['cuda:0']
-        if torch.cuda.is_available():
+        if len(available_gpus) > 0:
             cuda_now = (pool_id+1) % len(available_gpus)
             torch.set_default_device(available_gpus[cuda_now])
             print("Process %s use GPU: %s" % (current_process_name, available_gpus[cuda_now]))
         else:
             torch.set_default_device('cpu')
+            print("Process %s use CPU" % (current_process_name))
 
         # torch.set_default_device(torch.device('cuda:0'))
         torch.set_default_dtype(torch.float64)
@@ -143,12 +112,13 @@ class MorphSolver(BaseSolver):
         FE_inp = FEA.FEA_INP()
         FE_inp.read_inp(path_result + '/Cache/' + '/TopOptRun.inp')
 
-        fe = current_class.init_FEA(FE_inp, load_params=load_params)
-        load_params.process_fea(fea=fe, step_index=step_index)
+        # fe = current_class.init_FEA(FE_inp, load_params=load_params, step_index=step_index)
+        fe = load_params.create_fea(FE_inp)
+        load_params.process_fea(fe=fe, step_index=step_index)
 
         # solve displacement 0
         fe.solver.maximum_iteration = 200
-        result = fe.solve(tol_error=1e-4)
+        result = fe.solve(tol_error=1e-3)
 
         if type(result) == bool:
             raise RuntimeError(

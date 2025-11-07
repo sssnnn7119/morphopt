@@ -176,6 +176,8 @@ class MaterialParams(_Materials):
 - ContactSelfInterface：自接触；一般无幅值。
 - ConcentratedForceInterface：集中力，基于参考点名 `rp_name`，幅值为 `[Fx,Fy,Fz]`。
 - ConcentratedMomentInterface：集中力矩，`rp_name`，幅值为 `[Mx,My,Mz]`。
+- SpringToGroundInterface：弹簧（RP-地面点），参数顺序为 `[k, L0, Px, Py, Pz]`。
+- SpringBetweenRPsInterface：弹簧（RP-RP），参数顺序为 `[k, L0]`。
 
 注意：接口类内部仅存 Python list[float]；参数导出阶段再转为张量，便于优化器统一打包。
 

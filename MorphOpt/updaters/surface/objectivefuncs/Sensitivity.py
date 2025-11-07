@@ -57,7 +57,7 @@ class ShapeDerivativeDirect(BaseObj):
                 GC0 = objfun.U[i].to(part.nodes.device)
                 fe.assembly.GC = GC0
                 fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
-                GLOBAL.controller.params.loads.process_fea(fea=fe, step_index=i)
+                GLOBAL.controller.params.loads.process_fea(fe=fe, step_index=i)
                 
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)

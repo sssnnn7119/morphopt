@@ -12,8 +12,7 @@ import runpy
 from MorphOpt import GLOBAL
 
 import torch
-torch.set_default_dtype(torch.float64)
-torch.set_default_device('cpu')
+
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 def restart_optimization(restart_path, target_iteration=None):
@@ -33,6 +32,8 @@ def restart_optimization(restart_path, target_iteration=None):
     if target_iteration is None:
         target_iteration = GLOBAL.History.iteration
     GLOBAL.History.iteration = target_iteration
+    GLOBAL.History.history_num_nodes = GLOBAL.History.history_num_nodes[:target_iteration]
+    GLOBAL.History.history_num_elements = GLOBAL.History.history_num_elements[:target_iteration]
     GLOBAL.History.history_objective = GLOBAL.History.history_objective[:target_iteration]
     GLOBAL.History.history_time = GLOBAL.History.history_time[:target_iteration]
     GLOBAL.History.history_deformation = GLOBAL.History.history_deformation[:target_iteration]
@@ -50,10 +51,12 @@ def restart_optimization(restart_path, target_iteration=None):
                                                     generator=generator, 
                                                     solver=solver, 
                                                     updater=updater)
-
+    params.initialize(0)
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
     controller.opt_loop()
 
 if __name__ == "__main__":
-    restart_optimization(restart_path = "Z:/Results/FRONT_T20251103190841/", 
+    torch.set_default_dtype(torch.float64)
+    torch.set_default_device('cpu')
+    restart_optimization(restart_path = "Z:/Results/LOCOMOTION_T20251104184923/", 
                          target_iteration = None)  

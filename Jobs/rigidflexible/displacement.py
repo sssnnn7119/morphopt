@@ -41,6 +41,9 @@ class Params(_Params):
 
     class FEAParams(_FEAParams):
 
+        def __init__(self):
+            super().__init__()
+
         def define_interface(self):
             # Common BC / RP / Couple
             self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))

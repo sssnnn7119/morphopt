@@ -23,7 +23,7 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
         result_path = os.getcwd() + '/Results/'
     
     GLOBAL.PATH.path_Result = result_path + '/' + opt_label + '_' + 'T' + datetime.datetime.now().strftime(
-        "%Y%m%d%H%M%S") + '/'
+        "%Y-%m-%d_%H-%M-%S") + '/'
         
     # create the result path if it does not exist
     os.makedirs(GLOBAL.PATH.path_Result + '/Cache/')

@@ -179,15 +179,22 @@ class Params(_Params):
 
                 self.surface_list[surf_ind[i]].update_variables(dx)
             
-    class LoadParams(_LoadsParams):
+    class FEAParams(_FEAParams):
         def __init__(self):
             super().__init__()
-            # Define interfaces
-            self.add_load_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
-            self.add_load_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
 
+        def define_interface(self):
+            # Common BC / RP / Couple
+            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
+            self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+            # Define interfaces
+            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
+            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
+
+        def define_steps(self):
             # One step amplitudes
             self.set_step_num(1)
             self.set_step_params(0, 'P_s1', [0.06])
@@ -198,7 +205,7 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.LoadParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
 
 class Generator(_Generator):
     def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:

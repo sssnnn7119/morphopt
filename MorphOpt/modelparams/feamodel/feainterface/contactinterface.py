@@ -1,5 +1,6 @@
+from FEA import FEAController
 import torch
-from .baseloadinterface import BaseLoadInterface
+from .basefeainterface import BaseFEAInterface
 
 # Prefer the same import style as PressureInterface
 try:
@@ -10,9 +11,14 @@ except Exception:  # Fallback if package structure differs
 	ContactSelf = None  # type: ignore
 
 
-class ContactInterface(BaseLoadInterface):
+class ContactInterface(BaseFEAInterface):
 	"""
 	Contact load interface between two instances.
+
+	Notes:
+	- This contact interface has no amplitude values (num_values = 0).
+	  It is registered once and applied as a constraint; no per-step values required.
+	- Penalty parameters can be specified via init args.
 
 	This interface describes a contact constraint between surface1 of instance1
 	and surface2 of instance2. It integrates with LoadsParams so contact loads
@@ -38,7 +44,12 @@ class ContactInterface(BaseLoadInterface):
 		self.penalty_start_f = None if penalty_start_f is None else float(penalty_start_f)
 		self.penalty_end_f = None if penalty_end_f is None else float(penalty_end_f)
 
-	def get_fea_load(self):
+	@property
+	def num_values(self) -> int:
+		return 0
+
+	def modify_fea(self, fe: FEAController, name: str):
+
 		# Lazy import to be robust to different package layouts
 		global Contact
 		if Contact is None:
@@ -56,13 +67,19 @@ class ContactInterface(BaseLoadInterface):
 			kwargs["penalty_start_f"] = self.penalty_start_f
 		if self.penalty_end_f is not None:
 			kwargs["penalty_end_f"] = self.penalty_end_f
-		return Contact(**kwargs)  # type: ignore
+		loadobj = Contact(**kwargs)  # type: ignore
+
+		fe.assembly.add_load(loadobj, name)
 
 
 
-class ContactSelfInterface(BaseLoadInterface):
+class ContactSelfInterface(BaseFEAInterface):
 	"""
 	Self-contact load interface for a single instance surface.
+
+	Notes:
+	- This self-contact interface has no amplitude values (num_values = 0).
+	  It is registered once and applied as a constraint; no per-step values required.
 
 	Adds a self-contact constraint for a given surface on one instance.
 	"""
@@ -77,9 +94,12 @@ class ContactSelfInterface(BaseLoadInterface):
 		self.instance_name = instance_name
 		self.surface_name = surface_name
 		self.penalty_threshold_h = None if penalty_threshold_h is None else float(penalty_threshold_h)
+		
+	@property
+	def num_values(self) -> int:
+		return 0
 
-
-	def get_fea_load(self):
+	def modify_fea(self, fe: FEAController, name: str):
 		from FEA.assemble.loads.contact import ContactSelf
 
 		kwargs = dict(
@@ -88,4 +108,6 @@ class ContactSelfInterface(BaseLoadInterface):
 		)
 		if self.penalty_threshold_h is not None:
 			kwargs["penalty_threshold_h"] = self.penalty_threshold_h
-		return ContactSelf(**kwargs)  # type: ignore
+		loadobj = ContactSelf(**kwargs)  # type: ignore
+
+		fe.assembly.add_load(loadobj, name)
