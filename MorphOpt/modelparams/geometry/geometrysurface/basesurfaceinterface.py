@@ -7,9 +7,6 @@ class BaseInterface():
     Class to handle the surface of the morphable model.
     """
     
-    def __init__(self):
-        pass
-
     def __init__(self, surface: Surface_Base, symmetric: list[int] = None) -> None:
         """
         Initialize the Surface class.
@@ -46,13 +43,15 @@ class BaseInterface():
         """record the output knots of the surface"""
         self.surface_out_coo: torch.Tensor
         """record the output coordinates of the surface"""
+
+        self._coordinates_fea: torch.Tensor
+        """record the coordinates of the surface for FEA"""
     
     def initialize(self) -> None:
         """
         Initialize the surface.
         """
         pass
-
     
     @property
     def surf_type(self) -> int:
@@ -158,8 +157,18 @@ class BaseInterface():
             fnew = f[index]
         return index, fnew
     
-    
-    
+    def match_points_surface(self, points: torch.Tensor) -> torch.Tensor:
+        """
+        Match the points to the surface.
+
+        Parameters:
+            points (torch.Tensor): The points to be matched.
+
+        Returns:
+            torch.Tensor: The coordinates of the matched points on the surface.
+        """
+        raise NotImplementedError("The match_points_surface method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+
     @property
     def num_variables(self) -> int:
         """

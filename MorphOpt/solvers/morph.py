@@ -56,34 +56,29 @@ class MorphSolver(BaseSolver):
                 - GCv (list[torch.Tensor]): The first adjoint displacement field.
                 - GCw (list[torch.Tensor]): The second adjoint displacement field.
         """
-
-
-        FE_inp = FEA.FEA_INP()
-        FE_inp.read_inp(PATH.path_Result + '/Cache/' + '/TopOptRun.inp')
-
-        fe = self.params.loads.create_fea(FE_inp)
-        fe.initialize()
         
+        fe = self.params.feamodel.create_fea(inp=GLOBAL.obj_fun.inp)
+        fe.initialize()
 
         # multiprocess FEA
-        # self._solve_FEA(PATH.path_Result, self.params.loads, 0, self.available_gpus)
+        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
         pools = mp.Pool(processes=self.num_process)
         result = []
-        for i in range(self.params.loads.num_load_steps):
+        for i in range(self.params.feamodel.num_load_steps):
             result.append(
                 pools.apply_async(self._solve_FEA,
-                                args=(PATH.path_Result, self.params.loads, i, self.available_gpus)))
+                                args=(GLOBAL.obj_fun.inp, self.params.feamodel, i, self.available_gpus)))
         pools.close()
         pools.join()
 
         # get the result
         U0 = torch.tensor([i.get() for i in result], device='cpu')
 
-        GLOBAL.obj_fun.set_results(fe=fe, U=U0, inp=FE_inp)
+        GLOBAL.obj_fun.set_results(fe=fe, U=U0)
         GLOBAL.obj_fun.calculate_adjoint_problem()
 
     @classmethod
-    def _solve_FEA(current_class, path_result: str, load_params: FEAParams, step_index: int, available_gpus):
+    def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, available_gpus):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -109,12 +104,8 @@ class MorphSolver(BaseSolver):
         torch.set_default_dtype(torch.float64)
         torch.cuda.empty_cache()
         # construct the FEA
-        FE_inp = FEA.FEA_INP()
-        FE_inp.read_inp(path_result + '/Cache/' + '/TopOptRun.inp')
-
-        # fe = current_class.init_FEA(FE_inp, load_params=load_params, step_index=step_index)
-        fe = load_params.create_fea(FE_inp)
-        load_params.process_fea(fe=fe, step_index=step_index)
+        fe = feamodel.create_fea(inp)
+        feamodel.process_fea(fe=fe, step_index=step_index)
 
         # solve displacement 0
         fe.solver.maximum_iteration = 200

@@ -14,7 +14,7 @@ from MorphOpt import *
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self):
-        GLOBAL.controller.params.loads.process_fea(self.fe, step_index=0)
+        GLOBAL.controller.params.feamodel.process_fea(self.fe, step_index=0)
         assembly = self.fe.assembly
         ins_cylinder = assembly.get_instance('cylinder')
         ins_actuator = assembly.get_instance('final_model')
@@ -88,14 +88,16 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 
         Rf = R_now.sum(dim=0)
 
-        loss0 = -self.U[0][-2]
-        loss1 = -Rf[2]
-        # loss2 = -(torch.exp(-(D+0.05)**2) * weight).sum() * 1e-5
-        loss2 = (D**2 * weight).sum() * 1e-5
+        loss0 = -self.U[0][-2] * 1e-4
+        loss1 = Rf[0]
+        loss2 = -(torch.exp(-(D+0.05)**2) * weight).sum() * 1e-4
+        # loss2 = (D**2 * weight).sum()
         
         # E = ins_actuator.potential_energy(RGC = assembly._GC2RGC(self.U[0].to(assembly.device)))
         # loss1 = -E.sum()
-        return loss0 + loss2
+
+        print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
+        return loss0 + loss2 + loss1
  
     
     def save_figure(self, filepath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
@@ -177,14 +179,14 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2])
+            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.5, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=8.,
                                                         length=80.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.4, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=12.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=4.,
@@ -192,7 +194,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.4, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=12.))
         
             
             
@@ -205,6 +207,7 @@ class Params(_Params):
         def define_interface(self):
             # Common BC / RP / Couple
             self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='cylinder', set_nodes_name='contact', index_dof=[0,1,2]))
             self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
             self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
@@ -213,7 +216,7 @@ class Params(_Params):
             self.add_fea_interface(self.ContactInterface(
                 instance_name1='final_model', surface_name1='surface_0_All',
                 instance_name2='cylinder', surface_name2='contact',
-                penalty_threshold_h=3.0
+                penalty_threshold_h=2.0
             ), name='Contact_ext')
 
         def define_steps(self):
@@ -222,20 +225,21 @@ class Params(_Params):
             self.set_step_params(0, 'P_s1', [0.08])
 
         def create_fea(self, inp: FEA.FEA_INP) -> FEA.FEAController:
-            # Build FE model, then add external instance before registering interfaces
-            fe = FEA.from_inp(inp)
-            fe.solver = FEA.solver.StaticImplicitSolver()
+
+            # Use base implementation to build the deformable actuator instance and register interfaces
+            fe = super().create_fea(inp)
+
             # Add cylinder
             self.add_instance_from_inp(
                 fe,
-                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/hulu.inp",
-                part_name='cylinder',
-                instance_name='cylinder',
-                translation=[5.0, 0.0, 0.0]
+                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/rec.inp",
+                part_name='rec',
+                instance_name='rec',
+                part_name_new='cylinder',
+                instance_name_new='cylinder',
+                translation=[0.0, 0.0, 0.0]
             )
-            # Register FEA interfaces
-            for name, interface in self.feainterfaces.items():
-                interface.modify_fea(fe, name)
+
             return fe
             
     class MaterialParams(_Materials):
@@ -244,19 +248,7 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
-
-class Generator(_Generator):
-    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
-        """
-        Initialize the Genetrator class.
-        
-        Parameters:
-            surfaces (Surfaces): The surfaces of the soft robot.
-            path_output (str): The path to the output directory.
-            path_queue (str): The path to the queue directory.
-        """
-        super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
+        super().__init__(surfaces=self.SurfaceParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
 class Solver(_MorphSolver):
     """
@@ -296,7 +288,7 @@ class Updater(_Updaters):
             shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
             self.add_objective_function(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
@@ -326,12 +318,10 @@ if __name__ == '__main__':
     initializer.initialize_history()
 
     params = Params()
-    
-    generator = Generator(surfaces=params.surfaces,path_output=GLOBAL.PATH.path_Result + '/Cache/', path_queue=GLOBAL.PATH.path_Queue)
 
     solver = Solver(params=params)
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solver, updater=updater)
+    controller = Controller(params=params, solver=solver, updater=updater)
     controller.opt_loop()

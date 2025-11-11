@@ -108,7 +108,7 @@ class BaseParams:
         """
         pass
 
-    def export_data(self, filepath: str):
+    def _export_data(self, filepath: str):
         """
         Export the data of parameters to file(s).
         

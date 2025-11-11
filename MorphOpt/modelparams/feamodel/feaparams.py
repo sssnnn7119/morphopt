@@ -39,7 +39,8 @@ class FEAParams(BaseParams):
     def define_steps(self):
         pass
 
-    def add_instance_from_inp(self, fe: FEAController, inp_path: str, part_name: str, instance_name: str, translation: list[float] = None, part_name_new: str = None, instance_name_new: str = None) -> None:
+    
+    def add_instance_from_inp(self, fe: FEA.FEAController, inp_path: str, part_name: str, instance_name: str, translation: list[float] = None, part_name_new: str = None, instance_name_new: str = None) -> None:
         """
         Add a part and instance into the current FE assembly by reading an external INP file.
 
@@ -57,7 +58,7 @@ class FEAParams(BaseParams):
         if instance_name_new is None:
             instance_name_new = instance_name
 
-        ext_inp = FEA_INP()
+        ext_inp = FEA.FEA_INP()
         ext_inp.read_inp(inp_path)
         fe_ext = FEA.from_inp(ext_inp)
         part = fe_ext.assembly.get_part(part_name)
@@ -138,13 +139,18 @@ class FEAParams(BaseParams):
         """
         return len(self.fea_steps_params)
 
-    def create_fea(self, inp: FEA_INP) -> FEAController:
+    def create_fea(self, inp: FEA.FEA_INP) -> FEAController:
+        """
+        Create an FEAController instance from the given FEA_INP file and add load interfaces
+        Args:
+            inp (FEA.FEA_INP): The FEA input file.
+        Returns:
+            FEAController: The created FEAController instance with load interfaces added.
+        """
+        
+        # get the FEA model
         fe = FEA.from_inp(inp)
         fe.solver = FEA.solver.StaticImplicitSolver()
-        ins_name = 'final_model'
-        ins = fe.assembly.get_instance(ins_name)
-        # convert to the second order elements
-        # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
 
         # Add fea features
         for name, interface in self.feainterfaces.items():
@@ -165,8 +171,6 @@ class FEAParams(BaseParams):
         for name, load_interface in self.feainterfaces.items():
             load_interface._values = load_step_now[name]
             load_interface.apply_fea_value(fe, name)
-
-            
 
     def get_parameters(self) -> list[torch.Tensor]:
         """

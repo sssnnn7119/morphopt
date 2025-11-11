@@ -43,7 +43,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4)
+            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.5, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=21.,
@@ -309,19 +309,8 @@ class Params(_Params):
             super().__init__(mu=0.7, kappa=7.0, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-class Generator(_Generator):
-    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
-        """
-        Initialize the Genetrator class.
-        
-        Parameters:
-            surfaces (Surfaces): The surfaces of the soft robot.
-            path_output (str): The path to the output directory.
-            path_queue (str): The path to the queue directory.
-        """
-        super().__init__(seed_size=1.5, mesh_order=1, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(_MorphSolver):
     """
@@ -359,7 +348,7 @@ class Updater(_Updaters):
             shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
             self.add_objective_function(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5, 2.5, 2.5, 2.5],
@@ -395,12 +384,10 @@ if __name__ == '__main__':
     initializer.initialize_history()
 
     params = Params()
-    
-    generator = Generator(surfaces=params.surfaces,path_output=GLOBAL.PATH.path_Result + '/Cache/', path_queue=GLOBAL.PATH.path_Queue)
 
     solver = Solver(params=params)
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solver, updater=updater)
+    controller = Controller(params=params, solver=solver, updater=updater)
     controller.opt_loop()

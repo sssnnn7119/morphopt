@@ -2,7 +2,7 @@ from math import e
 import torch
 import vtk
 from mayavi import mlab
-from .BaseInterface import BaseInterface
+from .basesurfaceinterface import BaseInterface
 from ..SurfaceModel.ClosedSurface.CS import ClosedSurface
 from .... import GLOBAL
 class CsInterface(BaseInterface):

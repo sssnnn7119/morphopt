@@ -1,6 +1,13 @@
 
+import datetime
+from email.policy import default
+import os
+import shutil
+import time
+import FEA
+import numpy as np
 import torch
-from .SurfaceInterface.BaseInterface import BaseInterface
+from .geometrysurface.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 from ... import GLOBAL
 
@@ -8,11 +15,11 @@ class SurfacesParams(BaseParams):
     """
     Class to handle the surfaces of the morphable model.
     """
-    from .SurfaceInterface.CSInterface import CsInterface as CS
-    from .SurfaceInterface.BSPInterface import BspInterface as BSP
-    from .SurfaceInterface.CPGEOSphereInterface import CPGEOSurfaceInterface as CPGEO
+    from .geometrysurface.cssurfaceinterface import CsInterface as CS
+    from .geometrysurface.bspsurfaceinterface import BspInterface as BSP
+    from .geometrysurface.cpgeosurfaceinterface import CPGEOSurfaceInterface as CPGEO
 
-    def __init__(self, max_step_length: list[float], reinitialize_per_iter: int = 1, *args, **kwargs) -> None:
+    def __init__(self, max_step_length: list[float], fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """
         Initialize the Surfaces class.
 
@@ -41,7 +48,21 @@ class SurfacesParams(BaseParams):
         The number of iterations after which the surfaces are reinitialized.
         This is useful for ensuring that the surfaces are updated periodically during the optimization process.
         """
-    
+        self.fea_seed_size = fea_seed_size
+        """
+        The seed size for the finite element analysis (FEA).
+        """
+        
+        self.fea_mesh_order = fea_mesh_order
+        """
+        The mesh order for the finite element analysis (FEA).
+        """
+
+        self._surface_node_index: list[np.ndarray] = []
+        """
+        The indices of the surface nodes.
+        """
+        
     def initialize(self, iteration: int):
         """
         Initialize the surfaces for the optimization process.
@@ -243,12 +264,133 @@ class SurfacesParams(BaseParams):
         mlab.view(azimuth=210, elevation=70, distance=300)
         mlab.savefig(filepath + '%d.jpg'%GLOBAL.History.iteration)
         mlab.close()
+    
+    def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
+        """
+        This function generates the geometric model of the soft robot.
+        It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
+        """
 
-    def export_data(self, filepath) -> list[str]:
-        name = []
+        if GLOBAL.History.iteration % self.reinitialize_per_iter == 0:
+            self._regenerate(material_para=material_para)
+        else:
+            self._refinemesh()
+
+    def _refinemesh(self):
+        """
+        This function refines the mesh of the geometric model of the soft robot.
+        """
+        inp = GLOBAL.obj_fun.inp
+        part = inp.part['final_model']
+        for i in range(self.num_surface):
+            node_surface = self.surface_list[i].model.map(self.surface_list[i]._coordinates_fea).cpu().numpy().T
+            part.nodes[self._surface_node_index[i], 1:] = node_surface
+
+    def _regenerate(self, material_para: list[float]) -> None:
+        """
+        This function regenerates the geometric model of the soft robot.
+        It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
+        """
+        path_output = GLOBAL.PATH.path_Result + '/Cache/'
+        path_queue = GLOBAL.PATH.path_Queue + '/'
+
+        # export the data
+        que_names = self._export_data(path_output, path_queue)
+        
+        # call Rhino to generate the model
+        self._call_rhino(que_Names=que_names)
+
+        # call Abaqus for FEA
+        self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
+
+        # read the inp file
+        inp_path = GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp'
+        inp = FEA.FEA_INP()
+        inp.read_inp(path=inp_path)
+
+        GLOBAL.obj_fun.inp = inp
+
+        # match the points on the surfaces
+        self._match_points_surface()
+
+    def _match_points_surface(self):
+        """
+        Match the points on the surfaces after FEA meshing.
+        """
+        inp = GLOBAL.obj_fun.inp
+        nodes = inp.part['final_model'].nodes[:, 1:]
+
+        temp = torch.tensor([1.])
+        default_device = temp.device
+
+        self._surface_node_index = []
+        for i in range(self.num_surface):
+            if self.surface_list[i].surf_type == 0:
+                surf_set_now = np.unique(np.array(list(inp.part['final_model'].sets_nodes['surface_%d_Lateral' % i])))
+            else:
+                surf_set_now = np.unique(np.array(list(inp.part['final_model'].sets_nodes['surface_%d_All' % i])))
+            self._surface_node_index.append(surf_set_now)
+            surf_nodes = torch.from_numpy(nodes[surf_set_now]).T.to(default_device)
+            self.surface_list[i].match_points_surface(surf_nodes)
+
+
+    def _export_data(self, path_output: str, path_queue: str) -> list[str]:
+        """
+        This function export the data of each surfaces
+        """
+        
+        # export each surface with Rhino
+        que_Names = []
         for i in range(self.num_surface):
             surf_name0 = '__surface-%d' % i
-            name_now = self.surface_list[i].output_data(path_output=filepath, name_output=surf_name0, flip=(i!=0))
-            name.append(name_now)
+            name = self.surface_list[i].output_data(path_output=path_output, name_output=surf_name0, flip=(i!=0))
+            
+            info = '%d\n%s\n%s' % (self.surface_list[i].surf_type, path_output +
+                                name, path_output + surf_name0 + '.stp')
+            que_name = 'T' + datetime.datetime.now().strftime(
+                "%Y%m%d%H%M%S") + '_%d.txt' % i
+            with open(path_queue + que_name, 'w') as f:
+                f.write(info.replace('/', '\\\\'))
+            que_Names.append(path_queue + que_name)
+        for que_file in que_Names:
+            while os.path.exists(que_file):
+                time.sleep(0.1)    
+        return que_Names
+    
+    def _call_rhino(self, que_Names: list[str]) -> None:
+        """
+        This function is a placeholder for calling Rhino, a 3D computer graphics and computer-aided design (CAD) application.
+        It is currently not implemented.
+        """
+        for que_file in que_Names:
+            while os.path.exists(que_file):
+                time.sleep(0.1)
 
-        return name
+    def _call_Abaqus(self, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
+        
+        current_path = os.getcwd()
+
+        shutil.copy(os.path.dirname(os.path.abspath(__file__)) + '/_Abaqus/GenModel.py', path_output)
+        with open(path_output + '__FEM_Para_Base.txt', 'w') as f:
+
+            # surface type
+            f.write('Surfaces*\t')
+            for sf in self.surface_list:
+                f.write('%d\t' % sf.surf_type)
+            f.write('\n')
+
+            # materials
+            f.write(
+                'Material*\t%s\t%e\t%d\t%e\t%e\n' %
+                ('Rubber', material_para[0], material_para[1],
+                material_para[2], material_para[3]))
+
+            # Seed size
+            f.write('SeedSize*\t%e\n' % seed_size)
+
+            # mesh order
+            f.write('MeshOrder*\t%d\n' % mesh_order)
+        
+        os.chdir(path_output)
+        os.system('abaqus cae noGUI=' + path_output + '/GenModel.py')
+        os.chdir(current_path)

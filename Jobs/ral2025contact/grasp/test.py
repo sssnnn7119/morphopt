@@ -1,4 +1,5 @@
 
+from turtle import pen
 import torch
 
 import FEA
@@ -17,28 +18,28 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         
     """
     inp_cylinder = FEA.FEA_INP()
-    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/hulu.inp")
+    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/rec.inp")
     fe_cylinder = FEA.from_inp(inp_cylinder)
-    part_cylinder = fe_cylinder.assembly.get_part('cylinder')
+    part_cylinder = fe_cylinder.assembly.get_part('rec')
 
     fe = FEA.from_inp(inp)
-    fe.assembly.add_part(part_cylinder, name='cylinder')
-    fe.assembly.add_instance(FEA.Instance(part=part_cylinder), name='cylinder')
+    fe.assembly.add_part(part_cylinder, name='rec')
+    fe.assembly.add_instance(FEA.Instance(part=part_cylinder), name='rec')
 
     fe.solver = FEA.solver.StaticImplicitSolver()
     ins_name = 'final_model'
     ins = fe.assembly.get_instance(ins_name)
-    ins_cylinder = fe.assembly.get_instance('cylinder')
+    ins_cylinder = fe.assembly.get_instance('rec')
     # convert to the second order elements
     # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-    ins_cylinder._translation = torch.tensor([5,0,0.])
+    ins_cylinder._translation = torch.tensor([0,0,0.])
     
     # add contact between cylinder and model
-    fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2='cylinder', 
-                                            surface_name1='surface_0_All', surface_name2='contact'))
+    fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2='rec', 
+                                            surface_name1='surface_0_All', surface_name2='contact', penalty_threshold_h=2.0),)
     
     # boundary condition on cylinder
-    fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name='cylinder', index_nodes=np.arange(0, ins_cylinder.nodes.shape[0])))
+    fe.assembly.add_boundary(FEA.boundarys.Boundary_Condition(instance_name='rec', set_nodes_name='contact'))
 
     # add loads
     i=0
@@ -60,14 +61,14 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
 
     # add boundary condition
     bc_dof = inp.part['final_model'].sets_nodes['surface_0_Bottom']
-    fe.assembly.add_constraint(FEA.constraints.Boundary_Condition(instance_name=ins_name, index_nodes=bc_dof),
+    fe.assembly.add_boundary(FEA.boundarys.Boundary_Condition(instance_name=ins_name, set_nodes_name='surface_0_Bottom'),
                     name='BC')        # add reference point and constraints
     
     
     rp = FEA.ReferencePoint([0., 0., ins.nodes[:, 2].max()],)
     rp_name = fe.assembly.add_reference_point(rp=rp)
     indexNodes = inp.part['final_model'].sets_nodes['surface_0_Head']
-    fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, indexNodes=indexNodes, rp_name=rp_name)
+    fe.assembly.add_constraint(FEA.constraints.Couple(instance_name=ins_name, set_nodes_name='surface_0_Head', rp_name=rp_name)
     )
 
     
@@ -94,7 +95,7 @@ torch.set_default_dtype(torch.float64)
 torch.cuda.empty_cache()
 # construct the FEA
 FE_inp = FEA.FEA_INP()
-FE_inp.read_inp('Z:/Results/GRASP_T20251016110721/Cache/TopOptRun.inp')
+FE_inp.read_inp('Z:/Results/GRASP_T2025-11-10_10-04-13/Cache/TopOptRun.inp')
 
 fe = init_FEA(FE_inp)
 
@@ -116,12 +117,12 @@ print(GC0[-6:].tolist())
 
 assembly = fe.assembly
 R = assembly._assemble_generalized_Matrix(GC=GC0.to(assembly.device))[0]
-R_now = R[assembly.RGC_list_indexStart[assembly.get_instance('cylinder')._RGC_index]:assembly.RGC_list_indexStart[assembly.get_instance('cylinder')._RGC_index+1]].reshape([-1, 3])
+R_now = R[assembly.RGC_list_indexStart[assembly.get_instance('rec')._RGC_index]:assembly.RGC_list_indexStart[assembly.get_instance('rec')._RGC_index+1]].reshape([-1, 3])
 Rf = R_now.sum(dim=0)
 
 # extern_surf = fe.loads['pressure-1'].surface_element.cpu().numpy()
 ins1 = fe.assembly.get_instance('final_model')
-ins2 = fe.assembly.get_instance('cylinder')
+ins2 = fe.assembly.get_instance('rec')
 extern_surf = ins1.surfaces.get_elements('surface_0_All')[0]._elems.cpu().numpy()
 extern_surf2 = ins2.surfaces.get_elements('contact')[0]._elems.cpu().numpy()
 # extern_surf = fem.part['final_model'].surfaces['surface_1_All']

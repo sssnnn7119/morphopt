@@ -1,6 +1,7 @@
+from turtle import distance
 import numpy as np
 import torch
-from .BaseInterface import BaseInterface
+from .basesurfaceinterface import BaseInterface
 from ..SurfaceModel.bspline.BSP import BSP_Surf
 from .... import GLOBAL
 
@@ -129,6 +130,25 @@ class BspInterface(BaseInterface):
         return name_output + '.csv'
     
 
+    def match_points_surface(self, points: torch.Tensor) -> torch.Tensor:
+        
+        # get the initial guess
+        points_init = self.model.map().cpu()
+
+        distance_init = (points.reshape([3, 1, -1]).cpu() - points_init.reshape([3, -1, 1]).cpu()).norm(dim=0)
+        index_init = torch.argmin(distance_init, dim=0)
+
+        uv_init = self.model.coordinates.reshape([2, -1])[:, index_init].detach().clone().requires_grad_()
+        opt = torch.optim.Adam([uv_init], lr=0.01)
+        for i in range(100):
+            opt.zero_grad()
+            surface_points = self.model.map(uv_init)
+            loss = ((surface_points - points)**2).sum()
+            loss.backward()
+            opt.step()
+
+        self._coordinates_fea = uv_init.detach().to(points.device)
+
     
     def get_surface_parameters(self) -> torch.Tensor:
         """
@@ -152,11 +172,9 @@ class BspInterface(BaseInterface):
     def update_variables(self, x_change):
         
         x_change = x_change.reshape_as(self.model.control_points)
-        
-        x_change[:, [0,1,2], :] = 0
-        x_change[:, [-1,-2,-3], :] = 0
-        x_change[2, 1:5, :] = 0
-        x_change[2, -5:-1, :] = 0
+
+        x_change[2, :5, :] = 0
+        x_change[2, -5:, :] = 0
         
         self.model.control_points = self.model.control_points + x_change.reshape(self.model.control_points.shape)
     

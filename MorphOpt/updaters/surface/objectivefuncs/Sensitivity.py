@@ -10,7 +10,7 @@ class ShapeDerivativeDirect(BaseObj):
     Shape derivative for contact forces.
     """
 
-    def __init__(self, reset_per_iter: int = 5):
+    def __init__(self, reset_per_iter: int = 1):
 
         super().__init__()
 
@@ -57,7 +57,7 @@ class ShapeDerivativeDirect(BaseObj):
                 GC0 = objfun.U[i].to(part.nodes.device)
                 fe.assembly.GC = GC0
                 fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
-                GLOBAL.controller.params.loads.process_fea(fe=fe, step_index=i)
+                GLOBAL.controller.params.feamodel.process_fea(fe=fe, step_index=i)
                 
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)
@@ -133,7 +133,7 @@ class ShapeDerivativeDirect(BaseObj):
         Returns:
             list[torch.Tensor]: The interpolated points for the design variables.
         """
-        surfaces = GLOBAL.controller.params.surfaces
+        surfaces = GLOBAL.controller.params.geometry
         r0 = surfaces.get_geometry_values()[0]
         interpolated_points = []
         for sf in range(surfaces.num_surface):

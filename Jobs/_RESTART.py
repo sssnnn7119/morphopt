@@ -42,13 +42,9 @@ def restart_optimization(restart_path, target_iteration=None):
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
-    generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
-                                                  path_output=GLOBAL.PATH.path_Result + '/Cache/', 
-                                                  path_queue=GLOBAL.PATH.path_Queue)
     solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
     updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
     controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
-                                                    generator=generator, 
                                                     solver=solver, 
                                                     updater=updater)
     params.initialize(0)
@@ -58,5 +54,5 @@ def restart_optimization(restart_path, target_iteration=None):
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cpu')
-    restart_optimization(restart_path = "Z:/Results/LOCOMOTION_T20251104184923/", 
+    restart_optimization(restart_path = "Z:/Results/EXAMPLE_T2025-11-07_11-09-37/", 
                          target_iteration = None)  

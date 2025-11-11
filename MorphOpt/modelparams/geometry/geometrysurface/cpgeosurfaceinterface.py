@@ -7,7 +7,7 @@ from mayavi import mlab
 
 
 
-from .BaseInterface import BaseInterface
+from .basesurfaceinterface import BaseInterface
 
 
 import CPGEO
@@ -85,6 +85,16 @@ class CPGEOSurfaceInterface(BaseInterface):
 
         return name_output + '.stl'
     
+    def match_points_surface(self, points):
+        points_init = self.model.map(self.surface_out_knots).cpu()
+
+        distance_init = (points.reshape([3, 1, -1]).cpu() - points_init.reshape([3, -1, 1]).cpu()).norm(dim=0)
+        index_init = torch.argmin(distance_init, dim=0)
+
+        uv_init = self.surface_out_knots.reshape([3, -1])[:, index_init]
+
+        self._coordinates_fea = uv_init.detach().to(points.device)
+
     def get_surface_parameters(self) -> torch.Tensor:
         """
         Get the design variables of the surface.

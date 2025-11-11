@@ -17,8 +17,7 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
     GLOBAL.PATH.opt_Lable = opt_label
     
     GLOBAL.PATH.path_Code = os.getcwd() + '/MorphOpt/'
-    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/GenerateModel/_Rhino/TaskQueue/'
-
+    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/modelparams/geometry/_Rhino/TaskQueue/'
     if result_path is None:
         result_path = os.getcwd() + '/Results/'
     

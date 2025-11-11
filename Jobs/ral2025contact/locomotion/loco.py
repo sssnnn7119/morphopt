@@ -126,7 +126,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2])
+            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.2, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=8.,
@@ -171,11 +171,12 @@ class Params(_Params):
             self.set_step_num(1)
             self.set_step_params(0, 'P_s1', [0.08])
 
-            
         def create_fea(self, inp: FEA.FEA_INP) -> FEA.FEAController:
-            fe = FEA.from_inp(inp)
-            fe.solver = FEA.solver.StaticImplicitSolver()
-            # Add external block instance before registering interfaces
+
+            # Use base implementation to build the deformable actuator instance and register interfaces
+            fe = super().create_fea(inp)
+
+            # Add external rigid/block instance before solving (same style as grasp.py)
             self.add_instance_from_inp(
                 fe,
                 inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/locomotion/rec.inp",
@@ -183,8 +184,7 @@ class Params(_Params):
                 instance_name='block',
                 translation=[0.0, 0.0, 0.0]
             )
-            for name, interface in self.feainterfaces.items():
-                interface.modify_fea(fe, name)
+
             return fe
             
     class MaterialParams(_Materials):
@@ -193,19 +193,8 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), loads=self.FEAParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.SurfaceParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-class Generator(_Generator):
-    def __init__(self, surfaces: Params.SurfaceParams, path_output: str = None, path_queue: str = None) -> None:
-        """
-        Initialize the Genetrator class.
-        
-        Parameters:
-            surfaces (Surfaces): The surfaces of the soft robot.
-            path_output (str): The path to the output directory.
-            path_queue (str): The path to the queue directory.
-        """
-        super().__init__(seed_size=1.2, surfaces=surfaces, path_output=path_output, path_queue=path_queue)
 
 class Solver(_MorphSolver):
     """
@@ -245,7 +234,7 @@ class Updater(_Updaters):
             shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
             self.add_objective_function(shape_derivative)
             self.add_objective_function(
-                self.objectivefuncs.Fairness(surfaces=params.surfaces, sensitivity=shape_derivative))
+                self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
             self.add_objective_function(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
@@ -264,7 +253,8 @@ class Controller(_Controller):
             pass
     
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float32)
+    # Unify default dtype with grasp.py
+    torch.set_default_dtype(torch.float64)
     torch.set_default_device('cpu')
 
     path_result = 'Z:/Results'
@@ -275,12 +265,10 @@ if __name__ == '__main__':
     initializer.initialize_history()
 
     params = Params()
-    
-    generator = Generator(surfaces=params.surfaces,path_output=GLOBAL.PATH.path_Result + '/Cache/', path_queue=GLOBAL.PATH.path_Queue)
 
     solver = Solver(params=params)
 
     updater = Updater(params=params)
 
-    controller = Controller(params=params, generator=generator, solver=solver, updater=updater)
+    controller = Controller(params=params, solver=solver, updater=updater)
     controller.opt_loop()

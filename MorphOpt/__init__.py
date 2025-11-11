@@ -5,7 +5,6 @@ from . import initializer
 from .solvers import MorphSolver as _MorphSolver
 from .updaters.surface import UpdaterSurfaces as _UpdaterSurfaces
 from .updaters.updaters import Updaters as _Updaters
-from .generatemodel import Generator as _Generator
 from .modelparams import Params as _Params
 
 __all__ = [
@@ -18,7 +17,6 @@ __all__ = [
     "_MorphSolver",
     "_UpdaterSurfaces",
     "_Updaters",
-    "_Generator",
     "_Params",
 ]
 

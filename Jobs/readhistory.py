@@ -42,13 +42,9 @@ def restart_optimization(restart_path, target_iteration=None):
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
-    generator = MAIN_SCRIPT_FOR_RESTART.Generator(surfaces=params.surfaces, 
-                                                  path_output=GLOBAL.PATH.path_Result + '/Cache/', 
-                                                  path_queue=GLOBAL.PATH.path_Queue)
     solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
     updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
     controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
-                                                    generator=generator, 
                                                     solver=solver, 
                                                     updater=updater)
 

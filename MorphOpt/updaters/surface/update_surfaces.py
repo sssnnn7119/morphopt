@@ -46,7 +46,7 @@ class UpdaterSurfaces(BaseUpdater):
         The weights for the points in the optimization process.
         """
 
-        self.params_update: SurfacesParams = params.surfaces
+        self.params_update: SurfacesParams = params.geometry
         """
         The surfaces object that contains the design variables.
         """
