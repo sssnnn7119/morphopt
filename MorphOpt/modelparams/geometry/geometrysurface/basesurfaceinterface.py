@@ -1,3 +1,5 @@
+import FEA
+import numpy as np
 import torch
 
 from ..SurfaceModel.Surface_Base import Surface_Base
@@ -50,6 +52,12 @@ class BaseInterface():
     def initialize(self) -> None:
         """
         Initialize the surface.
+        """
+        pass
+
+    def pre_load(self) -> None:
+        """
+        Pre-load the surface to accelerate the computation when the coordinates are the same.
         """
         pass
     
@@ -168,6 +176,16 @@ class BaseInterface():
             torch.Tensor: The coordinates of the matched points on the surface.
         """
         raise NotImplementedError("The match_points_surface method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+
+    def refine_fea_mesh(self, part: FEA.FEA_INP.Parts, surf_index: int, nodes_new: np.ndarray):
+        """
+        Refine the mesh of the surface.
+
+        Parameters:
+            part (FEA.FEA_INP.Parts): The FEA input data.
+            surf_index (int): The index of the surface to be refined.
+        """
+        return nodes_new
 
     @property
     def num_variables(self) -> int:

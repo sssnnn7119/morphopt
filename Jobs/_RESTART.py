@@ -54,5 +54,5 @@ def restart_optimization(restart_path, target_iteration=None):
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cpu')
-    restart_optimization(restart_path = "Z:/Results/EXAMPLE_T2025-11-07_11-09-37/", 
+    restart_optimization(restart_path = "Z:/Results/EXAMPLE_T2025-11-12_15-44-03/", 
                          target_iteration = None)  

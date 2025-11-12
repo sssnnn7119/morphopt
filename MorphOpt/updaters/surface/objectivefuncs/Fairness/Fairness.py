@@ -1,13 +1,13 @@
 import torch
 from ..baseobjfun import BaseObj
-from .....modelparams import SurfacesParams
+from .....modelparams import GeometryParams
 from .. import ShapeDerivativeDirect
 class Fairness(BaseObj):
     """
     Fairness objective function for MorphOpt.
     """
 
-    def __init__(self, surfaces: SurfacesParams, sensitivity: ShapeDerivativeDirect):
+    def __init__(self, surfaces: GeometryParams, sensitivity: ShapeDerivativeDirect):
         """
         Initialize the fairness objective function with a name.
         """

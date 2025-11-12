@@ -1,3 +1,4 @@
+from calendar import c
 import sys
 import os
 
@@ -325,9 +326,9 @@ class BSP():
                         (Coordinates[i]) *
                         (self.domain_zoom[i][1] - self.domain_zoom[i][0]) +
                         self.domain_zoom[i][0]))
+            self.coordinates = torch.stack(self.coordinates, dim=0)
         else:
-            self.coordinates = copy.deepcopy(coordinates)
-        self.coordinates = torch.stack(self.coordinates, dim=0)
+            self.coordinates = torch.tensor(coordinates)
 
         # get the weight of each control points for each grid
         for dev in range((order_derive + 1)**self.dimension_IO[0]):
@@ -438,12 +439,12 @@ class BSP_Surf(BSP, Surface_Base):
                          vector_type=vector_type,
                          symmetric=symmetric)
 
-    def pre_load(self, num_points: int = None, init_size: float = 1., num_derive=2):
+    def pre_load(self, num_points: int = None, num_derive=2, coordinates=0,):
         
         if num_points is None:
             num_points = (np.array(list(self.control_points.shape[1:])) * 2).tolist()
             
-        super().pre_load(num_points=num_points, order_derive=num_derive)
+        super().pre_load(num_points=num_points, order_derive=num_derive, coordinates=coordinates)
 
         # initial position
         self.R0 = self.get_surface_value(derivatives=0)[0][0]

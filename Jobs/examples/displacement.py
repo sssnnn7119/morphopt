@@ -17,7 +17,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(_SurfacesParams):
+    class GeometryParams(_GeometryParams):
 
         def __init__(self):
 
@@ -30,21 +30,21 @@ class Params(_Params):
                                                         symmetric=[1, [1]],
                                                         flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
             
-            # self.add_surface(
-            #     self.BSP.initialize_cylinder(r0=4.,
-            #                                         length=74.,
-            #                                         seed_size=1.0,
-            #                                         symmetric=[1, [1]],
-            #                                         init_location=[0, 0, 3],
-            #                                         flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
             self.add_surface(
-                self.CPGEO.initialize_Sphere(seed_size=1.0,
-                                             flip=True,
-                                             r0=4.,
-                                             init_location=[0., 0., 40.],
-                                             MaxC=1.0,
-                ))
+                self.BSP.initialize_cylinder(r0=4.,
+                                                    length=74.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[0, 0, 3],
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+
+            # self.add_surface(
+            #     self.CPGEO.initialize_Sphere(seed_size=1.0,
+            #                                  flip=True,
+            #                                  r0=4.,
+            #                                  init_location=[0., 0., 40.],
+            #                                  MaxC=1.0,
+            #     ))
 
 
     class FEAParams(_FEAParams):
@@ -69,7 +69,7 @@ class Params(_Params):
             super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
     
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
 
 class Solver(_MorphSolver):
@@ -103,7 +103,7 @@ class Updater(_Updaters):
 
             super().__init__(
                 params=params,
-                max_step_iter=100)
+                max_step_iter=50)
 
             shape_derivative = self.objectivefuncs.ShapeDerivativeDirect(reset_per_iter=5)
             self.add_objective_function(shape_derivative)

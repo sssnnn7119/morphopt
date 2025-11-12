@@ -122,7 +122,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(_SurfacesParams):
+    class SurfaceParams(_GeometryParams):
 
         def __init__(self):
 

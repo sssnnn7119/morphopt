@@ -22,7 +22,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 GLOBAL.obj_fun = ObjectiveFunction()
 
 class Params(_Params):
-    class SurfaceParams(_SurfacesParams):
+    class SurfaceParams(_GeometryParams):
 
         def __rotate120_240(self, r0):
             r0_120 = torch.zeros_like(r0)

@@ -6,7 +6,7 @@ from ...GLOBAL import PATH, History
 from .. import optimizer
 
 from ...modelparams.params import Params
-from ...modelparams import SurfacesParams, FEAParams, Materials
+from ...modelparams import GeometryParams, FEAParams, Materials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
 from MorphOpt import GLOBAL
@@ -46,7 +46,7 @@ class UpdaterSurfaces(BaseUpdater):
         The weights for the points in the optimization process.
         """
 
-        self.params_update: SurfacesParams = params.geometry
+        self.params_update: GeometryParams = params.geometry
         """
         The surfaces object that contains the design variables.
         """

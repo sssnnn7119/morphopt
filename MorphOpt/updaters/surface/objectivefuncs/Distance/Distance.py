@@ -1,6 +1,6 @@
 import torch
 from ..baseobjfun import BaseObj
-from .....modelparams import SurfacesParams
+from .....modelparams import GeometryParams
 from .....dlls import interface
 
 class Distance(BaseObj):

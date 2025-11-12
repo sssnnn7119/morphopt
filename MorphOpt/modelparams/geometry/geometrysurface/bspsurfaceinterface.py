@@ -149,7 +149,24 @@ class BspInterface(BaseInterface):
 
         self._coordinates_fea = uv_init.detach().to(points.device)
 
-    
+    def refine_fea_mesh(self, part, surf_index, nodes_new):
+        from ..utils import mesh
+        nodes_new = nodes_new.copy()
+        def refine_part_mesh(name: str):
+            surface_head_nodes = np.sort(list(part.sets_nodes['surface_%d_%s' % (surf_index, name)]))
+            surface_head_elems = part.surfaces_tri['surface_%d_All' % surf_index]
+            surface_head_elems_remain = np.where(
+                np.isin(surface_head_elems, surface_head_nodes).sum(axis=1) == 3)[0]
+            surface_head_elems = surface_head_elems[surface_head_elems_remain]
+
+            new_nodes = mesh.edge_length_regularization_surf3D(nodes0=torch.from_numpy(nodes_new.T), 
+                                                        elements=torch.from_numpy(surface_head_elems).to(torch.int64),)
+            nodes_new[surface_head_nodes] = new_nodes.cpu().numpy().T[surface_head_nodes]
+        refine_part_mesh('Head')
+        refine_part_mesh('Bottom')
+        return nodes_new
+
+
     def get_surface_parameters(self) -> torch.Tensor:
         """
         Get the design variables of the surface.
@@ -360,7 +377,6 @@ class BspInterface(BaseInterface):
             2, 0, :] = init_location[2]
         bsp.control_points.data[2, -1, :] = init_location[2] + length
 
-        bsp.pre_load([bsp.num_points[0] * 2, bsp.num_points[1] * 2],
-                    init_size=seed_size)
+        bsp.pre_load([bsp.num_points[0] * 2, bsp.num_points[1] * 2])
 
         return cls(bsp, init_size=seed_size, symmetric=symmetric, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)

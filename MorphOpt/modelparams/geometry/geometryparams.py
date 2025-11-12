@@ -11,7 +11,105 @@ from .geometrysurface.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 from ... import GLOBAL
 
-class SurfacesParams(BaseParams):
+
+class MeshQualityOptimizer:
+    """Simplified optimizer assuming tetra connectivity is already a numpy int array of shape [Ne,4]."""
+    def __init__(self, elements: np.ndarray, nodes: np.ndarray):
+        self.elements = torch.from_numpy(elements.copy())
+        self.nodes = torch.from_numpy(nodes.copy())
+
+    @staticmethod
+    def signed_volume(nodes: torch.Tensor, conn: torch.Tensor) -> torch.Tensor:
+        tets = nodes[conn]
+        v0, v1, v2, v3 = tets[:,0], tets[:,1], tets[:,2], tets[:,3]
+        return torch.einsum('ij,ij->i', torch.cross(v2-v0, v3-v0, dim=1), v1-v0)/6.0
+
+    @staticmethod
+    def aspect_penalty(nodes: torch.Tensor, conn: torch.Tensor, target: float=3.0) -> torch.Tensor:
+        t = nodes[conn]
+        edges = [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
+        lens = [ (t[:,a]-t[:,b]).norm(dim=1) for a,b in edges ]
+        L = torch.stack(lens, dim=1)
+        aspect = L.max(dim=1).values / (L.min(dim=1).values + 1e-12)
+        return torch.relu(aspect - target).pow(2).mean()
+
+    def run(self, index_internal: np.ndarray, nodes_new: np.ndarray, iters: int=5, lr: float=0.001,
+        w_inv=1., w_boundary=10.0,
+        min_vol_ratio=0.001,
+        # Augmented Lagrangian parameters (for equality constraint g=0 on boundary)
+        al_rho_init: float = 100.0,
+        al_rho_max: float = 1e6,
+        al_increase: float = 10.0,
+        al_tol: float = 1e-8):
+        nodes = self.nodes.clone().requires_grad_(True)
+        conn = self.elements
+
+        # Target boundary coordinates to match exactly
+        nodes_new_boundary = torch.from_numpy(nodes_new[~index_internal]).detach().clone()
+
+        # Use L-BFGS with strong Wolfe line search
+        opt = torch.optim.LBFGS(
+            [nodes],
+            lr=lr,
+            max_iter=50,            # inner iterations per step (line-search driven)
+            history_size=50,
+            tolerance_grad=1e-10,
+            tolerance_change=1e-6,
+            line_search_fn="strong_wolfe",
+        )
+
+        # Augmented Lagrangian state (note: boundary nodes are not optimization variables here).
+        # We still keep the AL scaffolding for extensibility; with boundary clamped, g==0 always.
+        rho = float(al_rho_init)
+
+        # Outer iterations: augmented Lagrangian updates + early stopping on constraints and volumes
+        last_min_vol = None
+        last_g_norm = None
+        for _ in range(max(1, iters)):
+            def closure():
+                opt.zero_grad()
+                nodes_iter = nodes.clone()
+
+                # Physics/quality term: barrier on inverted/near-inverted tets
+                vol = self.signed_volume(nodes_iter, conn)
+                loss_inv = torch.exp(-(vol + min_vol_ratio) / 0.01).sum()
+
+                # Augmented Lagrangian term for boundary equality (degenerates to zero due to clamp)
+                g = nodes_iter[~index_internal] - nodes_new_boundary  # should be 0
+                aug = 0.5 * rho * (g * g).sum()
+
+                loss = w_inv * loss_inv + aug
+                loss.backward()
+                return loss
+
+            loss_val = opt.step(closure)
+
+            # Check early stopping condition (all tets positive volume)
+            with torch.no_grad():
+                nodes_iter = nodes.clone()
+                vol_now = self.signed_volume(nodes_iter, conn)
+                last_min_vol = vol_now.min().item()
+
+                g = nodes_iter[~index_internal] - nodes_new_boundary
+
+                print("  Current min volume: %.6e, Current match residual: %.3e\r" % (
+                    last_min_vol, g.abs().max().item()
+                ), end='')
+                if last_min_vol >= min_vol_ratio:
+                    break
+
+
+        # write back nodes
+        print()
+        print("Mesh optimization done. Min volume: %.6e" % (
+            last_min_vol if last_min_vol is not None else float('nan'),
+        ))
+        return nodes.detach(), last_min_vol, g.abs().max().item()
+
+
+
+
+class GeometryParams(BaseParams):
     """
     Class to handle the surfaces of the morphable model.
     """
@@ -274,17 +372,41 @@ class SurfacesParams(BaseParams):
         if GLOBAL.History.iteration % self.reinitialize_per_iter == 0:
             self._regenerate(material_para=material_para)
         else:
-            self._refinemesh()
+            last_min_vol, max_g = self._refinemesh()
+            if max_g > 5e-1 or last_min_vol < 0:
+                self._regenerate(material_para=material_para)
+        
+        # for i in range(self.num_surface):
+        #     self.surface_list[i].pre_load()
 
     def _refinemesh(self):
         """
         This function refines the mesh of the geometric model of the soft robot.
         """
+        from .utils import mesh
+
+        # update each surface nodes
         inp = GLOBAL.obj_fun.inp
         part = inp.part['final_model']
+        nodes_new = part.nodes[:, 1:].copy()
+        index_internal = np.ones([part.nodes.shape[0]], dtype=bool)
         for i in range(self.num_surface):
             node_surface = self.surface_list[i].model.map(self.surface_list[i]._coordinates_fea).cpu().numpy().T
-            part.nodes[self._surface_node_index[i], 1:] = node_surface
+            nodes_new[self._surface_node_index[i]] = node_surface
+            nodes_new = self.surface_list[i].refine_fea_mesh(part, i, nodes_new)
+
+            index_internal[list(part.sets_nodes['surface_%d_All' % i])] = False
+
+        # optimize internal nodes & fix element orientation
+        elements = list(part.elems.values())[0][:, 1:]
+        optimizer = MeshQualityOptimizer(elements=elements, nodes=part.nodes[:, 1:])
+        nodes_new, last_min_vol, max_g = optimizer.run(index_internal=index_internal, nodes_new=nodes_new, iters=5, lr=0.08)
+
+        part.nodes[:, 1:] = nodes_new.detach().cpu().numpy()
+
+        inp.write_inp('Z:/temp/iter%d_refine.inp' % GLOBAL.History.iteration)
+
+        return last_min_vol, max_g
 
     def _regenerate(self, material_para: list[float]) -> None:
         """
@@ -332,7 +454,6 @@ class SurfacesParams(BaseParams):
             self._surface_node_index.append(surf_set_now)
             surf_nodes = torch.from_numpy(nodes[surf_set_now]).T.to(default_device)
             self.surface_list[i].match_points_surface(surf_nodes)
-
 
     def _export_data(self, path_output: str, path_queue: str) -> list[str]:
         """
