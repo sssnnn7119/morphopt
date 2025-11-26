@@ -159,21 +159,22 @@ class UpdaterSurfaces(BaseUpdater):
                 break
 
             # get current objective function value
-            with torch.no_grad():
-                obj_values = self.closure(x=variables, return_list=True)
+            if self.iteration_total % 10 == 0:
+                with torch.no_grad():
+                    obj_values = self.closure(x=variables, return_list=True)
 
-            # print the objective function value
-            # Print a pretty table showing objective values and iteration progress
-            # Clear previous output (move cursor up and clear lines)
-            if iteration > 0:
-                print("\033[F\033[K" * 4, end="\r")
+                # print the objective function value
+                # Print a pretty table showing objective values and iteration progress
+                # Clear previous output (move cursor up and clear lines)
+                if iteration > 0:
+                    print("\033[F\033[K" * 4, end="\r")
 
-            headers = ["Iteration"] + ["Total"] + list(self.obj_funcs.keys())
-            data = [[f"{iteration+1}/{self.max_step_iter}"] +
-                    [f"{sum(obj_values).item():.6e}"] +
-                    [f"{val.item():.6e}" for val in obj_values]]
+                headers = ["Iteration"] + ["Total"] + list(self.obj_funcs.keys())
+                data = [[f"{iteration+1}/{self.max_step_iter}"] +
+                        [f"{sum(obj_values).item():.6e}"] +
+                        [f"{val.item():.6e}" for val in obj_values]]
 
-            string = tabulate(data, headers=headers, tablefmt="grid")
-            print(string, end="\r")
+                string = tabulate(data, headers=headers, tablefmt="grid")
+                print(string, end="\r")
 
         return variables.detach().clone()

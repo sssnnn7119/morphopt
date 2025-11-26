@@ -168,11 +168,11 @@ class History:
             time_end_idx = max(time_indices) + 1 if time_indices else None
 
             # Find element and node columns
-            element_indices = [i for i, h in enumerate(headers) if h.startswith('E')]
+            element_indices = [i for i, h in enumerate(headers) if h.startswith('Num_elements')]
             element_start_idx = min(element_indices) if element_indices else None
             element_end_idx = max(element_indices) + 1 if element_indices else None
 
-            node_indices = [i for i, h in enumerate(headers) if h.startswith('N')]
+            node_indices = [i for i, h in enumerate(headers) if h.startswith('Num_nodes')]
             node_start_idx = min(node_indices) if node_indices else None
             node_end_idx = max(node_indices) + 1 if node_indices else None
 

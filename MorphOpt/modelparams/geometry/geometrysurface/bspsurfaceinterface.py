@@ -1,3 +1,4 @@
+from email.policy import default
 from turtle import distance
 import numpy as np
 import torch
@@ -150,6 +151,9 @@ class BspInterface(BaseInterface):
         self._coordinates_fea = uv_init.detach().to(points.device)
 
     def refine_fea_mesh(self, part, surf_index, nodes_new):
+
+        default_device = torch.tensor(0).device
+
         from ..utils import mesh
         nodes_new = nodes_new.copy()
         def refine_part_mesh(name: str):
@@ -159,8 +163,8 @@ class BspInterface(BaseInterface):
                 np.isin(surface_head_elems, surface_head_nodes).sum(axis=1) == 3)[0]
             surface_head_elems = surface_head_elems[surface_head_elems_remain]
 
-            new_nodes = mesh.edge_length_regularization_surf3D(nodes0=torch.from_numpy(nodes_new.T), 
-                                                        elements=torch.from_numpy(surface_head_elems).to(torch.int64),)
+            new_nodes = mesh.edge_length_regularization_surf3D(nodes0=torch.from_numpy(nodes_new.T).to(default_device), 
+                                                        elements=torch.from_numpy(surface_head_elems).to(torch.int64).to(default_device),)
             nodes_new[surface_head_nodes] = new_nodes.cpu().numpy().T[surface_head_nodes]
         refine_part_mesh('Head')
         refine_part_mesh('Bottom')
@@ -341,7 +345,7 @@ class BspInterface(BaseInterface):
         numU = round(r0 * 2 * np.pi / seed_size)
         numV = round(length / seed_size)
 
-        numU = round(numU / 12) * 12
+        numU = round(numU / 30) * 30
 
         P0 = torch.zeros(3, numV, numU)
 

@@ -117,7 +117,7 @@ class GeometryParams(BaseParams):
     from .geometrysurface.bspsurfaceinterface import BspInterface as BSP
     from .geometrysurface.cpgeosurfaceinterface import CPGEOSurfaceInterface as CPGEO
 
-    def __init__(self, max_step_length: list[float], fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
+    def __init__(self, fea_seed_size: float, max_step_length: list[float] = [], fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """
         Initialize the Surfaces class.
 
@@ -130,9 +130,29 @@ class GeometryParams(BaseParams):
         List of surface objects.
         """
         
-        self._max_step_length: list[float] = max_step_length
+        self._max_step_length_max: list[float] = max_step_length
         """
         The maximum step length for each surface in the optimization process.
+        """
+
+        self._max_step_length: list[float] = max_step_length
+        """
+        The current maximum step length for each surface in the optimization process.
+        """
+
+        self._step_length_min_ratio: float = 0.02
+        """
+        The minimum ratio for the step length relative to the maximum step length.
+        """
+
+        self._step_length_decay: float = 0.5
+        """
+        The decay factor for the step length relative to the maximum step length.
+        """
+
+        self._step_length_increase: float = 1.2
+        """
+        The increase factor for the step length relative to the maximum step length.
         """
         
         self.if_update = []
@@ -167,11 +187,31 @@ class GeometryParams(BaseParams):
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
+
+        if len(self._max_step_length_max) != self.num_surface:
+            self._max_step_length_max = [0.5] * self.num_surface
+            self._max_step_length = [0.5] * self.num_surface
         
         self.if_update = [True for _ in range(self.num_surface)]
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
                 self.surface_list[i].initialize()
+
+        if iteration > 2:
+            obj_before = GLOBAL.History.history_objective[iteration - 2]
+            obj_now = GLOBAL.History.history_objective[iteration-1]
+
+            if obj_now > obj_before:
+                for i in range(len(self._max_step_length)):
+                    self._max_step_length[i] = max(
+                        self._max_step_length[i] * self._step_length_decay, 
+                        self._max_step_length_max[i] * self._step_length_min_ratio)
+            else:
+                for i in range(len(self._max_step_length)):
+                    self._max_step_length[i] = min(
+                        self._max_step_length[i] * self._step_length_increase, 
+                        self._max_step_length_max[i])
+
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """

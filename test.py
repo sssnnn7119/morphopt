@@ -1,16 +1,9 @@
 import torch
 
-a=torch.randn([40000,40000])
+a=torch.arange(0,12,1)
 
-print(a)
+print(a.shape)
 
-del a
+print(a[6:12])
 
-import gc
-gc.collect()
-
-print("done")
-
-torch.cuda.empty_cache()
-
-print("done2")
+print(a[-6:6])

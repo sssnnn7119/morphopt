@@ -116,7 +116,7 @@ def _get_adjacent_faces(faces: torch.Tensor):
     if index_more_faces.numel() > 0:
         raise Exception('the mesh is not a manifold surface')
 
-    adjacent_faces = torch.ones([edges0.shape[0], 2], dtype=torch.long) * -1
+    adjacent_faces = torch.ones([edges0.shape[0], 2], dtype=torch.long, device=edges0.device) * -1
 
     adjacent_faces[
         index_double_faces,
@@ -135,7 +135,7 @@ def _get_adjacent_faces(faces: torch.Tensor):
     edges[:, 1] = edges0 % max_node
 
     another_points_index = torch.ones([edges0.shape[0], 2],
-                                      dtype=torch.long) * -1
+                                      dtype=torch.long, device=edges0.device) * -1
     another_points_index[
         index_double_faces,
         0] = adjacent_faces0[cumsum_adjacent_faces[index_double_faces]] % 3

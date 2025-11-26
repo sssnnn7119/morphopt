@@ -88,16 +88,16 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 
         Rf = R_now.sum(dim=0)
 
-        loss0 = -self.U[0][-2] * 1e-4
-        loss1 = Rf[0]
-        loss2 = -(torch.exp(-(D+0.05)**2) * weight).sum() * 1e-4
+        loss0 = -self.U[0][-2]
+        loss1 = Rf[0]/10
+        loss2 = -(torch.exp(-(D)**2) * weight).sum() * 1e-6
         # loss2 = (D**2 * weight).sum()
         
         # E = ins_actuator.potential_energy(RGC = assembly._GC2RGC(self.U[0].to(assembly.device)))
         # loss1 = -E.sum()
 
         print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
-        return loss0 + loss2 + loss1
+        return loss0 + loss1
  
     
     def save_figure(self, filepath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
@@ -127,46 +127,58 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
             fig = mlab.figure(size=(800, 800), bgcolor=(1, 1, 1))
             fig.scene.parallel_projection = True
             
-            # Draw all surface connections using TVTK
+            # extern_surf = fe.loads['pressure-1'].surface_element.cpu().numpy()
+            ins1 = self.fe.assembly.get_instance('final_model')
+            ins2 = self.fe.assembly.get_instance('cylinder')
+            extern_surf = ins1.surfaces.get_elements('surface_0_All')[0]._elems.cpu().numpy()
+            extern_surf2 = ins2.surfaces.get_elements('contact')[0]._elems.cpu().numpy()
+            # extern_surf = fem.part['final_model'].surfaces['surface_1_All']
 
-            # Create a dataset with points and cells
-            points = tvtk.Points()
-            points.from_array(deformed_nodes)
+            from mayavi import mlab
+            import vtk
+            from mayavi import mlab
+            coo=extern_surf
 
-            polys = tvtk.CellArray()
-            mesh = tvtk.PolyData()
-            mesh.points = points
+            # Get the deformed surface coordinates
+            RGC_now = self.fe.assembly._GC2RGC(self.U[case].to(self.fe.assembly.device))
+            U1 = RGC_now[ins1._RGC_index].cpu().numpy()
+            U2 = RGC_now[ins2._RGC_index].cpu().numpy()
+            undeformed_surface1 = ins1.nodes.cpu().numpy()
+            undeformed_surface2 = ins2.nodes.cpu().numpy()
+            deformed_surface1 = undeformed_surface1 + U1
+            deformed_surface2 = undeformed_surface2 + U2
 
-            # Add all surface connections as polygons - optimized version
-            # Pre-calculate the total number of cells and points for pre-allocation
-            total_cells = sum(len(connection) for connection in surface_connections)
-            polys.allocate(total_cells)
+            r1=deformed_surface1.transpose()
+            r2=deformed_surface2.transpose()
 
-            # Process all faces more efficiently
-            for connection in surface_connections:
-                for face in connection:
-                    # Skip if any node is -1 (placeholder)
-                    if -1 in face:
-                        continue
-                    
-                    # More efficient cell insertion
-                    n_points = len(face)
-                    # Convert face to a list/array compatible with VTK
-                    polys.insert_next_cell(n_points)
-                    for point_idx in face:
-                        polys.insert_cell_point(point_idx)
+            Unorm1 = (U1**2).sum(axis=1)**0.5
+            Unorm2 = (U2**2).sum(axis=1)**0.5
 
-            mesh.polys = polys
+            # surface = mlab.pipeline.triangular_mesh_source(r[0], r[1], r[2], coo)
+            # surface_vtk = surface.outputs[0]._vtk_obj
+            # stlWriter = vtk.vtkSTLWriter()
+            # stlWriter.SetFileName('test.stl')
+            # stlWriter.SetInputConnection(surface_vtk.GetOutputPort())
+            # stlWriter.Write()
+            # mlab.close()
 
-            # Create a mapper and actor
-            mapper = tvtk.PolyDataMapper()
-            configure_input_data(mapper, mesh)
-            actor = tvtk.Actor(mapper=mapper)
-            actor.property.color = (40.0/255, 120.0/255, 181.0/255)
-            actor.property.opacity = 1.0
+            # Plot the deformed surface
+            mesh1=mlab.triangular_mesh(deformed_surface1[:, 0], deformed_surface1[:, 1], deformed_surface1[:, 2], extern_surf, scalars=Unorm1)
+            mesh2=mlab.triangular_mesh(deformed_surface2[:, 0], deformed_surface2[:, 1], deformed_surface2[:, 2], extern_surf2[:, [0,1,2]], scalars=Unorm2)
 
-            # Add the actor to the scene
-            fig.scene.add_actor(actor)
+            mesh1.actor.property.edge_visibility = True
+            mesh1.actor.property.line_width = 1.0
+            mesh1.actor.property.edge_color = (0, 0, 0)  # Black edges
+
+            mesh2.actor.property.edge_visibility = True
+            mesh2.actor.property.line_width = 1.0
+            mesh2.actor.property.edge_color = (0, 0, 0)  # Black edges
+
+            if extern_surf2.shape[1] > 3:
+                mesh3=mlab.triangular_mesh(deformed_surface2[:, 0], deformed_surface2[:, 1], deformed_surface2[:, 2], extern_surf2[:, [0,2,3]], scalars=Unorm2)
+                mesh3.actor.property.edge_visibility = True
+                mesh3.actor.property.line_width = 1.0
+                mesh3.actor.property.edge_color = (0, 0, 0)  # Black edges
 
             mlab.view(azimuth=90, elevation=90, distance=300)
             mlab.savefig(f"{filepath}/task_{case}_iter_{iteration}.png")
@@ -179,22 +191,22 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.5, fea_mesh_order=1)
+            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.2, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=8.,
                                                         length=80.,
-                                                        seed_size=1.0,
+                                                        seed_size=0.6,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=4.,
                                                     length=74.,
-                                                    seed_size=1.0,
+                                                    seed_size=0.6,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
         
             
             
@@ -216,7 +228,7 @@ class Params(_Params):
             self.add_fea_interface(self.ContactInterface(
                 instance_name1='final_model', surface_name1='surface_0_All',
                 instance_name2='cylinder', surface_name2='contact',
-                penalty_threshold_h=2.0
+                penalty_threshold_h=3.0
             ), name='Contact_ext')
 
         def define_steps(self):
@@ -232,12 +244,12 @@ class Params(_Params):
             # Add cylinder
             self.add_instance_from_inp(
                 fe,
-                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/rec.inp",
-                part_name='rec',
-                instance_name='rec',
+                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/ellipsebian.inp",
+                part_name='cylinder',
+                instance_name='cylinder',
                 part_name_new='cylinder',
                 instance_name_new='cylinder',
-                translation=[0.0, 0.0, 0.0]
+                translation=[-1.0, 0.0, 10.0]
             )
 
             return fe

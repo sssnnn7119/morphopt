@@ -14,7 +14,7 @@
 
 #ifdef IMPORT_DLL
 #else
-#define IMPORT_DLL extern "C" _declspec(dllimport) //指的是允许将其给外部调用
+#define IMPORT_DLL extern "C" __declspec(dllimport) //指的是允许将其给外部调用
 #endif
 
 

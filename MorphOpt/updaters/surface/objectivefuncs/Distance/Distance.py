@@ -1,7 +1,7 @@
+
 import torch
 from ..baseobjfun import BaseObj
-from .....modelparams import GeometryParams
-from .....dlls import interface
+import logging
 
 class Distance(BaseObj):
     """
@@ -68,13 +68,11 @@ class Distance(BaseObj):
 
         
         # get the neighbor points
-        self.neighbor_points = interface.get_distance_penalty(
-            points=torch.cat(r0, dim=1).T,
-            normal=normal0.T,
-            surface_index=self.points_surface_index,
-            distance_threshold=self.distance_threshold).T
+        import scipy.spatial
+        kdtree = scipy.spatial.KDTree(torch.cat(r0, dim=1).T.cpu().numpy())
+        self.neighbor_points = kdtree.query_pairs(r=self.distance_threshold, output_type='ndarray').T
 
-        self.neighbor_points = torch.tensor(self.neighbor_points, dtype=torch.int64)
+        self.neighbor_points = torch.from_numpy(self.neighbor_points).type(torch.int64).to(r0[0].device)
 
         # determine the minimum distance between the neighbor points
         self.neighbor_mindist = torch.zeros(self.neighbor_points.shape[1], dtype=torch.float32)
@@ -93,6 +91,12 @@ class Distance(BaseObj):
                     else:  
                         # Different surfaces
                         self.neighbor_mindist[index] = self.min_distance[i, j]
+
+        index_pos = self.neighbor_mindist > 0
+        self.neighbor_points = self.neighbor_points[:, index_pos]
+        self.neighbor_mindist = self.neighbor_mindist[index_pos]
+
+        logging.debug(f"Distance Objective Function: {self.neighbor_points.shape[1]} point pairs within threshold {self.distance_threshold}")
 
     def __call__(self, weight, r, rdu, rdu2, *args, **kwargs):
 

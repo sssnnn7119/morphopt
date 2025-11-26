@@ -58,10 +58,10 @@ class BaseOpt():
             if ~torch.isnan(obj_new) and ~torch.isinf(
                     obj_new
             ) and obj_new < obj0 + self._c1 * alpha * dx.dot(direction):
-                return alpha
+                return alpha, obj_new
             alpha *= self._rou1
             if (alpha * direction).abs().max() < 1e-14:
-                return 0.
+                return 0., obj0
 
     def step(x_now: torch.Tensor, gk_now: torch.Tensor=None) -> torch.Tensor:
         """
@@ -135,7 +135,7 @@ class LBFGS(BaseOpt):
             dk = -dk
 
         # line search
-        alpha = self._LineSearchBacktracking(x0=x_now, dx=gk_now, direction=dk, alpha0=1., obj0=obj_now)
+        alpha, obj_new = self._LineSearchBacktracking(x0=x_now, dx=gk_now, direction=dk, alpha0=1., obj0=obj_now)
 
         # if the step length is too small, stop the iteration
         if abs(alpha) <= self.tol_error:
@@ -145,7 +145,6 @@ class LBFGS(BaseOpt):
 
         x_new = x_now + alpha * dk
         
-        obj_new = self.closure(x_new)
 
         if obj_new>obj_now:
             self.SK = []
