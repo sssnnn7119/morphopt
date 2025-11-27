@@ -24,8 +24,8 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
         RGC1 = self.fe.assembly._GC2RGC(self.U[1].to(device0))
         U1 = RGC1[rp_index]
 
-        loss0 = (U0[2] + 20) ** 2
-        loss1 = U1[5]*10
+        loss0 = torch.exp((U0[2]+20)/5)/5
+        loss1 = U1[5]
 
         return loss0 + loss1
 GLOBAL.obj_fun = ObjectiveFunction()
@@ -35,14 +35,14 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(fea_seed_size=1.5, fea_mesh_order=1)
+            super().__init__(fea_seed_size=1.0, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=10.,
                                                         length=50.,
                                                         seed_size=0.6,
                                                         symmetric=[0, [1]],
-                                                        flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=10.))
+                                                        flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.5))
             
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=6.,
@@ -50,7 +50,7 @@ class Params(_Params):
                                                     seed_size=0.6,
                                                     symmetric=[0, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=10.))
+                                                    flip=True, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.5))
 
         def _get_all_r(self, rinit: torch.Tensor):
             rout = rinit.clone()
@@ -218,6 +218,52 @@ class Solver(_MorphSolver):
 
         super().__init__(params=params,
                          num_process=1)
+    def solve(self):
+        """
+        Solve the optimization problem using the specified solver.
+
+        Returns:
+            tuple: the displacement field and its derivatives:
+                - fe (FEA.FEAController): An instance of the FEA_Main class with the given input parameters.
+                - GC0 (list[torch.Tensor]): The displacement field at the reference point.
+                - Udp0 (list[torch.Tensor]): The displacement field at the reference point with respect to the pressure.
+                - GCv (list[torch.Tensor]): The first adjoint displacement field.
+                - GCw (list[torch.Tensor]): The second adjoint displacement field.
+        """
+        
+        fe = self.params.feamodel.create_fea(inp=GLOBAL.obj_fun.inp)
+        fe.initialize()
+
+        # multiprocess FEA
+        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
+        pools = mp.Pool(processes=self.num_process)
+        result = []
+        result.append(
+            pools.apply_async(self._solve_FEA,
+                            args=(GLOBAL.obj_fun.inp, self.params.feamodel, 0, self.available_gpus)))
+        pools.close()
+        pools.join()
+
+        # get the result
+        U0 = torch.tensor([i.get() for i in result], device='cpu')
+
+        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
+        pools = mp.Pool(processes=self.num_process)
+        result = []
+        result.append(
+            pools.apply_async(self._solve_FEA,
+                            args=(GLOBAL.obj_fun.inp, self.params.feamodel, 1, self.available_gpus, U0[0].cpu().numpy())))
+        pools.close()
+        pools.join()
+
+        # get the result
+        U1 = torch.tensor([i.get() for i in result], device='cpu')
+
+        Uout = torch.cat([U0, U1], dim=0)
+
+        GLOBAL.obj_fun.set_results(fe=fe, U=Uout)
+        GLOBAL.obj_fun.calculate_adjoint_problem()
+
 
 class Updater(_Updaters):
     """
@@ -250,7 +296,7 @@ class Updater(_Updaters):
                                                             [[1.0, 2.5],
                                                              [2.5, 2.0]]))
             self.add_objective_function(
-                self.objectivefuncs.boundarys.Cylinder(radius=12., height=50., bottom=0.))
+                self.objectivefuncs.boundarys.Cylinder(radius=15., height=50., bottom=0.))
 
 
 class Controller(_Controller):

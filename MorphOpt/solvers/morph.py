@@ -1,4 +1,5 @@
 
+import numpy as np
 from scipy.signal import step
 import torch
 
@@ -78,7 +79,7 @@ class MorphSolver(BaseSolver):
         GLOBAL.obj_fun.calculate_adjoint_problem()
 
     @classmethod
-    def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, available_gpus):
+    def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, available_gpus: list[str], U_guess: np.ndarray = None):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -109,7 +110,12 @@ class MorphSolver(BaseSolver):
 
         # solve displacement 0
         fe.solver.maximum_iteration = 200
-        result = fe.solve(tol_error=1e-3)
+
+        if U_guess is not None:
+            U0 = torch.from_numpy(U_guess).to(torch.float64).to(fe.assembly.device)
+            result = fe.solve(tol_error=1e-3, GC0=U0)
+        else:
+            result = fe.solve(tol_error=1e-3)
 
         if type(result) == bool:
             raise RuntimeError(

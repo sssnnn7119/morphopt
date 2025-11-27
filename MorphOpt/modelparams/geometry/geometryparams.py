@@ -140,7 +140,7 @@ class GeometryParams(BaseParams):
         The current maximum step length for each surface in the optimization process.
         """
 
-        self._step_length_min_ratio: float = 0.02
+        self._step_length_min_ratio: float = 0.1
         """
         The minimum ratio for the step length relative to the maximum step length.
         """
