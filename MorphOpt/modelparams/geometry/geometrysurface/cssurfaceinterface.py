@@ -33,26 +33,26 @@ class CsInterface(BaseInterface):
 
         if seed_size<0:
             knots = self.model.pre_nodes
-            coo = self.model.pre_elements.tolist()
+            coo = self.model.pre_elements.cpu().numpy()
         else:
             knots = self.model.knots.T
-            coo = self.model.knots_element.tolist()
+            coo = self.model.knots_element.cpu().numpy()
 
         # points3d, coo = self.Sphere_Mesh(5000, 3)
         R = self.model.map(knots)
-        r = R.tolist()
+        r = R.cpu().numpy()
 
         # record the output knots and coordinates
         self.surface_out_knots = knots
         self.surface_out_coo = coo
 
-        surface = mlab.pipeline.triangular_mesh_source(r[0], r[1], r[2], coo)
-        surface_vtk = surface.outputs[0]._vtk_obj
-        stlWriter = vtk.vtkSTLWriter()
-        stlWriter.SetFileName(path_output + name_output + '.stl')
-        stlWriter.SetInputConnection(surface_vtk.GetOutputPort())
-        stlWriter.Write()
-        mlab.close()
+        # Save STP file
+        converter = self.MeshSurfaceConverter()
+        data = converter.convert_mesh_to_stp(faces=coo,
+                                      vertices=r.T,
+                                        filename=name_output)
+        with open(path_output + name_output + '.stp', 'w') as f:
+            f.write(data)
 
         with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
             num_points = 10

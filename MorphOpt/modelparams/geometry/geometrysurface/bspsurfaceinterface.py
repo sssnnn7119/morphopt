@@ -345,7 +345,7 @@ class BspInterface(BaseInterface):
         numU = round(r0 * 2 * np.pi / seed_size)
         numV = round(length / seed_size)
 
-        numU = round(numU / 30) * 30
+        numU = round(numU / 12) * 12
 
         P0 = torch.zeros(3, numV, numU)
 
@@ -365,7 +365,7 @@ class BspInterface(BaseInterface):
         # Apply perturbation if specified
         if perturbation_L > 0:
             r = torch.sqrt(P0[0]**2 + P0[1]**2)
-            r_new = (1 + 0.04*torch.sin(2*(P0[2] / length) * np.pi * (length/perturbation_L))) * r0
+            r_new = (1 + 0.04*torch.cos(2*(P0[2] / length) * np.pi * (length/perturbation_L))) * r0
             P0[0] *= r_new / r
             P0[1] *= r_new / r
 

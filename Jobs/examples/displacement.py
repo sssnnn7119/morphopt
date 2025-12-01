@@ -21,7 +21,7 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.4, 0.4], fea_seed_size=1.5, fea_mesh_order=1)
+            super().__init__(max_step_length=[0.4, 0.4], fea_seed_size=1.5, fea_mesh_order=1, reinitialize_per_iter=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=8.,
@@ -30,21 +30,21 @@ class Params(_Params):
                                                         symmetric=[1, [1]],
                                                         flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
             
-            self.add_surface(
-                self.BSP.initialize_cylinder(r0=4.,
-                                                    length=74.,
-                                                    seed_size=1.0,
-                                                    symmetric=[1, [1]],
-                                                    init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
             # self.add_surface(
-            #     self.CPGEO.initialize_Sphere(seed_size=1.0,
-            #                                  flip=True,
-            #                                  r0=4.,
-            #                                  init_location=[0., 0., 40.],
-            #                                  MaxC=1.0,
-            #     ))
+            #     self.BSP.initialize_cylinder(r0=4.,
+            #                                         length=74.,
+            #                                         seed_size=1.0,
+            #                                         symmetric=[1, [1]],
+            #                                         init_location=[0, 0, 3],
+            #                                         flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+
+            self.add_surface(
+                self.CPGEO.initialize_Sphere(seed_size=1.0,
+                                             flip=True,
+                                             r0=4.,
+                                             init_location=[0., 0., 40.],
+                                             MaxC=1.0,
+                ))
 
 
     class FEAParams(_FEAParams):
@@ -105,15 +105,15 @@ class Updater(_Updaters):
                 params=params,
                 max_step_iter=50)
 
-            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect(reset_per_iter=5)
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
             self.add_objective_function(shape_derivative)
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
 class Controller(_Controller):
     def save(self):

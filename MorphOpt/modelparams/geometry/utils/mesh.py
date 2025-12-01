@@ -1219,34 +1219,3 @@ def LSCM_disk(vertices: torch.Tensor, faces: torch.Tensor):
 
     return torch.stack([u, v], dim=0)
 
-
-if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
-    sys.path.append(os.getcwd())
-    
-    
-    f = open('tests/r.txt', 'r')
-    data = f.read()
-    f.close()
-    r = torch.tensor(eval(data))
-    
-    f = open('tests/elements.txt', 'r')
-    data = f.read()
-    f.close()
-    elements = torch.tensor(eval(data))
-    
-    n1 = divide_mesh(elements)[0][0]
-    
-    vertices = r[:, n1]
-    faces = adjust_faces(elements, n1)
-    
-
-    # show_surf(srbf.control_points, connection1)
-    # u = LSCM(srbf.cp_vertices, srbf.cp_faces)
-    # u = LSCM_disk(srbf.cp_vertices, srbf.cp_faces)
-    u = equilateral_triangle_mesh(faces)
-    u = edge_length_regularization_surf2D(u, faces)
-    
-    print(u)
-
-    vis.show_surf2(u, faces)

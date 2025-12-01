@@ -35,22 +35,22 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(fea_seed_size=1.0, fea_mesh_order=1)
+            super().__init__(fea_seed_size=1.4, fea_mesh_order=1)
 
             self.add_surface(
-                self.BSP.initialize_cylinder(r0=10.,
+                self.BSP.initialize_cylinder(r0=12.,
                                                         length=50.,
-                                                        seed_size=0.6,
+                                                        seed_size=0.8,
                                                         symmetric=[0, [1]],
-                                                        flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.5))
+                                                        flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=50/4))
             
             self.add_surface(
-                self.BSP.initialize_cylinder(r0=6.,
+                self.BSP.initialize_cylinder(r0=8.,
                                                     length=44.,
-                                                    seed_size=0.6,
+                                                    seed_size=0.8,
                                                     symmetric=[0, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.5))
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=50/4))
 
         def _get_all_r(self, rinit: torch.Tensor):
             rout = rinit.clone()
@@ -192,11 +192,11 @@ class Params(_Params):
         def define_steps(self):
             self.set_step_num(2)
 
-            self.set_step_params(0, "pressure_1", [-0.06])
+            self.set_step_params(0, "pressure_1", [-0.05])
             self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
 
-            self.set_step_params(1, "pressure_1", [-0.06])
-            self.set_step_params(1, "moment_1", [0.0, 0.0, 40.0])
+            self.set_step_params(1, "pressure_1", [-0.05])
+            self.set_step_params(1, "moment_1", [0.0, 0.0, 100.0])
 
 
     class MaterialParams(_Materials):
@@ -217,53 +217,8 @@ class Solver(_MorphSolver):
     def __init__(self, params: Params):
 
         super().__init__(params=params,
+                         task_index_list=[[0, 1]],
                          num_process=1)
-    def solve(self):
-        """
-        Solve the optimization problem using the specified solver.
-
-        Returns:
-            tuple: the displacement field and its derivatives:
-                - fe (FEA.FEAController): An instance of the FEA_Main class with the given input parameters.
-                - GC0 (list[torch.Tensor]): The displacement field at the reference point.
-                - Udp0 (list[torch.Tensor]): The displacement field at the reference point with respect to the pressure.
-                - GCv (list[torch.Tensor]): The first adjoint displacement field.
-                - GCw (list[torch.Tensor]): The second adjoint displacement field.
-        """
-        
-        fe = self.params.feamodel.create_fea(inp=GLOBAL.obj_fun.inp)
-        fe.initialize()
-
-        # multiprocess FEA
-        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
-        pools = mp.Pool(processes=self.num_process)
-        result = []
-        result.append(
-            pools.apply_async(self._solve_FEA,
-                            args=(GLOBAL.obj_fun.inp, self.params.feamodel, 0, self.available_gpus)))
-        pools.close()
-        pools.join()
-
-        # get the result
-        U0 = torch.tensor([i.get() for i in result], device='cpu')
-
-        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
-        pools = mp.Pool(processes=self.num_process)
-        result = []
-        result.append(
-            pools.apply_async(self._solve_FEA,
-                            args=(GLOBAL.obj_fun.inp, self.params.feamodel, 1, self.available_gpus, U0[0].cpu().numpy())))
-        pools.close()
-        pools.join()
-
-        # get the result
-        U1 = torch.tensor([i.get() for i in result], device='cpu')
-
-        Uout = torch.cat([U0, U1], dim=0)
-
-        GLOBAL.obj_fun.set_results(fe=fe, U=Uout)
-        GLOBAL.obj_fun.calculate_adjoint_problem()
-
 
 class Updater(_Updaters):
     """
@@ -285,17 +240,17 @@ class Updater(_Updaters):
 
             super().__init__(
                 params=params,
-                max_step_iter=100)
+                max_step_iter=50)
 
-            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect(reset_per_iter=5)
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement(reset_per_iter=5)
             self.add_objective_function(shape_derivative)
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[1.0, 2.5],
                                                              [2.5, 2.0]]))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.boundarys.Cylinder(radius=15., height=50., bottom=0.))
 
 

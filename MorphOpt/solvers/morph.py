@@ -18,14 +18,12 @@ class MorphSolver(BaseSolver):
     """
 
     
-    def __init__(self, params: Params, num_process: int = 4, available_gpus: list[str] = None):
+    def __init__(self, params: Params, num_process: int = 4, available_gpus: list[str] = None, task_index_list: list[list[int]] = None):
         """
         Initialize the Solver class with a list of pressure values.
 
         Parameters:
-            pressure_list (list[list[float]]): A list of pressure values for the optimization problem.
-            U_dim (list[int]): The dimensions of the interest for the optimization problem.
-            p_dim (list[int]): The dimensions of the pressure for the optimization problem.
+            params (Params): 
             num_process (int): The number of processes to use for parallel computation.
         """
 
@@ -43,8 +41,21 @@ class MorphSolver(BaseSolver):
 
         if available_gpus is None:
             self.available_gpus = ['cuda:%d' % i for i in range(torch.cuda.device_count())]
+        else:
+            self.available_gpus = available_gpus
 
+        self.task_index_list = task_index_list
+        """
+        list[list[int]]: A list of task indices for each process.
+        """
+
+    def initialize(self, iteration):
+        if self.task_index_list is None:
+            self.task_index_list = []
+            for i in range(GLOBAL.controller.params.feamodel.num_load_steps):
+                self.task_index_list.append([i])
         
+
     def solve(self):
         """
         Solve the optimization problem using the specified solver.
@@ -65,21 +76,31 @@ class MorphSolver(BaseSolver):
         # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
         pools = mp.Pool(processes=self.num_process)
         result = []
-        for i in range(self.params.feamodel.num_load_steps):
+        for i in range(len(self.task_index_list)):
             result.append(
-                pools.apply_async(self._solve_FEA,
-                                args=(GLOBAL.obj_fun.inp, self.params.feamodel, i, self.available_gpus)))
+                            pools.apply_async(self._solve_FEA,
+                                            kwds={'inp': GLOBAL.obj_fun.inp, 
+                                                    'feamodel': self.params.feamodel, 
+                                                    'step_index': i, 
+                                                    'task_index': self.task_index_list[i],
+                                                    'available_gpus': self.available_gpus}))
         pools.close()
         pools.join()
 
         # get the result
-        U0 = torch.tensor([i.get() for i in result], device='cpu')
-
-        GLOBAL.obj_fun.set_results(fe=fe, U=U0)
+        U0 = []
+        list_number = []
+        for i in range(len(result)):
+            U0 += result[i].get()
+            list_number += self.task_index_list[i]
+        list_number = np.array(list_number).flatten()
+        
+        Uresult = torch.tensor(U0).to(torch.float64).to(fe.assembly.device)[list_number]
+        GLOBAL.obj_fun.set_results(fe=fe, U=Uresult)
         GLOBAL.obj_fun.calculate_adjoint_problem()
 
     @classmethod
-    def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, available_gpus: list[str], U_guess: np.ndarray = None):
+    def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, task_index: list[int], available_gpus: list[str], U_guess: np.ndarray = None):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
@@ -106,22 +127,26 @@ class MorphSolver(BaseSolver):
         torch.cuda.empty_cache()
         # construct the FEA
         fe = feamodel.create_fea(inp)
-        feamodel.process_fea(fe=fe, step_index=step_index)
-
+        
         # solve displacement 0
         fe.solver.maximum_iteration = 200
 
+        fe.initialize()
         if U_guess is not None:
             U0 = torch.from_numpy(U_guess).to(torch.float64).to(fe.assembly.device)
-            result = fe.solve(tol_error=1e-3, GC0=U0)
         else:
-            result = fe.solve(tol_error=1e-3)
+            U0 = fe.assembly.GC
 
-        if type(result) == bool:
-            raise RuntimeError(
-                "FEA solver failed to converge. Please check the input parameters."
-            )
+        result = []
+        for i in range(len(task_index)):
+            feamodel.process_fea(fe=fe, step_index=task_index[i])
+            if_converge = fe.solve(GC0=U0, if_initialize=False)
 
-        GC0 = fe.solver.GC.clone().detach()
-
-        return GC0.tolist()
+            if type(if_converge) == bool:
+                raise RuntimeError(
+                    "FEA solver failed to converge. Please check the input parameters."
+                )
+            
+            U0 = fe.assembly.GC.clone().detach()
+            result.append(U0.tolist())
+        return result

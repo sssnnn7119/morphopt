@@ -297,15 +297,15 @@ class Updater(_Updaters):
                 params=params,
                 max_step_iter=50)
 
-            shape_derivative = self.objectivefuncs.ShapeDerivativeDirect()
+            shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
             self.add_objective_function(shape_derivative)
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.Distance(min_distance=
                                                             [[2.5, 2.5],
                                                              [2.5, 2.5]]))
-            self.add_objective_function(
+            self.add_constraints(
                 self.objectivefuncs.boundarys.Cylinder(radius=10., height=80., bottom=0.))
     
 class Controller(_Controller):

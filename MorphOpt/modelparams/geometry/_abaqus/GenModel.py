@@ -90,7 +90,7 @@ def Assemble_Surfaces(base_name, void_name_list):
             instanceToBeCut=mdb.models['Model-1'].rootAssembly.instances[
                 base_name + '-1'],
             cuttingInstances=(a.instances[void_name + '-1'], ),
-            originalInstances=DELETE)
+            originalInstances=DELETE) # 布尔切割操作
         mdb.models['Model-1'].rootAssembly.features.changeKey(
             fromName=base_name+'-2', toName=base_name+'-1')
 
@@ -107,6 +107,14 @@ def Find_Connected_Surfaces(all_surfaces, surface0_index):
         queue.update(set([i.index for i in adjacentFaces]))
         set.difference_update(queue, set0)
     return set0
+
+def cap_bspline_surface(p):
+    # 在两端添加平面
+    e = p.edges
+    p.CoverEdges(edgeList = e[1:3], tryAnalytical=True)
+    # 从曲面创建实体
+    f = p.faces
+    p.AddCells(faceList = f[:])
 
 ###==============import Data===============###
 
@@ -315,9 +323,9 @@ mdb.Job(name=JOBNAME,
         scratch='',
         resultsFormat=ODB,
         multiprocessingMode=THREADS,
-        numCpus=8,
-        numDomains=8,
-        numGPUs=1)
+        numCpus=1,
+        numDomains=1,
+        numGPUs=0)
 
 mdb.jobs['TopOptRun'].writeInput(consistencyChecking=OFF)
 mdb.jobs['TopOptRun'].waitForCompletion()

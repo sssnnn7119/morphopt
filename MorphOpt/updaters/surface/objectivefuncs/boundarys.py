@@ -1,9 +1,9 @@
 
 import torch
-from .baseobjfun import BaseObj
+from .basefuncs import BaseConstraints
 
 
-class MinRadius(BaseObj):
+class MinRadius(BaseConstraints):
     """
     Cylinder boundary objective function for MorphOpt.
     """
@@ -20,7 +20,7 @@ class MinRadius(BaseObj):
         """
 
 
-    def __call__(self, weight, r, rdu, rdu2, *args, **kwargs):
+    def __call__(self, r, rdu, rdu2, *args, **kwargs):
         
         thre = 0.05
         degree = 3
@@ -34,12 +34,12 @@ class MinRadius(BaseObj):
 
             
             if len(index_r) > 0:
-                loss = loss + (weight[i][index_r] * loss_r).sum()
+                loss = loss + (self.scaler[i][index_r] * loss_r).sum()
             
         return loss
     
 
-class Cylinder(BaseObj):
+class Cylinder(BaseConstraints):
     """
     Cylinder boundary objective function for MorphOpt.
     """
@@ -65,7 +65,7 @@ class Cylinder(BaseObj):
         The bottom of the cylinder.
         """
 
-    def __call__(self, weight, r, rdu, rdu2, *args, **kwargs):
+    def __call__(self, r, rdu, rdu2, *args, **kwargs):
         
         thre = 0.05
         degree = 3
@@ -82,10 +82,10 @@ class Cylinder(BaseObj):
             index_top, loss_top = self.barrier_function(length_top, thre, 0., degree)
             
             if len(index_r) > 0:
-                loss = loss + (weight[i][index_r] * loss_r).sum()
+                loss = loss + (self.scaler[i][index_r] * loss_r).sum()
             if len(index_bottom) > 0:
-                loss = loss + (weight[i][index_bottom] * loss_bottom).sum()
+                loss = loss + (self.scaler[i][index_bottom] * loss_bottom).sum()
             if len(index_top) > 0:
-                loss = loss + (weight[i][index_top] * loss_top).sum()
+                loss = loss + (self.scaler[i][index_top] * loss_top).sum()
             
         return loss

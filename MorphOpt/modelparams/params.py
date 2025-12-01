@@ -31,6 +31,9 @@ class Params:
         self.feamodel.initialize(iteration=iteration)
         self.materials.initialize(iteration=iteration)
 
+    # def reinitialize(self, iteration: int):
+        
+
     def save(self, filepath: str) -> None:
         """
         Save the parameters to a file.

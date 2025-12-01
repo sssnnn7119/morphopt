@@ -1,5 +1,5 @@
-from .baseobjfun import BaseObj
-from .sensitivity import ShapeDerivativeDirect
-from .Fairness.Fairness import Fairness
+from .basefuncs import BaseConstraints, BaseObjective
+from .shapederivative import ShapeDerivativeDisplacement
+from .surfacefairness import Fairness
 from . import boundarys
-from .Distance import Distance
+from .distancesurface import Distance

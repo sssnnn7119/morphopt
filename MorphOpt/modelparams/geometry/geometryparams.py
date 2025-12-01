@@ -1,6 +1,5 @@
 
 import datetime
-from email.policy import default
 import os
 import shutil
 import time
@@ -10,7 +9,13 @@ import torch
 from .geometrysurface.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 from ... import GLOBAL
-
+from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+from OCC.Core.Geom import Geom_BSplineSurface
+from OCC.Core.TColgp import TColgp_Array2OfPnt
+from OCC.Core.TColStd import TColStd_Array1OfReal, TColStd_Array1OfInteger
+from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
+from OCC.Core.IFSelect import IFSelect_RetDone
+from OCC.Core.gp import gp_Pnt
 
 class MeshQualityOptimizer:
     """Simplified optimizer assuming tetra connectivity is already a numpy int array of shape [Ne,4]."""
@@ -104,7 +109,7 @@ class MeshQualityOptimizer:
         print("Mesh optimization done. Min volume: %.6e" % (
             last_min_vol if last_min_vol is not None else float('nan'),
         ))
-        return nodes.detach(), last_min_vol, g.abs().max().item()
+        return nodes.detach(), last_min_vol, g.abs().max().item()    
 
 
 
@@ -117,7 +122,7 @@ class GeometryParams(BaseParams):
     from .geometrysurface.bspsurfaceinterface import BspInterface as BSP
     from .geometrysurface.cpgeosurfaceinterface import CPGEOSurfaceInterface as CPGEO
 
-    def __init__(self, fea_seed_size: float, max_step_length: list[float] = [], fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
+    def __init__(self, fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """
         Initialize the Surfaces class.
 
@@ -128,31 +133,6 @@ class GeometryParams(BaseParams):
         self.surface_list: list[BaseInterface] = []
         """
         List of surface objects.
-        """
-        
-        self._max_step_length_max: list[float] = max_step_length
-        """
-        The maximum step length for each surface in the optimization process.
-        """
-
-        self._max_step_length: list[float] = max_step_length
-        """
-        The current maximum step length for each surface in the optimization process.
-        """
-
-        self._step_length_min_ratio: float = 0.1
-        """
-        The minimum ratio for the step length relative to the maximum step length.
-        """
-
-        self._step_length_decay: float = 0.5
-        """
-        The decay factor for the step length relative to the maximum step length.
-        """
-
-        self._step_length_increase: float = 1.2
-        """
-        The increase factor for the step length relative to the maximum step length.
         """
         
         self.if_update = []
@@ -187,30 +167,13 @@ class GeometryParams(BaseParams):
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
-
-        if len(self._max_step_length_max) != self.num_surface:
-            self._max_step_length_max = [0.5] * self.num_surface
-            self._max_step_length = [0.5] * self.num_surface
         
         self.if_update = [True for _ in range(self.num_surface)]
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
                 self.surface_list[i].initialize()
 
-        if iteration > 2:
-            obj_before = GLOBAL.History.history_objective[iteration - 2]
-            obj_now = GLOBAL.History.history_objective[iteration-1]
 
-            if obj_now > obj_before:
-                for i in range(len(self._max_step_length)):
-                    self._max_step_length[i] = max(
-                        self._max_step_length[i] * self._step_length_decay, 
-                        self._max_step_length_max[i] * self._step_length_min_ratio)
-            else:
-                for i in range(len(self._max_step_length)):
-                    self._max_step_length[i] = min(
-                        self._max_step_length[i] * self._step_length_increase, 
-                        self._max_step_length_max[i])
 
 
     def add_surface(self, surface_new: BaseInterface) -> None:
@@ -321,7 +284,7 @@ class GeometryParams(BaseParams):
         x_flatten = torch.cat([torch.randn_like(xlist[i].flatten())*1e-6 for i in range(len(xlist))])
         return x_flatten
     
-    def update_variables(self, x_change: torch.Tensor) -> None:
+    def update_variables(self, x_change: torch.Tensor, max_step_length: list[torch.Tensor]) -> None:
         """
         Update the surfaces with the new variables.
 
@@ -329,7 +292,7 @@ class GeometryParams(BaseParams):
             xlist_change (torch.Tensor): The change of variables for the surfaces.
         """
         
-        x_change_list = []
+        x_change_list: list[torch.Tensor] = []
         start = 0
         for i in range(self.num_surface):
             
@@ -347,7 +310,7 @@ class GeometryParams(BaseParams):
             
             r = x_change_list[i].norm(dim=0)
             
-            dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * self._max_step_length[i]
+            dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * max_step_length[i]
             
             self.surface_list[i].update_variables(dx)
 
@@ -506,16 +469,16 @@ class GeometryParams(BaseParams):
             surf_name0 = '__surface-%d' % i
             name = self.surface_list[i].output_data(path_output=path_output, name_output=surf_name0, flip=(i!=0))
             
-            info = '%d\n%s\n%s' % (self.surface_list[i].surf_type, path_output +
-                                name, path_output + surf_name0 + '.stp')
-            que_name = 'T' + datetime.datetime.now().strftime(
-                "%Y%m%d%H%M%S") + '_%d.txt' % i
-            with open(path_queue + que_name, 'w') as f:
-                f.write(info.replace('/', '\\\\'))
-            que_Names.append(path_queue + que_name)
-        for que_file in que_Names:
-            while os.path.exists(que_file):
-                time.sleep(0.1)    
+            if self.surface_list[i].surf_type == 0:
+                info = '%d\n%s\n%s' % (self.surface_list[i].surf_type, path_output +
+                                    name, path_output + surf_name0 + '.stp')
+                que_name = 'T' + datetime.datetime.now().strftime(
+                    "%Y%m%d%H%M%S") + '_%d.txt' % i
+                
+                with open(path_queue + que_name, 'w') as f:
+                    f.write(info.replace('/', '\\\\'))
+                que_Names.append(path_queue + que_name)
+
         return que_Names
     
     def _call_rhino(self, que_Names: list[str]) -> None:

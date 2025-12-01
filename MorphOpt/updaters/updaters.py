@@ -57,4 +57,4 @@ class Updaters:
         Update the variables of the surfaces and loads.
         """
         if self.if_update_surface:
-            self._surface.params_update.update_variables(x_change=self._var_surface)
+            self._surface.params_update.update_variables(x_change=self._var_surface, max_step_length=self._surface._max_step_length)

@@ -1,6 +1,8 @@
 import math
 import os
+from mpmath import fac
 import torch
+from torch.nn.modules import conv
 import vtk
 from mayavi import mlab
 
@@ -60,16 +62,13 @@ class CPGEOSurfaceInterface(BaseInterface):
         self.surface_out_knots = knots
         self.surface_out_coo = Coo
 
-        r = R.tolist()
-        coo = Coo.tolist()
-
-        surface = mlab.pipeline.triangular_mesh_source(r[0], r[1], r[2], coo)
-        surface_vtk = surface.outputs[0]._vtk_obj
-        stlWriter = vtk.vtkSTLWriter()
-        stlWriter.SetFileName(path_output + name_output + '.stl')
-        stlWriter.SetInputConnection(surface_vtk.GetOutputPort())
-        stlWriter.Write()
-        mlab.close()
+        # Save STP file
+        converter = self.MeshSurfaceConverter()
+        data = converter.convert_mesh_to_stp(faces=Coo.cpu().numpy(),
+                                      vertices=R.cpu().numpy().T,
+                                        filename=name_output)
+        with open(path_output + name_output + '.stp', 'w') as f:
+            f.write(data)
 
         with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
             num_points = 10
