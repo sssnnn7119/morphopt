@@ -1,5 +1,7 @@
 from socketserver import UDPServer
+import numpy as np
 from scipy import interpolate
+from sympy.physics import control
 import torch
 from torch.nn.init import normal_
 from ...GLOBAL import PATH, History
@@ -47,9 +49,9 @@ class UpdaterSurfaces(BaseUpdater):
         L = sum_{i=1}^{n} w_i * f_i(x)
         """
 
-        self.sensitivity_previous: list[torch.Tensor] = []
+        self._delta_control_points_previous: list[np.ndarray] = None
         """
-        The sensitivity values for the optimization process from the previous iteration.
+        The previous change in control points for each surface.
         """
 
         self._weight_points: list[torch.Tensor] = []
@@ -65,11 +67,6 @@ class UpdaterSurfaces(BaseUpdater):
         self._reset_sensitivity_scaler_per_iter = reset_sensitivity_scaler_per_iter
         """
         The number of iterations after which the scaler is reset.
-        """
-
-        self._sensitivity_scaler: float = None
-        """
-        The scaler for the shape derivative sensitivity.
         """
 
         self._max_step_length_max: float = max_step_length
@@ -92,7 +89,7 @@ class UpdaterSurfaces(BaseUpdater):
         The decay factor for the step length relative to the maximum step length.
         """
 
-        self._step_length_increase: float = 1.2
+        self._step_length_increase: float = 1.5
         """
         The increase factor for the step length relative to the maximum step length.
         """
@@ -150,23 +147,30 @@ class UpdaterSurfaces(BaseUpdater):
         r0, rdu0, rdu20 = self.params_update.get_geometry_values()
 
         # initialize the shape derivative sensitivity
+        self._initialize_objectives(iter_now=iter_now, r0=r0, rdu0=rdu0, rdu20=rdu20)
+        
+        # get the total sensitivity
+        sensitivity = self._get_total_sensitivity()
+
+        # initialize the constraint functions
+        self._initialize_constraints(r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity)
+            
+        # initialize the optimizer
+        self._initialize_optimizer()
+
+        # initialize the step length
+        if len(self._max_step_length) == 0:
+            for i in range(self.params_update.num_surface):
+                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max)
+
+        # save the sensitivity for the next iteration
+        self.sensitivity_previous = sensitivity
+          
+    def _initialize_objectives(self, iter_now: int, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
         for obj_func in self.obj_funcs.values():
-            obj_func.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20)
+            obj_func.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, weights=self._weight_points)
 
-        # reset the scaler for the shape derivative
-        if iter_now % self._reset_sensitivity_scaler_per_iter == 0 or self._sensitivity_scaler is None:
-            max_sensitivity = 0.
-            for obj_func in self.obj_funcs.values():
-                for sensitivity_surf in obj_func.sensitivity:
-                    max_sensitivity = max(max_sensitivity,
-                                        sensitivity_surf.abs().max())
-            self._sensitivity_scaler = 1 / max_sensitivity
-
-        # rescale the sensitivity
-        for obj_func in self.obj_funcs.values():
-            for surf_ind in range(len(obj_func.sensitivity)):
-                obj_func.sensitivity[surf_ind] = obj_func.sensitivity[surf_ind] * self._sensitivity_scaler * self._weight_points[surf_ind]
-
+    def _get_total_sensitivity(self) -> None:
         # get the total sensitivity
         sensitivity_all = []
         for obj_func in self.obj_funcs.values():
@@ -175,36 +179,33 @@ class UpdaterSurfaces(BaseUpdater):
         for surf_ind in range(len(sensitivity)):
             for obj_ind in range(1, len(sensitivity_all)):
                 sensitivity[surf_ind] += sensitivity_all[obj_ind][surf_ind]
-        
-        # initialize the constraint functions
+        return sensitivity
+    
+    def _initialize_constraints(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor]) -> None:
         for constraints in self.constraints_funcs.values():
-            constraints.initialize(iter_now=iter_now, r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity)
-            
-        # initialize the optimizer
+            constraints.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity, weights=self._weight_points)
+
+    def _initialize_optimizer(self) -> None:
         self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
         self.iteration_total = 0
 
-        # initialize the max step length
-        if len(self._max_step_length) == 0:
-            for i in range(self.params_update.num_surface):
-                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max)
+    def _update_step_length(self, delta_control_points: list[np.ndarray]) -> None:
 
-        for i in range(len(self._max_step_length)):
-            if (self._max_step_length[i].numel() != self.params.geometry.surface_list[i].num_variables // 3):
-                    self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
-
-        if len(self.sensitivity_previous) != 0:
-            # check if the mesh has improved
+        # update the step length based on the number of variables
+        if self._delta_control_points_previous is not None:
             for i in range(len(self._max_step_length)):
-                sensitivity_product = (sensitivity[i] * self.sensitivity_previous[i]).sum(dim=0) / (sensitivity[i].norm(dim=0) * self.sensitivity_previous[i].norm(dim=0) + 1e-15)
-                increase_index = torch.where(sensitivity_product > 0)[0]
-                decrease_index = torch.where(sensitivity_product <= 0)[0]
-                self._max_step_length[i][increase_index] = torch.clamp(self._max_step_length[i][increase_index] * self._step_length_increase,
-                                                                        max=self._max_step_length_max)
-                self._max_step_length[i][decrease_index] = torch.clamp(self._max_step_length[i][decrease_index] * self._step_length_decay,
-                                                                        min=self._max_step_length_max * self._step_length_min_ratio)
-          
+                # check if the mesh has improved
+                if (self._delta_control_points_previous[i].shape[1] != self.params.geometry.surface_list[i].control_points.shape[1]):
+                    self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
+                else:
+                    delta_difference = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / np.linalg.norm(delta_control_points[i], axis=0) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
 
+                    index_increase = (delta_difference > -0.5).flatten()
+                    index_decrease = (delta_difference <= -0.5).flatten()
+                    self._max_step_length[i][index_increase] = torch.clamp(self._max_step_length[i][index_increase] * self._step_length_increase,
+                                                                          max=self._max_step_length_max)
+                    self._max_step_length[i][index_decrease] = torch.clamp(self._max_step_length[i][index_decrease] * self._step_length_decay,
+                                                                          min=self._max_step_length_max * self._step_length_min_ratio)
 
     def closure(self, x: torch.Tensor, return_list=False) -> float:
         """
@@ -224,7 +225,7 @@ class UpdaterSurfaces(BaseUpdater):
 
         # Calculate the objective function value
         r, rdu, rdu2 = self.params_update.get_geometry_values()
-
+        
         constraints_value: list[torch.Tensor] = []
         for constraints in self.constraints_funcs.values():
             constraints_value.append(constraints(r=r, rdu=rdu, rdu2=rdu2))
@@ -297,3 +298,19 @@ class UpdaterSurfaces(BaseUpdater):
                 print(string, end="\r")
 
         return variables.detach().clone()
+
+    def update_variables(self, dx: torch.Tensor) -> None:
+        """
+        Update the variables of the surfaces.
+        """
+        control_points0 = self.params_update.get_control_points_list()
+        control_points0 = [cp.detach().clone().cpu().numpy() for cp in control_points0]
+
+        self.params_update.update_variables(x_change=dx, max_step_length=self._max_step_length)
+
+        control_points_new = self.params_update.get_control_points_list()
+        control_points_new = [cp.detach().clone().cpu().numpy() for cp in control_points_new]
+        delta_control_points = [control_points_new[i] - control_points0[i] for i in range(len(control_points0))]
+        self._update_step_length(delta_control_points=delta_control_points)
+
+        self._delta_control_points_previous = [cp.copy() for cp in delta_control_points]

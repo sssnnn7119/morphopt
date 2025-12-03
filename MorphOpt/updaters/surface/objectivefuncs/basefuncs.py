@@ -16,15 +16,15 @@ class BaseConstraints():
         """
 
 
-    def initialize(self, sensitivity: list[torch.Tensor], *args, **kwargs):
+    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs):
         
         self.scaler = []
         for i in range(len(sensitivity)):
             sen_now = sensitivity[i].reshape([3, -1]).norm(dim=0)
             sen_now[sen_now==0] = sen_now[sen_now!=0].min()
-            self.scaler.append(sen_now)
+            self.scaler.append(sen_now * weights[i])
 
-    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
+    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> float:
         """
         Call the objective function.
 
@@ -85,11 +85,12 @@ class BaseObjective():
         Sensitivity of the shape derivative with respect to the contact forces.
         """
 
-    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], *args, **kwargs) -> None:
+    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> None:
         """
         Initialize the objective function with the given parameters.
 
         Args:
+            weights (list[torch.Tensor]): The weights for each point.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
         """

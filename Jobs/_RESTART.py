@@ -25,7 +25,7 @@ def restart_optimization(restart_path, target_iteration=None):
     """
 
     GLOBAL.PATH.path_Code = os.getcwd() + '/MorphOpt/'
-    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/GenerateModel/_Rhino/TaskQueue/'
+    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/modelparams/geometry/_Rhino/taskqueue/'
     GLOBAL.PATH.path_Result = restart_path
 
     GLOBAL.History.load_csv(restart_path + '/log/')
@@ -53,6 +53,6 @@ def restart_optimization(restart_path, target_iteration=None):
 
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
-    restart_optimization(restart_path = "Z:/Results/EXAMPLE_T2025-11-12_15-44-03/", 
+    torch.set_default_device('cuda')
+    restart_optimization(restart_path = "Z:/Results/JUMP_T2025-12-02_14-17-23/", 
                          target_iteration = None)  

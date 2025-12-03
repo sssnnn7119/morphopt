@@ -160,6 +160,26 @@ class GeometryParams(BaseParams):
         """
         The indices of the surface nodes.
         """
+
+        self._iter_since_last_regenerate: int = 0
+        """
+        The number of iterations since the last regeneration of the surfaces.
+        """
+
+        self._max_iter_before_regenerate: int = 15
+        """
+        The maximum number of iterations before the surfaces are regenerated.
+        """
+
+        self._nodes_last_regenerate: np.ndarray = None
+        """
+        The node positions at the last regeneration of the surfaces.
+        """
+
+        self._max_nodes_change: float = 1.5
+        """
+        The maximum allowed change in node positions before the surfaces are regenerated.
+        """
         
     def initialize(self, iteration: int):
         """
@@ -172,9 +192,7 @@ class GeometryParams(BaseParams):
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
                 self.surface_list[i].initialize()
-
-
-
+        self.apply_surface_constraints()
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """
@@ -197,6 +215,17 @@ class GeometryParams(BaseParams):
         """
         return len(self.surface_list)
     
+    @property
+    def num_variables_list(self) -> list[int]:
+        """
+        Get the number of variables for each surface.
+
+        Returns:
+            list[int]: The number of variables for each surface.
+        """
+        num_vars = [self.surface_list[i].num_variables for i in range(self.num_surface)]
+        return num_vars
+
     def get_geometry_values(self) -> list[torch.Tensor]:
         """
         Get the geometry values of the surfaces.
@@ -214,6 +243,17 @@ class GeometryParams(BaseParams):
         rdu2 = [rlist[i][2] for i in range(self.num_surface)]
         return r, rdu, rdu2
     
+    def get_control_points_list(self) -> list[torch.Tensor]:
+        """
+        Get the control points of the surfaces.
+
+        Returns:
+            list[torch.Tensor]: The control points of the surfaces.
+        """
+        
+        ctrl_pts = [self.surface_list[i].control_points.detach().clone() for i in range(self.num_surface)]
+        return ctrl_pts
+
     def get_penalty_fairness(self, weight: list[torch.Tensor], r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor]) -> torch.Tensor:
         """
         Get the penalty fairness of the surfaces.
@@ -314,6 +354,14 @@ class GeometryParams(BaseParams):
             
             self.surface_list[i].update_variables(dx)
 
+        self.apply_surface_constraints()
+
+    def apply_surface_constraints(self) -> None:
+        """
+        Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+        """
+        pass
+
     def save(self, filepath):
         for i in range(self.num_surface):
             self.surface_list[i].save(filepath + '/Surface-%d_iter-%d' %
@@ -372,12 +420,41 @@ class GeometryParams(BaseParams):
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        if GLOBAL.History.iteration % self.reinitialize_per_iter == 0:
+        if GLOBAL.obj_fun.inp is None:
             self._regenerate(material_para=material_para)
+            self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
+            self._iter_since_last_regenerate = 0
+            return
+        
+
+        part = GLOBAL.obj_fun.inp.part['final_model']
+        nodes_now = part.nodes[:, 1:]  # shape [N,3]
+
+        if self._nodes_last_regenerate is not None:
+            # judge whether the nodes have changed significantly
+            disp: np.ndarray = np.linalg.norm(nodes_now - self._nodes_last_regenerate, axis=1)
+            max_node_disp = float(disp.max())
+        else:
+            max_node_disp = 0.0
+
+        need_regen = (
+            self._iter_since_last_regenerate >= self._max_iter_before_regenerate
+            or (self._nodes_last_regenerate is not None and max_node_disp > self._max_nodes_change)
+        )
+
+        if need_regen:
+            self._regenerate(material_para=material_para)
+            self._iter_since_last_regenerate = 0
+            # update the reference nodes
+            self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
         else:
             last_min_vol, max_g = self._refinemesh()
             if max_g > 5e-1 or last_min_vol < 0:
                 self._regenerate(material_para=material_para)
+                self._iter_since_last_regenerate = 0
+                self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
+            else:
+                self._iter_since_last_regenerate += 1
         
         # for i in range(self.num_surface):
         #     self.surface_list[i].pre_load()

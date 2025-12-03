@@ -2,10 +2,10 @@
 
 from scipy import interpolate
 import torch
-from .baseobjfun import BaseObj
+from .basefuncs import BaseObjective
 from .... import GLOBAL
 
-class ShapeDerivativeDirect(BaseObj):
+class ShapeDerivativeDirect(BaseObjective):
     """
     Shape derivative for contact forces.
     """
@@ -24,7 +24,7 @@ class ShapeDerivativeDirect(BaseObj):
         Initial reference configuration.
         """
 
-        self.scaler = None
+        self.weights: list[torch.Tensor] = None
         """
         The scaler for the objective function.
         """
@@ -35,17 +35,30 @@ class ShapeDerivativeDirect(BaseObj):
         """
 
 
-    def initialize(self, iter_now: int, r0: list[torch.Tensor], *args, **kwargs):
+    def initialize(self, iter_now: int, r0: list[torch.Tensor], control_points_list0: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs):
 
+        self._control_points_list0 = [control_points_list0[i].detach().clone() for i in range(len(control_points_list0))]
+        self._r0 = [r0[i].detach().clone() for i in range(len(r0))]
+        self.weights = weights
+
+        grad_pos, nodes = self._sensitivity_analysis()
+
+        interpolate_points = self._get_interpolate_points()
+
+        self.sensitivity = self._sensitivity_interpolation(Ldot=grad_pos, points_request=nodes, interpolated_points=interpolate_points)
+
+
+    def _sensitivity_analysis(self):
+        """
+        Perform sensitivity analysis using the adjoint method.
+        
+        Returns:
+            grad_pos (torch.Tensor): The gradient of the objective function with respect to the node positions.
+            nodes (torch.Tensor): The node positions.
+        """
         objfun = GLOBAL.obj_fun
         fe = objfun.fe
-
-        self._r0 = [r0[i].detach().clone() for i in range(len(r0))]
-
-        ins = fe.assembly.get_instance('final_model')
         part = fe.assembly.get_part('final_model')
-        grad_pos = torch.zeros_like(ins.nodes)
-
         def closure_work(nodes_diff: torch.Tensor):
             nodes0 = part.nodes
             part.nodes = nodes_diff
@@ -65,17 +78,8 @@ class ShapeDerivativeDirect(BaseObj):
             part.nodes = nodes0
             fe.initialize()
             return work
-        grad_pos += torch.autograd.functional.jacobian(closure_work, part.nodes.detach().clone())
-
-        i=0
-
-        interpolate_points = self._get_interpolate_points()
-
-        self.sensitivity = self._sensitivity_interpolation(Ldot=grad_pos, points_request=part.nodes, interpolated_points=interpolate_points)
-
-        self._reset_scaler(iter_now=iter_now, sensitivity=self.sensitivity)
-        for i in range(len(self.sensitivity)):
-            self.sensitivity[i] *= self.scaler
+        grad_pos = torch.autograd.functional.jacobian(closure_work, part.nodes.detach().clone())
+        return grad_pos, part.nodes
     
     def show_sensitivity(self, ind: int) -> None:
         """
@@ -96,31 +100,14 @@ class ShapeDerivativeDirect(BaseObj):
 
         mlab.show()
 
-    def __call__(self, weight, r: list[torch.Tensor], *args, **kwargs):
+    def __call__(self, r: list[torch.Tensor], *args, **kwargs):
         loss_objective = 0.0
 
-        for i in range(len(weight)):
+        for i in range(len(self.weights)):
 
-            loss_objective += ((r[i] - self._r0[i]) * self.sensitivity[i]).sum()
+            loss_objective += ((r[i] - self._r0[i]) * self.sensitivity[i] * self.weights[i]).sum()
 
         return loss_objective
-    
-    def _reset_scaler(self, iter_now: int, sensitivity: list[torch.Tensor]) -> None:
-        """
-        Reset the scaler for the objective function.
-
-        Parameters:
-            iter_now (int): The current iteration number.
-        """
-        if iter_now % self.reset_per_iter == 0 or self.scaler is None:
-            # get the maximum sensitivity value
-            max_sensitivity = 0
-            for sensitivity_surf in sensitivity:
-                max_sensitivity = max(max_sensitivity,
-                                      sensitivity_surf.abs().max())
-            self.scaler = 1 / max_sensitivity
-
-        return sensitivity
 
     def _get_interpolate_points(self, *args, **kwargs):
         """

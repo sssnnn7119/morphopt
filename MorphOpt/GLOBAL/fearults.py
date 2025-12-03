@@ -16,7 +16,7 @@ class ObjectiveFunction:
         The FEA solver instance.
         """
 
-        self.inp: FEA.FEA_INP
+        self.inp: FEA.FEA_INP = None
         """
         The FEA .inp file.
         """

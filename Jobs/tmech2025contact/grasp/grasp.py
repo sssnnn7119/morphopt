@@ -1,11 +1,11 @@
 import os
 import sys
 
-import FEA
-import numpy as np
+
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
-
+import FEA
+import numpy as np
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -86,18 +86,23 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 
         D = -(dn * dy).sum(dim=-1) / 2
 
+        L = dy.norm(dim=-1)
+        T = (contactobj._penalty_threshold_h - L) / (contactobj._penalty_ratio_h * contactobj._penalty_threshold_h)
+        T = T.clamp(0, 1)
+        h = T**3 * (6*T**2 - 15*T + 10)
+
         Rf = R_now.sum(dim=0)
 
-        loss0 = -self.U[0][-2]
-        loss1 = Rf[0]/10
-        loss2 = -(torch.exp(-(D)**2) * weight).sum() * 1e-6
+        loss0 = -self.U[0][-6] / 100
+        loss1 = Rf[0]
+        loss2 = -(torch.exp(-(D)**2) * weight * f * h).sum() * 1e-4
         # loss2 = (D**2 * weight).sum()
         
         # E = ins_actuator.potential_energy(RGC = assembly._GC2RGC(self.U[0].to(assembly.device)))
         # loss1 = -E.sum()
 
         print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
-        return loss0 + loss1
+        return loss0 + loss2 + loss1
  
     
     def save_figure(self, filepath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
@@ -191,19 +196,19 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.2, fea_mesh_order=1)
+            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2], fea_seed_size=1.4, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=8.,
-                                                        length=80.,
-                                                        seed_size=0.6,
+                                                        length=120.,
+                                                        seed_size=1.0,
                                                         symmetric=[1, [1]],
                                                         flip=False, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=4.,
-                                                    length=74.,
-                                                    seed_size=0.6,
+                                                    length=114.,
+                                                    seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
                                                     flip=True, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
@@ -244,12 +249,12 @@ class Params(_Params):
             # Add cylinder
             self.add_instance_from_inp(
                 fe,
-                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/ellipsebian.inp",
-                part_name='cylinder',
-                instance_name='cylinder',
+                inp_path="C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/tmech2025contact/grasp/rec.inp",
+                part_name='rec',
+                instance_name='rec',
                 part_name_new='cylinder',
                 instance_name_new='cylinder',
-                translation=[-1.0, 0.0, 10.0]
+                translation=[10.0, 0.0, 50.0]
             )
 
             return fe
@@ -295,7 +300,7 @@ class Updater(_Updaters):
 
             super().__init__(
                 params=params,
-                max_step_iter=50)
+                max_step_iter=50, max_step_length=0.4)
 
             shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
             self.add_objective_function(shape_derivative)
@@ -303,10 +308,10 @@ class Updater(_Updaters):
                 self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
             self.add_constraints(
                 self.objectivefuncs.Distance(min_distance=
-                                                            [[2.5, 2.5],
-                                                             [2.5, 2.5]]))
+                                                            [[1.0, 2.5],
+                                                             [2.5, 2.0]]))
             self.add_constraints(
-                self.objectivefuncs.boundarys.Cylinder(radius=10., height=80., bottom=0.))
+                self.objectivefuncs.boundarys.Cylinder(radius=12., height=120., bottom=0.))
     
 class Controller(_Controller):
     def save(self):

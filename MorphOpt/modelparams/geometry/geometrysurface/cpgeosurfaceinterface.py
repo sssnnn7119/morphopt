@@ -44,6 +44,25 @@ class CPGEOSurfaceInterface(BaseInterface):
             int: The number of design variables.
         """
         return self.model.cp_vertices.numel()
+    
+    @property
+    def control_points(self) -> torch.Tensor:
+        """
+        Get the control points of the B-spline surface.
+
+        Returns:
+            torch.Tensor: The control points of the B-spline surface.
+        """
+        return self.model.cp_vertices
+    @control_points.setter
+    def control_points(self, x: torch.Tensor) -> None:
+        """
+        Set the control points of the B-spline surface.
+
+        Parameters:
+            x (torch.Tensor): The new control points to be set.
+        """
+        self.model.cp_vertices = x.reshape(self.model.cp_vertices.shape)
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False):
 

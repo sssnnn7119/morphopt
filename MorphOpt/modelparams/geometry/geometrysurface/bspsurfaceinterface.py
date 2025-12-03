@@ -2,6 +2,7 @@ from email.policy import default
 from turtle import distance
 import numpy as np
 import torch
+from traits.tests.test_ctraits import setter
 from .basesurfaceinterface import BaseInterface
 from ..SurfaceModel.bspline.BSP import BSP_Surf
 from .... import GLOBAL
@@ -46,6 +47,8 @@ class BspInterface(BaseInterface):
                                 0.2] = MaxR * 0.2 / RRvv[RRvv > MaxR *
                                                         0.2] / lengthV
         self.rr_compensation[3] /= lengthV
+
+        self.flip: bool = False
     
     def initialize(self):
         self.model.symmetric_reinitialize()
@@ -63,6 +66,26 @@ class BspInterface(BaseInterface):
             int: The number of design variables.
         """
         return self.model.control_points.numel()
+
+    @property
+    def control_points(self) -> torch.Tensor:
+        """
+        Get the control points of the B-spline surface.
+
+        Returns:
+            torch.Tensor: The control points of the B-spline surface.
+        """
+        return self.model.control_points
+    
+    @control_points.setter
+    def control_points(self, x: torch.Tensor) -> None:
+        """
+        Set the control points of the B-spline surface.
+
+        Parameters:
+            x (torch.Tensor): The new control points to be set.
+        """
+        self.model.control_points = x.reshape(self.model.control_points.shape)
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False):
         flip = not flip
@@ -319,7 +342,7 @@ class BspInterface(BaseInterface):
 
 
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, symmetric: list[int] = [0], degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
+    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, num_U_ratio: int = 1, num_V_ratio: int = 1, symmetric: list[int] = [0], degree = 4, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
         """
         Initialize the B-spline surface for the optimization process.
 
@@ -327,6 +350,8 @@ class BspInterface(BaseInterface):
             r0 (float): The radius of the cylinder.
             length (float): The length of the cylinder.
             seed_size (float): The size of the seed for the B-spline surface.
+            num_U_ratio (int, optional): The ratio for the number of points in the U direction. Default is 1.
+            num_V_ratio (int, optional): The ratio for the number of points in the V direction. Default is 1.
             symmetric (list[int]): The symmetry of the surface.
             flip (bool): Whether to flip the surface or not.
             degree (int, optional): The degree of the B-spline surface. Default is 4.
@@ -346,6 +371,9 @@ class BspInterface(BaseInterface):
         numV = round(length / seed_size)
 
         numU = round(numU / 12) * 12
+
+        numU = round(numU / num_U_ratio) * num_U_ratio
+        numV = round(numV / num_V_ratio) * num_V_ratio
 
         P0 = torch.zeros(3, numV, numU)
 
@@ -383,4 +411,7 @@ class BspInterface(BaseInterface):
 
         bsp.pre_load([bsp.num_points[0] * 2, bsp.num_points[1] * 2])
 
-        return cls(bsp, init_size=seed_size, symmetric=symmetric, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
+        output = cls(bsp, init_size=seed_size, symmetric=symmetric, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
+        output.flip = flip
+
+        return output

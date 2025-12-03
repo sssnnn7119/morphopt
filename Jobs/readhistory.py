@@ -5,6 +5,8 @@ import numpy as np
 from sympy.polys.subresultants_qq_zz import res
 from traits.adaptation.tests.benchmark import target
 
+import MorphOpt
+
 # Add the path to your MorphOpt module
 sys.path.append(os.getcwd())
 
@@ -18,7 +20,7 @@ torch.set_default_dtype(torch.float64)
 torch.set_default_device('cpu')
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
-def restart_optimization(restart_path, target_iteration=None):
+def restart_optimization(restart_path, target_iteration=None)->MorphOpt.modelparams.Params:
     """
     Restart the optimization process from a specified iteration.
 
@@ -28,38 +30,36 @@ def restart_optimization(restart_path, target_iteration=None):
     """
 
     GLOBAL.PATH.path_Code = os.getcwd() + '/MorphOpt/'
-    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/GenerateModel/_Rhino/TaskQueue/'
+    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/modelparams/geometry/_Rhino/taskqueue/'
     GLOBAL.PATH.path_Result = restart_path
 
     GLOBAL.History.load_csv(restart_path + '/log/')
     if target_iteration is None:
         target_iteration = GLOBAL.History.iteration
     GLOBAL.History.iteration = target_iteration
+    GLOBAL.History.history_num_nodes = GLOBAL.History.history_num_nodes[:target_iteration]
+    GLOBAL.History.history_num_elements = GLOBAL.History.history_num_elements[:target_iteration]
     GLOBAL.History.history_objective = GLOBAL.History.history_objective[:target_iteration]
     GLOBAL.History.history_time = GLOBAL.History.history_time[:target_iteration]
+    GLOBAL.History.history_deformation = GLOBAL.History.history_deformation[:target_iteration]
     
     sys.path.append(restart_path + '/scripts/Jobs/')
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
     params = MAIN_SCRIPT_FOR_RESTART.Params()
-    solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
-    updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
-    controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
-                                                    solver=solver, 
-                                                    updater=updater)
-
+    params.initialize(0)
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
 
-    return params, generator
+    return params
 
 if __name__ == "__main__":
     # Read the parameters from the restart path
-    restart_path = "Z:/Results/T20250905154812_FRONT_ref/"
-    target_iteration = 83
+    restart_path = "Z:/results/JUMP_T2025-12-02_14-17-23_P8/"
+    target_iteration = 126
 
-    params, generator = restart_optimization(restart_path = restart_path, 
-                         target_iteration = 248)
+    params = restart_optimization(restart_path = restart_path, 
+                                  target_iteration = target_iteration)
     
-    generator.generate(material_para=[params.materials.density, 1, 
+    params.geometry._regenerate(material_para=[params.materials.density, 1, 
                                                            params.materials.mu, 
                                                            params.materials.kappa])
