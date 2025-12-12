@@ -20,6 +20,7 @@ class FEAParams(BaseParams):
     from .feainterface import BoundaryConditionInterface, BoundaryConditionRPInterface
     from .feainterface import CoupleInterface
     from .feainterface import ReferencePointInterface
+    from .feainterface import BodyforceInterface
     def __init__(self):
         """
         Initialize the Loads class.

@@ -6,3 +6,5 @@ from .springinterface import SpringToGroundInterface, SpringBetweenRPsInterface
 from .coupleinterface import CoupleInterface
 from .boundaryconditioninterface import BoundaryConditionInterface, BoundaryConditionRPInterface
 from .referencepointinterface import ReferencePointInterface
+
+from .bodyforceinterface import BodyforceInterface

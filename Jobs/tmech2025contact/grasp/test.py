@@ -1,5 +1,5 @@
-
-from turtle import pen
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import torch
 
 import FEA
@@ -18,7 +18,7 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
         
     """
     inp_cylinder = FEA.FEA_INP()
-    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/ral2025contact/grasp/rec.inp")
+    inp_cylinder.read_inp("C:/Users/24391/Documents/MineData/Learning/Code/Projects/MorphOpt/Jobs/tmech2025contact/grasp/rec.inp")
     fe_cylinder = FEA.from_inp(inp_cylinder)
     part_cylinder = fe_cylinder.assembly.get_part('rec')
 
@@ -32,11 +32,11 @@ def init_FEA(inp: FEA.FEA_INP) -> FEA.FEAController:
     ins_cylinder = fe.assembly.get_instance('rec')
     # convert to the second order elements
     # fe = FEA.elements.convert_to_second_order(fe, ['element-0'])
-    ins_cylinder._translation = torch.tensor([0,0,0.])
+    ins_cylinder._translation = torch.tensor([10,0,50.])
     
     # add contact between cylinder and model
     fe.assembly.add_load(FEA.loads.Contact(instance_name1=ins_name, instance_name2='rec', 
-                                            surface_name1='surface_0_All', surface_name2='contact', penalty_threshold_h=2.0),)
+                                            surface_name1='surface_0_All', surface_name2='contact'),)
     
     # boundary condition on cylinder
     fe.assembly.add_boundary(FEA.boundarys.Boundary_Condition(instance_name='rec', set_nodes_name='contact'))
@@ -95,7 +95,7 @@ torch.set_default_dtype(torch.float64)
 torch.cuda.empty_cache()
 # construct the FEA
 FE_inp = FEA.FEA_INP()
-FE_inp.read_inp('Z:/Results/GRASP_T2025-11-10_10-04-13/Cache/TopOptRun.inp')
+FE_inp.read_inp('Z:/Results/GRASP_T20251204_202644/FEA/TopOptRun.inp')
 
 fe = init_FEA(FE_inp)
 

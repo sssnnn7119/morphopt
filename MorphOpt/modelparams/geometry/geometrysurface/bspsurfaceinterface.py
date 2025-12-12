@@ -161,6 +161,7 @@ class BspInterface(BaseInterface):
 
         distance_init = (points.reshape([3, 1, -1]).cpu() - points_init.reshape([3, -1, 1]).cpu()).norm(dim=0)
         index_init = torch.argmin(distance_init, dim=0)
+        del distance_init
 
         uv_init = self.model.coordinates.reshape([2, -1])[:, index_init].detach().clone().requires_grad_()
         opt = torch.optim.Adam([uv_init], lr=0.01)

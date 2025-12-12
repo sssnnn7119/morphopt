@@ -7,6 +7,8 @@ from .updaters.surface import UpdaterSurfaces as _UpdaterSurfaces
 from .updaters.updaters import Updaters as _Updaters
 from .modelparams import Params as _Params
 
+from .utils.restart import restart_optimization
+
 __all__ = [
     "GLOBAL",
     "_Controller",
@@ -18,5 +20,6 @@ __all__ = [
     "_UpdaterSurfaces",
     "_Updaters",
     "_Params",
+    "restart_optimization"
 ]
 

@@ -53,8 +53,8 @@ class Params:
             filepath (str): The path to load the parameters from.
         """
         self.geometry.load(filepath=filepath + '/Surfaces/Data/', iteration=iteration)
-        self.feamodel.load(filepath=filepath + '/Loads/Data/', iteration=iteration)
-        self.materials.load(filepath=filepath + '/Materials/Data/', iteration=iteration)
+        # self.feamodel.load(filepath=filepath + '/Loads/Data/', iteration=iteration)
+        # self.materials.load(filepath=filepath + '/Materials/Data/', iteration=iteration)
 
     def save_figure(self, filepath: str) -> None:
         """

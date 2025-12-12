@@ -93,15 +93,16 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
 
         Rf = R_now.sum(dim=0)
 
-        loss0 = -self.U[0][-6] / 100
+        loss0 = -self.U[0][-6] / 1000
         loss1 = Rf[0]
-        loss2 = -(torch.exp(-(D)**2) * weight * f * h).sum() * 1e-4
+        loss2 = -(torch.exp(-(D)**2) * weight * f * h).sum() * 0e-4
         # loss2 = (D**2 * weight).sum()
         
         # E = ins_actuator.potential_energy(RGC = assembly._GC2RGC(self.U[0].to(assembly.device)))
         # loss1 = -E.sum()
 
         print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
+        print('Contact force:', Rf.tolist())
         return loss0 + loss2 + loss1
  
     
@@ -130,7 +131,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
             from tvtk.common import configure_input_data
 
             fig = mlab.figure(size=(800, 800), bgcolor=(1, 1, 1))
-            fig.scene.parallel_projection = True
+            # fig.scene.parallel_projection = True
             
             # extern_surf = fe.loads['pressure-1'].surface_element.cpu().numpy()
             ins1 = self.fe.assembly.get_instance('final_model')
@@ -185,7 +186,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
                 mesh3.actor.property.line_width = 1.0
                 mesh3.actor.property.edge_color = (0, 0, 0)  # Black edges
 
-            mlab.view(azimuth=90, elevation=90, distance=300)
+            mlab.view(azimuth=100, elevation=90, distance=300, focalpoint=(0, 0, 60))
             mlab.savefig(f"{filepath}/task_{case}_iter_{iteration}.png")
             mlab.close(fig)
 
@@ -203,7 +204,7 @@ class Params(_Params):
                                                         length=120.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
+                                                        flip=False, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=10.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=4.,
@@ -211,10 +212,10 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.8, maxFF=0.1, perturbation_L=10.))
+                                                    flip=True, maxR=0.1, maxC=1.5, maxFF=0.1, perturbation_L=10.))
         
             
-            
+            self._max_iter_before_regenerate = 0
             self.if_update = [True, True]
             
     class FEAParams(_FEAParams):
@@ -225,7 +226,7 @@ class Params(_Params):
             # Common BC / RP / Couple
             self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
             self.add_fea_interface(self.BoundaryConditionInterface(instance_name='cylinder', set_nodes_name='contact', index_dof=[0,1,2]))
-            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 120.]), name='RP_head')
             self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
             # Define load interfaces once
@@ -233,7 +234,6 @@ class Params(_Params):
             self.add_fea_interface(self.ContactInterface(
                 instance_name1='final_model', surface_name1='surface_0_All',
                 instance_name2='cylinder', surface_name2='contact',
-                penalty_threshold_h=3.0
             ), name='Contact_ext')
 
         def define_steps(self):
@@ -254,7 +254,7 @@ class Params(_Params):
                 instance_name='rec',
                 part_name_new='cylinder',
                 instance_name_new='cylinder',
-                translation=[10.0, 0.0, 50.0]
+                translation=[10.0, 0.0, 0.0]
             )
 
             return fe
@@ -325,7 +325,7 @@ class Controller(_Controller):
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
+    torch.set_default_device('cuda')
 
     path_result = 'Z:/Results'
     opt_label = 'GRASP'

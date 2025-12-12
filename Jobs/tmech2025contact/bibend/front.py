@@ -14,7 +14,8 @@ from MorphOpt import *
 
 class ObjectiveFunction(GLOBAL.ObjectiveFunction):
     def get_objective(self, *args, **kwargs):
-        loss = self.U[0, -2]
+        rp_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
+        loss = -self.U[0][self.fe.assembly._GC_list_indexStart[rp_index] + 4]
         return loss
 GLOBAL.obj_fun = ObjectiveFunction()
 
@@ -23,14 +24,14 @@ class Params(_Params):
 
         def __init__(self):
 
-            super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4], fea_seed_size=1.5, fea_mesh_order=1)
+            super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4], fea_seed_size=1.2, fea_mesh_order=1)
 
             self.add_surface(
                 self.BSP.initialize_cylinder(r0=21.,
                                                         length=50.,
                                                         seed_size=1.0,
                                                         symmetric=[1, [1]],
-                                                        flip=False, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
+                                                        flip=False, maxR=0.1, maxC=1.2, maxFF=0.2, perturbation_L=12.))
             
             self.add_surface(
             self.BSP.initialize_cylinder(r0=6.,
@@ -38,7 +39,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[-11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.2, maxFF=0.2, perturbation_L=12.))
         
             self.add_surface(
             self.BSP.initialize_cylinder(r0=6.,
@@ -46,7 +47,7 @@ class Params(_Params):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[11, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=0.7, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.2, maxFF=0.2, perturbation_L=12.))
             
             
             self.if_update = [True, True, True]
@@ -83,9 +84,8 @@ class Params(_Params):
 
             return torch.cat([part1_avg, part2_result, part3_result, part4_result], dim=2)
 
-        def initialize(self, iteration):
-            super().initialize(iteration)
-            # self.if_update[0] = False
+
+        def apply_surface_constraints(self):
             control_points_ = self.surface_list[1].model.control_points.clone()
 
             control_points_[0] *= -1
@@ -93,9 +93,7 @@ class Params(_Params):
 
             self.surface_list[2].model.control_points = control_points_
 
-
             self.surface_list[0].model.control_points = self._symmetry(self.surface_list[0].model.control_points)
- 
 
         def get_geometry_values(self):
             r0, r0du, r0du2 = self.surface_list[0].get_geometry_values()
@@ -121,63 +119,6 @@ class Params(_Params):
 
             return r, rdu, rdu2
 
-        def get_parameters(self) -> torch.Tensor:
-            """
-            Get the current variables of the surfaces.
-
-            Returns:
-                list[torch.Tensor]: The current variables of the surfaces.
-            """
-
-            xlist = [
-                self.surface_list[0].get_surface_parameters().flatten().detach(
-                ).clone(),
-                self.surface_list[1].get_surface_parameters().flatten().detach(
-                ).clone(),
-            ]
-            return xlist
-
-        def set_parameters(self, xlist: list[torch.Tensor]) -> None:
-            """
-            Set the current variables of the surfaces.
-
-            Parameters:
-                xlist (list[torch.Tensor]): The new variables for the surfaces.
-            """
-            self.surface_list[0].set_surface_parameters(
-                    xlist[0].detach().clone())
-            self.surface_list[1].set_surface_parameters(
-                    xlist[1].detach().clone())
-
-        def update_variables(self, x_change: torch.Tensor) -> None:
-            """
-            Update the surfaces with the new variables.
-
-            Parameters:
-                xlist_change (torch.Tensor): The change of variables for the surfaces.
-            """
-            
-            params = self.get_parameters()
-
-            x_change_list: list[torch.Tensor] = []
-            start = 0
-            for i in range(len(params)):
-                end = start + params[i].numel()
-                x_change_list.append(x_change[start:end].reshape([3, -1]))
-                start = end
-
-            x_change_list[0] = self._symmetry(x_change_list[0].reshape_as(self.surface_list[0].model.control_points)).reshape([3, -1])
-
-            x_new = []
-            surf_ind = [0, 1]
-            for i in range(len(surf_ind)):
-
-                r = x_change_list[i].norm(dim=0)
-
-                dx = 2 / torch.pi * torch.atan(r) * x_change_list[i] / (
-                    r + 1e-15) * self._max_step_length[i]
-
-                self.surface_list[surf_ind[i]].update_variables(dx)
             
     class FEAParams(_FEAParams):
         def __init__(self):

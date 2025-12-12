@@ -42,7 +42,7 @@ class MeshQualityOptimizer:
         w_inv=1., w_boundary=10.0,
         min_vol_ratio=0.001,
         # Augmented Lagrangian parameters (for equality constraint g=0 on boundary)
-        al_rho_init: float = 100.0,
+        al_rho_init: float = 300.0,
         al_rho_max: float = 1e6,
         al_increase: float = 10.0,
         al_tol: float = 1e-8):
@@ -176,7 +176,7 @@ class GeometryParams(BaseParams):
         The node positions at the last regeneration of the surfaces.
         """
 
-        self._max_nodes_change: float = 1.5
+        self._max_nodes_change: float = 1.0
         """
         The maximum allowed change in node positions before the surfaces are regenerated.
         """
@@ -449,7 +449,7 @@ class GeometryParams(BaseParams):
             self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
         else:
             last_min_vol, max_g = self._refinemesh()
-            if max_g > 5e-1 or last_min_vol < 0:
+            if max_g > 1e-1 or last_min_vol < 0:
                 self._regenerate(material_para=material_para)
                 self._iter_since_last_regenerate = 0
                 self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
