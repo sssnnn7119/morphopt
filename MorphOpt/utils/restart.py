@@ -3,6 +3,7 @@ import sys
 from .. import GLOBAL
 import os
 from ..opt_loop import Controller
+import MorphOpt
 def restart_optimization(restart_path, target_iteration=None) -> Controller:
     """
     Restart the optimization process from a specified iteration.
@@ -29,10 +30,10 @@ def restart_optimization(restart_path, target_iteration=None) -> Controller:
     sys.path.append(restart_path + '/scripts/Jobs/')
     import MAIN_SCRIPT_FOR_RESTART as MAIN_SCRIPT_FOR_RESTART # type: ignore
     
-    params = MAIN_SCRIPT_FOR_RESTART.Params()
-    solver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
-    updater = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
-    controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
+    params: MorphOpt._Params = MAIN_SCRIPT_FOR_RESTART.Params()
+    solver: MorphOpt._MorphSolver = MAIN_SCRIPT_FOR_RESTART.Solver(params=params)
+    updater: MorphOpt._Updaters = MAIN_SCRIPT_FOR_RESTART.Updater(params=params)
+    controller: MorphOpt._Controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
                                                     solver=solver, 
                                                     updater=updater)
     params.initialize(0)

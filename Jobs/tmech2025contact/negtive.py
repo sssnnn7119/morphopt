@@ -25,7 +25,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
         U1 = RGC1[rp_index]
 
         loss0 = torch.exp((U0[2]+20)/5)/5
-        loss1 = U1[5]
+        loss1 = U1[5] * 0
 
         return loss0 + loss1
 GLOBAL.obj_fun = ObjectiveFunction()
@@ -154,7 +154,7 @@ class Params(_Params):
             self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
 
             self.set_step_params(1, "pressure_1", [-0.05])
-            self.set_step_params(1, "moment_1", [0.0, 0.0, 100.0])
+            self.set_step_params(1, "moment_1", [0.0, 0.0, 0.0])
 
 
     class MaterialParams(_Materials):

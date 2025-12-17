@@ -1,11 +1,153 @@
-from email.policy import default
-from turtle import distance
+
 import numpy as np
 import torch
-from traits.tests.test_ctraits import setter
+
 from .basesurfaceinterface import BaseInterface
 from ..SurfaceModel.bspline.BSP import BSP_Surf
-from .... import GLOBAL
+
+from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir
+from OCC.Core.TColgp import TColgp_Array2OfPnt
+from OCC.Core.TColStd import TColStd_Array1OfReal, TColStd_Array1OfInteger
+from OCC.Core.Geom import Geom_BSplineSurface
+from OCC.Core.BRepBuilderAPI import (
+    BRepBuilderAPI_MakeEdge, 
+    BRepBuilderAPI_MakeWire,
+    BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_Sewing
+)
+from OCC.Core.TopoDS import TopoDS_Solid, topods
+from OCC.Core.BRep import BRep_Builder
+from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
+from OCC.Core.Interface import Interface_Static
+from OCC.Core.IFSelect import IFSelect_RetDone
+from OCC.Core.TopAbs import TopAbs_SHELL
+
+
+class BSplineSolidGenerator:
+    def __init__(self, P0, degree_u=3, degree_v=3):
+        """
+        初始化 B-Spline 实体生成器
+        
+        参数:
+            P0: numpy array, shape (3, numV, numU). 
+                代表控制点 (Poles). 
+                注意: U方向应为非重复的唯一控制点 (Periodic).
+                如果输入数据包含重复的最后一列，请在传入前自行切片，或者本类会将其视为独立的控制点。
+            degree_u: U方向阶数
+            degree_v: V方向阶数
+        """
+        self.P0 = P0
+        self.degree_u = degree_u
+        self.degree_v = degree_v
+        self.solid = None
+
+    def build(self):
+        """构建实体"""
+        # 1. 准备数据
+        # P0 shape: [3, numV, numU]
+        num_poles_v = self.P0.shape[1]
+        num_poles_u = self.P0.shape[2]
+        
+        # 转换 Poles 到 OCC 格式
+        poles = TColgp_Array2OfPnt(1, num_poles_u, 1, num_poles_v)
+        for i in range(num_poles_u):
+            for j in range(num_poles_v):
+                pt = self.P0[:, j, i]
+                poles.SetValue(i + 1, j + 1, gp_Pnt(float(pt[0]), float(pt[1]), float(pt[2])))
+
+        # 2. 准备 Knots 和 Mults
+        
+        # U方向 (Periodic): Uniform Knots
+        # 对于周期性曲面，Knots 数量通常为 num_poles_u + 1
+        knots_u = TColStd_Array1OfReal(1, num_poles_u + 1)
+        mults_u = TColStd_Array1OfInteger(1, num_poles_u + 1)
+        for i in range(num_poles_u + 1):
+            knots_u.SetValue(i + 1, float(i))
+            mults_u.SetValue(i + 1, 1)
+            
+        # V方向 (Non-Periodic, Clamped):
+        # Knots 数量 = num_poles_v - degree_v + 1
+        num_knots_v = num_poles_v - self.degree_v + 1
+        knots_v = TColStd_Array1OfReal(1, num_knots_v)
+        mults_v = TColStd_Array1OfInteger(1, num_knots_v)
+        
+        for i in range(num_knots_v):
+            knots_v.SetValue(i + 1, float(i))
+            if i == 0 or i == num_knots_v - 1:
+                mults_v.SetValue(i + 1, self.degree_v + 1)
+            else:
+                mults_v.SetValue(i + 1, 1)
+
+        # 3. 创建曲面
+        bspline_surface = Geom_BSplineSurface(
+            poles, 
+            knots_u, knots_v, 
+            mults_u, mults_v, 
+            self.degree_u, self.degree_v, 
+            True, False # IsUPeriodic=True, IsVPeriodic=False
+        )
+
+        # 4. 创建面
+        # 侧面
+        face_side = BRepBuilderAPI_MakeFace(bspline_surface, 1e-6).Face()
+        
+        # 顶底面 (使用 VIso 提取等参线，保证水密性)
+        u_min, u_max, v_min, v_max = bspline_surface.Bounds()
+        
+        # 底面 (V=v_min)
+        edge_bottom = BRepBuilderAPI_MakeEdge(bspline_surface.VIso(v_min)).Edge()
+        wire_bottom = BRepBuilderAPI_MakeWire(edge_bottom).Wire()
+        face_bottom = BRepBuilderAPI_MakeFace(wire_bottom).Face()
+        
+        # 顶面 (V=v_max)
+        edge_top = BRepBuilderAPI_MakeEdge(bspline_surface.VIso(v_max)).Edge()
+        wire_top = BRepBuilderAPI_MakeWire(edge_top).Wire()
+        face_top = BRepBuilderAPI_MakeFace(wire_top).Face()
+
+        # 5. 缝合所有面
+        sewer = BRepBuilderAPI_Sewing(1e-6)
+        sewer.Add(face_side)
+        sewer.Add(face_bottom)
+        sewer.Add(face_top)
+        sewer.Perform()
+        
+        sewed_shape = sewer.SewedShape()
+        
+        # 6. 转换为实体
+        if sewed_shape.ShapeType() == TopAbs_SHELL:
+            builder = BRep_Builder()
+            self.solid = TopoDS_Solid()
+            builder.MakeSolid(self.solid)
+            builder.Add(self.solid, topods.Shell(sewed_shape))
+        else:
+            self.solid = sewed_shape
+            
+        return self.solid
+
+    def export_step(self, filename):
+        """导出 STEP 文件"""
+        if not self.solid:
+            print("Error: Solid not built yet. Call build() first.")
+            return False
+            
+        Interface_Static.SetCVal("write.step.unit", "MM")
+        Interface_Static.SetCVal("write.step.schema", "AP214")
+        
+        writer = STEPControl_Writer()
+        status = writer.Transfer(self.solid, STEPControl_AsIs)
+        
+        if status != IFSelect_RetDone:
+            print(f"Transfer failed with status: {status}")
+            return False
+            
+        status = writer.Write(filename)
+        if status == IFSelect_RetDone:
+            print(f"Successfully exported to {filename}")
+            return True
+        else:
+            print(f"Write failed with status: {status}")
+            return False
+
 
 class BspInterface(BaseInterface):
     """
@@ -220,6 +362,9 @@ class BspInterface(BaseInterface):
 
         x_change[2, :5, :] = 0
         x_change[2, -5:, :] = 0
+
+        x_change[:, 0, :] = 0
+        x_change[:, -1, :] = 0
         
         self.model.control_points = self.model.control_points + x_change.reshape(self.model.control_points.shape)
     

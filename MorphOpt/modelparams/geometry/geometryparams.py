@@ -9,13 +9,6 @@ import torch
 from .geometrysurface.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 from ... import GLOBAL
-from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-from OCC.Core.Geom import Geom_BSplineSurface
-from OCC.Core.TColgp import TColgp_Array2OfPnt
-from OCC.Core.TColStd import TColStd_Array1OfReal, TColStd_Array1OfInteger
-from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
-from OCC.Core.IFSelect import IFSelect_RetDone
-from OCC.Core.gp import gp_Pnt
 
 class MeshQualityOptimizer:
     """Simplified optimizer assuming tetra connectivity is already a numpy int array of shape [Ne,4]."""
@@ -110,9 +103,6 @@ class MeshQualityOptimizer:
             last_min_vol if last_min_vol is not None else float('nan'),
         ))
         return nodes.detach(), last_min_vol, g.abs().max().item()    
-
-
-
 
 class GeometryParams(BaseParams):
     """

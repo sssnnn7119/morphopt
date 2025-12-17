@@ -25,7 +25,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
         r = Pz / torch.sin(Urot)
 
 
-        loss1 = torch.exp(1 - (Uz_pos - Uz_neg)/30)
+        loss1 = torch.exp(1 - (Uz_pos - Uz_neg)/24)
 
         loss2 = torch.exp(1 + Urot / 2.1)
 
@@ -34,6 +34,7 @@ class ObjectiveFunction(GLOBAL.ObjectiveFunction):
         loss4 = self.U[2][-5]
 
         print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', self.U[2][-5].item())
+        np.savetxt(f'{GLOBAL.PATH.path_Result}/Log/Deformation/{GLOBAL.History.iteration}.txt', np.array([GLOBAL.History.iteration, (Uz_pos - Uz_neg).item(), Urot.item(), Pz.item(), r.item(), self.U[2][-5].item()]), fmt='%f', delimiter=',', newline='\n', header='', footer='', comments='# ')
 
         return loss1 + loss2 + loss3 + loss4
     
@@ -69,16 +70,17 @@ class Params(_Params):
                                                  length=70.,
                                                  seed_size=1.0,
                                                  flip=False,
-                                                 maxR=0.2,
-                                                 maxC=1.2,
-                                                 maxFF=0.2, perturbation_L=14))
+                                                 maxR=0.1,
+                                                 maxC=0.8,
+                                                 maxFF=0.1, perturbation_L=14))
             self.add_surface(
                 self.BSP.initialize_cylinder(seed_size=1.0,
                                                  flip=True,
                                                  r0=5.,
                                                  length=64.,
-                                                 maxR=0.2,
-                                                 maxC=1.2,
+                                                 maxR=0.1,
+                                                 maxC=1.0,
+                                                 maxFF=0.1,
                                                  init_location=[12, 0, 3], perturbation_L=14))
 
             self.add_surface(
@@ -86,8 +88,9 @@ class Params(_Params):
                                                  flip=True,
                                                  r0=5.,
                                                  length=64.,
-                                                 maxR=0.2,
-                                                 maxC=1.2,
+                                                 maxR=0.1,
+                                                 maxC=1.0,
+                                                 maxFF=0.1,
                                                  init_location=[-6, 10.5, 3], perturbation_L=14))
 
             self.add_surface(
@@ -95,8 +98,9 @@ class Params(_Params):
                                                  flip=True,
                                                  r0=5.,
                                                  length=64.,
-                                                 maxR=0.2,
-                                                 maxC=1.2,
+                                                 maxR=0.1,
+                                                 maxC=1.0,
+                                                    maxFF=0.1,
                                                  init_location=[-6, -10.5, 3], perturbation_L=14))
             
 
@@ -244,7 +248,7 @@ class Controller(_Controller):
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cuda')
+    torch.set_default_device('cpu')
 
     path_result = 'Z:/Results'
     opt_label = 'FRONT'
