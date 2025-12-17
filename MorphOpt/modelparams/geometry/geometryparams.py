@@ -488,9 +488,6 @@ class GeometryParams(BaseParams):
 
         # export the data
         que_names = self._export_data(path_output, path_queue)
-        
-        # call Rhino to generate the model
-        self._call_rhino(que_Names=que_names)
 
         # call Abaqus for FEA
         self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
@@ -531,31 +528,9 @@ class GeometryParams(BaseParams):
         """
         
         # export each surface with Rhino
-        que_Names = []
         for i in range(self.num_surface):
             surf_name0 = '__surface-%d' % i
-            name = self.surface_list[i].output_data(path_output=path_output, name_output=surf_name0, flip=(i!=0))
-            
-            if self.surface_list[i].surf_type == 0:
-                info = '%d\n%s\n%s' % (self.surface_list[i].surf_type, path_output +
-                                    name, path_output + surf_name0 + '.stp')
-                que_name = 'T' + datetime.datetime.now().strftime(
-                    "%Y%m%d%H%M%S") + '_%d.txt' % i
-                
-                with open(path_queue + que_name, 'w') as f:
-                    f.write(info.replace('/', '\\\\'))
-                que_Names.append(path_queue + que_name)
-
-        return que_Names
-    
-    def _call_rhino(self, que_Names: list[str]) -> None:
-        """
-        This function is a placeholder for calling Rhino, a 3D computer graphics and computer-aided design (CAD) application.
-        It is currently not implemented.
-        """
-        for que_file in que_Names:
-            while os.path.exists(que_file):
-                time.sleep(0.1)
+            self.surface_list[i].output_data(path_output=path_output, name_output=surf_name0, flip=(i!=0))
 
     def _call_Abaqus(self, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
         

@@ -58,15 +58,15 @@ class Controller:
             max_iter_before_regenerate0 = self.params.geometry._max_iter_before_regenerate
             
             while True:
-                try:
+                # try:
                     loss, t0, t1, t2, t3 = self.step()
                     break
-                except Exception as e:
-                    print('Error occurred during optimization step: %s' % str(e))
-                    self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
-                    self.params.geometry._max_iter_before_regenerate = 1
-                    self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
-                    self.params.initialize(iteration = 0)
+                # except Exception as e:
+                #     print('Error occurred during optimization step: %s' % str(e))
+                #     self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
+                #     self.params.geometry._max_iter_before_regenerate = 1
+                #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
+                #     self.params.initialize(iteration = 0)
             self.params.geometry.fea_seed_size = seed_size0
             self.params.geometry._max_iter_before_regenerate = max_iter_before_regenerate0
 

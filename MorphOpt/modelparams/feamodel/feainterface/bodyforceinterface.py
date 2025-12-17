@@ -5,7 +5,7 @@ from .basefeainterface import BaseFEAInterface
 from FEA.assemble.loads.body_force import BodyForce
 
 
-class GravityInterface(BaseFEAInterface):
+class BodyforceInterface(BaseFEAInterface):
     """
     Body force (Gravity) load interface.
 
@@ -17,7 +17,7 @@ class GravityInterface(BaseFEAInterface):
 
     def __init__(self, element_name: str, instance_name: str = 'final_model'):
         """
-        Initialize the GravityInterface class.
+        Initialize the BodyforceInterface class.
         """
         super().__init__()
         self.instance_name = instance_name
