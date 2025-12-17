@@ -66,7 +66,7 @@ class CsInterface(BaseInterface):
 
             f.write(info)
 
-        return name_output + '.stl'
+        return name_output + '.stp'
     
     def get_surface_parameters(self) -> torch.Tensor:
         """

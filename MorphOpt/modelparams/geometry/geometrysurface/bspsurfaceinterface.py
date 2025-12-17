@@ -230,23 +230,11 @@ class BspInterface(BaseInterface):
         self.model.control_points = x.reshape(self.model.control_points.shape)
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False):
-        flip = not flip
-        # degree
-        info = "%d,%d\n" % (self.model.degree - 1, self.model.degree - 1)
-        # uv control points
-        info += "%d,%d\n" % (self.model.num_points[-1] + 1, self.model.num_points[-2])
-
-        offset = round(self.model.num_points[0] / 8)
-
-        for i in range(self.model.num_points[1] + 1):
-            for j in range(self.model.num_points[0]):
-                indexU = (i + offset) % self.model.num_points[1]
-                info += "%e,%e,%e\n" % (self.model.control_points[0, j, indexU],
-                                        self.model.control_points[1, j, indexU], self.model.control_points[2, j,
-                                                                    indexU])
-
-        with open(path_output + name_output + '.csv', 'w') as f:
-            f.write(info)
+        
+        generator = BSplineSolidGenerator(P0=self.model.control_points, degree_u=self.model.degree, degree_v=self.model.degree)
+        generator.build()
+        output_file = path_output + name_output + '.stp'
+        generator.export_step(output_file)
 
         with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
             num_points = 10
@@ -293,7 +281,7 @@ class BspInterface(BaseInterface):
 
             f.write(info)
 
-        return name_output + '.csv'
+        return name_output + '.stp'
     
 
     def match_points_surface(self, points: torch.Tensor) -> torch.Tensor:

@@ -162,6 +162,9 @@ class UpdaterSurfaces(BaseUpdater):
         if len(self._max_step_length) == 0:
             for i in range(self.params_update.num_surface):
                 self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max)
+        for i in range(len(self._max_step_length)):
+            if (self._max_step_length[i].shape[0] != self.params.geometry.surface_list[i].control_points.shape[1]):
+                self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
 
         # save the sensitivity for the next iteration
         self.sensitivity_previous = sensitivity

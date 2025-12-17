@@ -101,7 +101,7 @@ class CPGEOSurfaceInterface(BaseInterface):
 
             f.write(info)
 
-        return name_output + '.stl'
+        return name_output + '.stp'
     
     def match_points_surface(self, points):
         points_init = self.model.map(self.surface_out_knots).cpu()
