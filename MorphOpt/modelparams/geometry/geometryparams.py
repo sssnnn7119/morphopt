@@ -124,12 +124,6 @@ class GeometryParams(BaseParams):
         """
         List of surface objects.
         """
-        
-        self.if_update = []
-        """
-        A list indicating whether each surface needs to be updated.
-        True means the surface needs to be updated, False means it does not.
-        """
 
         self.reinitialize_per_iter = reinitialize_per_iter
         """
@@ -182,10 +176,6 @@ class GeometryParams(BaseParams):
                 self.surface_list[i].reinitialize()
             GLOBAL.obj_fun.inp = None
         self.apply_surface_constraints()
-
-
-    def initialize(self, *args, **kwargs):
-        self.if_update = [True for _ in range(self.num_surface)]
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """
@@ -288,9 +278,6 @@ class GeometryParams(BaseParams):
         
         xlist = []
         for i in range(self.num_surface):
-            if not self.if_update[i]:
-                xlist.append(torch.zeros([0]))
-                continue
             xlist.append(self.surface_list[i].get_surface_parameters().flatten().detach().clone())
         return xlist
     
@@ -302,8 +289,6 @@ class GeometryParams(BaseParams):
             xlist (list[torch.Tensor]): The new variables for the surfaces.
         """
         for i in range(self.num_surface):
-            if not self.if_update[i]:
-                continue
             self.surface_list[i].set_surface_parameters(xlist[i].detach().clone())
             
     def get_variables(self) -> torch.Tensor:
@@ -328,19 +313,12 @@ class GeometryParams(BaseParams):
         x_change_list: list[torch.Tensor] = []
         start = 0
         for i in range(self.num_surface):
-            
-            if self.if_update[i]:
-                end = start + self.surface_list[i].num_variables
-            else:
-                end = start + 0
+            end = start + self.surface_list[i].num_variables
             x_change_list.append(x_change[start:end].reshape([3, -1]))
             start = end
 
         for i in range(self.num_surface):
-            
-            if not self.if_update[i]:
-                continue
-            
+
             r = x_change_list[i].norm(dim=0)
             
             dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * max_step_length[i]

@@ -54,8 +54,13 @@ class Controller:
             self.save()
             self.save_figure()
 
-            # clean the cache
-            del GLOBAL.obj_fun.fe
+            # Explicitly release large objects to ensure they are collected
+            GLOBAL.obj_fun.K_sp = []
+            GLOBAL.obj_fun.K_solver = []
+            GLOBAL.obj_fun.U = None
+            GLOBAL.obj_fun.ADJu = None
+            GLOBAL.obj_fun.fe = None
+
             torch.cuda.empty_cache()
             data = gc.collect()
             print(f"Garbage collector: collected {data} objects.")

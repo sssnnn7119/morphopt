@@ -93,6 +93,13 @@ class UpdaterSurfaces(BaseUpdater):
         """
         The increase factor for the step length relative to the maximum step length.
         """
+ 
+        self.if_update = []
+        """
+        A list indicating whether each surface needs to be updated.
+        True means the surface needs to be updated, False means it does not.
+        """
+
 
     def add_constraints(self,
                                obj_func: objectivefuncs.basefuncs,
@@ -169,7 +176,9 @@ class UpdaterSurfaces(BaseUpdater):
     def initialize(self):
         if len(self._max_step_length) == 0:
             for i in range(self.params_update.num_surface):
-                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max * 0.2)
+                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max * 0.5)
+
+        self.if_update = [True for _ in range(self.params.geometry.num_surface)]
 
 
     def _initialize_objectives(self, iter_now: int, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
@@ -212,6 +221,9 @@ class UpdaterSurfaces(BaseUpdater):
                                                                           max=self._max_step_length_max)
                     self._max_step_length[i][index_decrease] = torch.clamp(self._max_step_length[i][index_decrease] * self._step_length_decay,
                                                                           min=self._max_step_length_max * self._step_length_min_ratio)
+
+                if not self.if_update[i]:
+                    self._max_step_length[i] *= 0.0
 
     def closure(self, x: torch.Tensor, return_list=False) -> float:
         """
