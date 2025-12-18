@@ -192,7 +192,7 @@ class BspInterface(BaseInterface):
 
         self.flip: bool = False
     
-    def initialize(self):
+    def reinitialize(self):
         self.model.symmetric_reinitialize()
     
     @property
@@ -230,7 +230,7 @@ class BspInterface(BaseInterface):
         self.model.control_points = x.reshape(self.model.control_points.shape)
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False):
-        
+        flip = not flip
         generator = BSplineSolidGenerator(P0=self.model.control_points, degree_u=self.model.degree, degree_v=self.model.degree)
         generator.build()
         output_file = path_output + name_output + '.stp'

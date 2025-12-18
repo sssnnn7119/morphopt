@@ -63,7 +63,6 @@ class ObjectiveFunction:
         """
         Update the results of the FEA solver.
         """
-        del self.fe
         self.fe = fe
         self.U = U.cpu()
     @property

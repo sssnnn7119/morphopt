@@ -23,27 +23,33 @@ class Params:
         Materials: An instance of the Materials class from the ModelParams module.
         """
 
-    def initialize(self, iteration: int) -> None:
+    def reinitialize(self, iteration: int) -> None:
+        """
+        reInitialize the parameters.
+        """
+        self.geometry.reinitialize(iteration=iteration)
+        self.feamodel.reinitialize(iteration=iteration)
+        self.materials.reinitialize(iteration=iteration)
+
+    def initialize(self):
         """
         Initialize the parameters.
         """
-        self.geometry.initialize(iteration=iteration)
-        self.feamodel.initialize(iteration=iteration)
-        self.materials.initialize(iteration=iteration)
-
-    # def reinitialize(self, iteration: int):
+        self.geometry.initialize()
+        self.feamodel.initialize()
+        self.materials.initialize()
         
 
-    def save(self, filepath: str) -> None:
+    def save(self, foldpath: str) -> None:
         """
         Save the parameters to a file.
         
         Args:
-            filepath (str): The path to save the parameters.
+            foldpath (str): The path to save the parameters.
         """
-        self.geometry.save(filepath=filepath + '/Surfaces/Data/')
-        self.feamodel.save(filepath=filepath + '/Loads/Data/')
-        self.materials.save(filepath=filepath + '/Materials/Data/')
+        self.geometry.save(foldpath=foldpath + '/surfaces/data/')
+        self.feamodel.save(foldpath=foldpath + '/loads/data/')
+        self.materials.save(foldpath=foldpath + '/materials/data/')
 
     def load(self, filepath: str, iteration: int) -> None:
         """
@@ -52,7 +58,7 @@ class Params:
         Args:
             filepath (str): The path to load the parameters from.
         """
-        self.geometry.load(filepath=filepath + '/Surfaces/Data/', iteration=iteration)
+        self.geometry.load(foldpath=filepath + '/Surfaces/Data/', iteration=iteration)
         # self.feamodel.load(filepath=filepath + '/Loads/Data/', iteration=iteration)
         # self.materials.load(filepath=filepath + '/Materials/Data/', iteration=iteration)
 
@@ -63,9 +69,9 @@ class Params:
         Args:
             filepath (str): The path to save the figures.
         """
-        self.geometry.save_figure(filepath=filepath + '/Surfaces/Figures/')
-        self.feamodel.save_figure(filepath=filepath + '/Loads/Figures/')
-        self.materials.save_figure(filepath=filepath + '/Materials/Figures/')
+        self.geometry.save_figure(filename=filepath + '/Surfaces/Figures/')
+        self.feamodel.save_figure(filename=filepath + '/Loads/Figures/')
+        self.materials.save_figure(filename=filepath + '/Materials/Figures/')
 
     def export_data(self, filepath: str):
         """
@@ -75,5 +81,5 @@ class Params:
             filepath (str): The path to export the data.
         """
         self.geometry._export_data(filepath=filepath)
-        self.feamodel._export_data(filepath=filepath)
-        self.materials._export_data(filepath=filepath)
+        self.feamodel._export_data(foldpath=filepath)
+        self.materials._export_data(foldpath=filepath)

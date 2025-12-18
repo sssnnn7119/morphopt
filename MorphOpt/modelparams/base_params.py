@@ -25,7 +25,15 @@ class BaseParams:
         """
         return self.__repr__()
     
-    def initialize(self, iteration: int, *args, **kwargs) -> None:
+    def reinitialize(self, iteration: int, *args, **kwargs) -> None:
+        """
+        reInitialize the parameters.
+        
+        This method should be implemented in subclasses to initialize specific parameters.
+        """
+        pass
+
+    def initialize(self, *args, **kwargs) -> None:
         """
         Initialize the parameters.
         
@@ -71,22 +79,21 @@ class BaseParams:
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
 
-    
-    def save(self, filepath: str) -> None:
+    def save(self, foldpath: str) -> None:
         """
         Save the parameters to a file.
         
         Args:
-            filepath (str): The name of the file to save the parameters to.
+            foldpath (str): The name of the file to save the parameters to.
         """
         pass
 
-    def load(self, filepath: str, iteration: int) -> None:
+    def load(self, foldpath: str, iteration: int) -> None:
         """
         Load the parameters from a file.
         
         Args:
-            filepath (str): The name of the file to load the parameters from.
+            foldpath (str): The name of the file to load the parameters from.
             iteration (int): The iteration number to load.
         """
         pass
@@ -99,20 +106,20 @@ class BaseParams:
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
     
-    def save_figure(self, filepath: str) -> None:
+    def save_figure(self, filename: str) -> None:
         """
         Save the figure of the parameters to a file.
         
         Args:
-            filepath (str): The name of the file to save the figure to.
+            filename (str): The name of the file to save the figure to.
         """
         pass
 
-    def _export_data(self, filepath: str):
+    def _export_data(self, foldpath: str):
         """
         Export the data of parameters to file(s).
         
         Args:
-            filepath (str): The path to export the data.
+            foldpath (str): The path to export the data.
         """
         pass

@@ -121,7 +121,7 @@ class FEAParams(BaseParams):
             raise KeyError(f"Load interface with name '{load_name}' does not exist.")
         self.fea_steps_params[step_index][load_name] = values
     
-    def initialize(self, iteration, *args, **kwargs):
+    def reinitialize(self, iteration, *args, **kwargs):
         # Sort the load interfaces and load steps parameters by their keys
         sorted_fea_interfaces = dict(sorted(self.feainterfaces.items()))
         sorted_fea_steps_params = [dict(sorted(step.items())) for step in self.fea_steps_params]
@@ -230,23 +230,23 @@ class FEAParams(BaseParams):
                 load_step[key] = updated_params.detach().cpu().tolist()
                 ind_now += num_vars
 
-    def save(self, filepath) -> None:
+    def save(self, foldpath) -> None:
         """
         Save the loads to a file.
         """
         params = self.get_parameters()
         params = [p.detach().cpu().numpy() for p in params]
-        np.savez(filepath + '/loads_iter-%d.npz'% GLOBAL.History.iteration, *params)
+        np.savez(foldpath + '/loads_iter-%d.npz'% GLOBAL.History.iteration, *params)
 
-    def load(self, filepath: str, iteration: int) -> None:
+    def load(self, foldpath: str, iteration: int) -> None:
         """
         Load the loads from a file.
 
         Args:
-            filepath (str): The path to the file.
+            foldpath (str): The path to the file.
             iteration (int): The iteration number.
         """
-        data = np.load(filepath + '/loads_iter-%d.npz'% iteration)
+        data = np.load(foldpath + '/loads_iter-%d.npz'% iteration)
         params = self.get_parameters()
         key_list = list(self.feainterfaces.keys())
         for i in range(len(params)):
@@ -256,10 +256,10 @@ class FEAParams(BaseParams):
     def plot(self):
         pass
         
-    def save_figure(self, filepath):
+    def save_figure(self, filename):
         from matplotlib import pyplot as plt
         
         plt.figure()
         self.plot()
-        plt.savefig(filepath + '/Pressure_%d.png'% GLOBAL.History.iteration)
+        plt.savefig(filename + '/Pressure_%d.png'% GLOBAL.History.iteration)
         plt.close()

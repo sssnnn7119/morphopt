@@ -12,7 +12,7 @@ class CsInterface(BaseInterface):
         self.MaxC = MaxC
         self.model = surface
 
-    def initialize(self):
+    def reinitialize(self):
         self.model.refine_surface()
 
     @property
