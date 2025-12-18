@@ -1,267 +1,238 @@
-
 import os
 import sys
-
-
 import numpy as np
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
-import FEA
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
-from MorphOpt import *
+import MorphOpt
 
-class ObjectiveFunction(GLOBAL.ObjectiveFunction):
-    def get_objective(self, *args, **kwargs):
-
-        Uz_neg = self.U[0][-4]
-        Uz_pos = self.U[1][-4]
-
-        Urot = self.U[3][-2]
-        Pz = self.U[3][-4] + 70.
-
-        r = Pz / torch.sin(Urot)
-
-
-        loss1 = torch.exp(1 - (Uz_pos - Uz_neg)/24)
-
-        loss2 = torch.exp(1 + Urot / 2.1)
-
-        loss3 = r
-
-        loss4 = self.U[2][-5]
-
-        print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', self.U[2][-5].item())
-        np.savetxt(f'{GLOBAL.PATH.path_Result}/Log/Deformation/{GLOBAL.History.iteration}.txt', np.array([GLOBAL.History.iteration, (Uz_pos - Uz_neg).item(), Urot.item(), Pz.item(), r.item(), self.U[2][-5].item()]), fmt='%f', delimiter=',', newline='\n', header='', footer='', comments='# ')
-
-        return loss1 + loss2 + loss3 + loss4
-    
-
-GLOBAL.obj_fun = ObjectiveFunction()
-
-class Params(_Params):
-    class SurfaceParams(_GeometryParams):
-
-        def __rotate120_240(self, r0):
-            r0_120 = torch.zeros_like(r0)
-            r0_120[0] = r0[0] * np.cos(2 * np.pi / 3) - r0[1] * np.sin(
-                2 * np.pi / 3)
-            r0_120[1] = r0[0] * np.sin(2 * np.pi / 3) + r0[1] * np.cos(
-                2 * np.pi / 3)
-            r0_120[2] = r0[2]
-
-            r0_240 = torch.zeros_like(r0)
-            r0_240[0] = r0[0] * np.cos(4 * np.pi / 3) - r0[1] * np.sin(
-                4 * np.pi / 3)
-            r0_240[1] = r0[0] * np.sin(4 * np.pi / 3) + r0[1] * np.cos(
-                4 * np.pi / 3)
-            r0_240[2] = r0[2]
-
-            return r0_120, r0_240
-
-        def __init__(self):
-
-            super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.5, fea_mesh_order=1)
-
-            self.add_surface(
-                self.BSP.initialize_cylinder(r0=21.,
-                                                 length=70.,
-                                                 seed_size=1.0,
-                                                 flip=False,
-                                                 maxR=0.1,
-                                                 maxC=0.8,
-                                                 maxFF=0.1, perturbation_L=14))
-            self.add_surface(
-                self.BSP.initialize_cylinder(seed_size=1.0,
-                                                 flip=True,
-                                                 r0=5.,
-                                                 length=64.,
-                                                 maxR=0.1,
-                                                 maxC=1.0,
-                                                 maxFF=0.1,
-                                                 init_location=[12, 0, 3], perturbation_L=14))
-
-            self.add_surface(
-                self.BSP.initialize_cylinder(seed_size=1.0,
-                                                 flip=True,
-                                                 r0=5.,
-                                                 length=64.,
-                                                 maxR=0.1,
-                                                 maxC=1.0,
-                                                 maxFF=0.1,
-                                                 init_location=[-6, 10.5, 3], perturbation_L=14))
-
-            self.add_surface(
-                self.BSP.initialize_cylinder(seed_size=1.0,
-                                                 flip=True,
-                                                 r0=5.,
-                                                 length=64.,
-                                                 maxR=0.1,
-                                                 maxC=1.0,
-                                                    maxFF=0.1,
-                                                 init_location=[-6, -10.5, 3], perturbation_L=14))
-            
-
-        def apply_surface_constraints(self):
-            # rotate the exterior surface
-            num_points = self.surface_list[0].model.control_points.shape[2] / 3
-            num_points = int(num_points)
-            r0 = self.surface_list[0].model.control_points[:, :, :num_points]
-            r0_120, r0_240 = self.__rotate120_240(r0)
-            self.surface_list[0].model.control_points[:, :,
-                                                    num_points:num_points *
-                                                    2] = r0_120
-            self.surface_list[0].model.control_points[:, :,
-                                                    num_points * 2:] = r0_240
-            r0 = self.surface_list[0].model.control_points.clone()
-            self.surface_list[0].model.control_points[0] = (r0[0] + r0.flip(dims=[2])[0]) / 2
-            self.surface_list[0].model.control_points[1] = (r0[1] - r0.flip(dims=[2])[1]) / 2
-            self.surface_list[0].model.control_points[2] = (r0[2] + r0.flip(dims=[2])[2]) / 2
-
-            # rotate the bottom surface
-            r1 = self.surface_list[1].model.control_points.clone()
-            self.surface_list[1].model.control_points[0] = (r1[0] + r1.flip(dims=[2])[0]) / 2
-            self.surface_list[1].model.control_points[1] = (r1[1] - r1.flip(dims=[2])[1]) / 2
-            self.surface_list[1].model.control_points[2] = (r1[2] + r1.flip(dims=[2])[2]) / 2
-            r1 = self.surface_list[1].model.control_points
-
-            r1_120, r1_240 = self.__rotate120_240(r1)
-            self.surface_list[2].model.control_points = r1_120
-            self.surface_list[3].model.control_points = r1_240
-        
-    class FEAParams(_FEAParams):
-        def __init__(self):
-            super().__init__()
-
-        def define_interface(self):
-            # Common BC / RP / Couple
-            self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-            self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 70.]), name='RP_head')
-            self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
-            # Define all load interfaces once
-            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
-            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
-            self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
-
-            self.add_fea_interface(self.BodyforceInterface(element_name='element-0', instance_name='final_model'), name='BodyForce')
-
-            # Contact self (no amplitude, but needs to exist in FEA)
-            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
-            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
-            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
-            self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'), name='CS_s3')
-
-        def define_steps(self):
-            # Define step amplitudes
-            self.set_step_num(4)
-            self.set_step_params(0, 'P_s1', [-0.08])
-            self.set_step_params(0, 'P_s2', [-0.08])
-            self.set_step_params(0, 'P_s3', [-0.08])
-            self.set_step_params(0, 'BodyForce', [0., 0., 0.])
-
-            self.set_step_params(1, 'P_s1', [0.08])
-            self.set_step_params(1, 'P_s2', [0.08])
-            self.set_step_params(1, 'P_s3', [0.08])
-            self.set_step_params(1, 'BodyForce', [0., 0., 0.])
-
-            self.set_step_params(2, 'P_s1', [0.08])
-            self.set_step_params(2, 'P_s2', [0.08])
-            self.set_step_params(2, 'P_s3', [0.08])
-            self.set_step_params(2, 'BodyForce', [0., 9.81e-6, 0.])
-
-            self.set_step_params(3, 'P_s1', [-0.08])
-            self.set_step_params(3, 'P_s2', [0.08])
-            self.set_step_params(3, 'P_s3', [0.08])
-            self.set_step_params(3, 'BodyForce', [0., 0., 0.])
-
-
-
-
-            
-    class MaterialParams(_Materials):
-        
-        def __init__(self):
-            super().__init__(mu=0.48, kappa=4.8, density=1.08e-9,)
-    
+class ThisController(MorphOpt.Controller):
     def __init__(self):
-        super().__init__(surfaces=self.SurfaceParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+        super().__init__(path_result_folder='Z:/Results', 
+                         opt_label='FRONT')
+        
+    class ObjectiveFunction(MorphOpt.ObjectiveFunction):
+        def get_objective(self, *args, **kwargs):
+
+            Uz_neg = self.U[0][-4]
+            Uz_pos = self.U[1][-4]
+
+            Urot = self.U[3][-2]
+            Pz = self.U[3][-4] + 70.
+
+            r = Pz / torch.sin(Urot)
 
 
-class Solver(_MorphSolver):
-    """
-    Solver class for MorphOpt.
-    This class is responsible for solving the finite element analysis (FEA) problem.
-    """
+            loss1 = torch.exp(1 - (Uz_pos - Uz_neg)/24)
 
-    def __init__(self, params: Params):
-        super().__init__(params=params,
-                         num_process=1, task_index_list=[[0], [1, 2], [3]])
-   
+            loss2 = torch.exp(1 + Urot / 2.1)
+
+            loss3 = r
+
+            loss4 = self.U[2][-5]
+
+            print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', self.U[2][-5].item())
+            np.savetxt(f'{MorphOpt.controller.path_result}/Log/Deformation/{MorphOpt.controller.history.iteration}.txt', np.array([MorphOpt.controller.history.iteration, (Uz_pos - Uz_neg).item(), Urot.item(), Pz.item(), r.item(), self.U[2][-5].item()]), fmt='%f', delimiter=',', newline='\n', header='', footer='', comments='# ')
+
+            return loss1 + loss2 + loss3 + loss4
     
-class Updater(_Updaters):
-    """
-    Updater class for MorphOpt.
-    This class is responsible for updating the design variables based on the results of the optimization process.
-    """
+    class Params(MorphOpt.Params):
+        class GeometryParams(MorphOpt.GeometryParams):
 
-    def __init__(self, params: Params, *args, **kwargs):
-        super().__init__(surfaces=self.UpdaterSurfaces(params=params),
-                         loads=None, *args, **kwargs)
+            def __rotate120_240(self, r0):
+                r0_120 = torch.zeros_like(r0)
+                r0_120[0] = r0[0] * np.cos(2 * np.pi / 3) - r0[1] * np.sin(
+                    2 * np.pi / 3)
+                r0_120[1] = r0[0] * np.sin(2 * np.pi / 3) + r0[1] * np.cos(
+                    2 * np.pi / 3)
+                r0_120[2] = r0[2]
 
-    class UpdaterSurfaces(_UpdaterSurfaces):
+                r0_240 = torch.zeros_like(r0)
+                r0_240[0] = r0[0] * np.cos(4 * np.pi / 3) - r0[1] * np.sin(
+                    4 * np.pi / 3)
+                r0_240[1] = r0[0] * np.sin(4 * np.pi / 3) + r0[1] * np.cos(
+                    4 * np.pi / 3)
+                r0_240[2] = r0[2]
+
+                return r0_120, r0_240
+
+            def __init__(self):
+
+                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.5, fea_mesh_order=1)
+
+                self.add_surface(
+                    self.BSP.initialize_cylinder(r0=21.,
+                                                    length=70.,
+                                                    seed_size=1.0,
+                                                    flip=False,
+                                                    maxR=0.1,
+                                                    maxC=0.8,
+                                                    maxFF=0.1, perturbation_L=14))
+                self.add_surface(
+                    self.BSP.initialize_cylinder(seed_size=1.0,
+                                                    flip=True,
+                                                    r0=5.,
+                                                    length=64.,
+                                                    maxR=0.1,
+                                                    maxC=1.0,
+                                                    maxFF=0.1,
+                                                    init_location=[12, 0, 3], perturbation_L=14))
+
+                self.add_surface(
+                    self.BSP.initialize_cylinder(seed_size=1.0,
+                                                    flip=True,
+                                                    r0=5.,
+                                                    length=64.,
+                                                    maxR=0.1,
+                                                    maxC=1.0,
+                                                    maxFF=0.1,
+                                                    init_location=[-6, 10.5, 3], perturbation_L=14))
+
+                self.add_surface(
+                    self.BSP.initialize_cylinder(seed_size=1.0,
+                                                    flip=True,
+                                                    r0=5.,
+                                                    length=64.,
+                                                    maxR=0.1,
+                                                    maxC=1.0,
+                                                    maxFF=0.1,
+                                                    init_location=[-6, -10.5, 3], perturbation_L=14))
+                
+
+            def apply_surface_constraints(self):
+                # rotate the exterior surface
+                num_points = self.surface_list[0].model.control_points.shape[2] / 3
+                num_points = int(num_points)
+                r0 = self.surface_list[0].model.control_points[:, :, :num_points]
+                r0_120, r0_240 = self.__rotate120_240(r0)
+                self.surface_list[0].model.control_points[:, :,
+                                                        num_points:num_points *
+                                                        2] = r0_120
+                self.surface_list[0].model.control_points[:, :,
+                                                        num_points * 2:] = r0_240
+                r0 = self.surface_list[0].model.control_points.clone()
+                self.surface_list[0].model.control_points[0] = (r0[0] + r0.flip(dims=[2])[0]) / 2
+                self.surface_list[0].model.control_points[1] = (r0[1] - r0.flip(dims=[2])[1]) / 2
+                self.surface_list[0].model.control_points[2] = (r0[2] + r0.flip(dims=[2])[2]) / 2
+
+                # rotate the bottom surface
+                r1 = self.surface_list[1].model.control_points.clone()
+                self.surface_list[1].model.control_points[0] = (r1[0] + r1.flip(dims=[2])[0]) / 2
+                self.surface_list[1].model.control_points[1] = (r1[1] - r1.flip(dims=[2])[1]) / 2
+                self.surface_list[1].model.control_points[2] = (r1[2] + r1.flip(dims=[2])[2]) / 2
+                r1 = self.surface_list[1].model.control_points
+
+                r1_120, r1_240 = self.__rotate120_240(r1)
+                self.surface_list[2].model.control_points = r1_120
+                self.surface_list[3].model.control_points = r1_240
+            
+        class FEAParams(MorphOpt.FEAParams):
+            def __init__(self):
+                super().__init__()
+
+            def define_interface(self):
+                # Common BC / RP / Couple
+                self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 70.]), name='RP_head')
+                self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+                # Define all load interfaces once
+                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
+                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
+                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
+
+                self.add_fea_interface(self.BodyforceInterface(element_name='element-0', instance_name='final_model'), name='BodyForce')
+
+                # Contact self (no amplitude, but needs to exist in FEA)
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_All'), name='CS_s1')
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_2_All'), name='CS_s2')
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'), name='CS_s3')
+
+            def define_steps(self):
+                # Define step amplitudes
+                self.set_step_num(4)
+                self.set_step_params(0, 'P_s1', [-0.08])
+                self.set_step_params(0, 'P_s2', [-0.08])
+                self.set_step_params(0, 'P_s3', [-0.08])
+                self.set_step_params(0, 'BodyForce', [0., 0., 0.])
+
+                self.set_step_params(1, 'P_s1', [0.08])
+                self.set_step_params(1, 'P_s2', [0.08])
+                self.set_step_params(1, 'P_s3', [0.08])
+                self.set_step_params(1, 'BodyForce', [0., 0., 0.])
+
+                self.set_step_params(2, 'P_s1', [0.08])
+                self.set_step_params(2, 'P_s2', [0.08])
+                self.set_step_params(2, 'P_s3', [0.08])
+                self.set_step_params(2, 'BodyForce', [0., 9.81e-6, 0.])
+
+                self.set_step_params(3, 'P_s1', [-0.08])
+                self.set_step_params(3, 'P_s2', [0.08])
+                self.set_step_params(3, 'P_s3', [0.08])
+                self.set_step_params(3, 'BodyForce', [0., 0., 0.])
+
+        class MaterialParams(MorphOpt.Materials):
+            
+            def __init__(self):
+                super().__init__(mu=0.48, kappa=4.8, density=1.08e-9,)
+        
+        def __init__(self):
+            super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+
+
+    class Solver(MorphOpt.MorphSolver):
+        """
+        Solver class for MorphOpt.
+        This class is responsible for solving the finite element analysis (FEA) problem.
+        """
+
+        def __init__(self, params: MorphOpt.Params):
+            super().__init__(params=params,
+                            num_process=1, task_index_list=[[0], [1, 2], [3]])
+    
+    
+    class Updater(MorphOpt.Updaters):
         """
         Updater class for MorphOpt.
         This class is responsible for updating the design variables based on the results of the optimization process.
         """
 
-        def __init__(self, params: Params):
+        def __init__(self, params: MorphOpt.Params, *args, **kwargs):
+            super().__init__(surfaces=self.UpdaterSurfaces(params=params),
+                            loads=None, *args, **kwargs)
 
-            super().__init__(
-                params=params,
-                max_step_iter=50)
+        class UpdaterSurfaces(MorphOpt.UpdaterSurfaces):
+            """
+            Updater class for MorphOpt.
+            This class is responsible for updating the design variables based on the results of the optimization process.
+            """
 
-            shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
-            self.add_objective_function(shape_derivative)
-            self.add_constraints(
-                self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
-            self.add_constraints(
-                self.objectivefuncs.Distance(min_distance=
-                                                            [[1.0, 2.5, 2.5, 2.5],
-                                                             [2.5, 2.0, 2.5, 2.5],
-                                                             [2.5, 2.5, 2.0, 2.5],
-                                                             [2.5, 2.5, 2.5, 2.0]]))
-            self.add_constraints(
-                self.objectivefuncs.boundarys.Cylinder(radius=22.5, height=70., bottom=0.))
+            def __init__(self, params: MorphOpt.Params):
 
+                super().__init__(
+                    params=params,
+                    max_step_iter=50)
 
-class Controller(_Controller):
-    def save(self):
-        super().save()
-        import shutil
-        try:
-            shutil.copyfile(GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp',
-                            GLOBAL.PATH.path_Result + '/Log/Deformation/Data/TopOptRun_%d.inp' % (GLOBAL.History.iteration-1))
-        except:
-            pass
+                shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
+                self.add_objective_function(shape_derivative)
+                self.add_constraints(
+                    self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
+                self.add_constraints(
+                    self.objectivefuncs.Distance(min_distance=
+                                                                [[1.0, 2.5, 2.5, 2.5],
+                                                                [2.5, 2.0, 2.5, 2.5],
+                                                                [2.5, 2.5, 2.0, 2.5],
+                                                                [2.5, 2.5, 2.5, 2.0]]))
+                self.add_constraints(
+                    self.objectivefuncs.boundarys.Cylinder(radius=22.5, height=70., bottom=0.))
+
     
 if __name__ == '__main__':
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cpu')
 
-    path_result = 'Z:/Results'
-    opt_label = 'FRONT'
-
-    # region Initialize the workflow
-    initializer.initialize_path(result_path=path_result, opt_label=opt_label)
-    initializer.initialize_history()
-
-    params = Params()
-
-    solver = Solver(params=params)
-
-    updater = Updater(params=params)
-
-    controller = Controller(params=params, solver=solver, updater=updater)
-    controller.opt_loop()
+    controller = ThisController()
+    controller.start_optimization()

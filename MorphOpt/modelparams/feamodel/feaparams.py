@@ -4,7 +4,6 @@ import numpy as np
 import torch
 
 from ..base_params import BaseParams
-from ... import GLOBAL
 from .feainterface.basefeainterface import BaseFEAInterface
 
 from FEA import FEA_INP, FEAController
@@ -230,13 +229,13 @@ class FEAParams(BaseParams):
                 load_step[key] = updated_params.detach().cpu().tolist()
                 ind_now += num_vars
 
-    def save(self, foldpath) -> None:
+    def save(self, foldpath, iteration) -> None:
         """
         Save the loads to a file.
         """
         params = self.get_parameters()
         params = [p.detach().cpu().numpy() for p in params]
-        np.savez(foldpath + '/loads_iter-%d.npz'% GLOBAL.History.iteration, *params)
+        np.savez(foldpath + '/loads_iter-%d.npz'% iteration, *params)
 
     def load(self, foldpath: str, iteration: int) -> None:
         """
@@ -256,10 +255,10 @@ class FEAParams(BaseParams):
     def plot(self):
         pass
         
-    def save_figure(self, filename):
+    def save_figure(self, filename, iteration) -> None:
         from matplotlib import pyplot as plt
         
         plt.figure()
         self.plot()
-        plt.savefig(filename + '/Pressure_%d.png'% GLOBAL.History.iteration)
+        plt.savefig(filename + '/Pressure_%d.png'% iteration)
         plt.close()

@@ -6,9 +6,10 @@ import time
 import FEA
 import numpy as np
 import torch
+
+import MorphOpt
 from .geometrysurface.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
-from ... import GLOBAL
 
 class MeshQualityOptimizer:
     """Simplified optimizer assuming tetra connectivity is already a numpy int array of shape [Ne,4]."""
@@ -174,7 +175,7 @@ class GeometryParams(BaseParams):
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
                 self.surface_list[i].reinitialize()
-            GLOBAL.obj_fun.inp = None
+            MorphOpt.controller.objfun.inp = None
         self.apply_surface_constraints()
 
     def add_surface(self, surface_new: BaseInterface) -> None:
@@ -333,10 +334,10 @@ class GeometryParams(BaseParams):
         """
         pass
 
-    def save(self, foldpath):
+    def save(self, foldpath, iteration) -> None:
         for i in range(self.num_surface):
             self.surface_list[i].save(foldpath + '/Surface-%d_iter-%d' %
-                              (i, GLOBAL.History.iteration))
+                              (i, iteration))
 
     def load(self, foldpath, iteration):
         for i in range(self.num_surface):
@@ -352,7 +353,7 @@ class GeometryParams(BaseParams):
                 alpha = 1
             self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
 
-    def save_figure(self, filename):
+    def save_figure(self, filename, iteration) -> None:
         from mayavi import mlab
 
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
@@ -382,7 +383,7 @@ class GeometryParams(BaseParams):
         axes.axes.property.color = (0, 0, 0)       # Set axes lines color to black
         
         mlab.view(azimuth=210, elevation=70, distance=300)
-        mlab.savefig(filename + '%d.jpg'%GLOBAL.History.iteration)
+        mlab.savefig(filename + '%d.jpg'%iteration)
         mlab.close()
     
     def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
@@ -391,14 +392,14 @@ class GeometryParams(BaseParams):
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        if GLOBAL.obj_fun.inp is None:
+        if MorphOpt.controller.objfun.inp is None:
             self._regenerate(material_para=material_para)
-            self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
+            self._nodes_last_regenerate = MorphOpt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
             self._iter_since_last_regenerate = 0
             return
         
 
-        part = GLOBAL.obj_fun.inp.part['final_model']
+        part = MorphOpt.controller.objfun.inp.part['final_model']
         nodes_now = part.nodes[:, 1:]  # shape [N,3]
 
         if self._nodes_last_regenerate is not None:
@@ -417,13 +418,13 @@ class GeometryParams(BaseParams):
             self._regenerate(material_para=material_para)
             self._iter_since_last_regenerate = 0
             # update the reference nodes
-            self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
+            self._nodes_last_regenerate = MorphOpt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
         else:
             last_min_vol, max_g = self._refinemesh()
             if max_g > 1e-1 or last_min_vol < 0:
                 self._regenerate(material_para=material_para)
                 self._iter_since_last_regenerate = 0
-                self._nodes_last_regenerate = GLOBAL.obj_fun.inp.part['final_model'].nodes[:, 1:].copy()
+                self._nodes_last_regenerate = MorphOpt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
             else:
                 self._iter_since_last_regenerate += 1
         
@@ -437,7 +438,7 @@ class GeometryParams(BaseParams):
         from .utils import mesh
 
         # update each surface nodes
-        inp = GLOBAL.obj_fun.inp
+        inp = MorphOpt.controller.objfun.inp
         part = inp.part['final_model']
         nodes_new = part.nodes[:, 1:].copy()
         index_internal = np.ones([part.nodes.shape[0]], dtype=bool)
@@ -455,7 +456,6 @@ class GeometryParams(BaseParams):
 
         part.nodes[:, 1:] = nodes_new.detach().cpu().numpy()
 
-        inp.write_inp('Z:/temp/iter%d_refine.inp' % GLOBAL.History.iteration)
 
         return last_min_vol, max_g
 
@@ -464,7 +464,7 @@ class GeometryParams(BaseParams):
         This function regenerates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
-        path_output = GLOBAL.PATH.path_Result + '/Cache/'
+        path_output = MorphOpt.controller.path_result + '/Cache/'
 
         # export the data
         self._export_data(foldpath=path_output)
@@ -473,12 +473,11 @@ class GeometryParams(BaseParams):
         self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
 
         # read the inp file
-        inp_path = GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp'
+        inp_path = MorphOpt.controller.path_result + '/Cache/TopOptRun.inp'
         inp = FEA.FEA_INP()
         inp.read_inp(path=inp_path)
 
-        GLOBAL.obj_fun.inp = inp
-
+        MorphOpt.controller.objfun.inp = inp
         # match the points on the surfaces
         self._match_points_surface()
 
@@ -486,7 +485,7 @@ class GeometryParams(BaseParams):
         """
         Match the points on the surfaces after FEA meshing.
         """
-        inp = GLOBAL.obj_fun.inp
+        inp = MorphOpt.controller.objfun.inp
         nodes = inp.part['final_model'].nodes[:, 1:]
 
         temp = torch.tensor([1.])

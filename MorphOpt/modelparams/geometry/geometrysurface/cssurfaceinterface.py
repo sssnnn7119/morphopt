@@ -1,10 +1,8 @@
-from math import e
+
 import torch
-import vtk
 from mayavi import mlab
 from .basesurfaceinterface import BaseInterface
 from ..SurfaceModel.ClosedSurface.CS import ClosedSurface
-from .... import GLOBAL
 class CsInterface(BaseInterface):
 
     def __init__(self, surface: ClosedSurface, symmetric = [0], MaxC = 1.):

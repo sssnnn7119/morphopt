@@ -3,9 +3,10 @@ import numpy as np
 import torch
 import scipy.sparse as sp
 import pypardiso
+import MorphOpt
 
-from MorphOpt import GLOBAL
-class ObjectiveFunction:
+from .baseobject import BaseObject
+class ObjectiveFunction(BaseObject):
     """
     The objective functions in MorphOpt.
     """
@@ -44,6 +45,12 @@ class ObjectiveFunction:
         The solvers for the stiffness matrix.
         [shape: (num_tasks,)]
         """
+
+    def initialize(self, *args, **kwargs) -> None:
+        """
+        Initialize the objective function.
+        """
+        pass
 
     def get_objective(self, *args, **kwargs) -> torch.Tensor:
         """
@@ -98,7 +105,7 @@ class ObjectiveFunction:
         for step_index in range(self.num_tasks):
 
             # set the loads
-            GLOBAL.controller.params.feamodel.process_fea(fe=self.fe, step_index=step_index)
+            MorphOpt.controller.params.feamodel.process_fea(fe=self.fe, step_index=step_index)
             
             # region get the decomposed stiffness matrix
             K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))[1:]

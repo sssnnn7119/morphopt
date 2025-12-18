@@ -3,7 +3,7 @@
 from scipy import interpolate
 import torch
 from .basefuncs import BaseConstraints
-from .... import GLOBAL
+import MorphOpt
 
 class ShapeDerivativeDisplacement(BaseConstraints):
     """
@@ -21,7 +21,7 @@ class ShapeDerivativeDisplacement(BaseConstraints):
 
     def initialize(self, r0: list[torch.Tensor], *args, **kwargs):
 
-        objfun = GLOBAL.obj_fun
+        objfun = MorphOpt.controller.objfun
         fe = objfun.fe
 
         self._r0 = [r0[i].detach().clone() for i in range(len(r0))]
@@ -41,7 +41,7 @@ class ShapeDerivativeDisplacement(BaseConstraints):
                 GC0 = objfun.U[i].to(part.nodes.device)
                 fe.assembly.GC = GC0
                 fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
-                GLOBAL.controller.params.feamodel.process_fea(fe=fe, step_index=i)
+                MorphOpt.controller.params.feamodel.process_fea(fe=fe, step_index=i)
                 
                 R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
                 ADJu = objfun.ADJu[i].to(part.nodes.device)
@@ -97,7 +97,7 @@ class ShapeDerivativeDisplacement(BaseConstraints):
         Returns:
             list[torch.Tensor]: The interpolated points for the design variables.
         """
-        surfaces = GLOBAL.controller.params.geometry
+        surfaces = MorphOpt.controller.params.geometry
         r0 = surfaces.get_geometry_values()[0]
         interpolated_points = []
         for sf in range(surfaces.num_surface):

@@ -79,12 +79,13 @@ class BaseParams:
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
 
-    def save(self, foldpath: str) -> None:
+    def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the parameters to a file.
         
         Args:
             foldpath (str): The name of the file to save the parameters to.
+            iteration (int): The iteration number to save.
         """
         pass
 
@@ -106,12 +107,13 @@ class BaseParams:
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
     
-    def save_figure(self, filename: str) -> None:
+    def save_figure(self, filename: str, iteration: int) -> None:
         """
         Save the figure of the parameters to a file.
         
         Args:
             filename (str): The name of the file to save the figure to.
+            iteration (int): The iteration number to save.
         """
         pass
 

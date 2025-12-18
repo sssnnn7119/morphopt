@@ -1,17 +1,13 @@
-from socketserver import UDPServer
+
 import numpy as np
-from scipy import interpolate
-from sympy.physics import control
+
 import torch
-from torch.nn.init import normal_
-from ...GLOBAL import PATH, History
 from .. import optimizer
 
 from ...modelparams.params import Params
 from ...modelparams import GeometryParams, FEAParams, Materials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
-from MorphOpt import GLOBAL
 
 class UpdaterSurfaces(BaseUpdater):
     """
@@ -139,7 +135,7 @@ class UpdaterSurfaces(BaseUpdater):
         name = name + '_%d' % extra_num
         self.obj_funcs[name] = obj_func
 
-    def reinitialize(self, iter_now: int, *args, **kwargs) -> None:
+    def reinitialize(self, *args, **kwargs) -> None:
         """
         Initialize the parameters of the optimization process.
 
@@ -154,7 +150,7 @@ class UpdaterSurfaces(BaseUpdater):
         r0, rdu0, rdu20 = self.params_update.get_geometry_values()
 
         # initialize the shape derivative sensitivity
-        self._initialize_objectives(iter_now=iter_now, r0=r0, rdu0=rdu0, rdu20=rdu20)
+        self._initialize_objectives(r0=r0, rdu0=rdu0, rdu20=rdu20)
         
         # get the total sensitivity
         sensitivity = self._get_total_sensitivity()
@@ -181,7 +177,7 @@ class UpdaterSurfaces(BaseUpdater):
         self.if_update = [True for _ in range(self.params.geometry.num_surface)]
 
 
-    def _initialize_objectives(self, iter_now: int, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
+    def _initialize_objectives(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
         for obj_func in self.obj_funcs.values():
             obj_func.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, weights=self._weight_points)
 
@@ -266,7 +262,7 @@ class UpdaterSurfaces(BaseUpdater):
         """
 
         # initialize the optimizer
-        self.reinitialize(iter_now=History.iteration)
+        self.reinitialize()
 
         # update the objective function
         variables = self.params_update.get_variables().detach().clone()
@@ -332,7 +328,3 @@ class UpdaterSurfaces(BaseUpdater):
         self._update_step_length(delta_control_points=delta_control_points)
 
         self._delta_control_points_previous = [cp.copy() for cp in delta_control_points]
-
-
-    def save(self, filename):
-        return super().save(filename)

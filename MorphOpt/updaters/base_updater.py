@@ -1,8 +1,6 @@
 
 
 import torch
-from tabulate import tabulate
-from ..GLOBAL import History
 from ..modelparams.base_params import BaseParams
 from ..modelparams.params import Params
 from . import optimizer
@@ -111,7 +109,7 @@ class BaseUpdater:
         """
         pass
 
-    def save(self, filename: str) -> None:
+    def save(self, filename: str, iteration: int) -> None:
         """
         Save the updater state to a file.
         """

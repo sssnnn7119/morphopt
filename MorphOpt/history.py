@@ -1,7 +1,8 @@
 import csv
 import numpy as np
 
-class History:
+from .baseobject import BaseObject
+class History(BaseObject):
     """
     A class to record the information of the optimization process.
     """
@@ -35,32 +36,19 @@ class History:
         The current iteration number.
         """
 
-    def save(self, path: str) -> None:
-        """
-        Save the history to a file.
-        """
-        np.savetxt(path + '/history_objective.txt', self.history_objective, delimiter=',')
-        np.savetxt(path + '/history_time.txt', self.history_time, delimiter=',')
-        np.savetxt(path + '/iteration.txt', [self.iteration], delimiter=',')
-        np.save(path + '/history_deformation.npy', self.history_deformation)
-        
-    def load(self, path: str) -> None:
-        """
-        Load the history from a file.
-        """
-        self.history_objective = np.loadtxt(path + '/history_objective.txt', delimiter=',').tolist()
-        self.history_time = np.loadtxt(path + '/history_time.txt', delimiter=',').tolist()
-        self.iteration = int(np.loadtxt(path + '/iteration.txt', delimiter=','))
-        self.history_deformation = np.load(path + '/history_deformation.npy').tolist()
+    def initialize(self) -> None:
+        self.iteration = 0
+        self.history_objective = []
+        self.history_time = []
 
-    def save_csv(self, path: str) -> None:
+    def save(self, foldpath: str, *args, **kwargs) -> None:
         """
         Save the history to a CSV file.
         CSV format:
         - Row 1: Column headers (iteration, objective, T0, T1, ..., U0-0, U0-1, ..., UdF0-0-0, UdF0-0-1, ...)
         - Row 2+: Data records
         """
-        filepath = path + '/history_record.csv'
+        filepath = foldpath + '/history_record.csv'
 
         with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
@@ -146,12 +134,12 @@ class History:
                         formatted_row.append(val)
                 writer.writerow(formatted_row)
 
-    def load_csv(self, path: str) -> None:
+    def load(self, foldpath: str, iteration: int = None) -> None:
         """
         Load the history from a CSV file.
         Reconstructs the original data structure from the flattened CSV format.
         """
-        filepath = path + '/history_record.csv'
+        filepath = foldpath + '/history_record.csv'
         
         with open(filepath, 'r', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
@@ -254,3 +242,11 @@ class History:
 
             # read how many iterations are recorded
             self.iteration = len(self.history_objective)
+
+        if iteration is not None:
+            self.iteration = iteration
+            self.history_num_nodes = self.history_num_nodes[:iteration]
+            self.history_num_elements = self.history_num_elements[:iteration]
+            self.history_objective = self.history_objective[:iteration]
+            self.history_time = self.history_time[:iteration]
+            self.history_deformation = self.history_deformation[:iteration]

@@ -1,9 +1,5 @@
 import torch
 from ..base_params import BaseParams
-import numpy as np
-import os
-from ... import GLOBAL
-from mayavi import mlab
 
 class Materials(BaseParams):
     """

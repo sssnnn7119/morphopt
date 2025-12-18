@@ -1,11 +1,12 @@
-from re import A
+
 import torch
 
-from MorphOpt import GLOBAL
+from ..baseobject import BaseObject
+
 from .surface.update_surfaces import UpdaterSurfaces
 
 
-class Updaters:
+class Updaters(BaseObject):
     """
     This class is responsible for updating the morphologies of the neurons.
     """
@@ -66,9 +67,9 @@ class Updaters:
         if self.if_update_surface:
             self._surface.update_variables(dx=self._var_surface)
 
-    def save(self, foldpath: str) -> None:
+    def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the updater state to a file.
         """
         if self.if_update_surface:
-            self._surface.save(filename=foldpath + '/updaters/')
+            self._surface.save(filename=foldpath + '/updaters/', iteration=iteration)

@@ -12,7 +12,7 @@ def restart_optimization(restart_path, target_iteration=None):
     - target_iteration: The iteration number to restart from. If None, will restart from the last saved iteration.
     """
     
-    params: MorphOpt._Params = MAIN_SCRIPT_FOR_RESTART.Params()
+    params: MorphOpt.Params = MAIN_SCRIPT_FOR_RESTART.Params()
 
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
 

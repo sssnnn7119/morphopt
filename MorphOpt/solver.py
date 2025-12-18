@@ -1,18 +1,15 @@
 
 import numpy as np
-from scipy.signal import step
 import torch
 
 import FEA
 import multiprocessing as mp
 
-from ..modelparams import Params, FEAParams
-from ..GLOBAL import PATH
-from .base_solver import BaseSolver
+from .modelparams import Params, FEAParams
 
-from MorphOpt import GLOBAL
-
-class MorphSolver(BaseSolver):
+from .baseobject import BaseObject
+import MorphOpt
+class MorphSolver(BaseObject):
     """
     This class is responsible for solving the FEA and get the displacement of the soft robot.
     """
@@ -52,9 +49,18 @@ class MorphSolver(BaseSolver):
     def initialize(self):
         if self.task_index_list is None:
             self.task_index_list = []
-            for i in range(GLOBAL.controller.params.feamodel.num_load_steps):
+            for i in range(MorphOpt.controller.params.feamodel.num_load_steps):
                 self.task_index_list.append([i])
-        
+
+
+    def reinitialize(self, iteration: int) -> None:
+        """
+        Reinitialize the solver for a new iteration.
+
+        Parameters:
+            iteration (int): The current iteration number.
+        """
+        pass
 
     def solve(self):
         """
@@ -69,17 +75,17 @@ class MorphSolver(BaseSolver):
                 - GCw (list[torch.Tensor]): The second adjoint displacement field.
         """
         
-        fe = self.params.feamodel.create_fea(inp=GLOBAL.obj_fun.inp)
+        fe = self.params.feamodel.create_fea(inp=MorphOpt.controller.objfun.inp)
         fe.initialize()
 
         # multiprocess FEA
-        # self._solve_FEA(GLOBAL.obj_fun.inp, self.params.loads, 0, self.available_gpus)
+        # self._solve_FEA(MorphOpt.controller.objfun.inp, self.params.loads, 0, self.available_gpus)
         pools = mp.Pool(processes=self.num_process)
         result = []
         for i in range(len(self.task_index_list)):
             result.append(
                             pools.apply_async(self._solve_FEA,
-                                            kwds={'inp': GLOBAL.obj_fun.inp, 
+                                            kwds={'inp': MorphOpt.controller.objfun.inp, 
                                                     'feamodel': self.params.feamodel, 
                                                     'step_index': i, 
                                                     'task_index': self.task_index_list[i],
@@ -96,8 +102,8 @@ class MorphSolver(BaseSolver):
         list_number = np.array(list_number).flatten()
         
         Uresult = torch.tensor(U0).to(torch.float64).to(fe.assembly.device)[list_number]
-        GLOBAL.obj_fun.set_results(fe=fe, U=Uresult)
-        GLOBAL.obj_fun.calculate_adjoint_problem()
+        MorphOpt.controller.objfun.set_results(fe=fe, U=Uresult)
+        MorphOpt.controller.objfun.calculate_adjoint_problem()
 
     @classmethod
     def _solve_FEA(current_class, inp: FEA.FEA_INP, feamodel: FEAParams, step_index: int, task_index: list[int], available_gpus: list[str], U_guess: np.ndarray = None):

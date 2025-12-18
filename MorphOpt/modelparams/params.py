@@ -1,8 +1,10 @@
 
+import MorphOpt
+from ..baseobject import BaseObject
 from .feamodel.feaparams import FEAParams
 from .geometry.geometryparams import GeometryParams
 from .materials.materialparams import Materials
-class Params:
+class Params(BaseObject):
     """
     Class to handle the parameters of the model.
     """
@@ -40,16 +42,16 @@ class Params:
         self.materials.initialize()
         
 
-    def save(self, foldpath: str) -> None:
+    def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the parameters to a file.
         
         Args:
             foldpath (str): The path to save the parameters.
         """
-        self.geometry.save(foldpath=foldpath + '/surfaces/data/')
-        self.feamodel.save(foldpath=foldpath + '/loads/data/')
-        self.materials.save(foldpath=foldpath + '/materials/data/')
+        self.geometry.save(foldpath=foldpath + '/surfaces/data/', iteration=iteration)
+        self.feamodel.save(foldpath=foldpath + '/loads/data/', iteration=iteration)
+        self.materials.save(foldpath=foldpath + '/materials/data/', iteration=iteration)
 
     def load(self, filepath: str, iteration: int) -> None:
         """
@@ -62,16 +64,16 @@ class Params:
         # self.feamodel.load(filepath=filepath + '/Loads/Data/', iteration=iteration)
         # self.materials.load(filepath=filepath + '/Materials/Data/', iteration=iteration)
 
-    def save_figure(self, filepath: str) -> None:
+    def save_figure(self, filepath: str, iteration: int) -> None:
         """
         Save the figures of the parameters to a file.
         
         Args:
             filepath (str): The path to save the figures.
         """
-        self.geometry.save_figure(filename=filepath + '/Surfaces/Figures/')
-        self.feamodel.save_figure(filename=filepath + '/Loads/Figures/')
-        self.materials.save_figure(filename=filepath + '/Materials/Figures/')
+        self.geometry.save_figure(filename=filepath + '/Surfaces/Figures/', iteration=iteration)
+        self.feamodel.save_figure(filename=filepath + '/Loads/Figures/', iteration=iteration)
+        self.materials.save_figure(filename=filepath + '/Materials/Figures/', iteration=iteration)
 
     def export_data(self, filepath: str):
         """
