@@ -14,7 +14,6 @@ def restart_optimization(restart_path, target_iteration=None) -> Controller:
     """
 
     GLOBAL.PATH.path_Code = os.getcwd() + '/MorphOpt/'
-    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/modelparams/geometry/_Rhino/taskqueue/'
     GLOBAL.PATH.path_Result = restart_path
 
     GLOBAL.History.load_csv(restart_path + '/log/')
@@ -36,7 +35,7 @@ def restart_optimization(restart_path, target_iteration=None) -> Controller:
     controller: MorphOpt._Controller = MAIN_SCRIPT_FOR_RESTART.Controller(params=params, 
                                                     solver=solver, 
                                                     updater=updater)
-    params.initialize(0)
+    params.reinitialize(0)
     params.load(filepath=restart_path + '/Log/', iteration=target_iteration)
 
     return controller

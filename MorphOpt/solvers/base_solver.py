@@ -9,7 +9,13 @@ class BaseSolver:
     def __init__(self, *args, **kwargs):
         pass
 
-    def initialize(self, iteration: int) -> None:
+    def reinitialize(self, iteration: int) -> None:
+        """
+        reInitialize the solver with the given problem.
+        """
+        pass
+
+    def initialize(self) -> None:
         """
         Initialize the solver with the given problem.
         """
@@ -39,4 +45,9 @@ class BaseSolver:
         raise NotImplementedError(
             "This method should be overridden by subclasses.")
 
+    def save(self, foldpath: str) -> None:
+        """
+        Save the solver state to a file.
+        """
+        pass
 

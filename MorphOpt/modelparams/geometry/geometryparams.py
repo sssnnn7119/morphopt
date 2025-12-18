@@ -171,18 +171,21 @@ class GeometryParams(BaseParams):
         The maximum allowed change in node positions before the surfaces are regenerated.
         """
         
-    def initialize(self, iteration: int):
+    def reinitialize(self, iteration: int):
         """
         Initialize the surfaces for the optimization process.
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
-        
-        self.if_update = [True for _ in range(self.num_surface)]
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
-                self.surface_list[i].initialize()
+                self.surface_list[i].reinitialize()
+            GLOBAL.obj_fun.inp = None
         self.apply_surface_constraints()
+
+
+    def initialize(self, *args, **kwargs):
+        self.if_update = [True for _ in range(self.num_surface)]
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """
@@ -352,14 +355,14 @@ class GeometryParams(BaseParams):
         """
         pass
 
-    def save(self, filepath):
+    def save(self, foldpath):
         for i in range(self.num_surface):
-            self.surface_list[i].save(filepath + '/Surface-%d_iter-%d' %
+            self.surface_list[i].save(foldpath + '/Surface-%d_iter-%d' %
                               (i, GLOBAL.History.iteration))
 
-    def load(self, filepath, iteration):
+    def load(self, foldpath, iteration):
         for i in range(self.num_surface):
-            self.surface_list[i].load(filepath + '/Surface-%d_iter-%d' %
+            self.surface_list[i].load(foldpath + '/Surface-%d_iter-%d' %
                               (i, iteration))
             # self.surface_list[i].initialize()
             
@@ -371,7 +374,7 @@ class GeometryParams(BaseParams):
                 alpha = 1
             self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
 
-    def save_figure(self, filepath):
+    def save_figure(self, filename):
         from mayavi import mlab
 
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
@@ -401,7 +404,7 @@ class GeometryParams(BaseParams):
         axes.axes.property.color = (0, 0, 0)       # Set axes lines color to black
         
         mlab.view(azimuth=210, elevation=70, distance=300)
-        mlab.savefig(filepath + '%d.jpg'%GLOBAL.History.iteration)
+        mlab.savefig(filename + '%d.jpg'%GLOBAL.History.iteration)
         mlab.close()
     
     def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
@@ -484,10 +487,9 @@ class GeometryParams(BaseParams):
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
         path_output = GLOBAL.PATH.path_Result + '/Cache/'
-        path_queue = GLOBAL.PATH.path_Queue + '/'
 
         # export the data
-        que_names = self._export_data(path_output, path_queue)
+        self._export_data(foldpath=path_output)
 
         # call Abaqus for FEA
         self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
@@ -522,7 +524,7 @@ class GeometryParams(BaseParams):
             surf_nodes = torch.from_numpy(nodes[surf_set_now]).T.to(default_device)
             self.surface_list[i].match_points_surface(surf_nodes)
 
-    def _export_data(self, path_output: str, path_queue: str) -> list[str]:
+    def _export_data(self, foldpath: str) -> list[str]:
         """
         This function export the data of each surfaces
         """
@@ -530,7 +532,7 @@ class GeometryParams(BaseParams):
         # export each surface with Rhino
         for i in range(self.num_surface):
             surf_name0 = '__surface-%d' % i
-            self.surface_list[i].output_data(path_output=path_output, name_output=surf_name0, flip=(i!=0))
+            self.surface_list[i].output_data(path_output=foldpath, name_output=surf_name0, flip=(i!=0))
 
     def _call_Abaqus(self, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
         

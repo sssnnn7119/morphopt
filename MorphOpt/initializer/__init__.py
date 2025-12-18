@@ -6,8 +6,8 @@ import os
 import __main__
 
 def initialize_path_log(name: str):
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/%s/Data'%(name))
-    os.makedirs(GLOBAL.PATH.path_Result + '/Log/%s/Figures'%(name))
+    os.makedirs(GLOBAL.PATH.path_Result + '/log/%s/data'%(name))
+    os.makedirs(GLOBAL.PATH.path_Result + '/log/%s/figures'%(name))
 
 def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) -> None:
     """
@@ -17,22 +17,23 @@ def initialize_path(opt_label: str = 'DefaultLabel', result_path: str = None) ->
     GLOBAL.PATH.opt_Lable = opt_label
     
     GLOBAL.PATH.path_Code = os.getcwd() + '/MorphOpt/'
-    GLOBAL.PATH.path_Queue = GLOBAL.PATH.path_Code + '/modelparams/geometry/_Rhino/taskqueue/'
+    
     if result_path is None:
-        result_path = os.getcwd() + '/Results/'
+        result_path = os.getcwd() + '/results/'
     
     GLOBAL.PATH.path_Result = result_path + '/' + opt_label + '_' + 'T' + datetime.datetime.now().strftime(
         "%Y%m%d_%H%M%S") + '/'
         
     # create the result path if it does not exist
-    os.makedirs(GLOBAL.PATH.path_Result + '/Cache/')
+    os.makedirs(GLOBAL.PATH.path_Result + '/cache/')
 
-    initialize_path_log('Surfaces')
-    initialize_path_log('Loads')
-    initialize_path_log('Materials')
-    initialize_path_log('Deformation')
+    initialize_path_log('surfaces')
+    initialize_path_log('loads')
+    initialize_path_log('materials')
+    initialize_path_log('deformation')
 
-    os.makedirs(GLOBAL.PATH.path_Result + '/FEA')
+
+    os.makedirs(GLOBAL.PATH.path_Result + '/fea')
 
     # copy the scripts to the result path
     def ignore_folder(dir, contents):

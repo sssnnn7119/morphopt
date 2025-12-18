@@ -10,7 +10,7 @@ class Updaters:
     This class is responsible for updating the morphologies of the neurons.
     """
 
-    def __init__(self, surfaces:UpdaterSurfaces=None, U_dim=[-6,-5,-4,-3,-2,-1], *args, **kwargs):
+    def __init__(self, surfaces:UpdaterSurfaces=None, *args, **kwargs):
         """
         Initialize the Updaters class with a neuron object.
 
@@ -30,19 +30,26 @@ class Updaters:
         
         if surfaces is not None:
             self._surface = surfaces
-            self._surface.U_dim = U_dim
             self.if_update_surface = True
         self._var_surface: torch.Tensor = None
         """
         var_surface: The updated surface variables.
         """
 
-    def initialize(self, iteration: int) -> None:
+    def reinitialize(self, iteration: int) -> None:
+        """
+        reInitialize the Updaters class.
+        This method reinitializes the surfaces, loads, and materials if they are present.
+        """
+        pass
+
+    def initialize(self) -> None:
         """
         Initialize the Updaters class.
         This method initializes the surfaces, loads, and materials if they are present.
         """
-        pass
+        if self.if_update_surface:
+            self._surface.initialize()
 
     def update(self) -> torch.Tensor:
         """
@@ -58,3 +65,10 @@ class Updaters:
         """
         if self.if_update_surface:
             self._surface.update_variables(dx=self._var_surface)
+
+    def save(self, foldpath: str) -> None:
+        """
+        Save the updater state to a file.
+        """
+        if self.if_update_surface:
+            self._surface.save(filename=foldpath + '/updaters/')

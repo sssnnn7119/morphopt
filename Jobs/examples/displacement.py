@@ -43,7 +43,7 @@ class Params(_Params):
                                              flip=True,
                                              r0=4.,
                                              init_location=[0., 0., 40.],
-                                             MaxC=1.0,
+                                             MaxC=1.5,
                 ))
 
 

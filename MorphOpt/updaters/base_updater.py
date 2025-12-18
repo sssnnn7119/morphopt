@@ -51,9 +51,15 @@ class BaseUpdater:
         This is a list of integers representing the dimensions of the displacement vector.
         """
     
-    def initialize(self, iter_now: int, sensitivity: list[torch.Tensor]) -> None:
+    def reinitialize(self, iter_now: int, sensitivity: list[torch.Tensor]) -> None:
         """
-        Initialize the updater with the current iteration and sensitivity.
+        reInitialize the updater with the current iteration and sensitivity.
+        """
+        raise NotImplementedError("This method should be overridden by subclasses.")
+        
+    def initialize(self) -> None:
+        """
+        Initialize the updater.
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
@@ -102,5 +108,11 @@ class BaseUpdater:
     def update_variables(self, dx: torch.Tensor) -> None:
         """
         Update the variables of the surfaces.
+        """
+        pass
+
+    def save(self, filename: str) -> None:
+        """
+        Save the updater state to a file.
         """
         pass

@@ -18,8 +18,3 @@ class Path():
         """
         The path to the result directory.
         """
-
-        self.path_Queue: str = ''
-        """
-        The path to the Rhino queue directory.
-        """

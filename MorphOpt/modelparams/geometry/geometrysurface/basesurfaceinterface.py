@@ -51,7 +51,7 @@ class BaseInterface():
         self._coordinates_fea: torch.Tensor
         """record the coordinates of the surface for FEA"""
     
-    def initialize(self) -> None:
+    def reinitialize(self) -> None:
         """
         Initialize the surface.
         """

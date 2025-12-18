@@ -49,7 +49,7 @@ class MorphSolver(BaseSolver):
         list[list[int]]: A list of task indices for each process.
         """
 
-    def initialize(self, iteration):
+    def initialize(self):
         if self.task_index_list is None:
             self.task_index_list = []
             for i in range(GLOBAL.controller.params.feamodel.num_load_steps):

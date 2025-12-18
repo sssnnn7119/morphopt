@@ -27,7 +27,7 @@ class CPGEOSurfaceInterface(BaseInterface):
         self.seed_size = seed_size
         self.flip = flip
 
-    def initialize(self):
+    def reinitialize(self):
         self.model.reconstruction(seed_size=self.seed_size)
         self.model.pre_load(1)
         

@@ -45,28 +45,34 @@ class Controller:
 
         GLOBAL.controller = self
 
+        self.params.initialize()
+        self.solver.initialize()
+        self.updater.initialize()
+
         while True:
             # Save the current parameters and plot the figures
             self.save()
             self.save_figure()
 
             # clean the cache
+            del GLOBAL.obj_fun.fe
             torch.cuda.empty_cache()
-            gc.collect()
+            data = gc.collect()
+            print(f"Garbage collector: collected {data} objects.")
 
             seed_size0 = self.params.geometry.fea_seed_size
             max_iter_before_regenerate0 = self.params.geometry._max_iter_before_regenerate
             
             while True:
-                # try:
+                try:
                     loss, t0, t1, t2, t3 = self.step()
                     break
-                # except Exception as e:
-                #     print('Error occurred during optimization step: %s' % str(e))
-                #     self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
-                #     self.params.geometry._max_iter_before_regenerate = 1
-                #     self.params.load(filepath=GLOBAL.PATH.path_Result + '/Log/', iteration=GLOBAL.History.iteration)
-                #     self.params.initialize(iteration = 0)
+                except Exception as e:
+                    print('Error occurred during optimization step: %s' % str(e))
+                    self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
+                    self.params.geometry._max_iter_before_regenerate = 1
+                    self.params.load(filepath=GLOBAL.PATH.path_Result + '/log/', iteration=GLOBAL.History.iteration)
+                    self.params.reinitialize(iteration = 0)
             self.params.geometry.fea_seed_size = seed_size0
             self.params.geometry._max_iter_before_regenerate = max_iter_before_regenerate0
 
@@ -90,13 +96,13 @@ class Controller:
             t3 (float): The time after updating the surfaces.
         """
         t0 = time.time()
-        if os.path.exists(GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp'):
-            os.remove(GLOBAL.PATH.path_Result + '/Cache/TopOptRun.inp')
+        if os.path.exists(GLOBAL.PATH.path_Result + '/cache/TopOptRun.inp'):
+            os.remove(GLOBAL.PATH.path_Result + '/cache/TopOptRun.inp')
 
         # Initialize the workflow
-        self.params.initialize(iteration = GLOBAL.History.iteration)
-        self.solver.initialize(iteration = GLOBAL.History.iteration)
-        self.updater.initialize(iteration = GLOBAL.History.iteration)
+        self.params.reinitialize(iteration = GLOBAL.History.iteration)
+        self.solver.reinitialize(iteration = GLOBAL.History.iteration)
+        self.updater.reinitialize(iteration = GLOBAL.History.iteration)
 
         # Perform the optimization step
         # Generate the model
@@ -155,20 +161,17 @@ class Controller:
         """
         Save the current state of the optimization process.
         """
-        self.params.save(filepath=GLOBAL.PATH.path_Result + '/Log/')
+        self.params.save(foldpath=GLOBAL.PATH.path_Result + '/log/')
+        self.solver.save(foldpath=GLOBAL.PATH.path_Result + '/log/')
+        self.updater.save(foldpath=GLOBAL.PATH.path_Result + '/log/')
 
-        # try:
-        #     shutil.copyfile(GLOBAL.PATH.path_Result + '/Cache/TopAbqLS.cae',
-        #                     GLOBAL.PATH.path_Result + '/Log/Deformation/Data/TopAbqLS_%d.cae' % (GLOBAL.History.iteration-1))
-        # except:
-        #     pass
-        GLOBAL.History.save_csv(path=GLOBAL.PATH.path_Result + '/Log/')
+        GLOBAL.History.save_csv(path=GLOBAL.PATH.path_Result + '/log/')
         
     def save_figure(self) -> None:
         """
         Save the figures generated during the optimization process.
         """
-        self.params.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/')
+        self.params.save_figure(filepath=GLOBAL.PATH.path_Result + '/log/')
         if GLOBAL.obj_fun.fe is not None:
-            GLOBAL.obj_fun.save_figure(filepath=GLOBAL.PATH.path_Result + '/Log/Deformation/Figures/', iteration=GLOBAL.History.iteration)
+            GLOBAL.obj_fun.save_figure(filepath=GLOBAL.PATH.path_Result + '/log/deformation/figures/', iteration=GLOBAL.History.iteration)
 
