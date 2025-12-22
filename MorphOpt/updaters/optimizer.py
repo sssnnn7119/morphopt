@@ -128,7 +128,11 @@ class LBFGS(BaseOpt):
             dk = -gk_now
         else:
             dk = self.Hg_loop(-gk_now)
-        dk.view(-1)[dk.view(-1).isnan()] = 0
+        if dk.view(-1).isnan().any():
+            dk = -gk_now
+            self.SK = []
+            self.YK = []
+            self.rhok = []
 
         # if the gradient is not positive, use steepest descent direction
         if (dk * gk_now).sum() > 0:
@@ -158,7 +162,7 @@ class LBFGS(BaseOpt):
         sk = alpha * dk.flatten()
 
         # BFGS method
-        if yk.norm() > 0:
+        if yk.norm() > 1e-14 and sk.norm() > 1e-14:
             self.SK.append(sk)
             self.YK.append(yk)
             self.rhok.append(1 / yk.dot(sk))

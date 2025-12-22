@@ -210,6 +210,7 @@ class UpdaterSurfaces(BaseUpdater):
                     self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
                 else:
                     delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / np.linalg.norm(delta_control_points[i], axis=0) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
+                    delta_difference[np.isnan(delta_difference)] = 0.0
 
                     index_increase = (delta_difference > -0.5).flatten()
                     index_decrease = (delta_difference <= -0.5).flatten()
@@ -289,7 +290,7 @@ class UpdaterSurfaces(BaseUpdater):
                 print(
                     f"Low step length detected ({low_step_length_iter} iterations), stopping optimization."
                 )
-                break
+                # break
 
             # get current objective function value
             if self.iteration_total % 10 == 0:

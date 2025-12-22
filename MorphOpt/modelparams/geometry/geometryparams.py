@@ -353,7 +353,7 @@ class GeometryParams(BaseParams):
                 alpha = 1
             self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
 
-    def save_figure(self, filename, iteration) -> None:
+    def save_figure(self, foldpath, iteration) -> None:
         from mayavi import mlab
 
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
@@ -383,7 +383,7 @@ class GeometryParams(BaseParams):
         axes.axes.property.color = (0, 0, 0)       # Set axes lines color to black
         
         mlab.view(azimuth=210, elevation=70, distance=300)
-        mlab.savefig(filename + '%d.jpg'%iteration)
+        mlab.savefig(foldpath + '%d.jpg'%iteration)
         mlab.close()
     
     def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:

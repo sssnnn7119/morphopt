@@ -255,10 +255,10 @@ class FEAParams(BaseParams):
     def plot(self):
         pass
         
-    def save_figure(self, filename, iteration) -> None:
+    def save_figure(self, foldpath, iteration) -> None:
         from matplotlib import pyplot as plt
         
         plt.figure()
         self.plot()
-        plt.savefig(filename + '/Pressure_%d.png'% iteration)
+        plt.savefig(foldpath + '/Pressure_%d.png'% iteration)
         plt.close()

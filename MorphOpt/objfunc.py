@@ -6,6 +6,7 @@ import pypardiso
 import MorphOpt
 
 from .baseobject import BaseObject
+
 class ObjectiveFunction(BaseObject):
     """
     The objective functions in MorphOpt.
@@ -183,12 +184,12 @@ class ObjectiveFunction(BaseObject):
         else:
             raise KeyError(f"'{key}' not found in FE_result")
 
-    def save_figure(self, filepath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
+    def save_figure(self, foldpath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
         """
         Save the figures of the FEA results.
 
         Parameters:
-            filepath (str): The path to save the figures.
+            foldpath (str): The path to save the figures.
             iteration (int): The current iteration number.
         """
         ins = self.fe.assembly.get_instance(insname)
@@ -252,5 +253,22 @@ class ObjectiveFunction(BaseObject):
             fig.scene.add_actor(actor)
 
             mlab.view(azimuth=210, elevation=70, distance=300)
-            mlab.savefig(f"{filepath}/task_{case}_iter_{iteration}.png")
+            # Save the figure as a PNG file
+            mlab.savefig(f"{foldpath}/deformation/data/task_{case}_iter_{iteration}.png")
+
+            # Save the deformed mesh as an OBJ file
+            obj_filepath = f"{foldpath}/deformation/data/task_{case}_iter_{iteration}.obj"
+            with open(obj_filepath, 'w') as obj_file:
+                # Write the vertices
+                for i, node in enumerate(deformed_nodes):
+                    obj_file.write(f"v {node[0]} {node[1]} {node[2]}\n")
+                
+                # Write the faces
+                for connection in surface_connections:
+                    for face in connection:
+                        if -1 in face:
+                            continue
+                        # OBJ format uses 1-based indexing
+                        face_indices = " ".join(str(idx + 1) for idx in face)
+                        obj_file.write(f"f {face_indices}\n")
             mlab.close(fig)

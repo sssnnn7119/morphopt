@@ -320,9 +320,9 @@ class Controller:
         """
         Save the figures generated during the optimization process.
         """
-        self.params.save_figure(filepath=self.path_result + '/log/', iteration=self.history.iteration)
+        self.params.save_figure(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
         if self.objfun.fe is not None:
-            self.objfun.save_figure(filepath=self.path_result + '/log/deformation/figures/', iteration=self.history.iteration)
+            self.objfun.save_figure(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
 
     def clear_cache(self) -> None:
         """

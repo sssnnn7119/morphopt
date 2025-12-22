@@ -64,17 +64,16 @@ class Params(BaseObject):
         # self.feamodel.load(foldpath=foldpath + '/loads/data/', iteration=iteration)
         # self.materials.load(foldpath=foldpath + '/materials/data/', iteration=iteration)
         
-    def save_figure(self, filepath: str, iteration: int) -> None:
+    def save_figure(self, foldpath: str, iteration: int) -> None:
         """
         Save the figures of the parameters to a file.
         
         Args:
-            filepath (str): The path to save the figures.
+            foldpath (str): The path to save the figures.
         """
-        self.geometry.save_figure(filename=filepath + '/surfaces/figures/', iteration=iteration)
-        self.feamodel.save_figure(filename=filepath + '/loads/figures/', iteration=iteration)
-        self.materials.save_figure(filename=filepath + '/materials/figures/', iteration=iteration)
-
+        self.geometry.save_figure(foldpath=foldpath + '/surfaces/figures/', iteration=iteration)
+        self.feamodel.save_figure(foldpath=foldpath + '/loads/figures/', iteration=iteration)
+        self.materials.save_figure(foldpath=foldpath + '/materials/figures/', iteration=iteration)
     def export_data(self, filepath: str):
         """
         Export the data of parameters to file(s).

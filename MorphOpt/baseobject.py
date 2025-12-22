@@ -20,3 +20,13 @@ class BaseObject:
             iteration (int): The iteration number to load.
         """
         pass
+
+    def save_figure(self, foldpath: str, iteration: int) -> None:
+        """
+        Save the figure of the objective function to a file.
+        
+        Args:
+            foldpath (str): The path to save the figure.
+            iteration (int): The iteration number to save.
+        """
+        pass
