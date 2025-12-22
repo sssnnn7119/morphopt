@@ -1,14 +1,4 @@
-import os
-import sys
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-sys.path.append(os.getcwd())
-
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-
-
 import MorphOpt
-import torch
 
 class ThisController(MorphOpt.Controller):
     def __init__(self):
@@ -75,7 +65,6 @@ class ThisController(MorphOpt.Controller):
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-
     class Solver(MorphOpt.MorphSolver):
         """
         Solver class for MorphOpt.
@@ -122,8 +111,4 @@ class ThisController(MorphOpt.Controller):
 
     
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
-
-    controller = ThisController()
-    controller.start_optimization()
+    MorphOpt.start_optimization(Controller=ThisController, device='cuda:0')

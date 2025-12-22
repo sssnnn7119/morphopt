@@ -209,7 +209,7 @@ class UpdaterSurfaces(BaseUpdater):
                 if (self._delta_control_points_previous[i].shape[1] != self.params.geometry.surface_list[i].control_points.shape[1]):
                     self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
                 else:
-                    delta_difference = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / np.linalg.norm(delta_control_points[i], axis=0) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
+                    delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / np.linalg.norm(delta_control_points[i], axis=0) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
 
                     index_increase = (delta_difference > -0.5).flatten()
                     index_decrease = (delta_difference <= -0.5).flatten()

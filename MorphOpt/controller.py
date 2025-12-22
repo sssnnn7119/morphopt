@@ -89,44 +89,44 @@ class Controller:
 
         def vendor_package(package_name, target_dir='.'):
             """
-            将指定的Python包源文件复制到目标目录
+            copy the specified package to the target directory.
             
-            参数:
-                package_name: 要复制的包名
-                target_dir: 目标目录，默认为当前目录
+            Args:
+                package_name: The name of the package to copy.
+                target_dir: The target directory, default is the current directory.
             """
             try:
-                # 导入包以获取其安装路径
+                # import the package
                 module = importlib.import_module(package_name)
                 
-                # 获取包的安装目录
+                # get the package path
                 package_path = os.path.dirname(module.__file__)
                 
-                # 构建目标路径
+                # construct the target path
                 target_path = os.path.join(target_dir, package_name)
                 
-                # 如果目标目录已存在，则先删除
+                # if the target directory exists, remove it first
                 if os.path.exists(target_path):
                     if os.path.isfile(target_path):
                         os.remove(target_path)
                     else:
                         shutil.rmtree(target_path)
                 
-                # 复制包文件
+                # copy the package files
                 if os.path.isdir(package_path):
                     shutil.copytree(package_path, target_path)
-                    print(f"成功将包 '{package_name}' 复制到 {target_path}")
+                    print(f"successfully copied package '{package_name}' to {target_path}")
                 else:
                     shutil.copy2(package_path, target_path)
-                    print(f"成功将模块 '{package_name}' 复制到 {target_path}")
+                    print(f"successfully copied module '{package_name}' to {target_path}")
                     
-                # 检查是否有相关的.pth文件或其他元数据需要处理
-                # 对于纯Python包，通常上面的步骤已经足够
+                # Check if there are related .pth files or other metadata that need to be handled
+                # For pure Python packages, the above steps are usually sufficient
                 
             except ImportError:
-                print(f"错误: 找不到包 '{package_name}'，请先安装它")
+                print(f"Error: Package '{package_name}' not found. Please install it first.")
             except Exception as e:
-                print(f"复制过程中发生错误: {str(e)}")
+                print(f"Error occurred during copying: {str(e)}")
         
         self.path_result = self.path_result_folder + '/' + self.opt_label + '_' + 'T' + datetime.datetime.now().strftime(
             "%Y%m%d_%H%M%S") + '/'
@@ -152,7 +152,7 @@ class Controller:
 
         shutil.copytree(os.getcwd(), self.path_result + '/scripts/', ignore=ignore_folder)
 
-        shutil.copy(__main__.__file__, self.path_result + '/scripts/Jobs/MAIN_SCRIPT_FOR_RESTART.py')
+        shutil.copy(__main__.__file__, self.path_result + '/scripts/MAIN_SCRIPT_FOR_RESTART.py')
 
         vendor_package('FEA', target_dir=self.path_result + '/scripts/')
         vendor_package('CPGEO', target_dir=self.path_result + '/scripts/')
@@ -186,11 +186,15 @@ class Controller:
 
         self.path_result = restart_path
         self.initialize()
-        if target_iteration is not None:
-            self.params.load(filepath=self.path_result + '/log/', iteration=target_iteration)
-            self.solver.load(filepath=self.path_result + '/log/', iteration=target_iteration)
-            self.updater.load(filepath=self.path_result + '/log/', iteration=target_iteration)
-            self.history.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
+        self.history.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
+
+        if target_iteration is None:
+            target_iteration = self.history.iteration
+
+        self.params.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
+        self.solver.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
+        self.updater.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
+
         self.opt_loop()
 
     def opt_loop(self) -> None:
@@ -198,23 +202,14 @@ class Controller:
         This function runs the optimization loop for a specified number of iterations.
         It calls the opt_step function in each iteration.
         """
-
-        MorphOpt.controller = self
+        
         while True:
             # Save the current parameters and plot the figures
             self.save()
             self.save_figure()
 
             # Explicitly release large objects to ensure they are collected
-            self.objfun.K_sp = []
-            self.objfun.K_solver = []
-            self.objfun.U = None
-            self.objfun.ADJu = None
-            self.objfun.fe = None
-
-            torch.cuda.empty_cache()
-            data = gc.collect()
-            print(f"Garbage collector: collected {data} objects.")
+            self.clear_cache()
 
             seed_size0 = self.params.geometry.fea_seed_size
             max_iter_before_regenerate0 = self.params.geometry._max_iter_before_regenerate
@@ -227,7 +222,7 @@ class Controller:
                     print('Error occurred during optimization step: %s' % str(e))
                     self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
                     self.params.geometry._max_iter_before_regenerate = 1
-                    self.params.load(filepath=self.path_result + '/log/', iteration=self.history.iteration)
+                    self.params.load(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
                     self.params.reinitialize(iteration = 0)
             self.params.geometry.fea_seed_size = seed_size0
             self.params.geometry._max_iter_before_regenerate = max_iter_before_regenerate0
@@ -329,3 +324,16 @@ class Controller:
         if self.objfun.fe is not None:
             self.objfun.save_figure(filepath=self.path_result + '/log/deformation/figures/', iteration=self.history.iteration)
 
+    def clear_cache(self) -> None:
+        """
+        Clear the cache directory.
+        """
+        self.objfun.K_sp = []
+        self.objfun.K_solver = []
+        self.objfun.U = None
+        self.objfun.ADJu = None
+        self.objfun.fe = None
+
+        torch.cuda.empty_cache()
+        data = gc.collect()
+        print(f"Garbage collector: collected {data} objects.")
