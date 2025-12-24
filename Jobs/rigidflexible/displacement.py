@@ -1,9 +1,9 @@
 import os
 import sys
+
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
-from tkinter.tix import Tree
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -14,7 +14,7 @@ import MorphOpt
 class ThisController(MorphOpt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results', 
-                         opt_label='EXAMPLE')
+                         opt_label='RIGID')
 
     class ObjectiveFunction(MorphOpt.ObjectiveFunction):
         def get_objective(self, *args, **kwargs):
@@ -25,25 +25,26 @@ class ThisController(MorphOpt.Controller):
 
             loss1 = 0*torch.clamp(1.2-self.U[0][GC_start + 4], min=0)**3
             loss11 = self.U[5][GC_start + 4]
+            loss111 = self.U[6][GC_start + 4]
             loss2 = self.U[1][GC_start + 3]
             loss3 = -self.U[2][GC_start + 3]
             loss4 = self.U[3][GC_start + 5]
             loss5 = -self.U[4][GC_start + 5]
-            return loss1 + loss2 + loss3 + loss4 + loss5 + loss11
+            return loss1 + loss2 + loss3 + loss4 + loss5 + loss11 + loss111
 
     class Params(MorphOpt.Params):
         class GeometryParams(MorphOpt.GeometryParams):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4], reinitialize_per_iter=3, fea_seed_size=1.5, fea_mesh_order=1)
+                super().__init__(reinitialize_per_iter=3, fea_seed_size=1.4, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=10.,
                                                             length=80.,
                                                             seed_size=0.8,
                                                             symmetric=[0, [1]],
-                                                            flip=False, maxR=0.1, maxC=2.0, maxFF=0.2, perturbation_L=12.))
+                                                            flip=False, maxR=0.1, maxC=2.0, maxFF=0.2))
                 
                 # self.add_surface(
                 #     self.CPGEO.initialize_Sphere(seed_size=0.8,
@@ -53,20 +54,19 @@ class ThisController(MorphOpt.Controller):
                 #                                  MaxC=0.8))
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,20.],
-                                                MaxC=0.8))
+                                                MaxC=1.0))
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,60.],
-                                                MaxC=0.8))
+                                                MaxC=1.0))
                 
-                self.if_update = [False, True, True]
 
 
         class FEAParams(MorphOpt.FEAParams):
@@ -92,24 +92,27 @@ class ThisController(MorphOpt.Controller):
                                         name='moment_1')
 
             def define_steps(self):
-                self.set_step_num(6)
+                self.set_step_num(7)
                 # self.set_step_params(0, "pressure_1", [0.0])
                 self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
 
                 # self.set_step_params(1, "pressure_1", [0.0])
-                self.set_step_params(1, "moment_1", [40., 0.0, 0.0])
+                self.set_step_params(1, "moment_1", [100., 0.0, 0.0])
                 
                 # self.set_step_params(2, "pressure_1", [0.0])
-                self.set_step_params(2, "moment_1", [-40., 0.0, 0.0])
+                self.set_step_params(2, "moment_1", [-100., 0.0, 0.0])
 
                 # self.set_step_params(3, "pressure_1", [0.0])
-                self.set_step_params(3, "moment_1", [0.0, 0.0, 40.])
+                self.set_step_params(3, "moment_1", [0.0, 0.0, 100.])
                 
                 # self.set_step_params(4, "pressure_1", [0.0])
-                self.set_step_params(4, "moment_1", [0.0, 0.0, -40.])
+                self.set_step_params(4, "moment_1", [0.0, 0.0, -100.])
 
                 # self.set_step_params(5, "pressure_1", [0.0])
-                self.set_step_params(5, "moment_1", [0.0, -40.0, 0.0])
+                self.set_step_params(5, "moment_1", [0.0, -100.0, 0.0])
+
+                # self.set_step_params(5, "pressure_1", [0.0])
+                self.set_step_params(6, "moment_1", [0.0, 100.0, 0.0])
 
         class MaterialParams(MorphOpt.Materials):
             
@@ -150,8 +153,7 @@ class ThisController(MorphOpt.Controller):
             def __init__(self, params: MorphOpt.Params):
 
                 super().__init__(
-                    params=params,
-                    max_step_iter=100)
+                    params=params)
 
                 shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
                 self.add_objective_function(shape_derivative)
@@ -166,10 +168,6 @@ class ThisController(MorphOpt.Controller):
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
 
-    
+                self.if_update = [False, True, True]
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
-
-    controller = ThisController()
-    controller.start_optimization()
+    MorphOpt.start_optimization(Controller=ThisController)

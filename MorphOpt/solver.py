@@ -46,12 +46,15 @@ class MorphSolver(BaseObject):
         list[list[int]]: A list of task indices for each process.
         """
 
+        self.pools = None
+
     def initialize(self):
         if self.task_index_list is None:
             self.task_index_list = []
             for i in range(MorphOpt.controller.params.feamodel.num_load_steps):
                 self.task_index_list.append([i])
 
+        self.pools = mp.Pool(processes=self.num_process)
 
     def reinitialize(self, iteration: int) -> None:
         """
@@ -80,7 +83,7 @@ class MorphSolver(BaseObject):
 
         # multiprocess FEA
         # self._solve_FEA(MorphOpt.controller.objfun.inp, self.params.loads, 0, self.available_gpus)
-        pools = mp.Pool(processes=self.num_process)
+        pools = self.pools
         result = []
         for i in range(len(self.task_index_list)):
             result.append(
@@ -90,8 +93,6 @@ class MorphSolver(BaseObject):
                                                     'step_index': i, 
                                                     'task_index': self.task_index_list[i],
                                                     'available_gpus': self.available_gpus}))
-        pools.close()
-        pools.join()
 
         # get the result
         U0 = []

@@ -16,7 +16,7 @@ class UpdaterSurfaces(BaseUpdater):
     """
     from . import objectivefuncs
 
-    def __init__(self, params: Params, max_step_iter: int, max_step_length: float = 0.5, reset_sensitivity_scaler_per_iter: int = 1) -> None:
+    def __init__(self, params: Params, max_step_iter: int = 50, max_step_length: float = 0.5, reset_sensitivity_scaler_per_iter: int = 1) -> None:
         """
         Initialize the Updater class with the given parameters.
         
@@ -90,7 +90,7 @@ class UpdaterSurfaces(BaseUpdater):
         The increase factor for the step length relative to the maximum step length.
         """
  
-        self.if_update = []
+        self.if_update: list[float] = None
         """
         A list indicating whether each surface needs to be updated.
         True means the surface needs to be updated, False means it does not.
@@ -174,7 +174,8 @@ class UpdaterSurfaces(BaseUpdater):
             for i in range(self.params_update.num_surface):
                 self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max * 0.5)
 
-        self.if_update = [True for _ in range(self.params.geometry.num_surface)]
+        if self.if_update is None:
+            self.if_update = [True for _ in range(self.params.geometry.num_surface)]
 
 
     def _initialize_objectives(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
@@ -209,7 +210,7 @@ class UpdaterSurfaces(BaseUpdater):
                 if (self._delta_control_points_previous[i].shape[1] != self.params.geometry.surface_list[i].control_points.shape[1]):
                     self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
                 else:
-                    delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / np.linalg.norm(delta_control_points[i], axis=0) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
+                    delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / (np.linalg.norm(delta_control_points[i], axis=0)) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
                     delta_difference[np.isnan(delta_difference)] = 0.0
 
                     index_increase = (delta_difference > -0.5).flatten()
@@ -218,9 +219,9 @@ class UpdaterSurfaces(BaseUpdater):
                                                                           max=self._max_step_length_max)
                     self._max_step_length[i][index_decrease] = torch.clamp(self._max_step_length[i][index_decrease] * self._step_length_decay,
                                                                           min=self._max_step_length_max * self._step_length_min_ratio)
-
-                if not self.if_update[i]:
-                    self._max_step_length[i] *= 0.0
+        for i in range(len(self._max_step_length)):
+            if not self.if_update[i]:
+                self._max_step_length[i] *= 0.0
 
     def closure(self, x: torch.Tensor, return_list=False) -> float:
         """

@@ -13,7 +13,6 @@ import numpy as np
 
 import time
 import gc
-import __main__
 import MorphOpt
 
 class Controller:
@@ -78,7 +77,12 @@ class Controller:
         History: An instance of the History class from the History module to record the optimization history.
         """
 
-    def initialize_path(self) -> None:
+        self.restart_per_iteration: int = 20
+        """
+        The frequency of restarting the optimization process.
+        """
+
+    def initialize_path(self, main_filepath: str = None) -> None:
         """
         Initialize the workflow by importing necessary modules and setting up the environment.
         """
@@ -152,7 +156,11 @@ class Controller:
 
         shutil.copytree(os.getcwd(), self.path_result + '/scripts/', ignore=ignore_folder)
 
-        shutil.copy(__main__.__file__, self.path_result + '/scripts/MAIN_SCRIPT_FOR_RESTART.py')
+        if main_filepath is not None:
+            shutil.copy(main_filepath, self.path_result + '/scripts/MAIN_SCRIPT_FOR_RESTART.py')
+        else:
+            import __main__
+            shutil.copy(__main__.__file__, self.path_result + '/scripts/MAIN_SCRIPT_FOR_RESTART.py')
 
         vendor_package('FEA', target_dir=self.path_result + '/scripts/')
         vendor_package('CPGEO', target_dir=self.path_result + '/scripts/')
@@ -177,8 +185,8 @@ class Controller:
         self.objfun.initialize()
         self.history.initialize()
 
-    def start_optimization(self) -> None:
-        self.initialize_path()
+    def start_optimization(self, main_filepath: str = None) -> None:
+        self.initialize_path(main_filepath=main_filepath)
         self.initialize()
         self.opt_loop()
 
@@ -195,6 +203,8 @@ class Controller:
         self.solver.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
         self.updater.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
 
+        self.history.iteration += 1
+
         self.opt_loop()
 
     def opt_loop(self) -> None:
@@ -204,9 +214,6 @@ class Controller:
         """
         
         while True:
-            # Save the current parameters and plot the figures
-            self.save()
-            self.save_figure()
 
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
@@ -232,6 +239,14 @@ class Controller:
             
             # Print the information
             self.print_info(t0, t1, t2, t3)
+
+            # Save the current parameters and plot the figures
+            self.save()
+            self.save_figure()
+            
+            if self.restart_per_iteration > 0 and (self.history.iteration+1) % self.restart_per_iteration == 0:
+                print(f"Restarting optimization at iteration {self.history.iteration} to free up resources.")
+                return
             
             self.history.iteration += 1
             

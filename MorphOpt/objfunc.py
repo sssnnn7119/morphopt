@@ -254,7 +254,7 @@ class ObjectiveFunction(BaseObject):
 
             mlab.view(azimuth=210, elevation=70, distance=300)
             # Save the figure as a PNG file
-            mlab.savefig(f"{foldpath}/deformation/data/task_{case}_iter_{iteration}.png")
+            mlab.savefig(f"{foldpath}/deformation/figures/task_{case}_iter_{iteration}.png")
 
             # Save the deformed mesh as an OBJ file
             obj_filepath = f"{foldpath}/deformation/data/task_{case}_iter_{iteration}.obj"
