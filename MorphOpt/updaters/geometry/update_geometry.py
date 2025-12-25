@@ -332,3 +332,12 @@ class UpdaterGeometries(BaseUpdater):
         self._update_step_length(delta_control_points=delta_control_points)
 
         self._delta_control_points_previous = [cp.copy() for cp in delta_control_points]
+
+    def save(self, foldpath, iteration):
+        step_length_numpy = [self._max_step_length[i].detach().cpu().numpy() for i in range(len(self._max_step_length))]
+        data = np.savez(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz", *step_length_numpy)
+
+    def load(self, foldpath, iteration):
+        data = np.load(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz")
+        for i in range(len(self._max_step_length)):
+            self._max_step_length[i] = torch.tensor(data['arr_%d' % i]).to(self.params_update.surface_list[i].model.control_points.device)

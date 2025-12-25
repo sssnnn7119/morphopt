@@ -217,8 +217,4 @@ class ThisController(MorphOpt.Controller):
 
     
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cuda')
-
-    controller = ThisController()
-    controller.start_optimization()
+    MorphOpt.start_optimization(Controller=ThisController, device='cuda:0')

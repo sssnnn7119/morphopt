@@ -247,9 +247,4 @@ class ThisController(MorphOpt.Controller):
                     self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
     
 if __name__ == '__main__':
-    # Unify default dtype with grasp.py
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cpu')
-
-    controller = ThisController()
-    controller.start_optimization()
+    MorphOpt.start_optimization(Controller=ThisController, device='cuda:0')

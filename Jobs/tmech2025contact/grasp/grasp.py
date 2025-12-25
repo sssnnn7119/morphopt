@@ -320,8 +320,4 @@ class ThisController(MorphOpt.Controller):
                     self.objectivefuncs.boundarys.Cylinder(radius=12., height=120., bottom=0.))
     
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device('cuda')
-
-    controller = ThisController()
-    controller.start_optimization()
+    MorphOpt.start_optimization(Controller=ThisController, device='cuda:0')
