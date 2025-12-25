@@ -47,12 +47,6 @@ class ObjectiveFunction(BaseObject):
         [shape: (num_tasks,)]
         """
 
-    def initialize(self, *args, **kwargs) -> None:
-        """
-        Initialize the objective function.
-        """
-        pass
-
     def get_objective(self, *args, **kwargs) -> torch.Tensor:
         """
         Get the value of the objective function.
@@ -79,6 +73,9 @@ class ObjectiveFunction(BaseObject):
         Get the number of tasks.
         """
         return self.U.shape[0]
+    
+    def pathlog_required(self):
+        return ['deformation']
 
     def calculate_adjoint(self, *args, **kwargs) -> torch.Tensor:
         """
@@ -184,7 +181,7 @@ class ObjectiveFunction(BaseObject):
         else:
             raise KeyError(f"'{key}' not found in FE_result")
 
-    def save_figure(self, foldpath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
+    def save(self, foldpath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
         """
         Save the figures of the FEA results.
 
@@ -254,10 +251,10 @@ class ObjectiveFunction(BaseObject):
 
             mlab.view(azimuth=210, elevation=70, distance=300)
             # Save the figure as a PNG file
-            mlab.savefig(f"{foldpath}/deformation/figures/task_{case}_iter_{iteration}.png")
+            mlab.savefig(f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.png")
 
             # Save the deformed mesh as an OBJ file
-            obj_filepath = f"{foldpath}/deformation/data/task_{case}_iter_{iteration}.obj"
+            obj_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.obj"
             with open(obj_filepath, 'w') as obj_file:
                 # Write the vertices
                 for i, node in enumerate(deformed_nodes):

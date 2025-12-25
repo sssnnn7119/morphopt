@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import MorphOpt
-from .geometrysurface.basesurfaceinterface import BaseInterface
+from .geometryinterfaces.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 
 class MeshQualityOptimizer:
@@ -109,9 +109,9 @@ class GeometryParams(BaseParams):
     """
     Class to handle the surfaces of the morphable model.
     """
-    from .geometrysurface.cssurfaceinterface import CsInterface as CS
-    from .geometrysurface.bspsurfaceinterface import BspInterface as BSP
-    from .geometrysurface.cpgeosurfaceinterface import CPGEOSurfaceInterface as CPGEO
+    from .geometryinterfaces.cssurfaceinterface import CsInterface as CS
+    from .geometryinterfaces.bspsurfaceinterface import BspInterface as BSP
+    from .geometryinterfaces.cpgeosurfaceinterface import CPGEOSurfaceInterface as CPGEO
 
     def __init__(self, fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """
@@ -209,6 +209,9 @@ class GeometryParams(BaseParams):
         """
         num_vars = [self.surface_list[i].num_variables for i in range(self.num_surface)]
         return num_vars
+
+    def pathlog_required(self):
+        return ['geometry']
 
     def get_geometry_values(self) -> list[torch.Tensor]:
         """
@@ -336,24 +339,8 @@ class GeometryParams(BaseParams):
 
     def save(self, foldpath, iteration) -> None:
         for i in range(self.num_surface):
-            self.surface_list[i].save(foldpath + '/Surface-%d_iter-%d' %
+            self.surface_list[i].save(foldpath + self.pathlog_required()[0] + '/Surface-%d_iter-%d' %
                               (i, iteration))
-
-    def load(self, foldpath, iteration):
-        for i in range(self.num_surface):
-            self.surface_list[i].load(foldpath + '/Surface-%d_iter-%d' %
-                              (i, iteration))
-            # self.surface_list[i].initialize()
-            
-    def plot(self):
-        for sf in range(self.num_surface):
-            if sf == 0:
-                alpha = 0.6
-            else:
-                alpha = 1
-            self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
-
-    def save_figure(self, foldpath, iteration) -> None:
         from mayavi import mlab
 
         fig = mlab.figure(bgcolor=(1, 1, 1), size=(800, 800))
@@ -383,8 +370,23 @@ class GeometryParams(BaseParams):
         axes.axes.property.color = (0, 0, 0)       # Set axes lines color to black
         
         mlab.view(azimuth=210, elevation=70, distance=300)
-        mlab.savefig(foldpath + '%d.jpg'%iteration)
+        mlab.savefig(foldpath + self.pathlog_required()[0] + '/%d.jpg'%iteration)
         mlab.close()
+
+        
+    def load(self, foldpath, iteration):
+        for i in range(self.num_surface):
+            self.surface_list[i].load(foldpath + self.pathlog_required()[0] + '/Surface-%d_iter-%d' %
+                              (i, iteration))
+            # self.surface_list[i].initialize()
+            
+    def plot(self):
+        for sf in range(self.num_surface):
+            if sf == 0:
+                alpha = 0.6
+            else:
+                alpha = 1
+            self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255))
     
     def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
         """

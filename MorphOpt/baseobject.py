@@ -1,6 +1,23 @@
 
 
 class BaseObject:
+
+    def initialize(self, *args, **kwargs) -> None:
+        """
+        Initialize the class.
+        
+        This method should be implemented in subclasses to initialize specific attributes.
+        """
+        pass
+
+    def reinitialize(self, iteration: int, *args, **kwargs) -> None:
+        """
+        reInitialize the class.
+        
+        This method should be implemented in subclasses to reinitialize specific attributes.
+        """
+        pass
+
     def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the objective function data to a file.
@@ -20,13 +37,12 @@ class BaseObject:
             iteration (int): The iteration number to load.
         """
         pass
-
-    def save_figure(self, foldpath: str, iteration: int) -> None:
+    
+    def pathlog_required(self) -> list[str]:
         """
-        Save the figure of the objective function to a file.
+        Allocate the path for saving data.
         
         Args:
-            foldpath (str): The path to save the figure.
-            iteration (int): The iteration number to save.
+            foldpath (str): The path to allocate.
         """
-        pass
+        return []

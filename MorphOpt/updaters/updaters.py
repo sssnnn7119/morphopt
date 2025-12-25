@@ -3,7 +3,7 @@ import torch
 
 from ..baseobject import BaseObject
 
-from .surface.update_surfaces import UpdaterSurfaces
+from .geometry.update_geometry import UpdaterGeometries
 
 
 class Updaters(BaseObject):
@@ -11,7 +11,7 @@ class Updaters(BaseObject):
     This class is responsible for updating the morphologies of the neurons.
     """
 
-    def __init__(self, surfaces:UpdaterSurfaces=None, *args, **kwargs):
+    def __init__(self, surfaces:UpdaterGeometries=None, *args, **kwargs):
         """
         Initialize the Updaters class with a neuron object.
 
@@ -20,7 +20,7 @@ class Updaters(BaseObject):
             loads (UpdaterLoads, optional): An instance of the UpdaterLoads class for updating the loads.
             materials (UpdaterMaterials, optional): An instance of the UpdaterMaterials class for updating the materials.
         """
-        self._surface: UpdaterSurfaces = None
+        self._surface: UpdaterGeometries = None
         """
         UpdaterSurfaces: An instance of the UpdaterSurfaces class for updating the surfaces.
         """
@@ -72,4 +72,11 @@ class Updaters(BaseObject):
         Save the updater state to a file.
         """
         if self.if_update_surface:
-            self._surface.save(filename=foldpath + '/updaters/', iteration=iteration)
+            self._surface.save(foldpath=foldpath, iteration=iteration)
+
+
+    def pathlog_required(self):
+        paths = []
+        if self.if_update_surface:
+            paths += self._surface.pathlog_required()
+        return paths

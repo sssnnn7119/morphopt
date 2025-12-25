@@ -87,10 +87,6 @@ class Controller:
         Initialize the workflow by importing necessary modules and setting up the environment.
         """
 
-        def _initialize_path_log(name: str, path_result: str) -> None:
-            os.makedirs(path_result + '/log/%s/data'%(name))
-            os.makedirs(path_result + '/log/%s/figures'%(name))
-
         def vendor_package(package_name, target_dir='.'):
             """
             copy the specified package to the target directory.
@@ -137,10 +133,13 @@ class Controller:
             
         # create the result path if it does not exist
         os.makedirs(self.path_result + '/cache/')
-        _initialize_path_log('surfaces', self.path_result)
-        _initialize_path_log('loads', self.path_result)
-        _initialize_path_log('materials', self.path_result)
-        _initialize_path_log('deformation', self.path_result)
+        pathlog_list = []
+        pathlog_list += self.params.pathlog_required()
+        pathlog_list += self.solver.pathlog_required()
+        pathlog_list += self.updater.pathlog_required()
+        pathlog_list += self.objfun.pathlog_required()
+        for pathlog in pathlog_list:
+            os.makedirs(self.path_result + '/log/' + pathlog)
 
         os.makedirs(self.path_result + '/fea')
 
@@ -186,8 +185,9 @@ class Controller:
         self.history.initialize()
 
     def start_optimization(self, main_filepath: str = None) -> None:
-        self.initialize_path(main_filepath=main_filepath)
+        
         self.initialize()
+        self.initialize_path(main_filepath=main_filepath)
         self.opt_loop()
 
     def restart_optimization(self, restart_path: str, target_iteration: int = None) -> None:
@@ -242,7 +242,6 @@ class Controller:
 
             # Save the current parameters and plot the figures
             self.save()
-            self.save_figure()
             
             if self.restart_per_iteration > 0 and (self.history.iteration+1) % self.restart_per_iteration == 0:
                 print(f"Restarting optimization at iteration {self.history.iteration} to free up resources.")
@@ -269,6 +268,7 @@ class Controller:
         self.params.reinitialize(iteration = self.history.iteration)
         self.solver.reinitialize(iteration = self.history.iteration)
         self.updater.reinitialize(iteration = self.history.iteration)
+        self.objfun.reinitialize(iteration = self.history.iteration)
 
         # Perform the optimization step
         # Generate the model
@@ -330,14 +330,7 @@ class Controller:
         self.solver.save(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
         self.updater.save(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
         self.history.save(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
-        
-    def save_figure(self) -> None:
-        """
-        Save the figures generated during the optimization process.
-        """
-        self.params.save_figure(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
-        if self.objfun.fe is not None:
-            self.objfun.save_figure(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
+        self.objfun.save(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
 
     def clear_cache(self) -> None:
         """

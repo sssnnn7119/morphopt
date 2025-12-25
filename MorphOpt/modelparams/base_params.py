@@ -1,9 +1,9 @@
 
 
 import torch
+from ..baseobject import BaseObject
 
-
-class BaseParams:
+class BaseParams(BaseObject):
     """
     Base class for all parameter classes.
     """
@@ -78,26 +78,6 @@ class BaseParams:
             list[torch.Tensor]: The parameters of the class.
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
-
-    def save(self, foldpath: str, iteration: int) -> None:
-        """
-        Save the parameters to a file.
-        
-        Args:
-            foldpath (str): The name of the file to save the parameters to.
-            iteration (int): The iteration number to save.
-        """
-        pass
-
-    def load(self, foldpath: str, iteration: int) -> None:
-        """
-        Load the parameters from a file.
-        
-        Args:
-            foldpath (str): The name of the file to load the parameters from.
-            iteration (int): The iteration number to load.
-        """
-        pass
     
     def plot(self) -> None:
         """
@@ -106,16 +86,6 @@ class BaseParams:
         This method should be implemented in subclasses to plot specific parameters.
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
-    
-    def save_figure(self, foldpath: str, iteration: int) -> None:
-        """
-        Save the figure of the parameters to a file.
-        
-        Args:
-            foldpath (str): The path to save the figure to.
-            iteration (int): The iteration number to save.
-        """
-        pass
 
     def _export_data(self, foldpath: str):
         """

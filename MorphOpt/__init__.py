@@ -2,7 +2,7 @@
 from .controller import Controller
 from .modelparams import GeometryParams, FEAParams, Materials
 from .solver import MorphSolver
-from .updaters.surface import UpdaterSurfaces
+from .updaters.geometry import UpdaterGeometries
 from .updaters.updaters import Updaters
 from .modelparams import Params
 from .objfunc import ObjectiveFunction
@@ -24,7 +24,7 @@ __all__ = [
     "FEAParams",
     "Materials",
     "MorphSolver",
-    "UpdaterSurfaces",
+    "UpdaterGeometries",
     "Updaters",
     "Params",
     "ObjectiveFunction",

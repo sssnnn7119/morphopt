@@ -192,7 +192,7 @@ class ThisController(MorphOpt.Controller):
             super().__init__(surfaces=self.UpdaterSurfaces(params=params),
                             loads=None, *args, **kwargs)
 
-        class UpdaterSurfaces(MorphOpt.UpdaterSurfaces):
+        class UpdaterSurfaces(MorphOpt.UpdaterGeometries):
             """
             Updater class for MorphOpt.
             This class is responsible for updating the design variables based on the results of the optimization process.

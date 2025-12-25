@@ -49,9 +49,9 @@ class Params(BaseObject):
         Args:
             foldpath (str): The path to save the parameters.
         """
-        self.geometry.save(foldpath=foldpath + '/surfaces/data/', iteration=iteration)
-        self.feamodel.save(foldpath=foldpath + '/loads/data/', iteration=iteration)
-        self.materials.save(foldpath=foldpath + '/materials/data/', iteration=iteration)
+        self.geometry.save(foldpath=foldpath, iteration=iteration)
+        self.feamodel.save(foldpath=foldpath, iteration=iteration)
+        self.materials.save(foldpath=foldpath, iteration=iteration)
 
     def load(self, foldpath: str, iteration: int) -> None:
         """
@@ -60,20 +60,10 @@ class Params(BaseObject):
         Args:
             foldpath (str): The path to load the parameters from.
         """
-        self.geometry.load(foldpath=foldpath + '/surfaces/data/', iteration=iteration)
-        # self.feamodel.load(foldpath=foldpath + '/loads/data/', iteration=iteration)
-        # self.materials.load(foldpath=foldpath + '/materials/data/', iteration=iteration)
-        
-    def save_figure(self, foldpath: str, iteration: int) -> None:
-        """
-        Save the figures of the parameters to a file.
-        
-        Args:
-            foldpath (str): The path to save the figures.
-        """
-        self.geometry.save_figure(foldpath=foldpath + '/surfaces/figures/', iteration=iteration)
-        self.feamodel.save_figure(foldpath=foldpath + '/loads/figures/', iteration=iteration)
-        self.materials.save_figure(foldpath=foldpath + '/materials/figures/', iteration=iteration)
+        self.geometry.load(foldpath=foldpath, iteration=iteration)
+        # self.feamodel.load(foldpath=foldpath, iteration=iteration)
+        # self.materials.load(foldpath=foldpath, iteration=iteration)
+
     def export_data(self, filepath: str):
         """
         Export the data of parameters to file(s).
@@ -84,3 +74,16 @@ class Params(BaseObject):
         self.geometry._export_data(filepath=filepath)
         self.feamodel._export_data(foldpath=filepath)
         self.materials._export_data(foldpath=filepath)
+
+    def pathlog_required(self) -> list[str]:
+        """
+        Allocate the path for saving data.
+        
+        Args:
+            foldpath (str): The path to allocate.
+        """
+        paths = []
+        paths += self.geometry.pathlog_required()
+        paths += self.feamodel.pathlog_required()
+        paths += self.materials.pathlog_required()
+        return paths

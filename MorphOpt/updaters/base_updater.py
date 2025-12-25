@@ -4,9 +4,9 @@ import torch
 from ..modelparams.base_params import BaseParams
 from ..modelparams.params import Params
 from . import optimizer
+from ..baseobject import BaseObject
 
-
-class BaseUpdater:
+class BaseUpdater(BaseObject):
     """
     Base class for all Updaters.
     """
@@ -106,11 +106,5 @@ class BaseUpdater:
     def update_variables(self, dx: torch.Tensor) -> None:
         """
         Update the variables of the surfaces.
-        """
-        pass
-
-    def save(self, filename: str, iteration: int) -> None:
-        """
-        Save the updater state to a file.
         """
         pass

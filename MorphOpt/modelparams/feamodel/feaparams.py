@@ -228,37 +228,3 @@ class FEAParams(BaseParams):
                 updated_params = current_params + change_slice
                 load_step[key] = updated_params.detach().cpu().tolist()
                 ind_now += num_vars
-
-    def save(self, foldpath, iteration) -> None:
-        """
-        Save the loads to a file.
-        """
-        params = self.get_parameters()
-        params = [p.detach().cpu().numpy() for p in params]
-        np.savez(foldpath + '/loads_iter-%d.npz'% iteration, *params)
-
-    def load(self, foldpath: str, iteration: int) -> None:
-        """
-        Load the loads from a file.
-
-        Args:
-            foldpath (str): The path to the file.
-            iteration (int): The iteration number.
-        """
-        data = np.load(foldpath + '/loads_iter-%d.npz'% iteration)
-        params = self.get_parameters()
-        key_list = list(self.feainterfaces.keys())
-        for i in range(len(params)):
-            params[i].data = torch.tensor(data['arr_%d'%i]).reshape(params[i].shape)
-        self.set_parameters(params)
-        
-    def plot(self):
-        pass
-        
-    def save_figure(self, foldpath, iteration) -> None:
-        from matplotlib import pyplot as plt
-        
-        plt.figure()
-        self.plot()
-        plt.savefig(foldpath + '/Pressure_%d.png'% iteration)
-        plt.close()

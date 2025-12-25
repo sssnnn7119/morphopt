@@ -9,7 +9,7 @@ from ...modelparams import GeometryParams, FEAParams, Materials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
 
-class UpdaterSurfaces(BaseUpdater):
+class UpdaterGeometries(BaseUpdater):
     """
     The Updater class is responsible for updating the parameters of the optimization process.
     It contains methods to update the parameters based on the optimization algorithm used.
@@ -33,13 +33,13 @@ class UpdaterSurfaces(BaseUpdater):
         The maximum number of iterations for the sub-optimization process.
         """
 
-        self.constraints_funcs: dict[str, UpdaterSurfaces.objectivefuncs.BaseConstraints] = {}
+        self.constraints_funcs: dict[str, UpdaterGeometries.objectivefuncs.BaseConstraints] = {}
         """
         A list of penalty functions to be optimized. \n
         L = sum_{i=1}^{n} w_i * f_i(x)
         """
 
-        self.obj_funcs: dict[str, UpdaterSurfaces.objectivefuncs.BaseObjective] = {}
+        self.obj_funcs: dict[str, UpdaterGeometries.objectivefuncs.BaseObjective] = {}
         """
         A list of objective functions to be optimized. \n
         L = sum_{i=1}^{n} w_i * f_i(x)
@@ -96,6 +96,8 @@ class UpdaterSurfaces(BaseUpdater):
         True means the surface needs to be updated, False means it does not.
         """
 
+    def pathlog_required(self):
+        return ['geometryupdater']
 
     def add_constraints(self,
                                obj_func: objectivefuncs.basefuncs,
