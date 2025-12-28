@@ -169,4 +169,4 @@ class ThisController(MorphOpt.Controller):
 
                 self.if_update = [False, True, True]
 if __name__ == '__main__':
-    MorphOpt.start_optimization(Controller=ThisController, device='cuda:0')
+    MorphOpt.start_optimization(device='cuda:0')

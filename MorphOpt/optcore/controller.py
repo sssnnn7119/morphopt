@@ -190,9 +190,9 @@ class Controller:
         self.initialize_path(main_filepath=main_filepath)
         self.opt_loop()
 
-    def restart_optimization(self, restart_path: str, target_iteration: int = None) -> None:
+    def restart_optimization(self, path_result: str, target_iteration: int = None) -> None:
 
-        self.path_result = restart_path
+        self.path_result = path_result
         self.initialize()
         self.history.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
 
@@ -219,20 +219,11 @@ class Controller:
             self.clear_cache()
 
             seed_size0 = self.params.geometry.fea_seed_size
-            max_iter_before_regenerate0 = self.params.geometry._max_iter_before_regenerate
+            self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.0)
+
+            loss, t0, t1, t2, t3 = self.step()
             
-            while True:
-                try:
-                    loss, t0, t1, t2, t3 = self.step()
-                    break
-                except Exception as e:
-                    print('Error occurred during optimization step: %s' % str(e))
-                    self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
-                    self.params.geometry._max_iter_before_regenerate = 1
-                    self.params.load(foldpath=self.path_result + '/log/', iteration=self.history.iteration-1)
-                    self.params.reinitialize(iteration = 0)
             self.params.geometry.fea_seed_size = seed_size0
-            self.params.geometry._max_iter_before_regenerate = max_iter_before_regenerate0
 
             # Record the history of the optimization process
             self.record_history(loss, t0, t1, t2, t3)
@@ -244,7 +235,6 @@ class Controller:
             self.save()
             
             if self.restart_per_iteration > 0 and (self.history.iteration+1) % self.restart_per_iteration == 0:
-                print(f"Restarting optimization at iteration {self.history.iteration} to free up resources.")
                 return
             
             self.history.iteration += 1

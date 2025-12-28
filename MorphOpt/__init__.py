@@ -11,7 +11,7 @@ from .optcore.baseobject import BaseObject
 from .optcore.utils.plot_history_surface import SurfacesFigurePlotter
 # endregion
 
-from .startoptimization import restart_optimization, start_optimization
+from .startoptimization import start_optimization, debug_optimization
 
 
 
