@@ -1,20 +1,20 @@
-# region basic imports
-from .controller import Controller
-from .modelparams import GeometryParams, FEAParams, Materials
-from .solver import MorphSolver
-from .updaters.geometry import UpdaterGeometries
-from .updaters.updaters import Updaters
-from .modelparams import Params
-from .objfunc import ObjectiveFunction
-from .history import History
-from .baseobject import BaseObject
+# region optcore imports
+from .optcore.controller import Controller
+from .optcore.modelparams import GeometryParams, FEAParams, Materials
+from .optcore.solver import MorphSolver
+from .optcore.updaters.geometry import UpdaterGeometries
+from .optcore.updaters.updaters import Updaters
+from .optcore.modelparams import Params
+from .optcore.objfunc import ObjectiveFunction
+from .optcore.history import History
+from .optcore.baseobject import BaseObject
+from .optcore.utils.plot_history_surface import SurfacesFigurePlotter
+# endregion
 
 from .startoptimization import restart_optimization, start_optimization
-# endregion
 
-# region utility imports
-from .utils.plot_history_surface import SurfacesFigurePlotter
-# endregion
+
+
 
 controller: Controller = None
 

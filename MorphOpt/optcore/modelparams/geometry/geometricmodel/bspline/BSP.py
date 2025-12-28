@@ -10,7 +10,7 @@ import ctypes
 import numpy as np
 import time
 import torch
-from ..Surface_Base import Surface_Base
+from ..basesurfacemodel import Surface_Base
 
 
 class BSP():

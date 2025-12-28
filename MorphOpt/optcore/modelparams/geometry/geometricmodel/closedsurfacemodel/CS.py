@@ -11,7 +11,7 @@ from mayavi import mlab
 
 import vtk
 
-from ..Surface_Base import Surface_Base
+from ..basesurfacemodel import Surface_Base
 
 current_path = os.path.dirname(os.path.abspath(__file__))
 

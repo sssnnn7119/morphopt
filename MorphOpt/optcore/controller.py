@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Params, MorphSolver, Updaters, ObjectiveFunction
+    from .. import Params, MorphSolver, Updaters, ObjectiveFunction
 from .history import History
 import datetime
 import importlib
@@ -229,7 +229,7 @@ class Controller:
                     print('Error occurred during optimization step: %s' % str(e))
                     self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.2)
                     self.params.geometry._max_iter_before_regenerate = 1
-                    self.params.load(foldpath=self.path_result + '/log/', iteration=self.history.iteration)
+                    self.params.load(foldpath=self.path_result + '/log/', iteration=self.history.iteration-1)
                     self.params.reinitialize(iteration = 0)
             self.params.geometry.fea_seed_size = seed_size0
             self.params.geometry._max_iter_before_regenerate = max_iter_before_regenerate0

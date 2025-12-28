@@ -172,13 +172,17 @@ class UpdaterGeometries(BaseUpdater):
         self.sensitivity_previous = sensitivity
           
     def initialize(self):
-        if len(self._max_step_length) == 0:
-            for i in range(self.params_update.num_surface):
-                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max * 0.5)
 
         if self.if_update is None:
             self.if_update = [True for _ in range(self.params.geometry.num_surface)]
 
+        if len(self._max_step_length) == 0:
+            for i in range(self.params_update.num_surface):
+                self._max_step_length.append(torch.ones(self.params.geometry.surface_list[i].num_variables // 3) * self._max_step_length_max * 0.5)
+
+        for i in range(len(self._max_step_length)):
+            if not self.if_update[i]:
+                self._max_step_length[i] *= 0.0
 
     def _initialize_objectives(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
         for obj_func in self.obj_funcs.values():

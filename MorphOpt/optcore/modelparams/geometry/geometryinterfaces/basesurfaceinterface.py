@@ -4,7 +4,7 @@ import FEA
 import numpy as np
 import torch
 
-from ..SurfaceModel.Surface_Base import Surface_Base
+from ..geometricmodel.basesurfacemodel import Surface_Base
 
 class BaseInterface():
     """

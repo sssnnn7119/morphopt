@@ -37,12 +37,12 @@ class ThisController(MorphOpt.Controller):
 
             def __init__(self):
 
-                super().__init__(reinitialize_per_iter=3, fea_seed_size=1.4, fea_mesh_order=1)
+                super().__init__(reinitialize_per_iter=3, fea_seed_size=1.0, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=10.,
                                                             length=80.,
-                                                            seed_size=0.8,
+                                                            seed_size=1.5,
                                                             symmetric=[0, [1]],
                                                             flip=False, maxR=0.1, maxC=2.0, maxFF=0.2))
                 
@@ -58,14 +58,14 @@ class ThisController(MorphOpt.Controller):
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,20.],
-                                                MaxC=1.0))
+                                                MaxC=1.4))
                 
                 self.add_surface(
                     self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,60.],
-                                                MaxC=1.0))
+                                                MaxC=1.4))
                 
 
 
@@ -161,10 +161,9 @@ class ThisController(MorphOpt.Controller):
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[2.5, 2.5, 1.5, 1.5],
-                                                                [2.5, 2.5, 1.5, 1.5],
-                                                                [1.5, 1.5, 1.5, 1.5],
-                                                                [1.5, 1.5, 1.5, 1.5]]))
+                                                                [[2.0, 2.0, 2.0],
+                                                                [2.0, 2.0, 2.0],
+                                                                [2.0, 2.0, 2.0]]))
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
 

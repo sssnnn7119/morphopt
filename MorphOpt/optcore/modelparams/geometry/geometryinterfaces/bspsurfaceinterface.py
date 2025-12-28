@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from .basesurfaceinterface import BaseInterface
-from ..SurfaceModel.bspline.BSP import BSP_Surf
+from ..geometricmodel.bspline.BSP import BSP_Surf
 
 from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir
 from OCC.Core.TColgp import TColgp_Array2OfPnt
