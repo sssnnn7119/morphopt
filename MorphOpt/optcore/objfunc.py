@@ -106,7 +106,7 @@ class ObjectiveFunction(BaseObject):
             MorphOpt.controller.params.feamodel.process_fea(fe=self.fe, step_index=step_index)
             
             # region get the decomposed stiffness matrix
-            K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))[1:]
+            R, K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))
             K_values = K_values.cpu().numpy()
             K_indices = K_indices.cpu().numpy()
             K_sp = sp.coo_matrix(

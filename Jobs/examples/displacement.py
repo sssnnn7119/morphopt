@@ -24,21 +24,21 @@ class ThisController(MorphOpt.Controller):
                                                             symmetric=[1, [1]],
                                                             flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
                 
-                # self.add_surface(
-                #     self.BSP.initialize_cylinder(r0=4.,
-                #                                         length=74.,
-                #                                         seed_size=1.0,
-                #                                         symmetric=[1, [1]],
-                #                                         init_location=[0, 0, 3],
-                #                                         flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
-                                                flip=True,
-                                                r0=4.,
-                                                init_location=[0., 0., 40.],
-                                                MaxC=1.5,
-                    ))
+                    self.BSP.initialize_cylinder(r0=4.,
+                                                        length=74.,
+                                                        seed_size=1.0,
+                                                        symmetric=[1, [1]],
+                                                        init_location=[0, 0, 3],
+                                                        flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+
+                # self.add_surface(
+                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
+                #                                 flip=True,
+                #                                 r0=4.,
+                #                                 init_location=[0., 0., 40.],
+                #                                 MaxC=1.5,
+                #     ))
 
 
         class FEAParams(MorphOpt.FEAParams):

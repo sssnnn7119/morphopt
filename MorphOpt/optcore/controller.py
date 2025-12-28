@@ -14,6 +14,7 @@ import numpy as np
 import time
 import gc
 import MorphOpt
+import multiprocessing as mp
 
 class Controller:
 
@@ -81,6 +82,8 @@ class Controller:
         """
         The frequency of restarting the optimization process.
         """
+
+        self.dataqueue: Optional[mp.Queue] = None
 
     def initialize_path(self, main_filepath: str = None) -> None:
         """
@@ -219,7 +222,7 @@ class Controller:
             self.clear_cache()
 
             seed_size0 = self.params.geometry.fea_seed_size
-            self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.0)
+            # self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.0)
 
             loss, t0, t1, t2, t3 = self.step()
             
@@ -233,6 +236,10 @@ class Controller:
 
             # Save the current parameters and plot the figures
             self.save()
+
+            # if dataqueue is not None, send the data to the queue
+            if self.dataqueue is not None:
+                self.dataqueue.put({'iteration': self.history.iteration, 'path_result': self.path_result})
             
             if self.restart_per_iteration > 0 and (self.history.iteration+1) % self.restart_per_iteration == 0:
                 return
