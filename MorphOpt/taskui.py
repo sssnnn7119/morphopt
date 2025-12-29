@@ -68,6 +68,14 @@ class MayaviVisualizer(HasTraits):
         """Start scene in the Qt main thread context"""
         # Use QTimer to ensure this runs in the main thread
         QTimer.singleShot(0, self._initialize_scene)
+from traits.api import HasTraits, Instance, on_trait_change
+from traitsui.api import View, Item
+from tvtk.pyface.scene_editor import SceneEditor
+from mayavi.tools.mlab_scene_model import MlabSceneModel
+from mayavi.core.ui.mayavi_scene import MayaviScene
+from tvtk.pyface.api import Scene
+import mayavi.mlab as mlab
+mlab.options.backend = 'auto'
 
 
 class MonitorThread(QThread):
@@ -95,6 +103,8 @@ class OptimizationMonitorUI(QMainWindow):
         self.params.initialize()
         self.path_result = None
         self.iteration = 0
+        self.figure = Figure()
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.initUI()
         self.monitor_thread = MonitorThread(self.dataqueue)
         self.monitor_thread.update_signal.connect(self.update_ui)
@@ -106,11 +116,23 @@ class OptimizationMonitorUI(QMainWindow):
         
         main_layout = QVBoxLayout()
         
-        # Top: History table
+        # Top half: Table and plot
+        top_layout = QHBoxLayout()
+        
+        # Left top: History table
+        left_layout = QVBoxLayout()
         self.history_table = QTableWidget()
-        self.history_table.setColumnCount(5)
-        self.history_table.setHorizontalHeaderLabels(['Iteration', 'Objective', 'Init Time', 'FEA Time', 'Update Time'])
-        main_layout.addWidget(self.history_table)
+        self.history_table.setColumnCount(7)
+        self.history_table.setHorizontalHeaderLabels(['Iteration', 'Objective', 'Init Time', 'FEA Time', 'Update Time', 'Num Elements', 'Num Nodes'])
+        left_layout.addWidget(self.history_table)
+        top_layout.addLayout(left_layout)
+        
+        # Right top: Plot
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.canvas)
+        top_layout.addLayout(right_layout)
+        
+        main_layout.addLayout(top_layout)
         
         # Bottom: Controls and plots
         bottom_layout = QVBoxLayout()
@@ -163,13 +185,17 @@ class OptimizationMonitorUI(QMainWindow):
             # Update table
             self.history_table.setRowCount(len(history.history_objective))
             for i in range(len(history.history_objective)):
-                self.history_table.setItem(i, 0, QTableWidgetItem(str(i)))
+                self.history_table.setItem(i, 0, QTableWidgetItem(str(i+1)))
                 self.history_table.setItem(i, 1, QTableWidgetItem(f'{history.history_objective[i]:.6f}'))
                 if i < len(history.history_time):
                     t = history.history_time[i]
                     self.history_table.setItem(i, 2, QTableWidgetItem(f'{t[0]:.2f}'))
                     self.history_table.setItem(i, 3, QTableWidgetItem(f'{t[1]:.2f}'))
                     self.history_table.setItem(i, 4, QTableWidgetItem(f'{t[2]:.2f}'))
+                if i < len(history.history_num_elements):
+                    self.history_table.setItem(i, 5, QTableWidgetItem(str(history.history_num_elements[i])))
+                if i < len(history.history_num_nodes):
+                    self.history_table.setItem(i, 6, QTableWidgetItem(str(history.history_num_nodes[i])))
             
             # Update iteration combo
             if self.iteration_combo.findText(str(iteration)) == -1:
@@ -181,6 +207,17 @@ class OptimizationMonitorUI(QMainWindow):
                 self.case_combo.clear()
                 for j in range(num_cases):
                     self.case_combo.addItem(f'Case {j}')
+            
+            # Update plot
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            iterations = list(range(1, len(history.history_objective) + 1))
+            ax.plot(iterations, history.history_objective, marker='o')
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Objective Function')
+            ax.set_title('Objective Function vs Iteration')
+            ax.grid(True)
+            self.canvas.draw()
 
     def plot_selected(self):
         selected_iter = int(self.iteration_combo.currentText()) if self.iteration_combo.currentText() else 0
@@ -222,6 +259,7 @@ class OptimizationMonitorUI(QMainWindow):
                     face = [int(p.split('/')[0]) - 1 for p in parts[1:]]
                     faces.append(face)
         return np.array(vertices), faces
+
 
 def run_ui(dataqueue: mp.Queue, main_filepath: str = None):
     import os
