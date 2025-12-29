@@ -1,8 +1,14 @@
 
 import datetime
+import glob
 import os
 import shutil
 import time
+
+from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCC.Core.IFSelect import IFSelect_RetDone
+from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Writer
+from torch.nn.modules import fold
 import FEA
 import numpy as np
 import torch
@@ -512,6 +518,38 @@ class GeometryParams(BaseParams):
         for i in range(self.num_surface):
             surf_name0 = '__surface-%d' % i
             self.surface_list[i].output_data(path_output=foldpath, name_output=surf_name0, flip=(i!=0))
+
+        def read_step(file_path):
+            reader = STEPControl_Reader()
+            status = reader.ReadFile(file_path)
+            if status == IFSelect_RetDone:
+                reader.TransferRoot()
+                return reader.Shape()
+            else:
+                raise ValueError(f"Failed to read {file_path}")
+            
+        files = sorted(glob.glob(foldpath + "__surface-*.stp"))
+        if not files:
+            print("No __surface-*.stp files found.")
+            return
+
+        # Assume the first one is the main body (0)
+        main_shape = read_step(files[0])
+        print(f"Loaded main shape from {files[0]}")
+
+        # Subtract each subsequent shape
+        for f in files[1:]:
+            tool_shape = read_step(f)
+            print(f"Subtracting {f}")
+            main_shape = BRepAlgoAPI_Cut(main_shape, tool_shape).Shape()
+
+        # Write the result
+        writer = STEPControl_Writer()
+        writer.Transfer(main_shape, STEPControl_AsIs)
+        writer.Write(foldpath + "__surface_all.stp")
+        print("Output written to _surface_all.stp")
+
+        
 
     def _call_Abaqus(self, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
         

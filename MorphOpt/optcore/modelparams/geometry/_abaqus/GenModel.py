@@ -167,13 +167,18 @@ for i in range(len(surface_type)):
                 [tuple(map(float, data[j + 1].split(',')))]), )
 
 ###==============import model==============###
-void_name_list = []
-Import_Part('__surface-0.stp', 'final_model')
-for i in range(len(surface_type) - 1):
-    Import_Part('__surface-%d.stp' % (i+1), 'surface_%d' % (i + 1))
-    void_name_list.append('surface_%d' % (i + 1))
+# void_name_list = []
+# Import_Part('__surface-0.stp', 'final_model')
+# for i in range(len(surface_type) - 1):
+#     Import_Part('__surface-%d.stp' % (i+1), 'surface_%d' % (i + 1))
+#     void_name_list.append('surface_%d' % (i + 1))
 
-Assemble_Surfaces('final_model', void_name_list=void_name_list)
+# Assemble_Surfaces('final_model', void_name_list=void_name_list)
+Import_Part(workdir + '__surface_all.stp', 'final_model')
+a = mdb.models['Model-1'].rootAssembly
+a.DatumCsysByDefault(CARTESIAN)
+base_part = mdb.models['Model-1'].parts['final_model']
+a.Instance(name='final_model-1', part=base_part, dependent=ON)
 
 ###==============find surface==============###
 p = mdb.models['Model-1'].parts['final_model']
