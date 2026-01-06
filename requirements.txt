@@ -1,9 +1,0 @@
-pythonocc-core
-mayavi==4.8.2
-torch
-pypardiso
-pandas
-numpy
-pyqt5
-tabulate
-matplotlib
