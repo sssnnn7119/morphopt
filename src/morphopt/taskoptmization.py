@@ -10,7 +10,8 @@ class TaskOptimization:
                             restart_per_iteration: int = 20, 
                             dataqueue: mp.Queue = None):
         
-
+        import warnings
+        warnings.filterwarnings("ignore", category=UserWarning)
 
 
         path_queue = mp.Queue()

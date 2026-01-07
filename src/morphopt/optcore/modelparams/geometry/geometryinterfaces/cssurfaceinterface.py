@@ -156,14 +156,12 @@ class CsInterface(BaseInterface):
         self.model = self.model.load_from_file(filename + '.txt')
         self.model.pre_load(1)
 
-    def plot(self, alpha, color, plotter=None):
+    def get_mesh(self):
         """
-        Plot the surface using PyVista.
+        Get the mesh for the surface.
 
-        Parameters:
-            alpha (float): The transparency of the surface.
-            color (tuple): The color of the surface in RGB format.
-            plotter: The pyvista plotter object.
+        Returns:
+            pyvista.PolyData: The mesh object.
         """
         import pyvista as pv
         knots = self.model.symmetrize_knots_CPs()[1]
@@ -175,13 +173,9 @@ class CsInterface(BaseInterface):
         faces_pv = np.hstack((np.full((faces.shape[0], 1), 3), faces)).flatten()
         
         mesh = pv.PolyData(vertices, faces_pv)
+        mesh.compute_normals(inplace=True)
         
-        if plotter is None:
-            plotter = pv.Plotter()
-            plotter.add_mesh(mesh, color=color, opacity=alpha)
-            plotter.show()
-        else:
-            plotter.add_mesh(mesh, color=color, opacity=alpha)
+        return mesh
 
     @classmethod
     def initialize_Sphere(cls, seed_size: float, flip: bool, r0: float, init_location: list[float], symmetric: list[int] = [0]) -> 'CsInterface':

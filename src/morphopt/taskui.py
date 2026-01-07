@@ -1,7 +1,14 @@
-from os import path
-import sys
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+
+from pyvista.plotting import plotter
+
+if TYPE_CHECKING:
+    import morphopt
+
+
 import multiprocessing as mp
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QComboBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QComboBox, QMessageBox
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QTimer, QThread, pyqtSignal
 import time
@@ -25,6 +32,8 @@ class PyVistaQWidget(QWidget):
         self.plotter = QtInteractor(self)
         layout.addWidget(self.plotter.interactor)
         self.layout = layout
+
+        self.plotter.set_background('black')
         
     def get_plotter(self):
         return self.plotter
@@ -52,12 +61,14 @@ class OptimizationMonitorUI(QMainWindow):
         super().__init__()
         self.dataqueue = dataqueue
         self.Controller = Controller
+        self.params: morphopt.Params
         self.params = Controller.Params()
         self.params.initialize()
         self.path_result = None
         self.iteration = 0
-        self.figure = Figure()
+        self.figure = Figure(facecolor='#121212')  # Match app background
         self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.setStyleSheet("background-color: #121212;") # Ensure widget bg is also dark
         self.initUI()
         self.monitor_thread = MonitorThread(self.dataqueue)
         self.monitor_thread.update_signal.connect(self.update_ui)
@@ -125,6 +136,16 @@ class OptimizationMonitorUI(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, 'Exit Confirmation',
+                                     "Are you sure you want to exit the optimization monitor?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                                     QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            event.accept()
+        else:
+            event.ignore()
+
     def update_ui(self, data):
         iteration = data['iteration']
         path_result = data['path_result']
@@ -162,14 +183,15 @@ class OptimizationMonitorUI(QMainWindow):
                     self.case_combo.addItem(f'Case {j}')
             
             # Update plot
+            plt.style.use('dark_background')  # Set dark theme for black background and white text
             self.figure.clear()
             ax = self.figure.add_subplot(111)
             iterations = list(range(1, len(history.history_objective) + 1))
-            ax.plot(iterations, history.history_objective, marker='o')
+            ax.plot(iterations, history.history_objective, marker='o', color='cyan')  # Optional: set line color for better visibility
             ax.set_xlabel('Iteration')
             ax.set_ylabel('Objective Function')
             ax.set_title('Objective Function vs Iteration')
-            ax.grid(True)
+            ax.grid(True, color='white', linestyle='--', linewidth=0.5)
             self.canvas.draw()
 
     def plot_selected(self):
@@ -180,18 +202,27 @@ class OptimizationMonitorUI(QMainWindow):
             # Plot surface using embedded pyvista
             plotter_surface = self.pyvista_container_surface.get_plotter()
             plotter_surface.clear()
-            plotter_surface.set_background('white')
+            plotter_surface.enable_lightkit()
+            plotter_surface.set_background('black')
             self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=selected_iter)
             self.params.geometry.plot(plotter=plotter_surface)
+
+            # Add coordinate axes
+            plotter_surface.show_axes()
             
             # Plot deformation using embedded pyvista with obj file
             plotter_def = self.pyvista_container_deformation.get_plotter()
             plotter_def.clear()
-            plotter_def.set_background('white')
+            plotter_def.enable_lightkit()
+            plotter_def.set_background('black')
             obj_path = f"{self.path_result}/log/deformation/task_{selected_case}_iter_{selected_iter}.obj"
             try:
                 mesh = pv.read(obj_path)
-                plotter_def.add_mesh(mesh)
+                plotter_def.add_mesh(mesh, color=(40.0/255, 120.0/255, 181.0/255), opacity=1.0, show_edges=True)
+                
+                # Add coordinate axes
+                plotter_def.show_axes()
+                
             except Exception as e:
                 print(f"Error loading OBJ: {e}")
 
@@ -210,6 +241,49 @@ def run_ui(dataqueue: mp.Queue, main_filepath: str = None):
     Controller = getattr(__import__(filename), 'ThisController')
 
     app = QApplication(sys.argv)
+    
+    # Set dark stylesheet for the entire application
+    app.setStyleSheet("""
+        QMainWindow, QWidget {
+            background-color: #121212;
+            color: #ffffff;
+        }
+        QTableWidget {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            gridline-color: #333333;
+            border: 1px solid #333333;
+        }
+        QHeaderView::section {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #333333;
+            padding: 4px;
+        }
+        QComboBox {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #333333;
+            padding: 5px;
+        }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QPushButton {
+            background-color: #0d47a1;
+            color: #ffffff;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #1565c0;
+        }
+        QLabel {
+            color: #e0e0e0;
+        }
+    """)
+    
     ui = OptimizationMonitorUI(dataqueue, Controller)
     ui.show()
     sys.exit(app.exec_())

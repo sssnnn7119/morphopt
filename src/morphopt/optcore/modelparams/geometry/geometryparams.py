@@ -398,7 +398,23 @@ class GeometryParams(BaseParams):
                 alpha = 0.6
             else:
                 alpha = 1
-            self.surface_list[sf].plot(alpha=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255), plotter=plotter)
+            mesh = self.surface_list[sf].get_mesh()
+            plotter.add_mesh(mesh, opacity=alpha,  color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
+                           diffuse=0.8, specular=0.2, ambient=0.3, specular_power=10,
+                           smooth_shading=True, show_edges=False)
+            
+    def get_meshes(self):
+        """
+        Get all meshes for the surfaces.
+
+        Returns:
+            list[pyvista.PolyData]: The mesh objects for all surfaces.
+        """
+        mesh_list = []
+        for sf in range(self.num_surface):
+            mesh = self.surface_list[sf].get_mesh()
+            mesh_list.append(mesh)
+        return mesh_list
     
     def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
         """
@@ -551,11 +567,11 @@ class GeometryParams(BaseParams):
                 print(f"Failed to import main shape from {files[0]}")
                 return
 
-            print(f"Loaded main shape from {files[0]}")
+            # print(f"Loaded main shape from {files[0]}")
 
             # Subtract each subsequent shape
             for f in files[1:]:
-                print(f"Subtracting {f}")
+                # print(f"Subtracting {f}")
                 tool_shapes = gmsh.model.occ.importShapes(f)
                 gmsh.model.occ.synchronize()
                 
@@ -567,7 +583,7 @@ class GeometryParams(BaseParams):
             
             # Write the result
             gmsh.write(foldpath + "__surface_all.stp")
-            print("Output written to _surface_all.stp")
+            # print("Output written to _surface_all.stp")
             
         except Exception as e:
             print(f"Error during Gmsh export: {e}")

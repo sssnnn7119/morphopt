@@ -1,5 +1,6 @@
 
 from calendar import c
+import math
 import pyvista as pv
 import torch
 import morphopt
@@ -29,7 +30,7 @@ class SurfacesFigurePlotter:
         """
         Load the parameters at a given iteration.
         """
-        self.params.geometry.load(foldpath=self.restart_path + '/log/surfaces/data/', iteration=iteration)
+        self.params.geometry.load(foldpath=self.restart_path + '/log/', iteration=iteration)
 
     def plot_surfaces(self, iteration: int, 
                       colors: list[tuple[float, float, float]] | tuple[float, float, float] = None, 
@@ -66,7 +67,10 @@ class SurfacesFigurePlotter:
             elif colors is not None and isinstance(colors, tuple):
                 color_to_use = colors
             
-            self.params.geometry.surface_list[sf].plot(alpha=alpha, color=color_to_use, plotter=plotter)
+            mesh = self.params.geometry.surface_list[sf].get_mesh()
+            plotter.add_mesh(mesh, opacity=alpha, color=color_to_use,
+                           diffuse=0.8, specular=0.2, ambient=0.1, specular_power=10,
+                           smooth_shading=True, show_edges=False)
         
         if boundary is not None:
             pass
@@ -95,9 +99,17 @@ class SurfacesFigurePlotter:
 
         plotter = pv.Plotter(off_screen=True, window_size=[2500, 2500])
         plotter.set_background('white')
-        plotter.enable_parallel_projection()
+        plotter.enable_lightkit()  # 启用光照效果
+
 
         self.plot_surfaces(iteration=iteration, colors=colors, opacity=opacity, boundary=boundary, plotter=plotter)
+
+        plotter.enable_parallel_projection()
+        azimuth = 210
+        elevation = 20
+        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(elevation))))
 
         plotter.open_gif(output_gif)
         plotter.camera_position = 'iso'
@@ -136,7 +148,14 @@ class SurfacesFigurePlotter:
 
         plotter = pv.Plotter(off_screen=True, window_size=[2500, 2500])
         plotter.set_background('white')
+
         plotter.enable_parallel_projection()
+        azimuth = 210
+        elevation = 20
+        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(elevation))))
+        plotter.enable_lightkit()  # 启用光照效果
         
         plotter.open_gif(output_gif)
 
@@ -144,12 +163,15 @@ class SurfacesFigurePlotter:
             self.load_parameters(iteration=iteration)
             plotter.clear()
             
-            self.params.geometry.surface_list[surface_index].plot(alpha=opacity, color=colors, plotter=plotter)
+            mesh = self.params.geometry.surface_list[surface_index].get_mesh()
+            plotter.add_mesh(mesh, opacity=opacity, color=colors,
+                           diffuse=0.8, specular=0.2, ambient=0.1, specular_power=10,
+                           smooth_shading=True, show_edges=False)
             
             if boundary is not None:
                 pass
+
             
-            plotter.camera_position = 'iso'
             plotter.write_frame()
             
             if output_jpg_foldpath is not None:
@@ -186,15 +208,23 @@ class SurfacesFigurePlotter:
 
         plotter = pv.Plotter(off_screen=True, window_size=[2500, 2500])
         plotter.set_background('white')
-        plotter.enable_parallel_projection()
+        
 
         plotter.open_gif(output_gif)
 
         for iteration in range(history_index + 1):
             plotter.clear()
+            plotter.enable_lightkit()  # 启用光照效果
             self.plot_surfaces(iteration=iteration, colors=colors, opacity=opacity, boundary=boundary, plotter=plotter)
+
+            if iteration == 0:
+                plotter.enable_parallel_projection()
+                azimuth = 210
+                elevation = 20
+                plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(elevation))))
             
-            plotter.camera_position = 'iso'
             plotter.write_frame()
             
             if output_jpg_foldpath is not None:
@@ -203,7 +233,7 @@ class SurfacesFigurePlotter:
         plotter.close()
 
 if __name__ == "__main__":
-    plotter = SurfacesFigurePlotter(restart_path='Z:/Results/EXAMPLE_T20251219_172355/')
-    plotter.plot_history_all_surfaces(history_index=50,
+    plotter = SurfacesFigurePlotter(restart_path='Z:/Results/EXAMPLE_T20260106_165756/')
+    plotter.plot_history_all_surfaces(history_index=3,
                                      output_gif='Z:/temp/example_displacement_history.gif',
                                      output_jpg_foldpath='Z:/temp/')

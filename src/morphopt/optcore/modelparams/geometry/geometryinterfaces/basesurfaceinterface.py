@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from ..geometricmodel.basesurfacemodel import Surface_Base
-
+import pyvista as pv
 class BaseInterface():
     """
     Class to handle the surface of the morphable model.
@@ -227,16 +227,14 @@ class BaseInterface():
         """
         raise NotImplementedError("The load method is not implemented in the BaseInterface class. Please implement it in the derived class.")
 
-    def plot(self, alpha: float, color: tuple[float, float, float], plotter=None) -> None:
+    def get_mesh(self) -> pv.PolyData:
         """
-        Plot the surface.
+        Get the mesh for the surface.
 
-        Parameters:
-            alpha (float): The transparency of the surface.
-            color (tuple[float, float, float]): The color of the surface.
-            plotter: The pyvista plotter object.
+        Returns:
+            object: The mesh object.
         """
-        raise NotImplementedError("The plot method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        raise NotImplementedError("The get_mesh method is not implemented in the BaseInterface class. Please implement it in the derived class.")
     
 
     class MeshSurfaceConverter:

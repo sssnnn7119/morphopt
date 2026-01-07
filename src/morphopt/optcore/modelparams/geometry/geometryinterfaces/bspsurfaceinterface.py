@@ -714,7 +714,7 @@ class BspInterface(BaseInterface):
         self.model.pre_load(
             [self.model.num_points[0] * 2, self.model.num_points[1] * 2])
 
-    def plot(self, alpha, color, plotter=None):
+    def get_mesh(self):
         import pyvista as pv
         u = torch.linspace(0, 1, self.model.num_points[0] * 2)
         v = torch.linspace(0, 1, self.model.num_points[1] * 2)
@@ -728,15 +728,10 @@ class BspInterface(BaseInterface):
         
         # Create structured grid
         grid = pv.StructuredGrid(x, y, z)
+        mesh = grid.extract_surface()
+        mesh.compute_normals(inplace=True)
         
-        if plotter is None:
-            plotter = pv.Plotter()
-            plotter.add_mesh(grid, color=color, opacity=alpha)
-            plotter.show()
-        else:
-            plotter.add_mesh(grid, color=color, opacity=alpha)
-
-
+        return mesh
 
 
     @classmethod

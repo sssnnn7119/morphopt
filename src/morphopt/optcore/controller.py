@@ -151,18 +151,7 @@ class Controller:
 
         os.makedirs(self.path_result + '/fea')
 
-        # copy the scripts to the result path
-        def ignore_folder(dir, contents):
-            """忽略指定的文件夹"""
-            ignore_list = ['.conda', '.git']
-            result = []
-            for item in contents:
-                if item in ignore_list:
-                    result.append(item)
-            return result
-
-        shutil.copytree(os.getcwd(), self.path_result + '/scripts/', ignore=ignore_folder)
-
+        os.makedirs(self.path_result + '/scripts/', exist_ok=True)
         if main_filepath is not None:
             shutil.copy(main_filepath, self.path_result + '/scripts/MAIN_SCRIPT_FOR_RESTART.py')
         else:
@@ -171,6 +160,7 @@ class Controller:
 
         vendor_package('torchfea', target_dir=self.path_result + '/scripts/')
         vendor_package('cpgeo', target_dir=self.path_result + '/scripts/')
+        vendor_package('morphopt', target_dir=self.path_result + '/scripts/')
 
 
     def initialize(self) -> None:
@@ -248,6 +238,8 @@ class Controller:
                 self.dataqueue.put({'iteration': self.history.iteration, 'path_result': self.path_result})
             
             if self.restart_per_iteration > 0 and (self.history.iteration+1) % self.restart_per_iteration == 0:
+                self.pools.close()
+                self.pools.join()
                 return
             
             self.history.iteration += 1

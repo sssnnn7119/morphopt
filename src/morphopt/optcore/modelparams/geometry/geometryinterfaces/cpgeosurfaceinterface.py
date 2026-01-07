@@ -89,6 +89,14 @@ class CPGEOSurfaceInterface(BaseInterface):
         with open(path_output + name_output + '.stp', 'w') as f:
             f.write(data)
 
+        # Save STL file
+        import pyvista as pv
+        vertices = R.cpu().numpy().T
+        faces = Coo.cpu().numpy()
+        faces_pv = np.hstack((np.full((faces.shape[0], 1), 3), faces)).flatten()
+        mesh = pv.PolyData(vertices, faces_pv)
+        mesh.save(path_output + name_output + '.stl')
+
         with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
             num_points = 10
             info = ''
@@ -230,14 +238,12 @@ class CPGEOSurfaceInterface(BaseInterface):
         self.model = self.model.load(filename + '.npz')
         self.model.pre_load(1)
 
-    def plot(self, alpha, color, plotter=None):
+    def get_mesh(self):
         """
-        Plot the surface using PyVista.
+        Get the mesh for the surface.
 
-        Parameters:
-            alpha (float): The transparency of the surface.
-            color (tuple): The color of the surface in RGB format.
-            plotter: The pyvista plotter object.
+        Returns:
+            pyvista.PolyData: The mesh object.
         """
         import pyvista as pv
         r = self.model.map(self.model.knots).tolist()
@@ -248,13 +254,9 @@ class CPGEOSurfaceInterface(BaseInterface):
         faces_pv = np.hstack((np.full((faces.shape[0], 1), 3), faces)).flatten()
         
         mesh = pv.PolyData(vertices, faces_pv)
+        mesh.compute_normals(inplace=True)
         
-        if plotter is None:
-            plotter = pv.Plotter()
-            plotter.add_mesh(mesh, color=color, opacity=alpha)
-            plotter.show()
-        else:
-            plotter.add_mesh(mesh, color=color, opacity=alpha)
+        return mesh
 
     @classmethod
     def initialize_Sphere(cls, seed_size: float, flip: bool, r0: float, init_location: list[float], symmetric: list[int] = [0], MaxC = 1.) -> 'CPGEOSurfaceInterface':
@@ -276,12 +278,12 @@ class CPGEOSurfaceInterface(BaseInterface):
         num_points = 4*math.pi*r0**2 / seed_size**2
         num_points = int(num_points)
 
-        cpgeo = cpgeo.surface.sphere(num_points=num_points, radius=r0)
-        cpgeo.cp_vertices = cpgeo.cp_vertices + torch.tensor(init_location).reshape([3, 1])
-        cpgeo.k_neighbors=12
-        cpgeo.pre_load(1)
+        cpgeo_now = cpgeo.surface.sphere(num_points=num_points, radius=r0)
+        cpgeo_now.cp_vertices = cpgeo_now.cp_vertices + torch.tensor(init_location).reshape([3, 1])
+        cpgeo_now.k_neighbors=12
+        cpgeo_now.pre_load(1)
         #, surface: cpgeo.surface.Sphere, seed_size: float, symmetric = [0], MaxC = 1., flip: bool = False
-        return cls(cpgeo, seed_size, symmetric, MaxC, flip)
+        return cls(cpgeo_now, seed_size, symmetric, MaxC, flip)
 
     @classmethod
     def initialize_Cylinder(cls, seed_size: float, flip: bool, r0: float, length: float, init_location: list[float], symmetric: list[int] = [0], MaxC = 1.) -> 'CPGEOSurfaceInterface':
@@ -348,23 +350,23 @@ class CPGEOSurfaceInterface(BaseInterface):
 
         control_points[0] *= -1
 
-        cpgeo = cpgeo.surface.Sphere()
-        cpgeo.cp_vertices = control_points + torch.tensor(init_location).reshape([3, 1])
-        cpgeo.cp_elements = cpgeo.surface._mesh_methods.sphere_mesh(knots.T)
+        cpgeo_now = cpgeo.surface.Sphere()
+        cpgeo_now.cp_vertices = control_points + torch.tensor(init_location).reshape([3, 1])
+        cpgeo_now.cp_elements = cpgeo.surface._mesh_methods.sphere_mesh(knots.T)
         
-        normal = torch.cross(knots[cpgeo.cp_elements[:, 1]] - knots[cpgeo.cp_elements[:, 0]],
-                            knots[cpgeo.cp_elements[:, 2]] - knots[cpgeo.cp_elements[:, 0]],
+        normal = torch.cross(knots[cpgeo_now.cp_elements[:, 1]] - knots[cpgeo_now.cp_elements[:, 0]],
+                            knots[cpgeo_now.cp_elements[:, 2]] - knots[cpgeo_now.cp_elements[:, 0]],
                             dim=1).T
-        normal_ = torch.cross(cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 1]] - cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 0]],
-                            cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 2]] - cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 0]],
+        normal_ = torch.cross(cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 1]] - cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 0]],
+                            cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 2]] - cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 0]],
                             dim=1).T
-        triangularcenter = (knots[cpgeo.cp_elements[:, 0]] + knots[cpgeo.cp_elements[:, 1]] +
-                            knots[cpgeo.cp_elements[:, 2]]).T / 3
-        triangularcenter_ = (cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 0]] +
-                            cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 1]] +
-                            cpgeo.cp_vertices.T[cpgeo.cp_elements[:, 2]]).T / 3
-        cpgeo.k_neighbors=12
-        cpgeo.initialize()
-        cpgeo.pre_load(1)
-        # cpgeo.reconstruction(seed_size=seed_size)
-        return cls(cpgeo, seed_size, symmetric, MaxC, flip)
+        triangularcenter = (knots[cpgeo_now.cp_elements[:, 0]] + knots[cpgeo_now.cp_elements[:, 1]] +
+                            knots[cpgeo_now.cp_elements[:, 2]]).T / 3
+        triangularcenter_ = (cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 0]] +
+                            cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 1]] +
+                            cpgeo_now.cp_vertices.T[cpgeo_now.cp_elements[:, 2]]).T / 3
+        cpgeo_now.k_neighbors=12
+        cpgeo_now.initialize()
+        cpgeo_now.pre_load(1)
+        # cpgeo_now.reconstruction(seed_size=seed_size)
+        return cls(cpgeo_now, seed_size, symmetric, MaxC, flip)
