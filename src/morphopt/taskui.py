@@ -8,9 +8,9 @@ if TYPE_CHECKING:
 
 
 import multiprocessing as mp
-from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QComboBox, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QComboBox, QMessageBox, QSlider
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QTimer, QThread, pyqtSignal, Qt
 import time
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -66,6 +66,9 @@ class OptimizationMonitorUI(QMainWindow):
         self.params.initialize()
         self.path_result = None
         self.iteration = 0
+        self.last_plotted_iteration = -1
+        self.surface_cache = {}
+        self.deformation_cache = {}
         self.figure = Figure(facecolor='#121212')  # Match app background
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.setStyleSheet("background-color: #121212;") # Ensure widget bg is also dark
@@ -103,19 +106,27 @@ class OptimizationMonitorUI(QMainWindow):
         
         # Controls
         controls_layout = QHBoxLayout()
-        self.iteration_combo = QComboBox()
-        self.iteration_combo.setToolTip('Select Iteration')
+        
         controls_layout.addWidget(QLabel('Iteration:'))
-        controls_layout.addWidget(self.iteration_combo)
+        self.iteration_label = QLabel('0')
+        self.iteration_label.setFixedWidth(30)
+        controls_layout.addWidget(self.iteration_label)
+        
+        self.iteration_slider = QSlider(Qt.Orientation.Horizontal)
+        self.iteration_slider.setToolTip('Select Iteration')
+        self.iteration_slider.setMinimum(1)
+        self.iteration_slider.setMaximum(1)
+        self.iteration_slider.valueChanged.connect(self.on_slider_change)
+        controls_layout.addWidget(self.iteration_slider)
+        
+        self.slider_timer = QTimer()
+        self.slider_timer.timeout.connect(self.check_slider_update)
+        self.slider_timer.start(100) # Check every 0.1s
         
         self.case_combo = QComboBox()
         self.case_combo.setToolTip('Select Deformation Case')
         controls_layout.addWidget(QLabel('Case:'))
         controls_layout.addWidget(self.case_combo)
-        
-        self.plot_button = QPushButton('Plot')
-        self.plot_button.clicked.connect(self.plot_selected)
-        controls_layout.addWidget(self.plot_button)
         
         bottom_layout.addLayout(controls_layout)
         
@@ -151,6 +162,56 @@ class OptimizationMonitorUI(QMainWindow):
         path_result = data['path_result']
         if path_result:
             self.path_result = path_result
+
+            # Cache meshes
+            import glob
+            import os
+            
+            # Surface Cache
+            if iteration not in self.surface_cache:
+                try:
+                    self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=iteration)
+                    self.surface_cache[iteration] = self.params.geometry.get_meshes()
+                except Exception as e:
+                    print(f"Error caching surface for iteration {iteration}: {e}")
+
+            # Deformation Cache
+            if iteration not in self.deformation_cache:
+                self.deformation_cache[iteration] = {}
+            
+            def_pattern = f"{self.path_result}/log/deformation/task_*_iter_{iteration}.obj"
+            def_files = glob.glob(def_pattern)
+            
+            found_cases = set()
+            for fpath in def_files:
+                try:
+                    basename = os.path.basename(fpath)
+                    parts = basename.split('_')
+                    # Expected: task_{case}_iter_{iter}.obj
+                    if len(parts) >= 4 and parts[0] == 'task':
+                        case_idx = int(parts[1])
+                        found_cases.add(case_idx)
+                        if case_idx not in self.deformation_cache[iteration]:
+                            mesh = pv.read(fpath)
+                            self.deformation_cache[iteration][case_idx] = mesh
+                except Exception as e:
+                    print(f"Error caching deformation {fpath}: {e}")
+            
+            # Update Case Combo
+            current_cases = set()
+            for i in range(self.case_combo.count()):
+                try:
+                    txt = self.case_combo.itemText(i)
+                    if txt:
+                        c = int(txt.split()[-1])
+                        current_cases.add(c)
+                except:
+                    pass
+            
+            for c in sorted(list(found_cases)):
+                if c not in current_cases:
+                    self.case_combo.addItem(f"Task {c}")
+
             # load history
             from .optcore.history import History
             history = History()
@@ -171,16 +232,12 @@ class OptimizationMonitorUI(QMainWindow):
                 if i < len(history.history_num_nodes):
                     self.history_table.setItem(i, 6, QTableWidgetItem(str(history.history_num_nodes[i])))
             
-            # Update iteration combo
-            if self.iteration_combo.findText(str(iteration)) == -1:
-                self.iteration_combo.addItem(str(iteration))
-            
-            # Update case combo if deformation available
-            if history.history_deformation and history.history_deformation[-1]:
-                num_cases = len(history.history_deformation[-1])
-                self.case_combo.clear()
-                for j in range(num_cases):
-                    self.case_combo.addItem(f'Case {j}')
+            # Update iteration slider
+            if iteration > self.iteration_slider.maximum():
+                self.iteration_slider.setMaximum(iteration)
+                # If we are strictly following (at max-1 since max just increased by 1), update
+                if self.iteration_slider.value() == iteration - 1:
+                    self.iteration_slider.setValue(iteration)
             
             # Update plot
             plt.style.use('dark_background')  # Set dark theme for black background and white text
@@ -194,37 +251,76 @@ class OptimizationMonitorUI(QMainWindow):
             ax.grid(True, color='white', linestyle='--', linewidth=0.5)
             self.canvas.draw()
 
+    def on_slider_change(self, value):
+        self.iteration_label.setText(str(value))
+
+    def check_slider_update(self):
+        val = self.iteration_slider.value()
+        if val != self.last_plotted_iteration:
+            self.plot_selected()
+
     def plot_selected(self):
-        selected_iter = int(self.iteration_combo.currentText()) if self.iteration_combo.currentText() else 0
-        selected_case = int(self.case_combo.currentText().split()[-1]) if self.case_combo.currentText() else 0
+        selected_iter = self.iteration_slider.value()
+        self.last_plotted_iteration = selected_iter
+        
+        txt = self.case_combo.currentText()
+        selected_case = int(txt.split()[-1]) if txt else 0
         
         if self.path_result:
-            # Plot surface using embedded pyvista
+            # Plot surface using cache
             plotter_surface = self.pyvista_container_surface.get_plotter()
+            surface_camera = plotter_surface.camera_position
+
             plotter_surface.clear()
             plotter_surface.enable_lightkit()
             plotter_surface.set_background('black')
-            self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=selected_iter)
-            self.params.geometry.plot(plotter=plotter_surface)
-
-            # Add coordinate axes
-            plotter_surface.show_axes()
             
-            # Plot deformation using embedded pyvista with obj file
+            meshes = []
+            if selected_iter in self.surface_cache:
+                meshes = self.surface_cache[selected_iter]
+            else:
+                try:
+                    self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=selected_iter)
+                    meshes = self.params.geometry.get_meshes()
+                    self.surface_cache[selected_iter] = meshes
+                except Exception as e:
+                    print(f"Error loading geometry: {e}")
+
+            for i, mesh in enumerate(meshes):
+                alpha = 0.6 if i == 0 else 1.0
+                plotter_surface.add_mesh(mesh, opacity=alpha, color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
+                           diffuse=0.8, specular=0.2, ambient=0.3, specular_power=10,
+                           smooth_shading=True, show_edges=False)
+
+            plotter_surface.show_axes()
+            plotter_surface.camera_position = surface_camera
+            
+            # Plot deformation using cache
             plotter_def = self.pyvista_container_deformation.get_plotter()
+            def_camera = plotter_def.camera_position
+
             plotter_def.clear()
             plotter_def.enable_lightkit()
             plotter_def.set_background('black')
-            obj_path = f"{self.path_result}/log/deformation/task_{selected_case}_iter_{selected_iter}.obj"
-            try:
-                mesh = pv.read(obj_path)
-                plotter_def.add_mesh(mesh, color=(40.0/255, 120.0/255, 181.0/255), opacity=1.0, show_edges=True)
-                
-                # Add coordinate axes
+            
+            mesh_def = None
+            if selected_iter in self.deformation_cache and selected_case in self.deformation_cache[selected_iter]:
+                mesh_def = self.deformation_cache[selected_iter][selected_case]
+            else:
+                # Fallback to file reading if not cached
+                obj_path = f"{self.path_result}/log/deformation/task_{selected_case}_iter_{selected_iter}.obj"
+                try:
+                    import os
+                    if os.path.exists(obj_path):
+                         mesh_def = pv.read(obj_path)
+                except Exception as e:
+                    print(f"Error loading OBJ: {e}")
+            
+            if mesh_def:
+                plotter_def.add_mesh(mesh_def, color=(40.0/255, 120.0/255, 181.0/255), opacity=1.0, show_edges=True)
                 plotter_def.show_axes()
                 
-            except Exception as e:
-                print(f"Error loading OBJ: {e}")
+            plotter_def.camera_position = def_camera
 
 
 def run_ui(dataqueue: mp.Queue, main_filepath: str = None):

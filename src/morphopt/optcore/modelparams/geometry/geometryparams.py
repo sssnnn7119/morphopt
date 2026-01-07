@@ -14,100 +14,307 @@ import morphopt
 from .geometryinterfaces.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
 
+class MeshGenerator:
+    def __init__(self, mesh_size_min=None, mesh_size_max=None):
+        print("Initializing GMSH...")
+        gmsh.initialize()
+        self.files_map = {}
+        self.surface_tags_by_index = {}
+        self.sorted_indices = []
+        
+        # Set mesh size options if provided
+        if mesh_size_min is not None:
+            print(f"Setting Mesh.MeshSizeMin to {mesh_size_min}")
+            gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_size_min)
+            
+        if mesh_size_max is not None:
+            print(f"Setting Mesh.MeshSizeMax to {mesh_size_max}")
+            gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
+            
 
-class MeshQualityOptimizer:
-    """Simplified optimizer assuming tetra connectivity is already a numpy int array of shape [Ne,4]."""
-    def __init__(self, elements: np.ndarray, nodes: np.ndarray):
-        self.elements = torch.from_numpy(elements.copy())
-        self.nodes = torch.from_numpy(nodes.copy())
+    def scan_directory(self, directory=None):
+        if directory is None:
+            directory = os.getcwd()
+            
+        print(f"Scanning directory {directory} for files...")
+        # Pattern: __surface-{number}.(stp|stl)
+        import re
+        pattern = re.compile(r'^__surface-(\d+)\.(stp|stl)$', re.IGNORECASE)
+        
+        self.files_map = {}
+        for filename in os.listdir(directory):
+            match = pattern.match(filename)
+            if match:
+                idx = int(match.group(1))
+                self.files_map[idx] = os.path.join(directory, filename)
+                print(f"  Found: {filename} (Index: {idx})")
+        
+        if 0 not in self.files_map:
+            raise FileNotFoundError("Base surface file (Index 0) not found. Need '__surface-0.stp' or '__surface-0.stl'.")
+            
+        self.sorted_indices = sorted(self.files_map.keys())
+        print(f"Processing indices: {self.sorted_indices}")
 
-    @staticmethod
-    def signed_volume(nodes: torch.Tensor, conn: torch.Tensor) -> torch.Tensor:
-        tets = nodes[conn]
-        v0, v1, v2, v3 = tets[:,0], tets[:,1], tets[:,2], tets[:,3]
-        return torch.einsum('ij,ij->i', torch.cross(v2-v0, v3-v0, dim=1), v1-v0)/6.0
+    def _get_all_surface_tags(self):
+        return set(dim_tag[1] for dim_tag in gmsh.model.getEntities(2))
 
-    @staticmethod
-    def aspect_penalty(nodes: torch.Tensor, conn: torch.Tensor, target: float=3.0) -> torch.Tensor:
-        t = nodes[conn]
-        edges = [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
-        lens = [ (t[:,a]-t[:,b]).norm(dim=1) for a,b in edges ]
-        L = torch.stack(lens, dim=1)
-        aspect = L.max(dim=1).values / (L.min(dim=1).values + 1e-12)
-        return torch.relu(aspect - target).pow(2).mean()
+    def load_and_process_files(self):
+        self.surface_tags_by_index = {}
 
-    def run(self, index_internal: np.ndarray, nodes_new: np.ndarray, iters: int=5, lr: float=0.001,
-        w_inv=1., w_boundary=10.0,
-        min_vol_ratio=0.001,
-        # Augmented Lagrangian parameters (for equality constraint g=0 on boundary)
-        al_rho_init: float = 300.0,
-        al_rho_max: float = 1e6,
-        al_increase: float = 10.0,
-        al_tol: float = 1e-8):
-        nodes = self.nodes.clone().requires_grad_(True)
-        conn = self.elements
+        for idx in self.sorted_indices:
+            filename = self.files_map[idx]
+            print(f"\n--- Processing Index {idx}: {filename} ---")
+            
+            # Snapshot current surfaces to identify new ones
+            pre_surfaces = self._get_all_surface_tags()
+            
+            ext = os.path.splitext(filename)[1].lower()
+            
+            if ext in ['.stp', '.step']:
+                print("  Type: STP (CAD)")
+                try:
+                    # Import OCC
+                    gmsh.model.occ.importShapes(filename)
+                    gmsh.model.occ.synchronize()
+                    
+                    # Remove volumes, keep surfaces
+                    vols = gmsh.model.getEntities(3)
+                    if vols:
+                        print(f"  Found {len(vols)} volume(s) in STP. Removing volume entities, keeping surfaces...")
+                        gmsh.model.occ.remove(vols, recursive=False)
+                        gmsh.model.occ.synchronize()
+                    
+                except Exception as e:
+                    raise RuntimeError(f"Error loading STP file {filename}: {e}")
 
-        # Target boundary coordinates to match exactly
-        nodes_new_boundary = torch.from_numpy(nodes_new[~index_internal]).detach().clone()
+            elif ext in ['.stl']:
+                print("  Type: STL (Discrete)")
+                try:
+                    gmsh.merge(filename)
+                except Exception as e:
+                    raise RuntimeError(f"Error loading STL file {filename}: {e}")
+            
+            # Identify newly added surfaces
+            post_surfaces = self._get_all_surface_tags()
+            new_surfaces = list(post_surfaces - pre_surfaces)
+            
+            if not new_surfaces:
+                print(f"  Warning: No surfaces found in {filename}.")
+            else:
+                print(f"  Extracted {len(new_surfaces)} surface(s).")
+                self.surface_tags_by_index[idx] = new_surfaces
 
-        # Use L-BFGS with strong Wolfe line search
-        opt = torch.optim.LBFGS(
-            [nodes],
-            lr=lr,
-            max_iter=50,            # inner iterations per step (line-search driven)
-            history_size=50,
-            tolerance_grad=1e-10,
-            tolerance_change=1e-6,
-            line_search_fn="strong_wolfe",
-        )
+    def construct_volume(self):
+        print("\n--- Constructing Volume ---")
+        
+        if 0 not in self.surface_tags_by_index or not self.surface_tags_by_index[0]:
+            raise RuntimeError("Error: No surfaces available for base (Index 0).")
 
-        # Augmented Lagrangian state (note: boundary nodes are not optimization variables here).
-        # We still keep the AL scaffolding for extensibility; with boundary clamped, g==0 always.
-        rho = float(al_rho_init)
+        loops = []
+        
+        # Process Base (0) first
+        try:
+            base_loop = gmsh.model.geo.addSurfaceLoop(self.surface_tags_by_index[0])
+            loops.append(base_loop)
+            print("  Added outer surface loop (from Index 0).")
+        except Exception as e:
+            raise RuntimeError(f"Error creating outer loop: {e}")
 
-        # Outer iterations: augmented Lagrangian updates + early stopping on constraints and volumes
-        last_min_vol = None
-        last_g_norm = None
-        for _ in range(max(1, iters)):
-            def closure():
-                opt.zero_grad()
-                nodes_iter = nodes.clone()
+        # Process Cavities (>0)
+        for idx in self.sorted_indices:
+            if idx == 0: continue
+            tags = self.surface_tags_by_index.get(idx)
+            if tags:
+                try:
+                    cavity_loop = gmsh.model.geo.addSurfaceLoop(tags)
+                    loops.append(cavity_loop)
+                    print(f"  Added cavity loop (from Index {idx}).")
+                except Exception as e:
+                    raise RuntimeError(f"Error creating cavity loop for index {idx}: {e}")
 
-                # Physics/quality term: barrier on inverted/near-inverted tets
-                vol = self.signed_volume(nodes_iter, conn)
-                loss_inv = torch.exp(-(vol + min_vol_ratio) / 0.01).sum()
+        # Create Volume
+        try:
+            vol_tag = gmsh.model.geo.addVolume(loops)
+            print(f"  Created Volume Tag: {vol_tag}")
+            gmsh.model.geo.synchronize()
+            
+            # Create Physical Volume
+            gmsh.model.addPhysicalGroup(3, [vol_tag], name="Volume_All")
+            
+        except Exception as e:
+            raise RuntimeError(f"Error creating volume: {e}")
 
-                # Augmented Lagrangian term for boundary equality (degenerates to zero due to clamp)
-                g = nodes_iter[~index_internal] - nodes_new_boundary  # should be 0
-                aug = 0.5 * rho * (g * g).sum()
+    def generate_mesh(self, dim=3):
+        print("\n--- Meshing ---")
+        try:
+            gmsh.model.mesh.generate(dim)
+        except Exception as e:
+            raise RuntimeError(f"Error during meshing: {e}")
 
-                loss = w_inv * loss_inv + aug
-                loss.backward()
-                return loss
+    def _generate_abaqus_surface_payload(self):
+        """
+        Generates the Abaqus SURFACE definition string by mapping 3D element faces
+        to the geometric surfaces.
+        """
+        print("  Generating Abaqus surface definitions...")
 
-            loss_val = opt.step(closure)
+        # Get all 3D tetrahedron elements (Type 4 in GMSH)
+        try:
+            tet_tags, tet_node_tags = gmsh.model.mesh.getElementsByType(4)
+        except:
+            print("  No 3D elements found.")
+            return ""
 
-            # Check early stopping condition (all tets positive volume)
-            with torch.no_grad():
-                nodes_iter = nodes.clone()
-                vol_now = self.signed_volume(nodes_iter, conn)
-                last_min_vol = vol_now.min().item()
+        if len(tet_tags) == 0:
+            return ""
 
-                g = nodes_iter[~index_internal] - nodes_new_boundary
+        # Map faces to elements
+        # Key: frozenset(3 nodes), Value: (element_tag, abaqus_face_id)
+        # Abaqus C3D4 Face Defs (Nodes 1-4):
+        # S1: 1, 2, 3
+        # S2: 1, 4, 2
+        # S3: 2, 4, 3
+        # S4: 3, 4, 1
+        
+        # GMSH Tet4 Node Order: 0, 1, 2, 3
+        # GMSH flattened check:
+        # We need to ensure we use the correct nodes.
+        # Assuming compact packing.
+        
+        face_map = {}
 
-                print("  Current min volume: %.6e, Current match residual: %.3e\r" % (
-                    last_min_vol, g.abs().max().item()
-                ), end='')
-                if last_min_vol >= min_vol_ratio:
-                    break
+        # Use NumPy for vectorized operations
+        tet_nodes = np.array(tet_node_tags).reshape(-1, 4)
+        tet_tags_arr = np.array(tet_tags)
 
+        # Nodes for each face definition
+        # S1: (0, 1, 2), S2: (0, 3, 1), S3: (1, 3, 2), S4: (2, 3, 0)
+        face_defs = [
+            ([0, 1, 2], "S1"),
+            ([0, 3, 1], "S2"),
+            ([1, 3, 2], "S3"),
+            ([2, 3, 0], "S4")
+        ]
 
-        # write back nodes
-        print()
-        print("Mesh optimization done. Min volume: %.6e" % (
-            last_min_vol if last_min_vol is not None else float('nan'),
-        ))
-        return nodes.detach(), last_min_vol, g.abs().max().item()    
+        for col_idx, face_name in face_defs:
+            # Extract (N, 3)
+            faces = tet_nodes[:, col_idx]
+            # Create keys and update map
+            for key, tag in zip(map(frozenset, faces), tet_tags_arr):
+                face_map[key] = (tag, face_name)
+
+        payload_lines = []
+        
+        # For each surface index, find which faces belong to it
+        for idx, surf_tags in self.surface_tags_by_index.items():
+            
+            # Collect sets of elements for each face type
+            sets_data = {
+                "S1": [], "S2": [], "S3": [], "S4": []
+            }
+            
+            found_count = 0
+            
+            # Iterate over the geometric surfaces for this index
+            for s_tag in surf_tags:
+                # Get 2D elements (Triangles = Type 2) on this surface
+                try:
+                    tri_tags, tri_node_tags = gmsh.model.mesh.getElementsByType(2, tag=s_tag)
+                except:
+                    continue
+                    
+                n_tris = len(tri_tags)
+                if n_tris == 0: continue
+                
+                for t in range(n_tris):
+                    base = t * 3
+                    tn0 = tri_node_tags[base]
+                    tn1 = tri_node_tags[base+1]
+                    tn2 = tri_node_tags[base+2]
+                    
+                    key = frozenset((tn0, tn1, tn2))
+                    
+                    if key in face_map:
+                        etag, face_id = face_map[key]
+                        sets_data[face_id].append(etag)
+                        found_count += 1
+            
+            if found_count > 0:
+                print(f"    Mapped {found_count} faces for surface_{idx}_All")
+                surf_name = f"surface_{idx}_All"
+                
+                # Create ELSETs for each face type
+                active_faces = []
+                for face_id, el_list in sets_data.items():
+                    if el_list:
+                        set_name = f"_{surf_name}_{face_id}"
+                        active_faces.append(f"{set_name}, {face_id}")
+                        
+                        payload_lines.append(f"*ELSET, ELSET={set_name}, INTERNAL")
+                        # Write IDs, 16 per line max usually, plain csv is fine
+                        # Join with commas
+                        # Chunking for niceness
+                        chunk_size = 16
+                        for k in range(0, len(el_list), chunk_size):
+                            chunk = el_list[k:k+chunk_size]
+                            line = ", ".join(str(e) for e in chunk)
+                            payload_lines.append(line)
+                
+                # Create SURFACE definition
+                payload_lines.append(f"*SURFACE, TYPE=ELEMENT, NAME={surf_name}")
+                payload_lines.extend(active_faces)
+        
+        return "\n".join(payload_lines)
+
+    def export(self, outfile="output.inp"):
+        print(f"\n--- Exporting to {outfile} ---")
+        
+        # 1. Generate the surface definition payload based on the mesh
+        surface_payload = self._generate_abaqus_surface_payload()
+        
+        # 2. Write the standard GMSH output (Volume only)
+        # Note: We do NOT have Physical Surfaces defined, so they won't be exported as elements.
+        gmsh.write(outfile)
+        
+        # 3. Post-process to insert *Part and append surfaces
+        print("  Post-processing INP file...")
+        with open(outfile, 'r') as f:
+            lines = f.readlines()
+
+        lines.insert(2, "*Part, name=final_model\n")
+            
+        # Append surface payload
+        if surface_payload:
+            lines.append("\n")
+            lines.append(surface_payload)
+            lines.append("\n")
+
+        # end part
+        lines.append("*End Part\n")
+            
+        # Write back
+        with open(outfile, 'w') as f:
+            f.writelines(lines)
+            
+    def finalize(self):
+        gmsh.finalize()
+        print("Done.")
+
+    @classmethod
+    def run(cls, seed_size: float, output_file="output.inp", directory: str = None):
+        generator = cls(mesh_size_max=seed_size*1.4,
+                        mesh_size_min=seed_size*0.7)
+        try:
+            generator.scan_directory(directory=directory)
+            generator.load_and_process_files()
+            generator.construct_volume()
+            generator.generate_mesh(3)
+            generator.export(output_file)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            generator.finalize()
+
 
 class GeometryParams(BaseParams):
     """
@@ -422,71 +629,9 @@ class GeometryParams(BaseParams):
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        if morphopt.controller.objfun.inp is None:
-            self._regenerate(material_para=material_para)
-            self._nodes_last_regenerate = morphopt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
-            self._iter_since_last_regenerate = 0
-            return
-        
+        self._regenerate(material_para=material_para)
+        return
 
-        part = morphopt.controller.objfun.inp.part['final_model']
-        nodes_now = part.nodes[:, 1:]  # shape [N,3]
-
-        if self._nodes_last_regenerate is not None:
-            # judge whether the nodes have changed significantly
-            disp: np.ndarray = np.linalg.norm(nodes_now - self._nodes_last_regenerate, axis=1)
-            max_node_disp = float(disp.max())
-        else:
-            max_node_disp = 0.0
-
-        need_regen = (
-            self._iter_since_last_regenerate >= self._max_iter_before_regenerate
-            or (self._nodes_last_regenerate is not None and max_node_disp > self._max_nodes_change)
-        )
-
-        if need_regen:
-            self._regenerate(material_para=material_para)
-            self._iter_since_last_regenerate = 0
-            # update the reference nodes
-            self._nodes_last_regenerate = morphopt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
-        else:
-            last_min_vol, max_g = self._refinemesh()
-            if max_g > 1e-1 or last_min_vol < 0:
-                self._regenerate(material_para=material_para)
-                self._iter_since_last_regenerate = 0
-                self._nodes_last_regenerate = morphopt.controller.objfun.inp.part['final_model'].nodes[:, 1:].copy()
-            else:
-                self._iter_since_last_regenerate += 1
-        
-        # for i in range(self.num_surface):
-        #     self.surface_list[i].pre_load()
-
-    def _refinemesh(self):
-        """
-        This function refines the mesh of the geometric model of the soft robot.
-        """
-
-        # update each surface nodes
-        inp = morphopt.controller.objfun.inp
-        part = inp.part['final_model']
-        nodes_new = part.nodes[:, 1:].copy()
-        index_internal = np.ones([part.nodes.shape[0]], dtype=bool)
-        for i in range(self.num_surface):
-            node_surface = self.surface_list[i].model.map(self.surface_list[i]._coordinates_fea).cpu().numpy().T
-            nodes_new[self._surface_node_index[i]] = node_surface
-            nodes_new = self.surface_list[i].refine_fea_mesh(part, i, nodes_new)
-
-            index_internal[list(part.sets_nodes['surface_%d_All' % i])] = False
-
-        # optimize internal nodes & fix element orientation
-        elements = list(part.elems.values())[0][:, 1:]
-        optimizer = MeshQualityOptimizer(elements=elements, nodes=part.nodes[:, 1:])
-        nodes_new, last_min_vol, max_g = optimizer.run(index_internal=index_internal, nodes_new=nodes_new, iters=5, lr=0.08)
-
-        part.nodes[:, 1:] = nodes_new.detach().cpu().numpy()
-
-
-        return last_min_vol, max_g
 
     def _regenerate(self, material_para: list[float]) -> None:
         """
@@ -499,36 +644,19 @@ class GeometryParams(BaseParams):
         self._export_data(foldpath=path_output)
 
         # call Abaqus for FEA
-        self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
+        inp_path = morphopt.controller.path_result + '/Cache/TopOptRun.inp'
+        # self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
+        morphopt.controller.pools.apply_async(MeshGenerator.run, kwds={
+            'seed_size': self.fea_seed_size,
+            'output_file': inp_path,
+            'directory': path_output
+        }).get()
 
         # read the inp file
-        inp_path = morphopt.controller.path_result + '/Cache/TopOptRun.inp'
         inp = torchfea.FEA_INP()
         inp.read_inp(path=inp_path)
 
         morphopt.controller.objfun.inp = inp
-        # match the points on the surfaces
-        self._match_points_surface()
-
-    def _match_points_surface(self):
-        """
-        Match the points on the surfaces after FEA meshing.
-        """
-        inp = morphopt.controller.objfun.inp
-        nodes = inp.part['final_model'].nodes[:, 1:]
-
-        temp = torch.tensor([1.])
-        default_device = temp.device
-
-        self._surface_node_index = []
-        for i in range(self.num_surface):
-            if self.surface_list[i].surf_type == 0:
-                surf_set_now = np.unique(np.array(list(inp.part['final_model'].sets_nodes['surface_%d_Lateral' % i])))
-            else:
-                surf_set_now = np.unique(np.array(list(inp.part['final_model'].sets_nodes['surface_%d_All' % i])))
-            self._surface_node_index.append(surf_set_now)
-            surf_nodes = torch.from_numpy(nodes[surf_set_now]).T.to(default_device)
-            self.surface_list[i].match_points_surface(surf_nodes)
 
     def _export_data(self, foldpath: str) -> list[str]:
         """
@@ -544,79 +672,3 @@ class GeometryParams(BaseParams):
         if not files:
             print("No __surface-*.stp files found.")
             return
-
-
-        pools = morphopt.controller.pools
-        result = pools.apply_async(self.merge_stps, args=(foldpath, files))
-        return result.get()
-
-    @staticmethod
-    def merge_stps(foldpath, files):
-        if not gmsh.isInitialized():
-            gmsh.initialize()
-            
-        try:
-            gmsh.model.add("boolean_operation")
-            
-            # Import the main body (first file)
-            # importShapes returns a list of (dim, tag) tuples
-            main_shapes = gmsh.model.occ.importShapes(files[0])
-            gmsh.model.occ.synchronize()
-            
-            if not main_shapes:
-                print(f"Failed to import main shape from {files[0]}")
-                return
-
-            # print(f"Loaded main shape from {files[0]}")
-
-            # Subtract each subsequent shape
-            for f in files[1:]:
-                # print(f"Subtracting {f}")
-                tool_shapes = gmsh.model.occ.importShapes(f)
-                gmsh.model.occ.synchronize()
-                
-                if tool_shapes:
-                    # Cut: object, tool
-                    # removeObject=True, removeTool=True by default
-                    main_shapes, _ = gmsh.model.occ.cut(main_shapes, tool_shapes)
-                    gmsh.model.occ.synchronize()
-            
-            # Write the result
-            gmsh.write(foldpath + "__surface_all.stp")
-            # print("Output written to _surface_all.stp")
-            
-        except Exception as e:
-            print(f"Error during Gmsh export: {e}")
-        finally:
-            gmsh.finalize()
-
-        
-
-    def _call_Abaqus(self, path_output: str, material_para: list[float], seed_size: float, mesh_order: int) -> None:
-        
-        current_path = os.getcwd()
-
-        shutil.copy(os.path.dirname(os.path.abspath(__file__)) + '/_Abaqus/GenModel.py', path_output)
-        with open(path_output + '__FEM_Para_Base.txt', 'w') as f:
-
-            # surface type
-            f.write('Surfaces*\t')
-            for sf in self.surface_list:
-                f.write('%d\t' % sf.surf_type)
-            f.write('\n')
-
-            # materials
-            f.write(
-                'Material*\t%s\t%e\t%d\t%e\t%e\n' %
-                ('Rubber', material_para[0], material_para[1],
-                material_para[2], material_para[3]))
-
-            # Seed size
-            f.write('SeedSize*\t%e\n' % seed_size)
-
-            # mesh order
-            f.write('MeshOrder*\t%d\n' % mesh_order)
-        os.chdir(path_output)
-        import subprocess
-        subprocess.run('abaqus cae noGUI=GenModel.py', check=True, shell=True)
-        os.chdir(current_path)

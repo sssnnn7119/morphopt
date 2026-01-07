@@ -147,9 +147,44 @@ class FEAParams(BaseParams):
         Returns:
             FEAController: The created FEAController instance with load interfaces added.
         """
+
+        default_device = torch.tensor(0.).device
+        default_dtype = torch.tensor(0.).dtype
         
         # get the FEA model
-        fe = torchfea.from_inp(inp)
+        nodes = inp.part['final_model'].nodes[:, 1:]
+        part = torchfea.Part(torch.from_numpy(nodes).to(default_device).to(default_dtype))
+        for surface_name, surface in inp.part['final_model'].surfaces.items():
+            sf_now = []
+            for sf in surface:
+                sf_now.append((sf[0], sf[1]))
+            part.add_surface_set(surface_name, sf_now)
+
+        index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
+        part.set_nodes['surface_0_Bottom'] = index_bottom
+        index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
+        part.set_nodes['surface_0_Head'] = index_head
+
+        elems = inp.part['final_model'].elems['C3D4'][:, 1:]
+        elems_index = inp.part['final_model'].elems['C3D4'][:, 0]
+        element = torchfea.elements.initialize_element(element_type='C3D4',
+                                                    elems_index=torch.from_numpy(elems_index),     
+                                                    elems=torch.from_numpy(elems), 
+                                                    part=part)
+        element.density = 1.02e-6
+
+        material = torchfea.materials.initialize_materials(materials_type=1,
+                                                        materials_params=torch.tensor([[0.48, 4.8]]))
+        element.set_materials(material)
+
+        part.add_element(element)
+
+        assembly = torchfea.Assembly()
+        assembly.add_part(part=part, name='final_model')
+        assembly.add_instance(instance=torchfea.Instance(part), name='final_model')
+
+        fe = torchfea.FEAController()
+        fe.assembly = assembly
         fe.solver = torchfea.solver.StaticImplicitSolver()
 
         # Add fea features

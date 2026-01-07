@@ -44,27 +44,35 @@ class CsInterface(BaseInterface):
         self.surface_out_knots = knots
         self.surface_out_coo = coo
 
-        # Save STP file
-        converter = self.MeshSurfaceConverter()
-        data = converter.convert_mesh_to_stp(faces=coo,
-                                      vertices=r.T,
-                                        filename=name_output)
-        with open(path_output + name_output + '.stp', 'w') as f:
-            f.write(data)
+        # # Save STP file
+        # converter = self.MeshSurfaceConverter()
+        # data = converter.convert_mesh_to_stp(faces=coo,
+        #                               vertices=r.T,
+        #                                 filename=name_output)
+        # with open(path_output + name_output + '.stp', 'w') as f:
+        #     f.write(data)
 
-        with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
-            num_points = 10
-            info = ''
+        # Save STL file
+        import pyvista as pv
+        vertices = R.cpu().numpy().T
+        faces = coo
+        faces_pv = np.hstack((np.full((faces.shape[0], 1), 3), faces)).flatten()
+        mesh = pv.PolyData(vertices, faces_pv)
+        mesh.save(path_output + name_output + '.stl')
 
-            points = self.model.fibonacci_grid(num_points, dimen=3)
-            output = self.model.map(points).transpose(0, 1).tolist()
+        # with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
+        #     num_points = 10
+        #     info = ''
 
-            for pt in output:
-                info += '%e, %e, %e\n' % (pt[0], pt[1], pt[2])
+        #     points = self.model.fibonacci_grid(num_points, dimen=3)
+        #     output = self.model.map(points).transpose(0, 1).tolist()
 
-            f.write(info)
+        #     for pt in output:
+        #         info += '%e, %e, %e\n' % (pt[0], pt[1], pt[2])
 
-        return name_output + '.stp'
+        #     f.write(info)
+
+        return name_output + '.stl'
     
     def get_surface_parameters(self) -> torch.Tensor:
         """

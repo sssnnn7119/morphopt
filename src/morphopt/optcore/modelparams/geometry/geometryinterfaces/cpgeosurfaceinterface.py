@@ -81,13 +81,13 @@ class CPGEOSurfaceInterface(BaseInterface):
         self.surface_out_knots = knots
         self.surface_out_coo = Coo
 
-        # Save STP file
-        converter = self.MeshSurfaceConverter()
-        data = converter.convert_mesh_to_stp(faces=Coo.cpu().numpy(),
-                                      vertices=R.cpu().numpy().T,
-                                        filename=name_output)
-        with open(path_output + name_output + '.stp', 'w') as f:
-            f.write(data)
+        # # Save STP file
+        # converter = self.MeshSurfaceConverter()
+        # data = converter.convert_mesh_to_stp(faces=Coo.cpu().numpy(),
+        #                               vertices=R.cpu().numpy().T,
+        #                                 filename=name_output)
+        # with open(path_output + name_output + '.stp', 'w') as f:
+        #     f.write(data)
 
         # Save STL file
         import pyvista as pv
@@ -97,19 +97,19 @@ class CPGEOSurfaceInterface(BaseInterface):
         mesh = pv.PolyData(vertices, faces_pv)
         mesh.save(path_output + name_output + '.stl')
 
-        with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
-            num_points = 10
-            info = ''
+        # with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
+        #     num_points = 10
+        #     info = ''
 
-            points = torch.tensor([[0., 0., 1.], [0., 1., 0.], [1., 0., 0.]]).T
-            output = self.model.map(points).transpose(0, 1).tolist()
+        #     points = torch.tensor([[0., 0., 1.], [0., 1., 0.], [1., 0., 0.]]).T
+        #     output = self.model.map(points).transpose(0, 1).tolist()
 
-            for pt in output:
-                info += '%e, %e, %e\n' % (pt[0], pt[1], pt[2])
+        #     for pt in output:
+        #         info += '%e, %e, %e\n' % (pt[0], pt[1], pt[2])
 
-            f.write(info)
+        #     f.write(info)
 
-        return name_output + '.stp'
+        return name_output + '.stl'
     
     def match_points_surface(self, points):
         points_init = self.model.map(self.surface_out_knots).cpu()

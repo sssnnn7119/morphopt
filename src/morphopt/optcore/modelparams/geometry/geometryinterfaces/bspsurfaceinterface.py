@@ -487,50 +487,50 @@ class BspInterface(BaseInterface):
                                                     name_output))
         result.get()
 
-        with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
-            num_points = 10
-            length = 0.1
-            info = ''
+        # with open(path_output + '__FEM' + name_output + '.csv', 'w') as f:
+        #     num_points = 10
+        #     length = 0.1
+        #     info = ''
 
-            # for head surface search
-            head = self.model.map(torch.tensor([[1, 1], [0.7, 0.2]]))
-            vec = self.model.map(torch.tensor([[1, 1], [0.7, 0.2]]),
-                        derivative=[0, 1])
-            vv = torch.sqrt(torch.sum(vec**2, dim=0))
-            vec /= vv
-            info += '%e, %e, %e\n' % (head[0, 0] + length * vec[1, 0] *
-                                    (1 - 2 * int(flip)),
-                                    head[1, 0] - length * vec[0, 0] *
-                                    (1 - 2 * int(flip)), head[2, 0])
-            info += '%e, %e, %e\n' % (head[0, 1] + length * vec[1, 1] *
-                                    (1 - 2 * int(flip)),
-                                    head[1, 1] - length * vec[0, 1] *
-                                    (1 - 2 * int(flip)), head[2, 1])
+        #     # for head surface search
+        #     head = self.model.map(torch.tensor([[1, 1], [0.7, 0.2]]))
+        #     vec = self.model.map(torch.tensor([[1, 1], [0.7, 0.2]]),
+        #                 derivative=[0, 1])
+        #     vv = torch.sqrt(torch.sum(vec**2, dim=0))
+        #     vec /= vv
+        #     info += '%e, %e, %e\n' % (head[0, 0] + length * vec[1, 0] *
+        #                             (1 - 2 * int(flip)),
+        #                             head[1, 0] - length * vec[0, 0] *
+        #                             (1 - 2 * int(flip)), head[2, 0])
+        #     info += '%e, %e, %e\n' % (head[0, 1] + length * vec[1, 1] *
+        #                             (1 - 2 * int(flip)),
+        #                             head[1, 1] - length * vec[0, 1] *
+        #                             (1 - 2 * int(flip)), head[2, 1])
 
-            # for bottom surface search
-            bottom = self.model.map(torch.tensor([[0, 0], [0.7, 0.2]]))
-            vec = self.model.map(torch.tensor([[0, 0], [0.7, 0.2]]),
-                        derivative=[0, 1])
-            vv = torch.sqrt(torch.sum(vec**2, dim=0))
-            vec /= vv
-            info += '%e, %e, %e\n' % (bottom[0, 0] + length * vec[1, 0] *
-                                    (1 - 2 * int(flip)),
-                                    bottom[1, 0] - length * vec[0, 0] *
-                                    (1 - 2 * int(flip)), bottom[2, 0])
-            info += '%e, %e, %e\n' % (bottom[0, 1] + length * vec[1, 1] *
-                                    (1 - 2 * int(flip)),
-                                    bottom[1, 1] - length * vec[0, 1] *
-                                    (1 - 2 * int(flip)), bottom[2, 1])
+        #     # for bottom surface search
+        #     bottom = self.model.map(torch.tensor([[0, 0], [0.7, 0.2]]))
+        #     vec = self.model.map(torch.tensor([[0, 0], [0.7, 0.2]]),
+        #                 derivative=[0, 1])
+        #     vv = torch.sqrt(torch.sum(vec**2, dim=0))
+        #     vec /= vv
+        #     info += '%e, %e, %e\n' % (bottom[0, 0] + length * vec[1, 0] *
+        #                             (1 - 2 * int(flip)),
+        #                             bottom[1, 0] - length * vec[0, 0] *
+        #                             (1 - 2 * int(flip)), bottom[2, 0])
+        #     info += '%e, %e, %e\n' % (bottom[0, 1] + length * vec[1, 1] *
+        #                             (1 - 2 * int(flip)),
+        #                             bottom[1, 1] - length * vec[0, 1] *
+        #                             (1 - 2 * int(flip)), bottom[2, 1])
 
-            U = torch.arange(num_points) / num_points
-            V = 0.5 * torch.ones_like(U)
+        #     U = torch.arange(num_points) / num_points
+        #     V = 0.5 * torch.ones_like(U)
 
-            lateral = self.model.map((V, U))
+        #     lateral = self.model.map((V, U))
 
-            for i in range(num_points):
-                info += "%e, %e, %e\n" % tuple(lateral[:, i])
+        #     for i in range(num_points):
+        #         info += "%e, %e, %e\n" % tuple(lateral[:, i])
 
-            f.write(info)
+        #     f.write(info)
 
         return name_output + '.stp'
     
