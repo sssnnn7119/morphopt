@@ -267,16 +267,22 @@ class Controller:
 
         # Perform the optimization step
         # Generate the model
-        self.params.geometry.generate(material_para=[self.params.materials.density, 1, 
-                                                self.params.materials.mu, 
-                                                self.params.materials.kappa])
+        inp = self.params.geometry.generate()
+        self.objfun.inp = inp
+        fe = self.params.feamodel.create_fea(inp=inp)
+        self.params.materials.set_materials(fe)
+        fe.initialize()
+        self.objfun.fe = fe
 
         t1 = time.time()
 
         # Perform finite element analysis (FEA)
-        self.solver.solve()
+        self.objfun.U = self.solver.solve()
 
         t2 = time.time()
+
+        # the adjoint problem
+        self.objfun.calculate_adjoint_problem()
 
         # Update the surfaces based on the FEA results
         self.updater.update()

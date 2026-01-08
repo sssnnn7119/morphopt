@@ -5,7 +5,7 @@ import torch
 import torchfea
 import multiprocessing as mp
 
-from .modelparams import Params, FEAParams
+from .modelparams import Params, FEAParams, Materials
 
 from .baseobject import BaseObject
 import morphopt
@@ -75,12 +75,10 @@ class MorphSolver(BaseObject):
                 - GCv (list[torch.Tensor]): The first adjoint displacement field.
                 - GCw (list[torch.Tensor]): The second adjoint displacement field.
         """
-        
-        fe = self.params.feamodel.create_fea(inp=morphopt.controller.objfun.inp)
-        fe.initialize()
 
         # multiprocess FEA
-        # self._solve_FEA(morphopt.controller.objfun.inp, self.params.loads, 0, self.available_gpus)
+        # self._solve_FEA(morphopt.controller.objfun.inp, self.params.feamodel, self.params.materials,
+        #                 self.task_index_list[0], self.available_gpus)
         pools = morphopt.controller.pools
         result = []
         for i in range(len(self.task_index_list)):
@@ -88,7 +86,7 @@ class MorphSolver(BaseObject):
                             pools.apply_async(self._solve_FEA,
                                             kwds={'inp': morphopt.controller.objfun.inp, 
                                                     'feamodel': self.params.feamodel, 
-                                                    'step_index': i, 
+                                                    'matetialmodel': self.params.materials,
                                                     'task_index': self.task_index_list[i],
                                                     'available_gpus': self.available_gpus}))
 
@@ -100,18 +98,22 @@ class MorphSolver(BaseObject):
             list_number += self.task_index_list[i]
         list_number = np.array(list_number).flatten()
         
-        Uresult = torch.tensor(U0).to(torch.float64).to(fe.assembly.device)[list_number]
-        morphopt.controller.objfun.set_results(fe=fe, U=Uresult)
-        morphopt.controller.objfun.calculate_adjoint_problem()
+        Uresult = torch.tensor(U0).to(torch.float64)[list_number]
+        return Uresult
+        
 
     @classmethod
-    def _solve_FEA(current_class, inp: torchfea.FEA_INP, feamodel: FEAParams, step_index: int, task_index: list[int], available_gpus: list[str], U_guess: np.ndarray = None):
+    def _solve_FEA(cls, inp: torchfea.FEA_INP, 
+                   feamodel: FEAParams, 
+                   matetialmodel: Materials,
+                   task_index: list[int], 
+                   available_gpus: list[str], 
+                   U_guess: np.ndarray = None):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
         import torch
         sys.path.append(os.getcwd())
-        import torchfea
 
         current_process_name = mp.current_process().name
         try:
@@ -132,6 +134,7 @@ class MorphSolver(BaseObject):
         torch.cuda.empty_cache()
         # construct the FEA
         fe = feamodel.create_fea(inp)
+        matetialmodel.set_materials(fe)
         
         # solve displacement 0
         fe.solver.maximum_iteration = 200

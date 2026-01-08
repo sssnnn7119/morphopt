@@ -171,11 +171,6 @@ class FEAParams(BaseParams):
                                                     elems_index=torch.from_numpy(elems_index),     
                                                     elems=torch.from_numpy(elems), 
                                                     part=part)
-        element.density = 1.02e-6
-
-        material = torchfea.materials.initialize_materials(materials_type=1,
-                                                        materials_params=torch.tensor([[0.48, 4.8]]))
-        element.set_materials(material)
 
         part.add_element(element)
 

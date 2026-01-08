@@ -60,14 +60,7 @@ class ObjectiveFunction(BaseObject):
             torch.Tensor: The value of the objective function.
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
-    
-    def set_results(self, fe: torchfea.FEAController,
-                    U: torch.Tensor) -> None:
-        """
-        Update the results of the FEA solver.
-        """
-        self.fe = fe
-        self.U = U.cpu()
+
     @property
     def num_tasks(self) -> int:
         """

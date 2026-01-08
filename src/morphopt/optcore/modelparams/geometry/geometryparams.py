@@ -623,17 +623,17 @@ class GeometryParams(BaseParams):
             mesh_list.append(mesh)
         return mesh_list
     
-    def generate(self, material_para: list[float] | list[torch.Tensor]) -> None:
+    def generate(self) -> None:
         """
         This function generates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        self._regenerate(material_para=material_para)
-        return
+        return self._regenerate()
+        
 
 
-    def _regenerate(self, material_para: list[float]) -> None:
+    def _regenerate(self) -> None:
         """
         This function regenerates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
@@ -656,7 +656,7 @@ class GeometryParams(BaseParams):
         inp = torchfea.FEA_INP()
         inp.read_inp(path=inp_path)
 
-        morphopt.controller.objfun.inp = inp
+        return inp
 
     def _export_data(self, foldpath: str) -> list[str]:
         """
