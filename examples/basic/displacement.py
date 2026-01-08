@@ -9,6 +9,9 @@ class ThisController(morphopt.Controller):
         def get_objective(self):
             loss1 = -self.U[0][-2]
             return loss1
+        
+        def get_metrics(self):
+            return [self.U[0][-6], self.U[0][-4]]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):

@@ -61,6 +61,15 @@ class ObjectiveFunction(BaseObject):
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
+    def get_metrics(self) -> list[float]:
+        """
+        Get custom metrics for display.
+        
+        Returns:
+            list[float]: A list of metric values.
+        """
+        return []
+
     @property
     def num_tasks(self) -> int:
         """

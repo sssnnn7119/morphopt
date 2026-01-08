@@ -303,11 +303,12 @@ class Controller:
         else:
             GC_start_index = self.objfun.fe.assembly._GC_list_indexStart[self.objfun.fe.assembly.get_reference_point('RP_head')._RGC_index]
             displacement = [self.objfun.U[i][GC_start_index:GC_start_index+6].tolist() for i in range(len(self.objfun.U))]
-        self.history.history_deformation.append(displacement)
-        self.history.history_objective.append(loss.item())
-        self.history.history_time.append([t1-t0, t2-t1, t3-t2])
-        self.history.history_num_elements.append(self.objfun.fe.assembly.get_instance('final_model').elems['element-0']._elems.shape[0])
-        self.history.history_num_nodes.append(self.objfun.fe.assembly.get_instance('final_model').nodes.shape[0])
+        self.history.append('deformation', displacement)
+        self.history.append('objective', loss.item())
+        self.history.append('metrics', self.objfun.get_metrics())
+        self.history.append('time', [t1-t0, t2-t1, t3-t2])
+        self.history.append('num_elements', self.objfun.fe.assembly.get_instance('final_model').elems['element-0']._elems.shape[0])
+        self.history.append('num_nodes', self.objfun.fe.assembly.get_instance('final_model').nodes.shape[0])
 
     def print_info(self, t0, t1, t2, t3) -> None:
         """

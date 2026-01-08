@@ -218,19 +218,90 @@ class OptimizationMonitorUI(QMainWindow):
             history.load(foldpath=self.path_result + '/log/', iteration=iteration)
             
             # Update table
+            # Detect metrics
+            metrics_data = history.history_metrics
+            num_metrics = 0
+            if metrics_data.size > 0:
+                 if metrics_data.ndim == 1:
+                     num_metrics = 1
+                     metrics_data = metrics_data.reshape(-1, 1)
+                 else:
+                     num_metrics = metrics_data.shape[1]
+            
+            # Detect deformation
+            deformation_data = history.history_deformation
+            num_def_cols = 0
+            def_labels = []
+            
+            # We need a flattened version for the table
+            deformation_data_flat = None
+
+            if deformation_data.size > 0:
+                 if deformation_data.ndim == 2:
+                     # (iter, dofs)
+                     num_def_cols = deformation_data.shape[1]
+                     for d in range(num_def_cols):
+                         def_labels.append(f'U0-{d}')
+                     deformation_data_flat = deformation_data
+                 elif deformation_data.ndim == 3:
+                     # (iter, tasks, dofs)
+                     n_tasks = deformation_data.shape[1]
+                     n_dofs = deformation_data.shape[2]
+                     num_def_cols = n_tasks * n_dofs
+                     for t in range(n_tasks):
+                         for d in range(n_dofs):
+                             def_labels.append(f'U{t}-{d}')
+                     deformation_data_flat = deformation_data.reshape(deformation_data.shape[0], -1)
+
+            # Base headers
+            headers = ['Iteration', 'Objective']
+            for m in range(num_metrics):
+                headers.append(f'Metric {m}')
+            headers.extend(['Init Time', 'FEA Time', 'Update Time', 'Num Elements', 'Num Nodes'])
+            headers.extend(def_labels)
+            
+            self.history_table.setColumnCount(len(headers))
+            self.history_table.setHorizontalHeaderLabels(headers)
+
             self.history_table.setRowCount(len(history.history_objective))
             for i in range(len(history.history_objective)):
-                self.history_table.setItem(i, 0, QTableWidgetItem(str(i+1)))
-                self.history_table.setItem(i, 1, QTableWidgetItem(f'{history.history_objective[i]:.6f}'))
+                col = 0
+                # Iteration
+                self.history_table.setItem(i, col, QTableWidgetItem(str(i+1))); col += 1
+                # Objective
+                self.history_table.setItem(i, col, QTableWidgetItem(f'{history.history_objective[i]:.6f}')); col += 1
+                
+                # Metrics
+                if num_metrics > 0:
+                     if i < len(metrics_data):
+                        for m in range(num_metrics):
+                            val = metrics_data[i, m]
+                            self.history_table.setItem(i, col, QTableWidgetItem(f'{val:.6f}')); col += 1
+                     else: col += num_metrics
+
+                # Time
                 if i < len(history.history_time):
                     t = history.history_time[i]
-                    self.history_table.setItem(i, 2, QTableWidgetItem(f'{t[0]:.2f}'))
-                    self.history_table.setItem(i, 3, QTableWidgetItem(f'{t[1]:.2f}'))
-                    self.history_table.setItem(i, 4, QTableWidgetItem(f'{t[2]:.2f}'))
+                    self.history_table.setItem(i, col, QTableWidgetItem(f'{t[0]:.2f}')); col += 1
+                    self.history_table.setItem(i, col, QTableWidgetItem(f'{t[1]:.2f}')); col += 1
+                    self.history_table.setItem(i, col, QTableWidgetItem(f'{t[2]:.2f}')); col += 1
+                else: col += 3
+                
+                # Elements/Nodes
                 if i < len(history.history_num_elements):
-                    self.history_table.setItem(i, 5, QTableWidgetItem(str(history.history_num_elements[i])))
+                    self.history_table.setItem(i, col, QTableWidgetItem(str(history.history_num_elements[i]))); col += 1
+                else: col += 1
                 if i < len(history.history_num_nodes):
-                    self.history_table.setItem(i, 6, QTableWidgetItem(str(history.history_num_nodes[i])))
+                    self.history_table.setItem(i, col, QTableWidgetItem(str(history.history_num_nodes[i]))); col += 1
+                else: col += 1
+
+                # Deformation
+                if num_def_cols > 0:
+                     if deformation_data_flat is not None and i < len(deformation_data_flat):
+                        for d in range(num_def_cols):
+                            val = deformation_data_flat[i, d]
+                            self.history_table.setItem(i, col, QTableWidgetItem(f'{val:.4e}')); col += 1
+                     else: col += num_def_cols
             
             # Update iteration slider
             if iteration > self.iteration_slider.maximum():
