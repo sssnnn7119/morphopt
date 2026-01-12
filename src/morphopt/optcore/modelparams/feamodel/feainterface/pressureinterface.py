@@ -3,7 +3,7 @@ from torchfea import FEAController
 import numpy as np
 import torch
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble.loads.pressure import Pressure
+from torchfea.model.loads import Pressure
 class PressureInterface(BaseFEAInterface):
     """
     Surface pressure load interface.

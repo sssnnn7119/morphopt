@@ -2,7 +2,7 @@ from torchfea import FEAController
 import torch
 from .basefeainterface import BaseFEAInterface
 
-from torchfea.assemble.loads.body_force import BodyForce
+from torchfea.model.loads.body_force import BodyForce
 
 
 class BodyforceInterface(BaseFEAInterface):

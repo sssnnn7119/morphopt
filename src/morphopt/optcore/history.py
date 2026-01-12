@@ -249,12 +249,38 @@ class History(BaseObject):
             'time': [],
             'num_elements': [],
             'num_nodes': [],
-            'deformation': []
+            'deformation': [],
+            'metrics': []
         }
-        # Add custom keys found
+        
+        # Helper to classify scalars vs arrays
+        # Fixed classifications
+        scalar_keys = {'objective', 'num_elements', 'num_nodes'}
+        
+        # Analyze col_map to classify other keys
+        # Collect subs for each key to determine if it's scalar or array
+        key_subs = {} 
         for item in col_map:
-            if item and item[0] not in data_lists:
-                data_lists[item[0]] = []
+            if item is None: continue
+            k, sub = item
+            if k not in key_subs: key_subs[k] = set()
+            key_subs[k].add(sub)
+            
+            # Ensure key is in data_lists
+            if k not in data_lists:
+                data_lists[k] = []
+
+        # Determine which are scalars (all subs are None)
+        # Exception: deformation is always array (sub like U0-0)
+        # Exception: time is always array (sub 0, 1...)
+        
+        for k, subs in key_subs.items():
+            if k in scalar_keys: continue
+            if k == 'deformation' or k == 'time': continue
+            
+            if len(subs) == 1 and list(subs)[0] is None:
+                scalar_keys.add(k)
+
 
         # Determine shape for deformation
         def_indices = [h for h in headers if h.startswith('U') and '-' in h]
@@ -275,8 +301,13 @@ class History(BaseObject):
         for row in rows:
             if not row: continue
             
-            # Per row temporary storage
-            row_data = {k: {} if k in ['time', 'deformation'] or k not in ['objective', 'num_elements', 'num_nodes'] else None for k in data_lists}
+            # Init row data container
+            row_data = {}
+            for k in data_lists:
+                if k in scalar_keys:
+                    row_data[k] = None
+                else:
+                    row_data[k] = {}
 
             for i, val_str in enumerate(row):
                 if i >= len(col_map) or col_map[i] is None: continue
@@ -287,7 +318,14 @@ class History(BaseObject):
                 
                 key, sub = col_map[i]
                 
-                if isinstance(row_data.get(key), dict):
+                if key in scalar_keys:
+                    if key in ['num_elements', 'num_nodes']:
+                        try: row_data[key] = int(val)
+                        except: row_data[key] = val
+                    else:
+                        row_data[key] = val
+                else:
+                    # Array type
                     if key == 'deformation':
                          parts = sub.replace('U','').split('-')
                          r, c = int(parts[0]), int(parts[1])
@@ -295,15 +333,17 @@ class History(BaseObject):
                     else:
                          idx = sub if sub is not None else 0
                          row_data[key][idx] = val
-                else:
-                    if key in ['num_elements', 'num_nodes']:
-                        row_data[key] = int(val)
-                    else:
-                        row_data[key] = val
             
             # Convert row_data to list elements
             for k, v in row_data.items():
-                if k == 'deformation':
+                if k in scalar_keys:
+                    if v is not None:
+                         data_lists[k].append(v)
+                    # If None, it means missing value for this row, we skip or handle?
+                    # Current logic skips append, which might misalign rows if data is sparse?
+                    # But history usually dense. 
+                    # Existing code also did: if v is not None: append.
+                elif k == 'deformation':
                     if def_shape and v:
                         d_mat = np.zeros(def_shape)
                         for (r,c), val in v.items():
@@ -311,16 +351,15 @@ class History(BaseObject):
                         data_lists[k].append(d_mat)
                     elif v:
                          pass
-                elif isinstance(v, dict):
+                else:
+                    # Generic Array
                     if v:
                         max_idx = max(v.keys()) if all(isinstance(x, int) for x in v.keys()) else len(v)-1
                         vec = [v.get(x, 0.0) for x in range(max_idx+1)]
                         data_lists[k].append(vec)
-                else:
-                    if v is not None:
-                        data_lists[k].append(v)
         
         # Convert to arrays
+
         for k, v in data_lists.items():
             if v:
                 self.data[k] = np.array(v)

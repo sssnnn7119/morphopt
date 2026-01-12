@@ -24,7 +24,7 @@ class ThisController(morphopt.Controller):
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
 
             loss1 = 0*torch.clamp(1.2-self.U[0][GC_start + 4], min=0)**3
-            loss11 = self.U[5][GC_start + 4]
+            loss11 = torch.exp(5*(self.U[5][GC_start + 4] - 1.5))/5
             loss111 = self.U[6][GC_start + 4]
             loss2 = self.U[1][GC_start + 3]
             loss3 = -self.U[2][GC_start + 3]
@@ -37,7 +37,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(reinitialize_per_iter=3, fea_seed_size=1.0, fea_mesh_order=1)
+                super().__init__(reinitialize_per_iter=3, fea_seed_size=0.8, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=10.,
@@ -54,18 +54,18 @@ class ThisController(morphopt.Controller):
                 #                                  MaxC=0.8))
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                    self.CPGEO.initialize_Sphere(seed_size=0.8,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,20.],
-                                                MaxC=1.4))
+                                                MaxC=0.7))
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                    self.CPGEO.initialize_Sphere(seed_size=0.8,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,60.],
-                                                MaxC=1.4))
+                                                MaxC=0.7))
                 
 
 
@@ -132,7 +132,7 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params):
 
             super().__init__(params=params,
-                            num_process=1)
+                            num_process=4)
 
     class Updater(morphopt.Updaters):
         """
@@ -161,11 +161,11 @@ class ThisController(morphopt.Controller):
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[2.0, 2.0, 2.0],
-                                                                [2.0, 2.0, 2.0],
-                                                                [2.0, 2.0, 2.0]]))
+                                                                [[1.7, 1.7, 1.7],
+                                                                [1.7, 1.7, 1.7],
+                                                                [1.7, 1.7, 1.7]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=12., height=80., bottom=0.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=12., height=77., bottom=3.))
 
                 self.if_update = [False, True, True]
 if __name__ == '__main__':

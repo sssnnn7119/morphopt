@@ -2,7 +2,7 @@ import torch
 
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble.loads.spring import Spring_RP_Point, Spring_RP_RP
+from torchfea.model.loads.spring import Spring_RP_Point, Spring_RP_RP
 
 
 class SpringToGroundInterface(BaseFEAInterface):

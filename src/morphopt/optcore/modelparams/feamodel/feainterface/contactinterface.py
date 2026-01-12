@@ -4,7 +4,7 @@ from .basefeainterface import BaseFEAInterface
 
 # Prefer the same import style as PressureInterface
 try:
-	from torchfea.assemble.loads.contact import Contact, ContactSelf  # type: ignore
+	from torchfea.model.loads.contact import Contact, ContactSelf  # type: ignore
 except Exception:  # Fallback if package structure differs
 	# Defer import to get_fea_load to avoid import-time failures
 	Contact = None  # type: ignore
@@ -100,7 +100,7 @@ class ContactSelfInterface(BaseFEAInterface):
 		return 0
 
 	def modify_fea(self, fe: FEAController, name: str):
-		from torchfea.assemble.loads.contact import ContactSelf
+		from torchfea.model.loads.contact import ContactSelf
 
 		kwargs = dict(
 			instance_name=self.instance_name,

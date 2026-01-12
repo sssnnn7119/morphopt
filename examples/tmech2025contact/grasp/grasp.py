@@ -6,7 +6,7 @@ import morphopt
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
-import FEA
+import torchfea
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -30,7 +30,7 @@ class ThisController(morphopt.Controller):
 
             RGC = assembly._GC2RGC(self.U[0].to(assembly.device))
 
-            contactobj: FEA.loads.Contact = assembly._loads['Contact_ext']
+            contactobj: torchfea.loads.Contact = assembly._loads['Contact_ext']
             instance1 = ins_actuator
             instance2 = ins_cylinder
             contactobj._filter_point_pairs(contactobj.surface_element1, contactobj.surface_element2, 
@@ -123,7 +123,7 @@ class ThisController(morphopt.Controller):
             """
             ins = self.fe.assembly.get_instance(insname)
             surfaces = [surface]
-            surface_elements: list[FEA.elements.BaseSurface] = []
+            surface_elements: list[torchfea.elements.BaseSurface] = []
             for i in range(len(surfaces)):
                 surface_elements = surface_elements + ins.surfaces.get_elements(surfaces[i])
             
@@ -247,7 +247,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, 'P_s1', [0.08])
 
-            def create_fea(self, inp: FEA.FEA_INP) -> FEA.FEAController:
+            def create_fea(self, inp: torchfea.FEA_INP) -> torchfea.FEAController:
 
                 # Use base implementation to build the deformable actuator instance and register interfaces
                 fe = super().create_fea(inp)

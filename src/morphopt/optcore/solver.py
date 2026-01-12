@@ -114,10 +114,10 @@ class MorphSolver(BaseObject):
         import sys
         import torch
         sys.path.append(os.getcwd())
-
+ 
         current_process_name = mp.current_process().name
         try:
-            pool_id = int(current_process_name.split("-")[-1])
+            pool_id = int(current_process_name[-1])
         except:
             pool_id = 0
 

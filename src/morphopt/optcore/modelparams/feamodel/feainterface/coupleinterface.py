@@ -3,7 +3,7 @@ import torch
 
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble.constraints import Couple
+from torchfea.model.constraints import Couple
 
 
 class CoupleInterface(BaseFEAInterface):

@@ -160,6 +160,10 @@ class FEAParams(BaseParams):
                 sf_now.append((sf[0], sf[1]))
             part.add_surface_set(surface_name, sf_now)
 
+        # define the set of nodes
+        for set_name, node_indices in inp.part['final_model'].sets_nodes.items():
+            part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
+
         index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
         part.set_nodes['surface_0_Bottom'] = index_bottom
         index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
@@ -180,7 +184,7 @@ class FEAParams(BaseParams):
 
         fe = torchfea.FEAController()
         fe.assembly = assembly
-        fe.solver = torchfea.solver.StaticImplicitSolver()
+        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-3)
 
         # Add fea features
         for name, interface in self.feainterfaces.items():

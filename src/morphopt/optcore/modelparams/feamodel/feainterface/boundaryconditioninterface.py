@@ -3,7 +3,7 @@ import torch
 
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble.boundarys import Boundary_Condition, Boundary_Condition_RP
+from torchfea.model.boundarys import Boundary_Condition, Boundary_Condition_RP
 
 
 class BoundaryConditionInterface(BaseFEAInterface):

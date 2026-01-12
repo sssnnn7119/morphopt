@@ -215,6 +215,9 @@ class MeshGenerator:
             
             found_count = 0
             
+            # Set to collect unique node tags for this surface index
+            surface_nodes = set()
+
             # Iterate over the geometric surfaces for this index
             for s_tag in surf_tags:
                 # Get 2D elements (Triangles = Type 2) on this surface
@@ -231,6 +234,11 @@ class MeshGenerator:
                     tn0 = tri_node_tags[base]
                     tn1 = tri_node_tags[base+1]
                     tn2 = tri_node_tags[base+2]
+
+                    # Add nodes to the set for NSET generation
+                    surface_nodes.add(tn0)
+                    surface_nodes.add(tn1)
+                    surface_nodes.add(tn2)
                     
                     key = frozenset((tn0, tn1, tn2))
                     
@@ -263,6 +271,16 @@ class MeshGenerator:
                 # Create SURFACE definition
                 payload_lines.append(f"*SURFACE, TYPE=ELEMENT, NAME={surf_name}")
                 payload_lines.extend(active_faces)
+
+                # Create NSET definition
+                if surface_nodes:
+                    payload_lines.append(f"*Nset, nset={surf_name}")
+                    sorted_nodes = sorted(list(surface_nodes))
+                    chunk_size = 16
+                    for k in range(0, len(sorted_nodes), chunk_size):
+                        chunk = sorted_nodes[k:k+chunk_size]
+                        line = ", ".join(str(e) for e in chunk)
+                        payload_lines.append(line)
         
         return "\n".join(payload_lines)
 

@@ -3,7 +3,7 @@ import torch
 
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble.loads import Concentrate_Force, Moment
+from torchfea.model.loads import Concentrate_Force, Moment
 
 
 class ConcentratedForceInterface(BaseFEAInterface):

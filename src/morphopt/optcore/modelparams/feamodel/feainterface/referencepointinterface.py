@@ -3,7 +3,7 @@ import torch
 
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
-from torchfea.assemble import ReferencePoint
+from torchfea.model import ReferencePoint
 
 
 class ReferencePointInterface(BaseFEAInterface):

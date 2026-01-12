@@ -522,7 +522,7 @@ requires-dist = [
     { name = "pyvistaqt", specifier = ">=0.11.3" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "torch", specifier = ">=2.0.0" },
-    { name = "torchfea", specifier = ">=1.0.1" },
+    { name = "torchfea", specifier = ">=1.0.2" },
     { name = "torchvision", specifier = ">=0.15.1" },
     { name = "vtk", specifier = ">=9.5.2" },
 ]
@@ -1216,7 +1216,7 @@ wheels = [
 
 [[package]]
 name = "torchfea"
-version = "1.0.1"
+version = "1.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pandas" },
@@ -1225,9 +1225,9 @@ dependencies = [
     { name = "torch" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/f4/6ddb6583f5f25b7e93577ae3fc661421a233d9c24c7ee74a77530db9f324/torchfea-1.0.1.tar.gz", hash = "sha256:f9febdaf66a12866501520630f6765b7287b047d5c2372d3a6f2f573e3f9218e", size = 73467, upload-time = "2026-01-06T09:12:43.616Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/a8/51afacbcba44a0d4636cb814658db188b954c88fd259d02864b86b8ac212/torchfea-1.0.2.tar.gz", hash = "sha256:bd5c55c0229988bc4be16410b3c4cebc9aea28e3c15f6c7b81b02b44cbaa910a", size = 68366, upload-time = "2026-01-12T07:44:44.415Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/7e/6339b93133d145b2f46bed0efc3084fc39dee957ebcd23e2ddb12885cc21/torchfea-1.0.1-py3-none-any.whl", hash = "sha256:693f12eeddbd1a99073efff65d1afdca8b3da3e29ee521b6d827267906ac29fc", size = 93226, upload-time = "2026-01-06T09:12:41.957Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/a1/e5987b9dc8acd536cfde5852ca71812cdefd4159b2f7d5192cb38593b07d/torchfea-1.0.2-py3-none-any.whl", hash = "sha256:d474742a682b18c9c1e5c0f28917c2e4a0f991a63250b9b63a61082e1d5613f3", size = 87407, upload-time = "2026-01-12T07:44:43.111Z" },
 ]
 
 [[package]]
