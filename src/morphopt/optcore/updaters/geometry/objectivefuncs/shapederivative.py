@@ -63,19 +63,22 @@ class ShapeDerivativeDisplacement(BaseConstraints):
         Show the shape sensitivity
         """
 
-        def show_quiver3d(R: torch.Tensor, N: torch.Tensor):
-            from mayavi import mlab
-            r = R.detach().cpu().numpy()
-            n = N.detach().cpu().numpy()
-            mlab.quiver3d(r[0], r[1], r[2], n[0], n[1], n[2])
+        import pyvista as pv
+        import numpy as np
 
-            
-        from mayavi import mlab
+        plotter = pv.Plotter(window_size=(1000, 1000))
+        plotter.set_background('black')
 
-        mlab.figure(size=(1000, 1000), bgcolor=(0, 0, 0))
-        show_quiver3d(self._r0[ind].cpu(), self.sensitivity[ind].cpu())
+        r = self._r0[ind].detach().cpu().numpy()
+        n = self.sensitivity[ind].detach().cpu().numpy()
 
-        mlab.show()
+        # Assuming r and n are [3, N], transpose to [N, 3]
+        points = r.T
+        vectors = n.T
+
+        plotter.add_arrows(points, vectors, mag=1.0, color='white')
+
+        plotter.show()
 
     def __call__(self, r: list[torch.Tensor], *args, **kwargs):
         loss_objective = 0.0

@@ -24,8 +24,15 @@ class TaskOptimization:
                                                         'pathqueue': path_queue,
                                                         'dataqueue': dataqueue})
             process.start()
-            process.join()
-            path_result = path_queue.get()
+            try:
+                process.join()  # Wait for process to finish
+                if process.exitcode != 0:
+                    print(f"Process failed with exit code {process.exitcode}, continuing...")
+                    continue
+                path_result = path_queue.get(timeout=10)  # Add timeout to avoid indefinite blocking
+            except Exception as e:
+                print(f"Error in process or queue: {e}, continuing...")
+                continue
             target_iteration = None  # after first restart, always continue to the latest iteration
 
     @classmethod
@@ -56,6 +63,7 @@ class TaskOptimization:
         controller: morphopt.Controller = Controller()
         controller.restart_per_iteration = restart_per_iteration
         controller.dataqueue = dataqueue
+        controller.optdevice = device
 
         if target_iteration == 0 or path_result is None:
             controller.start_optimization(main_filepath=main_filepath)

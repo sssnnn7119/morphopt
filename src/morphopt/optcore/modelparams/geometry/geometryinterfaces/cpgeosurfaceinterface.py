@@ -66,12 +66,12 @@ class CPGEOSurfaceInterface(BaseInterface):
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False):
 
-        # if seed_size < 0:
-        #     knots = self.model._pre_vertices
-        #     Coo = self.model._pre_faces
+        if seed_size < 0:
+            knots = self.model._pre_vertices
+            Coo = self.model._pre_faces
             
-        # else:
-        knots, Coo = self.model.uniformly_mesh(seed_size=self.seed_size)
+        else:
+            knots, Coo = self.model.uniformly_mesh(seed_size=self.seed_size)
         
         # points3d, coo = self.Sphere_Mesh(5000, 3)
         R = self.model.map(knots)

@@ -1,7 +1,7 @@
 
 import numpy as np
 import torch
-
+import copy
 import torchfea
 import multiprocessing as mp
 
@@ -79,14 +79,16 @@ class MorphSolver(BaseObject):
         # multiprocess FEA
         # self._solve_FEA(morphopt.controller.objfun.inp, self.params.feamodel, self.params.materials,
         #                 self.task_index_list[0], self.available_gpus)
+        fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
+        fe_cpu.change_device(torch.device('cpu'))
+
         pools = morphopt.controller.pools
         result = []
         for i in range(len(self.task_index_list)):
             result.append(
                             pools.apply_async(self._solve_FEA,
-                                            kwds={'inp': morphopt.controller.objfun.inp, 
-                                                    'feamodel': self.params.feamodel, 
-                                                    'matetialmodel': self.params.materials,
+                                            kwds={'fe': fe_cpu,
+                                                    'feamodel': self.params.feamodel,
                                                     'task_index': self.task_index_list[i],
                                                     'available_gpus': self.available_gpus}))
 
@@ -99,13 +101,13 @@ class MorphSolver(BaseObject):
         list_number = np.array(list_number).flatten()
         
         Uresult = torch.tensor(U0).to(torch.float64)[list_number]
+        del fe_cpu
         return Uresult
         
 
     @classmethod
-    def _solve_FEA(cls, inp: torchfea.FEA_INP, 
+    def _solve_FEA(cls, fe: torchfea.FEAController, 
                    feamodel: FEAParams, 
-                   matetialmodel: Materials,
                    task_index: list[int], 
                    available_gpus: list[str], 
                    U_guess: np.ndarray = None):
@@ -124,20 +126,18 @@ class MorphSolver(BaseObject):
         if len(available_gpus) > 0:
             cuda_now = (pool_id+1) % len(available_gpus)
             torch.set_default_device(available_gpus[cuda_now])
+            device_now = torch.device(available_gpus[cuda_now])
             print("Process %s use GPU: %s" % (current_process_name, available_gpus[cuda_now]))
         else:
             torch.set_default_device('cpu')
+            device_now = torch.device('cpu')
             print("Process %s use CPU" % (current_process_name))
 
         # torch.set_default_device(torch.device('cuda:0'))
         torch.set_default_dtype(torch.float64)
         torch.cuda.empty_cache()
         # construct the FEA
-        fe = feamodel.create_fea(inp)
-        matetialmodel.set_materials(fe)
-        
-        # solve displacement 0
-        fe.solver.maximum_iteration = 200
+        fe.change_device(device_now)
 
         fe.initialize()
         if U_guess is not None:
@@ -145,16 +145,11 @@ class MorphSolver(BaseObject):
         else:
             U0 = fe.assembly.GC
 
-        result = []
+        result_list = []
         for i in range(len(task_index)):
             feamodel.process_fea(fe=fe, step_index=task_index[i])
-            if_converge = fe.solve(GC0=U0, if_initialize=False)
+            result: torchfea.solver.StaticResult = fe.solve(GC0=U0, if_initialize=False)
 
-            if type(if_converge) == bool:
-                raise RuntimeError(
-                    "FEA solver failed to converge. Please check the input parameters."
-                )
-            
-            U0 = fe.assembly.GC.clone().detach()
-            result.append(U0.tolist())
-        return result
+            U0 = result.GC.detach().cpu().numpy()
+            result_list.append(U0)
+        return result_list

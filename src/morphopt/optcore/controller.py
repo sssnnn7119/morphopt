@@ -90,6 +90,11 @@ class Controller:
         The multiprocessing pool for parallel computation.
         """
 
+        self.optdevice: str = 'cpu'
+        """
+        The device to run the optimization on.
+        """
+
     def initialize_path(self, main_filepath: str = None) -> None:
         """
         Initialize the workflow by importing necessary modules and setting up the environment.
@@ -347,3 +352,53 @@ class Controller:
         torch.cuda.empty_cache()
         data = gc.collect()
         print(f"Garbage collector: collected {data} objects.")
+
+    def change_device(self, device: torch.device, obj: object = None) -> None:
+        """
+        Recursively change the device of the finite element model and all nested objects.
+
+        Args:
+            device (torch.device): The target device.
+            obj (object, optional): The object to change the device for. If None, change the device for the Controller instance itself.
+
+        Returns:
+            None
+        """
+        if obj is not None:
+            self._change_device_recursive(obj, device)
+        else:
+            self._change_device_recursive(self, device)
+
+    def _change_device_recursive(self, obj, device, visited=None):
+        """
+        Recursively move tensors to the target device.
+        """
+        if visited is None:
+            visited = set()
+        
+        obj_id = id(obj)
+        if obj_id in visited:
+            return
+        visited.add(obj_id)
+
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(v, torch.Tensor):
+                    obj[k] = v.to(device)
+                else:
+                    self._change_device_recursive(v, device, visited)
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                if isinstance(v, torch.Tensor):
+                    obj[i] = v.to(device)
+                else:
+                    self._change_device_recursive(v, device, visited)
+        elif isinstance(obj, tuple):
+            for v in obj:
+                self._change_device_recursive(v, device, visited)
+        elif hasattr(obj, '__dict__'):
+            for k, v in list(obj.__dict__.items()):
+                if isinstance(v, torch.Tensor):
+                    setattr(obj, k, v.to(device))
+                else:
+                    self._change_device_recursive(v, device, visited)

@@ -8,7 +8,7 @@ import gmsh
 import morphopt
 
 from .basesurfaceinterface import BaseInterface
-from ..geometricmodel.bspline.BSP import BSP_Surf
+import bspmap
 
 
 class BSplineSolidGenerator:
@@ -42,8 +42,8 @@ class BSplineSolidGenerator:
         gmsh.model.add("bspline_solid")
         
         # 获取维度
-        num_poles_v = self.P0.shape[1]
-        num_poles_u_raw = self.P0.shape[2]
+        num_poles_v = self.P0.shape[0]
+        num_poles_u_raw = self.P0.shape[1]
         du = self.degree_u
         dv = self.degree_v
         
@@ -55,17 +55,17 @@ class BSplineSolidGenerator:
         # 如果发现首尾重合，去掉最后一个。
         
         # 检查第一行即可
-        p_start = self.P0[:, 0, 0]
-        p_end = self.P0[:, 0, -1]
+        p_start = self.P0[0, 0]
+        p_end = self.P0[0, -1]
         dist = np.linalg.norm(p_start - p_end)
         
         if dist < 1e-6:
             # print("Detecting closed input poles (Start == End). Removing last pole for periodic construction.")
-            poles_to_use = self.P0[:, :, :-1]
+            poles_to_use = self.P0[:, :-1]
         else:
             poles_to_use = self.P0
             
-        num_poles_u = poles_to_use.shape[2]
+        num_poles_u = poles_to_use.shape[1]
         # print(f"Effective Unique Poles U: {num_poles_u}")
 
 
@@ -82,7 +82,7 @@ class BSplineSolidGenerator:
         point_tags_map = np.zeros((num_poles_v, num_poles_u), dtype=int)
         for j in range(num_poles_v):
             for i in range(num_poles_u):
-                pt = poles_to_use[:, j, i]
+                pt = poles_to_use[j, i, :]
                 t = gmsh.model.occ.addPoint(pt[0], pt[1], pt[2])
                 point_tags_map[j, i] = t
 
@@ -392,7 +392,7 @@ class BspInterface(BaseInterface):
     Class to handle the B-spline surface interface.
     """
 
-    def __init__(self, surface: BSP_Surf, init_size: float, symmetric = [0], MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
+    def __init__(self, surface: bspmap.BSP, init_size: float, symmetric = [0], MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
         super().__init__(surface, symmetric)
         self.model = surface
         RRuu, RRuv, RRvu, RRvv = surface.get_surface_value(derivatives=0)[0][-4:]
@@ -429,9 +429,19 @@ class BspInterface(BaseInterface):
         self.rr_compensation[3] /= lengthV
 
         self.flip: bool = False
-    
-    def reinitialize(self):
-        self.model.symmetric_reinitialize()
+
+        self._cps: torch.Tensor = self.control_points
+        """Control points tensor."""
+        self._preload_uv: torch.Tensor
+        """Preloaded UV parameters for the surface."""
+        self._indices: torch.Tensor
+        """Indices in the knot vector at each dimension."""
+        self._weights: torch.Tensor
+        """Weights for the control points."""
+        self._weights_dot: torch.Tensor
+        """derivative of the weights."""
+        self._weights_dot2: torch.Tensor
+        """Second derivative of the weights."""
     
     @property
     def surf_type(self) -> int:
@@ -445,7 +455,7 @@ class BspInterface(BaseInterface):
         Returns:
             int: The number of design variables.
         """
-        return self.model.control_points.numel()
+        return self.control_points.numel()
 
     @property
     def control_points(self) -> torch.Tensor:
@@ -455,7 +465,7 @@ class BspInterface(BaseInterface):
         Returns:
             torch.Tensor: The control points of the B-spline surface.
         """
-        return self.model.control_points
+        return torch.from_numpy(self.model.control_points).to(torch.get_default_device())
     
     @control_points.setter
     def control_points(self, x: torch.Tensor) -> None:
@@ -465,7 +475,7 @@ class BspInterface(BaseInterface):
         Parameters:
             x (torch.Tensor): The new control points to be set.
         """
-        self.model.control_points = x.reshape(self.model.control_points.shape)
+        self.model.control_points = x.reshape(self.model.control_points.shape).cpu().numpy()
     
     @staticmethod
     def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
@@ -479,56 +489,17 @@ class BspInterface(BaseInterface):
         flip = not flip
         
         pools = morphopt.controller.pools
-        result = pools.apply_async(self.output_stp_file, args=(self.model.control_points.detach().cpu().numpy(),
-                                                  self.model.degree-1,
-                                                    self.model.degree-1,
+        result = pools.apply_async(self.output_stp_file, args=(self.model.control_points.reshape([
+                                                    self.model.size[0],
+                                                    self.model.size[1],
+                                                    3]),
+                                                  self.model.degree,
+                                                    self.model.degree,
                                                     path_output,
                                                     name_output))
         result.get()
 
         return name_output + '.stp'
-    
-
-    def match_points_surface(self, points: torch.Tensor) -> torch.Tensor:
-        
-        # get the initial guess
-        points_init = self.model.map().cpu()
-
-        distance_init = (points.reshape([3, 1, -1]).cpu() - points_init.reshape([3, -1, 1]).cpu()).norm(dim=0)
-        index_init = torch.argmin(distance_init, dim=0)
-        del distance_init
-
-        uv_init = self.model.coordinates.reshape([2, -1])[:, index_init].detach().clone().requires_grad_()
-        opt = torch.optim.Adam([uv_init], lr=0.01)
-        for i in range(100):
-            opt.zero_grad()
-            surface_points = self.model.map(uv_init)
-            loss = ((surface_points - points)**2).sum()
-            loss.backward()
-            opt.step()
-
-        self._coordinates_fea = uv_init.detach().to(points.device)
-
-    def refine_fea_mesh(self, part, surf_index, nodes_new):
-
-        default_device = torch.tensor(0).device
-
-        from ..utils import mesh
-        nodes_new = nodes_new.copy()
-        def refine_part_mesh(name: str):
-            surface_head_nodes = np.sort(list(part.sets_nodes['surface_%d_%s' % (surf_index, name)]))
-            surface_head_elems = part.surfaces_tri['surface_%d_All' % surf_index]
-            surface_head_elems_remain = np.where(
-                np.isin(surface_head_elems, surface_head_nodes).sum(axis=1) == 3)[0]
-            surface_head_elems = surface_head_elems[surface_head_elems_remain]
-
-            new_nodes = mesh.edge_length_regularization_surf3D(nodes0=torch.from_numpy(nodes_new.T).to(default_device), 
-                                                        elements=torch.from_numpy(surface_head_elems).to(torch.int64).to(default_device),)
-            nodes_new[surface_head_nodes] = new_nodes.cpu().numpy().T[surface_head_nodes]
-        refine_part_mesh('Head')
-        refine_part_mesh('Bottom')
-        return nodes_new
-
 
     def get_surface_parameters(self) -> torch.Tensor:
         """
@@ -537,7 +508,7 @@ class BspInterface(BaseInterface):
         Returns:
             torch.Tensor: The design variables of the surface.
         """
-        return self.model.control_points
+        return self.control_points
     
     def set_surface_parameters(self, x: torch.Tensor) -> None:
         """
@@ -546,20 +517,19 @@ class BspInterface(BaseInterface):
         Parameters:
             x (torch.Tensor): The new design variables to be set.
         """
-        self.model.control_points = x.reshape(self.model.control_points.shape)
-        self.model.symmetric_reinitialize()
+        self.control_points = x
 
     def update_variables(self, x_change):
         
         x_change = x_change.reshape_as(self.model.control_points)
 
-        x_change[2, :5, :] = 0
-        x_change[2, -5:, :] = 0
+        x_change[:5, :, 2] = 0
+        x_change[-5:, :, 2] = 0
 
-        x_change[:, 0, :] = 0
-        x_change[:, -1, :] = 0
+        x_change[0] = 0
+        x_change[-1] = 0
         
-        self.model.control_points = self.model.control_points + x_change.reshape(self.model.control_points.shape)
+        self.control_points = self.control_points + x_change.reshape(self.control_points.shape)
     
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """

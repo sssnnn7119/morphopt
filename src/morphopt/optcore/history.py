@@ -265,9 +265,49 @@ class History(BaseObject):
             k, sub = item
             if k not in key_subs: key_subs[k] = set()
             key_subs[k].add(sub)
+        
+        # --- Correction Logic Start ---
+        # If a key seems to be an array (has subs), but does not have index 0,
+        # it is likely a scalar variable that happens to end with "_N" (e.g. "param_1").
+        keys_to_revert = set()
+        for k, subs in key_subs.items():
+            if k in ['time', 'deformation']: continue # special arrays
+            if k in scalar_keys: continue 
             
-            # Ensure key is in data_lists
-            if k not in data_lists:
+            # If it contains None, it's already treated as scalar/mixed.
+            if None in subs: continue
+            
+            # Check if 0 is present in the subs
+            # Note: subs contains integers for generic arrays
+            if 0 not in subs:
+                keys_to_revert.add(k)
+        
+        if keys_to_revert:
+            new_col_map = []
+            for i, item in enumerate(col_map):
+                if item is None:
+                    new_col_map.append(None)
+                else:
+                    k, sub = item
+                    if k in keys_to_revert:
+                        # Revert to using the original header as the key
+                        full_header_name = headers[i]
+                        new_col_map.append((full_header_name, None))
+                    else:
+                        new_col_map.append(item)
+            col_map = new_col_map
+            
+            # Re-generate key_subs after correction
+            key_subs = {} 
+            for item in col_map:
+                if item is None: continue
+                k, sub = item
+                if k not in key_subs: key_subs[k] = set()
+                key_subs[k].add(sub)
+        # --- Correction Logic End ---
+
+        for k in key_subs:
+             if k not in data_lists:
                 data_lists[k] = []
 
         # Determine which are scalars (all subs are None)
@@ -297,6 +337,22 @@ class History(BaseObject):
             def_shape = (max_r+1, max_c+1)
         else:
             def_shape = None
+
+        # Determine shape for generic arrays (to handle missing rows)
+        array_widths = {}
+        for k, subs in key_subs.items():
+            if k in scalar_keys or k == 'deformation': continue
+            max_idx = -1
+            for s in subs:
+                 try:
+                    idx = int(s)
+                    max_idx = max(max_idx, idx)
+                 except (ValueError, TypeError):
+                    pass
+            if max_idx >= 0:
+                 array_widths[k] = max_idx + 1
+            else:
+                 array_widths[k] = 0
 
         for row in rows:
             if not row: continue
@@ -339,16 +395,19 @@ class History(BaseObject):
                 if k in scalar_keys:
                     if v is not None:
                          data_lists[k].append(v)
-                    # If None, it means missing value for this row, we skip or handle?
-                    # Current logic skips append, which might misalign rows if data is sparse?
-                    # But history usually dense. 
-                    # Existing code also did: if v is not None: append.
+                    else:
+                         # Append NaN for missing scalar to maintain alignment
+                         data_lists[k].append(np.nan)
+
                 elif k == 'deformation':
                     if def_shape and v:
                         d_mat = np.zeros(def_shape)
                         for (r,c), val in v.items():
                             d_mat[r, c] = val
                         data_lists[k].append(d_mat)
+                    elif def_shape:
+                         # Append matrix of NaNs
+                         data_lists[k].append(np.full(def_shape, np.nan))
                     elif v:
                          pass
                 else:
@@ -357,6 +416,14 @@ class History(BaseObject):
                         max_idx = max(v.keys()) if all(isinstance(x, int) for x in v.keys()) else len(v)-1
                         vec = [v.get(x, 0.0) for x in range(max_idx+1)]
                         data_lists[k].append(vec)
+                    elif k in array_widths and array_widths[k] > 0:
+                        # Append list of NaNs
+                        data_lists[k].append([np.nan] * array_widths[k])
+                    else:
+                        # If unknown width or not in headers, append empty? 
+                        # Or better, if it's a default key like 'time' but not in CSV, 
+                        # we can append empty list (which leads to 0-width array).
+                        data_lists[k].append([])
         
         # Convert to arrays
 

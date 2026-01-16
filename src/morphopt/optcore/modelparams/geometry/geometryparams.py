@@ -16,19 +16,21 @@ from ..base_params import BaseParams
 
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
-        print("Initializing GMSH...")
+        # print("Initializing GMSH...")
         gmsh.initialize()
+        gmsh.option.setNumber("General.NumThreads", 0) # Use all available cores
+        gmsh.option.setNumber("General.Verbosity", 2)  # Errors only
         self.files_map = {}
         self.surface_tags_by_index = {}
         self.sorted_indices = []
         
         # Set mesh size options if provided
         if mesh_size_min is not None:
-            print(f"Setting Mesh.MeshSizeMin to {mesh_size_min}")
+            # print(f"Setting Mesh.MeshSizeMin to {mesh_size_min}")
             gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_size_min)
             
         if mesh_size_max is not None:
-            print(f"Setting Mesh.MeshSizeMax to {mesh_size_max}")
+            # print(f"Setting Mesh.MeshSizeMax to {mesh_size_max}")
             gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
             
 
@@ -36,7 +38,7 @@ class MeshGenerator:
         if directory is None:
             directory = os.getcwd()
             
-        print(f"Scanning directory {directory} for files...")
+        # print(f"Scanning directory {directory} for files...")
         # Pattern: __surface-{number}.(stp|stl)
         import re
         pattern = re.compile(r'^__surface-(\d+)\.(stp|stl)$', re.IGNORECASE)
@@ -47,13 +49,13 @@ class MeshGenerator:
             if match:
                 idx = int(match.group(1))
                 self.files_map[idx] = os.path.join(directory, filename)
-                print(f"  Found: {filename} (Index: {idx})")
+                # print(f"  Found: {filename} (Index: {idx})")
         
         if 0 not in self.files_map:
             raise FileNotFoundError("Base surface file (Index 0) not found. Need '__surface-0.stp' or '__surface-0.stl'.")
             
         self.sorted_indices = sorted(self.files_map.keys())
-        print(f"Processing indices: {self.sorted_indices}")
+        # print(f"Processing indices: {self.sorted_indices}")
 
     def _get_all_surface_tags(self):
         return set(dim_tag[1] for dim_tag in gmsh.model.getEntities(2))
@@ -63,7 +65,7 @@ class MeshGenerator:
 
         for idx in self.sorted_indices:
             filename = self.files_map[idx]
-            print(f"\n--- Processing Index {idx}: {filename} ---")
+            # print(f"\n--- Processing Index {idx}: {filename} ---")
             
             # Snapshot current surfaces to identify new ones
             pre_surfaces = self._get_all_surface_tags()
@@ -71,7 +73,7 @@ class MeshGenerator:
             ext = os.path.splitext(filename)[1].lower()
             
             if ext in ['.stp', '.step']:
-                print("  Type: STP (CAD)")
+                # print("  Type: STP (CAD)")
                 try:
                     # Import OCC
                     gmsh.model.occ.importShapes(filename)
@@ -80,7 +82,7 @@ class MeshGenerator:
                     # Remove volumes, keep surfaces
                     vols = gmsh.model.getEntities(3)
                     if vols:
-                        print(f"  Found {len(vols)} volume(s) in STP. Removing volume entities, keeping surfaces...")
+                        # print(f"  Found {len(vols)} volume(s) in STP. Removing volume entities, keeping surfaces...")
                         gmsh.model.occ.remove(vols, recursive=False)
                         gmsh.model.occ.synchronize()
                     
@@ -88,7 +90,7 @@ class MeshGenerator:
                     raise RuntimeError(f"Error loading STP file {filename}: {e}")
 
             elif ext in ['.stl']:
-                print("  Type: STL (Discrete)")
+                # print("  Type: STL (Discrete)")
                 try:
                     gmsh.merge(filename)
                 except Exception as e:
@@ -99,13 +101,14 @@ class MeshGenerator:
             new_surfaces = list(post_surfaces - pre_surfaces)
             
             if not new_surfaces:
-                print(f"  Warning: No surfaces found in {filename}.")
+                # print(f"  Warning: No surfaces found in {filename}.")
+                pass
             else:
-                print(f"  Extracted {len(new_surfaces)} surface(s).")
+                # print(f"  Extracted {len(new_surfaces)} surface(s).")
                 self.surface_tags_by_index[idx] = new_surfaces
 
     def construct_volume(self):
-        print("\n--- Constructing Volume ---")
+        # print("\n--- Constructing Volume ---")
         
         if 0 not in self.surface_tags_by_index or not self.surface_tags_by_index[0]:
             raise RuntimeError("Error: No surfaces available for base (Index 0).")
@@ -116,7 +119,7 @@ class MeshGenerator:
         try:
             base_loop = gmsh.model.geo.addSurfaceLoop(self.surface_tags_by_index[0])
             loops.append(base_loop)
-            print("  Added outer surface loop (from Index 0).")
+            # print("  Added outer surface loop (from Index 0).")
         except Exception as e:
             raise RuntimeError(f"Error creating outer loop: {e}")
 
@@ -128,14 +131,14 @@ class MeshGenerator:
                 try:
                     cavity_loop = gmsh.model.geo.addSurfaceLoop(tags)
                     loops.append(cavity_loop)
-                    print(f"  Added cavity loop (from Index {idx}).")
+                    # print(f"  Added cavity loop (from Index {idx}).")
                 except Exception as e:
                     raise RuntimeError(f"Error creating cavity loop for index {idx}: {e}")
 
         # Create Volume
         try:
             vol_tag = gmsh.model.geo.addVolume(loops)
-            print(f"  Created Volume Tag: {vol_tag}")
+            # print(f"  Created Volume Tag: {vol_tag}")
             gmsh.model.geo.synchronize()
             
             # Create Physical Volume
@@ -145,7 +148,7 @@ class MeshGenerator:
             raise RuntimeError(f"Error creating volume: {e}")
 
     def generate_mesh(self, dim=3):
-        print("\n--- Meshing ---")
+        # print("\n--- Meshing ---")
         try:
             gmsh.model.mesh.generate(dim)
         except Exception as e:
@@ -156,13 +159,13 @@ class MeshGenerator:
         Generates the Abaqus SURFACE definition string by mapping 3D element faces
         to the geometric surfaces.
         """
-        print("  Generating Abaqus surface definitions...")
+        # print("  Generating Abaqus surface definitions...")
 
         # Get all 3D tetrahedron elements (Type 4 in GMSH)
         try:
             tet_tags, tet_node_tags = gmsh.model.mesh.getElementsByType(4)
         except:
-            print("  No 3D elements found.")
+            # print("  No 3D elements found.")
             return ""
 
         if len(tet_tags) == 0:
@@ -248,7 +251,7 @@ class MeshGenerator:
                         found_count += 1
             
             if found_count > 0:
-                print(f"    Mapped {found_count} faces for surface_{idx}_All")
+                # print(f"    Mapped {found_count} faces for surface_{idx}_All")
                 surf_name = f"surface_{idx}_All"
                 
                 # Create ELSETs for each face type
@@ -285,7 +288,7 @@ class MeshGenerator:
         return "\n".join(payload_lines)
 
     def export(self, outfile="output.inp"):
-        print(f"\n--- Exporting to {outfile} ---")
+        # print(f"\n--- Exporting to {outfile} ---")
         
         # 1. Generate the surface definition payload based on the mesh
         surface_payload = self._generate_abaqus_surface_payload()
@@ -295,7 +298,7 @@ class MeshGenerator:
         gmsh.write(outfile)
         
         # 3. Post-process to insert *Part and append surfaces
-        print("  Post-processing INP file...")
+        # print("  Post-processing INP file...")
         with open(outfile, 'r') as f:
             lines = f.readlines()
 
@@ -316,7 +319,7 @@ class MeshGenerator:
             
     def finalize(self):
         gmsh.finalize()
-        print("Done.")
+        # print("Done.")
 
     @classmethod
     def run(cls, seed_size: float, output_file="output.inp", directory: str = None):
@@ -404,6 +407,22 @@ class GeometryParams(BaseParams):
         if iteration % self.reinitialize_per_iter == 0:
             for i in range(self.num_surface):
                 self.surface_list[i].reinitialize()
+            # import copy
+            # result = []
+            # pools = morphopt.controller.pools
+            # for i in range(self.num_surface):
+            #     surface_now = copy.deepcopy(self.surface_list[i])
+            #     morphopt.controller.change_device(device='cpu', obj=surface_now)
+            #     result.append(
+            #         pools.apply_async(
+            #         surface_now.reinitialize, kwds={}))
+                
+
+            # get the result
+            # for i in range(self.num_surface):
+            #     result[i].get()
+            
+
             morphopt.controller.objfun.inp = None
         self.apply_surface_constraints()
 

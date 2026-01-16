@@ -172,8 +172,8 @@ class FEAParams(BaseParams):
         elems = inp.part['final_model'].elems['C3D4'][:, 1:]
         elems_index = inp.part['final_model'].elems['C3D4'][:, 0]
         element = torchfea.elements.initialize_element(element_type='C3D4',
-                                                    elems_index=torch.from_numpy(elems_index),     
-                                                    elems=torch.from_numpy(elems), 
+                                                    elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
+                                                    elems=torch.from_numpy(elems).to(torch.get_default_device()), 
                                                     part=part)
 
         part.add_element(element)
