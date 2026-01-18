@@ -398,6 +398,10 @@ class GeometryParams(BaseParams):
         The maximum allowed change in node positions before the surfaces are regenerated.
         """
         
+    def initialize(self, *args, **kwargs):
+        for i in range(self.num_surface):
+            self.surface_list[i].initialize(*args, **kwargs)
+
     def reinitialize(self, iteration: int):
         """
         Initialize the surfaces for the optimization process.
@@ -566,14 +570,14 @@ class GeometryParams(BaseParams):
         start = 0
         for i in range(self.num_surface):
             end = start + self.surface_list[i].num_variables
-            x_change_list.append(x_change[start:end].reshape([3, -1]))
+            x_change_list.append(x_change[start:end].reshape([-1, 3]))
             start = end
 
         for i in range(self.num_surface):
 
-            r = x_change_list[i].norm(dim=0)
+            r = x_change_list[i].norm(dim=1, keepdim=True)
             
-            dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * max_step_length[i]
+            dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * max_step_length[i].unsqueeze(1)
             
             self.surface_list[i].update_variables(dx)
 
@@ -602,10 +606,10 @@ class GeometryParams(BaseParams):
             r, _, _ = self.surface_list[i].get_geometry_values()
             all_points.append(r)
 
-        all_points = torch.cat(all_points, dim=1)
-        x_min, x_max = all_points[0].min().item(), all_points[0].max().item()
-        y_min, y_max = all_points[1].min().item(), all_points[1].max().item()
-        z_min, z_max = all_points[2].min().item(), all_points[2].max().item()
+        all_points = torch.cat(all_points, dim=0)
+        x_min, x_max = all_points[:, 0].min().item(), all_points[:, 0].max().item()
+        y_min, y_max = all_points[:, 1].min().item(), all_points[:, 1].max().item()
+        z_min, z_max = all_points[:, 2].min().item(), all_points[:, 2].max().item()
 
         # Add some padding to the bounds
         padding = 0.05 * max(x_max-x_min, y_max-y_min, z_max-z_min)
@@ -692,6 +696,7 @@ class GeometryParams(BaseParams):
         # read the inp file
         inp = torchfea.FEA_INP()
         inp.read_inp(path=inp_path)
+        # inp.read_inp('Z:\\Results\\EXAMPLE_T20260118_100206\\cache\\TopOptRun.inp')
 
         return inp
 

@@ -28,7 +28,7 @@ class MinRadius(BaseConstraints):
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
         for i in range(len(r)):
             
-            length_r = -(r[i][0]**2 + r[i][1]**2).sqrt() + self._radius
+            length_r = -(r[i][:, 0]**2 + r[i][:, 1]**2).sqrt() + self._radius
             
             index_r, loss_r = self.barrier_function(length_r, thre, 0., degree)
 
@@ -73,9 +73,9 @@ class Cylinder(BaseConstraints):
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
         for i in range(len(r)):
             
-            length_r = (r[i][0]**2 + r[i][1]**2).sqrt() - self._radius
-            length_bottom = -r[i][2] + self._bottom
-            length_top = r[i][2] - self._height
+            length_r = (r[i][:, 0]**2 + r[i][:, 1]**2).sqrt() - self._radius
+            length_bottom = -r[i][:, 2] + self._bottom
+            length_top = r[i][:, 2] - self._height
             
             index_r, loss_r = self.barrier_function(length_r, thre, 0., degree)
             index_bottom, loss_bottom = self.barrier_function(length_bottom, thre, 0., degree)
