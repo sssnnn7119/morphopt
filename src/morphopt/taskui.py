@@ -396,6 +396,8 @@ class OptimizationMonitorUI(QMainWindow):
 
 def run_ui(dataqueue: mp.Queue, main_filepath: str = None):
     import os
+    
+    os.environ['KMP_DUPLICATE_LIB_OK']='True'
     import torch
     torch.set_default_dtype(torch.float64)
     torch.set_default_device('cpu')

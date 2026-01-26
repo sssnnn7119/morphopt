@@ -342,6 +342,7 @@ class GeometryParams(BaseParams):
     Class to handle the surfaces of the morphable model.
     """
     from .geometryinterfaces.bspsurfaceinterface import BspInterface as BSP
+    from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
 
     def __init__(self, fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """

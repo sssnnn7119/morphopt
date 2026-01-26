@@ -188,6 +188,14 @@ class BaseInterface():
         """
         raise NotImplementedError("The get_mesh method is not implemented in the BaseInterface class. Please implement it in the derived class.")
     
+    def plot(self):
+        """
+        Plot the surface mesh.
+        """
+        mesh = self.get_mesh()
+        plotter = pv.Plotter()
+        plotter.add_mesh(mesh, color='lightblue', show_edges=True)
+        plotter.show()
 
     class MeshSurfaceConverter:
         def __init__(self):
