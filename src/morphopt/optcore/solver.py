@@ -77,10 +77,14 @@ class MorphSolver(BaseObject):
         """
 
         # multiprocess FEA
-        # self._solve_FEA(morphopt.controller.objfun.inp, self.params.feamodel, self.params.materials,
-        #                 self.task_index_list[0], self.available_gpus)
+
         fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
         fe_cpu.change_device(torch.device('cpu'))
+
+        # self._solve_FEA(fe=fe_cpu, 
+        #                 feamodel=self.params.feamodel,
+        #                 task_index=self.task_index_list[0],
+        #                 available_gpus=self.available_gpus)
 
         pools = morphopt.controller.pools
         result = []
@@ -126,11 +130,11 @@ class MorphSolver(BaseObject):
         if len(available_gpus) > 0:
             cuda_now = (pool_id+1) % len(available_gpus)
             torch.set_default_device(available_gpus[cuda_now])
-            device_now = torch.device(available_gpus[cuda_now])
+            device_now = available_gpus[cuda_now]
             print("Process %s use GPU: %s" % (current_process_name, available_gpus[cuda_now]))
         else:
             torch.set_default_device('cpu')
-            device_now = torch.device('cpu')
+            device_now = 'cpu'
             print("Process %s use CPU" % (current_process_name))
 
         # torch.set_default_device(torch.device('cuda:0'))
@@ -139,17 +143,17 @@ class MorphSolver(BaseObject):
         # construct the FEA
         fe.change_device(device_now)
 
-        fe.initialize()
         if U_guess is not None:
             U0 = torch.from_numpy(U_guess).to(torch.float64).to(fe.assembly.device)
         else:
-            U0 = fe.assembly.GC
+            U0 = fe.assembly.GC.to(torch.get_default_device())
 
         result_list = []
         for i in range(len(task_index)):
             feamodel.process_fea(fe=fe, step_index=task_index[i])
-            result: torchfea.solver.StaticResult = fe.solve(GC0=U0, if_initialize=False)
+            result: torchfea.solver.StaticResult = fe.solve(GC0=U0.to(torch.get_default_device()), if_initialize=False)
 
-            U0 = result.GC.detach().cpu().numpy()
-            result_list.append(U0)
+            U0 = result.GC.detach()
+            Unow = U0.cpu().numpy()
+            result_list.append(Unow)
         return result_list

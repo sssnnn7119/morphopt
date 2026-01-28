@@ -127,4 +127,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:0', restart_per_iteration=2)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10, no_gui=False)

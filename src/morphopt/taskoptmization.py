@@ -29,7 +29,7 @@ class TaskOptimization:
                 if process.exitcode != 0:
                     print(f"Process failed with exit code {process.exitcode}, continuing...")
                     continue
-                path_result = path_queue.get(timeout=10)  # Add timeout to avoid indefinite blocking
+                path_result = path_queue.get()
             except Exception as e:
                 print(f"Error in process or queue: {e}, continuing...")
                 continue
