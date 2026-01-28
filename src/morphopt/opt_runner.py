@@ -1,7 +1,7 @@
 
 
 
-def start_optimization(device='cpu', restart_per_iteration: int = 20, path_result: str=None, target_iteration=None, ):
+def start_optimization(device='cpu', restart_per_iteration: int = 20, path_result: str=None, target_iteration=None, no_gui: bool=False):
     """
     Start a new optimization process.
 
@@ -31,6 +31,10 @@ def start_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
                                                                                 'dataqueue': dataqueue})
     process_optimization.start()
 
+    if no_gui:
+        process_optimization.join()
+        return
+    
     process_ui = mp.Process(target=run_ui, args=(dataqueue, main_filepath))
     process_ui.start()
 
@@ -94,7 +98,27 @@ def debug_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
     """
     import __main__
     from .taskoptmization import TaskOptimization
-    main_filepath = __main__.__file__
+    import os
+    import morphopt
+
+    if path_result is None:
+        import __main__
+        main_filepath = __main__.__file__
+    else:
+        main_filepath = path_result + '/scripts/' + 'MAIN_SCRIPT_FOR_RESTART.py'
+
+    filename = os.path.splitext(os.path.basename(main_filepath))[0] 
+    filepath = os.path.dirname(main_filepath)
+    os.chdir(filepath)
+    import sys
+    sys.path.append(os.getcwd())
+
+    Controller: morphopt.Controller = getattr(__import__(filename), 'ThisController')
+
+    controller: morphopt.Controller = Controller()
+    controller.restart_per_iteration = restart_per_iteration
+    controller.optdevice = device
+
     TaskOptimization.optmain(device=device, 
                             path_result=path_result,
                             target_iteration=target_iteration,

@@ -67,24 +67,54 @@ class ShapeDerivativeDisplacement(BaseConstraints):
         import numpy as np
 
         plotter = pv.Plotter(window_size=(1000, 1000))
-        plotter.set_background('black')
+        plotter.set_background('white')
 
         r = self._r0[ind].detach().cpu().numpy()
         n = self.sensitivity[ind].detach().cpu().numpy()
 
-        # Assuming r and n are [3, N], transpose to [N, 3]
-        points = r.T
-        vectors = n.T
+        # r and n are [N, 3]
+        points = r
+        vectors = n
+        
+        # Debug: print statistics
+        print(f"Points shape: {points.shape}")
+        print(f"Vectors shape: {vectors.shape}")
+        print(f"Vector magnitude range: [{np.linalg.norm(vectors, axis=1).min():.6e}, {np.linalg.norm(vectors, axis=1).max():.6e}]")
+        
+        # Filter out zero vectors
+        vector_norms = np.linalg.norm(vectors, axis=1)
+        valid_mask = vector_norms > 1e-10
+        
+        if valid_mask.sum() == 0:
+            print("Warning: All sensitivity vectors are zero!")
+            return
+        
+        points_filtered = points[valid_mask]
+        vectors_filtered = vectors[valid_mask]
+        
+        # Auto-scale magnitude based on model size
+        model_size = np.max(points_filtered.max(axis=0) - points_filtered.min(axis=0))
+        vector_mag = np.linalg.norm(vectors_filtered, axis=1).mean()
+        mag_scale = model_size / vector_mag * 0.01  # Scale to 1% of model size
+        
+        print(f"Using {valid_mask.sum()} non-zero vectors out of {len(valid_mask)}")
+        print(f"Auto-scaled magnitude: {mag_scale:.6e}")
+        
+        # Add surface mesh for context
+        plotter.add_points(points_filtered, color='blue', point_size=5, render_points_as_spheres=True)
+        
+        # Add arrows with auto-scaled magnitude
+        plotter.add_arrows(points_filtered, vectors_filtered, mag=mag_scale, color='red')
 
-        plotter.add_arrows(points, vectors, mag=1.0, color='white')
-
+        plotter.show_axes()
         plotter.show()
 
     def __call__(self, r: list[torch.Tensor], *args, **kwargs):
         loss_objective = 0.0
 
         for i in range(len(self.sensitivity)):
-
+            # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
+            # Compute inner product: sum over all points and dimensions
             loss_objective += ((r[i] - self._r0[i]) * self.sensitivity[i]).sum()
 
         return loss_objective
@@ -137,13 +167,13 @@ class ShapeDerivativeDisplacement(BaseConstraints):
                 Part_B = interpolate.griddata(
                     points_request.reshape([-1, 3]).detach().cpu().numpy(),
                     Ldot[:, i].flatten().detach().cpu().numpy(),
-                    (interpolated_points[surf_index][0],
-                    interpolated_points[surf_index][1],
-                    interpolated_points[surf_index][2]),
+                    (interpolated_points[surf_index][:, 0],
+                    interpolated_points[surf_index][:, 1],
+                    interpolated_points[surf_index][:, 2]),
                     method='nearest',
                     fill_value=0,
                     rescale=True)
 
-                output_senNodes[-1][i] = torch.tensor((Part_B).tolist())
+                output_senNodes[-1][:, i] = torch.tensor((Part_B).tolist())
 
         return output_senNodes

@@ -165,7 +165,7 @@ class UpdaterGeometries(BaseUpdater):
 
         # initialize the step length
         for i in range(len(self._max_step_length)):
-            if (self._max_step_length[i].shape[0] != self.params.geometry.surface_list[i].control_points.shape[1]):
+            if (self._max_step_length[i].shape[0] != self.params.geometry.surface_list[i].control_points.flatten().shape[0] // 3):
                 self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
 
         # save the sensitivity for the next iteration
@@ -213,10 +213,10 @@ class UpdaterGeometries(BaseUpdater):
         if self._delta_control_points_previous is not None:
             for i in range(len(self._max_step_length)):
                 # check if the mesh has improved
-                if (self._delta_control_points_previous[i].shape[1] != self.params.geometry.surface_list[i].control_points.shape[1]):
+                if (self._delta_control_points_previous[i].shape != self.params.geometry.surface_list[i].control_points.shape):
                     self._max_step_length[i] = self._max_step_length[i].mean().repeat(self.params.geometry.surface_list[i].num_variables // 3)
                 else:
-                    delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=0) / (np.linalg.norm(delta_control_points[i], axis=0)) / np.linalg.norm(self._delta_control_points_previous[i], axis=0)
+                    delta_difference: np.ndarray = np.sum(self._delta_control_points_previous[i] * delta_control_points[i], axis=-1) / (np.linalg.norm(delta_control_points[i], axis=-1)) / np.linalg.norm(self._delta_control_points_previous[i], axis=-1)
                     delta_difference[np.isnan(delta_difference)] = 0.0
 
                     index_increase = (delta_difference > -0.5).flatten()

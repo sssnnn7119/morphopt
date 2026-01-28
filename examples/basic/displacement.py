@@ -1,3 +1,4 @@
+
 import morphopt
 
 class ThisController(morphopt.Controller):
@@ -22,26 +23,37 @@ class ThisController(morphopt.Controller):
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=8.,
-                                                            length=80.,
-                                                            seed_size=1.0,
-                                                            symmetric=[1, [1]],
-                                                            flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    length=80.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
                 
-                self.add_surface(
-                    self.BSP.initialize_cylinder(r0=4.,
-                                                        length=74.,
-                                                        seed_size=1.0,
-                                                        symmetric=[1, [1]],
-                                                        init_location=[0, 0, 3],
-                                                        flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
                 # self.add_surface(
-                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
-                #                                 flip=True,
-                #                                 r0=4.,
-                #                                 init_location=[0., 0., 40.],
-                #                                 MaxC=1.5,
-                #     ))
+                #     self.BSP.initialize_cylinder(r0=4.,
+                #                                     length=74.,
+                #                                     seed_size=1.0,
+                #                                     symmetric=[1, [1]],
+                #                                     init_location=[0, 0, 3],
+                #                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+
+                self.add_surface(
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                                                flip=True,
+                                                r0=4.,
+                                                init_location=[0., 0., 40.],
+                                                MaxC=1.5,
+                    ))
+
+            def apply_surface_constraints(self) -> None:
+                """
+                Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+                """
+                a: ThisController.Params.GeometryParams.BSP = self.surface_list[0]
+                cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)
+                import torch
+                cp0[:, :, 0] = (cp0[:, :, 0] + torch.flip(cp0[:, :, 0], dims=[1])) / 2
+                cp0[:, :, 1] = (cp0[:, :, 1] - torch.flip(cp0[:, :, 1], dims=[1])) / 2
+                cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
 
 
         class FEAParams(morphopt.FEAParams):
@@ -115,4 +127,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:0', restart_per_iteration=3)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10, no_gui=False)

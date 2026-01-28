@@ -1,17 +1,16 @@
 import datetime
 import math
-import torchfea
 import numpy as np
 import torch
 
-from ..geometricmodel.basesurfacemodel import Surface_Base
 import pyvista as pv
+
 class BaseInterface():
     """
     Class to handle the surface of the morphable model.
     """
     
-    def __init__(self, surface: Surface_Base, symmetric: list[int] = None) -> None:
+    def __init__(self, symmetric: list[int] = None, *args, **kwargs) -> None:
         """
         Initialize the Surface class.
 
@@ -27,11 +26,6 @@ class BaseInterface():
                     1: y-axis symmetry
                     2: z-axis symmetry
         """
-        
-        self.model = surface
-        """
-        The surface model.
-        """
 
         self.symmetric: list[int] = symmetric
         """
@@ -43,38 +37,18 @@ class BaseInterface():
             ## 2: z-axis symmetry
         """
 
-        self.surface_out_knots: torch.Tensor
-        """record the output knots of the surface"""
-        self.surface_out_coo: torch.Tensor
-        """record the output coordinates of the surface"""
-
-        self._coordinates_fea: torch.Tensor
-        """record the coordinates of the surface for FEA"""
-    
-    def reinitialize(self) -> None:
+    def initialize(self) -> None:
         """
         Initialize the surface.
         """
         pass
 
-    def pre_load(self) -> None:
+    def reinitialize(self) -> None:
         """
-        Pre-load the surface to accelerate the computation when the coordinates are the same.
+        ReInitialize the surface.
         """
         pass
-    
-    @property
-    def surf_type(self) -> int:
-        """
-        Get the type of the surface.
 
-        Returns:
-            int: The type of the surface.
-                - 0: bspline surface
-                - 1: closed surface
-        """
-        raise NotImplementedError("The surf_type property is not implemented in the BaseInterface class. Please implement it in the derived class.")
-    
     @property
     def control_points(self) -> torch.Tensor:
         """
@@ -176,28 +150,6 @@ class BaseInterface():
         else:
             fnew = f[index]
         return index, fnew
-    
-    def match_points_surface(self, points: torch.Tensor) -> torch.Tensor:
-        """
-        Match the points to the surface.
-
-        Parameters:
-            points (torch.Tensor): The points to be matched.
-
-        Returns:
-            torch.Tensor: The coordinates of the matched points on the surface.
-        """
-        raise NotImplementedError("The match_points_surface method is not implemented in the BaseInterface class. Please implement it in the derived class.")
-
-    def refine_fea_mesh(self, part: torchfea.FEA_INP.Parts, surf_index: int, nodes_new: np.ndarray):
-        """
-        Refine the mesh of the surface.
-
-        Parameters:
-            part (torchfea.FEA_INP.Parts): The FEA input data.
-            surf_index (int): The index of the surface to be refined.
-        """
-        return nodes_new
 
     @property
     def num_variables(self) -> int:
@@ -236,6 +188,14 @@ class BaseInterface():
         """
         raise NotImplementedError("The get_mesh method is not implemented in the BaseInterface class. Please implement it in the derived class.")
     
+    def plot(self):
+        """
+        Plot the surface mesh.
+        """
+        mesh = self.get_mesh()
+        plotter = pv.Plotter()
+        plotter.add_mesh(mesh, color='lightblue', show_edges=True)
+        plotter.show()
 
     class MeshSurfaceConverter:
         def __init__(self):
@@ -638,3 +598,166 @@ class BaseInterface():
                 v2_coords = unique_vertices[v2]
                 stp_content.append(f"#{point1_id}=CARTESIAN_POINT('',({v1_coords[0]},{v1_coords[1]},{v1_coords[2]}));")
                 stp_content.append(f"#{point2_id}=CARTESIAN_POINT('',({v2_coords[0]},{v2_coords[1]},{v2_coords[2]}));")
+
+
+
+class CpBasedInterface(BaseInterface):
+    """
+    Class to handle the surface of the morphable model.
+    """
+    
+    def __init__(self, *args, **kwargs) -> None:
+        """
+        Initialize the Surface class.
+
+        Parameters:
+            surface (Surface_Base) : The surface model.
+            surf_type (int) : The type of the surface.
+                - 0: bspline surface
+                - 1: closed surface
+            symmetric (list[int]) : The symmetry of the surface.
+                - 0: no symmetry
+                - 1: axis symmetry
+                    0: x-axis symmetry
+                    1: y-axis symmetry
+                    2: z-axis symmetry
+        """
+
+        super().__init__(*args, **kwargs)
+
+        self._cps: torch.Tensor
+        """Control points tensor."""
+        self._preload_uv: torch.Tensor
+        """Preloaded UV parameters for the surface."""
+        self._indices: torch.Tensor
+        """Indices in the knot vector at each dimension.
+
+            shape: (2, num_pairs)
+                - [0]: indices for the required points
+                - [1]: indices for the control points
+        """
+        self._weights: torch.Tensor
+        """Weights for the control points."""
+        self._weights_du: torch.Tensor
+        """derivative of the weights with respect to the `first` parameter."""
+        self._weights_dv: torch.Tensor
+        """derivative of the weights with respect to the `second` parameter."""
+        self._weights_du2: torch.Tensor
+        """Second derivative of the weights with respect to the `first` parameter."""
+        self._weights_dudv: torch.Tensor
+        """Mixed derivative of the weights with respect to the `first` and `second` parameters."""
+        self._weights_dv2: torch.Tensor
+        """Second derivative of the weights with respect to the `second` parameter."""
+
+
+
+    def _map(self, weights: torch.Tensor, indices: torch.Tensor, num_pts: int = None) -> torch.Tensor:
+
+        if num_pts is None:
+            num_pts = indices[0].max().item() + 1
+        
+        result = torch.zeros([num_pts, 3], dtype=self._cps.dtype)
+        for i in range(3):
+            result[:, i].scatter_add_(0, indices[0], weights * self._cps[indices[1], i])
+        return result
+    
+    def get_r(self):
+        """
+        Get the point coordinates of the surface.
+
+        Returns:
+            torch.Tensor: The point coordinates of the surface.
+        """
+        return self._map(self._weights, self._indices, num_pts=self._preload_uv.shape[0])
+    
+    def get_rdu(self):
+        """
+        Get the first partial derivatives of the surface.
+
+        Returns:
+            torch.Tensor: The first partial derivatives of the surface.
+                - shape: (num_points, 3, 2), the first derivative with respect to the first parameter and the second parameter.
+        """
+        rdu = self._map(self._weights_du, self._indices, num_pts=self._preload_uv.shape[0])
+        rdv = self._map(self._weights_dv, self._indices, num_pts=self._preload_uv.shape[0])
+        return torch.stack([rdu, rdv], dim=2)
+    
+    def get_rdu2(self):
+        """
+        Get the second partial derivatives of the surface.
+
+        Returns:
+            torch.Tensor: The second partial derivatives of the surface.
+                - shape: (num_points, 3, 2, 2), the second derivative with respect to the first parameter and the second parameter.
+        """
+
+        rdu2 = self._map(self._weights_du2, self._indices, num_pts=self._preload_uv.shape[0])
+        rduv = self._map(self._weights_dudv, self._indices, num_pts=self._preload_uv.shape[0])
+        rdv2 = self._map(self._weights_dv2, self._indices, num_pts=self._preload_uv.shape[0])
+        return torch.stack([torch.stack([rdu2, rduv], dim=2),
+                            torch.stack([rduv, rdv2], dim=2)], dim=2)
+
+    @property
+    def control_points(self) -> torch.Tensor:
+        """
+        Get the control points of the surface.
+
+        Returns:
+            torch.Tensor: The control points of the surface.
+        """
+        return self._cps
+
+    def get_surface_parameters(self) -> torch.Tensor:
+        """
+        Get the design variables of the surface.
+
+        Returns:
+            x (torch.Tensor): The design variables of the surface.
+        """
+        return self._cps.flatten()
+        
+
+    def set_surface_parameters(self, x: torch.Tensor) -> None:
+        """
+        Set the design variables of the surface.
+
+        Parameters:
+            x (torch.Tensor): The new design variables to be set.
+        """
+        self._cps = x.reshape(self._cps.shape)
+
+    def update_variables(self, x_change: torch.Tensor) -> None:
+        """
+        Update the surface with the new design variables.
+
+        Parameters:
+            x_change (torch.Tensor): The change of design variables to be applied.
+        """
+        self._cps = self._cps + x_change.reshape(self._cps.shape)
+
+    def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Get the geometry values of the surface.
+
+        Returns:
+            tuple: A tuple containing the geometry values of the surface.
+                - r (torch.Tensor): The point coordinates of the surface.
+                - rdu (torch.Tensor): The partial derivatives of the surface.
+                - rdu2 (torch.Tensor): The second partial derivatives of the surface.
+        """
+        r = self.get_r()
+        rdu = self.get_rdu()
+        rdu2 = self.get_rdu2()
+        return r, rdu, rdu2
+
+    @property
+    def num_variables(self) -> int:
+        """
+        Get the number of design variables.
+
+        Returns:
+            int: The number of design variables.
+        """
+        return self._cps.numel()
+
+

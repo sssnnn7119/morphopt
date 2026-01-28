@@ -20,8 +20,11 @@ class BaseConstraints():
         
         self.scaler = []
         for i in range(len(sensitivity)):
-            sen_now = sensitivity[i].reshape([3, -1]).norm(dim=0)
-            sen_now[sen_now==0] = sen_now[sen_now!=0].min()
+            sen_now = sensitivity[i].reshape([-1, 3]).norm(dim=1)
+            if (sen_now != 0).any():
+                sen_now[sen_now==0] = sen_now[sen_now!=0].min()
+            else:
+                sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
             self.scaler.append(sen_now * weights[i])
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> float:
