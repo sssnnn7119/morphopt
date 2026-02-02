@@ -61,8 +61,8 @@ class OptimizationMonitorUI(QMainWindow):
         super().__init__()
         self.dataqueue = dataqueue
         self.Controller = Controller
-        self.params: morphopt.Params
-        self.params = Controller.Params()
+        self.params: morphopt.GeometryParams
+        self.params = Controller.Params().geometry
         self.params.initialize()
         self.path_result = None
         self.iteration = 0
@@ -169,11 +169,11 @@ class OptimizationMonitorUI(QMainWindow):
             
             # Surface Cache
             if iteration not in self.surface_cache:
-                try:
-                    self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=iteration)
-                    self.surface_cache[iteration] = self.params.geometry.get_meshes()
-                except Exception as e:
-                    print(f"Error caching surface for iteration {iteration}: {e}")
+                # try:
+                    self.params.load(foldpath=self.path_result + '/log/', iteration=iteration)
+                    self.surface_cache[iteration] = self.params.get_meshes()
+                # except Exception as e:
+                #     print(f"Error caching surface for iteration {iteration}: {e}")
 
             # Deformation Cache
             if iteration not in self.deformation_cache:
@@ -351,9 +351,11 @@ class OptimizationMonitorUI(QMainWindow):
                 meshes = self.surface_cache[selected_iter]
             else:
                 try:
-                    self.params.geometry.load(foldpath=self.path_result + '/log/', iteration=selected_iter)
-                    meshes = self.params.geometry.get_meshes()
+                    self.params.load(foldpath=self.path_result + '/log/', iteration=selected_iter)
+                    meshes = self.params.get_meshes()
                     self.surface_cache[selected_iter] = meshes
+                    import gc
+                    gc.collect()
                 except Exception as e:
                     print(f"Error loading geometry: {e}")
 

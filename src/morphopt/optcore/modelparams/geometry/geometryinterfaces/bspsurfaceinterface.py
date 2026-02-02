@@ -638,6 +638,11 @@ class BspInterface(CpBasedInterface):
         x = result[:, :, 0]
         y = result[:, :, 1]
         z = result[:, :, 2]
+
+
+        x = np.concatenate([x, x[:, :1]], axis=1)
+        y = np.concatenate([y, y[:, :1]], axis=1)
+        z = np.concatenate([z, z[:, :1]], axis=1)
         
         # Create structured grid
         grid = pv.StructuredGrid(x, y, z)

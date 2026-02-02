@@ -39,12 +39,23 @@ class CPGEOInterface(CpBasedInterface):
         # Initialize CPGEO knots and thresholds
         self.model.initialize()
 
+        self._preload()
+
+        
+    def reinitialize(self):
+        
+        self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+        
         # Load control points into torch tensor
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
         
         # Get knot points from the CPGEO model
         # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
         self._num_knots = self.model._knots.shape[0]
+
+        self._preload()
+
+    def _preload(self):
         self._preload_uv = torch.from_numpy(self.model._knots).to(torch.get_default_device())
         
         # Precompute weights for knot points (derivative 0, 1, 2)
@@ -72,7 +83,7 @@ class CPGEOInterface(CpBasedInterface):
         self._weights_du2 = torch.from_numpy(wdu2[0, 0]).to(torch.get_default_device()).flatten()
         self._weights_dv2 = torch.from_numpy(wdu2[1, 1]).to(torch.get_default_device()).flatten()
         self._weights_dudv = torch.from_numpy(wdu2[0, 1]).to(torch.get_default_device()).flatten()
-        
+    
     @staticmethod
     def output_stl_file(vertices, faces, path_output, name_output):
         """Output CPGEO mesh as STL file.
@@ -197,10 +208,8 @@ class CPGEOInterface(CpBasedInterface):
         """Load CPGEO model from file."""
         self.model = cpgeo.CPGEO.load(filename + '.npz')
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-        self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
         self.initialize()
 
-        1
 
     def get_mesh(self):
         """Get PyVista mesh from CPGEO model.

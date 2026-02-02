@@ -1,6 +1,8 @@
 import os
 import sys
 
+from torch.nn.modules import loss
+
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
@@ -23,30 +25,31 @@ class ThisController(morphopt.Controller):
 
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
 
-            loss1 = torch.exp(1.5-self.U[0][GC_start + 4]) * 5
-            loss11 = -self.U[5][GC_start + 4]
-            loss2 = self.U[1][GC_start + 3]
-            loss3 = -self.U[2][GC_start + 3]
-            loss4 = self.U[3][GC_start + 5]
-            loss5 = -self.U[4][GC_start + 5]
-            return loss1 + loss2 + loss3 + loss4 + loss5 + loss11
+
+            lossElongate = -self.U[0][GC_start + 2]
+            lossBendx = self.U[1][GC_start] - self.U[2][GC_start]
+            lossBendy = self.U[3][GC_start + 1] - self.U[4][GC_start + 1]
+            lossTwistPos = self.U[5][GC_start + 5]
+            lossTwistNeg = -self.U[5][GC_start + 5]
+
+
+            return lossElongate + (lossBendx + lossBendy) + 10 * (lossTwistPos + lossTwistNeg)
         
         def get_metrics(self):
             rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
-            return [self.U[0][GC_start + 4],
-                    self.U[1][GC_start + 3],
-                    self.U[2][GC_start + 3],
-                    self.U[3][GC_start + 5],
-                    self.U[4][GC_start + 5],
-                    self.U[5][GC_start + 4],]
+            return [self.U[0][GC_start + 2],
+                    self.U[1][GC_start] - self.U[2][GC_start],
+                    self.U[3][GC_start + 1] - self.U[4][GC_start + 1],
+                    self.U[5][GC_start + 5],
+                    -self.U[5][GC_start + 5],]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
 
             def __init__(self):
 
-                super().__init__(reinitialize_per_iter=3, fea_seed_size=1.0, fea_mesh_order=1)
+                super().__init__(reinitialize_per_iter=5, fea_seed_size=1.0, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=12.,
@@ -54,35 +57,22 @@ class ThisController(morphopt.Controller):
                                                             seed_size=1.5,
                                                             symmetric=[0, [1]],
                                                             flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
+
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
-                                                 flip=True,
-                                                 r0=3.,
-                                                 init_location=[-6,0,40.],
-                                                 MaxC=0.8))
-                
-                self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,20.],
-                                                MaxC=0.8))
+                                                MaxC=0.6))
                 
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,60.],
-                                                MaxC=0.8))
-                
-                self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=0.8,
-                                                flip=True,
-                                                r0=3.,
-                                                init_location=[6,0,40.],
-                                                MaxC=0.8))
-                
+                                                MaxC=0.6))
+
 
 
         class FEAParams(morphopt.FEAParams):
@@ -91,8 +81,6 @@ class ThisController(morphopt.Controller):
                 self.rp_dict: dict[str, morphopt.FEAParams.ReferencePointInterface] = {}
                 super().__init__()
 
-                
-
             def define_interface(self):
 
                 # Common BC / RP / Couple
@@ -100,46 +88,46 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
-                RP_Rigid2 = self.ReferencePointInterface(rp_location=[0., 0., 20.])
+                RP_Rigid1 = self.ReferencePointInterface(rp_location=[0., 0., 20.])
+                self.rp_dict['RP_Rigid1'] = RP_Rigid1
+                self.add_fea_interface(RP_Rigid1, name='RP_Rigid1')
+                self.add_fea_interface(self.CoupleInterface(rp_name='RP_Rigid1', instance_name='final_model', set_nodes_name='surface_1_All'))
+
+                RP_Rigid2 = self.ReferencePointInterface(rp_location=[0., 0., 60.])
                 self.rp_dict['RP_Rigid2'] = RP_Rigid2
                 self.add_fea_interface(RP_Rigid2, name='RP_Rigid2')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_Rigid2', instance_name='final_model', set_nodes_name='surface_2_All'))
 
-                RP_Rigid3 = self.ReferencePointInterface(rp_location=[0., 0., 60.])
-                self.rp_dict['RP_Rigid3'] = RP_Rigid3
-                self.add_fea_interface(RP_Rigid3, name='RP_Rigid3')
-                self.add_fea_interface(self.CoupleInterface(rp_name='RP_Rigid3', instance_name='final_model', set_nodes_name='surface_3_All'))
-
-                RP_Rigid4 = self.ReferencePointInterface(rp_location=[0., 0., 40.])
-                self.rp_dict['RP_Rigid4'] = RP_Rigid4
-                self.add_fea_interface(RP_Rigid4, name='RP_Rigid4')
-                self.add_fea_interface(self.CoupleInterface(rp_name='RP_Rigid4', instance_name='final_model', set_nodes_name='surface_4_All'))
-
-                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'),
-                                        name='pressure_1')
-                
                 self.add_fea_interface(self.ConcentratedMomentInterface(rp_name='RP_head'),
                                         name='moment_1')
+                
+                self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'),
+                                        name='force_1')
 
             def define_steps(self):
-                self.set_step_num(6)
-                self.set_step_params(0, "pressure_1", [0.1])
+                self.set_step_num(7)
                 self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(0, "force_1", [0.0, 0.0, 10.0])
 
-                self.set_step_params(1, "pressure_1", [0.0])
-                self.set_step_params(1, "moment_1", [100., 0.0, 0.0])
+                self.set_step_params(1, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(1, "force_1", [2.0, 0.0, 0.0])
                 
-                self.set_step_params(2, "pressure_1", [0.0])
-                self.set_step_params(2, "moment_1", [-100., 0.0, 0.0])
+                self.set_step_params(2, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(2, "force_1", [-2.0, 0.0, 0.0])
 
-                self.set_step_params(3, "pressure_1", [0.0])
-                self.set_step_params(3, "moment_1", [0.0, 0.0, 100.])
+                self.set_step_params(3, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(3, "force_1", [0.0, 2.0, 0.0])
                 
-                self.set_step_params(4, "pressure_1", [0.0])
-                self.set_step_params(4, "moment_1", [0.0, 0.0, -100.])
+                self.set_step_params(4, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(4, "force_1", [0.0, -2.0, 0.0])
 
-                self.set_step_params(5, "pressure_1", [0.0])
-                self.set_step_params(5, "moment_1", [0.0, -100.0, 0.0])
+                self.set_step_params(5, "moment_1", [0.0, 0.0, 100.0])
+                self.set_step_params(5, "force_1", [0.0, 0.0, 0.0])
+
+                self.set_step_params(6, "moment_1", [0.0, 0.0, -100.0])
+                self.set_step_params(6, "force_1", [0.0, 0.0, 0.0])
+
+
 
             def reinitialize(self, iteration, *args, **kwargs):
                 super().reinitialize(iteration, *args, **kwargs)
@@ -147,11 +135,10 @@ class ThisController(morphopt.Controller):
                 # find the geometry center of each surface
                 center_list = []
                 for i in range(morphopt.controller.params.geometry.num_surface):
-                    center_list.append(morphopt.controller.params.geometry.surface_list[i].control_points.mean(dim=1).tolist())
+                    center_list.append(morphopt.controller.params.geometry.surface_list[i].control_points.mean(dim=0).tolist())
 
+                self.rp_dict['RP_Rigid1'].rp_location = center_list[1]
                 self.rp_dict['RP_Rigid2'].rp_location = center_list[2]
-                self.rp_dict['RP_Rigid3'].rp_location = center_list[3]
-                self.rp_dict['RP_Rigid4'].rp_location = center_list[4]
 
         class MaterialParams(morphopt.Materials):
             
@@ -200,14 +187,14 @@ class ThisController(morphopt.Controller):
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[1.8, 2.5, 1.4, 1.4, 1.4],
-                                                                [2.5, 2.0, 1.4, 1.4, 1.4],
-                                                                [1.4, 1.4, 1.4, 1.4, 1.4],
-                                                                [1.4, 1.4, 1.4, 1.4, 1.4],
-                                                                [1.4, 1.4, 1.4, 1.4, 1.4]],))
+                                                                [[1.8, 1.5, 1.5, 1.5, 1.5],
+                                                                [1.5, 1.5, 1.5, 1.5, 1.5],
+                                                                [1.5, 1.5, 1.5, 1.5, 1.5],
+                                                                [1.5, 1.5, 1.5, 1.5, 1.5],
+                                                                [1.5, 1.5, 1.5, 1.5, 1.5]],))
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(radius=12., height=77., bottom=3.))
 
-                self.if_update = [True, True, True, True, True]
+                self.if_update = [False, True, True, True, True]
 if __name__ == '__main__':
     morphopt.start_optimization(device='cuda')

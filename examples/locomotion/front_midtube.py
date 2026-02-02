@@ -76,7 +76,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.5, fea_mesh_order=1)
+                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.0, fea_mesh_order=1)
 
                 self.surface_list: list[morphopt.GeometryParams.BSP] = []
 
@@ -86,7 +86,7 @@ class ThisController(morphopt.Controller):
                                                     seed_size=1.0,
                                                     flip=False,
                                                     maxR=0.1,
-                                                    maxC=0.8,
+                                                    maxC=1.2,
                                                     maxFF=0.1, perturbation_L=14))
                 self.add_surface(
                     self.BSP.initialize_cylinder(seed_size=1.0,
@@ -94,7 +94,7 @@ class ThisController(morphopt.Controller):
                                                     r0=5.,
                                                     length=64.,
                                                     maxR=0.1,
-                                                    maxC=1.0,
+                                                    maxC=1.2,
                                                     maxFF=0.1,
                                                     init_location=[12, 0, 3], perturbation_L=14))
 
@@ -104,7 +104,7 @@ class ThisController(morphopt.Controller):
                                                     r0=5.,
                                                     length=64.,
                                                     maxR=0.1,
-                                                    maxC=1.0,
+                                                    maxC=1.2,
                                                     maxFF=0.1,
                                                     init_location=[-6, 10.5, 3], perturbation_L=14))
 
@@ -114,7 +114,7 @@ class ThisController(morphopt.Controller):
                                                     r0=5.,
                                                     length=64.,
                                                     maxR=0.1,
-                                                    maxC=1.0,
+                                                    maxC=1.2,
                                                     maxFF=0.1,
                                                     init_location=[-6, -10.5, 3], perturbation_L=14))
                 
@@ -124,7 +124,7 @@ class ThisController(morphopt.Controller):
                                                     r0=3.,
                                                     length=64.,
                                                     maxR=0.1,
-                                                    maxC=1.0,
+                                                    maxC=1.2,
                                                     maxFF=0.1,
                                                     init_location=[0, 0, 3]))
                 

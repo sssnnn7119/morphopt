@@ -184,7 +184,7 @@ class FEAParams(BaseParams):
 
         fe = torchfea.FEAController()
         fe.assembly = assembly
-        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-6)
+        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-3)
 
         # Add fea features
         for name, interface in self.feainterfaces.items():

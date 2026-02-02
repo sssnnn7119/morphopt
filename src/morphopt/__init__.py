@@ -8,7 +8,6 @@ from .optcore.modelparams import Params
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.history import History
 from .optcore.baseobject import BaseObject
-from .optcore.utils.plot_history_surface import SurfacesFigurePlotter
 # endregion
 
 from .opt_runner import start_optimization, debug_optimization, view_optimization_result
