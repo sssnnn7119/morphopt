@@ -42,12 +42,12 @@ class BaseInterface():
         Initialize the surface.
         """
         pass
-
-    def reinitialize(self) -> None:
+    
+    def reinitialize(self) -> 'BaseInterface':
         """
         ReInitialize the surface.
         """
-        pass
+        return self
 
     @property
     def control_points(self) -> torch.Tensor:

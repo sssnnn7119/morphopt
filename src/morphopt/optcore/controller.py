@@ -194,8 +194,7 @@ class Controller:
         self.initialize_path(main_filepath=main_filepath)
         self.opt_loop()
 
-    def restart_optimization(self, path_result: str, target_iteration: int = None) -> None:
-
+    def _load_history(self, path_result: str, target_iteration: int = None) -> None:
         self.path_result = path_result
         self.initialize()
         self.history.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
@@ -209,6 +208,9 @@ class Controller:
 
         self.history.iteration += 1
 
+    def restart_optimization(self, path_result: str, target_iteration: int = None) -> None:
+
+        self._load_history(path_result=path_result, target_iteration=target_iteration)
         self.opt_loop()
 
     def opt_loop(self) -> None:

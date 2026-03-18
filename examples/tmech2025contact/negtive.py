@@ -1,7 +1,6 @@
 import os
 import sys
 
-import FEA
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append(os.getcwd())
 
@@ -16,7 +15,7 @@ ROTATIONPERIOD = 6
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results', 
-                         opt_label='JUMP')
+                         opt_label='JUMP_P6')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def get_objective(self, *args, **kwargs):
@@ -31,7 +30,7 @@ class ThisController(morphopt.Controller):
             U1 = RGC1[rp_index]
 
             loss0 = torch.exp((U0[2]+20)/5)/5
-            loss1 = U1[5] * 0
+            loss1 = U1[5]
 
             return loss0 + loss1
 
@@ -40,7 +39,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.5, fea_mesh_order=1)
+                super().__init__(fea_seed_size=0.8, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=12.,
@@ -48,7 +47,7 @@ class ThisController(morphopt.Controller):
                                                             seed_size=0.8,
                                                             num_U_ratio=ROTATIONPERIOD,
                                                             symmetric=[0, [1]],
-                                                            flip=False, maxR=0.1, maxC=1.5, maxFF=0.2, perturbation_L=50/4))
+                                                            flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=50/4))
                 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=8.,
@@ -57,8 +56,9 @@ class ThisController(morphopt.Controller):
                                                         num_U_ratio=ROTATIONPERIOD,
                                                         symmetric=[0, [1]],
                                                         init_location=[0, 0, 3],
-                                                        flip=True, maxR=0.1, maxC=1.5, maxFF=0.2, perturbation_L=50/4))
+                                                        flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=50/4))
 
+                1
             # def _get_all_r(self, rinit: torch.Tensor):
             #     rout = rinit.clone()
             #     num_points = rinit.shape[2] / 4
@@ -80,22 +80,22 @@ class ThisController(morphopt.Controller):
                 """
                 强制 U 方向满足 ROTATIONPERIOD 的旋转对称，并额外保证关于 xz 平面的轴对称：
                 U 正序与倒序列的 x,z 相同，y 互为相反数。
-                期望 rinit 形状为 [3, Nv, Nu]，Nu 为 ROTATIONPERIOD 的整数倍。
+                期望 rinit 形状为 [Nv, Nu, 3]，Nu 为 ROTATIONPERIOD 的整数倍。
                 """
                 rout = rinit.clone()
 
-                if rout.dim() != 3 or rout.size(0) < 3:
-                    raise ValueError("control_points 需要形状 [3, Nv, Nu]")
+                if rout.dim() != 3 or rout.size(2) < 3:
+                    raise ValueError("control_points 需要形状 [Nv, Nu, 3]")
 
-                Nu = rout.shape[2]
+                Nu = rout.shape[1]
                 if Nu % ROTATIONPERIOD != 0:
                     raise ValueError(f"U 方向长度 Nu={Nu} 不是 ROTATIONPERIOD={ROTATIONPERIOD} 的倍数")
 
                 # 旋转对称复制（按每个周期列 i 为基准）
                 for i in range(ROTATIONPERIOD):
-                    x0 = rinit[0, :, i]
-                    y0 = rinit[1, :, i]
-                    z0 = rinit[2, :, i]
+                    x0 = rinit[:, i, 0]
+                    y0 = rinit[:, i, 1]
+                    z0 = rinit[:, i, 2]
 
                     theta0 = torch.atan2(y0, x0)
                     r0 = torch.sqrt(x0 * x0 + y0 * y0)
@@ -109,26 +109,31 @@ class ThisController(morphopt.Controller):
                     x_all = r0.unsqueeze(1) * torch.cos(theta_all.unsqueeze(0) + theta0.unsqueeze(1))
                     y_all = r0.unsqueeze(1) * torch.sin(theta_all.unsqueeze(0) + theta0.unsqueeze(1))
                     z_all = z0.unsqueeze(1).repeat(1, len(index_check))
-                    rout[0, :, index_check] = x_all
-                    rout[1, :, index_check] = y_all
-                    rout[2, :, index_check] = z_all
+                    rout[:, index_check] = torch.stack([x_all, y_all, z_all], dim=-1)
 
                 # 轴对称（关于 xz 平面）：U 正序与倒序一致，y 为相反数
                 # 将后半段镜像为前半段，保持自洽
-                rout[0] = (rout[0] + rout[0].flip(dims=[1])) / 2
-                rout[2] = (rout[2] + rout[2].flip(dims=[1])) / 2
-                rout[1] = (rout[1] - rout[1].flip(dims=[1])) / 2
+                rout[:, :, 0] = (rout[:, :, 0] + rout[:, :, 0].flip(dims=[1])) / 2
+                rout[:, :, 2] = (rout[:, :, 2] + rout[:, :, 2].flip(dims=[1])) / 2
+                rout[:, :, 1] = (rout[:, :, 1] - rout[:, :, 1].flip(dims=[1])) / 2
 
                 # 轴对称 （关于z=25平面）
-                rout[0] = (rout[0] + rout[0].flip(dims=[0])) / 2
-                rout[1] = (rout[1] + rout[1].flip(dims=[0])) / 2
-                rout[2] = (rout[2] - (rout[2].flip(dims=[0]) - 50)) / 2
+                rout[:, :, 0] = (rout[:, :, 0] + rout[:, :, 0].flip(dims=[0])) / 2
+                rout[:, :, 1] = (rout[:, :, 1] + rout[:, :, 1].flip(dims=[0])) / 2
+                rout[:, :, 2] = (rout[:, :, 2] - (rout[:, :, 2].flip(dims=[0]) - 50)) / 2
 
                 return rout
             
             def apply_surface_constraints(self):
-                self.surface_list[0].control_points = self._get_all_r(self.surface_list[0].control_points, self.surface_list[0].flip)
-                self.surface_list[1].control_points = self._get_all_r(self.surface_list[1].control_points, self.surface_list[1].flip)
+                cp0 = self.surface_list[0].control_points
+                surfinterface0: morphopt.GeometryParams.BSP = self.surface_list[0]
+                cp0 = cp0.reshape(surfinterface0.model.size[0], surfinterface0.model.size[1], 3)
+                surfinterface0._cps = self._get_all_r(cp0, self.surface_list[0].flip).reshape(-1, 3)
+
+                cp1 = self.surface_list[1].control_points
+                surfinterface1: morphopt.GeometryParams.BSP = self.surface_list[1]
+                cp1 = cp1.reshape(surfinterface1.model.size[0], surfinterface1.model.size[1], 3)
+                surfinterface1._cps = self._get_all_r(cp1, self.surface_list[1].flip).reshape(-1, 3)
 
         class FEAParams(morphopt.FEAParams):
 
@@ -158,7 +163,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
 
                 self.set_step_params(1, "pressure_1", [-0.05])
-                self.set_step_params(1, "moment_1", [0.0, 0.0, 0.0])
+                self.set_step_params(1, "moment_1", [0.0, 0.0, 100.0])
 
 
         class MaterialParams(morphopt.Materials):
@@ -217,4 +222,4 @@ class ThisController(morphopt.Controller):
 
     
 if __name__ == '__main__':
-    morphopt.start_optimization(Controller=ThisController, device='cuda:0')
+    morphopt.start_optimization(device='cuda:1')

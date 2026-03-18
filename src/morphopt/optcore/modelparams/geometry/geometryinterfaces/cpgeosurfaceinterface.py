@@ -55,14 +55,42 @@ class CPGEOInterface(CpBasedInterface):
 
         self._preload()
 
+        return self
+
     def _preload(self):
-        self._preload_uv = torch.from_numpy(self.model._knots).to(torch.get_default_device())
-        
-        # Precompute weights for knot points (derivative 0, 1, 2)
+        # Precompute Gaussian quadrature points (Dunavant 6-point rule) per triangular face
+        knots = self.model._knots
+        faces = self.model._cp_faces
+        v0 = knots[faces[:, 0]]
+        v1 = knots[faces[:, 1]]
+        v2 = knots[faces[:, 2]]
+
+        # Dunavant 6-point rule: two 3-point orbits (barycentric coordinates)
+        # orbit 1: alpha1=0.816847572980459, beta1=0.091576213509771
+        # orbit 2: alpha2=0.108103018168070, beta2=0.445948490915965
+        a1 = 0.816847572980459
+        b1 = 0.091576213509771
+        a2 = 0.108103018168070
+        b2 = 0.445948490915965
+
+        gauss_points = np.stack([
+            a1 * v0 + b1 * v1 + b1 * v2,
+            b1 * v0 + a1 * v1 + b1 * v2,
+            b1 * v0 + b1 * v1 + a1 * v2,
+            a2 * v0 + b2 * v1 + b2 * v2,
+            b2 * v0 + a2 * v1 + b2 * v2,
+            b2 * v0 + b2 * v1 + a2 * v2,
+        ], axis=1).reshape(-1, 3)
+
+        gauss_points = gauss_points / np.linalg.norm(gauss_points, axis=1, keepdims=True)  # Normalize for spherical surfaces
+
+        self._preload_uv = torch.from_numpy(gauss_points).to(torch.get_default_device()).to(self._cps.dtype)
+
+        # Precompute weights for Gaussian points (derivative 0, 1, 2)
         # get_weights3 returns: (indices_cps, indices_pts, w) for derivative=0
         #                       (indices_cps, indices_pts, w), (indices_cps, indices_pts, wdu) for derivative=1
         #                       (indices_cps, indices_pts, w), (indices_cps, indices_pts, wdu), (indices_cps, indices_pts, wdu2) for derivative=2
-        result = self.model.get_weights3(self.model._knots, derivative=2)
+        result = self.model.get_weights3(gauss_points, derivative=2)
         indices_cps, indices_pts, w, wdu, wdu2 = result
 
         
@@ -83,7 +111,43 @@ class CPGEOInterface(CpBasedInterface):
         self._weights_du2 = torch.from_numpy(wdu2[0, 0]).to(torch.get_default_device()).flatten()
         self._weights_dv2 = torch.from_numpy(wdu2[1, 1]).to(torch.get_default_device()).flatten()
         self._weights_dudv = torch.from_numpy(wdu2[0, 1]).to(torch.get_default_device()).flatten()
-    
+
+    def get_points_weight(self):
+        """Compute area-based weights for each Gaussian preload point.
+        
+        For each triangular face we use a 6-point Gaussian quadrature. Each
+        Gaussian point receives weight = triangle_area / 6.
+
+        Returns:
+            torch.Tensor: Weights for each preload point (shape: num_faces * 6)
+        """
+        # Use control-point coordinates to compute triangle areas
+        cps = self._cps.detach()
+        faces = torch.from_numpy(self.model._cp_faces).to(cps.device)
+
+        v0 = cps[faces[:, 0]]
+        v1 = cps[faces[:, 1]]
+        v2 = cps[faces[:, 2]]
+
+        # Triangle area = 0.5 * ||cross product||
+        areas = torch.cross(v1 - v0, v2 - v0, dim=1).norm(dim=1) / 2.0
+
+        # Dunavant 6-point rule uses two orbits with different weights.
+        # Reference triangle (area = 1/2) weights for the two orbits are:
+        #   wA = 0.054975871827661  (for the three points of orbit A)
+        #   wB = 0.1116907948390055 (for the three points of orbit B)
+        # They sum to 1/2. Convert to fractions (sum to 1) by dividing by 1/2.
+        f1 = 0.054975871827661 / 0.5
+        f2 = 0.1116907948390055 / 0.5
+
+        # Per-triangle weights: for each face, six points have weights [f1,f1,f1,f2,f2,f2]*area
+        fractions = torch.tensor([f1, f1, f1, f2, f2, f2], device=cps.device, dtype=self._cps.dtype)
+        weights = (areas.unsqueeze(1) * fractions.unsqueeze(0)).reshape(-1)
+
+        # Ensure same dtype/device as other tensors
+        return weights.to(cps.device).to(self._cps.dtype)
+
+
     @staticmethod
     def output_stl_file(vertices, faces, path_output, name_output):
         """Output CPGEO mesh as STL file.
@@ -120,7 +184,7 @@ class CPGEOInterface(CpBasedInterface):
         """
         
         pools = morphopt.controller.pools
-        r = self.get_r().detach().cpu().numpy()
+        r = self.model.map3(self.model._knots)
         result = pools.apply_async(self.output_stl_file, args=(
             r,
             self.model._cp_faces,
@@ -169,35 +233,10 @@ class CPGEOInterface(CpBasedInterface):
         C0 = self._geofair_data(r, rdu, rdu2)
 
         indexC, C = self.barrier_function(C0, self.MaxC, 0.8,
-                                                    3)
+                                                    5)
 
         return (weight[indexC] * C).sum()
 
-    def get_points_weight(self):
-        """Compute area-based weights for each knot point in CPGEO mesh.
-        
-        Returns:
-            torch.Tensor: Weights based on local surface area around each knot
-        """
-        R0 = self.get_r().detach()
-        
-        # Get face connectivity
-        faces = torch.from_numpy(self.model._cp_faces).to(R0.device)
-        
-        # Compute area for each triangle
-        v0 = R0[faces[:, 0]]
-        v1 = R0[faces[:, 1]]
-        v2 = R0[faces[:, 2]]
-        
-        # Triangle area = 0.5 * ||cross product||
-        areas = torch.cross(v1 - v0, v2 - v0, dim=1).norm(dim=1) / 2.0
-        
-        # Distribute area to vertices (each vertex gets 1/3 of incident triangle areas)
-        weights = torch.zeros(R0.shape[0], device=R0.device)
-        for i in range(3):
-            weights.scatter_add_(0, faces[:, i], areas / 3.0)
-        
-        return weights
 
     def save(self, filename):
         """Save CPGEO model to file."""
@@ -220,7 +259,7 @@ class CPGEOInterface(CpBasedInterface):
         import pyvista as pv
         
         # Get current control point positions
-        vertices = self.get_r().detach().cpu().numpy()
+        vertices = r = self.model.map3(self.model._knots)
         faces = self.model._cp_faces
         
         # Create PyVista mesh (prepend face count for each triangle)

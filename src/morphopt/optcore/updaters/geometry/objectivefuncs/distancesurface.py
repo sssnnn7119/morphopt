@@ -103,7 +103,7 @@ class Distance(BaseConstraints):
     def __call__(self, r, *args, **kwargs):
 
         R = torch.cat(r, dim=0).type(torch.float32)
-        thre = 0.02
+        thre = 0.01
         degree = 5
         loss_distance = torch.tensor(0.0, dtype=torch.float32)
         weight_flatten = torch.cat(self.scaler, dim=0).type(torch.float32)

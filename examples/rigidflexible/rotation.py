@@ -25,24 +25,27 @@ class ThisController(morphopt.Controller):
 
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
 
+            loss1 = (20-self.U[0][GC_start + 2])**2 / 10
 
-            lossElongate = (20-self.U[0][GC_start + 2])**2 / 100
-            lossBendx = self.U[1][GC_start] - self.U[2][GC_start]
-            lossBendy = self.U[3][GC_start + 1] - self.U[4][GC_start + 1]
-            lossTwistPos = self.U[5][GC_start + 5]
-            lossTwistNeg = -self.U[5][GC_start + 5]
-
-
-            return lossElongate + (lossBendx + lossBendy) + 10 * (lossTwistPos + lossTwistNeg)
+            loss2 = self.U[1][GC_start + 3]
+            loss3 = -self.U[2][GC_start + 3]
+            loss4 = self.U[3][GC_start + 5]
+            loss5 = -self.U[4][GC_start + 5]
+            loss6 = self.U[5][GC_start + 4]
+            loss7 = -self.U[6][GC_start + 4]
+            return loss1 + loss2 + loss3 + loss4 + loss5 + loss6 + loss7
         
         def get_metrics(self):
             rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
             return [self.U[0][GC_start + 2],
-                    self.U[1][GC_start] - self.U[2][GC_start],
-                    self.U[3][GC_start + 1] - self.U[4][GC_start + 1],
-                    self.U[5][GC_start + 5],
-                    -self.U[5][GC_start + 5],]
+                    self.U[1][GC_start + 3],
+                    self.U[2][GC_start + 3],
+                    self.U[3][GC_start + 5],
+                    self.U[4][GC_start + 5],
+                    self.U[5][GC_start + 4],
+                    self.U[6][GC_start + 4],]
+
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
@@ -106,27 +109,26 @@ class ThisController(morphopt.Controller):
 
             def define_steps(self):
                 self.set_step_num(7)
+                self.set_step_params(0, "force_1", [0., 0., 20.])
                 self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
-                self.set_step_params(0, "force_1", [0.0, 0.0, 20.0])
 
-                self.set_step_params(1, "moment_1", [0.0, 0.0, 0.0])
-                self.set_step_params(1, "force_1", [2.0, 0.0, 0.0])
+                self.set_step_params(1, "force_1", [0., 0., 0.])
+                self.set_step_params(1, "moment_1", [100., 0.0, 0.0])
                 
-                self.set_step_params(2, "moment_1", [0.0, 0.0, 0.0])
-                self.set_step_params(2, "force_1", [-2.0, 0.0, 0.0])
+                self.set_step_params(2, "force_1", [0., 0., 0.])
+                self.set_step_params(2, "moment_1", [-100., 0.0, 0.0])
 
-                self.set_step_params(3, "moment_1", [0.0, 0.0, 0.0])
-                self.set_step_params(3, "force_1", [0.0, 2.0, 0.0])
+                self.set_step_params(3, "force_1", [0., 0., 0.])
+                self.set_step_params(3, "moment_1", [0.0, 0.0, 100.])
                 
-                self.set_step_params(4, "moment_1", [0.0, 0.0, 0.0])
-                self.set_step_params(4, "force_1", [0.0, -2.0, 0.0])
+                self.set_step_params(4, "force_1", [0., 0., 0.])
+                self.set_step_params(4, "moment_1", [0.0, 0.0, -100.])
 
-                self.set_step_params(5, "moment_1", [0.0, 0.0, 100.0])
-                self.set_step_params(5, "force_1", [0.0, 0.0, 0.0])
+                self.set_step_params(5, "force_1", [0., 0., 0.])
+                self.set_step_params(5, "moment_1", [0.0, 100.0, 0.0])
 
-                self.set_step_params(6, "moment_1", [0.0, 0.0, -100.0])
-                self.set_step_params(6, "force_1", [0.0, 0.0, 0.0])
-
+                self.set_step_params(6, "force_1", [0., 0., 0.])
+                self.set_step_params(6, "moment_1", [0.0, -100.0, 0.0])
 
 
             def reinitialize(self, iteration, *args, **kwargs):

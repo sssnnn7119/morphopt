@@ -31,12 +31,13 @@ class SurfacesFigurePlotter:
         Load the parameters at a given iteration.
         """
         self.params.geometry.load(foldpath=self.restart_path + '/log/', iteration=iteration)
+        self.params.geometry.initialize()
 
     def plot_surfaces(self, iteration: int, 
                       colors: list[tuple[float, float, float]] | tuple[float, float, float] = None, 
                       opacity: list[float] = None,
                       boundary: tuple[float, float, float, float, float, float] = None,
-                      plotter=None):
+                      plotter: pv.Plotter = None) -> pv.Plotter:
         """
         Plot the surfaces at a given iteration.
         """
@@ -69,11 +70,13 @@ class SurfacesFigurePlotter:
             
             mesh = self.params.geometry.surface_list[sf].get_mesh()
             plotter.add_mesh(mesh, opacity=alpha, color=color_to_use,
-                           diffuse=0.8, specular=0.2, ambient=0.1, specular_power=10,
+                           diffuse=0.8, specular=0.1, ambient=0.4, specular_power=5,
                            smooth_shading=True, show_edges=False)
         
         if boundary is not None:
             pass
+
+        return plotter
 
     def plot_surface_rotation(self, iteration: int, 
                               colors: tuple[float, float, float] = None, 
@@ -99,7 +102,8 @@ class SurfacesFigurePlotter:
 
         plotter = pv.Plotter(off_screen=True, window_size=[2500, 2500])
         plotter.set_background('white')
-        plotter.enable_lightkit()  # 启用光照效果
+        plotter.remove_all_lights()
+        plotter.add_light(pv.Light(light_type='headlight', intensity=1.0))  # Mayavi 默认: 跟随相机的头灯
 
 
         self.plot_surfaces(iteration=iteration, colors=colors, opacity=opacity, boundary=boundary, plotter=plotter)
@@ -155,7 +159,8 @@ class SurfacesFigurePlotter:
         plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(elevation))))
-        plotter.enable_lightkit()  # 启用光照效果
+        plotter.remove_all_lights()
+        plotter.add_light(pv.Light(light_type='headlight', intensity=1.0))  # Mayavi 默认: 跟随相机的头灯
         
         plotter.open_gif(output_gif)
 
@@ -165,7 +170,7 @@ class SurfacesFigurePlotter:
             
             mesh = self.params.geometry.surface_list[surface_index].get_mesh()
             plotter.add_mesh(mesh, opacity=opacity, color=colors,
-                           diffuse=0.8, specular=0.2, ambient=0.1, specular_power=10,
+                           diffuse=0.8, specular=0.1, ambient=0.4, specular_power=5,
                            smooth_shading=True, show_edges=False)
             
             if boundary is not None:
@@ -212,15 +217,18 @@ class SurfacesFigurePlotter:
 
         plotter.open_gif(output_gif)
 
-        for iteration in range(history_index + 1):
+        num_frames = 60
+        for titer in range(num_frames):
+            iteration = 1 + int(history_index * titer / num_frames)
             plotter.clear()
-            plotter.enable_lightkit()  # 启用光照效果
+            plotter.remove_all_lights()
+            plotter.add_light(pv.Light(light_type='headlight', intensity=1.0))  # Mayavi 默认: 跟随相机的头灯
             self.plot_surfaces(iteration=iteration, colors=colors, opacity=opacity, boundary=boundary, plotter=plotter)
 
-            if iteration == 0:
+            if titer == 0:
                 plotter.enable_parallel_projection()
-                azimuth = 210
-                elevation = 20
+                azimuth = 90
+                elevation = 0
                 plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
                     math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
                     math.sin(math.radians(elevation))))
@@ -228,12 +236,30 @@ class SurfacesFigurePlotter:
             plotter.write_frame()
             
             if output_jpg_foldpath is not None:
-                plotter.screenshot(f"{output_jpg_foldpath}/iter_{iteration}.jpg")
+                plotter.screenshot(f"{output_jpg_foldpath}/iter_{titer}.jpg")
                 
         plotter.close()
 
 if __name__ == "__main__":
-    plotter = SurfacesFigurePlotter(restart_path='Z:/Results/EXAMPLE_T20260106_165756/')
-    plotter.plot_history_all_surfaces(history_index=3,
-                                     output_gif='Z:/temp/example_displacement_history.gif',
-                                     output_jpg_foldpath='Z:/temp/')
+    plotter = SurfacesFigurePlotter(restart_path='A:/MineData/Learning/Publications/TMECH2025Contact/results/Optimization/grasp/result/GRASP_T20260302_163335/')
+    # plotter.plot_history_all_surfaces(history_index=294,
+    #                                  output_gif='Z:/temp/example_displacement_history.gif',
+    #                                  output_jpg_foldpath='Z:/temp/')
+
+    plotter.plot_surface_rotation(iteration=294, output_gif='Z:/temp/example_surface_rotation.gif')
+
+    # pt = pv.Plotter(off_screen=True, window_size=[2500, 2500])
+    # pt.set_background('white')
+    # plotter.plot_surfaces(iteration=294, plotter=pt)
+
+    # pt.enable_parallel_projection()
+    # azimuth = 90
+    # elevation = 0
+    # pt.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+    #     math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+    #     math.sin(math.radians(elevation))))
+    
+    # pt.remove_all_lights()
+    # pt.add_light(pv.Light(light_type='headlight', intensity=0.8))  # Mayavi 默认: 跟随相机的头灯
+    
+    # pt.screenshot('Z:/temp/294.png')
