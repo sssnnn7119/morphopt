@@ -2,7 +2,7 @@
 import torch
 
 from ..baseobject import BaseObject
-
+import morphopt
 from .geometry.update_geometry import UpdaterGeometries
 
 
@@ -52,13 +52,13 @@ class Updaters(BaseObject):
         if self.if_update_surface:
             self._surface.initialize()
 
-    def update(self) -> torch.Tensor:
+    def update(self, gradients: dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Update the morphology of the neuron.
         """
         
         if self.if_update_surface:
-            self._var_surface = self._surface.update()
+            self._var_surface = self._surface.update(gradients['geometry'])
     
     def update_variables(self) -> None:
         """

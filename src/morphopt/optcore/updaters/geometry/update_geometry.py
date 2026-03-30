@@ -137,7 +137,7 @@ class UpdaterGeometries(BaseUpdater):
         name = name + '_%d' % extra_num
         self.obj_funcs[name] = obj_func
 
-    def reinitialize(self, *args, **kwargs) -> None:
+    def reinitialize(self, gradient: torch.Tensor, *args, **kwargs) -> None:
         """
         Initialize the parameters of the optimization process.
 
@@ -152,7 +152,7 @@ class UpdaterGeometries(BaseUpdater):
         r0, rdu0, rdu20 = self.params_update.get_geometry_values()
 
         # initialize the shape derivative sensitivity
-        self._initialize_objectives(r0=r0, rdu0=rdu0, rdu20=rdu20)
+        self._initialize_objectives(gradient=gradient, r0=r0, rdu0=rdu0, rdu20=rdu20)
         
         # get the total sensitivity
         sensitivity = self._get_total_sensitivity()
@@ -184,9 +184,9 @@ class UpdaterGeometries(BaseUpdater):
             if not self.if_update[i]:
                 self._max_step_length[i] *= 0.0
 
-    def _initialize_objectives(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
+    def _initialize_objectives(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor]) -> None:
         for obj_func in self.obj_funcs.values():
-            obj_func.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, weights=self._weight_points)
+            obj_func.initialize(gradient=gradient, r0=r0, rdu0=rdu0, rdu20=rdu20, weights=self._weight_points)
 
     def _get_total_sensitivity(self) -> None:
         # get the total sensitivity
@@ -264,13 +264,13 @@ class UpdaterGeometries(BaseUpdater):
         else:
             return sum(obj_value) + sum(constraints_value)
 
-    def update(self) -> torch.Tensor:
+    def update(self, gradient: torch.Tensor) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """
 
         # initialize the optimizer
-        self.reinitialize()
+        self.reinitialize(gradient=gradient)
 
         # update the objective function
         variables = self.params_update.get_variables().detach().clone()

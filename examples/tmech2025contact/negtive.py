@@ -8,6 +8,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
+import torchfea
 import morphopt
 
 ROTATIONPERIOD = 6
@@ -18,21 +19,36 @@ class ThisController(morphopt.Controller):
                          opt_label='JUMP_P6')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self, *args, **kwargs):
-            
+        def __init__(self):
+            super().__init__()
+
+            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                device0 = torch.tensor(1).device
+                rp_index = assembly.get_reference_point('RP_head')._RGC_index
+                RGC0 = assembly._GC2RGC(GC.to(device0))
+                U0 = RGC0[rp_index]
+                loss0 = torch.exp((U0[2]+20)/5)/5
+                return loss0
+
+            def objective2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                device0 = torch.tensor(1).device
+                rp_index = assembly.get_reference_point('RP_head')._RGC_index
+                RGC1 = assembly._GC2RGC(GC.to(device0))
+                U1 = RGC1[rp_index]
+                loss1 = U1[5]
+                return loss1
+
+            self.objective_functions = [objective1, objective2]
+
+        def get_metrics(self):
             device0 = torch.tensor(1).device
-
             rp_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
-            RGC0 = self.fe.assembly._GC2RGC(self.U[0].to(device0))
+            RGC0 = self.fe.assembly._GC2RGC(self.fe_results[0].GC.to(device0))
             U0 = RGC0[rp_index]
-
-            RGC1 = self.fe.assembly._GC2RGC(self.U[1].to(device0))
-            U1 = RGC1[rp_index]
-
             loss0 = torch.exp((U0[2]+20)/5)/5
-            loss1 = U1[5]
-
-            return loss0 + loss1
+            RGC1 = self.fe.assembly._GC2RGC(self.fe_results[1].GC.to(device0))
+            U1 = RGC1[rp_index]
+            return [loss0, U1[5].item()]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):

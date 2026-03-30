@@ -8,6 +8,7 @@ sys.path.append(os.getcwd())
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
+import torchfea
 import torch
 import morphopt
 
@@ -17,10 +18,16 @@ class ThisController(morphopt.Controller):
                          opt_label='BIBEND')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self, *args, **kwargs):
-            rp_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
-            loss = -self.U[0][self.fe.assembly._GC_list_indexStart[rp_index] + 4]
-            return loss
+        def __init__(self):
+            super().__init__()
+            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_index = assembly.get_reference_point('RP_head')._RGC_index
+                loss = -GC[assembly._GC_list_indexStart[rp_index] + 4]
+                return loss
+            self.objective_functions = [obj0]
+            
+        def get_metrics(self):
+            return []
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):

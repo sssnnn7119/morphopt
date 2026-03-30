@@ -1,5 +1,7 @@
 
 import morphopt
+import torch
+import torchfea
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -7,12 +9,16 @@ class ThisController(morphopt.Controller):
                          opt_label='EXAMPLE')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self):
-            loss1 = -self.U[0][-2]
-            return loss1
-        
-        # def get_metrics(self):
-        #     return [self.U[0][-6], self.U[0][-4]]
+        def __init__(self):
+            super().__init__()
+
+            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                return jacobian['pressure_1'][-2, 0]
+
+            self.objective_functions = [objective1]
+
+        def get_metrics(self):
+            return [self.fe_results[0].GC[-2]]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
@@ -127,4 +133,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10, no_gui=False)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10)

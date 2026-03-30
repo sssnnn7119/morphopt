@@ -1,4 +1,7 @@
 
+from torchfea import Assembly
+
+import torch
 from ..baseobject import BaseObject
 from .feamodel.feaparams import FEAParams
 from .geometry.geometryparams import GeometryParams
@@ -40,6 +43,54 @@ class Params(BaseObject):
         self.feamodel.initialize()
         self.materials.initialize()
         
+    def create_feamodel(self, path_result: str, pools=None) -> None:
+        """
+        Create the finite element model for sensitivity analysis.
+
+        Args:
+            assembly (Assembly): The assembly to create the finite element model for.
+        """
+        inp = self.geometry.generate(path_result=path_result, pools=pools)
+        fe = self.feamodel.create_fea(inp=inp)
+        self.materials.set_materials(fe)
+        fe.initialize()
+        
+        return fe
+    
+    def obtain_design_sensitivity_vars(self, assembly: Assembly):
+        """
+        Obtain the design sensitivity variables for the optimization problem.
+
+        Args:
+            assembly (Assembly): The assembly to obtain design sensitivity variables for.
+            
+        Returns:
+            dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
+        """
+        # Initialize an empty tensor to store the design sensitivity variables
+        design_sensitivity_vars = torch.zeros(0)
+
+        # Obtain design sensitivity variables from each parameter class
+        design_sensitivity_vars = {
+            'geometry': self.geometry.obtain_design_sensitivity_vars(assembly),
+            'feamodel': self.feamodel.obtain_design_sensitivity_vars(assembly),
+            'materials': self.materials.obtain_design_sensitivity_vars(assembly)
+        }
+
+
+        return design_sensitivity_vars
+
+    def modify_assembly(self, design_sensitivity_vars: dict[str, torch.Tensor], assembly: Assembly) -> None:
+        """
+        Modify the assembly for sensitivity analysis.
+
+        Args:
+            design_sensitivity_vars (dict[str, torch.Tensor]): The design sensitivity variables.
+            assembly (Assembly): The assembly to modify.
+        """
+        self.geometry.modify_assembly(design_sensitivity_vars['geometry'], assembly)
+        self.feamodel.modify_assembly(design_sensitivity_vars['feamodel'], assembly)
+        self.materials.modify_assembly(design_sensitivity_vars['materials'], assembly)
 
     def save(self, foldpath: str, iteration: int) -> None:
         """

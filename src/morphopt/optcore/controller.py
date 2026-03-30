@@ -273,26 +273,20 @@ class Controller:
         self.objfun.reinitialize(iteration = self.history.iteration)
 
         # Perform the optimization step
-        # Generate the model
-        inp = self.params.geometry.generate()
-        self.objfun.inp = inp
-        fe = self.params.feamodel.create_fea(inp=inp)
-        self.params.materials.set_materials(fe)
-        fe.initialize()
-        self.objfun.fe = fe
+        self.objfun.fe = self.params.create_feamodel(path_result=self.path_result + '/cache/', pools=self.pools)
 
         t1 = time.time()
 
         # Perform finite element analysis (FEA)
-        self.objfun.U = self.solver.solve()
+        self.objfun.fe_results = self.solver.solve()
 
         t2 = time.time()
 
-        # the adjoint problem
-        self.objfun.calculate_adjoint_problem()
+        # sensitivity analysis
+        gradients = self.objfun.sensitivity_analysis(params=self.params)
 
         # Update the surfaces based on the FEA results
-        self.updater.update()
+        self.updater.update(gradients=gradients)
         self.updater.update_variables()
 
         loss = self.objfun.get_objective()
@@ -309,7 +303,7 @@ class Controller:
             displacement = []
         else:
             GC_start_index = self.objfun.fe.assembly._GC_list_indexStart[self.objfun.fe.assembly.get_reference_point('RP_head')._RGC_index]
-            displacement = [self.objfun.U[i][GC_start_index:GC_start_index+6].tolist() for i in range(len(self.objfun.U))]
+            displacement = [self.objfun.fe_results[i].GC[GC_start_index:GC_start_index+6].tolist() for i in range(self.objfun.num_tasks)]
         self.history.append('deformation', displacement)
         self.history.append('objective', loss.item())
         self.history.append('metrics', self.objfun.get_metrics())

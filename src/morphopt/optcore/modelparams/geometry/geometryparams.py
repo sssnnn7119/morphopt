@@ -9,6 +9,7 @@ import gmsh
 import torchfea
 import numpy as np
 import torch
+import multiprocessing as mp
 
 import morphopt
 from .geometryinterfaces.basesurfaceinterface import BaseInterface
@@ -351,6 +352,7 @@ class GeometryParams(BaseParams):
         Parameters:
             thickness (list[float]): The minimum distance between the surfaces.
         """
+        super().__init__()
 
         self.surface_list: list[BaseInterface] = []
         """
@@ -663,34 +665,41 @@ class GeometryParams(BaseParams):
             mesh_list.append(mesh)
         return mesh_list
     
-    def generate(self) -> None:
+    def generate(self, path_result: str, pools = None) -> None:
         """
         This function generates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        return self._regenerate()
-        
+        return self._regenerate(path_result, pools)
 
 
-    def _regenerate(self) -> None:
+    def _regenerate(self, path_result: str, pools = None) -> None:
         """
         This function regenerates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
-        path_output = morphopt.controller.path_result + '/Cache/'
+        path_output = path_result
 
         # export the data
         self._export_data(foldpath=path_output)
 
         # call Abaqus for FEA
-        inp_path = morphopt.controller.path_result + '/Cache/TopOptRun.inp'
+        inp_path = path_output + '/TopOptRun.inp'
         # self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
-        morphopt.controller.pools.apply_async(MeshGenerator.run, kwds={
+        if pools is None:
+            pools_now = mp.Pool(1)
+        else:
+            pools_now = pools
+        pools_now.apply_async(MeshGenerator.run, kwds={
             'seed_size': self.fea_seed_size,
             'output_file': inp_path,
             'directory': path_output
         }).get()
+
+        if pools is None:
+            pools_now.close()
+            pools_now.join()
 
         # read the inp file
         inp = torchfea.FEA_INP()
@@ -713,3 +722,21 @@ class GeometryParams(BaseParams):
         if not files:
             print("No __surface-*.stp files found.")
             return
+
+
+    def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:
+        """
+        Get the design sensitivity variables for the optimization process.
+
+        Returns:
+            torch.Tensor: The design sensitivity variables.
+        """
+        return assembly.get_part("final_model").nodes.clone().detach()
+
+    def modify_assembly(self, geometry_params: torch.Tensor, assembly: torchfea.Assembly) -> None:
+        """
+        Modify the assembly for sensitivity analysis.
+        geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
+        """
+        assembly.get_part("final_model").nodes = geometry_params
+        

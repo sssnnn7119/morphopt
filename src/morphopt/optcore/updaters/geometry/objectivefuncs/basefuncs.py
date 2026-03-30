@@ -88,11 +88,12 @@ class BaseObjective():
         Sensitivity of the shape derivative with respect to the contact forces.
         """
 
-    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> None:
+    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> None:
         """
         Initialize the objective function with the given parameters.
 
         Args:
+            gradient (torch.Tensor): The gradient of the objective function.
             weights (list[torch.Tensor]): The weights for each point.
             *args: Positional arguments.
             **kwargs: Keyword arguments.

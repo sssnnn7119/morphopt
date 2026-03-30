@@ -9,6 +9,7 @@ sys.path.append(os.getcwd())
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
+import torchfea
 import torch
 import morphopt
 
@@ -21,16 +22,20 @@ class ThisController(morphopt.Controller):
 
         def __init__(self):
             super().__init__()
-            self.target_displacement = torch.tensor([10.0, 0.0, 120.0])
-        def get_objective(self):
-            end_surf = np.array(list(self.inp.part['final_model'].sets_nodes['surface_0_Head']))
-            RGC = self.fe.assembly._GC2RGC(self.U[0])
-            ins_ind = self.fe.assembly.get_instance('final_model')._RGC_index
-            end_pos = RGC[ins_ind][end_surf].mean(dim=0) + torch.tensor([0., 0., 80.0], device=RGC[0].device)
-
-            loss0 = (end_pos - self.target_displacement.to(end_pos.device))**2
-
-            return loss0.sum()
+            target_displacement = torch.tensor([10.0, 0.0, 120.0])
+            
+            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                end_surf = np.array(list(assembly.get_instance('final_model').sets_nodes['surface_0_Head']))
+                RGC = assembly._GC2RGC(GC)
+                ins_ind = assembly.get_instance('final_model')._RGC_index
+                end_pos = RGC[ins_ind][end_surf].mean(dim=0) + torch.tensor([0., 0., 80.0], device=RGC[0].device)
+                loss0 = (end_pos - target_displacement.to(end_pos.device))**2
+                return loss0.sum()
+                
+            self.objective_functions = [objective1]
+            
+        def get_metrics(self):
+            return []
     
         
         def save_figure(self, filepath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
@@ -50,7 +55,7 @@ class ThisController(morphopt.Controller):
             surface_connections = [surface_elements[i].surf_elems_circ.cpu().numpy() for i in range(len(surface_elements))]
 
 
-            deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.U[0].to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
+            deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.fe_results[0].GC.to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
 
             from mayavi import mlab
             from matplotlib.tri import Triangulation

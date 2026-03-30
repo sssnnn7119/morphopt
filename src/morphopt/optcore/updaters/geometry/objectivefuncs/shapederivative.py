@@ -19,43 +19,18 @@ class ShapeDerivativeDisplacement(BaseConstraints):
         Initial reference configuration.
         """
 
-    def initialize(self, r0: list[torch.Tensor], *args, **kwargs):
+    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], *args, **kwargs):
 
         objfun = morphopt.controller.objfun
         fe = objfun.fe
 
         self._r0 = [r0[i].detach().clone() for i in range(len(r0))]
 
-        ins = fe.assembly.get_instance('final_model')
         part = fe.assembly.get_part('final_model')
-        grad_pos = torch.zeros_like(ins.nodes)
-
-        def closure_work(nodes_diff: torch.Tensor):
-            nodes0 = part.nodes
-            part.nodes = nodes_diff
-            fe.initialize()
-
-            # compute the sensitivity of the displacement
-            work = objfun.get_objective().to(part.nodes.device)
-            for i in range(len(objfun.U)):
-                GC0 = objfun.U[i].to(part.nodes.device)
-                fe.assembly.GC = GC0
-                fe.assembly.RGC = fe.assembly._GC2RGC(GC0)
-                morphopt.controller.params.feamodel.process_fea(fe=fe, step_index=i)
-                
-                R = fe.assembly.assemble_Stiffness_Matrix(GC=GC0)[0]
-                ADJu = objfun.ADJu[i].to(part.nodes.device)
-                work = work + (R*ADJu).sum()
-            part.nodes = nodes0
-            fe.initialize()
-            return work
-        grad_pos += torch.autograd.functional.jacobian(closure_work, part.nodes.detach().clone())
-
-        i=0
-
+        
         interpolate_points = self._get_interpolate_points()
 
-        self.sensitivity = self._sensitivity_interpolation(Ldot=grad_pos, points_request=part.nodes, interpolated_points=interpolate_points)
+        self.sensitivity = self._sensitivity_interpolation(Ldot=gradient, points_request=part.nodes, interpolated_points=interpolate_points)
 
     
     def show_sensitivity(self, ind: int) -> None:

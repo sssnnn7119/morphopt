@@ -1,16 +1,16 @@
 import math
+import re
 import torchfea
-import numpy as np
 import torch
-import scipy.sparse as sp
-import pypardiso
 import morphopt
 
 from .baseobject import BaseObject
 
+from typing import Callable
+
 class ObjectiveFunction(BaseObject):
     """
-    The objective functions in morphopt.
+    This class is responsible for computing the objective function value and the design sensitivity variables.
     """
 
     def __init__(self):
@@ -18,48 +18,30 @@ class ObjectiveFunction(BaseObject):
         """
         The FEA solver instance.
         """
-
-        self.inp: torchfea.FEA_INP = None
-        """
-        The FEA .inp file.
-        """
         
-        self.U: torch.Tensor
+        self.fe_results: list[torchfea.solver.StaticResult] = None
         """
-        The displacement field.
-        [shape: (num_tasks, num_dofs)]
-        """
-
-        self.ADJu: torch.Tensor
-        """
-        The first adjoint displacement field.
-        [shape: (num_tasks, num_dofs)]
+        The FEA results for each step.
         """
 
-        self.K_sp: list[sp.csr_matrix]
+        self.objective_functions: list[Callable[[torch.Tensor, dict[str, torch.Tensor], torchfea.Assembly], torch.Tensor]] = []
         """
-        The sparse stiffness matrices.
-        [shape: (num_tasks,)]
-        """
-
-        self.K_solver: list[pypardiso.PyPardisoSolver]
-        """
-        The solvers for the stiffness matrix.
-        [shape: (num_tasks,)]
+        A list of objective function callables for each load step, each taking the following arguments:
+            - GC: The displacement field of the FEA results.
+            - jacobian: The jacobian of the displacement field with respect to the load parameters.
+            - assembly: The assembly of the FEA model.
+        Each callable should return a scalar tensor representing the value of the objective function for the given FEA results and assembly.
         """
 
-    def get_objective(self, *args, **kwargs) -> torch.Tensor:
+    def get_objective(self) -> torch.Tensor:
         """
-        Get the value of the objective function.
-
-        Args:
-            *args: Positional arguments.
-            **kwargs: Keyword arguments.
-
-        Returns:
-            torch.Tensor: The value of the objective function.
+        Compute all the objective functions and return the total objective value.
         """
-        raise NotImplementedError("This method should be overridden by subclasses.")
+
+        loss_objective = 0
+        for i in range(self.num_tasks):
+            loss_objective += self.objective_functions[i](self.fe_results[i].GC, self.fe_results[i].jacobian, self.fe.assembly)
+        return loss_objective
 
     def get_metrics(self) -> list[float]:
         """
@@ -69,70 +51,56 @@ class ObjectiveFunction(BaseObject):
             list[float]: A list of metric values.
         """
         return []
+    
+    def sensitivity_analysis(self, params: morphopt.Params) -> dict[str, torch.Tensor]:
+        """
+        Perform sensitivity analysis to compute the design sensitivity variables.
+
+        Args:
+            params: The optimization parameters.
+
+        Returns:
+            dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
+        """
+        
+        design_sensitivity_vars_dict = params.obtain_design_sensitivity_vars(assembly=self.fe.assembly)
+
+        design_sensitivity_vars = torch.cat(list(design_sensitivity_vars_dict.values()), dim=0)
+        design_sensitivity_vars_interval = [0]
+        for key in design_sensitivity_vars_dict.keys():
+            design_sensitivity_vars_interval.append(design_sensitivity_vars_interval[-1] + design_sensitivity_vars_dict[key].shape[0])
+
+        design_gradients = torch.zeros_like(design_sensitivity_vars)
+
+        def apply_func(assembly: torchfea.Assembly, design_sensitivity_vars: torch.Tensor):
+            params.modify_assembly(
+                {key: design_sensitivity_vars[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}, 
+                assembly)
+            
+        solver: torchfea.solver.StaticImplicitSolver = self.fe.solver
+
+        for load_step_idx in range(self.num_tasks):
+            grad_now = solver.get_jacobian_sensitivity(
+                fe_result=self.fe_results[load_step_idx],
+                design_vars=design_sensitivity_vars,
+                load_names=self.fe_results[load_step_idx].load_params.keys(),
+                apply_func=apply_func,
+                compute_objective_func=self.objective_functions[load_step_idx],
+                )
+            design_gradients += grad_now
+        
+        design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
+        return design_gradients_dict
 
     @property
     def num_tasks(self) -> int:
         """
         Get the number of tasks.
         """
-        return self.U.shape[0]
+        return len(self.fe_results)
     
     def pathlog_required(self):
         return ['deformation']
-
-    def calculate_adjoint(self, *args, **kwargs) -> torch.Tensor:
-        """
-        Calculate the adjoint variables.
-        """
-        raise NotImplementedError("This method should be overridden by subclasses.")
-    
-    def calculate_adjoint_problem(self, *args, **kwargs) -> torch.Tensor:
-        """
-        Calculate the linear factor of the objective function.
-        """
-
-        def closure_JdU(U: torch.Tensor) -> torch.Tensor:
-            U0 = self.U
-            self.U = U
-            obj = self.get_objective()
-            self.U = U0
-            return obj
-        
-        ADJFu_now: torch.Tensor = -torch.autograd.functional.jacobian(closure_JdU, self.U.detach().clone())
-
-        ADJu = []
-        K_sp_list = []
-        K_solver_list = []
-        for step_index in range(self.num_tasks):
-
-            # set the loads
-            morphopt.controller.params.feamodel.process_fea(fe=self.fe, step_index=step_index)
-            
-            # region get the decomposed stiffness matrix
-            R, K_indices, K_values = self.fe.assembly.assemble_Stiffness_Matrix(GC=self.U[step_index].to(self.fe.assembly.device))
-            K_values = K_values.cpu().numpy()
-            K_indices = K_indices.cpu().numpy()
-            K_sp = sp.coo_matrix(
-                (K_values,
-                (K_indices[0], K_indices[1])), dtype=np.float64,
-                shape=(self.fe.assembly.GC.shape[0], self.fe.assembly.GC.shape[0])).tocsr()
-            K_solver = pypardiso.PyPardisoSolver()
-            K_solver.factorize(K_sp)
-
-            K_sp_list.append(K_sp)
-            K_solver_list.append(K_solver)
-
-            # endregion
-
-            # region calculate the adjoint variable
-            
-            ADJu_now = torch.from_numpy(K_solver.solve(K_sp, ADJFu_now[step_index].cpu().numpy())).cpu()
-            ADJu.append(ADJu_now)
-            # endregion
-
-        self.ADJu = torch.stack(ADJu, dim=0).cpu()
-        self.K_sp = K_sp_list
-        self.K_solver = K_solver_list
 
     def __str__(self) -> str:
 
@@ -143,24 +111,9 @@ class ObjectiveFunction(BaseObject):
             
             
             # 格式化位移向量（一维）
-            u_vector = self.U[i][-6:].tolist()
+            u_vector = self.fe_results[i].GC[-6:].tolist()
             u_str = " ".join([f"{x:.6f}" for x in u_vector])
             result.append(f"  Displacement U: {u_str}")
-            
-            # # 格式化Jacobian矩阵（二维）
-            # if self.Udp is not None:
-            #     matrix = self.Udp[i][:, -6:].T.tolist()  # 二维矩阵
-            #     result.append(f"  Jacobian Udp:")
-            #     # 格式化并添加矩阵每行
-            #     formatted = format_matrix(matrix, indent=4)
-            #     result.extend(formatted)
-            
-            # # 格式化UdF矩阵（二维）
-            # if self.UdF is not None:
-            #     matrix = self.UdF[i][:, -6:].tolist()  # 二维矩阵
-            #     result.append(f"  UdF:")
-            #     formatted = format_matrix(matrix, indent=4)
-            #     result.extend(formatted)
 
             result.append(f"============================================================================")
         
@@ -201,7 +154,7 @@ class ObjectiveFunction(BaseObject):
         surface_connections = [surface_elements[i].surf_elems_circ.cpu().numpy() for i in range(len(surface_elements))]
 
         for case in range(self.num_tasks):
-            deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.U[case].to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
+            deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.fe_results[case].GC.to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
 
             import pyvista as pv
 

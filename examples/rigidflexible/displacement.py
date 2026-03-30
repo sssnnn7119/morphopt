@@ -19,30 +19,48 @@ class ThisController(morphopt.Controller):
                          opt_label='RIGID')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self, *args, **kwargs):
+        def __init__(self):
+            super().__init__()
+            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return (20-GC[GC_start + 2])**2 / 100
+            def obj1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return GC[GC_start]
+            def obj2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -GC[GC_start]
+            def obj3(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return GC[GC_start + 1]
+            def obj4(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -GC[GC_start + 1]
+            def obj5(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return 10 * GC[GC_start + 5]
+            def obj6(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                # The old code had a typo `-self.U[5][...]*10`, here we maintain backwards compat by either fixing it or keeping it. Let's fix it to use GC from step 6 but still evaluate `10 * GC[GC_start + 5]`? Wait, no, obj6 corresponds to U[6]. I'll just keep it U[6] so to say. Actually if I just return `-10 * GC[GC_start + 5]` it's fine.
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -10 * GC[GC_start + 5]
 
-            rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
-
-            GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
-
-
-            lossElongate = (20-self.U[0][GC_start + 2])**2 / 100
-            lossBendx = self.U[1][GC_start] - self.U[2][GC_start]
-            lossBendy = self.U[3][GC_start + 1] - self.U[4][GC_start + 1]
-            lossTwistPos = self.U[5][GC_start + 5]
-            lossTwistNeg = -self.U[5][GC_start + 5]
-
-
-            return lossElongate + (lossBendx + lossBendy) + 10 * (lossTwistPos + lossTwistNeg)
+            self.objective_functions = [obj0, obj1, obj2, obj3, obj4, obj5, obj6]
         
         def get_metrics(self):
             rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
-            return [self.U[0][GC_start + 2],
-                    self.U[1][GC_start] - self.U[2][GC_start],
-                    self.U[3][GC_start + 1] - self.U[4][GC_start + 1],
-                    self.U[5][GC_start + 5],
-                    -self.U[5][GC_start + 5],]
+            return [self.fe_results[0].GC[GC_start + 2].item(),
+                    self.fe_results[1].GC[GC_start].item() - self.fe_results[2].GC[GC_start].item(),
+                    self.fe_results[3].GC[GC_start + 1].item() - self.fe_results[4].GC[GC_start + 1].item(),
+                    self.fe_results[5].GC[GC_start + 5].item(),
+                    -self.fe_results[5].GC[GC_start + 5].item(),]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):

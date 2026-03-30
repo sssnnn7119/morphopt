@@ -97,16 +97,19 @@ class MorphSolver(BaseObject):
                                                     'available_gpus': self.available_gpus}))
 
         # get the result
-        U0 = []
+        results = []
         list_number = []
         for i in range(len(result)):
-            U0 += result[i].get()
+            results += result[i].get()
             list_number += self.task_index_list[i]
         list_number = np.array(list_number).flatten()
         
-        Uresult = torch.tensor(U0).to(torch.float64)[list_number]
+        output = []
+        for i in range(len(results)):
+            output.append(results[list_number[i]])
+
         del fe_cpu
-        return Uresult
+        return output
         
 
     @classmethod
@@ -153,7 +156,5 @@ class MorphSolver(BaseObject):
             feamodel.process_fea(fe=fe, step_index=task_index[i])
             result: torchfea.solver.StaticResult = fe.solve(GC0=U0.to(torch.get_default_device()), if_initialize=False)
 
-            U0 = result.GC.detach()
-            Unow = U0.cpu().numpy()
-            result_list.append(Unow)
+            result_list.append(result)
         return result_list

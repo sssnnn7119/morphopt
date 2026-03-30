@@ -20,107 +20,105 @@ class ThisController(morphopt.Controller):
                          opt_label='GRASP')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self):
-            morphopt.controller.params.feamodel.process_fea(self.fe, step_index=0)
-            assembly = self.fe.assembly
-            ins_cylinder = assembly.get_instance('cylinder')
-            ins_actuator = assembly.get_instance('final_model')
-            R = assembly._assemble_generalized_Matrix(GC=self.U[0].to(assembly.device))[0]
-            R_now = R[assembly.RGC_list_indexStart[ins_cylinder._RGC_index]:assembly.RGC_list_indexStart[ins_cylinder._RGC_index+1]].reshape([-1, 3])
+        def __init__(self):
+            super().__init__()
+            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                morphopt.controller.params.feamodel.process_fea(self.fe, step_index=0)
+                ins_cylinder = assembly.get_instance('cylinder')
+                ins_actuator = assembly.get_instance('final_model')
+                R = assembly._assemble_generalized_Matrix(GC=GC.to(assembly.device))[0]
+                R_now = R[assembly.RGC_list_indexStart[ins_cylinder._RGC_index]:assembly.RGC_list_indexStart[ins_cylinder._RGC_index+1]].reshape([-1, 3])
 
-            RGC = assembly._GC2RGC(self.U[0].to(assembly.device))
+                RGC = assembly._GC2RGC(GC.to(assembly.device))
 
-            contactobj: torchfea.loads.Contact = assembly._loads['Contact_ext']
-            instance1 = ins_actuator
-            instance2 = ins_cylinder
-            contactobj._filter_point_pairs(contactobj.surface_element1, contactobj.surface_element2, 
-                                    instance1.nodes + RGC[instance1._RGC_index], 
-                                    instance2.nodes + RGC[instance2._RGC_index])
+                contactobj: torchfea.loads.Contact = assembly._loads['Contact_ext']
+                instance1 = ins_actuator
+                instance2 = ins_cylinder
+                contactobj._filter_point_pairs(contactobj.surface_element1, contactobj.surface_element2, 
+                                        instance1.nodes + RGC[instance1._RGC_index], 
+                                        instance2.nodes + RGC[instance2._RGC_index])
+                
+                weight = torch.einsum('gp, g, Gp, G->gGp', 
+                                    contactobj.surface_element1.det_Jacobian[:, contactobj._point_pairs[0]], 
+                                    contactobj.surface_element1.gaussian_weight,
+                                    contactobj.surface_element2.det_Jacobian[:, contactobj._point_pairs[1]],
+                                    contactobj.surface_element2.gaussian_weight)
+
+                Y1 = instance1.nodes + RGC[instance1._RGC_index]
+                Y2 = instance2.nodes + RGC[instance2._RGC_index]
+
+                num_g1 = contactobj.surface_element1._num_gaussian
+                num_g2 = contactobj.surface_element2._num_gaussian
+                num_e1 = contactobj.surface_element1._elems.shape[0]
+                num_e2 = contactobj.surface_element2._elems.shape[0]
+                num_n1 = contactobj.surface_element1.num_nodes_per_elem
+                num_n2 = contactobj.surface_element2.num_nodes_per_elem
+
+                # Calculate positions and normals for both surfaces
+                Ye1 = Y1[contactobj.surface_element1._elems]
+                Ye2 = Y2[contactobj.surface_element2._elems]
+
+                y1 = torch.einsum('eai, ga->gei', Ye1, contactobj.surface_element1.shape_function_gaussian[0])
+                y2 = torch.einsum('eai, ga->gei', Ye2, contactobj.surface_element2.shape_function_gaussian[0])
+
+                NR1 = torch.einsum('gma, eai->gemi', contactobj.surface_element1.shape_function_gaussian[1], Ye1)
+                NR2 = torch.einsum('gma, eai->gemi', contactobj.surface_element2.shape_function_gaussian[1], Ye2)
+                
+                N1 = torch.cross(NR1[:, :, 0, :], NR1[:, :, 1, :], dim=-1)
+                N2 = torch.cross(NR2[:, :, 0, :], NR2[:, :, 1, :], dim=-1)
+
+                nnorm1 = N1.norm(dim=-1)
+                nnorm2 = N2.norm(dim=-1)
+                n1 = N1 / nnorm1[:, :, None]
+                n2 = N2 / nnorm2[:, :, None]
+
+                num_p = contactobj._point_pairs.shape[1]
+                
+                # Create extended tensor for two surfaces
+                E10 = torch.zeros([num_g1, num_p, 2, 3], device=Y1.device)
+                E10[:, :, 0] = y1[:, contactobj._point_pairs[0]]
+                E10[:, :, 1] = n1[:, contactobj._point_pairs[0]]
+
+                E20 = torch.zeros([num_g2, num_p, 2, 3], device=Y2.device)
+                E20[:, :, 0] = y2[:, contactobj._point_pairs[1]]
+                E20[:, :, 1] = n2[:, contactobj._point_pairs[1]]
+                dy0 = E10[:, None, :, 0, :] - E20[None, :, :, 0, :]
+                dn0 = E10[:, None, :, 1, :] - E20[None, :, :, 1, :]
+
+                M0 = (E10[:, None, :, 1, :] * E20[None, :, :, 1, :]).sum(dim=-1)
+                MM0 = (contactobj.penalty_start_g - M0) / (contactobj.penalty_start_g - contactobj.penalty_end_g)
+                MM0 = MM0.clamp(0, 1)
+                f0 = MM0**3 * (6*MM0**2 - 15*MM0 + 10)
+
+                D0 = (dn0 * dy0).sum(dim=-1) / 2
+                g0 = torch.exp(D0 * contactobj.penalty_factor_f) * contactobj.penalty_distance_f
+                
+                L0 = dy0.norm(dim=-1)
+                T0 = (contactobj.penalty_threshold_h - L0) / (contactobj.penalty_ratio_h * contactobj.penalty_threshold_h)
+                T0 = T0.clamp(0, 1)
+                h0 = T0**3 * (6*T0**2 - 15*T0 + 10)
+
+                Rf = R_now.sum(dim=0)
+
+                loss0 = -GC[-2]
+                loss1 = Rf[0]
+                loss2 = -(torch.exp(-(D0)**2) * weight * f0 * h0).sum() * 1e-4
+
+                print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
+                print('Contact force:', Rf.tolist())
+                return loss0 + loss2
             
-            weight = torch.einsum('gp, g, Gp, G->gGp', 
-                                contactobj.surface_element1.det_Jacobian[:, contactobj._point_pairs[0]], 
-                                contactobj.surface_element1.gaussian_weight,
-                                contactobj.surface_element2.det_Jacobian[:, contactobj._point_pairs[1]],
-                                contactobj.surface_element2.gaussian_weight)
-
-            # U = U.clone().detach().requires_grad_(True)
-            Y1 = instance1.nodes + RGC[instance1._RGC_index]
-            Y2 = instance2.nodes + RGC[instance2._RGC_index]
-
-            num_g1 = contactobj.surface_element1._num_gaussian
-            num_g2 = contactobj.surface_element2._num_gaussian
-            num_e1 = contactobj.surface_element1._elems.shape[0]
-            num_e2 = contactobj.surface_element2._elems.shape[0]
-            num_n1 = contactobj.surface_element1.num_nodes_per_elem
-            num_n2 = contactobj.surface_element2.num_nodes_per_elem
-
-            # Calculate positions and normals for both surfaces
-            Ye1 = Y1[contactobj.surface_element1._elems]
-            Ye2 = Y2[contactobj.surface_element2._elems]
-
-            y1 = torch.einsum('eai, ga->gei', Ye1, contactobj.surface_element1.shape_function_gaussian[0])
-            y2 = torch.einsum('eai, ga->gei', Ye2, contactobj.surface_element2.shape_function_gaussian[0])
-
-            NR1 = torch.einsum('gma, eai->gemi', contactobj.surface_element1.shape_function_gaussian[1], Ye1)
-            NR2 = torch.einsum('gma, eai->gemi', contactobj.surface_element2.shape_function_gaussian[1], Ye2)
-            
-            N1 = torch.cross(NR1[:, :, 0, :], NR1[:, :, 1, :], dim=-1)
-            N2 = torch.cross(NR2[:, :, 0, :], NR2[:, :, 1, :], dim=-1)
-
-            nnorm1 = N1.norm(dim=-1)
-            nnorm2 = N2.norm(dim=-1)
-            n1 = N1 / nnorm1[:, :, None]
-            n2 = N2 / nnorm2[:, :, None]
-
-            num_p = contactobj._point_pairs.shape[1]
-            
-            # Create extended tensor for two surfaces
-            E10 = torch.zeros([num_g1, num_p, 2, 3], device=Y1.device)
-            E10[:, :, 0] = y1[:, contactobj._point_pairs[0]]
-            E10[:, :, 1] = n1[:, contactobj._point_pairs[0]]
-
-            E20 = torch.zeros([num_g2, num_p, 2, 3], device=Y2.device)
-            E20[:, :, 0] = y2[:, contactobj._point_pairs[1]]
-            E20[:, :, 1] = n2[:, contactobj._point_pairs[1]]
-            dy0 = E10[:, None, :, 0, :] - E20[None, :, :, 0, :]
-            dn0 = E10[:, None, :, 1, :] - E20[None, :, :, 1, :]
-
-            M0 = (E10[:, None, :, 1, :] * E20[None, :, :, 1, :]).sum(dim=-1)
-            MM0 = (contactobj.penalty_start_g - M0) / (contactobj.penalty_start_g - contactobj.penalty_end_g)
-            MM0 = MM0.clamp(0, 1)
-            f0 = MM0**3 * (6*MM0**2 - 15*MM0 + 10)
-
-            D0 = (dn0 * dy0).sum(dim=-1) / 2
-            g0 = torch.exp(D0 * contactobj.penalty_factor_f) * contactobj.penalty_distance_f
-            
-            L0 = dy0.norm(dim=-1)
-            T0 = (contactobj.penalty_threshold_h - L0) / (contactobj.penalty_ratio_h * contactobj.penalty_threshold_h)
-            T0 = T0.clamp(0, 1)
-            h0 = T0**3 * (6*T0**2 - 15*T0 + 10)
-
-            Rf = R_now.sum(dim=0)
-
-            loss0 = -self.U[0][-2]
-            loss1 = Rf[0]
-            loss2 = -(torch.exp(-(D0)**2) * weight * f0 * h0).sum() * 1e-4
-            # loss2 = (D**2 * weight).sum()
-            
-            # E = ins_actuator.potential_energy(RGC = assembly._GC2RGC(self.U[0].to(assembly.device)))
-            # loss1 = -E.sum()
-
-            print('Objective values: ', loss0.item(), loss2.item(), loss1.item())
-            print('Contact force:', Rf.tolist())
-            return loss0 + loss2
+            self.objective_functions = [objective1]
         
         def get_metrics(self):
             morphopt.controller.params.feamodel.process_fea(self.fe, step_index=0)
             assembly = self.fe.assembly
             ins_cylinder = assembly.get_instance('cylinder')
             ins_actuator = assembly.get_instance('final_model')
-            R = assembly._assemble_generalized_Matrix(GC=self.U[0].to(assembly.device))[0]
+            R = assembly._assemble_generalized_Matrix(GC=self.fe_results[0].GC.to(assembly.device))[0]
             R_now = R[assembly.RGC_list_indexStart[ins_cylinder._RGC_index]:assembly.RGC_list_indexStart[ins_cylinder._RGC_index+1]].reshape([-1, 3])
 
-            RGC = assembly._GC2RGC(self.U[0].to(assembly.device))
+            RGC = assembly._GC2RGC(self.fe_results[0].GC.to(assembly.device))
 
             contactobj: torchfea.loads.Contact = assembly._loads['Contact_ext']
             instance1 = ins_actuator
@@ -192,11 +190,11 @@ class ThisController(morphopt.Controller):
 
             Rf = R_now.sum(dim=0)
 
-            loss0 = -self.U[0][-2] / 1000
+            loss0 = -self.fe_results[0].GC[-2] / 1000
             loss1 = Rf[0]
             loss2 = -(torch.exp(-(D0)**2) * weight * f0 * h0).sum() * 1e-4
 
-            return [self.U[0][-2].item(), loss2.item()]
+            return [self.fe_results[0].GC[-2].item(), loss2.item()]
     
 
     class Params(morphopt.Params):

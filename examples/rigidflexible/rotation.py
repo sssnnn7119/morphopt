@@ -10,6 +10,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import torch
+import torchfea
 import morphopt
 
 
@@ -19,32 +20,46 @@ class ThisController(morphopt.Controller):
                          opt_label='RIGID')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def get_objective(self, *args, **kwargs):
+        def __init__(self):
+            super().__init__()
+            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                return torch.tensor(0.0, device=GC.device)
+            def obj1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return GC[GC_start + 3]
+            def obj2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -GC[GC_start + 3]
+            def obj3(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return GC[GC_start + 5]
+            def obj4(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -GC[GC_start + 5]
+            def obj5(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return (2.0-GC[GC_start + 4])**2 + GC[GC_start + 4]*0
+            def obj6(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
+                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+                GC_start = assembly._GC_list_indexStart[rp_head_index]
+                return -GC[GC_start + 4]
 
-            rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
-
-            GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
-
-            loss1 = (20-self.U[0][GC_start + 2])**2 / 10
-
-            loss2 = self.U[1][GC_start + 3]
-            loss3 = -self.U[2][GC_start + 3]
-            loss4 = self.U[3][GC_start + 5]
-            loss5 = -self.U[4][GC_start + 5]
-            loss6 = self.U[5][GC_start + 4]
-            loss7 = -self.U[6][GC_start + 4]
-            return loss1 + loss2 + loss3 + loss4 + loss5 + loss6 + loss7
+            self.objective_functions = [obj0, obj1, obj2, obj3, obj4, obj5, obj6]
         
         def get_metrics(self):
             rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
             GC_start = self.fe.assembly._GC_list_indexStart[rp_head_index]
-            return [self.U[0][GC_start + 2],
-                    self.U[1][GC_start + 3],
-                    self.U[2][GC_start + 3],
-                    self.U[3][GC_start + 5],
-                    self.U[4][GC_start + 5],
-                    self.U[5][GC_start + 4],
-                    self.U[6][GC_start + 4],]
+            return [self.fe_results[1].GC[GC_start + 3].item(),
+                    self.fe_results[2].GC[GC_start + 3].item(),
+                    self.fe_results[3].GC[GC_start + 5].item(),
+                    self.fe_results[4].GC[GC_start + 5].item(),
+                    self.fe_results[5].GC[GC_start + 4].item(),
+                    self.fe_results[6].GC[GC_start + 4].item(),]
 
 
     class Params(morphopt.Params):
@@ -67,14 +82,21 @@ class ThisController(morphopt.Controller):
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,20.],
-                                                MaxC=0.6))
+                                                MaxC=0.8))
                 
                 self.add_surface(
                     self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=5.,
                                                 init_location=[0,0,60.],
-                                                MaxC=0.6))
+                                                MaxC=0.8))
+                
+                self.add_surface(
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                                                flip=True,
+                                                r0=5.,
+                                                init_location=[0,0,40.],
+                                                MaxC=0.8))
 
 
 
@@ -107,9 +129,12 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'),
                                         name='force_1')
 
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'))
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_3_All'))
+
             def define_steps(self):
                 self.set_step_num(7)
-                self.set_step_params(0, "force_1", [0., 0., 20.])
+                self.set_step_params(0, "force_1", [0., 0., 0.])
                 self.set_step_params(0, "moment_1", [0.0, 0.0, 0.0])
 
                 self.set_step_params(1, "force_1", [0., 0., 0.])
@@ -119,16 +144,16 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(2, "moment_1", [-100., 0.0, 0.0])
 
                 self.set_step_params(3, "force_1", [0., 0., 0.])
-                self.set_step_params(3, "moment_1", [0.0, 0.0, 100.])
+                self.set_step_params(3, "moment_1", [0.0, 0.0, 70.])
                 
                 self.set_step_params(4, "force_1", [0., 0., 0.])
-                self.set_step_params(4, "moment_1", [0.0, 0.0, -100.])
+                self.set_step_params(4, "moment_1", [0.0, 0.0, -70.])
 
                 self.set_step_params(5, "force_1", [0., 0., 0.])
-                self.set_step_params(5, "moment_1", [0.0, 100.0, 0.0])
+                self.set_step_params(5, "moment_1", [0.0, 200.0, 0.0])
 
                 self.set_step_params(6, "force_1", [0., 0., 0.])
-                self.set_step_params(6, "moment_1", [0.0, -100.0, 0.0])
+                self.set_step_params(6, "moment_1", [0.0, -200.0, 0.0])
 
 
             def reinitialize(self, iteration, *args, **kwargs):

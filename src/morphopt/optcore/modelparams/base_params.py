@@ -2,6 +2,7 @@
 
 import torch
 from ..baseobject import BaseObject
+import torchfea
 
 class BaseParams(BaseObject):
     """
@@ -11,7 +12,6 @@ class BaseParams(BaseObject):
         """
         Initialize the parameters with the given keyword arguments.
         """
-        self.__dict__.update(kwargs)
 
     def __repr__(self):
         """
@@ -93,5 +93,27 @@ class BaseParams(BaseObject):
         
         Args:
             foldpath (str): The path to export the data.
+        """
+        pass
+
+    def obtain_design_sensitivity_vars(self, *args, **kwargs) -> torch.Tensor:
+        """
+        Obtain the design sensitivity variables for the optimization problem.
+        
+        This method should be implemented in subclasses to obtain specific design sensitivity variables.
+        
+        Returns:
+            torch.Tensor: The design sensitivity variables.
+        """
+        return torch.zeros(0)
+
+    def modify_assembly(self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly) -> None:
+        """
+        Modify the assembly for sensitivity analysis.
+        the design_sensitivity_vars will be defined in the subclasses, and the assembly will be modified according to the design_sensitivity_vars.
+
+        Args:
+            design_sensitivity_vars (torch.Tensor): The design sensitivity variables.
+            assembly (Assembly): The assembly to modify.
         """
         pass

@@ -24,6 +24,8 @@ class FEAParams(BaseParams):
         """
         Initialize the Loads class.
         """
+        super().__init__()
+
         self.feainterfaces: dict[str, BaseFEAInterface] = {}
         """loadinterfaces (dict): A dictionary to hold the load interfaces."""
 
