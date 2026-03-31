@@ -33,6 +33,11 @@ class ObjectiveFunction(BaseObject):
         Each callable should return a scalar tensor representing the value of the objective function for the given FEA results and assembly.
         """
 
+        self.jacobian_needed: list[str] = []
+        """
+        A list of load parameter names for which the jacobian is needed for sensitivity analysis.
+        """
+
     def get_objective(self) -> torch.Tensor:
         """
         Compute all the objective functions and return the total objective value.
@@ -79,15 +84,13 @@ class ObjectiveFunction(BaseObject):
             
         solver: torchfea.solver.StaticImplicitSolver = self.fe.solver
 
-        for load_step_idx in range(self.num_tasks):
-            grad_now = solver.get_jacobian_sensitivity(
-                fe_result=self.fe_results[load_step_idx],
-                design_vars=design_sensitivity_vars,
-                load_names=self.fe_results[load_step_idx].load_params.keys(),
-                apply_func=apply_func,
-                compute_objective_func=self.objective_functions[load_step_idx],
-                )
-            design_gradients += grad_now
+        design_gradients = solver.get_jacobian_sensitivity_multistep(
+            fe_results=self.fe_results,
+            design_vars=design_sensitivity_vars,
+            load_names=self.jacobian_needed,
+            apply_func=apply_func,
+            compute_objective_funcs=self.objective_functions,
+            )
         
         design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
         return design_gradients_dict

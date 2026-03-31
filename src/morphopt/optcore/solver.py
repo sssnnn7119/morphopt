@@ -107,6 +107,7 @@ class MorphSolver(BaseObject):
         output = []
         for i in range(len(results)):
             output.append(results[list_number[i]])
+            morphopt.controller.objfun.fe._change_device_recursive(output[i], torch.get_default_device())
 
         del fe_cpu
         return output

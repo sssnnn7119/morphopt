@@ -12,6 +12,8 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__()
 
+            self.jacobian_needed = ['pressure_1']
+
             def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
                 return jacobian['pressure_1'][-2, 0]
 

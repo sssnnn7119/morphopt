@@ -3,6 +3,7 @@
 本仓库提供基于形状优化的工作流，集成了表面参数化、有限元（FEA）求解、载荷管理与目标函数组合。你可以复用示例快速搭建新任务，或扩展接口以支持更多场景。
 
 目录：
+
 - 安装与环境
 - 项目结构
 - 快速开始（运行示例）
@@ -18,10 +19,12 @@
 ## 安装与环境
 
 前置条件：
+
 - Python 3.10+（建议使用 conda 环境）
 - Windows（已在 Windows+PowerShell 下验证），Linux 也可按需适配
 
 安装依赖：
+
 ```powershell
 # 可选：创建虚拟环境
 conda create -n MorphOpt python=3.10 -y; conda activate MorphOpt
@@ -35,6 +38,7 @@ pip install -r requirements.txt
 ## 项目结构
 
 参考主要目录：
+
 - `Jobs/`：示例与具体任务脚本（建议以 `Jobs/examples/displacement.py` 为模板）。
 - `MorphOpt/`：核心库，包括参数、接口、求解器、更新器等。
 - `Tests/`：简单的可视化/单元测试脚本。
@@ -44,6 +48,7 @@ pip install -r requirements.txt
 ## 快速开始（运行示例）
 
 运行位移示例（displacement）：
+
 ```powershell
 python Jobs/examples/displacement.py
 ```
@@ -59,15 +64,21 @@ python Jobs/examples/displacement.py
 每个任务脚本遵循统一结构：
 
 1) 定义目标函数 ObjectiveFunction
-- 继承自 `GLOBAL.ObjectiveFunction`，实现 `get_objective(self)`，并设置 `GLOBAL.obj_fun = ObjectiveFunction()`。
+
+- 继承自 `morphopt.ObjectiveFunction`，在 `__init__` 方法中局部定义针对各个加载步（工况）的 `objective` 函数，并将它们按评估顺序组成列表赋给 `self.objective_functions`。
+- 函数签名为 `def objective*(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor`。
+- **重要**：如果目标函数依赖于特定载荷的雅可比矩阵，必须在 `__init__` 中通过提前定义 `self.jacobian_needed = ['载荷接口名称']` 来显式声明需要的项。
+- 同时可以实现 `get_metrics(self)` 返回需要额外追踪的指标或损失（可通过 `self.fe_results[工况索引].GC` 获取内部状态）。
 
 2) 定义参数容器 Params(_Params)
+
 - 内含三个子类：
   - `SurfaceParams(_SurfacesParams)`：构建可优化的几何曲面（使用 `self.BSP.*` 初始化几何）。
   - `LoadParams(_LoadsParams)`：定义“所有需要的载荷接口”和“每个加载步的幅值参数”。
   - `MaterialParams(_Materials)`：设置材料参数（如 `mu`, `kappa`, `density`）。
 
 3) 定义 Generator、Solver、Updater 与 Controller
+
 - `Generator(_Generator)`：生成网格/中间数据（可设置 `seed_size`, `mesh_order` 等）。
 - `Solver(_MorphSolver)`：负责调用 FEA；内部会一次性将所有载荷添加到 FEA 中，并在每个加载步切换载荷“幅值”，无需重复初始化模型。
 - `Updater(_Updaters)`：包含 `UpdaterSurfaces(_UpdaterSurfaces)`，在其中添加/组合优化目标项（如形状导数、平滑、边界约束等）。
@@ -78,10 +89,12 @@ python Jobs/examples/displacement.py
 ### 曲面定义 SurfaceParams
 
 在 `SurfaceParams` 中：
+
 - 使用 `self.BSP.*` 工具函数构建一个或多个初始曲面，并通过 `self.add_surface(...)` 注册。
 - 通过 `self.if_update = [...]` 指定哪些曲面参与更新。
 
 示例（略化）：
+
 ```python
 class SurfaceParams(_SurfacesParams):
     def __init__(self):
@@ -98,10 +111,12 @@ class SurfaceParams(_SurfacesParams):
 ### 载荷定义 LoadParams（关键：一次定义，分步调幅）
 
 新的载荷定义方式遵循两个阶段：
+
 - 阶段 A：注册“载荷接口”（仅定义类型/关联对象，不写死幅值）。
 - 阶段 B：设置“步数”和“每个步的幅值”。求解时，FEA 只创建一次载荷对象，各步仅切换幅值，避免频繁重建/初始化。
 
 LoadParams 提供以下方法：
+
 - `add_load_interface(load_interface, name: str | None) -> str`
   - 注册一个载荷接口，返回其唯一名称（若未提供 name 会自动生成）。
 - `set_step_num(num_steps: int)`
@@ -110,6 +125,7 @@ LoadParams 提供以下方法：
   - 为某个加载步的某个载荷设置幅值（如压力标量，力/力矩三分量等）。
 
 常用载荷接口（均在 `MorphOpt/modelparams/loads/LoadInterface/` 下）：
+
 - `PressureInterface(instance_name='final_model', surface_name='...')`
   - 幅值参数：`[pressure]`（单个浮点数）。
 - `ConcentratedForceInterface(rp_name: str)`
@@ -123,6 +139,7 @@ LoadParams 提供以下方法：
   - 自接触约束，同样通常无幅值参数。
 
 示例（等价于 `Jobs/examples/displacement.py` 的写法）：
+
 ```python
 class LoadParams(_LoadsParams):
     def __init__(self):
@@ -139,12 +156,14 @@ class LoadParams(_LoadsParams):
 ```
 
 Solver 会在 solve 时：
+
 - 一次性用 `get_loads_fea()` 将全部载荷添加到 FEA。
 - 每个步调用 `process_fea(fea, step_index)` 应用当前步的幅值；模型不需要每步重建、仅切换数值，效率更高。
 
 ### 材料参数 MaterialParams
 
 示例：
+
 ```python
 class MaterialParams(_Materials):
     def __init__(self):
@@ -159,11 +178,13 @@ class MaterialParams(_Materials):
 ## 目标与更新器（Objective/Updater）
 
 在 `Updater(_Updaters).UpdaterSurfaces(_UpdaterSurfaces)` 中：
+
 - 创建形状导数（如 `ShapeDerivativeDirect(reset_per_iter=5)`）并注册：
   - `self.add_objective_function(shape_derivative)`
 - 可叠加其它目标/正则（如 `Fairness`, `Distance`, `boundarys.Cylinder` 等）。
 
 常见用法：
+
 - 目标函数统一通过 `self.add_objective_function(...)` 注册。
 - 多目标时，可通过权重在对应目标构造参数中体现。
 
@@ -215,6 +236,7 @@ class MaterialParams(_Materials):
 ---
 
 更多参考：
+
 - 示例：`Jobs/examples/displacement.py`
 - 接触/集中载荷用法：`Jobs/locomotion/front.py`、`Jobs/ral2025contact/*`
 - 载荷接口实现：`MorphOpt/modelparams/loads/LoadInterface/`

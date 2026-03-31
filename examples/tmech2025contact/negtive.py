@@ -200,8 +200,7 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params):
 
             super().__init__(params=params,
-                            task_index_list=[[0, 1]],
-                            num_process=1)
+                            num_process=2)
 
     class Updater(morphopt.Updaters):
         """
@@ -238,4 +237,4 @@ class ThisController(morphopt.Controller):
 
     
 if __name__ == '__main__':
-    morphopt.start_optimization(device='cuda:1')
+    morphopt.debug_optimization(device='cuda:0')
