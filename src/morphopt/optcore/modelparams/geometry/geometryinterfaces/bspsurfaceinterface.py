@@ -2,6 +2,7 @@
 import os
 import sys
 import numpy as np
+from numpy.ma import indices
 import torch
 import gmsh
 
@@ -414,33 +415,22 @@ class BspInterface(CpBasedInterface):
         self._preload_size: tuple[int, int]
         """The preloaded size of the UV grid."""
 
+    def map(self, uv: torch.Tensor) -> torch.Tensor:
+        """Map from UV space to 3D space using the B-spline surface model."""
+        uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
+        weights, indices = self.model.get_weights(uv_np, derivative=[0,0])
+
+        indices_cps = torch.from_numpy(indices).to(torch.get_default_device()).reshape([uv.shape[0], -1])
+        indices_pts = torch.arange(uv.shape[0], device=torch.get_default_device()).reshape([-1,1]).repeat(1, indices_cps.shape[1])
+        indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
+
+
+        return self._map(torch.from_numpy(weights).to(torch.get_default_device()).flatten(), indices, num_pts=uv.shape[0])
+
     def initialize(self):
 
-        # preload the uv grid
-        ratio = 2
-        self._preload_size = (self.model.size[0] * ratio, self.model.size[1] * ratio)
-
-        uvgrids = np.meshgrid(np.linspace(0, 1, self._preload_size[0]), np.linspace(0, 1, self._preload_size[1]+1)[1:], indexing='ij')
-        uvgrids_np = np.stack(uvgrids, axis=-1).reshape([-1, 2])
-        self._preload_uv = torch.tensor(np.stack([uvgrids[0].reshape([-1]), uvgrids[1].reshape([-1])], axis=1), dtype=torch.float64).to(torch.get_default_device())
-        self._weights, indices = self.model.get_weights(uvgrids_np, derivative=[0,0])
-        self._weights_du = self.model.get_weights(uvgrids_np, derivative=[1,0])[0]
-        self._weights_du2 = self.model.get_weights(uvgrids_np, derivative=[2,0])[0]
-        self._weights_dv = self.model.get_weights(uvgrids_np, derivative=[0,1])[0]
-        self._weights_dv2 = self.model.get_weights(uvgrids_np, derivative=[0,2])[0]
-        self._weights_dudv = self.model.get_weights(uvgrids_np, derivative=[1,1])[0]
-
-        indices_cps = torch.from_numpy(indices).to(torch.get_default_device()).reshape([self._preload_uv.shape[0], -1])
-        indices_pts = torch.arange(self._preload_uv.shape[0], device=torch.get_default_device()).reshape([-1,1]).repeat(1, indices_cps.shape[1])
-        self._indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
-
-        self._weights = torch.from_numpy(self._weights).to(torch.get_default_device()).flatten()
-        self._weights_du = torch.from_numpy(self._weights_du).to(torch.get_default_device()).flatten()
-        self._weights_du2 = torch.from_numpy(self._weights_du2).to(torch.get_default_device()).flatten()
-        self._weights_dv = torch.from_numpy(self._weights_dv).to(torch.get_default_device()).flatten()
-        self._weights_dv2 = torch.from_numpy(self._weights_dv2).to(torch.get_default_device()).flatten()
-        self._weights_dudv = torch.from_numpy(self._weights_dudv).to(torch.get_default_device()).flatten()
-
+        self.pre_load()
+        
         # initialize fairness compensation
         RRuu, RRuv, RRvu, RRvv = self._geofair_data(r=self.get_r(), 
                                                     rdu=self.get_rdu(), 
@@ -452,7 +442,6 @@ class BspInterface(CpBasedInterface):
         lengthV = (2 * self.model.size[1] * self.init_size)**2
         
         
-
         RRuu /= lengthU
         RRuv /= lengthV
         RRvu /= lengthU
@@ -474,6 +463,61 @@ class BspInterface(CpBasedInterface):
                                 0.2] = self.MaxR * 0.2 / RRvv[RRvv > self.MaxR *
                                                         0.2] / lengthV
         self.rr_compensation[3] /= lengthV
+
+    def pre_load(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None) -> None:
+        preload_data = self.get_preloaddata(pre_points=pre_points, faces=faces)
+        self.apply_preload_data(preload_data)
+
+    def get_preloaddata(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None):
+
+        if pre_points is None and faces is None:
+            # preload the uv grid
+            ratio = 2
+            preload_size = (self.model.size[0] * ratio, self.model.size[1] * ratio)
+
+            uvgrids = np.meshgrid(np.linspace(0, 1, preload_size[0]), np.linspace(0, 1, preload_size[1]+1)[1:], indexing='ij')
+            pts_np = np.stack(uvgrids, axis=-1).reshape([-1, 2])
+            preload_uv = torch.tensor(np.stack([uvgrids[0].reshape([-1]), uvgrids[1].reshape([-1])], axis=1), dtype=torch.float64).to(torch.get_default_device())
+            
+            # Build square-grid faces for the structured UV sampling grid
+            num_u, num_v = preload_size
+            faces_list = []
+            for iu in range(num_u - 1):
+                for iv in range(num_v - 1):
+                    idx00 = iu * num_v + iv
+                    idx01 = iu * num_v + (iv + 1)
+                    idx10 = (iu + 1) * num_v + iv
+                    idx11 = (iu + 1) * num_v + (iv + 1)
+                    faces_list.append([idx00, idx01, idx11, idx10])
+            faces = torch.tensor(faces_list, dtype=torch.long, device=torch.get_default_device())
+        else:
+            preload_uv = pre_points
+            pts_np = pre_points.detach().cpu().numpy()
+
+        _weights, indices = self.model.get_weights(pts_np, derivative=[0,0])
+        _weights_du = self.model.get_weights(pts_np, derivative=[1,0])[0]
+        _weights_du2 = self.model.get_weights(pts_np, derivative=[2,0])[0]
+        _weights_dv = self.model.get_weights(pts_np, derivative=[0,1])[0]
+        _weights_dv2 = self.model.get_weights(pts_np, derivative=[0,2])[0]
+        _weights_dudv = self.model.get_weights(pts_np, derivative=[1,1])[0]
+
+        indices_cps = torch.from_numpy(indices).to(torch.get_default_device()).reshape([preload_uv.shape[0], -1])
+        indices_pts = torch.arange(preload_uv.shape[0], device=torch.get_default_device()).reshape([-1,1]).repeat(1, indices_cps.shape[1])
+        indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
+
+        preload_data = self.PreLoadData(
+            uv=preload_uv,
+            cp_weights=torch.from_numpy(_weights).to(torch.get_default_device()).flatten(),
+            cp_weights_du=torch.from_numpy(_weights_du).to(torch.get_default_device()).flatten(),
+            cp_weights_dv=torch.from_numpy(_weights_dv).to(torch.get_default_device()).flatten(),
+            cp_weights_du2=torch.from_numpy(_weights_du2).to(torch.get_default_device()).flatten(),
+            cp_weights_dudv=torch.from_numpy(_weights_dudv).to(torch.get_default_device()).flatten(),
+            cp_weights_dv2=torch.from_numpy(_weights_dv2).to(torch.get_default_device()).flatten(),
+            indices=indices,
+            faces=faces,
+        )
+
+        return preload_data
 
     @staticmethod
     def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
@@ -588,37 +632,9 @@ class BspInterface(CpBasedInterface):
             (weight[indexRRvv] * RRvv).sum()
 
     def get_points_weight(self):
-        
-        R0 = self.get_r().detach()
-        
-        R_now = R0.reshape([
-            self._preload_size[0], self._preload_size[1],
-            3
-        ])
-        R_uplus = R_now.roll(-1, dims=1)
-
-        R_vplus = R_now[1:]
-        R_now = R_now[:-1]
-        R_uvplus = R_uplus[1:]
-        R_uplus = R_uplus[:-1]
-
-        area1 = torch.cross(R_vplus - R_now, R_uplus - R_now,
-                            dim=2).norm(dim=2) / 2
-        area2 = torch.cross(R_uvplus - R_uplus,
-                            R_uvplus - R_vplus,
-                            dim=2).norm(dim=2) / 2
-
-        ratio_now = torch.zeros(self._preload_size[0], self._preload_size[1],
-                                device=R0.device)
-
-        ratio_now[:-1] += area1 / 3
-        ratio_now[1:] += area1 / 3 + area2 / 3
-        ratio_now[:-1, (torch.arange(ratio_now.shape[1]) + 1) %
-                ratio_now.shape[1]] += area1 / 3 + area2 / 3
-        ratio_now[1:, (torch.arange(ratio_now.shape[1]) + 1) %
-                ratio_now.shape[1]] += area2 / 3
-
-        return ratio_now.flatten()
+        """Get vertex-based integration weights for the preload mesh."""
+        r = self.get_r().detach()
+        return self.preload_data.compute_point_weights(r)
 
     def save(self, filename):
         self.model.control_points = self._cps.detach().cpu().numpy()
@@ -630,14 +646,18 @@ class BspInterface(CpBasedInterface):
 
     def get_mesh(self):
         import pyvista as pv
-        result = self.get_r().detach().cpu().numpy().reshape([
-            self._preload_size[0], self._preload_size[1], 3
-        ])
+        ratio = 2
+        preload_size = (self.model.size[0] * ratio, self.model.size[1] * ratio)
+
+        uvgrids = np.meshgrid(np.linspace(0, 1, preload_size[0]), np.linspace(0, 1, preload_size[1]+1)[1:], indexing='ij')
+        pts_np = np.stack(uvgrids, axis=-1).reshape([-1, 2])
+
+        r = self.model.map(pts_np, derivative=[0, 0]).reshape([preload_size[0], preload_size[1], 3])
         
         # Convert to numpy arrays for PyVista
-        x = result[:, :, 0]
-        y = result[:, :, 1]
-        z = result[:, :, 2]
+        x = r[:, :, 0]
+        y = r[:, :, 1]
+        z = r[:, :, 2]
 
 
         x = np.concatenate([x, x[:, :1]], axis=1)
@@ -646,7 +666,7 @@ class BspInterface(CpBasedInterface):
         
         # Create structured grid
         grid = pv.StructuredGrid(x, y, z)
-        mesh = grid.extract_surface()
+        mesh = grid.extract_surface(algorithm='dataset_surface')
         mesh.compute_normals(inplace=True)
         
         return mesh
@@ -726,3 +746,142 @@ class BspInterface(CpBasedInterface):
         output.flip = flip
 
         return output
+
+    def match_coordinates(self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray, batch_size: int | None = None):
+        """Find closest (u, v) on `bspsurf` for each 3D point in `nodes`.
+
+        Improvements (memory-efficient):
+        - use a KD-tree (if available) to find nearest initial grid seed without forming MxN distance matrix
+        - perform Newton refinement in configurable batches to reduce peak memory
+        - fallback to chunked search if scipy is not present
+        """
+
+        # filter out the head and bottom nodes
+
+        bottom_z = self._cps[:, 2].min().item()
+        top_z = self._cps[:, 2].max().item()
+
+        idx_remain = (surf_nodes[:, 2] > bottom_z + 1e-5) & (surf_nodes[:, 2] < top_z - 1e-5)
+        nodes = surf_nodes[idx_remain]
+        self.surf_node_idx = surf_node_idx[idx_remain]
+
+
+        nodes = np.asarray(nodes, dtype=float)
+        if nodes.ndim == 1:
+            nodes = nodes.reshape(1, 3)
+        N = nodes.shape[0]
+
+        num_U = self.model.size[1] + 1
+        num_V = self.model.size[0]
+
+        # initial sampling grid (same orientation as before)
+        initgrid_V, initgrid_U = np.meshgrid(np.linspace(0, 1, num_V * 5),
+                                            np.linspace(0, 1, num_U * 5)[:-1],
+                                            indexing='ij')
+        initpts = np.stack([initgrid_V.ravel(), initgrid_U.ravel()], axis=1)
+
+        # evaluate surface at seed points (M x 3)
+        r0 = self.model.map(initpts)
+
+        # --- find nearest seed for each node (memory-efficient) ---
+        try:
+            # fast & memory-friendly when scipy is available
+            import scipy.spatial as sp
+            tree = sp.KDTree(r0)
+            _, min_dist_uv_idx = tree.query(nodes, k=1)
+        except Exception:
+            # fallback: chunked search over nodes to avoid creating an MxN matrix
+            min_dist_uv_idx = np.empty(N, dtype=int)
+            node_chunk = 1024
+            for i in range(0, N, node_chunk):
+                j = min(N, i + node_chunk)
+                nb = nodes[i:j]                                # (B, 3)
+                # compute squared distances in a chunk (M, B)
+                d2 = np.sum((r0[:, None, :] - nb[None, :, :]) ** 2, axis=2)
+                min_dist_uv_idx[i:j] = np.argmin(d2, axis=0)
+
+        min_dist_uv = initpts[min_dist_uv_idx]                  # (N, 2)
+
+        # --- Newton refinement in batches (reduces peak memory) ---
+        max_iter = 50
+        tol = 1e-6
+        
+        if batch_size is None:
+            batch_size = N if N <= 4096 else 4096
+
+        uv_out = np.empty((N, 2), dtype=float)
+
+        for start in range(0, N, batch_size):
+            end = min(N, start + batch_size)
+            uv = min_dist_uv[start:end].copy()
+            pts = nodes[start:end]
+
+            for it in range(max_iter):
+                r = self.model.map(uv)
+                ru = self.model.map(uv, derivative=[1, 0])
+                rv = self.model.map(uv, derivative=[0, 1])
+                ruu = self.model.map(uv, derivative=[2, 0])
+                ruv = self.model.map(uv, derivative=[1, 1])
+                rvv = self.model.map(uv, derivative=[0, 2])
+
+                diff = r - pts
+                gu = np.einsum('ij,ij->i', diff, ru)
+                gv = np.einsum('ij,ij->i', diff, rv)
+                gnorm = np.sqrt(gu * gu + gv * gv)
+
+                if np.all(gnorm < tol):
+                    break
+
+                A = np.einsum('ij,ij->i', ru, ru) + np.einsum('ij,ij->i', diff, ruu)
+                B = np.einsum('ij,ij->i', ru, rv) + np.einsum('ij,ij->i', diff, ruv)
+                C = np.einsum('ij,ij->i', rv, rv) + np.einsum('ij,ij->i', diff, rvv)
+
+                det = A * C - B * B
+                det_reg = det.copy()
+                det_reg[np.abs(det_reg) < 1e-12] = 1e-12
+
+                du = -(C * gu - B * gv) / det_reg
+                dv = -(-B * gu + A * gv) / det_reg
+                delta = np.stack([du, dv], axis=1)
+
+                f = np.einsum('ij,ij->i', diff, diff)
+
+                uv_new = uv.copy()
+                f_best = f.copy()
+                accept = np.zeros(f.shape, dtype=bool)
+
+                uv_step = np.clip(uv + delta, 0.0, 1.0)
+                r_step = self.model.map(uv_step)
+                f_step = np.einsum('ij,ij->i', (r_step - pts), (r_step - pts))
+                improved = f_step < f_best
+                if improved.any():
+                    uv_new[improved] = uv_step[improved]
+                    f_best[improved] = f_step[improved]
+                    accept[improved] = True
+
+                if not np.all(accept):
+                    remaining = ~accept
+                    for k in range(1, 8):
+                        alpha = 0.5 ** k
+                        uv_try = np.clip(uv + alpha * delta, 0.0, 1.0)
+                        r_try = self.model.map(uv_try)
+                        f_try = np.einsum('ij,ij->i', (r_try - pts), (r_try - pts))
+
+                        improved = (f_try < f_best) & remaining
+                        if improved.any():
+                            uv_new[improved] = uv_try[improved]
+                            f_best[improved] = f_try[improved]
+                            accept[improved] = True
+                            remaining = ~accept
+
+                        if not remaining.any():
+                            break
+
+                uv = uv_new.copy()
+
+                # print(f'Batch {start}-{end}, Iter {it}, Mean Residual {np.sqrt(f_best).mean():.3e}, Accept Rate {accept.mean():.2%}')
+
+            uv_out[start:end] = uv
+        self.surf_node_uv = uv_out
+
+        return self.model.map(uv_out)

@@ -19,34 +19,29 @@ class ThisController(morphopt.Controller):
                          opt_label='JUMP_P6')
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def __init__(self):
-            super().__init__()
 
-            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                device0 = torch.tensor(1).device
-                rp_index = assembly.get_reference_point('RP_head')._RGC_index
-                RGC0 = assembly._GC2RGC(GC.to(device0))
-                U0 = RGC0[rp_index]
-                loss0 = torch.exp((U0[2]+20)/5)/5
-                return loss0
 
-            def objective2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                device0 = torch.tensor(1).device
-                rp_index = assembly.get_reference_point('RP_head')._RGC_index
-                RGC1 = assembly._GC2RGC(GC.to(device0))
-                U1 = RGC1[rp_index]
-                loss1 = U1[5]
-                return loss1
+        def objective_function(self):
 
-            self.objective_functions = [objective1, objective2]
-
-        def get_metrics(self):
-            device0 = torch.tensor(1).device
             rp_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
-            RGC0 = self.fe.assembly._GC2RGC(self.fe_results[0].GC.to(device0))
+
+            RGC0 = self.fe.assembly._GC2RGC(self.fe_results[0].GC.to(torch.get_default_device()))
             U0 = RGC0[rp_index]
             loss0 = torch.exp((U0[2]+20)/5)/5
-            RGC1 = self.fe.assembly._GC2RGC(self.fe_results[1].GC.to(device0))
+
+            RGC1 = self.fe.assembly._GC2RGC(self.fe_results[1].GC.to(torch.get_default_device()))
+            U1 = RGC1[rp_index]
+            loss1 = U1[5]
+
+            loss = loss0 + loss1
+            return loss
+
+        def get_metrics(self):
+            rp_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index
+            RGC0 = self.fe.assembly._GC2RGC(self.fe_results[0].GC.to(torch.get_default_device()))
+            U0 = RGC0[rp_index]
+            loss0 = torch.exp((U0[2]+20)/5)/5
+            RGC1 = self.fe.assembly._GC2RGC(self.fe_results[1].GC.to(torch.get_default_device()))
             U1 = RGC1[rp_index]
             return [loss0, U1[5].item()]
 
@@ -55,7 +50,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=0.8, fea_mesh_order=1)
+                super().__init__(fea_seed_size=1.0, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=12.,
@@ -73,24 +68,6 @@ class ThisController(morphopt.Controller):
                                                         symmetric=[0, [1]],
                                                         init_location=[0, 0, 3],
                                                         flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=50/4))
-
-                1
-            # def _get_all_r(self, rinit: torch.Tensor):
-            #     rout = rinit.clone()
-            #     num_points = rinit.shape[2] / 4
-            #     num_points = int(num_points)
-            #     r0 = rinit[:, :, :num_points]
-            #     r1 = r0.clone()
-            #     r1[0] *= -1
-            #     rout[:, :, num_points:num_points*2] = r1.flip(dims=[2])
-            #     r2 = r0.clone()
-            #     r2[0] *= -1
-            #     r2[1] *= -1
-            #     rout[:, :, num_points*2:num_points*3] = r2
-            #     r3 = r0.clone()
-            #     r3[1] *= -1
-            #     rout[:, :, num_points*3:num_points*4] = r3.flip(dims=[2])
-            #     return rout
 
             def _get_all_r(self, rinit: torch.Tensor, flip: bool):
                 """
@@ -200,7 +177,8 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params):
 
             super().__init__(params=params,
-                            num_process=2)
+                            task_index_list=[[0, 1]],
+                            num_process=1)
 
     class Updater(morphopt.Updaters):
         """
@@ -237,4 +215,4 @@ class ThisController(morphopt.Controller):
 
     
 if __name__ == '__main__':
-    morphopt.debug_optimization(device='cuda:0')
+    morphopt.start_optimization(device='cuda:0')

@@ -57,6 +57,73 @@ class ObjectiveFunction(BaseObject):
         """
         return []
     
+    def objective_function(self):
+        """
+        Compute the objective function value.
+        
+        Returns:
+            torch.Tensor: The value of the objective function.
+        """
+        raise NotImplementedError("The objective_function method should be implemented in subclass.")
+
+    def build_objective_functions(self) -> None:
+        """
+        Build the objective function callables based on the current FEA results and assembly.
+        """
+        self.objective_functions = []
+        for taskidx in range(self.num_tasks):
+            def objective_func_now(GC: torch.Tensor,
+                                   jacobian: dict[str, torch.Tensor],
+                                   assembly: torchfea.Assembly,
+                                   taskidx: int = taskidx) -> torch.Tensor:
+                original_state: list[tuple[torch.Tensor, dict[str, torch.Tensor] | None]] = []
+
+                # Keep grad only for the current task. Other tasks are detached
+                # so objective_funtion can still reference all fe_results safely.
+                try:
+                    for i in range(self.num_tasks):
+                        result_i = self.fe_results[i]
+                        original_state.append((result_i.GC, result_i.jacobian))
+
+                        if i == taskidx:
+                            result_i.GC = GC
+                            result_i.jacobian = jacobian
+                        else:
+                            result_i.GC = result_i.GC.detach()
+                            if result_i.jacobian is None:
+                                result_i.jacobian = None
+                            else:
+                                result_i.jacobian = {
+                                    key: value.detach() for key, value in result_i.jacobian.items()
+                                }
+
+                    obj_with_step_grad = self.objective_function()
+
+                    # Autodiff trick: for taskidx > 0, subtract the same objective
+                    # evaluated with this step detached. This cancels the direct
+                    # design-variable derivative terms repeated in each step while
+                    # keeping the derivative path through current-step GC/jacobian.
+                    if taskidx == 0:
+                        return obj_with_step_grad
+
+                    self.fe_results[taskidx].GC = GC.detach()
+                    if jacobian is None:
+                        self.fe_results[taskidx].jacobian = None
+                    else:
+                        self.fe_results[taskidx].jacobian = {
+                            key: value.detach() for key, value in jacobian.items()
+                        }
+                    obj_without_step_grad = self.objective_function()
+
+                    return obj_with_step_grad - obj_without_step_grad
+
+                finally:
+                    for i, (old_gc, old_jacobian) in enumerate(original_state):
+                        self.fe_results[i].GC = old_gc
+                        self.fe_results[i].jacobian = old_jacobian
+
+            self.objective_functions.append(objective_func_now)
+    
     def sensitivity_analysis(self, params: morphopt.Params) -> dict[str, torch.Tensor]:
         """
         Perform sensitivity analysis to compute the design sensitivity variables.
@@ -67,7 +134,9 @@ class ObjectiveFunction(BaseObject):
         Returns:
             dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
         """
-        
+
+        self.build_objective_functions()
+
         design_sensitivity_vars_dict = params.obtain_design_sensitivity_vars(assembly=self.fe.assembly)
 
         design_sensitivity_vars = torch.cat(list(design_sensitivity_vars_dict.values()), dim=0)

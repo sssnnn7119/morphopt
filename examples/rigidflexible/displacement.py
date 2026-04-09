@@ -21,37 +21,21 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return (20-GC[GC_start + 2])**2 / 100
-            def obj1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return GC[GC_start]
-            def obj2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return -GC[GC_start]
-            def obj3(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return GC[GC_start + 1]
-            def obj4(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return -GC[GC_start + 1]
-            def obj5(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return 10 * GC[GC_start + 5]
-            def obj6(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                # The old code had a typo `-self.U[5][...]*10`, here we maintain backwards compat by either fixing it or keeping it. Let's fix it to use GC from step 6 but still evaluate `10 * GC[GC_start + 5]`? Wait, no, obj6 corresponds to U[6]. I'll just keep it U[6] so to say. Actually if I just return `-10 * GC[GC_start + 5]` it's fine.
-                rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
-                GC_start = assembly._GC_list_indexStart[rp_head_index]
-                return -10 * GC[GC_start + 5]
 
-            self.objective_functions = [obj0, obj1, obj2, obj3, obj4, obj5, obj6]
+        def objective_function(self):
+            assembly = self.fe.assembly
+            rp_head_index = assembly.get_reference_point('RP_head')._RGC_index
+            GC_start = assembly._GC_list_indexStart[rp_head_index]
+
+            return (
+                (20 - self.fe_results[0].GC[GC_start + 2])**2 / 100
+                + self.fe_results[1].GC[GC_start]
+                - self.fe_results[2].GC[GC_start]
+                + self.fe_results[3].GC[GC_start + 1]
+                - self.fe_results[4].GC[GC_start + 1]
+                + 10 * self.fe_results[5].GC[GC_start + 5]
+                - 10 * self.fe_results[6].GC[GC_start + 5]
+            )
         
         def get_metrics(self):
             rp_head_index = self.fe.assembly.get_reference_point('RP_head')._RGC_index

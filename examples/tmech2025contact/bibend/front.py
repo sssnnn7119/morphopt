@@ -20,11 +20,11 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                rp_index = assembly.get_reference_point('RP_head')._RGC_index
-                loss = -GC[assembly._GC_list_indexStart[rp_index] + 4]
-                return loss
-            self.objective_functions = [obj0]
+
+        def objective_function(self):
+            assembly = self.fe.assembly
+            rp_index = assembly.get_reference_point('RP_head')._RGC_index
+            return -self.fe_results[0].GC[assembly._GC_list_indexStart[rp_index] + 4]
             
         def get_metrics(self):
             return []

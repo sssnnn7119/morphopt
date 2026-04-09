@@ -31,57 +31,54 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__()
             self.jacobian_needed = [f'pressure_{k}' for k in range(1, 7)]
-            
-            self.objective_functions = []
 
-            def make_obj(i):
-                def obj(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                    rp_index = assembly.get_reference_point('RP_head')._RGC_index
-                    GC_start = assembly._GC_list_indexStart[rp_index]
+        def objective_function(self):
+            assembly = self.fe.assembly
+            rp_index = assembly.get_reference_point('RP_head')._RGC_index
+            GC_start = assembly._GC_list_indexStart[rp_index]
 
-                    U_now = GC[GC_start:GC_start+6].clone()
-
-                    ratio = ((i // 32) % 2) == 0
-                    ratio = -1 if ratio else 1
-
-                    U1 = U_now.clone() / 3
-                    U1[3] = (-1 / 36 * U_now[3]**3)
-                    U1[4] = (-1 / 36 * U_now[4]**3)
-                    U1[5] = (-1 / 36 * U_now[5]**3)
-
-                    Udp_now = torch.cat([jacobian[f'pressure_{k}'][GC_start:GC_start+6, :] for k in range(1, 7)], dim=1)
-
-                    if i < 64:
-                        Udp_left = Udp_now[1:]
-                        Udp_loss = Udp_now[0]
-                    else:
-                        ratio *= -1
-                        Udp_left = Udp_now[[4, 5, 0, 1, 2]]
-                        Udp_loss = Udp_now[3]
-
-                    normal = torch.zeros(6, device=GC.device)
-                    normal[0] = torch.det(Udp_left[:, 1:])
-                    normal[1] = torch.det(Udp_left[:, [0, 2, 3, 4, 5]]) * -1
-                    normal[2] = torch.det(Udp_left[:, [0, 1, 3, 4, 5]])
-                    normal[3] = torch.det(Udp_left[:, [0, 1, 2, 4, 5]]) * -1
-                    normal[4] = torch.det(Udp_left[:, [0, 1, 2, 3, 5]])
-                    normal[5] = torch.det(Udp_left[:, :-1]) * -1
-                    normal *= ratio
-
-                    obj_now = (normal * U1).sum()
-
-                    if i == 0:
-
-                        surfobj = get_surface_volume(assembly)
-                        obj_now += -surfobj * 0.01
-
-                    # print(i, (normal * Udp_loss).sum().item())
-
-                    return obj_now
-                return obj
+            total_obj = torch.tensor(0.0, device=assembly.device)
 
             for i in range(128):
-                self.objective_functions.append(make_obj(i))
+                GC = self.fe_results[i].GC
+                jacobian = self.fe_results[i].jacobian
+
+                U_now = GC[GC_start:GC_start+6].clone()
+
+                ratio = ((i // 32) % 2) == 0
+                ratio = -1 if ratio else 1
+
+                U1 = U_now.clone() / 3
+                U1[3] = (-1 / 36 * U_now[3]**3)
+                U1[4] = (-1 / 36 * U_now[4]**3)
+                U1[5] = (-1 / 36 * U_now[5]**3)
+
+                Udp_now = torch.cat([jacobian[f'pressure_{k}'][GC_start:GC_start+6, :] for k in range(1, 7)], dim=1)
+
+                if i < 64:
+                    Udp_left = Udp_now[1:]
+                else:
+                    ratio *= -1
+                    Udp_left = Udp_now[[4, 5, 0, 1, 2]]
+
+                normal = torch.zeros(6, device=GC.device)
+                normal[0] = torch.det(Udp_left[:, 1:])
+                normal[1] = torch.det(Udp_left[:, [0, 2, 3, 4, 5]]) * -1
+                normal[2] = torch.det(Udp_left[:, [0, 1, 3, 4, 5]])
+                normal[3] = torch.det(Udp_left[:, [0, 1, 2, 4, 5]]) * -1
+                normal[4] = torch.det(Udp_left[:, [0, 1, 2, 3, 5]])
+                normal[5] = torch.det(Udp_left[:, :-1]) * -1
+                normal *= ratio
+
+                obj_now = (normal * U1).sum()
+
+                if i == 0:
+                    surfobj = get_surface_volume(assembly)
+                    obj_now += -surfobj * 0.01
+
+                total_obj = total_obj + obj_now
+
+            return total_obj
 
         def get_metrics(self):
             return [get_surface_volume(self.fe.assembly).item()]

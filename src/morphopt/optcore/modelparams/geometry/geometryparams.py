@@ -324,8 +324,8 @@ class MeshGenerator:
 
     @classmethod
     def run(cls, seed_size: float, output_file="output.inp", directory: str = None):
-        generator = cls(mesh_size_max=seed_size*1.4,
-                        mesh_size_min=seed_size*0.7)
+        generator = cls(mesh_size_max=seed_size*1.0,
+                        mesh_size_min=seed_size*0.5)
         try:
             generator.scan_directory(directory=directory)
             generator.load_and_process_files()
@@ -344,6 +344,7 @@ class GeometryParams(BaseParams):
     """
     from .geometryinterfaces.bspsurfaceinterface import BspInterface as BSP
     from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
+    from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
 
     def __init__(self, fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
         """
@@ -705,6 +706,13 @@ class GeometryParams(BaseParams):
         inp = torchfea.FEA_INP()
         inp.read_inp(path=inp_path)
         # inp.read_inp('Z:\\Results\\EXAMPLE_T20260118_100206\\cache\\TopOptRun.inp')
+
+        for sf_idx in range(self.num_surface):
+            surf_node_idx = np.array(list(inp.part['final_model'].sets_nodes[f'surface_{sf_idx}_All']))
+            surf_node_idx = np.sort(surf_node_idx)
+            surf_nodes = inp.part['final_model'].nodes[surf_node_idx][:, 1:]
+            nodes_new = self.surface_list[sf_idx].match_coordinates(surf_node_idx, surf_nodes)
+            inp.part['final_model'].nodes[self.surface_list[sf_idx].surf_node_idx, 1:] = nodes_new
 
         return inp
 

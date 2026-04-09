@@ -33,15 +33,28 @@ class CPGEOInterface(CpBasedInterface):
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
 
+    def map(self, uv: torch.Tensor) -> torch.Tensor:
+        """Map from UV space to 3D space using the CPGEO model."""
+        uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
+        indices_cps, indices_pts, w = self.model.get_weights2(uv_np)
+        indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
+        indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
+
+        weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
+        indices_pts_t = torch.repeat_interleave(
+            torch.arange(uv.shape[0], dtype=torch.long,
+                         device=torch.get_default_device()),
+            weights_per_query)
+
+        indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
+        return self._map(w, indices, num_pts=uv.shape[0])
+
     def initialize(self):
         """Initialize the CPGEO model and preload knot points for evaluation."""
         
         # Initialize CPGEO knots and thresholds
         self.model.initialize()
 
-        self._preload()
-
-        
     def reinitialize(self):
         
         self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
@@ -53,44 +66,27 @@ class CPGEOInterface(CpBasedInterface):
         # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
         self._num_knots = self.model._knots.shape[0]
 
-        self._preload()
+        self.pre_load(pre_points=None, faces=None)
 
         return self
 
-    def _preload(self):
-        # Precompute Gaussian quadrature points (Dunavant 6-point rule) per triangular face
-        knots = self.model._knots
-        faces = self.model._cp_faces
-        v0 = knots[faces[:, 0]]
-        v1 = knots[faces[:, 1]]
-        v2 = knots[faces[:, 2]]
+    def get_preloaddata(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None):
 
-        # Dunavant 6-point rule: two 3-point orbits (barycentric coordinates)
-        # orbit 1: alpha1=0.816847572980459, beta1=0.091576213509771
-        # orbit 2: alpha2=0.108103018168070, beta2=0.445948490915965
-        a1 = 0.816847572980459
-        b1 = 0.091576213509771
-        a2 = 0.108103018168070
-        b2 = 0.445948490915965
+        if pre_points is not None and faces is not None:
+            # If external sample points are provided, use them directly.
+            preload_uv = pre_points
+            input_points = pre_points.detach().cpu().numpy()
+            faces_np = faces.detach().cpu().numpy()
+        else:
+            # Use mesh vertices directly as preload points for CPGEO.
+            preload_uv3 = self.model._knots
+            preload_uv = torch.from_numpy(self.model.reference_to_curvilinear(preload_uv3)).to(torch.get_default_device())
+            input_points = self.model._knots
+            faces_np = self.model._cp_faces
 
-        gauss_points = np.stack([
-            a1 * v0 + b1 * v1 + b1 * v2,
-            b1 * v0 + a1 * v1 + b1 * v2,
-            b1 * v0 + b1 * v1 + a1 * v2,
-            a2 * v0 + b2 * v1 + b2 * v2,
-            b2 * v0 + a2 * v1 + b2 * v2,
-            b2 * v0 + b2 * v1 + a2 * v2,
-        ], axis=1).reshape(-1, 3)
 
-        gauss_points = gauss_points / np.linalg.norm(gauss_points, axis=1, keepdims=True)  # Normalize for spherical surfaces
-
-        self._preload_uv = torch.from_numpy(gauss_points).to(torch.get_default_device()).to(self._cps.dtype)
-
-        # Precompute weights for Gaussian points (derivative 0, 1, 2)
-        # get_weights3 returns: (indices_cps, indices_pts, w) for derivative=0
-        #                       (indices_cps, indices_pts, w), (indices_cps, indices_pts, wdu) for derivative=1
-        #                       (indices_cps, indices_pts, w), (indices_cps, indices_pts, wdu), (indices_cps, indices_pts, wdu2) for derivative=2
-        result = self.model.get_weights3(gauss_points, derivative=2)
+        # Precompute weights for vertex evaluation points (derivative 0, 1, 2)
+        result = self.model.get_weights2(input_points, derivative=2)
         indices_cps, indices_pts, w, wdu, wdu2 = result
 
         
@@ -98,54 +94,35 @@ class CPGEOInterface(CpBasedInterface):
         indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
 
         weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
-        # 使用repeat_interleave创建查询点索引
-        indices_pts_t = torch.repeat_interleave(torch.arange(self._preload_uv.shape[0], dtype=torch.long), weights_per_query)
-        
-        # Convert to torch tensors and flatten for compatibility with base class _map method
-        self._indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
-        
-        self._weights = torch.from_numpy(w).to(torch.get_default_device()).flatten()
+        indices_pts_t = torch.repeat_interleave(
+            torch.arange(preload_uv.shape[0], dtype=torch.long,
+                         device=torch.get_default_device()),
+            weights_per_query)
 
-        self._weights_du = torch.from_numpy(wdu[0]).to(torch.get_default_device()).flatten()
-        self._weights_dv = torch.from_numpy(wdu[1]).to(torch.get_default_device()).flatten()
-        self._weights_du2 = torch.from_numpy(wdu2[0, 0]).to(torch.get_default_device()).flatten()
-        self._weights_dv2 = torch.from_numpy(wdu2[1, 1]).to(torch.get_default_device()).flatten()
-        self._weights_dudv = torch.from_numpy(wdu2[0, 1]).to(torch.get_default_device()).flatten()
+        indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
+
+        preload_data = self.PreLoadData(
+            uv=preload_uv,
+            cp_weights=torch.from_numpy(w).to(torch.get_default_device()).flatten(),
+            cp_weights_du=torch.from_numpy(wdu[0]).to(torch.get_default_device()).flatten(),
+            cp_weights_dv=torch.from_numpy(wdu[1]).to(torch.get_default_device()).flatten(),
+            cp_weights_du2=torch.from_numpy(wdu2[0, 0]).to(torch.get_default_device()).flatten(),
+            cp_weights_dudv=torch.from_numpy(wdu2[0, 1]).to(torch.get_default_device()).flatten(),
+            cp_weights_dv2=torch.from_numpy(wdu2[1, 1]).to(torch.get_default_device()).flatten(),
+            indices=indices,
+            faces=torch.from_numpy(faces_np).to(torch.get_default_device())
+        )
+
+        return preload_data
 
     def get_points_weight(self):
-        """Compute area-based weights for each Gaussian preload point.
-        
-        For each triangular face we use a 6-point Gaussian quadrature. Each
-        Gaussian point receives weight = triangle_area / 6.
+        """Compute vertex-based integration weights for CPGEO preload points.
 
-        Returns:
-            torch.Tensor: Weights for each preload point (shape: num_faces * 6)
+        Uses vertex barycentric area weighting: each triangle contributes one-third
+        of its area to each incident vertex.
         """
-        # Use control-point coordinates to compute triangle areas
-        cps = self._cps.detach()
-        faces = torch.from_numpy(self.model._cp_faces).to(cps.device)
-
-        v0 = cps[faces[:, 0]]
-        v1 = cps[faces[:, 1]]
-        v2 = cps[faces[:, 2]]
-
-        # Triangle area = 0.5 * ||cross product||
-        areas = torch.cross(v1 - v0, v2 - v0, dim=1).norm(dim=1) / 2.0
-
-        # Dunavant 6-point rule uses two orbits with different weights.
-        # Reference triangle (area = 1/2) weights for the two orbits are:
-        #   wA = 0.054975871827661  (for the three points of orbit A)
-        #   wB = 0.1116907948390055 (for the three points of orbit B)
-        # They sum to 1/2. Convert to fractions (sum to 1) by dividing by 1/2.
-        f1 = 0.054975871827661 / 0.5
-        f2 = 0.1116907948390055 / 0.5
-
-        # Per-triangle weights: for each face, six points have weights [f1,f1,f1,f2,f2,f2]*area
-        fractions = torch.tensor([f1, f1, f1, f2, f2, f2], device=cps.device, dtype=self._cps.dtype)
-        weights = (areas.unsqueeze(1) * fractions.unsqueeze(0)).reshape(-1)
-
-        # Ensure same dtype/device as other tensors
-        return weights.to(cps.device).to(self._cps.dtype)
+        r = self.get_r().detach()
+        return self.preload_data.compute_point_weights(r)
 
 
     @staticmethod
@@ -419,4 +396,128 @@ class CPGEOInterface(CpBasedInterface):
 
         return output
 
+    def match_coordinates(self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray, batch_size: int | None = None):
+        """
+        Find closest (u, v) on CPGEO surface for each 3D point in `nodes` using a memory-efficient approach.
+
+        Args:
+            nodes (np.ndarray): Array of shape (N, 3) containing 3D
+                coordinates to match on the surface.
+
+        Returns:
+            np.ndarray: Array of shape (N, 2) containing the corresponding
+                (u, v) parameters on the CPGEO surface for each input node.
+        """
         
+        nodes = surf_nodes
+        self.surf_node_idx = surf_node_idx
+
+        N = nodes.shape[0]
+
+        # evaluate surface at seed points (M x 3)
+        preuv = self.model.reference_to_curvilinear(self.model._knots)
+        r0 = self.model.map2(preuv)  # (M, 3)
+
+        # --- find nearest seed for each node (memory-efficient) ---
+        try:
+            # fast & memory-friendly when scipy is available
+            import scipy.spatial as sp
+            tree = sp.KDTree(r0)
+            _, min_dist_uv_idx = tree.query(nodes, k=1)
+        except Exception:
+            # fallback: chunked search over nodes to avoid creating an MxN matrix
+            min_dist_uv_idx = np.empty(N, dtype=int)
+            node_chunk = 1024
+            for i in range(0, N, node_chunk):
+                j = min(N, i + node_chunk)
+                nb = nodes[i:j]                                # (B, 3)
+                # compute squared distances in a chunk (M, B)
+                d2 = np.sum((r0[:, None, :] - nb[None, :, :]) ** 2, axis=2)
+                min_dist_uv_idx[i:j] = np.argmin(d2, axis=0)
+
+        min_dist_uv = preuv[min_dist_uv_idx]                  # (N, 2)
+
+        # --- Newton refinement in batches (reduces peak memory) ---
+        max_iter = 5
+        tol = 1e-6
+        
+        if batch_size is None:
+            batch_size = N if N <= 4096 else 4096
+
+        uv_out = np.empty((N, 2), dtype=float)
+
+        for start in range(0, N, batch_size):
+            end = min(N, start + batch_size)
+            uv = min_dist_uv[start:end].copy()
+            pts = nodes[start:end]
+
+            for it in range(max_iter):
+                r, rdot, rdot2 = self.model.map2(uv, derivative=2)
+
+                ru = rdot[:, :, 0]
+                rv = rdot[:, :, 1]
+                ruu = rdot2[:, :, 0, 0]
+                ruv = rdot2[:, :, 0, 1]
+                rvv = rdot2[:, :, 1, 1]
+
+                diff = r - pts
+                gu = np.einsum('ij,ij->i', diff, ru)
+                gv = np.einsum('ij,ij->i', diff, rv)
+                gnorm = np.sqrt(gu * gu + gv * gv)
+
+                if np.all(gnorm < tol):
+                    break
+
+                A = np.einsum('ij,ij->i', ru, ru) + np.einsum('ij,ij->i', diff, ruu)
+                B = np.einsum('ij,ij->i', ru, rv) + np.einsum('ij,ij->i', diff, ruv)
+                C = np.einsum('ij,ij->i', rv, rv) + np.einsum('ij,ij->i', diff, rvv)
+
+                det = A * C - B * B
+                det_reg = det.copy()
+                det_reg[np.abs(det_reg) < 1e-12] = 1e-12
+
+                du = -(C * gu - B * gv) / det_reg
+                dv = -(-B * gu + A * gv) / det_reg
+                delta = np.stack([du, dv], axis=1)
+
+                f = np.einsum('ij,ij->i', diff, diff)
+
+                uv_new = uv.copy()
+                f_best = f.copy()
+                accept = np.zeros(f.shape, dtype=bool)
+
+                uv_step = np.clip(uv + delta, 0.0, 1.0)
+                r_step = self.model.map2(uv_step)
+                f_step = np.einsum('ij,ij->i', (r_step - pts), (r_step - pts))
+                improved = f_step < f_best
+                if improved.any():
+                    uv_new[improved] = uv_step[improved]
+                    f_best[improved] = f_step[improved]
+                    accept[improved] = True
+
+                if not np.all(accept):
+                    remaining = ~accept
+                    for k in range(1, 8):
+                        alpha = 0.5 ** k
+                        uv_try = np.clip(uv + alpha * delta, 0.0, 1.0)
+                        r_try = self.model.map2(uv_try)
+                        f_try = np.einsum('ij,ij->i', (r_try - pts), (r_try - pts))
+
+                        improved = (f_try < f_best) & remaining
+                        if improved.any():
+                            uv_new[improved] = uv_try[improved]
+                            f_best[improved] = f_try[improved]
+                            accept[improved] = True
+                            remaining = ~accept
+
+                        if not remaining.any():
+                            break
+
+                uv = uv_new.copy()
+
+                # print(f'Batch {start}-{end}, Iter {it}, Mean Residual {np.sqrt(f_best).mean():.3e}, Accept Rate {accept.mean():.2%}')
+
+            uv_out[start:end] = uv
+        self.surf_node_uv = uv_out
+
+        return self.model.map2(uv_out)

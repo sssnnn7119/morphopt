@@ -1,5 +1,5 @@
 import torch
-
+import morphopt
 
 class BaseConstraints():
     """
@@ -27,12 +27,11 @@ class BaseConstraints():
                 sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
             self.scaler.append(sen_now * weights[i])
 
-    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> float:
+    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
         """
         Call the objective function.
 
         Args:
-            weight (list[torch.Tensor]): The weights for each point.
             r (list[torch.Tensor]): The point coordinates of the surfaces.
             rdu (list[torch.Tensor]): The partial derivatives of the surfaces.
             rdu2 (list[torch.Tensor]): The second partial derivatives of the surfaces.
@@ -88,7 +87,7 @@ class BaseObjective():
         Sensitivity of the shape derivative with respect to the contact forces.
         """
 
-    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs) -> None:
+    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], *args, **kwargs) -> None:
         """
         Initialize the objective function with the given parameters.
 
@@ -105,7 +104,6 @@ class BaseObjective():
         Call the objective function.
 
         Args:
-            weight (list[torch.Tensor]): The weights for each point.
             r (list[torch.Tensor]): The point coordinates of the surfaces.
             rdu (list[torch.Tensor]): The partial derivatives of the surfaces.
             rdu2 (list[torch.Tensor]): The second partial derivatives of the surfaces.

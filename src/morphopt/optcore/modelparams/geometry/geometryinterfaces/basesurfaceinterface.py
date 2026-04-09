@@ -2,6 +2,7 @@ import datetime
 import math
 import numpy as np
 import torch
+from typing import Optional
 
 import pyvista as pv
 
@@ -36,6 +37,25 @@ class BaseInterface():
             ## 1: y-axis symmetry
             ## 2: z-axis symmetry
         """
+
+        self.surf_node_idx: np.ndarray
+        """the node index of the surface at the fea mesh."""
+
+        self.surf_node_uv: np.ndarray
+        """the (u, v) coordinates of the surface nodes."""
+        
+
+    def map(self, uv: torch.Tensor) -> torch.Tensor:
+        """
+        Map from UV space to 3D space using the surface model.
+
+        Parameters:
+            uv (torch.Tensor): The UV coordinates to be mapped.
+
+        Returns:
+            torch.Tensor: The corresponding 3D coordinates in the physical space.
+        """
+        raise NotImplementedError("The map method is not implemented in the BaseInterface class. Please implement it in the derived class.")
 
     def initialize(self) -> None:
         """
@@ -599,13 +619,107 @@ class BaseInterface():
                 stp_content.append(f"#{point1_id}=CARTESIAN_POINT('',({v1_coords[0]},{v1_coords[1]},{v1_coords[2]}));")
                 stp_content.append(f"#{point2_id}=CARTESIAN_POINT('',({v2_coords[0]},{v2_coords[1]},{v2_coords[2]}));")
 
+    def match_coordinates(self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray, *args, **kwargs) -> np.ndarray:
+        """
+        Match the coordinates of the nodes to the surface.
 
+        Parameters:
+            surf_node_idx (np.ndarray): The indices of the surface nodes.
+            surf_nodes (np.ndarray): The coordinates of the surface nodes.
+
+        Returns:
+            np.ndarray: The nodes position updated to match the surface.
+        """
+        raise NotImplementedError("The match_coordinates method is not implemented in the BaseInterface class. Please implement it in the derived class.")
 
 class CpBasedInterface(BaseInterface):
     """
     Class to handle the surface of the morphable model.
     """
-    
+
+    class PreLoadData:
+        """
+        Class to handle the preloaded data for the surface.
+
+        Attributes:
+            uv (torch.Tensor): The preloaded UV parameters for the surface.
+            cp_weights (torch.Tensor): The preloaded weights for the control points.
+            cp_weights_du (torch.Tensor): The preloaded derivative of the weights with respect to the `first` parameter.
+            cp_weights_dv (torch.Tensor): The preloaded derivative of the weights with respect to the `second` parameter.
+            cp_weights_du2 (torch.Tensor): The preloaded second derivative of the weights with respect to the `first` parameter.
+            cp_weights_dudv (torch.Tensor): The preloaded mixed derivative of the weights with respect to the `first` and `second` parameters.
+            cp_weights_dv2 (torch.Tensor): The preloaded second derivative of the weights with respect to the `second` parameter.
+            indices (torch.Tensor): The flattened preload indices for scatter-add mapping.
+            faces (torch.Tensor | None): Optional mesh face connectivity for the preload points.
+        """
+
+        def __init__(
+            self,
+            uv: torch.Tensor,
+            cp_weights: torch.Tensor,
+            cp_weights_du: torch.Tensor,
+            cp_weights_dv: torch.Tensor,
+            cp_weights_du2: torch.Tensor,
+            cp_weights_dudv: torch.Tensor,
+            cp_weights_dv2: torch.Tensor,
+            indices: torch.Tensor,
+            faces: torch.Tensor,
+        ) -> None:
+            self.uv = uv
+            self.cp_weights = cp_weights
+            self.cp_weights_du = cp_weights_du
+            self.cp_weights_dv = cp_weights_dv
+            self.cp_weights_du2 = cp_weights_du2
+            self.cp_weights_dudv = cp_weights_dudv
+            self.cp_weights_dv2 = cp_weights_dv2
+            self.indices = indices
+            self.faces = faces
+
+        @property
+        def num_points(self) -> int:
+            return int(self.uv.shape[0])
+
+        def to_device(self, device: torch.device) -> 'BaseInterface.CpBasedInterface.PreLoadData':
+            self.uv = self.uv.to(device)
+            self.cp_weights = self.cp_weights.to(device)
+            self.cp_weights_du = self.cp_weights_du.to(device)
+            self.cp_weights_dv = self.cp_weights_dv.to(device)
+            self.cp_weights_du2 = self.cp_weights_du2.to(device)
+            self.cp_weights_dudv = self.cp_weights_dudv.to(device)
+            self.cp_weights_dv2 = self.cp_weights_dv2.to(device)
+            self.indices = self.indices.to(device)
+            self.faces = self.faces.to(device)
+            return self
+
+        def compute_point_weights(self, r: torch.Tensor) -> torch.Tensor:
+            """Compute integration weights for preload points from mesh faces.
+
+            Each triangular face contributes one-third of its area to each vertex.
+            For quad faces, the face is split into two triangles.
+            """
+            faces = self.faces
+            if faces.ndim != 2 or faces.shape[1] not in (3, 4):
+                raise ValueError('PreLoadData.faces must be triangular or quadrilateral connectivity.')
+
+            if faces.shape[1] == 4:
+                triangles = torch.cat([
+                    faces[:, [0, 1, 2]],
+                    faces[:, [0, 2, 3]],
+                ], dim=0)
+            else:
+                triangles = faces
+
+            v0 = r[triangles[:, 0]]
+            v1 = r[triangles[:, 1]]
+            v2 = r[triangles[:, 2]]
+            areas = torch.cross(v1 - v0, v2 - v0, dim=1).norm(dim=1) / 2.0
+
+            weights = torch.zeros(r.shape[0], dtype=areas.dtype, device=r.device)
+            weights = weights.index_add_(0, triangles[:, 0], areas / 3.0)
+            weights = weights.index_add_(0, triangles[:, 1], areas / 3.0)
+            weights = weights.index_add_(0, triangles[:, 2], areas / 3.0)
+            return weights
+
     def __init__(self, *args, **kwargs) -> None:
         """
         Initialize the Surface class.
@@ -627,28 +741,8 @@ class CpBasedInterface(BaseInterface):
 
         self._cps: torch.Tensor
         """Control points tensor."""
-        self._preload_uv: torch.Tensor
-        """Preloaded UV parameters for the surface."""
-        self._indices: torch.Tensor
-        """Indices in the knot vector at each dimension.
-
-            shape: (2, num_pairs)
-                - [0]: indices for the required points
-                - [1]: indices for the control points
-        """
-        self._weights: torch.Tensor
-        """Weights for the control points."""
-        self._weights_du: torch.Tensor
-        """derivative of the weights with respect to the `first` parameter."""
-        self._weights_dv: torch.Tensor
-        """derivative of the weights with respect to the `second` parameter."""
-        self._weights_du2: torch.Tensor
-        """Second derivative of the weights with respect to the `first` parameter."""
-        self._weights_dudv: torch.Tensor
-        """Mixed derivative of the weights with respect to the `first` and `second` parameters."""
-        self._weights_dv2: torch.Tensor
-        """Second derivative of the weights with respect to the `second` parameter."""
-
+        self._preload_data: CpBasedInterface.PreLoadData | None = None
+        """Single container for all preloaded surface evaluation data."""
 
 
     def _map(self, weights: torch.Tensor, indices: torch.Tensor, num_pts: int = None) -> torch.Tensor:
@@ -660,40 +754,79 @@ class CpBasedInterface(BaseInterface):
         for i in range(3):
             result[:, i].scatter_add_(0, indices[0], weights * self._cps[indices[1], i])
         return result
-    
-    def get_r(self):
+
+    def apply_preload_data(self, preload: 'CpBasedInterface.PreLoadData') -> None:
+        """Apply a standardized preload container to the interface."""
+        self._preload_data = preload
+
+    def pre_load(self, *args, **kwargs) -> None:
+        """Preload data for surface evaluation. This method should be called before any geometry evaluation."""
+        self._preload_data = self.get_preloaddata(*args, **kwargs)
+
+    def get_preloaddata(self, pre_points: torch.Tensor | None = None, faces: torch.Tensor | None = None) -> 'CpBasedInterface.PreLoadData':
+        """
+        Create and return preload data for the surface.
+
+        Args:
+            pre_points (torch.Tensor | None): Optional sample points used for preload evaluation.
+            faces (torch.Tensor | None): Optional face connectivity information used for point-weight calculations.
+
+        Returns:
+            CpBasedInterface.PreLoadData: The computed preload data. The returned object must include explicit face connectivity.
+        """
+        raise NotImplementedError("The preload method is not implemented in the CpBasedInterface class. Please implement it in the derived class.")
+
+    @property
+    def preload_data(self) -> 'CpBasedInterface.PreLoadData':
+        if self._preload_data is None:
+            raise RuntimeError('Preload data has not been initialized.')
+        return self._preload_data
+
+    def get_r(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
         """
         Get the point coordinates of the surface.
+
+        Args:
+            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The point coordinates of the surface.
         """
-        return self._map(self._weights, self._indices, num_pts=self._preload_uv.shape[0])
+        preload = preload_data if preload_data is not None else self.preload_data
+        return self._map(preload.cp_weights, preload.indices, num_pts=preload.num_points)
     
-    def get_rdu(self):
+    def get_rdu(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
         """
         Get the first partial derivatives of the surface.
+
+        Args:
+            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The first partial derivatives of the surface.
                 - shape: (num_points, 3, 2), the first derivative with respect to the first parameter and the second parameter.
         """
-        rdu = self._map(self._weights_du, self._indices, num_pts=self._preload_uv.shape[0])
-        rdv = self._map(self._weights_dv, self._indices, num_pts=self._preload_uv.shape[0])
+        preload = preload_data if preload_data is not None else self.preload_data
+        rdu = self._map(preload.cp_weights_du, preload.indices, num_pts=preload.num_points)
+        rdv = self._map(preload.cp_weights_dv, preload.indices, num_pts=preload.num_points)
         return torch.stack([rdu, rdv], dim=2)
     
-    def get_rdu2(self):
+    def get_rdu2(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
         """
         Get the second partial derivatives of the surface.
+
+        Args:
+            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The second partial derivatives of the surface.
                 - shape: (num_points, 3, 2, 2), the second derivative with respect to the first parameter and the second parameter.
         """
 
-        rdu2 = self._map(self._weights_du2, self._indices, num_pts=self._preload_uv.shape[0])
-        rduv = self._map(self._weights_dudv, self._indices, num_pts=self._preload_uv.shape[0])
-        rdv2 = self._map(self._weights_dv2, self._indices, num_pts=self._preload_uv.shape[0])
+        preload = preload_data if preload_data is not None else self.preload_data
+        rdu2 = self._map(preload.cp_weights_du2, preload.indices, num_pts=preload.num_points)
+        rduv = self._map(preload.cp_weights_dudv, preload.indices, num_pts=preload.num_points)
+        rdv2 = self._map(preload.cp_weights_dv2, preload.indices, num_pts=preload.num_points)
         return torch.stack([torch.stack([rdu2, rduv], dim=2),
                             torch.stack([rduv, rdv2], dim=2)], dim=2)
 

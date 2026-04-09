@@ -21,5 +21,5 @@ dependencies = [
     "trimesh>=4.11.5",
     "networkx>=3.6.1",
     "scipy>=1.17.1",
-    "cpgeo>=1.0.4",
+    "cpgeo>=1.0.5",
 ]

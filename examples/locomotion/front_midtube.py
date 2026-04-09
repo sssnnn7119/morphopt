@@ -18,28 +18,22 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-            def obj0(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                return torch.tensor(0.0, device=GC.device)
-            def obj1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                return torch.tensor(0.0, device=GC.device)
-            def obj2(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                return GC[-5]
-            def obj3(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                Uz_neg = self.fe_results[0].GC[-4]
-                Uz_pos = self.fe_results[1].GC[-4]
-                Urot = GC[-2]
-                Pz = GC[-4] + 70.
-                r = Pz / torch.sin(Urot)
-                loss1 = torch.exp(1 - (Uz_pos - Uz_neg)/24)
-                loss2 = torch.exp(1 + Urot / 2.1) * 5
-                loss3 = r
-                
-                print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', self.fe_results[2].GC[-5].item())
-                np.savetxt(f'{morphopt.controller.path_result}/Log/Deformation/{morphopt.controller.history.iteration}.txt', np.array([morphopt.controller.history.iteration, (Uz_pos - Uz_neg).item(), Urot.item(), Pz.item(), r.item(), self.fe_results[2].GC[-5].item()]), fmt='%f', delimiter=',', newline='\n', header='', footer='', comments='# ')
-                
-                return loss1 + loss2 + loss3
 
-            self.objective_functions = [obj0, obj1, obj2, obj3]
+        def objective_function(self):
+            Uz_neg = self.fe_results[0].GC[-4]
+            Uz_pos = self.fe_results[1].GC[-4]
+            force_z = self.fe_results[2].GC[-5]
+            Urot = self.fe_results[3].GC[-2]
+            Pz = self.fe_results[3].GC[-4] + 70.
+            r = Pz / torch.sin(Urot)
+            loss1 = torch.exp(1 - (Uz_pos - Uz_neg) / 24)
+            loss2 = torch.exp(1 + Urot / 2.1) * 5
+            loss3 = r
+
+            print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', force_z.item())
+            np.savetxt(f'{morphopt.controller.path_result}/Log/Deformation/{morphopt.controller.history.iteration}.txt', np.array([morphopt.controller.history.iteration, (Uz_pos - Uz_neg).item(), Urot.item(), Pz.item(), r.item(), force_z.item()]), fmt='%f', delimiter=',', newline='\n', header='', footer='', comments='# ')
+
+            return force_z + loss1 + loss2 + loss3
     
         def get_metrics(self):
             Uz_neg = self.fe_results[0].GC[-4]

@@ -14,10 +14,8 @@ class ThisController(morphopt.Controller):
 
             self.jacobian_needed = ['pressure_1']
 
-            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                return jacobian['pressure_1'][-2, 0]
-
-            self.objective_functions = [objective1]
+        def objective_function(self):
+            return self.fe_results[0].jacobian['pressure_1'][-2, 0]
 
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
@@ -27,7 +25,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=0.8, fea_mesh_order=1, reinitialize_per_iter=5)
+                super().__init__(fea_seed_size=1.2, fea_mesh_order=1, reinitialize_per_iter=5)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=8.,
@@ -36,21 +34,21 @@ class ThisController(morphopt.Controller):
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
                 
-                # self.add_surface(
-                #     self.BSP.initialize_cylinder(r0=4.,
-                #                                     length=74.,
-                #                                     seed_size=1.0,
-                #                                     symmetric=[1, [1]],
-                #                                     init_location=[0, 0, 3],
-                #                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
-                                                flip=True,
-                                                r0=4.,
-                                                init_location=[0., 0., 40.],
-                                                MaxC=1.5,
-                    ))
+                    self.BSP.initialize_cylinder(r0=4.,
+                                                    length=74.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[0, 0, 3],
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+
+                # self.add_surface(
+                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
+                #                                 flip=True,
+                #                                 r0=4.,
+                #                                 init_location=[0., 0., 40.],
+                #                                 MaxC=1.5,
+                #     ))
 
             def apply_surface_constraints(self) -> None:
                 """
@@ -135,4 +133,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=10)

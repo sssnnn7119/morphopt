@@ -22,17 +22,17 @@ class ThisController(morphopt.Controller):
 
         def __init__(self):
             super().__init__()
-            target_displacement = torch.tensor([10.0, 0.0, 120.0])
-            
-            def objective1(GC: torch.Tensor, jacobian: dict[torch.Tensor], assembly: torchfea.Assembly) -> torch.Tensor:
-                end_surf = np.array(list(assembly.get_instance('final_model').sets_nodes['surface_0_Head']))
-                RGC = assembly._GC2RGC(GC)
-                ins_ind = assembly.get_instance('final_model')._RGC_index
-                end_pos = RGC[ins_ind][end_surf].mean(dim=0) + torch.tensor([0., 0., 80.0], device=RGC[0].device)
-                loss0 = (end_pos - target_displacement.to(end_pos.device))**2
-                return loss0.sum()
-                
-            self.objective_functions = [objective1]
+            self.target_displacement = torch.tensor([10.0, 0.0, 120.0])
+
+        def objective_function(self):
+            assembly = self.fe.assembly
+            GC = self.fe_results[0].GC
+            end_surf = np.array(list(assembly.get_instance('final_model').sets_nodes['surface_0_Head']))
+            RGC = assembly._GC2RGC(GC)
+            ins_ind = assembly.get_instance('final_model')._RGC_index
+            end_pos = RGC[ins_ind][end_surf].mean(dim=0) + torch.tensor([0.0, 0.0, 80.0], device=RGC[0].device)
+            loss0 = (end_pos - self.target_displacement.to(end_pos.device))**2
+            return loss0.sum()
             
         def get_metrics(self):
             return []

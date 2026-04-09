@@ -1,6 +1,6 @@
 
-
 from scipy import interpolate
+import numpy as np
 import torch
 from .basefuncs import BaseConstraints
 import morphopt
@@ -14,17 +14,21 @@ class ShapeDerivativeDisplacement(BaseConstraints):
 
         super().__init__()
 
-        self._r0: list[torch.Tensor] = []
+        self._cp0: list[torch.Tensor] = []
         """
-        Initial reference configuration.
+        Initial control points of the surfaces, used for computing the shape derivative as the inner product of the change in control points and the sensitivity.
+        """
+
+        self.gradient: list[torch.Tensor] = []
+        """Gradient of the shape derivative with respect to the control points, computed in the initialize function.
         """
 
     def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], *args, **kwargs):
 
+
         objfun = morphopt.controller.objfun
         fe = objfun.fe
 
-        self._r0 = [r0[i].detach().clone() for i in range(len(r0))]
 
         part = fe.assembly.get_part('final_model')
         
@@ -32,6 +36,42 @@ class ShapeDerivativeDisplacement(BaseConstraints):
 
         self.sensitivity = self._sensitivity_interpolation(Ldot=gradient, points_request=part.nodes, interpolated_points=interpolate_points)
 
+
+        geoparams = morphopt.controller.params.geometry
+        sflist: list[morphopt.GeometryParams.CpBasedInterface] = geoparams.surface_list
+        assembly = morphopt.controller.objfun.fe.assembly
+
+        self._cp0 = []
+        for sf_idx in range(geoparams.num_surface):
+            cp0_sf = sflist[sf_idx]._cps.detach().clone()
+            self._cp0.append(cp0_sf)
+        
+        var = torch.zeros_like(geoparams.get_variables()).requires_grad_(True)
+        
+        p0 = geoparams.get_parameters()
+
+        geoparams.update_variables(x_change=var,
+                                max_step_length=torch.ones([geoparams.num_surface, 1]) * np.pi / 2)
+        nodes0 = assembly._parts['final_model'].nodes.detach().clone()
+        nodes_new = nodes0.clone().detach()
+
+        for sf_idx in range(geoparams.num_surface):
+            
+            surf_node_idx = sflist[sf_idx].surf_node_idx
+            node_update = sflist[sf_idx].map(torch.from_numpy(sflist[sf_idx].surf_node_uv))
+            nodes_new[surf_node_idx] = node_update
+        
+        loss = (nodes_new - nodes0) * gradient
+        loss = loss.sum()
+        
+
+        self.gradient = []
+        for sf_idx in range(geoparams.num_surface):
+            grad_sf = torch.autograd.grad(loss, sflist[sf_idx]._cps, retain_graph=True)[0].detach().clone()
+            self.gradient.append(grad_sf)
+
+        loss.backward()
+        geoparams.set_parameters(p0)
     
     def show_sensitivity(self, ind: int) -> None:
         """
@@ -87,12 +127,15 @@ class ShapeDerivativeDisplacement(BaseConstraints):
     def __call__(self, r: list[torch.Tensor], *args, **kwargs):
         loss_objective = 0.0
 
-        for i in range(len(self.sensitivity)):
+        surflist: list[morphopt.GeometryParams.CpBasedInterface] = morphopt.controller.params.geometry.surface_list
+
+        for i in range(len(surflist)):
             # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
             # Compute inner product: sum over all points and dimensions
-            loss_objective += ((r[i] - self._r0[i]) * self.sensitivity[i]).sum()
+            loss_objective += ((surflist[i]._cps - self._cp0[i]) * self.gradient[i]).sum()
 
         return loss_objective
+
 
     def _get_interpolate_points(self, *args, **kwargs):
         """
