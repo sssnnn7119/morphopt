@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -19,7 +19,7 @@ def get_surface_volume(assembly: torchfea.Assembly):
     p0,p1,p2 = surfnodes[surfelems[:,0]], surfnodes[surfelems[:,1]], surfnodes[surfelems[:,2]]
     normals = torch.cross(p1-p0, p2-p0, dim=1)
     vol = (torch.sum(normals * p0, dim=1).abs() / 6.0).sum()
-    # 如果希望体积与 RP 变形相关可用 U1 作为权重
+    # 濡傛灉甯屾湜浣撶Н涓?RP 鍙樺舰鐩稿叧鍙敤 U1 浣滀负鏉冮噸
     return vol
 
 class ThisController(morphopt.Controller):
@@ -196,7 +196,7 @@ class ThisController(morphopt.Controller):
         class UpdaterSurfaces(morphopt.UpdaterGeometries):
             def __init__(self, params: morphopt.Params):
                 super().__init__(params=params, max_step_iter=50)
-                shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
+                shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=np.ones([params.geometry.num_surface, params.geometry.num_surface]) * 2.5))
@@ -205,3 +205,4 @@ class ThisController(morphopt.Controller):
 
 if __name__ == '__main__':
     morphopt.start_optimization(device='cuda:0')
+

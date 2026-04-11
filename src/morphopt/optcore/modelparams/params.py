@@ -112,7 +112,7 @@ class Params(BaseObject):
         """
         self.geometry.load(foldpath=foldpath, iteration=iteration)
         # self.feamodel.load(foldpath=foldpath, iteration=iteration)
-        # self.materials.load(foldpath=foldpath, iteration=iteration)
+        self.materials.load(foldpath=foldpath, iteration=iteration)
 
     def export_data(self, filepath: str):
         """

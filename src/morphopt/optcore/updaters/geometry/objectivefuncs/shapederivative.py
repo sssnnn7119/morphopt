@@ -1,11 +1,11 @@
-
+﻿
 from scipy import interpolate
 import numpy as np
 import torch
-from .basefuncs import BaseConstraints
+from .basefuncs import BaseObjective
 import morphopt
 
-class ShapeDerivativeDisplacement(BaseConstraints):
+class ShapeDerivative(BaseObjective):
     """
     Shape derivative for contact forces.
     """
@@ -34,7 +34,7 @@ class ShapeDerivativeDisplacement(BaseConstraints):
         
         interpolate_points = self._get_interpolate_points()
 
-        self.sensitivity = self._sensitivity_interpolation(Ldot=gradient, points_request=part.nodes, interpolated_points=interpolate_points)
+        self.sensitivity = self._sensitivity_interpolation(Ldot=gradient.reshape_as(part.nodes), points_request=part.nodes, interpolated_points=interpolate_points)
 
 
         geoparams = morphopt.controller.params.geometry
@@ -61,7 +61,7 @@ class ShapeDerivativeDisplacement(BaseConstraints):
             node_update = sflist[sf_idx].map(torch.from_numpy(sflist[sf_idx].surf_node_uv))
             nodes_new[surf_node_idx] = node_update
         
-        loss = (nodes_new - nodes0) * gradient
+        loss = (nodes_new - nodes0) * gradient.reshape_as(part.nodes)
         loss = loss.sum()
         
 
@@ -195,3 +195,4 @@ class ShapeDerivativeDisplacement(BaseConstraints):
                 output_senNodes[-1][:, i] = torch.tensor((Part_B).tolist())
 
         return output_senNodes
+

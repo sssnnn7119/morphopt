@@ -1,5 +1,3 @@
-import torch
-from torch._refs import to
 
 import torchfea
 from ..base_params import BaseParams
@@ -85,15 +83,6 @@ class Materials(BaseParams):
             value (float): The new density.
         """
         self._density = float(value)
-
-    def get_ratio(self, nodes: torch.Tensor) -> float:
-        """
-        Get the ratio of maximum to minimum modulus.
-        
-        Returns:
-            float: The ratio of maximum to minimum modulus.
-        """
-        return 1.0
 
     def set_materials(self, fe: torchfea.FEAController) -> None:
         """

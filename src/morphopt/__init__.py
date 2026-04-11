@@ -1,8 +1,9 @@
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import GeometryParams, FEAParams, Materials
+from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMPMaterials
 from .optcore.solver import MorphSolver
 from .optcore.updaters.geometry import UpdaterGeometries
+from .optcore.updaters.materials import UpdaterMaterials
 from .optcore.updaters.updaters import Updaters
 from .optcore.modelparams import Params
 from .optcore.objfunc import ObjectiveFunction
@@ -24,6 +25,7 @@ __all__ = [
     "Materials",
     "MorphSolver",
     "UpdaterGeometries",
+    "UpdaterMaterials",
     "Updaters",
     "Params",
     "ObjectiveFunction",

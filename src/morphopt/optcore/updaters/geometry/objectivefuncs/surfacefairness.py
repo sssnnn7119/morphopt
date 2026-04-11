@@ -1,13 +1,13 @@
-import torch
+﻿import torch
 from .basefuncs import BaseConstraints
 from ....modelparams import GeometryParams
-from . import ShapeDerivativeDisplacement
+from . import ShapeDerivative
 class Fairness(BaseConstraints):
     """
     Fairness objective function for MorphOpt.
     """
 
-    def __init__(self, surfaces: GeometryParams, sensitivity: ShapeDerivativeDisplacement):
+    def __init__(self, surfaces: GeometryParams, sensitivity: ShapeDerivative):
         """
         Initialize the fairness objective function with a name.
         """

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -71,20 +71,20 @@ class ThisController(morphopt.Controller):
 
             def _get_all_r(self, rinit: torch.Tensor, flip: bool):
                 """
-                强制 U 方向满足 ROTATIONPERIOD 的旋转对称，并额外保证关于 xz 平面的轴对称：
-                U 正序与倒序列的 x,z 相同，y 互为相反数。
-                期望 rinit 形状为 [Nv, Nu, 3]，Nu 为 ROTATIONPERIOD 的整数倍。
+                寮哄埗 U 鏂瑰悜婊¤冻 ROTATIONPERIOD 鐨勬棆杞绉帮紝骞堕澶栦繚璇佸叧浜?xz 骞抽潰鐨勮酱瀵圭О锛?
+                U 姝ｅ簭涓庡€掑簭鍒楃殑 x,z 鐩稿悓锛寉 浜掍负鐩稿弽鏁般€?
+                鏈熸湜 rinit 褰㈢姸涓?[Nv, Nu, 3]锛孨u 涓?ROTATIONPERIOD 鐨勬暣鏁板€嶃€?
                 """
                 rout = rinit.clone()
 
                 if rout.dim() != 3 or rout.size(2) < 3:
-                    raise ValueError("control_points 需要形状 [Nv, Nu, 3]")
+                    raise ValueError("control_points 闇€瑕佸舰鐘?[Nv, Nu, 3]")
 
                 Nu = rout.shape[1]
                 if Nu % ROTATIONPERIOD != 0:
-                    raise ValueError(f"U 方向长度 Nu={Nu} 不是 ROTATIONPERIOD={ROTATIONPERIOD} 的倍数")
+                    raise ValueError(f"U 鏂瑰悜闀垮害 Nu={Nu} 涓嶆槸 ROTATIONPERIOD={ROTATIONPERIOD} 鐨勫€嶆暟")
 
-                # 旋转对称复制（按每个周期列 i 为基准）
+                # 鏃嬭浆瀵圭О澶嶅埗锛堟寜姣忎釜鍛ㄦ湡鍒?i 涓哄熀鍑嗭級
                 for i in range(ROTATIONPERIOD):
                     x0 = rinit[:, i, 0]
                     y0 = rinit[:, i, 1]
@@ -104,13 +104,13 @@ class ThisController(morphopt.Controller):
                     z_all = z0.unsqueeze(1).repeat(1, len(index_check))
                     rout[:, index_check] = torch.stack([x_all, y_all, z_all], dim=-1)
 
-                # 轴对称（关于 xz 平面）：U 正序与倒序一致，y 为相反数
-                # 将后半段镜像为前半段，保持自洽
+                # 杞村绉帮紙鍏充簬 xz 骞抽潰锛夛細U 姝ｅ簭涓庡€掑簭涓€鑷达紝y 涓虹浉鍙嶆暟
+                # 灏嗗悗鍗婃闀滃儚涓哄墠鍗婃锛屼繚鎸佽嚜娲?
                 rout[:, :, 0] = (rout[:, :, 0] + rout[:, :, 0].flip(dims=[1])) / 2
                 rout[:, :, 2] = (rout[:, :, 2] + rout[:, :, 2].flip(dims=[1])) / 2
                 rout[:, :, 1] = (rout[:, :, 1] - rout[:, :, 1].flip(dims=[1])) / 2
 
-                # 轴对称 （关于z=25平面）
+                # 杞村绉?锛堝叧浜巣=25骞抽潰锛?
                 rout[:, :, 0] = (rout[:, :, 0] + rout[:, :, 0].flip(dims=[0])) / 2
                 rout[:, :, 1] = (rout[:, :, 1] + rout[:, :, 1].flip(dims=[0])) / 2
                 rout[:, :, 2] = (rout[:, :, 2] - (rout[:, :, 2].flip(dims=[0]) - 50)) / 2
@@ -202,7 +202,7 @@ class ThisController(morphopt.Controller):
                     params=params,
                     max_step_iter=50, max_step_length=0.4)
 
-                shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
+                shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
@@ -216,3 +216,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
     morphopt.start_optimization(device='cuda:0')
+

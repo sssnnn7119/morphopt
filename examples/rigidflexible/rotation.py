@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 from torch.nn.modules import loss
@@ -194,7 +194,7 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     params=params)
 
-                shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
+                shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
@@ -211,3 +211,4 @@ class ThisController(morphopt.Controller):
                 self.if_update = [False, True, True, True, True]
 if __name__ == '__main__':
     morphopt.start_optimization(device='cuda')
+

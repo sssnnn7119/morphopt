@@ -739,12 +739,12 @@ class GeometryParams(BaseParams):
         Returns:
             torch.Tensor: The design sensitivity variables.
         """
-        return assembly.get_part("final_model").nodes.clone().detach()
+        return assembly.get_part("final_model").nodes.clone().detach().flatten()
 
-    def modify_assembly(self, geometry_params: torch.Tensor, assembly: torchfea.Assembly) -> None:
+    def modify_assembly(self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly) -> None:
         """
         Modify the assembly for sensitivity analysis.
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
         """
-        assembly.get_part("final_model").nodes = geometry_params
+        assembly.get_part("final_model").nodes = design_sensitivity_vars.reshape_as(assembly.get_part("final_model").nodes)
         

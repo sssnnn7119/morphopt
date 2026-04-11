@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 import FEA
@@ -240,7 +240,7 @@ class ThisController(morphopt.Controller):
                     params=params,
                     max_step_iter=50)
 
-                shape_derivative = self.objectivefuncs.ShapeDerivativeDisplacement()
+                shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
@@ -253,3 +253,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
     morphopt.start_optimization(Controller=ThisController, device='cuda:0')
+
