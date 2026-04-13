@@ -45,6 +45,9 @@ class BaseInterface():
         """the (u, v) coordinates of the surface nodes."""
         
 
+
+        self.flip: bool = False
+        
     def map(self, uv: torch.Tensor) -> torch.Tensor:
         """
         Map from UV space to 3D space using the surface model.
@@ -56,6 +59,18 @@ class BaseInterface():
             torch.Tensor: The corresponding 3D coordinates in the physical space.
         """
         raise NotImplementedError("The map method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+
+    def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
+        """
+        Get the normals of the surface at the given UV coordinates.
+
+        Parameters:
+            uv (torch.Tensor): The UV coordinates to get the normals.
+
+        Returns:
+            torch.Tensor: The normals of the surface at the given UV coordinates.
+        """
+        raise NotImplementedError("The get_normals method is not implemented in the BaseInterface class. Please implement it in the derived class.")
 
     def initialize(self) -> None:
         """
@@ -809,6 +824,9 @@ class CpBasedInterface(BaseInterface):
         preload = preload_data if preload_data is not None else self.preload_data
         rdu = self._map(preload.cp_weights_du, preload.indices, num_pts=preload.num_points)
         rdv = self._map(preload.cp_weights_dv, preload.indices, num_pts=preload.num_points)
+
+        if not self.flip:
+            rdu = -rdu
         return torch.stack([rdu, rdv], dim=2)
     
     def get_rdu2(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
@@ -827,6 +845,9 @@ class CpBasedInterface(BaseInterface):
         rdu2 = self._map(preload.cp_weights_du2, preload.indices, num_pts=preload.num_points)
         rduv = self._map(preload.cp_weights_dudv, preload.indices, num_pts=preload.num_points)
         rdv2 = self._map(preload.cp_weights_dv2, preload.indices, num_pts=preload.num_points)
+
+        if not self.flip:
+            rduv = -rduv
         return torch.stack([torch.stack([rdu2, rduv], dim=2),
                             torch.stack([rduv, rdv2], dim=2)], dim=2)
 

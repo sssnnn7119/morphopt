@@ -1,3 +1,3 @@
-from .materialparams import Materials
+from .homogeneousmaterial import Materials
 
 from .simpmaterial import SIMPMaterials

@@ -21,6 +21,7 @@ class SIMPMaterials(BaseParams):
                  simp_field_resolution: float,
                  degree: int,
                  density: float,
+                 initial_ratio: float = 0.5
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -33,6 +34,7 @@ class SIMPMaterials(BaseParams):
             simp_field_resolution (float): The resolution of the SIMP field, specified as the size of each voxel in the field.
             degree (int): The degree of the B-spline basis functions.
             density (float): The density of the material.
+            initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
         """
         super().__init__()
         self._mumax: float = float(mumax)
@@ -87,6 +89,10 @@ class SIMPMaterials(BaseParams):
         The control points of the BSP field for SIMP interpolation. This will be initialized in the `initialize` method.
         """
 
+        self._initial_ratio: float = float(initial_ratio)
+        """ The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
+        """
+
     def pathlog_required(self) -> list[str]:
         return ['materials']
 
@@ -96,7 +102,7 @@ class SIMPMaterials(BaseParams):
 
 
 
-        R0 = torch.ones([self._bsp_size[0], self._bsp_size[1], self._bsp_size[2], 1]) * 0.5
+        R0 = torch.ones([self._bsp_size[0], self._bsp_size[1], self._bsp_size[2], 1]) * self._initial_ratio
 
         basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
         basis_y = bspmap.BasisClamped(num_cps=self._bsp_size[1], degree=self._degree)
@@ -115,8 +121,9 @@ class SIMPMaterials(BaseParams):
 
     def reinitialize(self, iteration, *args, **kwargs):
         super().reinitialize(iteration, *args, **kwargs)
-
+        self._cps = torch.clamp(self._cps, 0.0, 1.0)
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
+
 
     def get_control_points_list(self) -> list[torch.Tensor]:
         return [self._cps.detach().clone()]
@@ -193,6 +200,7 @@ class SIMPMaterials(BaseParams):
         
         result = torch.zeros([num_pts, 1], dtype=self._cps.dtype, device=nodes.device)
         result[:, 0].scatter_add_(0, indices[0], weights * self._cps[indices[1], 0])
+
         return result
     
     def get_ratio_with_spatial_derivative(self, nodes: torch.Tensor) -> torch.Tensor:
@@ -255,10 +263,14 @@ class SIMPMaterials(BaseParams):
 
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
 
-        elements = fe.assembly.get_part('final_model').elems['element-0']
-        elements.initialize()
+        elements = fe.assembly.get_part('final_model').elems['C3D4']
 
-        gaussian_points_locations = self._get_gaussian_points(fe.assembly)
+        elems = elements._elems
+        nodes = fe.assembly.get_part('final_model').nodes
+
+        gaussian_points_locations = torch.zeros([1, elems.shape[0], 3], dtype=nodes.dtype, device=nodes.device)
+        for i in range(4):
+            gaussian_points_locations[0] += nodes[elems[:, i]] / 4
 
         shape_gaussian = gaussian_points_locations.shape
         gaussian_points_locations = gaussian_points_locations.reshape([-1, 3])
@@ -300,8 +312,8 @@ class SIMPMaterials(BaseParams):
 
 
         
-        assembly.get_part("final_model").elems['element-0'].materials._mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
-        assembly.get_part("final_model").elems['element-0'].materials._kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials._mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials._kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
 
     def save(self, foldpath: str, iteration: int) -> None:
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
@@ -425,6 +437,6 @@ class SIMPMaterials(BaseParams):
         Returns:
             torch.Tensor: The normalized Gaussian points.
         """
-        gaussian_points_locations = assembly.get_part('final_model').elems['element-0'].get_gaussian_points(assembly.get_part('final_model').nodes)
+        gaussian_points_locations = assembly.get_part('final_model').elems['C3D4'].get_gaussian_points(assembly.get_part('final_model').nodes)
 
         return gaussian_points_locations

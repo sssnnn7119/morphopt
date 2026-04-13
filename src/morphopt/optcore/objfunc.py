@@ -2,6 +2,7 @@ import math
 import re
 import torchfea
 import torch
+from torchfea import controller
 import morphopt
 
 from .baseobject import BaseObject
@@ -162,6 +163,9 @@ class ObjectiveFunction(BaseObject):
             )
         
         design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
+        
+        
+        morphopt.controller._detach_recursive(morphopt.controller)
         return design_gradients_dict
 
     @property

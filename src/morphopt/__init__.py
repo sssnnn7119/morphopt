@@ -13,8 +13,9 @@ from .optcore.baseobject import BaseObject
 
 from .opt_runner import start_optimization, debug_optimization, view_optimization_result
 
-
-
+# region codesign imports
+from . import codesign
+# endregion
 
 controller: Controller = None
 
@@ -29,5 +30,13 @@ __all__ = [
     "Updaters",
     "Params",
     "ObjectiveFunction",
+    "History",
+    "BaseObject",
+
+    "start_optimization",
+    "debug_optimization",
+    "view_optimization_result",
+
+    'codesign',
 ]
 

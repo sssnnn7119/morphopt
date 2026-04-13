@@ -3,9 +3,9 @@ from torchfea import Assembly
 
 import torch
 from ..baseobject import BaseObject
-from .feamodel.feaparams import FEAParams
-from .geometry.geometryparams import GeometryParams
-from .materials.materialparams import Materials
+from .feamodel import FEAParams
+from .geometry import GeometryParams
+from .materials import Materials
 class Params(BaseObject):
     """
     Class to handle the parameters of the model.

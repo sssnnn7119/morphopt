@@ -1,4 +1,5 @@
 ﻿
+
 import morphopt
 import torch
 mumax = 4.82
@@ -12,9 +13,10 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
+            self.jacobian_needed = ['force_1']
 
         def get_volume_fraction(self):
-            elems = self.fe.assembly._parts['final_model'].elems['element-0']
+            elems = self.fe.assembly._parts['final_model'].elems['C3D4']
 
             materials = elems.materials
 
@@ -35,40 +37,43 @@ class ThisController(morphopt.Controller):
 
             vol_fraction = self.get_volume_fraction()
 
-            return self.fe_results[0].GC[-6] + (vol_fraction - 0.4) ** 2 * 10
+            end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
+
+            return self.fe_results[0].GC[-2] + torch.sqrt(end_compliance[1,1]**2 + end_compliance[2,2]**2)
 
         def get_metrics(self):
-            return [self.fe_results[0].GC[-6], self.get_volume_fraction()]
+
+            end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
+            return [self.fe_results[0].GC[-2], 
+                    end_compliance[1,1], 
+                    end_compliance[2,2],
+                    self.get_volume_fraction()]
 
     class Params(morphopt.Params):
-        class GeometryParams(morphopt.GeometryParams):
+        class GeometryParams(morphopt.codesign.CodesignGeometry):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.2, fea_mesh_order=1, reinitialize_per_iter=5)
+                super().__init__(fea_seed_size=1.2, 
+                                 fea_mesh_order=1, 
+                                 reinitialize_per_iter=5,
+                                 thickness=1.5,
+                                 num_layers=2,)
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=12.,
-                                                    length=80.,
+                    self.BSP.initialize_cylinder(r0=20.,
+                                                    length=40.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
-                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-                
-                # self.add_surface(
-                #     self.BSP.initialize_cylinder(r0=6.,
-                #                                     length=74.,
-                #                                     seed_size=1.0,
-                #                                     symmetric=[1, [1]],
-                #                                     init_location=[0, 0, 3],
-                #                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
-                # self.add_surface(
-                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
-                #                                 flip=True,
-                #                                 r0=4.,
-                #                                 init_location=[0., 0., 40.],
-                #                                 MaxC=1.5,
-                #     ))
+                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
+ 
+                self.add_surface(
+                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                                                flip=True,
+                                                r0=10.,
+                                                init_location=[0., 0., 20.],
+                                                MaxC=1.5,
+                    ))
 
             def apply_surface_constraints(self) -> None:
                 """
@@ -82,34 +87,38 @@ class ThisController(morphopt.Controller):
                 cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
 
 
-        class FEAParams(morphopt.FEAParams):
+        class FEAParams(morphopt.codesign.CodesignFEAParams):
 
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 40.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
-                # self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'),
-                #                         name='pressure_1')
+                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
+                                        name='pressure_1')
                 self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
 
             def define_steps(self):
                 self.set_step_num(1)
-                # self.set_step_params(0, "pressure_1", [0.06])
-                self.set_step_params(0, "force_1", [1., 0., -0.])
+                self.set_step_params(0, "pressure_1", [0.06])
+                # self.set_step_params(0, "force_1", [1., 0., -0.])
                 
 
-        class MaterialParams(morphopt.SIMPMaterials):
+        class MaterialParams(morphopt.codesign.CodesignMaterials):
             
             def __init__(self):
                 super().__init__(mumax=4.82, 
                                  kappamax=48, 
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
-                                 bounding_box=[-15, 15, -15, 15, 0, 80], 
+                                 initial_ratio=0.01,
+                                 bounding_box=[-25, 25, -25, 25, 0, 40], 
                                  simp_field_resolution=1.0, 
-                                 degree=3)
+                                 degree=3,
+                                 shell_mu=0.48,
+                                 shell_kappa=4.8,
+                                 shell_density=1.08e-9)
         
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
@@ -146,7 +155,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(
                     params=params,
-                    max_step_iter=50)
+                    max_step_iter=100)
 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
@@ -155,11 +164,14 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
                                                                 [[2.5, 2.5],
-                                                                [2.5, 2.5]]))
+                                                                [2.5, 2.0]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=20., height=40., bottom=0.))
+                
+                self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
+                self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
 
-                self.if_update = [False, False]
+                self.if_update = [False, True]
 
         class UpdaterMaterials(morphopt.UpdaterMaterials):
             """

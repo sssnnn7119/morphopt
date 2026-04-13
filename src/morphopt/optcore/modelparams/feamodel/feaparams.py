@@ -171,14 +171,15 @@ class FEAParams(BaseParams):
         index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
         part.set_nodes['surface_0_Head'] = index_head
 
-        elems = inp.part['final_model'].elems['C3D4'][:, 1:]
-        elems_index = inp.part['final_model'].elems['C3D4'][:, 0]
-        element = torchfea.elements.initialize_element(element_type='C3D4',
-                                                    elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
-                                                    elems=torch.from_numpy(elems).to(torch.get_default_device()), 
-                                                    part=part)
+        for key in inp.part['final_model'].elems.keys():
+            elems = inp.part['final_model'].elems[key][:, 1:]
+            elems_index = inp.part['final_model'].elems[key][:, 0]
+            element = torchfea.elements.initialize_element(element_type=key,
+                                                        elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
+                                                        elems=torch.from_numpy(elems).to(torch.get_default_device()), 
+                                                        part=part)
 
-        part.add_element(element)
+            part.add_element(element, name=key)
 
         assembly = torchfea.Assembly()
         assembly.add_part(part=part, name='final_model')

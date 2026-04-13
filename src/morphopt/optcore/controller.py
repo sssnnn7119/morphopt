@@ -308,7 +308,7 @@ class Controller:
         self.history.append('objective', loss.item())
         self.history.append('metrics', self.objfun.get_metrics())
         self.history.append('time', [t1-t0, t2-t1, t3-t2])
-        self.history.append('num_elements', self.objfun.fe.assembly.get_instance('final_model').elems['element-0']._elems.shape[0])
+        self.history.append('num_elements', sum([elem._elems.shape[0] for elem in self.objfun.fe.assembly.get_instance('final_model').elems.values()]))
         self.history.append('num_nodes', self.objfun.fe.assembly.get_instance('final_model').nodes.shape[0])
 
     def print_info(self, t0, t1, t2, t3) -> None:
@@ -433,7 +433,7 @@ class Controller:
             # Iterate over a copy of items to avoid modification issues
             for k, v in list(obj.__dict__.items()):
                 if k.startswith('__'): continue 
-                if isinstance(v, torch.Tensor):
+                if isinstance(v, torch.Tensor) and v.requires_grad:
                     setattr(obj, k, v.detach())
                 else:
                     cls._detach_recursive(v, visited)

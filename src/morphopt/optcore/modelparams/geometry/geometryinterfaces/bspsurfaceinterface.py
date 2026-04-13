@@ -408,7 +408,6 @@ class BspInterface(CpBasedInterface):
 
         self.init_size = init_size
 
-        self.flip: bool = False
 
         self.rr_compensation: torch.Tensor
 
@@ -426,6 +425,22 @@ class BspInterface(CpBasedInterface):
 
 
         return self._map(torch.from_numpy(weights).to(torch.get_default_device()).flatten(), indices, num_pts=uv.shape[0])
+
+    def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
+        """Get the normals of the surface at the given UV coordinates."""
+        uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
+        weightsdu, indices = self.model.get_weights(uv_np, derivative=[1,0])
+        weightsdv, _ = self.model.get_weights(uv_np, derivative=[0,1])
+
+        indices_cps = torch.from_numpy(indices).to(torch.get_default_device()).reshape([uv.shape[0], -1])
+        indices_pts = torch.arange(uv.shape[0], device=torch.get_default_device()).reshape([-1,1]).repeat(1, indices_cps.shape[1])
+        indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
+
+        rdu = self._map(torch.from_numpy(weightsdu).to(torch.get_default_device()).flatten(), indices, num_pts=uv.shape[0])
+        rdv = self._map(torch.from_numpy(weightsdv).to(torch.get_default_device()).flatten(), indices, num_pts=uv.shape[0])
+        normals = torch.cross(rdv, rdu, dim=1)
+        normals = normals / torch.norm(normals, dim=1, keepdim=True)
+        return normals * (1 if self.flip else -1)
 
     def initialize(self):
 

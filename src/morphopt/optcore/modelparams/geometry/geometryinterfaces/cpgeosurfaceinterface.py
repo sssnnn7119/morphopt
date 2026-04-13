@@ -1,7 +1,9 @@
 
 import os
 import sys
+import cpgeo.utils
 import numpy as np
+from scipy.datasets import face
 import torch
 import gmsh
 
@@ -37,6 +39,7 @@ class CPGEOInterface(CpBasedInterface):
         """Map from UV space to 3D space using the CPGEO model."""
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
         indices_cps, indices_pts, w = self.model.get_weights2(uv_np)
+        w = torch.from_numpy(w).to(torch.get_default_device()).flatten()
         indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
         indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
 
@@ -49,6 +52,32 @@ class CPGEOInterface(CpBasedInterface):
         indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
         return self._map(w, indices, num_pts=uv.shape[0])
 
+    def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
+        """Compute normals at given UV coordinates using the CPGEO model."""
+        uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
+        indices_cps, indices_pts, w, wdu = self.model.get_weights2(uv_np, derivative=1)
+
+        wdu = torch.from_numpy(wdu).to(torch.get_default_device())
+        indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
+        indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
+
+        weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
+        indices_pts_t = torch.repeat_interleave(
+            torch.arange(uv.shape[0], dtype=torch.long,
+                         device=torch.get_default_device()),
+            weights_per_query)
+
+        indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
+
+        rdu = self._map(wdu[0], indices, num_pts=uv.shape[0])
+        rdv = self._map(wdu[1], indices, num_pts=uv.shape[0])
+
+        normals = torch.cross(rdv, rdu, dim=1)
+        normals = normals / torch.norm(normals, dim=1, keepdim=True)
+
+        return normals * (1 if self.flip else -1)
+        
+
     def initialize(self):
         """Initialize the CPGEO model and preload knot points for evaluation."""
         
@@ -56,9 +85,10 @@ class CPGEOInterface(CpBasedInterface):
         self.model.initialize()
 
     def reinitialize(self):
+
         
         self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
-        
+
         # Load control points into torch tensor
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
         
@@ -79,10 +109,20 @@ class CPGEOInterface(CpBasedInterface):
             faces_np = faces.detach().cpu().numpy()
         else:
             # Use mesh vertices directly as preload points for CPGEO.
-            preload_uv3 = self.model._knots
+            uv3_0 = self.model._knots
+            faces_0 = self.model._cp_faces
+            edges = cpgeo.utils.capi.get_mesh_edges(faces_0)
+
+            uv3_extra = (uv3_0[edges[:, 0]] + uv3_0[edges[:, 1]]) / 2
+            uv3_extra = uv3_extra / np.linalg.norm(uv3_extra, axis=1, keepdims=True)
+
+            preload_uv3 = np.vstack([uv3_0, uv3_extra])
+
             preload_uv = torch.from_numpy(self.model.reference_to_curvilinear(preload_uv3)).to(torch.get_default_device())
-            input_points = self.model._knots
-            faces_np = self.model._cp_faces
+            input_points = preload_uv.cpu().numpy()
+
+
+            faces_np = cpgeo.utils.capi.get_sphere_triangulation(preload_uv3)
 
 
         # Precompute weights for vertex evaluation points (derivative 0, 1, 2)

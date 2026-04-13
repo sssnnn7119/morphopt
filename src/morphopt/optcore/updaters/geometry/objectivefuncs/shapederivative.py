@@ -34,45 +34,25 @@ class ShapeDerivative(BaseObjective):
         
         interpolate_points = self._get_interpolate_points()
 
-        self.sensitivity = self._sensitivity_interpolation(Ldot=gradient.reshape_as(part.nodes), points_request=part.nodes, interpolated_points=interpolate_points)
-
 
         geoparams = morphopt.controller.params.geometry
         sflist: list[morphopt.GeometryParams.CpBasedInterface] = geoparams.surface_list
         assembly = morphopt.controller.objfun.fe.assembly
 
         self._cp0 = []
-        for sf_idx in range(geoparams.num_surface):
-            cp0_sf = sflist[sf_idx]._cps.detach().clone()
-            self._cp0.append(cp0_sf)
-        
-        var = torch.zeros_like(geoparams.get_variables()).requires_grad_(True)
-        
-        p0 = geoparams.get_parameters()
-
-        geoparams.update_variables(x_change=var,
-                                max_step_length=torch.ones([geoparams.num_surface, 1]) * np.pi / 2)
-        nodes0 = assembly._parts['final_model'].nodes.detach().clone()
-        nodes_new = nodes0.clone().detach()
-
-        for sf_idx in range(geoparams.num_surface):
-            
-            surf_node_idx = sflist[sf_idx].surf_node_idx
-            node_update = sflist[sf_idx].map(torch.from_numpy(sflist[sf_idx].surf_node_uv))
-            nodes_new[surf_node_idx] = node_update
-        
-        loss = (nodes_new - nodes0) * gradient.reshape_as(part.nodes)
-        loss = loss.sum()
-        
-
+        ptidx = 0
         self.gradient = []
         for sf_idx in range(geoparams.num_surface):
-            grad_sf = torch.autograd.grad(loss, sflist[sf_idx]._cps, retain_graph=True)[0].detach().clone()
-            self.gradient.append(grad_sf)
+            cp0_sf = sflist[sf_idx]._cps.detach().clone().reshape(-1, 3)
+            self._cp0.append(cp0_sf)
+            self.gradient.append(gradient[ptidx:ptidx + cp0_sf.numel()].reshape_as(cp0_sf))
+            ptidx += cp0_sf.numel()
 
-        loss.backward()
-        geoparams.set_parameters(p0)
-    
+        self.sensitivity = self._sensitivity_interpolation(Ldot=gradient.reshape([-1, 3]), 
+                                                           points_request=torch.cat(self._cp0, dim=0).reshape([-1, 3]),
+                                                           interpolated_points=interpolate_points)
+
+
     def show_sensitivity(self, ind: int) -> None:
         """
         Show the shape sensitivity

@@ -355,7 +355,7 @@ class GeometryParams(BaseParams):
         """
         super().__init__()
 
-        self.surface_list: list[BaseInterface] = []
+        self.surface_list: list[GeometryParams.CpBasedInterface] = []
         """
         List of surface objects.
         """
@@ -739,12 +739,34 @@ class GeometryParams(BaseParams):
         Returns:
             torch.Tensor: The design sensitivity variables.
         """
-        return assembly.get_part("final_model").nodes.clone().detach().flatten()
+
+
+        cps_list = []
+        for sfidx in range(self.num_surface):
+            cps_list.append(self.surface_list[sfidx]._cps.flatten())
+        
+        cps = torch.cat(cps_list, dim=0).detach()
+
+        return cps
 
     def modify_assembly(self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly) -> None:
         """
         Modify the assembly for sensitivity analysis.
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
         """
-        assembly.get_part("final_model").nodes = design_sensitivity_vars.reshape_as(assembly.get_part("final_model").nodes)
+
+        nodes0 = assembly._parts['final_model'].nodes
+        nodes_new = nodes0.clone()
+
+        varidx = 0
+        for sf_idx in range(self.num_surface):
+            
+            self.surface_list[sf_idx]._cps = design_sensitivity_vars[varidx:varidx+self.surface_list[sf_idx].num_variables].reshape_as(self.surface_list[sf_idx]._cps)
+            varidx += self.surface_list[sf_idx].num_variables
+
+            surf_node_idx = self.surface_list[sf_idx].surf_node_idx
+            node_update = self.surface_list[sf_idx].map(torch.from_numpy(self.surface_list[sf_idx].surf_node_uv))
+            nodes_new[surf_node_idx] = node_update
+
+        assembly.get_part("final_model").nodes = nodes_new
         

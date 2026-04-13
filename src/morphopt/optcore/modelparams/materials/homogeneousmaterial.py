@@ -91,7 +91,7 @@ class Materials(BaseParams):
         Args:
             fe (torchfea.FEAController): The FEA controller.
         """
-        elements = fe.assembly.get_part('final_model').elems['element-0']
+        elements = fe.assembly.get_part('final_model').elems['C3D4']
         mu = self.mu
         kappa = self.kappa
         materials = torchfea.materials.NeoHookean(mu=mu, kappa=kappa)
