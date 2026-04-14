@@ -33,6 +33,8 @@ class CodesignFEAParams(FEAParams):
             )
             surfcenter = surfnodes.mean(dim=1)
 
+            fe.assembly.get_instance('final_model').external_surface = 'surface_1_offset'
+
             mesh_1all = fe.assembly.get_instance('final_model').get_mesh(surf_name='surface_1_All')
             mesh_1offset = fe.assembly.get_instance('final_model').get_mesh(surf_name='surface_1_offset')
 
@@ -51,15 +53,15 @@ class CodesignFEAParams(FEAParams):
             glyphs = mesh.glyph(orient='Normals', scale=False, factor=scale)
 
             plotter = pv.Plotter()
-            plotter.add_mesh(mesh, color='lightgrey', point_size=5, render_points_as_spheres=True)
-            plotter.add_mesh(glyphs, color='red')
-            plotter.add_mesh(mesh_1all, color='blue', opacity=0.5)
-            plotter.add_mesh(mesh_1offset, color='green', opacity=1.0)
+            # plotter.add_mesh(mesh, color='lightgrey', point_size=5, render_points_as_spheres=True)
+            # plotter.add_mesh(glyphs, color='red')
+            plotter.add_mesh(mesh_1all, color='green', opacity=0.5)
+            plotter.add_mesh(mesh_1offset, color='red', opacity=1.0)
             plotter.add_axes()
             plotter.show_grid()
             plotter.show()
 
-            
+
 
             raise ValueError("The Gaussian weights of the C3D6 elements are negative. Please check the mesh quality.")
         

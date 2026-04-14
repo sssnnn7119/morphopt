@@ -344,4 +344,4 @@ class UpdaterGeometries(BaseUpdater):
     def load(self, foldpath, iteration):
         data = np.load(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz")
         for i in range(len(self._max_step_length)):
-            self._max_step_length[i] = torch.tensor(data['arr_%d' % i]).to(self.params_update.surface_list[i].model.control_points.device)
+            self._max_step_length[i] = torch.tensor(data['arr_%d' % i]).to(torch.get_default_device())

@@ -19,12 +19,7 @@ class BaseConstraints():
             self.scaler = torch.ones_like(cps0)
             return
 
-        scaler = sensitivity.abs().reshape_as(cps0)
-        nonzero = scaler > 0
-        if nonzero.any():
-            scaler = torch.where(nonzero, scaler, scaler[nonzero].min())
-        else:
-            scaler = torch.ones_like(cps0)
+        scaler = torch.ones_like(cps0)
         self.scaler = scaler
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:

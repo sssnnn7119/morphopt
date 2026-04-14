@@ -22,4 +22,4 @@ class DensityFieldMinimize(BaseObjective):
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         cps_now = cps.reshape_as(self.sensitivity if self.sensitivity is not None else cps)
-        return self.scale * cps_now.sum()
+        return self.scale * (cps_now.sum() + 1)**2

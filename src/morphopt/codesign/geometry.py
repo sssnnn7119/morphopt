@@ -41,6 +41,103 @@ class CodesignGeometry(GeometryParams):
         Triangle connectivity on the base layer, stored as local node indices.
         """
 
+        self._reinit_opt_steps: int = 8
+        self._reinit_opt_lr: float = 5e-3
+        self._reinit_opt_curvature_weight: float = 1e2
+        self._reinit_opt_shape_weight: float = 1.0
+        self._reinit_opt_curvature_margin_ratio: float = 0.35
+        self._reinit_opt_inward_sign: float = 1.0
+        self._reinit_opt_accept_only_improve: bool = True
+
+    def reinitialize(self, iteration):
+        super().reinitialize(iteration)
+        self._optimize_after_reinitialize()
+        self.apply_surface_constraints()
+
+    @staticmethod
+    def _principal_curvatures(rdu: torch.Tensor, rdu2: torch.Tensor, eps: float = 1e-12) -> tuple[torch.Tensor, torch.Tensor]:
+        normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
+        normal = normal0 / (normal0.norm(dim=1, keepdim=True) + eps)
+
+        I = torch.einsum("pim,pin->pmn", rdu, rdu)
+        eye2 = torch.eye(2, dtype=I.dtype, device=I.device).unsqueeze(0)
+        I = I + eps * eye2
+
+        II = torch.einsum("pimn,pi->pmn", rdu2, normal)
+        S = torch.linalg.solve(I, II)
+
+        tr = S[:, 0, 0] + S[:, 1, 1]
+        det = S[:, 0, 0] * S[:, 1, 1] - S[:, 0, 1] * S[:, 1, 0]
+        disc = (tr * tr - 4.0 * det).clamp(min=0.0)
+        root = torch.sqrt(disc)
+
+        k1 = 0.5 * (tr + root)
+        k2 = 0.5 * (tr - root)
+        return k1, k2
+
+    def _optimize_after_reinitialize(self) -> None:
+        if self._reinit_opt_steps <= 0:
+            return
+
+        thickness = float(self.shell_thickness)
+        if thickness <= 0:
+            return
+
+        k_limit = 1.0 / max(thickness * (1.0 + self._reinit_opt_curvature_margin_ratio), 1e-12)
+
+        def _surrogate_loss(surf_now, cp_ref_now):
+            _, rdu_now, rdu2_now = surf_now.get_geometry_values()
+            k1_now, k2_now = self._principal_curvatures(rdu_now, rdu2_now)
+
+            k1_in_now = torch.relu(self._reinit_opt_inward_sign * k1_now)
+            k2_in_now = torch.relu(self._reinit_opt_inward_sign * k2_now)
+            k_in_now = torch.maximum(k1_in_now, k2_in_now)
+
+            viol_now = torch.relu(k_in_now - k_limit)
+            loss_curv_now = (viol_now * viol_now).mean()
+            loss_shape_now = ((surf_now._cps - cp_ref_now) ** 2).mean()
+            return self._reinit_opt_curvature_weight * loss_curv_now + self._reinit_opt_shape_weight * loss_shape_now
+
+        for sfidx in range(1, self.num_surface):
+            surf = self.surface_list[sfidx]
+            surf.pre_load()
+            if not hasattr(surf, "_cps"):
+                continue
+
+            cp_ref = surf._cps.detach().clone()
+            surf._cps = surf._cps.detach().clone().requires_grad_(True)
+            optimizer = torch.optim.Adam([surf._cps], lr=self._reinit_opt_lr)
+
+            with torch.no_grad():
+                best_loss = _surrogate_loss(surf, cp_ref).detach()
+            best_cps = surf._cps.detach().clone()
+
+            for _ in range(self._reinit_opt_steps):
+                optimizer.zero_grad()
+
+                loss = _surrogate_loss(surf, cp_ref)
+
+                loss.backward()
+
+                if loss == 0:
+                    break
+                optimizer.step()
+
+                with torch.no_grad():
+                    loss_now = _surrogate_loss(surf, cp_ref)
+                    if loss_now < best_loss:
+                        best_loss = loss_now.detach()
+                        best_cps = surf._cps.detach().clone()
+
+            if self._reinit_opt_accept_only_improve:
+                surf._cps = best_cps
+            else:
+                surf._cps = surf._cps.detach()
+
+        
+
+        
+
     def _compute_normals(self, base_nodes: torch.Tensor, tri_local: np.ndarray) -> torch.Tensor:
         """
         Compute vertex normals from current base-layer nodes with autograd support.
