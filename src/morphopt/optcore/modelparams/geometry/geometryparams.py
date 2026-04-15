@@ -410,6 +410,7 @@ class GeometryParams(BaseParams):
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
+        self.apply_surface_constraints()
         if iteration % self.reinitialize_per_iter == 0:
             # for i in range(self.num_surface):
             #     self.surface_list[i].reinitialize()
@@ -430,7 +431,7 @@ class GeometryParams(BaseParams):
                 morphopt.controller.change_device(device=torch.get_default_device(), obj=self.surface_list[i])
 
             morphopt.controller.objfun.inp = None
-        self.apply_surface_constraints()
+        
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """

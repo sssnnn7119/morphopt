@@ -41,11 +41,11 @@ class CodesignGeometry(GeometryParams):
         Triangle connectivity on the base layer, stored as local node indices.
         """
 
-        self._reinit_opt_steps: int = 8
+        self._reinit_opt_steps: int = 100
         self._reinit_opt_lr: float = 5e-3
         self._reinit_opt_curvature_weight: float = 1e2
-        self._reinit_opt_shape_weight: float = 1.0
-        self._reinit_opt_curvature_margin_ratio: float = 0.35
+        self._reinit_opt_shape_weight: float = 1e2
+        self._reinit_opt_curvature_margin_ratio: float = 0.15
         self._reinit_opt_inward_sign: float = 1.0
         self._reinit_opt_accept_only_improve: bool = True
 
@@ -85,7 +85,7 @@ class CodesignGeometry(GeometryParams):
 
         k_limit = 1.0 / max(thickness * (1.0 + self._reinit_opt_curvature_margin_ratio), 1e-12)
 
-        def _surrogate_loss(surf_now, cp_ref_now):
+        def _surrogate_loss(surf_now: GeometryParams.CpBasedInterface, cp_ref_now: torch.Tensor):
             _, rdu_now, rdu2_now = surf_now.get_geometry_values()
             k1_now, k2_now = self._principal_curvatures(rdu_now, rdu2_now)
 
@@ -94,7 +94,7 @@ class CodesignGeometry(GeometryParams):
             k_in_now = torch.maximum(k1_in_now, k2_in_now)
 
             viol_now = torch.relu(k_in_now - k_limit)
-            loss_curv_now = (viol_now * viol_now).mean()
+            loss_curv_now = ((viol_now)**2).sum()
             loss_shape_now = ((surf_now._cps - cp_ref_now) ** 2).mean()
             return self._reinit_opt_curvature_weight * loss_curv_now + self._reinit_opt_shape_weight * loss_shape_now
 
@@ -111,8 +111,9 @@ class CodesignGeometry(GeometryParams):
             with torch.no_grad():
                 best_loss = _surrogate_loss(surf, cp_ref).detach()
             best_cps = surf._cps.detach().clone()
-
-            for _ in range(self._reinit_opt_steps):
+            
+            total_iter = 0
+            while True:
                 optimizer.zero_grad()
 
                 loss = _surrogate_loss(surf, cp_ref)
@@ -121,6 +122,9 @@ class CodesignGeometry(GeometryParams):
 
                 if loss == 0:
                     break
+                if _surrogate_loss(surf, surf._cps.detach()) < 1e-3:
+                    break
+
                 optimizer.step()
 
                 with torch.no_grad():
@@ -128,6 +132,10 @@ class CodesignGeometry(GeometryParams):
                     if loss_now < best_loss:
                         best_loss = loss_now.detach()
                         best_cps = surf._cps.detach().clone()
+
+                total_iter += 1
+                if total_iter >= self._reinit_opt_steps:
+                    break
 
             if self._reinit_opt_accept_only_improve:
                 surf._cps = best_cps

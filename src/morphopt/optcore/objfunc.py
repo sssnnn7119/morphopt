@@ -274,7 +274,7 @@ class ObjectiveFunction(BaseObject):
             # Save the figure as a PNG file
             plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.png")
 
-            # Save the deformed mesh as an OBJ file
-            obj_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.obj"
-            mesh.save(obj_filepath)
+            # Save the deformed mesh as an STL file
+            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.stl"
+            mesh.save(save_filepath, binary=True)
             plotter.close()

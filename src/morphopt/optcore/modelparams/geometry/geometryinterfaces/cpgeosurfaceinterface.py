@@ -111,7 +111,7 @@ class CPGEOInterface(CpBasedInterface):
             # Use mesh vertices directly as preload points for CPGEO.
             uv3_0 = self.model._knots
             faces_0 = self.model._cp_faces
-            edges = cpgeo.utils.capi.get_mesh_edges(faces_0)
+            edges = cpgeo.capi.get_mesh_edges(faces_0)
 
             uv3_extra = (uv3_0[edges[:, 0]] + uv3_0[edges[:, 1]]) / 2
             uv3_extra = uv3_extra / np.linalg.norm(uv3_extra, axis=1, keepdims=True)
@@ -122,7 +122,7 @@ class CPGEOInterface(CpBasedInterface):
             input_points = preload_uv.cpu().numpy()
 
 
-            faces_np = cpgeo.utils.capi.get_sphere_triangulation(preload_uv3)
+            faces_np = cpgeo.capi.get_sphere_triangulation(preload_uv3)
 
 
         # Precompute weights for vertex evaluation points (derivative 0, 1, 2)

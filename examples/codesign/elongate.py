@@ -1,7 +1,10 @@
 ﻿
 
+import cpgeo.utils
+
 import morphopt
 import torch
+import cpgeo
 mumax = 4.82
 minratio = 0.001
 
@@ -39,12 +42,13 @@ class ThisController(morphopt.Controller):
 
             end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
 
-            return self.fe_results[0].GC[-1] + torch.sqrt(end_compliance[1,1]**2 + end_compliance[2,2]**2) / 1000
+            return torch.exp((20 - self.fe_results[0].GC[-4]) / 10) + torch.sqrt((end_compliance**2).sum()) / 100
 
         def get_metrics(self):
 
             end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
-            return [self.fe_results[0].GC[-1], 
+            return [self.fe_results[0].GC[-4], 
+                    end_compliance[0,0],
                     end_compliance[1,1], 
                     end_compliance[2,2],
                     self.get_volume_fraction()]
@@ -54,9 +58,9 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=0.8, 
+                super().__init__(fea_seed_size=1.0, 
                                  fea_mesh_order=1, 
-                                 reinitialize_per_iter=5,
+                                 reinitialize_per_iter=10,
                                  thickness=1.5,
                                  num_layers=2,)
 
@@ -75,8 +79,23 @@ class ThisController(morphopt.Controller):
                                                 MaxC=1.5,
                     ))
 
-        class FEAParams(morphopt.codesign.CodesignFEAParams):
+            def reinitialize(self, iteration):
 
+                surf1: morphopt.GeometryParams.CPGEO = self.surface_list[1]
+                result = cpgeo.utils.enforce_rotational_symmetry_z(
+                        vertices=surf1._cps.detach().cpu().numpy(),
+                        faces=surf1.model._cp_faces,
+                        periods=3
+                    )
+                surf1._cps = torch.from_numpy(result[0]).to(surf1._cps.device)
+                surf1.model._cp_faces = torch.from_numpy(result[1]).to(surf1.model._cp_faces.device)
+                surf1.model._control_points = result[0]
+                surf1.initialize()
+
+                super().reinitialize(iteration)
+
+        class FEAParams(morphopt.codesign.CodesignFEAParams):
+                
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
@@ -108,6 +127,36 @@ class ThisController(morphopt.Controller):
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9)
         
+            def get_ratio(self, nodes):
+                theta120 = 2.0 * torch.pi / 3.0
+                theta240 = 4.0 * torch.pi / 3.0
+
+                c120 = torch.cos(torch.tensor(theta120, device=nodes.device, dtype=nodes.dtype))
+                s120 = torch.sin(torch.tensor(theta120, device=nodes.device, dtype=nodes.dtype))
+                c240 = torch.cos(torch.tensor(theta240, device=nodes.device, dtype=nodes.dtype))
+                s240 = torch.sin(torch.tensor(theta240, device=nodes.device, dtype=nodes.dtype))
+
+                # 0 deg
+                nodes_rot0 = nodes
+                # +120 deg around z
+                nodes_rot120 = torch.stack([
+                    c120 * nodes[:, 0] - s120 * nodes[:, 1],
+                    s120 * nodes[:, 0] + c120 * nodes[:, 1],
+                    nodes[:, 2],
+                ], dim=1)
+                # +240 deg around z
+                nodes_rot240 = torch.stack([
+                    c240 * nodes[:, 0] - s240 * nodes[:, 1],
+                    s240 * nodes[:, 0] + c240 * nodes[:, 1],
+                    nodes[:, 2],
+                ], dim=1)
+
+                ratio0 = super().get_ratio(nodes_rot0)
+                ratio120 = super().get_ratio(nodes_rot120)
+                ratio240 = super().get_ratio(nodes_rot240)
+
+                return (ratio0 + ratio120 + ratio240) / 3.0
+
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
@@ -186,4 +235,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda', restart_per_iteration=10)
+    morphopt.start_optimization(device='cuda:1', restart_per_iteration=20)

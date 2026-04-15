@@ -331,8 +331,9 @@ class UpdaterMaterials(BaseUpdater):
 
     def save(self, foldpath, iteration):
         step_length_numpy = self._max_step_length.detach().cpu().numpy()
-        np.savez(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz", step_length=step_length_numpy)
+        np.savez_compressed(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz", 
+                            step_length=step_length_numpy.astype(np.float16))
 
     def load(self, foldpath, iteration):
         data = np.load(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz")
-        self._max_step_length = torch.tensor(data['step_length']).to(self.params_update._cps.device)
+        self._max_step_length = torch.tensor(data['step_length']).to(self.params_update._cps.device).to(self.params_update._cps.dtype)

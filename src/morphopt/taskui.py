@@ -179,7 +179,7 @@ class OptimizationMonitorUI(QMainWindow):
             if iteration not in self.deformation_cache:
                 self.deformation_cache[iteration] = {}
             
-            def_pattern = f"{self.path_result}/log/deformation/task_*_iter_{iteration}.obj"
+            def_pattern = f"{self.path_result}/log/deformation/task_*_iter_{iteration}.stl"
             def_files = glob.glob(def_pattern)
             
             found_cases = set()

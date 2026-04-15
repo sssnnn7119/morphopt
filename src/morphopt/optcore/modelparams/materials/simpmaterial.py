@@ -317,9 +317,9 @@ class SIMPMaterials(BaseParams):
 
     def save(self, foldpath: str, iteration: int) -> None:
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
-        np.savez(
+        np.savez_compressed(
             path_now,
-            cps=self._cps.detach().cpu().numpy(),
+            cps=self._cps.detach().cpu().numpy().astype(np.float16),
             bsp_size=np.array(self._bsp_size, dtype=np.int64),
             bounding_box=np.array(self._bounding_box, dtype=np.float64),
             degree=np.array([self._degree], dtype=np.int64),
@@ -336,7 +336,7 @@ class SIMPMaterials(BaseParams):
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
         data = np.load(path_now)
 
-        cps_np = data["cps"]
+        cps_np = data["cps"].astype(np.float64)
         self._cps = torch.from_numpy(cps_np).to(
             device=torch.get_default_device(),
             dtype=torch.get_default_dtype(),
@@ -356,17 +356,35 @@ class SIMPMaterials(BaseParams):
             plotter = pv.Plotter(window_size=(1400, 1000))
             close_after = True
 
-        cps_grid = self._cps.detach().reshape(self._bsp_size).cpu().numpy()
-        ratio_grid = np.clip(cps_grid, 0.0, 1.0)
-
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
         nx, ny, nz = self._bsp_size
-        sx = (xmax - xmin) / max(nx - 1, 1)
-        sy = (ymax - ymin) / max(ny - 1, 1)
-        sz = (zmax - zmin) / max(nz - 1, 1)
+
+        # Query a denser field (3x control-point resolution per axis) instead of
+        # visualizing control points directly.
+        nx_q = max(2, (nx - 1) * 2 + 1)
+        ny_q = max(2, (ny - 1) * 2 + 1)
+        nz_q = max(2, (nz - 1) * 2 + 1)
+
+        xq = np.linspace(xmin, xmax, nx_q)
+        yq = np.linspace(ymin, ymax, ny_q)
+        zq = np.linspace(zmin, zmax, nz_q)
+        xg, yg, zg = np.meshgrid(xq, yq, zq, indexing="ij")
+        pts_query = np.stack([xg, yg, zg], axis=-1).reshape(-1, 3)
+
+        nodes_normalized = np.zeros_like(pts_query)
+        nodes_normalized[:, 0] = (pts_query[:, 0] - self._bounding_box[0]) / (self._bounding_box[1] - self._bounding_box[0])
+        nodes_normalized[:, 1] = (pts_query[:, 1] - self._bounding_box[2]) / (self._bounding_box[3] - self._bounding_box[2])
+        nodes_normalized[:, 2] = (pts_query[:, 2] - self._bounding_box[4]) / (self._bounding_box[5] - self._bounding_box[4])
+
+        ratio_query = self.simp_field.map(nodes_normalized).reshape(nx_q, ny_q, nz_q)
+        ratio_grid = np.clip(ratio_query, 0.0, 1.0)
+
+        sx = (xmax - xmin) / max(nx_q - 1, 1)
+        sy = (ymax - ymin) / max(ny_q - 1, 1)
+        sz = (zmax - zmin) / max(nz_q - 1, 1)
 
         grid = pv.ImageData(
-            dimensions=(nx, ny, nz),
+            dimensions=(nx_q, ny_q, nz_q),
             spacing=(sx, sy, sz),
             origin=(xmin, ymin, zmin),
         )

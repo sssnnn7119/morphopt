@@ -68,12 +68,7 @@ class MorphSolver(BaseObject):
         Solve the optimization problem using the specified solver.
 
         Returns:
-            tuple: the displacement field and its derivatives:
-                - fe (torchfea.FEAController): An instance of the FEA_Main class with the given input parameters.
-                - GC0 (list[torch.Tensor]): The displacement field at the reference point.
-                - Udp0 (list[torch.Tensor]): The displacement field at the reference point with respect to the pressure.
-                - GCv (list[torch.Tensor]): The first adjoint displacement field.
-                - GCw (list[torch.Tensor]): The second adjoint displacement field.
+            The result of the optimization problem.
         """
 
         # multiprocess FEA
@@ -104,10 +99,15 @@ class MorphSolver(BaseObject):
             list_number += self.task_index_list[i]
         list_number = np.array(list_number).flatten()
         
-        output = []
+        output: list[torchfea.solver.StaticResult] = []
         for i in range(len(results)):
             output.append(results[list_number[i]])
             morphopt.controller.objfun.fe._change_device_recursive(output[i], torch.get_default_device())
+
+        # check if convergence is achieved
+        for tidx in range(len(output)):
+            if output[tidx].converged == False:
+                raise ValueError("FEA did not converge for load step %d" % list_number[tidx])
 
         del fe_cpu
         return output
