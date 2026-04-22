@@ -1,4 +1,7 @@
-﻿import os
+﻿
+R0 = 22.
+
+import os
 import sys
 import numpy as np
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -24,10 +27,10 @@ class ThisController(morphopt.Controller):
             Uz_pos = self.fe_results[1].GC[-4]
             force_z = self.fe_results[2].GC[-5]
             Urot = self.fe_results[3].GC[-2]
-            Pz = self.fe_results[3].GC[-4] + 70.
+            Pz = self.fe_results[3].GC[-4] + 90.
             r = Pz / torch.sin(Urot)
             loss1 = torch.exp(1 - (Uz_pos - Uz_neg) / 24)
-            loss2 = torch.exp(1 + Urot / 2.1) * 5
+            loss2 = torch.exp(1 + Urot / 2.1)
             loss3 = r
 
             print('elongation:', (Uz_pos - Uz_neg).item(), 'rotation:', Urot.item(), 'Pz:', Pz.item(), 'r:', r.item(), 'force_z:', force_z.item())
@@ -40,7 +43,7 @@ class ThisController(morphopt.Controller):
             Uz_pos = self.fe_results[1].GC[-4]
 
             Urot = self.fe_results[3].GC[-2]
-            Pz = self.fe_results[3].GC[-4] + 70.
+            Pz = self.fe_results[3].GC[-4] + 90.
 
             r = Pz / torch.sin(Urot)
 
@@ -72,18 +75,18 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.0, fea_mesh_order=1)
+                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.1, fea_mesh_order=1)
 
                 self.surface_list: list[morphopt.GeometryParams.BSP] = []
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=21.,
-                                                    length=70.,
+                    self.BSP.initialize_cylinder(r0=22.,
+                                                    length=90.,
                                                     seed_size=1.0,
                                                     flip=False,
                                                     maxR=0.1,
                                                     maxC=1.2,
-                                                    maxFF=0.1, perturbation_L=14))
+                                                    maxFF=0.1, perturbation_L=90/4))
                 self.add_surface(
                     self.BSP.initialize_cylinder(seed_size=1.0,
                                                     flip=True,
@@ -92,7 +95,7 @@ class ThisController(morphopt.Controller):
                                                     maxR=0.1,
                                                     maxC=1.2,
                                                     maxFF=0.1,
-                                                    init_location=[12, 0, 3], perturbation_L=14))
+                                                    init_location=[12, 0, 3], perturbation_L=90/4))
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(seed_size=1.0,
@@ -102,7 +105,7 @@ class ThisController(morphopt.Controller):
                                                     maxR=0.1,
                                                     maxC=1.2,
                                                     maxFF=0.1,
-                                                    init_location=[-6, 10.5, 3], perturbation_L=14))
+                                                    init_location=[-6, 10.5, 3], perturbation_L=90/4))
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(seed_size=1.0,
@@ -112,27 +115,33 @@ class ThisController(morphopt.Controller):
                                                     maxR=0.1,
                                                     maxC=1.2,
                                                     maxFF=0.1,
-                                                    init_location=[-6, -10.5, 3], perturbation_L=14))
+                                                    init_location=[-6, -10.5, 3], perturbation_L=90/4))
                 
-                self.add_surface(
-                    self.BSP.initialize_cylinder(seed_size=1.0,
-                                                    flip=False,
-                                                    r0=3.,
-                                                    length=64.,
-                                                    maxR=0.1,
-                                                    maxC=1.2,
-                                                    maxFF=0.1,
-                                                    init_location=[0, 0, 3]))
-                
+                self.initr0: dict[int, torch.Tensor] = {}
 
             def apply_surface_constraints(self):
                 # rotate the exterior surface
                 size0 = self.surface_list[0].model.size
                 num_points = self.surface_list[0].model.size[1] / 3
                 num_points = int(num_points)
-                cp0 = self.surface_list[0]._cps.reshape(size0[0], size0[1], 3)
+                cp0 = self.surface_list[0]._cps.reshape(size0[0], size0[1], 3).clone()
                 r0 = cp0[:, :num_points]
+
+                def apply_cylindrical_constraint(r0: torch.Tensor, idx: int):
+
+                    if self.initr0.get(idx) is None:
+                        r0[:, idx, [0,1]] = r0[:, idx, [0,1]] / torch.norm(r0[:, idx, [0,1]], dim=1, keepdim=True) * R0
+                        self.initr0[idx] = r0[:, idx].detach().clone()
+                    else:
+                        r0[:, idx] = self.initr0[idx]
+
+
+                for i in range(5):
+                    apply_cylindrical_constraint(r0, num_points//2+i)
+                    apply_cylindrical_constraint(r0, num_points//2-i-1)
+
                 r0_120, r0_240 = self.__rotate120_240(r0)
+                cp0[:, :num_points] = r0
                 cp0[:, num_points:2 * num_points] = r0_120
                 cp0[:, 2 * num_points:] = r0_240
                 r0 = cp0.clone()
@@ -152,20 +161,6 @@ class ThisController(morphopt.Controller):
                 self.surface_list[2]._cps = r1_120.reshape([-1, 3])
                 self.surface_list[3]._cps = r1_240.reshape([-1, 3])
 
-                # for the internal center tube
-                size4 = self.surface_list[4].model.size
-                num_points = self.surface_list[4].model.size[1] / 3
-                num_points = int(num_points)
-                cp4 = self.surface_list[4]._cps.reshape(size4[0], size4[1], 3)
-                r4 = cp4[:, :num_points]
-                r4_120, r4_240 = self.__rotate120_240(r4)
-                cp4[:, num_points:2 * num_points] = r4_120
-                cp4[:, 2 * num_points:] = r4_240
-                r4 = cp4.clone()
-                cp4[:, :, 0] = (r4[:, :, 0] + r4.flip(dims=[1])[:, :, 0]) / 2
-                cp4[:, :, 1] = (r4[:, :, 1] - r4.flip(dims=[1])[:, :, 1]) / 2
-                cp4[:, :, 2] = (r4[:, :, 2] + r4.flip(dims=[1])[:, :, 2]) / 2
-                self.surface_list[4]._cps = cp4.reshape([-1, 3])
             
         class FEAParams(morphopt.FEAParams):
             def __init__(self):
@@ -174,7 +169,7 @@ class ThisController(morphopt.Controller):
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 70.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 90.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
                 # Define all load interfaces once
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_All'), name='P_s1')
@@ -229,7 +224,7 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: morphopt.Params):
             super().__init__(params=params,
-                            num_process=2, task_index_list=[[0], [1, 2], [3]])
+                            num_process=3, task_index_list=[[0], [1, 2], [3]])
     
     
     class Updater(morphopt.Updaters):
@@ -266,7 +261,7 @@ class ThisController(morphopt.Controller):
                                                                 [2.5, 2.5, 2.5, 2.0, 2.5],
                                                                 [2.5, 2.5, 2.5, 2.5, 2.0]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=22.5, height=70., bottom=0.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=23., height=90., bottom=0.))
                 
                 self.if_update = [True, True, True, True, False]
 

@@ -5,6 +5,7 @@ import cpgeo.utils
 import morphopt
 import torch
 import cpgeo
+import numpy as np
 mumax = 4.82
 minratio = 0.001
 
@@ -16,7 +17,6 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-            self.jacobian_needed = ['force_1']
 
         def get_volume_fraction(self):
             elems = self.fe.assembly._parts['final_model'].elems['C3D4']
@@ -38,23 +38,62 @@ class ThisController(morphopt.Controller):
 
         def objective_function(self):
 
-            vol_fraction = self.get_volume_fraction()
 
-            end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
+            assembly = self.fe.assembly
+            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
+            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
 
-            return torch.exp((20 - self.fe_results[0].GC[-4]) / 10) + torch.sqrt((end_compliance**2).sum()) / 100
+            E0 = assembly._total_Potential_Energy(RGC=RGC0)
+            E1 = assembly._total_Potential_Energy(RGC=RGC1)
+
+            return E1 - E0
 
         def get_metrics(self):
 
-            end_compliance = self.fe_results[0].jacobian['force_1'][-6:-3]
-            return [self.fe_results[0].GC[-4], 
-                    end_compliance[0,0],
-                    end_compliance[1,1], 
-                    end_compliance[2,2],
+            assembly = self.fe.assembly
+            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
+            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
+            E0 = assembly._total_Potential_Energy(RGC=RGC0)
+            E1 = assembly._total_Potential_Energy(RGC=RGC1)
+
+            return [self.fe_results[1].GC[-1],
+                    E0, E1,
                     self.get_volume_fraction()]
 
     class Params(morphopt.Params):
+
         class GeometryParams(morphopt.codesign.CodesignGeometry):
+            class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
+
+                def initialize(self):
+                    super().initialize()
+
+                    result = cpgeo.utils.enforce_rotational_symmetry_z(
+                            vertices=self._cps.detach().cpu().numpy(),
+                            faces=self.model._cp_faces,
+                            periods=3
+                        )
+                    self._cps = torch.from_numpy(result[0]).to(self._cps.device)
+                    self.model._cp_faces = result[1]
+                    self.model._control_points = result[0]
+                    self.model.initialize()
+                    self.pre_load()
+
+
+                def reinitialize(self):
+                    super().reinitialize()
+                    
+                    result = cpgeo.utils.enforce_rotational_symmetry_z(
+                            vertices=self._cps.detach().cpu().numpy(),
+                            faces=self.model._cp_faces,
+                            periods=3
+                        )
+                    self._cps = torch.from_numpy(result[0]).to(self._cps.device)
+                    self.model._cp_faces = result[1]
+                    self.model._control_points = result[0]
+                    self.model.initialize()
+                    self.pre_load()
+                    return self
 
             def __init__(self):
 
@@ -72,27 +111,31 @@ class ThisController(morphopt.Controller):
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
                                                 r0=10.,
                                                 init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
+                    
 
-            def reinitialize(self, iteration):
-
+            def apply_surface_constraints(self):
                 surf1: morphopt.GeometryParams.CPGEO = self.surface_list[1]
-                result = cpgeo.utils.enforce_rotational_symmetry_z(
-                        vertices=surf1._cps.detach().cpu().numpy(),
-                        faces=surf1.model._cp_faces,
-                        periods=3
-                    )
-                surf1._cps = torch.from_numpy(result[0]).to(surf1._cps.device)
-                surf1.model._cp_faces = torch.from_numpy(result[1]).to(surf1.model._cp_faces.device)
-                surf1.model._control_points = result[0]
-                surf1.initialize()
 
-                super().reinitialize(iteration)
+                cp0 = surf1._cps.clone()
+                cp0 = cp0.reshape([3, -1, 3])[0]
+                cp120 = torch.stack([
+                    np.cos(2.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(2.0 * np.pi / 3.0) * cp0[:, 1],
+                    np.sin(2.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(2.0 * np.pi / 3.0) * cp0[:, 1],
+                    cp0[:, 2],
+                ], dim=1)
+                cp240 = torch.stack([
+                    np.cos(4.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(4.0 * np.pi / 3.0) * cp0[:, 1],
+                    np.sin(4.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(4.0 * np.pi / 3.0) * cp0[:, 1],
+                    cp0[:, 2],
+                ], dim=1)
+
+                surf1._cps = torch.cat([cp0, cp120, cp240], dim=0).reshape(-1, 3)
 
         class FEAParams(morphopt.codesign.CodesignFEAParams):
                 
@@ -104,13 +147,15 @@ class ThisController(morphopt.Controller):
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
+                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=5), name='penalty_RP_head')
 
             def define_steps(self):
-                self.set_step_num(1)
+                self.set_step_num(2)
                 self.set_step_params(0, "pressure_1", [0.06])
-                # self.set_step_params(0, "force_1", [1., 0., -0.])
-                
+                self.set_step_params(0, "penalty_RP_head", [1e5, 0.0])
+
+                self.set_step_params(1, "pressure_1", [0.06])
+                self.set_step_params(1, "penalty_RP_head", [0e5, 0.0])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
             

@@ -63,7 +63,6 @@ class OptimizationMonitorUI(QMainWindow):
         self.Controller = Controller
         self.params: morphopt.GeometryParams
         self.params = Controller.Params().geometry
-        self.params.initialize()
         self.path_result = None
         self.iteration = 0
         self.last_plotted_iteration = -1

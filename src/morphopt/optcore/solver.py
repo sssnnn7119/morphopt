@@ -158,5 +158,6 @@ class MorphSolver(BaseObject):
             result: torchfea.solver.StaticResult = fe.solve(GC0=U0.to(torch.get_default_device()), if_initialize=False)
 
             result_list.append(result)
+            fe._change_device_recursive(result, torch.device('cpu'))
             U0 = result.GC.detach().clone()
         return result_list

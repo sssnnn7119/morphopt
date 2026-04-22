@@ -15,7 +15,7 @@ class FEAParams(BaseParams):
     from .feainterface import PressureInterface
     from .feainterface import ContactInterface, ContactSelfInterface
     from .feainterface import ConcentratedForceInterface, ConcentratedMomentInterface
-    from .feainterface import SpringToGroundInterface, SpringBetweenRPsInterface
+    from .feainterface import SpringToGroundInterface, SpringBetweenRPsInterface, PenaltyDoFInterface
     from .feainterface import BoundaryConditionInterface, BoundaryConditionRPInterface
     from .feainterface import CoupleInterface
     from .feainterface import ReferencePointInterface

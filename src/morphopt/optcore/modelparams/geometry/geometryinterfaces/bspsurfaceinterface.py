@@ -414,6 +414,9 @@ class BspInterface(CpBasedInterface):
         self._preload_size: tuple[int, int]
         """The preloaded size of the UV grid."""
 
+    def synchronize(self):
+        self.model._control_points = self._cps.detach().cpu().numpy()
+
     def map(self, uv: torch.Tensor) -> torch.Tensor:
         """Map from UV space to 3D space using the B-spline surface model."""
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
@@ -667,6 +670,8 @@ class BspInterface(CpBasedInterface):
         uvgrids = np.meshgrid(np.linspace(0, 1, preload_size[0]), np.linspace(0, 1, preload_size[1]+1)[1:], indexing='ij')
         pts_np = np.stack(uvgrids, axis=-1).reshape([-1, 2])
 
+        self.model.control_points = self._cps.detach().cpu().numpy().reshape([-1, 3])
+
         r = self.model.map(pts_np, derivative=[0, 0]).reshape([preload_size[0], preload_size[1], 3])
         
         # Convert to numpy arrays for PyVista
@@ -822,7 +827,7 @@ class BspInterface(CpBasedInterface):
         tol = 1e-6
         
         if batch_size is None:
-            batch_size = N if N <= 4096 else 4096
+            batch_size = N if N <= 40960 else 40960
 
         uv_out = np.empty((N, 2), dtype=float)
 

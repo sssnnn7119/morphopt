@@ -52,7 +52,6 @@ class CodesignGeometry(GeometryParams):
     def reinitialize(self, iteration):
         super().reinitialize(iteration)
         self._optimize_after_reinitialize()
-        self.apply_surface_constraints()
 
     @staticmethod
     def _principal_curvatures(rdu: torch.Tensor, rdu2: torch.Tensor, eps: float = 1e-12) -> tuple[torch.Tensor, torch.Tensor]:

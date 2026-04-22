@@ -3,6 +3,7 @@ import torch
 from torchfea import FEAController
 from .basefeainterface import BaseFEAInterface
 from torchfea.model.loads.spring import Spring_RP_Point, Spring_RP_RP
+from torchfea.model.loads import Penalty_DoF
 
 
 class SpringToGroundInterface(BaseFEAInterface):
@@ -102,3 +103,54 @@ class SpringBetweenRPsInterface(BaseFEAInterface):
         loadobj: Spring_RP_RP = fe.assembly.get_load(name)
         loadobj.k = self.k
         loadobj.rest_length = self.rest_length
+
+
+class PenaltyDoFInterface(BaseFEAInterface):
+    """
+    Quadratic penalty load on a single DoF of an object's RGC segment.
+
+    Values order (2 floats): [k, target]
+      - k: penalty coefficient
+      - target: desired value of the selected DoF
+    """
+
+    def __init__(self, obj_name: str, s: int, obj_type: str = "auto") -> None:
+        self.obj_name = obj_name
+        self.s = int(s)
+        self.obj_type = obj_type
+        super().__init__()
+
+    @property
+    def num_values(self) -> int:
+        return 2
+
+    @property
+    def k(self) -> float:
+        return float(self._values[0])
+
+    @k.setter
+    def k(self, value: float) -> None:
+        self._values[0] = float(value)
+
+    @property
+    def target(self) -> float:
+        return float(self._values[1])
+
+    @target.setter
+    def target(self, value: float) -> None:
+        self._values[1] = float(value)
+
+    def modify_fea(self, fe: FEAController, name: str) -> None:
+        loadobj = Penalty_DoF(
+            obj_name=self.obj_name,
+            s=self.s,
+            target=self.target,
+            k=self.k,
+            obj_type=self.obj_type,
+        )
+        fe.assembly.add_load(loadobj, name)
+
+    def apply_fea_value(self, fe: FEAController, name: str) -> None:
+        loadobj: Penalty_DoF = fe.assembly.get_load(name)
+        loadobj.k = self.k
+        loadobj.target = self.target

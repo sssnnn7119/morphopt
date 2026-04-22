@@ -759,6 +759,9 @@ class CpBasedInterface(BaseInterface):
         self._preload_data: CpBasedInterface.PreLoadData | None = None
         """Single container for all preloaded surface evaluation data."""
 
+    def synchronize(self) -> None:
+        """Synchronize the surface state with its model."""
+        pass
 
     def _map(self, weights: torch.Tensor, indices: torch.Tensor, num_pts: int = None) -> torch.Tensor:
 

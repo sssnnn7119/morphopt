@@ -35,6 +35,9 @@ class CPGEOInterface(CpBasedInterface):
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
 
+    def synchronize(self):
+        self.model._control_points = self._cps.detach().cpu().numpy()
+
     def map(self, uv: torch.Tensor) -> torch.Tensor:
         """Map from UV space to 3D space using the CPGEO model."""
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)

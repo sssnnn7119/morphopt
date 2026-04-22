@@ -1,12 +1,16 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-
+import numpy as np
 from torchfea import inp
 
 import morphopt
 import torch
 import importlib.util
+import matplotlib.pyplot as plt
+
 torch.set_default_dtype(torch.float64)
-torch.set_default_device('cuda')
+torch.set_default_device('cpu')
 
 
 def readhistoryparams(path_result: str, iteration: int = -1) -> morphopt.Params:
@@ -27,32 +31,28 @@ def readhistoryparams(path_result: str, iteration: int = -1) -> morphopt.Params:
 if __name__ == "__main__":
 
 
-    path_result = 'A:/MineData/Learning/Publications/TMECH2025Contact/results/Optimization/grasp/result/GRASP_T20260302_163335'
+    path_result = 'Z:/Results/EXAMPLE_T20260420_190258'
     
-    controller: morphopt.Controller = readhistoryparams(path_result, 294)
+    controller: morphopt.Controller = readhistoryparams(path_result, 55)
 
-    inp = controller.params.geometry.generate()
-    fe = controller.params.feamodel.create_fea(inp=inp)
-    controller.params.materials.set_materials(fe)
-    fe.initialize()
+    mat: morphopt.codesign.CodesignMaterials = controller.params.materials
 
-    controller.params.feamodel.process_fea(fe, 0)
+    quiry_points = np.meshgrid(np.linspace(-20, 20, 50), np.linspace(-20, 20, 50), np.linspace(0, 50, 50))
 
-    totaliter = 21
-    mesh = fe.assembly.get_instance('final_model').get_mesh(surf_name='surface_0_All')
-    exmesh = fe.assembly.get_instance('cylinder').get_mesh(surf_name='contact')
-    exmesh.save('Z:/temp/contact_cylinder.obj')
-    for i in range(totaliter):
-        print('Iteration %d / %d' % (i + 1, totaliter))
-        pressure_now = 0.08 * (i) / (totaliter-1)
-        print('Pressure: %.4f' % pressure_now)
-        fe.assembly.get_load('P_s1').pressure = pressure_now
-        result = fe.solve()
-        RGCcylinder = fe.assembly.RGC[fe.assembly.get_instance('cylinder')._RGC_index]
-        RGCmodel = fe.assembly.RGC[fe.assembly.get_instance('final_model')._RGC_index]
+    quiry_points = np.stack(quiry_points, axis=-1).reshape(-1, 3)
 
-        mesh.points = RGCmodel.cpu().numpy() + fe.assembly.get_instance('final_model').nodes.cpu().numpy()
-        mesh.save('Z:/temp/model_%d.obj' % i)
-    
+    cps = mat.get_ratio(torch.from_numpy(quiry_points))
+
+    mask = quiry_points[:, 0]**2 + quiry_points[:, 1]**2 < 20**2
+    cps = cps[mask] * mat._mumax
+
+    plt.figure()
+    plt.hist(cps, bins=50, color='tab:blue', edgecolor='black', density=True)
+    plt.title('CPS Distribution Histogram')
+    plt.xlabel('CPS value')
+    plt.ylabel('Frequency')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
 
     raise Exception("For Debugging Only")

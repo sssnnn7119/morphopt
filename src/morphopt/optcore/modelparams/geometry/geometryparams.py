@@ -683,6 +683,10 @@ class GeometryParams(BaseParams):
         """
         path_output = path_result
 
+        # synchronize the surfaces
+        for i in range(self.num_surface):
+            self.surface_list[i].synchronize()
+
         # export the data
         self._export_data(foldpath=path_output)
 

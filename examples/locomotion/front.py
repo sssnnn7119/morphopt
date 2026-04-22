@@ -49,7 +49,11 @@ class ThisController(morphopt.Controller):
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
 
-            def __rotate120_240(self, r0):
+            def __rotate120_240(self, r0: torch.Tensor):
+
+                size0 = r0.shape
+                r0 = r0.reshape([-1, 3]).T
+
                 r0_120 = torch.zeros_like(r0)
                 r0_120[0] = r0[0] * np.cos(2 * np.pi / 3) - r0[1] * np.sin(
                     2 * np.pi / 3)
@@ -64,7 +68,7 @@ class ThisController(morphopt.Controller):
                     4 * np.pi / 3)
                 r0_240[2] = r0[2]
 
-                return r0_120, r0_240
+                return r0_120.T.reshape(list(size0)), r0_240.T.reshape(list(size0))
 
             def __init__(self):
 
@@ -111,30 +115,31 @@ class ThisController(morphopt.Controller):
 
             def apply_surface_constraints(self):
                 # rotate the exterior surface
-                num_points = self.surface_list[0].model.control_points.shape[2] / 3
+                size0 = self.surface_list[0].model.size
+                num_points = self.surface_list[0].model.size[1] / 3
                 num_points = int(num_points)
-                r0 = self.surface_list[0].model.control_points[:, :, :num_points]
+                cp0 = self.surface_list[0]._cps.reshape(size0[0], size0[1], 3)
+                r0 = cp0[:, :num_points]
                 r0_120, r0_240 = self.__rotate120_240(r0)
-                self.surface_list[0].model.control_points[:, :,
-                                                        num_points:num_points *
-                                                        2] = r0_120
-                self.surface_list[0].model.control_points[:, :,
-                                                        num_points * 2:] = r0_240
-                r0 = self.surface_list[0].model.control_points.clone()
-                self.surface_list[0].model.control_points[0] = (r0[0] + r0.flip(dims=[2])[0]) / 2
-                self.surface_list[0].model.control_points[1] = (r0[1] - r0.flip(dims=[2])[1]) / 2
-                self.surface_list[0].model.control_points[2] = (r0[2] + r0.flip(dims=[2])[2]) / 2
+                cp0[:, num_points:2 * num_points] = r0_120
+                cp0[:, 2 * num_points:] = r0_240
+                r0 = cp0.clone()
+                cp0[:, :, 0] = (r0[:, :, 0] + r0.flip(dims=[1])[:, :, 0]) / 2
+                cp0[:, :, 1] = (r0[:, :, 1] - r0.flip(dims=[1])[:, :, 1]) / 2
+                cp0[:, :, 2] = (r0[:, :, 2] + r0.flip(dims=[1])[:, :, 2]) / 2
+                self.surface_list[0]._cps = cp0.reshape([-1, 3])
 
                 # rotate the bottom surface
-                r1 = self.surface_list[1].model.control_points.clone()
-                self.surface_list[1].model.control_points[0] = (r1[0] + r1.flip(dims=[2])[0]) / 2
-                self.surface_list[1].model.control_points[1] = (r1[1] - r1.flip(dims=[2])[1]) / 2
-                self.surface_list[1].model.control_points[2] = (r1[2] + r1.flip(dims=[2])[2]) / 2
-                r1 = self.surface_list[1].model.control_points
+                r1 = self.surface_list[1]._cps.reshape(self.surface_list[1].model.size[0], self.surface_list[1].model.size[1], 3)
+                r1[:, :, 0] = (r1[:, :, 0] + r1.flip(dims=[1])[:, :, 0]) / 2
+                r1[:, :, 1] = (r1[:, :, 1] - r1.flip(dims=[1])[:, :, 1]) / 2
+                r1[:, :, 2] = (r1[:, :, 2] + r1.flip(dims=[1])[:, :, 2]) / 2
+                self.surface_list[1]._cps = r1.reshape([-1, 3])
 
                 r1_120, r1_240 = self.__rotate120_240(r1)
-                self.surface_list[2].model.control_points = r1_120
-                self.surface_list[3].model.control_points = r1_240
+                self.surface_list[2]._cps = r1_120.reshape([-1, 3])
+                self.surface_list[3]._cps = r1_240.reshape([-1, 3])
+
             
         class FEAParams(morphopt.FEAParams):
             def __init__(self):
@@ -238,5 +243,5 @@ class ThisController(morphopt.Controller):
 
     
 if __name__ == '__main__':
-    morphopt.start_optimization(Controller=ThisController, device='cuda:0')
+    morphopt.debug_optimization(device='cuda:0')
 
