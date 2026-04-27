@@ -2,7 +2,7 @@
 import morphopt
 import torch
 mumax = 4.82
-minratio = 0.001
+minratio = 0.000001
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -14,11 +14,11 @@ class ThisController(morphopt.Controller):
             super().__init__()
 
         def get_volume_fraction(self):
-            elems = self.fe.assembly._parts['final_model'].elems['element-0']
+            elems = self.fe.assembly._parts['final_model'].elems['C3D4']
 
             materials = elems.materials
 
-            mu = materials._mu
+            mu = materials['material-0']._mu
             gaussian_weight = elems.gaussian_weight  # [gaussian, element]
 
             ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))
@@ -32,16 +32,18 @@ class ThisController(morphopt.Controller):
             return volume_fraction
 
         def objective_function(self):
-
-            vol_fraction = self.get_volume_fraction()
-
-            return self.fe_results[0].GC[-2]# + (vol_fraction - 0.4) ** 2 * 10
+            RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)
+            energy = self.fe.assembly.get_instance('final_model').potential_energy(RGC=RGC)
+            vol_frac = self.get_volume_fraction()
+            return -energy + (vol_frac - 0.4) ** 2
 
         def get_metrics(self):
-            return [self.fe_results[0].GC[-2]]
+            RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)
+            energy = self.fe.assembly.get_instance('final_model').potential_energy(RGC=RGC)
+            return [energy, self.get_volume_fraction()]
 
     class Params(morphopt.Params):
-        class GeometryParams(morphopt.GeometryParamsShell):
+        class GeometryParams(morphopt.GeometryParams):
 
             def __init__(self):
 
@@ -52,28 +54,12 @@ class ThisController(morphopt.Controller):
                                  num_layers=2,)
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=12.,
+                    self.BSP.initialize_cylinder(r0=15.,
                                                     length=80.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
-                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
                 
-                # self.add_surface(
-                #     self.BSP.initialize_cylinder(r0=6.,
-                #                                     length=74.,
-                #                                     seed_size=1.0,
-                #                                     symmetric=[1, [1]],
-                #                                     init_location=[0, 0, 3],
-                #                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
-                # self.add_surface(
-                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
-                #                                 flip=True,
-                #                                 r0=6.,
-                #                                 init_location=[0., 0., 40.],
-                #                                 MaxC=1.5,
-                #     ))
-
             def apply_surface_constraints(self) -> None:
                 """
                 Apply the constraints (e.g. the symmetric constraint) of the surfaces.
@@ -94,14 +80,11 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
-                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
-                                        name='pressure_1')
-                # self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
+                self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
 
             def define_steps(self):
                 self.set_step_num(1)
-                self.set_step_params(0, "pressure_1", [0.06])
-                # self.set_step_params(0, "force_1", [1., 0., -0.])
+                self.set_step_params(0, "force_1", [1., 0., -0.])
                 
 
         class MaterialParams(morphopt.SIMPMaterials):
@@ -111,7 +94,7 @@ class ThisController(morphopt.Controller):
                                  kappamax=48, 
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
-                                 bounding_box=[-15, 15, -15, 15, 0, 80], 
+                                 bounding_box=[-20, 20, -20, 20, 0, 80], 
                                  simp_field_resolution=1.0, 
                                  degree=3)
         
@@ -165,4 +148,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.debug_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=10)

@@ -183,11 +183,11 @@ class FEAParams(BaseParams):
 
         assembly = torchfea.Assembly()
         assembly.add_part(part=part, name='final_model')
-        assembly.add_instance(instance=torchfea.Instance(part), name='final_model')
+        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
 
         fe = torchfea.FEAController()
         fe.assembly = assembly
-        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-3)
+        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-4)
 
         # Add fea features
         for name, interface in self.feainterfaces.items():

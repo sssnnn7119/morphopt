@@ -7,12 +7,12 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 4.82
-minratio = 0.001
+minratio = 1e-6
 
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='EXAMPLE')
+                         opt_label='Twist_Energy')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
@@ -23,7 +23,7 @@ class ThisController(morphopt.Controller):
 
             materials = elems.materials
 
-            mu = materials._mu
+            mu = materials['material-0']._mu
             gaussian_weight = elems.gaussian_weight  # [gaussian, element]
 
             ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))
@@ -97,7 +97,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.0, 
+                super().__init__(fea_seed_size=1.2, 
                                  fea_mesh_order=1, 
                                  reinitialize_per_iter=10,
                                  thickness=1.5,
@@ -164,7 +164,7 @@ class ThisController(morphopt.Controller):
                                  kappamax=mumax * 10, 
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
-                                 initial_ratio=0.01,
+                                 initial_ratio=0.5,
                                  bounding_box=[-25, 25, -25, 25, 0, 50], 
                                  simp_field_resolution=1.0, 
                                  degree=3,
@@ -201,6 +201,36 @@ class ThisController(morphopt.Controller):
                 ratio240 = super().get_ratio(nodes_rot240)
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
+            
+            def get_ratio_with_spatial_derivative(self, nodes):
+                theta120 = 2.0 * torch.pi / 3.0
+                theta240 = 4.0 * torch.pi / 3.0
+
+                c120 = torch.cos(torch.tensor(theta120, device=nodes.device, dtype=nodes.dtype))
+                s120 = torch.sin(torch.tensor(theta120, device=nodes.device, dtype=nodes.dtype))
+                c240 = torch.cos(torch.tensor(theta240, device=nodes.device, dtype=nodes.dtype))
+                s240 = torch.sin(torch.tensor(theta240, device=nodes.device, dtype=nodes.dtype))
+
+                # 0 deg
+                nodes_rot0 = nodes
+                # +120 deg around z
+                nodes_rot120 = torch.stack([
+                    c120 * nodes[:, 0] - s120 * nodes[:, 1],
+                    s120 * nodes[:, 0] + c120 * nodes[:, 1],
+                    nodes[:, 2],
+                ], dim=1)
+                # +240 deg around z
+                nodes_rot240 = torch.stack([
+                    c240 * nodes[:, 0] - s240 * nodes[:, 1],
+                    s240 * nodes[:, 0] + c240 * nodes[:, 1],
+                    nodes[:, 2],
+                ], dim=1)
+
+                ratio0 = super().get_ratio_with_spatial_derivative(nodes_rot0)
+                ratio120 = super().get_ratio_with_spatial_derivative(nodes_rot120)
+                ratio240 = super().get_ratio_with_spatial_derivative(nodes_rot240)
+
+                return (ratio0 + ratio120 + ratio240) / 3.0
 
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
@@ -214,7 +244,8 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params):
 
             super().__init__(params=params,
-                            num_process=1)
+                            num_process=1,
+                            task_index_list=[[0, 1]])
 
     class Updater(morphopt.Updaters):
         """
@@ -247,7 +278,7 @@ class ThisController(morphopt.Controller):
                                                                 [[2.5, 2.5],
                                                                 [2.5, 2.0]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=20., height=50., bottom=0.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=20., height=47., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
@@ -263,13 +294,13 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     params=params,
                     max_step_iter=200,
-                    max_step_length=0.2,
+                    max_step_length=0.1,
                 )
 
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
                 self.add_objective_function(shape_derivative)
 
-                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-12)
+                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-10)
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.

@@ -218,6 +218,8 @@ class Controller:
         This function runs the optimization loop for a specified number of iterations.
         It calls the opt_step function in each iteration.
         """
+
+        if_first_step_restart = True
         
         while True:
 
@@ -227,7 +229,8 @@ class Controller:
             seed_size0 = self.params.geometry.fea_seed_size
             # self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.0)
 
-            loss, t0, t1, t2, t3 = self.step()
+            loss, t0, t1, t2, t3 = self.step(if_first_step_restart=if_first_step_restart)
+            if_first_step_restart = False
             
             self.params.geometry.fea_seed_size = seed_size0
 
@@ -252,7 +255,7 @@ class Controller:
             self.history.iteration += 1
             
 
-    def step(self):
+    def step(self, if_first_step_restart: bool = False):
         """
         Perform a single optimization step.
         Returns:
@@ -267,10 +270,16 @@ class Controller:
             os.remove(self.path_result + '/cache/TopOptRun.inp')
 
         # Initialize the workflow
-        self.params.reinitialize(iteration = self.history.iteration)
-        self.solver.reinitialize(iteration = self.history.iteration)
-        self.updater.reinitialize(iteration = self.history.iteration)
-        self.objfun.reinitialize(iteration = self.history.iteration)
+        if if_first_step_restart:
+            self.params.reinitialize(iteration = 0)
+            self.solver.reinitialize(iteration = 0)
+            self.updater.reinitialize(iteration = 0)
+            self.objfun.reinitialize(iteration = 0)
+        else:
+            self.params.reinitialize(iteration = self.history.iteration)
+            self.solver.reinitialize(iteration = self.history.iteration)
+            self.updater.reinitialize(iteration = self.history.iteration)
+            self.objfun.reinitialize(iteration = self.history.iteration)
 
         # Perform the optimization step
         self.objfun.fe = self.params.create_feamodel(path_result=self.path_result + '/cache/', pools=self.pools)

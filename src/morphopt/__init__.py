@@ -24,6 +24,7 @@ __all__ = [
     "GeometryParams",
     "FEAParams",
     "Materials",
+    "SIMPMaterials",
     "MorphSolver",
     "UpdaterGeometries",
     "UpdaterMaterials",

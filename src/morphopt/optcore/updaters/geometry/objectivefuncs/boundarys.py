@@ -55,12 +55,12 @@ class Cylinder(BaseConstraints):
         The radius of the cylinder.
         """
         
-        self._height = height + 1
+        self._height = height
         """
         The height of the cylinder.
         """
         
-        self._bottom = bottom - 1
+        self._bottom = bottom
         """
         The bottom of the cylinder.
         """
@@ -68,7 +68,7 @@ class Cylinder(BaseConstraints):
     def __call__(self, r, rdu, rdu2, *args, **kwargs):
         
         thre = 0.05
-        degree = 3
+        degree = 7
         
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
         for i in range(len(r)):

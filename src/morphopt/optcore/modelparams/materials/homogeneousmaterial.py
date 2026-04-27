@@ -94,6 +94,6 @@ class Materials(BaseParams):
         elements = fe.assembly.get_part('final_model').elems['C3D4']
         mu = self.mu
         kappa = self.kappa
-        materials = torchfea.materials.NeoHookean(mu=mu, kappa=kappa)
+        materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
         elements.set_materials(materials)
         elements.density = self.density

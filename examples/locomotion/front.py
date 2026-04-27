@@ -22,8 +22,9 @@ class ThisController(morphopt.Controller):
         def objective_function(self):
             Uz_neg = self.fe_results[0].GC[-4]
             Uz_pos = self.fe_results[1].GC[-4]
-            force_z = self.fe_results[2].GC[-5]
+            force_z = self.fe_results[2].GC[-5]*0
             Urot = self.fe_results[3].GC[-2]
+
             Pz = self.fe_results[3].GC[-4] + 70.
             r = Pz / torch.sin(Urot)
             loss1 = torch.exp(1 - (Uz_pos - Uz_neg) / 24)
@@ -72,7 +73,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.5, fea_mesh_order=1)
+                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.2, fea_mesh_order=1)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=21.,
@@ -155,7 +156,7 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_All'), name='P_s2')
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_3_All'), name='P_s3')
 
-                self.add_fea_interface(self.BodyforceInterface(element_name='element-0', instance_name='final_model'), name='BodyForce')
+                self.add_fea_interface(self.BodyforceInterface(element_name='C3D4', instance_name='final_model'), name='BodyForce')
 
                 # Contact self (no amplitude, but needs to exist in FEA)
                 self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_0_All'), name='CS_s0')

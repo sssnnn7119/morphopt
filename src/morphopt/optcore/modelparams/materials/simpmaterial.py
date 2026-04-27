@@ -280,7 +280,7 @@ class SIMPMaterials(BaseParams):
         mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
         kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
     
-        materials = torchfea.materials.NeoHookean(mu=mu, kappa=kappa)
+        materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
         elements.set_materials(materials)
         elements.density = self.density
 
@@ -312,8 +312,8 @@ class SIMPMaterials(BaseParams):
 
 
         
-        assembly.get_part("final_model").elems['C3D4'].materials._mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
-        assembly.get_part("final_model").elems['C3D4'].materials._kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
 
     def save(self, foldpath: str, iteration: int) -> None:
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"

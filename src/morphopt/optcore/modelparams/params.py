@@ -43,7 +43,7 @@ class Params(BaseObject):
         self.feamodel.initialize()
         self.materials.initialize()
         
-    def create_feamodel(self, path_result: str, pools=None) -> None:
+    def create_feamodel(self, path_result: str, pools=None):
         """
         Create the finite element model for sensitivity analysis.
 

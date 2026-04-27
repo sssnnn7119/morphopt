@@ -24,7 +24,7 @@ class ThisController(morphopt.Controller):
 
             materials = elems.materials
 
-            mu = materials._mu
+            mu = materials['material-0']._mu
             gaussian_weight = elems.gaussian_weight  # [gaussian, element]
 
             ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))

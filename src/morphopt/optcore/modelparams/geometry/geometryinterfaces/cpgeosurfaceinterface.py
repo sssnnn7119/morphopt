@@ -83,7 +83,18 @@ class CPGEOInterface(CpBasedInterface):
 
     def initialize(self):
         """Initialize the CPGEO model and preload knot points for evaluation."""
+        # # Initialize CPGEO knots and thresholds
+        # self.model.initialize()
         
+        # self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+
+        # # Load control points into torch tensor
+        # self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
+        
+        # # Get knot points from the CPGEO model
+        # # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
+        # self._num_knots = self.model._knots.shape[0]
+
         # Initialize CPGEO knots and thresholds
         self.model.initialize()
 
@@ -98,8 +109,6 @@ class CPGEOInterface(CpBasedInterface):
         # Get knot points from the CPGEO model
         # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
         self._num_knots = self.model._knots.shape[0]
-
-        self.pre_load(pre_points=None, faces=None)
 
         return self
 
@@ -205,9 +214,10 @@ class CPGEOInterface(CpBasedInterface):
         
         pools = morphopt.controller.pools
         r = self.model.map3(self.model._knots)
+        cpfaces = cpgeo.capi.optimize_mesh_by_edge_flipping(vertices=r, faces=self.model._cp_faces)
         result = pools.apply_async(self.output_stl_file, args=(
             r,
-            self.model._cp_faces,
+            cpfaces,
             path_output,
             name_output))
         result.get()
