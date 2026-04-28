@@ -25,29 +25,10 @@ class ObjectiveFunction(BaseObject):
         The FEA results for each step.
         """
 
-        self.objective_functions: list[Callable[[torch.Tensor, dict[str, torch.Tensor], torchfea.Assembly], torch.Tensor]] = []
-        """
-        A list of objective function callables for each load step, each taking the following arguments:
-            - GC: The displacement field of the FEA results.
-            - jacobian: The jacobian of the displacement field with respect to the load parameters.
-            - assembly: The assembly of the FEA model.
-        Each callable should return a scalar tensor representing the value of the objective function for the given FEA results and assembly.
-        """
-
         self.jacobian_needed: list[str] = []
         """
         A list of load parameter names for which the jacobian is needed for sensitivity analysis.
         """
-
-    def get_objective(self) -> torch.Tensor:
-        """
-        Compute all the objective functions and return the total objective value.
-        """
-
-        loss_objective = 0
-        for i in range(self.num_tasks):
-            loss_objective += self.objective_functions[i](self.fe_results[i].GC, self.fe_results[i].jacobian, self.fe.assembly)
-        return loss_objective
 
     def get_metrics(self) -> list[float]:
         """
@@ -67,63 +48,21 @@ class ObjectiveFunction(BaseObject):
         """
         raise NotImplementedError("The objective_function method should be implemented in subclass.")
 
-    def build_objective_functions(self) -> None:
+    def set_step(self, step: int):
         """
-        Build the objective function callables based on the current FEA results and assembly.
+        Set the current step for the objective function. This can be used to update any step-specific parameters or states.
+
+        Args:
+            step (int): The current step index.
         """
-        self.objective_functions = []
-        for taskidx in range(self.num_tasks):
-            def objective_func_now(GC: torch.Tensor,
-                                   jacobian: dict[str, torch.Tensor],
-                                   assembly: torchfea.Assembly,
-                                   taskidx: int = taskidx) -> torch.Tensor:
-                original_state: list[tuple[torch.Tensor, dict[str, torch.Tensor] | None]] = []
+        self.fe.assembly.set_load_parameters(self.fe_results[step].load_params)
 
-                # Keep grad only for the current task. Other tasks are detached
-                # so objective_funtion can still reference all fe_results safely.
-                try:
-                    for i in range(self.num_tasks):
-                        result_i = self.fe_results[i]
-                        original_state.append((result_i.GC, result_i.jacobian))
-
-                        if i == taskidx:
-                            result_i.GC = GC
-                            result_i.jacobian = jacobian
-                        else:
-                            result_i.GC = result_i.GC.detach()
-                            if result_i.jacobian is None:
-                                result_i.jacobian = None
-                            else:
-                                result_i.jacobian = {
-                                    key: value.detach() for key, value in result_i.jacobian.items()
-                                }
-
-                    obj_with_step_grad = self.objective_function()
-
-                    # Autodiff trick: for taskidx > 0, subtract the same objective
-                    # evaluated with this step detached. This cancels the direct
-                    # design-variable derivative terms repeated in each step while
-                    # keeping the derivative path through current-step GC/jacobian.
-                    if taskidx == 0:
-                        return obj_with_step_grad
-
-                    self.fe_results[taskidx].GC = GC.detach()
-                    if jacobian is None:
-                        self.fe_results[taskidx].jacobian = None
-                    else:
-                        self.fe_results[taskidx].jacobian = {
-                            key: value.detach() for key, value in jacobian.items()
-                        }
-                    obj_without_step_grad = self.objective_function()
-
-                    return obj_with_step_grad - obj_without_step_grad
-
-                finally:
-                    for i, (old_gc, old_jacobian) in enumerate(original_state):
-                        self.fe_results[i].GC = old_gc
-                        self.fe_results[i].jacobian = old_jacobian
-
-            self.objective_functions.append(objective_func_now)
+    def compute_multistep_objective(self, fe_results: list[torchfea.solver.StaticResult], assembly: torchfea.Assembly) -> torch.Tensor:
+        """
+        Compute the total objective from a multistep FE result list.
+        """
+        self.fe_results = fe_results
+        return self.objective_function()
     
     def sensitivity_analysis(self, params: morphopt.Params) -> dict[str, torch.Tensor]:
         """
@@ -135,8 +74,6 @@ class ObjectiveFunction(BaseObject):
         Returns:
             dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
         """
-
-        self.build_objective_functions()
 
         design_sensitivity_vars_dict = params.obtain_design_sensitivity_vars(assembly=self.fe.assembly)
 
@@ -159,11 +96,11 @@ class ObjectiveFunction(BaseObject):
             design_vars=design_sensitivity_vars,
             load_names=self.jacobian_needed,
             apply_func=apply_func,
-            compute_objective_funcs=self.objective_functions,
-            )
+            compute_objective_funcs=self.compute_multistep_objective,
+        )
         
         # rescale the gradients
-        design_gradients = design_gradients / (design_gradients.abs().max() + 1e-8)
+        # design_gradients = design_gradients / (design_gradients.abs().max() + 1e-8)
         
         design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
         

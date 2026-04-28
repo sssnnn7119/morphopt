@@ -7,7 +7,7 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 4.82
-minratio = 1e-6
+minratio = 1e-4
 
 class ThisController(morphopt.Controller):
     def __init__(self):

@@ -1,6 +1,7 @@
 ﻿
 import copy
 import os
+import tempfile
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  # For environments where MKL causes issues. Adjust as needed.
 import morphopt
 import torch
@@ -22,6 +23,7 @@ class ThisController(morphopt.Controller):
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
+            self.jacobian_needed = ['pressure_1']
 
         def get_volume_fraction(self):
             elems = self.fe.assembly._parts['final_model'].elems['C3D4']
@@ -42,9 +44,10 @@ class ThisController(morphopt.Controller):
             return volume_fraction
 
         def objective_function(self):
-
-
-            return self.fe_results[0].GC[-2]# + (vol_fraction - 0.4) ** 2 * 10
+            
+            self.set_step(1)
+            total_energy1 = self.fe.assembly._total_Potential_Energy(GC=self.fe_results[1].GC)
+            return self.fe_results[0].GC[-2] * total_energy1 * self.fe_results[0].jacobian['pressure_1'][-2, 0]
 
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
@@ -54,7 +57,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.2, 
+                super().__init__(fea_seed_size=3.0, 
                                  fea_mesh_order=1, 
                                  reinitialize_per_iter=5,
                                  thickness=1.5,
@@ -100,9 +103,9 @@ class ThisController(morphopt.Controller):
                 # self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
 
             def define_steps(self):
-                self.set_step_num(1)
+                self.set_step_num(2)
                 self.set_step_params(0, "pressure_1", [0.06])
-                # self.set_step_params(0, "force_1", [1., 0., -0.])
+                self.set_step_params(1, "pressure_1", [0.04])
                 
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
@@ -208,9 +211,11 @@ def run_once(
     controller.params.modify_assembly(design_vars, fe.assembly)
     fe.initialize()
     controller.objfun.fe = fe
+    solver: torchfea.solver.StaticImplicitSolver = fe.solver
     controller.objfun.fe_results = controller.solver.solve()
-    controller.objfun.build_objective_functions()
-    return controller.objfun.get_objective().detach()
+    for idx, results in enumerate(controller.objfun.fe_results):
+        results.jacobian = solver.get_jacobian(results, ['pressure_1'])
+    return controller.objfun.compute_multistep_objective(fe_results=controller.objfun.fe_results, assembly=fe.assembly)
 
 
 def central_difference(
@@ -219,7 +224,7 @@ def central_difference(
     x0_full: dict[str, torch.Tensor],
     key: str,
     sampled_ids: torch.Tensor,
-    eps: float = 1e-4,
+    eps: float = 1e-2,
 ) -> torch.Tensor:
     grad_fd = torch.zeros(sampled_ids.numel(), dtype=x0_full[key].dtype, device=x0_full[key].device)
     for i, idx in enumerate(sampled_ids):
@@ -270,7 +275,8 @@ def main():
     controller.initialize()
 
     try:
-        fe0 = controller.params.create_feamodel(path_result='Z:/cache/', pools=controller.pools)
+        with tempfile.TemporaryDirectory(prefix='cache_derivative_check_') as cache_dir:
+            fe0 = controller.params.create_feamodel(path_result=cache_dir + '/', pools=controller.pools)
         x0_full = {
             key: value.detach().clone()
             for key, value in controller.params.obtain_design_sensitivity_vars(fe0.assembly).items()

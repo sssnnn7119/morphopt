@@ -17,7 +17,7 @@ class CodesignFEAParams(FEAParams):
         fe = super().create_fea(inp)
         fe_part = fe.assembly.get_part('final_model')
         element_c3d6 = fe_part.elems['C3D6']
-        element_c3d6.initialize()
+        element_c3d6.initialize(nodes=fe_part.nodes)
 
         if (element_c3d6.gaussian_weight.min() < 0):
             nodes = fe_part.nodes
@@ -52,14 +52,14 @@ class CodesignFEAParams(FEAParams):
             scale = np.linalg.norm(np.ptp(surf_nodes_np, axis=0)) * 0.05
             glyphs = mesh.glyph(orient='Normals', scale=False, factor=scale)
 
-            plotter = pv.Plotter()
-            # plotter.add_mesh(mesh, color='lightgrey', point_size=5, render_points_as_spheres=True)
-            # plotter.add_mesh(glyphs, color='red')
-            plotter.add_mesh(mesh_1all, color='green', opacity=0.5)
-            plotter.add_mesh(mesh_1offset, color='red', opacity=1.0)
-            plotter.add_axes()
-            plotter.show_grid()
-            plotter.show()
+            # plotter = pv.Plotter()
+            # # plotter.add_mesh(mesh, color='lightgrey', point_size=5, render_points_as_spheres=True)
+            # # plotter.add_mesh(glyphs, color='red')
+            # plotter.add_mesh(mesh_1all, color='green', opacity=0.5)
+            # plotter.add_mesh(mesh_1offset, color='red', opacity=1.0)
+            # plotter.add_axes()
+            # plotter.show_grid()
+            # plotter.show()
 
 
 

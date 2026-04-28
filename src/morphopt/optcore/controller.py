@@ -298,7 +298,7 @@ class Controller:
         self.updater.update(gradients=gradients)
         self.updater.update_variables()
 
-        loss = self.objfun.get_objective()
+        loss = self.objfun.objective_function()
 
         t3 = time.time()
 

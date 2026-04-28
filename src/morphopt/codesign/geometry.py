@@ -45,7 +45,7 @@ class CodesignGeometry(GeometryParams):
         self._reinit_opt_lr: float = 5e-3
         self._reinit_opt_curvature_weight: float = 1e2
         self._reinit_opt_shape_weight: float = 1e2
-        self._reinit_opt_curvature_margin_ratio: float = 0.15
+        self._reinit_opt_curvature_margin_ratio: float = 0.25
         self._reinit_opt_inward_sign: float = 1.0
         self._reinit_opt_accept_only_improve: bool = True
 
