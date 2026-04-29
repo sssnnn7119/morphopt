@@ -15,6 +15,10 @@ class Sensitivity(BaseObjective):
         self.normalize_gradient = normalize_gradient
         self._cp0: torch.Tensor | None = None
 
+        self.factor: float
+        """A factor to scale the shape derivative, can be set in the initialize function. 
+        """
+
     def initialize(self, gradient: torch.Tensor, cps0: torch.Tensor, *args, **kwargs) -> None:
         self._cp0 = cps0.reshape_as(cps0).detach().clone()
 
@@ -26,7 +30,9 @@ class Sensitivity(BaseObjective):
 
         self.sensitivity = g
 
+        self.factor = 1 / (gradient.abs().max() + 1e-20)
+
     def __call__(self, cps: torch.Tensor | None = None, *args, **kwargs) -> torch.Tensor:
         cps_now = cps
 
-        return ((cps_now - self._cp0) * self.sensitivity).sum()
+        return ((cps_now - self._cp0) * self.sensitivity).sum() * self.factor

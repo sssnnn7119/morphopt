@@ -72,7 +72,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.0, fea_mesh_order=1)
+                super().__init__(max_step_length=[0.2, 0.2, 0.2, 0.2,0.2], reinitialize_per_iter=4, fea_seed_size=1.0)
 
                 self.surface_list: list[morphopt.GeometryParams.BSP] = []
 

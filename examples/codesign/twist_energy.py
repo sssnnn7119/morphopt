@@ -97,11 +97,11 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.2, 
-                                 fea_mesh_order=1, 
+                super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
                                  thickness=1.5,
-                                 num_layers=2,)
+                                 num_layers=1,
+                                 mesh_order=2)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=20.,
@@ -111,7 +111,7 @@ class ThisController(morphopt.Controller):
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.0,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
                                                 r0=10.,
                                                 init_location=[0., 0., 25.],

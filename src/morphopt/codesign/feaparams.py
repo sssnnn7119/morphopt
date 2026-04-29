@@ -13,13 +13,20 @@ class CodesignFEAParams(FEAParams):
     Class to handle the materials of the model for codesign optimization.
     """
 
-    def create_fea(self, inp):
-        fe = super().create_fea(inp)
+    def create_fea(self, part: torchfea.Part):
+        fe = super().create_fea(part=part)
         fe_part = fe.assembly.get_part('final_model')
-        element_c3d6 = fe_part.elems['C3D6']
-        element_c3d6.initialize(nodes=fe_part.nodes)
 
-        if (element_c3d6.gaussian_weight.min() < 0):
+        if 'C3D6' in fe_part.elems:
+            element_shell = fe_part.elems['C3D6']
+        elif 'C3D15' in fe_part.elems:
+            element_shell = fe_part.elems['C3D15']
+        else:
+            raise KeyError("Shell wedge elements not found (expected 'C3D6' or 'C3D15')")
+
+        element_shell.initialize(nodes=fe_part.nodes)
+
+        if (element_shell.gaussian_weight.min() < 0):
             nodes = fe_part.nodes
             fe.initialize()
             element_c3d4 = fe_part.elems['C3D4']

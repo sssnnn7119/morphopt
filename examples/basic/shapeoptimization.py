@@ -1,7 +1,5 @@
 ﻿
 import morphopt
-import torch
-import torchfea
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -12,10 +10,8 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__()
 
-            self.jacobian_needed = ['pressure_1']
-
         def objective_function(self):
-            return self.fe_results[0].jacobian['pressure_1'][-2, 0]
+            return self.fe_results[0].GC[-2]
 
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
@@ -25,7 +21,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.2, fea_mesh_order=1, reinitialize_per_iter=5)
+                super().__init__(fea_seed_size=2.5, reinitialize_per_iter=5, mesh_order=2)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=8.,
@@ -63,6 +59,9 @@ class ThisController(morphopt.Controller):
 
 
         class FEAParams(morphopt.FEAParams):
+            
+            def __init__(self):
+                super().__init__()
 
             def define_interface(self):
                 # Common BC / RP / Couple
@@ -135,4 +134,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.debug_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=10)

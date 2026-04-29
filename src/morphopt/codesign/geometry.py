@@ -8,14 +8,14 @@ class CodesignGeometry(GeometryParams):
 
     def __init__(self, 
                  fea_seed_size: float,
-                 fea_mesh_order: int = 1,
+                 mesh_order: int = 1,
                  reinitialize_per_iter: int = 5,
                  thickness=1.0,
                  num_layers=1,
                  **kwargs):
         super().__init__(
             fea_seed_size=fea_seed_size,
-            fea_mesh_order=fea_mesh_order,
+            mesh_order=mesh_order,
             reinitialize_per_iter=reinitialize_per_iter,
             **kwargs,
         )
@@ -40,6 +40,12 @@ class CodesignGeometry(GeometryParams):
         """
         Triangle connectivity on the base layer, stored as local node indices.
         """
+
+        self._shell_second_order_node_map: torch.Tensor | None = None
+        """[N,3] int64 tensor (i,j,mid) for shell mid-edge nodes."""
+
+        self._shell_elem_offset: int | None = None
+        """Element-id offset for the shell block (0-based)."""
 
         self._reinit_opt_steps: int = 100
         self._reinit_opt_lr: float = 5e-3
@@ -179,197 +185,145 @@ class CodesignGeometry(GeometryParams):
 
 
 
-    def _build_shell_c3d6(self, inp: torchfea.FEA_INP):
-        part = inp.part['final_model']
-        nodes_all = part.nodes
+    def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
+        thickness = float(self.shell_thickness)
+        if thickness <= 0:
+            return part
+        if self.num_layers <= 0:
+            return part
 
-        existing_elem_max_id = -1
-        if hasattr(part, 'elems') and part.elems is not None:
-            for elem_block in part.elems.values():
-                if elem_block is not None and elem_block.size > 0:
-                    existing_elem_max_id = max(existing_elem_max_id, int(np.max(elem_block[:, 0])))
+        # Ensure surface elements exist so we can query triangle meshes.
+        try:
+            part.surfaces.initialize(part)
+        except Exception:
+            pass
 
-        # Step 1: collect all cavity surfaces (surface_1_All ... surface_n_All),
-        # merge their nodes and triangle mesh into a single base set.
-        tri_blocks = []
-        tri_blocks_by_surface: dict[int, np.ndarray] = {}
+        tri_by_surface: dict[int, np.ndarray] = {}
+        tri_local_by_surface: dict[int, np.ndarray] = {}
+        base_ids_blocks: list[np.ndarray] = []
         cavity_order: list[int] = []
-        for name, tri in part.surfaces_tri.items():
-            if not (name.startswith('surface_') and name.endswith('_All')):
-                continue
-            try:
-                sidx = int(name.split('_')[1])
-            except Exception:
-                continue
-            if sidx >= 1 and tri.size > 0:
-                tri_now = tri.astype(int)
-                tri_blocks.append(tri_now)
-                tri_blocks_by_surface[sidx] = tri_now
-                cavity_order.append(sidx)
 
-        if len(tri_blocks) == 0:
-            raise KeyError("No cavity surface triangles found in surface_1_All ... surface_n_All.")
+        for sidx in range(1, int(self.num_surface)):
+            surf_name = f"surface_{sidx}_All"
+            tri = part.surfaces.get_trimesh(surf_name).detach().cpu().numpy().astype(int)
+            cavity_order.append(sidx)
+            tri_by_surface[sidx] = tri
+            base_ids_blocks.append(np.sort(np.asarray(part.set_nodes[surf_name], dtype=int)))
 
-        tri_all = np.concatenate(tri_blocks, axis=0)
-        base_ids = np.unique(tri_all.reshape(-1)).astype(int)
+        if len(tri_by_surface) == 0:
+            raise KeyError("No cavity surfaces found in surface_1_All ... surface_n_All")
+
+        # Merge base-layer node indices (keep deterministic order).
+        base_ids = np.concatenate(base_ids_blocks, axis=0)
         self._node_idx = [base_ids]
 
-        local_map = -np.ones(nodes_all.shape[0], dtype=int)
+        local_map = -np.ones((int(part.nodes.shape[0]),), dtype=int)
         local_map[base_ids] = np.arange(base_ids.shape[0], dtype=int)
 
-        tri_local = local_map[tri_all]
-        if np.any(tri_local < 0):
-            raise ValueError("Failed to map merged cavity triangles to local node indices.")
-        self._tri_local = tri_local.astype(int)
+        tri_local_all = []
+        for sidx in cavity_order:
+            tri_global = tri_by_surface[sidx]
+            tri_local = local_map[tri_global]
+            if np.any(tri_local < 0):
+                raise ValueError(f"Failed to map cavity triangles for surface_{sidx}_All")
+            tri_local = tri_local.astype(int)
+            tri_local_by_surface[sidx] = tri_local
+            tri_local_all.append(tri_local)
+        self._tri_local = np.concatenate(tri_local_all, axis=0).astype(int)
 
-        # Step 2: compute smoothed offset target points on merged triangle mesh.
-        base_xyz = nodes_all[base_ids, 1:4].copy()
-        target_xyz = self._compute_offset_targets(torch.from_numpy(base_xyz).to(torch.get_default_device()), self._tri_local).cpu().numpy()
-        disp_xyz = target_xyz - base_xyz
+        device = part.nodes.device
+        base_ids_t = torch.as_tensor(base_ids, dtype=torch.long, device=device)
 
-        # Step 3: insert layered nodes by linear interpolation from base to offset target.
-        next_node_id = int(nodes_all[:, 0].max()) + 1
-        for i in range(1, self.num_layers + 1):
-            alpha = float(i) / float(self.num_layers)
-            xyz = base_xyz + alpha * disp_xyz
-            node_ids = np.arange(next_node_id, next_node_id + xyz.shape[0], dtype=nodes_all.dtype)
-            next_node_id += xyz.shape[0]
+        with torch.no_grad():
+            base_nodes = part.nodes[base_ids_t]
+            target_nodes = self._compute_offset_targets(base_nodes, self._tri_local)
+            disp = target_nodes - base_nodes
 
-            block = np.zeros((xyz.shape[0], 4), dtype=nodes_all.dtype)
-            block[:, 0] = node_ids
-            block[:, 1:4] = xyz
-            nodes_all = np.concatenate([nodes_all, block], axis=0)
+            nodes_all = part.nodes
+            num_base = int(base_nodes.shape[0])
+            for layer in range(1, self.num_layers + 1):
+                alpha = float(layer) / float(self.num_layers)
+                new_xyz = base_nodes + alpha * disp
+                start_idx = int(nodes_all.shape[0])
+                nodes_all = torch.cat([nodes_all, new_xyz], dim=0)
+                self._node_idx.append(np.arange(start_idx, start_idx + num_base, dtype=int))
+            part.nodes = nodes_all
 
-            self._node_idx.append(node_ids.astype(int))
+        # Determine next element id (0-based, consistent with torchfea export).
+        existing_max = -1
+        for e in part.elems.values():
+            if getattr(e, "_elems_index", None) is None:
+                continue
+            if e._elems_index.numel() == 0:
+                continue
+            existing_max = max(existing_max, int(e._elems_index.max().item()))
+        elem_offset = int(existing_max + 1)
+        self._shell_elem_offset = elem_offset
 
-        # Build C3D6 elements between consecutive layers.
-        c3d6_rows = []
-        next_elem_id = existing_elem_max_id + 1
-        elem_id_of_tri_layer0: list[int] = []
-        elem_id_of_tri_by_layer: list[list[int]] = [[] for _ in range(self.num_layers)]
+        # Build linear wedge connectivity (C3D6) for all layers.
+        wedge6_blocks = []
+        elem_ids_top_by_surface: dict[int, np.ndarray] = {}
 
-        # Step 4: construct C3D6 from merged tri mesh and layer node indices.
+        elem_cursor = elem_offset
         for layer in range(self.num_layers):
             low_ids = self._node_idx[layer]
             up_ids = self._node_idx[layer + 1]
 
-            for tri in self._tri_local:
-                a, b, c = int(tri[0]), int(tri[1]), int(tri[2])
-                n0, n1, n2 = int(low_ids[a]), int(low_ids[b]), int(low_ids[c])
-                n3, n4, n5 = int(up_ids[a]), int(up_ids[b]), int(up_ids[c])
+            for sidx in cavity_order:
+                tri_local = tri_local_by_surface[sidx]
+                n0 = low_ids[tri_local[:, 0]]
+                n1 = low_ids[tri_local[:, 1]]
+                n2 = low_ids[tri_local[:, 2]]
+                n3 = up_ids[tri_local[:, 0]]
+                n4 = up_ids[tri_local[:, 1]]
+                n5 = up_ids[tri_local[:, 2]]
 
-                c3d6_rows.append([next_elem_id, n0, n1, n2, n3, n4, n5])
-                elem_id_of_tri_by_layer[layer].append(next_elem_id)
-                if layer == 0:
-                    elem_id_of_tri_layer0.append(next_elem_id)
-                next_elem_id += 1
+                wedge6 = np.stack([n0, n1, n2, n3, n4, n5], axis=1).astype(int)
+                wedge6_blocks.append(wedge6)
 
-        part.nodes = nodes_all
-        c3d6_new = np.asarray(c3d6_rows, dtype=int)
-        if not hasattr(part, 'elems') or part.elems is None:
-            part.elems = {'C3D6': c3d6_new}
-        elif 'C3D6' in part.elems and part.elems['C3D6'] is not None and part.elems['C3D6'].size > 0:
-            part.elems['C3D6'] = np.concatenate([part.elems['C3D6'], c3d6_new], axis=0)
-        else:
-            part.elems['C3D6'] = c3d6_new
+                elem_ids_now = np.arange(elem_cursor, elem_cursor + wedge6.shape[0], dtype=int)
+                elem_cursor += wedge6.shape[0]
+                if layer == self.num_layers - 1:
+                    elem_ids_top_by_surface[sidx] = elem_ids_now
 
-        # Keep INP part bookkeeping coherent with FEA_INP flow.
-        if hasattr(part, 'num_elems_3D'):
-            part.num_elems_3D = sum(
-                elem_data.shape[0]
-                for elem_data in part.elems.values()
-                if elem_data is not None and elem_data.size > 0 and elem_data.shape[1] >= 4
-            )
-        if hasattr(part, 'num_elems_2D'):
-            part.num_elems_2D = 0
+        wedge6_np = np.concatenate(wedge6_blocks, axis=0).astype(int)
+        elem_index = torch.arange(elem_offset, elem_offset + wedge6_np.shape[0], dtype=torch.long, device=device)
 
-        # Surface definitions for cavity pressure/BC: use layer-0 triangular face of C3D6 (face index 0).
-        part.surfaces = {} if not hasattr(part, 'surfaces') or part.surfaces is None else part.surfaces
-        part.sets_nodes = {} if not hasattr(part, 'sets_nodes') or part.sets_nodes is None else part.sets_nodes
 
-        # Define offset surfaces by cavity index: surface_%d_offset.
-        # Use the outermost inserted layer (k=num_layers).
-        tri_cursor = 0
-        top_layer_ids = self._node_idx[self.num_layers]
-        for sidx in cavity_order:
-            tri_s = tri_blocks_by_surface[sidx]
-            ntri = tri_s.shape[0]
-
-            # Element ids for this cavity at topmost wedge layer.
-            elem_ids_s_top = np.asarray(
-                elem_id_of_tri_by_layer[self.num_layers - 1][tri_cursor:tri_cursor + ntri],
-                dtype=int,
-            )
-            tri_cursor += ntri
-
-            surf_name_offset = f'surface_{sidx}_offset'
-            # C3D6 top triangular face index is 1.
-            part.surfaces[surf_name_offset] = [(elem_ids_s_top, 1)]
-
-            tri_local_s = local_map[tri_s]
-            tri_layer_s = top_layer_ids[tri_local_s]
-            part.surfaces_tri[surf_name_offset] = tri_layer_s.astype(int)
-            part.sets_nodes[surf_name_offset] = set(np.unique(tri_layer_s.reshape(-1)).astype(int).tolist())
-
-        # Rebuild element sets for section assignment consistency.
-        new_elem_ids = set(c3d6_new[:, 0].astype(int).tolist())
-        if hasattr(part, 'sets_elems') and part.sets_elems is not None:
-            for set_name in list(part.sets_elems.keys()):
-                old_set = part.sets_elems[set_name] if part.sets_elems[set_name] is not None else set()
-                part.sets_elems[set_name] = set(old_set).union(new_elem_ids)
-
-        # Rebuild material table shape/indexes expected by FEA_INP (index, density, type, p0, p1).
-        old_em = part.elems_material if hasattr(part, 'elems_material') else None
-        density = 0.0
-        mat_type = 1.0
-        p0 = 1.0
-        p1 = 1.0
-        if old_em is not None and old_em.size > 0:
-            valid = np.where((old_em[:, 0] >= 0) & np.isin(old_em[:, 2].astype(int), [1, 2]))[0]
-            if valid.size > 0:
-                src = old_em[valid[0]]
-                density = float(src[1])
-                mat_type = float(src[2])
-                p0 = float(src[3])
-                p1 = float(src[4])
-
-        p0 = 0.
-        p1 = 0.
-
-        all_elem_ids = np.concatenate(
-            [blk[:, 0].astype(int) for blk in part.elems.values() if blk is not None and blk.size > 0],
-            axis=0,
+        self._shell_second_order_node_map = None
+        element = torchfea.elements.initialize_element(
+            element_type="C3D6",
+            elems_index=elem_index,
+            elems=torch.from_numpy(wedge6_np).to(device=device, dtype=torch.long),
+            part=part,
         )
-        mat_size = int(all_elem_ids.max()) + 1 if all_elem_ids.size > 0 else 0
-        new_em = -np.ones((mat_size, 5), dtype=float)
-        if old_em is not None and old_em.size > 0:
-            copy_len = min(old_em.shape[0], mat_size)
-            new_em[:copy_len] = old_em[:copy_len]
+        part.add_element(element, name="C3D6")
+        shell_top_face_cols = [3, 4, 5]
 
-        new_em[c3d6_new[:, 0].astype(int), 0] = c3d6_new[:, 0].astype(float)
-        new_em[c3d6_new[:, 0].astype(int), 1] = density
-        new_em[c3d6_new[:, 0].astype(int), 2] = mat_type
-        new_em[c3d6_new[:, 0].astype(int), 3] = p0
-        new_em[c3d6_new[:, 0].astype(int), 4] = p1
+        # Define offset surfaces at the outermost layer, per cavity.
+        for sidx, elem_ids_s_top in elem_ids_top_by_surface.items():
+            surf_name_offset = f"surface_{sidx}_offset"
+            part.add_surface_set(surf_name_offset, [(np.asarray(elem_ids_s_top, dtype=int), 1)])
 
-        missing_ids = all_elem_ids[new_em[all_elem_ids, 2] < 0]
-        if missing_ids.size > 0:
-            new_em[missing_ids, 0] = missing_ids.astype(float)
-            new_em[missing_ids, 1] = density
-            new_em[missing_ids, 2] = mat_type
-            new_em[missing_ids, 3] = p0
-            new_em[missing_ids, 4] = p1
+            # Also provide a node set for convenience (include mid-edge nodes for quadratic).
+            row = (np.asarray(elem_ids_s_top, dtype=int) - elem_offset).astype(int)
+            if row.size > 0:
+                conn = wedge6_np[row][:, shell_top_face_cols]
+                part.set_nodes[surf_name_offset] = np.unique(conn.reshape(-1)).astype(int)
 
-        part.elems_material = new_em
+        # Refresh surfaces cache to include the newly-added offset surfaces.
+        try:
+            part.surfaces.initialize(part)
+        except Exception:
+            pass
 
-        return inp
+        return part
 
     def _regenerate(self, path_result: str, pools=None):
 
-        # get the input data
-        inp = super()._regenerate(path_result=path_result, pools=pools)
-        inp = self._build_shell_c3d6(inp)
-        return inp
+        part = super()._regenerate(path_result=path_result, pools=pools)
+        part = self._build_shell_c3d6(part)
+        return part
 
 
     def modify_assembly(self, design_sensitivity_vars, assembly):
@@ -377,16 +331,22 @@ class CodesignGeometry(GeometryParams):
 
         if len(self._node_idx) == 0 or self._tri_local is None:
             return
+        
+        part = assembly.get_part('final_model')
 
-        nodes = assembly.get_part('final_model').nodes.clone()
-        base_ids = self._node_idx[0]
-        base_nodes = nodes[base_ids]
+        nodes = part.nodes.clone()
+        base_ids_t = torch.as_tensor(self._node_idx[0], dtype=torch.long, device=nodes.device)
+        base_nodes = nodes[base_ids_t]
         target_nodes = self._compute_offset_targets(base_nodes, self._tri_local)
         disp = target_nodes - base_nodes
 
         for layer in range(1, self.num_layers + 1):
-            layer_ids = self._node_idx[layer]
+            layer_ids_t = torch.as_tensor(self._node_idx[layer], dtype=torch.long, device=nodes.device)
             alpha = float(layer) / float(self.num_layers)
-            nodes[layer_ids] = base_nodes + alpha * disp
+            nodes[layer_ids_t] = base_nodes + alpha * disp
 
-        assembly.get_part('final_model').nodes = nodes
+        # Keep quadratic mid-edge nodes consistent (and differentiable).
+        if self._mesh_order == 2:
+            nodes[part.mid_pt_idxmap_torch[:, 2]] = (nodes[part.mid_pt_idxmap_torch[:, 0]] + nodes[part.mid_pt_idxmap_torch[:, 1]]) / 2
+
+        part.nodes = nodes

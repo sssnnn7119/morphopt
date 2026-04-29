@@ -34,7 +34,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4], fea_seed_size=0.9, fea_mesh_order=1)
+                super().__init__(max_step_length=[0.4, 0.4, 0.4, 0.4], fea_seed_size=0.9)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=21.,

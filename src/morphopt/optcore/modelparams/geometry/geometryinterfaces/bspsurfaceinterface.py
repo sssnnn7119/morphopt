@@ -1,8 +1,6 @@
 
 import os
-import sys
 import numpy as np
-from numpy.ma import indices
 import torch
 import gmsh
 

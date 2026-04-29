@@ -50,8 +50,8 @@ class Params(BaseObject):
         Args:
             assembly (Assembly): The assembly to create the finite element model for.
         """
-        inp = self.geometry.generate(path_result=path_result, pools=pools)
-        fe = self.feamodel.create_fea(inp=inp)
+        part = self.geometry.generate(path_result=path_result, pools=pools)
+        fe = self.feamodel.create_fea(part=part)
         self.materials.set_materials(fe)
         fe.initialize()
         

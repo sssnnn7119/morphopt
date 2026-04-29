@@ -50,8 +50,8 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=1.0, 
-                                 fea_mesh_order=1, 
+                super().__init__(fea_seed_size=2.0, 
+                                 mesh_order=2,
                                  reinitialize_per_iter=5,
                                  thickness=0.1,
                                  num_layers=2,)
@@ -229,19 +229,19 @@ def validate_generated_inp() -> None:
 
         with tempfile.TemporaryDirectory(prefix='cache_shell_verify_') as cache_dir:
             cache_dir_with_sep = os.path.join(cache_dir, '')
-            inp = controller.params.geometry.generate(path_result=cache_dir_with_sep, pools=controller.pools)
-            
-            part = inp.part['final_model']
+            part = controller.params.geometry.generate(path_result=cache_dir_with_sep, pools=controller.pools)
+
+            part.surfaces.initialize(part)
 
             print('=== INP Validation (Shell Offset) ===')
             print(f'node count: {part.nodes.shape[0]}')
             print(f'element types: {list(part.elems.keys())}')
-            fe = controller.params.feamodel.create_fea(inp=inp)
-            fe.assembly.initialize()
+            fe = controller.params.feamodel.create_fea(part=part)
+            fe.initialize()
             fe_part = fe.assembly.get_part("final_model")
 
-            element_c3d4 = fe_part.elems['C3D4']
-            element_c3d6 = fe_part.elems['C3D6']
+            element_c3d4 = fe_part.elems.get('C3D4', None)
+            element_c3d6 = fe_part.elems.get('C3D6', None)
 
             nodes = fe_part.nodes
 
@@ -259,11 +259,15 @@ def validate_generated_inp() -> None:
 
             print(f'from_inp elements: {list(fe_part.elems.keys())}')
 
-        if 'C3D6' not in part.elems:
-            raise RuntimeError('C3D6 elements were not generated.')
+        if 'C3D6' not in part.elems and 'C3D15' not in part.elems:
+            raise RuntimeError("Shell wedge elements were not generated (expected 'C3D6' or 'C3D15').")
+        
+        element_c3d6.initialize(nodes=part.nodes)
+        if element_c3d6.gaussian_weight.min() < 0:
+            raise RuntimeError("Negative Gaussian weights found in C3D6 elements, which may lead to inaccurate results.")
 
         cavity_ids = []
-        for name in part.surfaces_tri.keys():
+        for name in part.surfaces.keys():
             m = re.fullmatch(r'surface_(\d+)_All', name)
             if m is not None and int(m.group(1)) >= 1:
                 cavity_ids.append(int(m.group(1)))
@@ -278,12 +282,10 @@ def validate_generated_inp() -> None:
             offset_name = f'surface_{cid}_offset'
             if offset_name not in part.surfaces:
                 raise RuntimeError(f'Missing offset surface definition: {offset_name} in part.surfaces')
-            if offset_name not in part.surfaces_tri:
-                raise RuntimeError(f'Missing offset surface triangles: {offset_name} in part.surfaces_tri')
-            if offset_name not in part.sets_nodes:
-                raise RuntimeError(f'Missing offset node set: {offset_name} in part.sets_nodes')
+            if offset_name not in part.set_nodes:
+                raise RuntimeError(f'Missing offset node set: {offset_name} in part.set_nodes')
 
-            tri = part.surfaces_tri[offset_name]
+            tri = part.surfaces.get_trimesh(offset_name).detach().cpu().numpy().astype(int)
             if tri.size == 0:
                 raise RuntimeError(f'Offset surface has empty triangles: {offset_name}')
 
@@ -291,17 +293,18 @@ def validate_generated_inp() -> None:
             if len(surf_items) == 0:
                 raise RuntimeError(f'Offset surface has empty surface mapping: {offset_name}')
 
-            print(f'{offset_name}: triangles={tri.shape[0]}, node_set={len(part.sets_nodes[offset_name])}')
+            print(f'{offset_name}: triangles={tri.shape[0]}, node_set={len(part.set_nodes[offset_name])}')
 
         # Check whether cavity surfaces are oriented and whether shell volume matches
         # enclosed-volume difference between surface_1_All and surface_1_offset.
         enclosed_diff_total = 0.0
         for cid in cavity_ids:
-            tri_all = part.surfaces_tri[f'surface_{cid}_All']
-            tri_offset = part.surfaces_tri[f'surface_{cid}_offset']
+            tri_all = part.surfaces.get_trimesh(f'surface_{cid}_All').detach().cpu().numpy().astype(int)
+            tri_offset = part.surfaces.get_trimesh(f'surface_{cid}_offset').detach().cpu().numpy().astype(int)
 
-            v_all_signed, orient_ratio_all = _surface_orientation_and_volume(nodes_xyz=part.nodes[:, 1:4], tri=tri_all)
-            v_offset_signed, orient_ratio_offset = _surface_orientation_and_volume(nodes_xyz=part.nodes[:, 1:4], tri=tri_offset)
+            nodes_xyz = part.nodes.detach().cpu().numpy()
+            v_all_signed, orient_ratio_all = _surface_orientation_and_volume(nodes_xyz=nodes_xyz, tri=tri_all)
+            v_offset_signed, orient_ratio_offset = _surface_orientation_and_volume(nodes_xyz=nodes_xyz, tri=tri_offset)
 
             print(f'surface_{cid}_All oriented volume: {v_all_signed:.6f}, orientation consistency: {orient_ratio_all:.4f}')
             print(f'surface_{cid}_offset oriented volume: {v_offset_signed:.6f}, orientation consistency: {orient_ratio_offset:.4f}')
@@ -319,16 +322,20 @@ def validate_generated_inp() -> None:
                 )
             enclosed_diff_total += enclosed_diff
 
-        c3d6_elems = [elem for elem in fe_part.elems.values() if elem.__class__.__name__ == 'C3D6']
-        if len(c3d6_elems) == 0:
-            raise RuntimeError('No C3D6 elements found in from_inp assembly.')
+        shell_elems = [elem for elem in fe_part.elems.values() if elem.__class__.__name__ in ['C3D6', 'C3D15']]
+        if len(shell_elems) == 0:
+            raise RuntimeError("No shell wedge elements found in assembly (expected C3D6/C3D15).")
 
         min_detj = float('inf')
         integrated_volume = 0.0
-        for elem in c3d6_elems:
+        for elem in shell_elems:
             # For current torchfea C3D6, base gauss weights are [0.5, 0.5],
             # and elem.gaussian_weight stores detJ * base_weight.
-            detj_now = (elem.gaussian_weight * 2.0).detach().cpu().numpy()
+            # For C3D15, gaussian_weight is also detJ * base_weight; we only assert positivity.
+            if elem.__class__.__name__ == 'C3D6':
+                detj_now = (elem.gaussian_weight * 2.0).detach().cpu().numpy()
+            else:
+                detj_now = elem.gaussian_weight.detach().cpu().numpy()
             min_detj = min(min_detj, float(detj_now.min()))
             integrated_volume += float(elem.get_volumn().detach().cpu().item())
 
@@ -337,21 +344,21 @@ def validate_generated_inp() -> None:
 
         base_area = 0.0
         top_area = 0.0
-        nodes_xyz = part.nodes[:, 1:4]
+        nodes_xyz = part.nodes.detach().cpu().numpy()
         for cid in cavity_ids:
-            tri_base = part.surfaces_tri[f'surface_{cid}_All']
+            tri_base = part.surfaces.get_trimesh(f'surface_{cid}_All').detach().cpu().numpy().astype(int)
             a = nodes_xyz[tri_base[:, 0]]
             b = nodes_xyz[tri_base[:, 1]]
             c = nodes_xyz[tri_base[:, 2]]
             base_area += float((0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)).sum())
 
-            tri_top = part.surfaces_tri[f'surface_{cid}_offset']
+            tri_top = part.surfaces.get_trimesh(f'surface_{cid}_offset').detach().cpu().numpy().astype(int)
             a = nodes_xyz[tri_top[:, 0]]
             b = nodes_xyz[tri_top[:, 1]]
             c = nodes_xyz[tri_top[:, 2]]
             top_area += float((0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)).sum())
 
-        thickness_total = float(controller.params.geometry.shell_thickness) * int(controller.params.geometry.num_layers)
+        thickness_total = float(controller.params.geometry.shell_thickness)
         volume_area_thickness = base_area * thickness_total
         volume_area_avg = 0.5 * (base_area + top_area) * thickness_total
         rel_err_simple = abs(integrated_volume - volume_area_thickness) / max(abs(volume_area_thickness), 1e-12)

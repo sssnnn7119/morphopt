@@ -23,8 +23,12 @@ class FEAParams(BaseParams):
     def __init__(self):
         """
         Initialize the Loads class.
+
+        Args:
+            fea_mesh_order (int): The FE mesh order used by the analysis.
         """
         super().__init__()
+
 
         self.feainterfaces: dict[str, BaseFEAInterface] = {}
         """loadinterfaces (dict): A dictionary to hold the load interfaces."""
@@ -141,47 +145,18 @@ class FEAParams(BaseParams):
         """
         return len(self.fea_steps_params)
 
-    def create_fea(self, inp: torchfea.FEA_INP) -> FEAController:
+    def create_fea(self, part: torchfea.Part) -> FEAController:
         """
         Create an FEAController instance from the given FEA_INP file and add load interfaces
         Args:
-            inp (torchfea.FEA_INP): The FEA input file.
+            part (torchfea.Part): The FEA part.
         Returns:
             FEAController: The created FEAController instance with load interfaces added.
         """
 
-        default_device = torch.tensor(0.).device
-        default_dtype = torch.tensor(0.).dtype
-        
         # get the FEA model
-        nodes = inp.part['final_model'].nodes[:, 1:]
-        part = torchfea.Part(torch.from_numpy(nodes).to(default_device).to(default_dtype))
-        for surface_name, surface in inp.part['final_model'].surfaces.items():
-            sf_now = []
-            for sf in surface:
-                sf_now.append((sf[0], sf[1]))
-            part.add_surface_set(surface_name, sf_now)
-
-        # define the set of nodes
-        for set_name, node_indices in inp.part['final_model'].sets_nodes.items():
-            part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
-
-        index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
-        part.set_nodes['surface_0_Bottom'] = index_bottom
-        index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
-        part.set_nodes['surface_0_Head'] = index_head
-
-        for key in inp.part['final_model'].elems.keys():
-            elems = inp.part['final_model'].elems[key][:, 1:]
-            elems_index = inp.part['final_model'].elems[key][:, 0]
-            element = torchfea.elements.initialize_element(element_type=key,
-                                                        elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
-                                                        elems=torch.from_numpy(elems).to(torch.get_default_device()), 
-                                                        part=part)
-
-            part.add_element(element, name=key)
-
         assembly = torchfea.Assembly()
+
         assembly.add_part(part=part, name='final_model')
         assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
 

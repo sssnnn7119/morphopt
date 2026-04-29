@@ -6,6 +6,9 @@ import os
 import shutil
 import gmsh
 
+import pypardiso
+from scipy.stats import f
+from scipy.stats.mstats import sen_seasonal_slopes
 import torchfea
 import numpy as np
 import torch
@@ -346,7 +349,7 @@ class GeometryParams(BaseParams):
     from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
     from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
 
-    def __init__(self, fea_seed_size: float, fea_mesh_order: int = 1, reinitialize_per_iter: int = 5, *args, **kwargs) -> None:
+    def __init__(self, fea_seed_size: float, reinitialize_per_iter: int = 5, mesh_order: int = 1, *args, **kwargs) -> None:
         """
         Initialize the Surfaces class.
 
@@ -360,6 +363,16 @@ class GeometryParams(BaseParams):
         List of surface objects.
         """
 
+        self._mesh_order = mesh_order
+        """
+        The mesh order for the finite element analysis (FEA). 
+        """
+
+        self._second_order_node_map: torch.Tensor = None
+        """
+        A mapping from the first-order nodes to the second-order nodes for second-order meshing.
+        """
+
         self.reinitialize_per_iter = reinitialize_per_iter
         """
         The number of iterations after which the surfaces are reinitialized.
@@ -368,11 +381,6 @@ class GeometryParams(BaseParams):
         self.fea_seed_size = fea_seed_size
         """
         The seed size for the finite element analysis (FEA).
-        """
-        
-        self.fea_mesh_order = fea_mesh_order
-        """
-        The mesh order for the finite element analysis (FEA).
         """
 
         self._surface_node_index: list[np.ndarray] = []
@@ -667,16 +675,19 @@ class GeometryParams(BaseParams):
             mesh_list.append(mesh)
         return mesh_list
     
-    def generate(self, path_result: str, pools = None) -> None:
+    def generate(self, path_result: str, pools = None):
         """
         This function generates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
         """
 
-        return self._regenerate(path_result, pools)
+        part = self._regenerate(path_result, pools)
+        if self._mesh_order == 2:
+            part.convert_linear_to_quadratic_elements(list(part.elems.keys()), list(part.elems.keys()))
+        
+        return part
 
-
-    def _regenerate(self, path_result: str, pools = None) -> None:
+    def _regenerate(self, path_result: str, pools = None):
         """
         This function regenerates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
@@ -707,19 +718,50 @@ class GeometryParams(BaseParams):
             pools_now.close()
             pools_now.join()
 
-        # read the inp file
+        # read the inp file and create the Part
         inp = torchfea.FEA_INP()
         inp.read_inp(path=inp_path)
         # inp.read_inp('Z:\\Results\\EXAMPLE_T20260118_100206\\cache\\TopOptRun.inp')
+        # get the FEA model
+        nodes = inp.part['final_model'].nodes[:, 1:]
+        part = torchfea.Part(torch.from_numpy(nodes).to(torch.get_default_device()).to(torch.get_default_dtype()))
+        for surface_name, surface in inp.part['final_model'].surfaces.items():
+            sf_now = []
+            for sf in surface:
+                sf_now.append((sf[0], sf[1]))
+            part.add_surface_set(surface_name, sf_now)
 
+        # define the set of nodes
+        for set_name, node_indices in inp.part['final_model'].sets_nodes.items():
+            part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
+
+        index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
+        part.set_nodes['surface_0_Bottom'] = index_bottom
+        index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
+        part.set_nodes['surface_0_Head'] = index_head
+
+        for key in inp.part['final_model'].elems.keys():
+            elems = inp.part['final_model'].elems[key][:, 1:]
+            elems_index = inp.part['final_model'].elems[key][:, 0]
+            element = torchfea.elements.initialize_element(element_type=key,
+                                                        elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
+                                                        elems=torch.from_numpy(elems).to(torch.get_default_device()), 
+                                                        part=part)
+            part.add_element(element, name=key)
+
+        surf_node_idx_list_order0 = [np.sort(part.set_nodes[f'surface_{i}_All']) for i in range(self.num_surface)]
+        
+        # match the nodes of the surfaces with the nodes of the FEA model, and update the nodes of the FEA model with the nodes of the surfaces
         for sf_idx in range(self.num_surface):
-            surf_node_idx = np.array(list(inp.part['final_model'].sets_nodes[f'surface_{sf_idx}_All']))
-            surf_node_idx = np.sort(surf_node_idx)
-            surf_nodes = inp.part['final_model'].nodes[surf_node_idx][:, 1:]
-            nodes_new = self.surface_list[sf_idx].match_coordinates(surf_node_idx, surf_nodes)
-            inp.part['final_model'].nodes[self.surface_list[sf_idx].surf_node_idx, 1:] = nodes_new
+            surf_node_idx = surf_node_idx_list_order0[sf_idx]
+            surf_nodes = part.nodes[surf_node_idx].cpu().numpy()
+            surf_now = self.surface_list[sf_idx]
+            surf_now.match_coordinates(surf_node_idx, surf_nodes)
 
-        return inp
+            nodes_new = surf_now.map(torch.from_numpy(surf_now.surf_node_uv))
+            part.nodes[surf_now.surf_node_idx] = nodes_new
+
+        return part
 
     def _export_data(self, foldpath: str) -> list[str]:
         """
@@ -759,8 +801,8 @@ class GeometryParams(BaseParams):
         Modify the assembly for sensitivity analysis.
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
         """
-
-        nodes0 = assembly._parts['final_model'].nodes
+        part = assembly.get_part('final_model')
+        nodes0 = part.nodes
         nodes_new = nodes0.clone()
 
         varidx = 0
@@ -773,5 +815,8 @@ class GeometryParams(BaseParams):
             node_update = self.surface_list[sf_idx].map(torch.from_numpy(self.surface_list[sf_idx].surf_node_uv))
             nodes_new[surf_node_idx] = node_update
 
-        assembly.get_part("final_model").nodes = nodes_new
+        if self._mesh_order == 2:
+            nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (nodes_new[part.mid_pt_idxmap_torch[:, 0]] + nodes_new[part.mid_pt_idxmap_torch[:, 1]]) / 2
+
+        part.nodes = nodes_new
         

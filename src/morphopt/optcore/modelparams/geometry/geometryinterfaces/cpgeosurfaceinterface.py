@@ -3,7 +3,6 @@ import os
 import sys
 import cpgeo.utils
 import numpy as np
-from scipy.datasets import face
 import torch
 import gmsh
 

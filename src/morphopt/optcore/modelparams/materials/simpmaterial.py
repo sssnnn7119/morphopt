@@ -263,14 +263,12 @@ class SIMPMaterials(BaseParams):
 
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
 
-        elements = fe.assembly.get_part('final_model').elems['C3D4']
+        elements: torchfea.elements.Element_3D = fe.assembly.get_part('final_model').elems['C3D4']
 
-        elems = elements._elems
         nodes = fe.assembly.get_part('final_model').nodes
+        elements._pre_load_gaussian(nodes=nodes)
 
-        gaussian_points_locations = torch.zeros([1, elems.shape[0], 3], dtype=nodes.dtype, device=nodes.device)
-        for i in range(4):
-            gaussian_points_locations[0] += nodes[elems[:, i]] / 4
+        gaussian_points_locations = elements.get_gaussian_points(nodes=nodes)
 
         shape_gaussian = gaussian_points_locations.shape
         gaussian_points_locations = gaussian_points_locations.reshape([-1, 3])

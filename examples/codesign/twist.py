@@ -90,7 +90,6 @@ class ThisController(morphopt.Controller):
             def __init__(self):
 
                 super().__init__(fea_seed_size=1.0, 
-                                 fea_mesh_order=1, 
                                  reinitialize_per_iter=10,
                                  thickness=1.5,
                                  num_layers=2,)
