@@ -708,11 +708,16 @@ class GeometryParams(BaseParams):
             pools_now = mp.Pool(1)
         else:
             pools_now = pools
-        pools_now.apply_async(MeshGenerator.run, kwds={
-            'seed_size': self.fea_seed_size,
-            'output_file': inp_path,
-            'directory': path_output
-        }).get()
+
+        import sys
+        if sys.platform.startswith('win'):
+            pools_now.apply_async(MeshGenerator.run, kwds={
+                'seed_size': self.fea_seed_size,
+                'output_file': inp_path,
+                'directory': path_output
+            }).get()
+        else:
+            MeshGenerator.run(seed_size=self.fea_seed_size, output_file=inp_path, directory=path_output)
 
         if pools is None:
             pools_now.close()

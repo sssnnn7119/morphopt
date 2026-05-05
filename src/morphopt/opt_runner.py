@@ -10,6 +10,9 @@ def start_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
         device (str, optional): The device to use for computation. Defaults to 'cpu'.
         restart_per_iteration (int, optional): The number of iterations between restarts. Defaults to 20.
     """
+
+    import multiprocessing as mp
+
     if path_result is None:
         import __main__
         main_filepath = __main__.__file__
@@ -17,10 +20,7 @@ def start_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
         main_filepath = path_result + '/scripts/' + 'MAIN_SCRIPT_FOR_RESTART.py'
 
     import time
-    import multiprocessing as mp
     from .taskoptmization import TaskOptimization
-    from .taskui import run_ui
-
 
     dataqueue = mp.Queue()
     process_optimization = mp.Process(target=TaskOptimization.task_optimization, kwargs={'path_result': path_result, 
@@ -35,6 +35,9 @@ def start_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
         process_optimization.join()
         return
     
+    # Defer PyQt6 import until after the optimization process is forked/spawned
+    # to avoid inheriting Qt/X11 connections in subprocesses
+    from .taskui import run_ui
     process_ui = mp.Process(target=run_ui, args=(dataqueue, main_filepath))
     process_ui.start()
 

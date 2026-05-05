@@ -15,6 +15,7 @@ import time
 import gc
 import morphopt
 import multiprocessing as mp
+from multiprocessing import get_context
 
 class Controller:
 
@@ -186,7 +187,9 @@ class Controller:
         self.objfun.initialize()
         self.history.initialize()
 
-        self.pools = mp.Pool(processes=self.solver.num_process)
+        # Use 'spawn' context for the Pool to avoid inheriting CUDA context
+        # and Qt/X11 connections from forked subprocesses
+        self.pools = get_context('spawn').Pool(processes=self.solver.num_process)
 
     def start_optimization(self, main_filepath: str = None) -> None:
         

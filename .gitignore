@@ -7,6 +7,9 @@ __pycache__/
 *.so
 .vscode/
 
+# temperary files
+.temp/
+
 .vs/
 # Distribution / packaging
 .Python

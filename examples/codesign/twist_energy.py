@@ -11,7 +11,7 @@ minratio = 1e-4
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/Results/', 
+        super().__init__(path_result_folder='/home/song/code/morphopt/.temp', 
                          opt_label='Twist_Energy')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
@@ -311,4 +311,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:1', restart_per_iteration=20)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)

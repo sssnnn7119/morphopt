@@ -3,7 +3,7 @@ import morphopt
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/Results/', 
+        super().__init__(path_result_folder='/home/song/文档/code/morphopt/.temp', 
                          opt_label='EXAMPLE')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
@@ -37,7 +37,7 @@ class ThisController(morphopt.Controller):
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
                                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-
+                
                 # self.add_surface(
                 #     self.CPGEO.initialize_Sphere(seed_size=1.0,
                 #                                 flip=True,
