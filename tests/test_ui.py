@@ -4,8 +4,16 @@ Minimal test: just create and show the UI, no optimization.
 import sys
 import os
 
-# Force Qt to use XCB (X11) to fix VTK+Wayland X11 BadWindow error
-os.environ.setdefault('QT_QPA_PLATFORM', 'xcb')
+# Platform-specific Qt backend selection.
+# - On Linux: default to XCB (X11) to avoid VTK+Wayland issues.
+# - On Windows: ensure we do NOT force Linux backends like "xcb".
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+elif sys.platform.startswith("win"):
+    # If the user previously exported QT_QPA_PLATFORM=xcb (e.g., copied from Linux),
+    # Qt will fail to initialize on Windows because the xcb plugin doesn't exist.
+    if os.environ.get("QT_QPA_PLATFORM", "").lower() == "xcb":
+        os.environ.pop("QT_QPA_PLATFORM", None)
 
 print(f"DISPLAY={os.environ.get('DISPLAY', 'NOT SET')}")
 print(f"QT_QPA_PLATFORM={os.environ.get('QT_QPA_PLATFORM', 'NOT SET')}")

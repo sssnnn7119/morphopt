@@ -11,7 +11,7 @@ minratio = 1e-4
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='/home/song/code/morphopt/.temp', 
+        super().__init__(path_result_folder='Z:/results/', 
                          opt_label='Twist_Energy')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):

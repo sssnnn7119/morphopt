@@ -400,7 +400,10 @@ def run_ui(dataqueue: mp.Queue, main_filepath: str = None):
     # Force Qt to use XCB (X11) platform instead of Wayland, because VTK's
     # OpenGL rendering requires a native X11 window and crashes with
     # "BadWindow (invalid Window parameter)" on Wayland sessions.
-    os.environ.setdefault('QT_QPA_PLATFORM', 'xcb')
+
+    import sys
+    if sys.platform.startswith("linux"):
+        os.environ.setdefault('QT_QPA_PLATFORM', 'xcb')
     
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
     import torch
