@@ -7,11 +7,11 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 4.82
-minratio = 1e-4
+minratio = 1e-6
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/results/', 
+        super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
                          opt_label='Twist_Energy')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
@@ -170,7 +170,8 @@ class ThisController(morphopt.Controller):
                                  degree=3,
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
-                                 shell_density=1.08e-9)
+                                 shell_density=1.08e-9,
+                                 penalfactor=1e-1)
         
             def get_ratio(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
@@ -245,7 +246,8 @@ class ThisController(morphopt.Controller):
 
             super().__init__(params=params,
                             num_process=1,
-                            task_index_list=[[0, 1]])
+                            task_index_list=[[0, 1]],
+                            available_gpus=['cuda:0'],)
 
     class Updater(morphopt.Updaters):
         """
@@ -268,7 +270,7 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     params=params,
                     max_step_iter=100)
-
+                
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(

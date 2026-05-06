@@ -2,7 +2,7 @@
 
 if __name__ == "__main__":
     import morphopt
-    morphopt.start_optimization(path_result='Z:/Results/Twist_Energy_T20260427_201737/',
+    morphopt.start_optimization(path_result='/run/media/song/缓存/Results/Twist_Energy_T20260506_115234/',
                                   target_iteration=None,
-                                  device='cuda:1',
+                                  device='cpu',
                                   restart_per_iteration=20,)
