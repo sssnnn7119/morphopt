@@ -84,7 +84,7 @@ class SurfacesFigurePlotter:
                               boundary: tuple[float, float, float, float, float, float] = None,
                               n_frames: int = 36,
                               total_time: int = 4000,
-                              view: tuple[float, float] = (45, 70),
+                              view: tuple[float, float] = (45, 80),
                               output_gif: str = 'surface_rotation.gif'):
         """
         Plot the surfaces at a given iteration with rotation and save as a gif.
@@ -116,7 +116,7 @@ class SurfacesFigurePlotter:
             math.sin(math.radians(elevation))))
 
         plotter.open_gif(output_gif)
-        plotter.camera_position = 'iso'
+        # plotter.camera_position = 'iso'
         
         for i in range(n_frames):
             plotter.write_frame()
@@ -241,25 +241,16 @@ class SurfacesFigurePlotter:
         plotter.close()
 
 if __name__ == "__main__":
-    plotter = SurfacesFigurePlotter(restart_path='A:/MineData/Learning/Publications/TMECH2025Contact/results/Optimization/grasp/result/GRASP_T20260302_163335/')
-    # plotter.plot_history_all_surfaces(history_index=294,
-    #                                  output_gif='Z:/temp/example_displacement_history.gif',
-    #                                  output_jpg_foldpath='Z:/temp/')
+    plotobject = SurfacesFigurePlotter(restart_path='/run/media/song/DATA/Work/results/locomotion/FRONT_T20260421_190912_YCX/')
 
-    plotter.plot_surface_rotation(iteration=294, output_gif='Z:/temp/example_surface_rotation.gif')
+    # plotobject.plot_surface_rotation(iteration=123, output_gif='/run/media/song/缓存/cache/example_surface_rotation.gif')
 
-    # pt = pv.Plotter(off_screen=True, window_size=[2500, 2500])
-    # pt.set_background('white')
-    # plotter.plot_surfaces(iteration=294, plotter=pt)
-
-    # pt.enable_parallel_projection()
-    # azimuth = 90
-    # elevation = 0
-    # pt.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-    #     math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-    #     math.sin(math.radians(elevation))))
+    plotter = plotobject.plot_surfaces(iteration=123, opacity=[1.0, 0.0, 0.0, 0.0])
+    plotter.enable_parallel_projection()
+    azimuth = 210
+    elevation = 20
+    plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+        math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+        math.sin(math.radians(elevation))))
     
-    # pt.remove_all_lights()
-    # pt.add_light(pv.Light(light_type='headlight', intensity=0.8))  # Mayavi 默认: 跟随相机的头灯
-    
-    # pt.screenshot('Z:/temp/294.png')
+    plotter.show()
