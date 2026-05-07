@@ -68,7 +68,7 @@ class ThisController(morphopt.Controller):
                 def initialize(self):
                     super().initialize()
 
-                    result = cpgeo.utils.enforce_rotational_symmetry_z(
+                    result = cpgeo.capi.rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
                             faces=self.model._cp_faces,
                             periods=3
@@ -83,7 +83,7 @@ class ThisController(morphopt.Controller):
                 def reinitialize(self):
                     super().reinitialize()
                     
-                    result = cpgeo.utils.enforce_rotational_symmetry_z(
+                    result = cpgeo.capi.rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
                             faces=self.model._cp_faces,
                             periods=3
@@ -99,7 +99,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
-                                 thickness=1.5,
+                                 thickness=2.5,
                                  num_layers=1,
                                  mesh_order=2)
 
@@ -113,7 +113,7 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=10.,
+                                                r0=15.,
                                                 init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))

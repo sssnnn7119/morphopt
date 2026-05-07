@@ -21,14 +21,14 @@ wheels = [
 
 [[package]]
 name = "bspmap"
-version = "1.0.0"
+version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/81/2e32b852d3ae02bd80816f9f935a80db371e9551f230d8ea63bdce7afed0/bspmap-1.0.0.tar.gz", hash = "sha256:6f73751c3fe10ed9543f87ff02678bb4e7ea882cff715a90b7fc859851144768", size = 34107, upload-time = "2026-01-25T11:01:04.791Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/d8/4a01c798f4bb318bb089bca5ea8d26a6aef0c9dd3f0df9553faf54477339/bspmap-1.0.1.tar.gz", hash = "sha256:e4f1f12d2a89d2c72d28a0102693e7fe7b2d7005e3de43e2813ea7daf740aacd", size = 599684, upload-time = "2026-05-06T11:00:38.063Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/21/79f310ac47266f7130a9ed2d8a74543035f4c298e49064cd189b72b1335d/bspmap-1.0.0-py3-none-any.whl", hash = "sha256:109a1226e31a64748090b5412acb6f01d784e3abcccf02efb7db49a3e3d722c8", size = 22440, upload-time = "2026-01-25T11:01:00.243Z" },
+    { url = "https://files.pythonhosted.org/packages/67/e3/281393a776965b745c6ba767b3e340cb28391c3d4483513bd03c4bda5d69/bspmap-1.0.1-py3-none-any.whl", hash = "sha256:c7c839017f8bd8173ab7ae31a2a513a367464f37ce944e9d22d22a01ef62b736", size = 590893, upload-time = "2026-05-06T11:00:40.41Z" },
 ]
 
 [[package]]
@@ -181,7 +181,7 @@ wheels = [
 
 [[package]]
 name = "cpgeo"
-version = "1.0.8"
+version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "networkx" },
@@ -190,9 +190,9 @@ dependencies = [
     { name = "pyvista" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/06/6863cd8bfc0639b654d63e3545d619686a0c83515cb3502d6af45c40681c/cpgeo-1.0.8.tar.gz", hash = "sha256:155d6f4ad77c0967c920dd2216e2dbc081c338794f16ab32ac1c3caa45873f23", size = 108445, upload-time = "2026-04-29T07:31:43.085Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/e2/5ca6888aac477156565428bb745d361afe14af5545fdc33233536c2ccb3d/cpgeo-1.0.9.tar.gz", hash = "sha256:5b8202cd9e174b95a73fd1c3c17e8ed88b23f9a64c8895957ddf405e4dcb5988", size = 917326, upload-time = "2026-05-06T10:42:25.047Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/96/875797920fa513ebac69b05c39251aa5cfabbe1e1dea26808dcbbbe8ff65/cpgeo-1.0.8-py3-none-any.whl", hash = "sha256:257c9efd5f9b0dee171a51ada975a396bd4317b7416bb2190f24dfbc2c6a2d19", size = 102115, upload-time = "2026-04-29T07:31:45.013Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/ca/143257196e59ae7e226c062589aa480c8e708f644a0516146e730d4d7162/cpgeo-1.0.9-py3-none-any.whl", hash = "sha256:760b4da958d460c1a4985774f75df19f546a9c8c10696b97400b646957608cf8", size = 916498, upload-time = "2026-05-06T10:42:27.337Z" },
 ]
 
 [[package]]
@@ -698,8 +698,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bspmap", specifier = ">=1.0.0" },
-    { name = "cpgeo", specifier = ">=1.0.8" },
+    { name = "bspmap", specifier = ">=1.0.1" },
+    { name = "cpgeo", specifier = ">=1.0.9" },
     { name = "gmsh", specifier = ">=4.15.0" },
     { name = "imageio", specifier = ">=2.37.3" },
     { name = "networkx", specifier = ">=3.6.1" },
@@ -711,7 +711,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "torch", specifier = ">=2.0.0" },
-    { name = "torchfea", specifier = ">=1.0.11" },
+    { name = "torchfea", specifier = ">=1.0.12" },
     { name = "torchvision", specifier = ">=0.15.1" },
     { name = "trimesh", specifier = ">=4.11.5" },
     { name = "vtk", specifier = ">=9.6.1" },
@@ -1464,7 +1464,7 @@ wheels = [
 
 [[package]]
 name = "torchfea"
-version = "1.0.11"
+version = "1.0.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pandas" },
@@ -1473,9 +1473,9 @@ dependencies = [
     { name = "torch" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/9e/d9adb921b1e7e64207ef91685c7a8a16d9b76f30cc5f677d23b5c3407351/torchfea-1.0.11.tar.gz", hash = "sha256:9b3849db6ba0bf3b5f0673bdeea315ac3a3eaca1245169d1a66c443cb0634ad1", size = 81288, upload-time = "2026-04-29T07:32:18.369Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/91/b4a3660f77da280bd3c0e8b617ef16539266b95f8cac1d8b5d60633fec17/torchfea-1.0.12.tar.gz", hash = "sha256:ea96c7ea63cc1d53ace95bab78e1b5c942a9223a6f7643f746a51f5cd34189b9", size = 78415, upload-time = "2026-05-06T10:54:43.873Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/d2/06b91a76dce9df470c9515cfc2643e02452584677d78fe9d02b295e3897a/torchfea-1.0.11-py3-none-any.whl", hash = "sha256:a9d0e9c55e1c75a505d2a5671d7e0e77997442a17948315bb7cf5d8b9cd56dcf", size = 100946, upload-time = "2026-04-29T07:32:16.535Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/72/3e5774c830dee5b7e3271ce19199e66596fa7e74841c5b03e9c8c30c5b86/torchfea-1.0.12-py3-none-any.whl", hash = "sha256:4ad1d70c9f5e8bcfb18ffd0b0a7b9f96f0ce1750067301f2ca24d6a6740a888e", size = 100212, upload-time = "2026-05-06T10:54:41.264Z" },
 ]
 
 [[package]]

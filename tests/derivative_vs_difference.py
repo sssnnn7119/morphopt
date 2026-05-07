@@ -14,7 +14,6 @@ N_MAT_CHECK = 4
 FD_EPS = 1e-4
 MIN_GRAD_ABS = 1e-10
 
-
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
