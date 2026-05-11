@@ -114,6 +114,8 @@ class ShapeDerivative(BaseObjective):
         surflist: list[morphopt.GeometryParams.CpBasedInterface] = morphopt.controller.params.geometry.surface_list
 
         for i in range(len(surflist)):
+            if self.if_update is not None and not self.if_update[i]:
+                continue
             # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
             # Compute inner product: sum over all points and dimensions
             loss_objective += ((surflist[i]._cps - self._cp0[i]) * self.gradient[i]).sum() * self.factor

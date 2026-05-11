@@ -418,28 +418,28 @@ class GeometryParams(BaseParams):
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
-        self.apply_surface_constraints()
         if iteration % self.reinitialize_per_iter == 0:
-            # for i in range(self.num_surface):
-            #     self.surface_list[i].reinitialize()
-            import copy
-            result = []
-            pools = morphopt.controller.pools
             for i in range(self.num_surface):
-                surface_now = copy.deepcopy(self.surface_list[i])
-                morphopt.controller.change_device(device='cpu', obj=surface_now)
-                result.append(
-                    pools.apply_async(
-                    surface_now.reinitialize, kwds={}))
+                self.surface_list[i].reinitialize()
+            # import copy
+            # result = []
+            # pools = morphopt.controller.pools
+            # for i in range(self.num_surface):
+            #     surface_now = copy.deepcopy(self.surface_list[i])
+            #     morphopt.controller.change_device(device='cpu', obj=surface_now)
+            #     result.append(
+            #         pools.apply_async(
+            #         surface_now.reinitialize, kwds={}))
                 
 
-            # get the result
-            for i in range(self.num_surface):
-                self.surface_list[i] = result[i].get()
-                morphopt.controller.change_device(device=torch.get_default_device(), obj=self.surface_list[i])
+            # # get the result
+            # for i in range(self.num_surface):
+            #     self.surface_list[i] = result[i].get()
+            #     morphopt.controller.change_device(device=torch.get_default_device(), obj=self.surface_list[i])
 
             morphopt.controller.objfun.inp = None
         
+        self.apply_surface_constraints()
 
     def add_surface(self, surface_new: BaseInterface) -> None:
         """

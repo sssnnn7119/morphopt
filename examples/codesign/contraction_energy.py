@@ -12,7 +12,7 @@ minratio = 1e-6
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='Twist_Energy')
+                         opt_label='Contraction_Energy')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
@@ -56,7 +56,7 @@ class ThisController(morphopt.Controller):
             E0 = assembly._total_Potential_Energy(RGC=RGC0)
             E1 = assembly._total_Potential_Energy(RGC=RGC1)
 
-            return [self.fe_results[1].GC[-1],
+            return [self.fe_results[1].GC[-2],
                     E0, E1,
                     self.get_volume_fraction()]
 
@@ -132,14 +132,16 @@ class ThisController(morphopt.Controller):
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=5), name='penalty_RP_head')
+                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=2), name='penalty_RP_head')
+
+                self.add_fea_interface(self.ContactSelfInterface(instance_name='final_model', surface_name='surface_1_offset'), name='self_contact')
 
             def define_steps(self):
                 self.set_step_num(2)
-                self.set_step_params(0, "pressure_1", [0.06])
+                self.set_step_params(0, "pressure_1", [-0.08])
                 self.set_step_params(0, "penalty_RP_head", [1e5, 0.0])
 
-                self.set_step_params(1, "pressure_1", [0.06])
+                self.set_step_params(1, "pressure_1", [-0.08])
                 self.set_step_params(1, "penalty_RP_head", [0e5, 0.0])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):

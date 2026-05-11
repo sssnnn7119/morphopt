@@ -201,7 +201,7 @@ class UpdaterGeometries(BaseUpdater):
     
     def _initialize_constraints(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor]) -> None:
         for constraints in self.constraints_funcs.values():
-            constraints.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity, weights=self._weight_points)
+            constraints.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity, weights=self._weight_points, if_update=self.if_update)
 
     def _initialize_optimizer(self) -> None:
         self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)

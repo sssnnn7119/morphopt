@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 import torch
 import numpy as np
@@ -12,6 +13,138 @@ class SIMPMaterials(BaseParams):
     """
     Class to handle the materials of the morphable model.
     """
+    class SIMPElementFgrad(torchfea.elements.Element_3D):
+
+        def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
+            super().__init__(elems_index, elems)
+
+            self.penalfactor = penalfactor
+            """the penalization factor for SIMP material"""
+
+        def initialize(self, *args, **kwargs):
+            super().initialize(*args, **kwargs)
+            self._dN2W = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight)
+
+            EmdUgrad2_2 = torch.zeros([1, 1, 3, 3, 3, 3, 3, 3])
+            for I0 in range(3):
+                for i0 in range(3):
+                    for j0 in range(3):
+                        EmdUgrad2_2[..., I0, i0, j0, I0, i0, j0] = self.penalfactor * 2
+
+            self._EmdUe_2 = torch.einsum('geija, geklb,geIijJkl->aIbJe', self._dN2W, self.shape_function_d2_gaussian, EmdUgrad2_2)
+
+        def potential_Energy(self, RGC: torch.Tensor, rotation_matrix: Optional[torch.Tensor] = None):
+            
+            U = RGC
+
+            if rotation_matrix is not None:
+                U = torch.einsum('ij,aj->ai', rotation_matrix.T, U)
+            
+            Ea = super().potential_Energy(RGC, rotation_matrix)
+
+            Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
+            for i in range(self.num_nodes_per_elem):
+                Ugrad2 += torch.einsum('geij,eI->geIij',
+                                            self.shape_function_d2_gaussian[..., i],
+                                            U[self._elems[:, i]])
+                
+            Er = self.penalfactor * torch.einsum('geIij,geIij,ge->', Ugrad2, Ugrad2, self.gaussian_weight)
+
+
+            return Ea + Er
+        
+        def _get_EpdUe_EpdUe2(self, U, if_onlyforce = False):
+            result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
+
+            Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
+            for i in range(self.num_nodes_per_elem):
+                Ugrad2 += torch.einsum('geij,eI->geIij',
+                                            self.shape_function_d2_gaussian[..., i],
+                                            U[self._elems[:, i]])
+                
+            EmdUgrad2 = 2 * self.penalfactor * Ugrad2
+
+            EmdUe = torch.einsum('geIij,geija->aIe', EmdUgrad2,
+                                    self._dN2W)
+            
+            if if_onlyforce:
+                return EmdUe + result0
+
+            return EmdUe + result0[0], self._EmdUe_2 + result0[1]
+
+    class SIMPElementFsrew(torchfea.elements.Element_3D):
+
+        def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
+            super().__init__(elems_index, elems)
+
+            self.penalfactor = penalfactor
+            """the penalization factor for SIMP material"""
+
+        def initialize(self, *args, **kwargs):
+            super().initialize(*args, **kwargs)
+            self._dN2W = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight)
+
+            EmdUgrad2_2 = torch.zeros([1, 1, 3, 3, 3, 3, 3, 3])
+            for I0 in range(3):
+                for i0 in range(3):
+                    for j0 in range(3):
+                        EmdUgrad2_2[..., I0, i0, j0, I0, i0, j0] += self.penalfactor * 4
+                        EmdUgrad2_2[..., I0, i0, j0, i0, I0, j0] += -self.penalfactor * 4
+
+            self._EmdUe_2 = torch.einsum('geija, geklb,geIijJkl->aIbJe', self._dN2W, self.shape_function_d2_gaussian, EmdUgrad2_2)
+
+        def potential_Energy(self, RGC: torch.Tensor, rotation_matrix: Optional[torch.Tensor] = None):
+            
+            U = RGC
+
+            if rotation_matrix is not None:
+                U = torch.einsum('ij,aj->ai', rotation_matrix.T, U)
+            
+            Ea = super().potential_Energy(RGC, rotation_matrix)
+
+            Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
+            for i in range(self.num_nodes_per_elem):
+                Ugrad2 += torch.einsum('geij,eI->geIij',
+                                            self.shape_function_d2_gaussian[..., i],
+                                            U[self._elems[:, i]])
+            
+            Fskew = Ugrad2 - Ugrad2.transpose(2, 3)
+
+            Er = self.penalfactor * torch.einsum('geIij,geIij,ge->', Fskew, Fskew, self.gaussian_weight)
+
+
+            return Ea + Er
+        
+        def _get_EpdUe_EpdUe2(self, U, if_onlyforce = False):
+            result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
+
+            Ue = U[self._elems]
+
+            Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
+            for i in range(self.num_nodes_per_elem):
+                Ugrad2 += torch.einsum('geij,eI->geIij',
+                                            self.shape_function_d2_gaussian[..., i],
+                                            Ue[:, i])
+            
+            # Fskew_geijk = Ugrad2_geijk - Ugrad2_geikj
+            Fskew = Ugrad2 - Ugrad2.transpose(2, 3) 
+
+            # E = p Fskew_geijk Fskew_geijk w_ge
+            Er = self.penalfactor * torch.einsum('geIij,geIij,ge->', Fskew, Fskew, self.gaussian_weight)
+
+
+            EmdUgrad2 = 4 * self.penalfactor * (Ugrad2 - Ugrad2.transpose(2, 3))
+
+            EmdUe = torch.einsum('geIij,geija->aIe', EmdUgrad2,
+                                    self._dN2W)
+            
+            if if_onlyforce:
+                return EmdUe + result0
+
+            return EmdUe + result0[0], self._EmdUe_2 + result0[1]
+
+    class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFsrew):
+        pass
 
     def __init__(self, 
                  mumax: float, 
@@ -21,7 +154,8 @@ class SIMPMaterials(BaseParams):
                  simp_field_resolution: float,
                  degree: int,
                  density: float,
-                 initial_ratio: float = 0.5
+                 initial_ratio: float = 0.5,
+                 penalfactor: float = 1e-2
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -35,6 +169,7 @@ class SIMPMaterials(BaseParams):
             degree (int): The degree of the B-spline basis functions.
             density (float): The density of the material.
             initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
+            penalfactor (float): The penalization factor for the SIMP material.
         """
         super().__init__()
         self._mumax: float = float(mumax)
@@ -91,6 +226,10 @@ class SIMPMaterials(BaseParams):
 
         self._initial_ratio: float = float(initial_ratio)
         """ The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
+        """
+
+        self.penalfactor: float = float(penalfactor)
+        """ The penalization factor for the SIMP material. This will affect the stiffness of intermediate density materials in the optimization process.
         """
 
     def pathlog_required(self) -> list[str]:
@@ -261,14 +400,20 @@ class SIMPMaterials(BaseParams):
             fe (torchfea.FEAController): The FEA controller.
         """
 
+        
+
+        # Set the SIMP materials for the solid elements
+        elements = fe.assembly.get_part('final_model').elems['C3D4']
+
+        elements_new = self.SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.penalfactor)
+        fe.assembly.get_part('final_model').elems['C3D4'] = elements_new
+
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
 
-        elements: torchfea.elements.Element_3D = fe.assembly.get_part('final_model').elems['C3D4']
-
         nodes = fe.assembly.get_part('final_model').nodes
-        elements._pre_load_gaussian(nodes=nodes)
+        elements_new._pre_load_gaussian(nodes=nodes)
 
-        gaussian_points_locations = elements.get_gaussian_points(nodes=nodes)
+        gaussian_points_locations = elements_new.get_gaussian_points(nodes=nodes)
 
         shape_gaussian = gaussian_points_locations.shape
         gaussian_points_locations = gaussian_points_locations.reshape([-1, 3])
@@ -279,8 +424,8 @@ class SIMPMaterials(BaseParams):
         kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
     
         materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
-        elements.set_materials(materials)
-        elements.density = self.density
+        elements_new.set_materials(materials)
+        elements_new.density = self.density
 
     def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:
         """

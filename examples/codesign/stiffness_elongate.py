@@ -1,7 +1,4 @@
 ﻿
-
-import cpgeo.utils
-
 import morphopt
 import torch
 import cpgeo
@@ -11,12 +8,15 @@ minratio = 1e-6
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='Twist_Energy')
+        # super().__init__(path_result_folder='Z:/Results/', 
+        #                  opt_label='Elongate_Stiffness')
+        super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
+                         opt_label='Elongate_Stiffness')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
+            self.jacobian_needed = ['force_RP_head', 'moment_RP_head']
 
         def get_volume_fraction(self):
             elems = self.fe.assembly._parts['final_model'].elems['C3D4']
@@ -39,26 +39,29 @@ class ThisController(morphopt.Controller):
         def objective_function(self):
 
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
+            jacobian_end_0 = torch.cat([self.fe_results[0].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[0].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
 
-            return E1 - E0
+            jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
+
+            loss_motion = torch.exp((20-self.fe_results[1].GC[-4]) / 5.0)
+
+            loss_stiffness = (jacobian_end_0[-3:, -3:]**2).sum().sqrt() + (jacobian_end_1[-3:, -3:]**2).sum().sqrt()
+
+            return loss_motion + loss_stiffness * 1e4
 
         def get_metrics(self):
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
+            jacobian_end_0 = torch.cat([self.fe_results[0].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[0].jacobian['moment_RP_head'][-6:]], dim=1)
+            
+            jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            return [self.fe_results[1].GC[-1],
-                    E0, E1,
-                    self.get_volume_fraction()]
+
+            return [self.get_volume_fraction()] + jacobian_end_0[-3:, -3:].flatten().tolist() + jacobian_end_1[-3:, -3:].flatten().tolist()
 
     class Params(morphopt.Params):
 
@@ -84,13 +87,13 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
-                                 thickness=2.5,
+                                 thickness=2.0,
                                  num_layers=1,
                                  mesh_order=2)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=20.,
-                                                    length=50.,
+                                                    length=40.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
@@ -98,8 +101,8 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=15.,
-                                                init_location=[0., 0., 25.],
+                                                r0=14.,
+                                                init_location=[0., 0., 20.],
                                                 MaxC=1.5,
                     ))
                     
@@ -127,20 +130,25 @@ class ThisController(morphopt.Controller):
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 40.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=5), name='penalty_RP_head')
+                
+                self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_RP_head')
+                self.add_fea_interface(self.ConcentratedMomentInterface(rp_name='RP_head'), name='moment_RP_head')
 
             def define_steps(self):
                 self.set_step_num(2)
-                self.set_step_params(0, "pressure_1", [0.06])
-                self.set_step_params(0, "penalty_RP_head", [1e5, 0.0])
+
+                self.set_step_params(0, "pressure_1", [0.0])
+                self.set_step_params(0, "force_RP_head", [0., 0., 0.0])
+                self.set_step_params(0, "moment_RP_head", [0., 0., 0.0])
 
                 self.set_step_params(1, "pressure_1", [0.06])
-                self.set_step_params(1, "penalty_RP_head", [0e5, 0.0])
+                self.set_step_params(1, "force_RP_head", [0., 0., 0.0])
+                self.set_step_params(1, "moment_RP_head", [0., 0., 0.0])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
             
@@ -150,7 +158,7 @@ class ThisController(morphopt.Controller):
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
                                  initial_ratio=0.5,
-                                 bounding_box=[-25, 25, -25, 25, 0, 50], 
+                                 bounding_box=[-25, 25, -25, 25, 0, 40], 
                                  simp_field_resolution=1.0, 
                                  degree=3,
                                  shell_mu=0.48,
@@ -265,7 +273,7 @@ class ThisController(morphopt.Controller):
                                                                 [[2.5, 2.5],
                                                                 [2.5, 2.0]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=18., height=47., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=15., height=37., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))

@@ -21,14 +21,14 @@ wheels = [
 
 [[package]]
 name = "bspmap"
-version = "1.0.1"
+version = "1.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/d8/4a01c798f4bb318bb089bca5ea8d26a6aef0c9dd3f0df9553faf54477339/bspmap-1.0.1.tar.gz", hash = "sha256:e4f1f12d2a89d2c72d28a0102693e7fe7b2d7005e3de43e2813ea7daf740aacd", size = 599684, upload-time = "2026-05-06T11:00:38.063Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/f7/62080a17159b22c9cd4be79cab1e7a1586d068727f74290ad9e9f469a041/bspmap-1.0.3.tar.gz", hash = "sha256:2177b08301741643e5b83044a3526de8431f37b258319693e6fe702fb5fc218c", size = 46683, upload-time = "2026-05-07T11:55:28.053Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/e3/281393a776965b745c6ba767b3e340cb28391c3d4483513bd03c4bda5d69/bspmap-1.0.1-py3-none-any.whl", hash = "sha256:c7c839017f8bd8173ab7ae31a2a513a367464f37ce944e9d22d22a01ef62b736", size = 590893, upload-time = "2026-05-06T11:00:40.41Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/7e/49d5adbc772635426337073a80c8d6575f6c8efdaf0029806b8efff7f83d/bspmap-1.0.3-py3-none-any.whl", hash = "sha256:1b92351fd2019291ba614a96784b1512c6a79d98499fa2a598a83046f201a21f", size = 34637, upload-time = "2026-05-07T11:55:23.359Z" },
 ]
 
 [[package]]
@@ -181,7 +181,7 @@ wheels = [
 
 [[package]]
 name = "cpgeo"
-version = "1.0.9"
+version = "1.0.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "networkx" },
@@ -190,9 +190,9 @@ dependencies = [
     { name = "pyvista" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/e2/5ca6888aac477156565428bb745d361afe14af5545fdc33233536c2ccb3d/cpgeo-1.0.9.tar.gz", hash = "sha256:5b8202cd9e174b95a73fd1c3c17e8ed88b23f9a64c8895957ddf405e4dcb5988", size = 917326, upload-time = "2026-05-06T10:42:25.047Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/02/dcc91dc491f3e4ca8d12738edfbe1273ab8bd46651bf1a5b58f9cf926638/cpgeo-1.0.11.tar.gz", hash = "sha256:5e947717d6aad5c361b25ca4c785ca9ec1a129f14afdd53e79dbab7f7d9878cc", size = 304327, upload-time = "2026-05-07T11:58:07.411Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/ca/143257196e59ae7e226c062589aa480c8e708f644a0516146e730d4d7162/cpgeo-1.0.9-py3-none-any.whl", hash = "sha256:760b4da958d460c1a4985774f75df19f546a9c8c10696b97400b646957608cf8", size = 916498, upload-time = "2026-05-06T10:42:27.337Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/76/feab10684e055786a907d85c488f635c930e918fcb44f179dfe66fd26cc9/cpgeo-1.0.11-py3-none-any.whl", hash = "sha256:738f035e96f529dec96fa5ef29ddfa071f2c8f6dda8ca1f457234d8d76e95f97", size = 299089, upload-time = "2026-05-07T11:58:05.771Z" },
 ]
 
 [[package]]
@@ -378,11 +378,11 @@ wheels = [
 
 [[package]]
 name = "idna"
-version = "3.13"
+version = "3.14"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ce/cc/762dfb036166873f0059f3b7de4565e1b5bc3d6f28a414c13da27e442f99/idna-3.13.tar.gz", hash = "sha256:585ea8fe5d69b9181ec1afba340451fba6ba764af97026f92a91d4eef164a242", size = 194210, upload-time = "2026-04-22T16:42:42.314Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/b1/efac073e0c297ecf2fb33c346989a529d4e19164f1759102dee5953ee17e/idna-3.14.tar.gz", hash = "sha256:466d810d7a2cc1022bea9b037c39728d51ae7dad40d480fc9b7d7ecf98ba8ee3", size = 198272, upload-time = "2026-05-10T20:32:15.935Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/13/ad7d7ca3808a898b4612b6fe93cde56b53f3034dcde235acb1f0e1df24c6/idna-3.13-py3-none-any.whl", hash = "sha256:892ea0cde124a99ce773decba204c5552b69c3c67ffd5f232eb7696135bc8bb3", size = 68629, upload-time = "2026-04-22T16:42:40.909Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/3c/3f62dee257eb3d6b2c1ef2a09d36d9793c7111156a73b5654d2c2305e5ce/idna-3.14-py3-none-any.whl", hash = "sha256:e677eaf072e290f7b725f9acf0b3a2bd55f9fd6f7c70abe5f0e34823d0accf69", size = 72184, upload-time = "2026-05-10T20:32:14.295Z" },
 ]
 
 [[package]]
@@ -522,14 +522,14 @@ wheels = [
 
 [[package]]
 name = "markdown-it-py"
-version = "4.0.0"
+version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mdurl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/f5/4ec618ed16cc4f8fb3b701563655a69816155e79e24a17b651541804721d/markdown_it_py-4.0.0.tar.gz", hash = "sha256:cb0a2b4aa34f932c007117b194e945bd74e0ec24133ceb5bac59009cda1cb9f3", size = 73070, upload-time = "2025-08-11T12:57:52.854Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/54/e7d793b573f298e1c9013b8c4dade17d481164aa517d1d7148619c2cedbf/markdown_it_py-4.0.0-py3-none-any.whl", hash = "sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147", size = 87321, upload-time = "2025-08-11T12:57:51.923Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl", hash = "sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a", size = 91687, upload-time = "2026-05-07T12:08:27.182Z" },
 ]
 
 [[package]]
@@ -674,7 +674,7 @@ wheels = [
 
 [[package]]
 name = "morphopt"
-version = "3.1.4"
+version = "3.1.5"
 source = { virtual = "." }
 dependencies = [
     { name = "bspmap" },
@@ -698,8 +698,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bspmap", specifier = ">=1.0.1" },
-    { name = "cpgeo", specifier = ">=1.0.9" },
+    { name = "bspmap", specifier = ">=1.0.3" },
+    { name = "cpgeo", specifier = ">=1.0.11" },
     { name = "gmsh", specifier = ">=4.15.0" },
     { name = "imageio", specifier = ">=2.37.3" },
     { name = "networkx", specifier = ">=3.6.1" },
@@ -1206,7 +1206,7 @@ wheels = [
 
 [[package]]
 name = "pyvista"
-version = "0.48.0"
+version = "0.48.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts" },
@@ -1218,9 +1218,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "vtk" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/80/24/a8bf4deb6521d4a26bdfe1262e2e942aaf49b866f8dc8395702d789e5089/pyvista-0.48.0.tar.gz", hash = "sha256:317c1590fce0d3777c34d7c2b4686dc52701a2ba03ab0a312bbd0bdae03f0d42", size = 2580723, upload-time = "2026-05-02T22:49:01.23Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/7d/747bd2c8fa132f94ffb0282611fcb6970caa97bfad950350318de444bc05/pyvista-0.48.2.tar.gz", hash = "sha256:0b115b107f03e8e57bfb5d9dd2a40591f4e641b6a87dc8beb5d0c2099a225e2e", size = 2580977, upload-time = "2026-05-10T06:37:35.017Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/e8/d057b011aee8df7fdb00e5e8f777cea160f2e97f65796bff7c81b85e398d/pyvista-0.48.0-py3-none-any.whl", hash = "sha256:cb6fe80d4a1a7e9ef512b9b555d8b16355ea97b07799fc4f73f2897ca0109e09", size = 2628237, upload-time = "2026-05-02T22:48:58.867Z" },
+    { url = "https://files.pythonhosted.org/packages/40/9d/9dde2ad0b3b16c763160bb8690177f8a5d7db2a99297c8dc73875188a3b9/pyvista-0.48.2-py3-none-any.whl", hash = "sha256:79a9205368a8ab2664463af523c27d37beb0c5fd522d009e788c11d5810737c6", size = 2628846, upload-time = "2026-05-10T06:37:32.729Z" },
 ]
 
 [[package]]
@@ -1571,11 +1571,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.6.3"
+version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed", size = 435556, upload-time = "2026-01-07T16:24:43.925Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4", size = 131584, upload-time = "2026-01-07T16:24:42.685Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
 
 [[package]]

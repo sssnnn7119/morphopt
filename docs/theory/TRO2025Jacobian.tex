@@ -1,0 +1,1370 @@
+\documentclass[journal]{IEEEtran}
+\setlength{\marginparwidth}{2cm}
+\usepackage[linesnumbered,ruled]{algorithm2e}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{newtxtext} % Improved Times font support
+\usepackage{bm}
+% \usepackage{algpseudocode}
+\usepackage{array}
+\usepackage{textcomp}
+\usepackage{gensymb}
+\usepackage{pstricks}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage[outdir=./]{epstopdf}
+\graphicspath{{./pdf/}}
+\usepackage[cmex10]{amsmath}
+\usepackage{booktabs}
+\usepackage[skip=3pt]{caption}
+\usepackage[skip=1pt,labelformat=empty]{subcaption}
+\usepackage{siunitx}
+\usepackage{float}
+\usepackage{nccmath}
+\usepackage{xcolor,soulutf8}
+\usepackage{changes}
+\usepackage{physics}
+\usepackage{threeparttable}
+\renewcommand{\vec}[1]{\mathbf{#1}}
+\let\proof\relax
+\let\endproof\relax
+\usepackage{amsthm}
+\theoremstyle{definition}
+\newtheorem{remark}{Remark}
+\newtheorem{assumption}{Assumption}
+\newtheorem{lemma}{Lemma}
+
+\usepackage{tikz}
+\newcommand*\circled[1]{\tikz[baseline=(char.base)]{
+            \node[shape=circle,draw,inner sep=1pt] (char) {#1};}}
+            
+\begin{document}
+%
+% paper title
+% Titles are generally capitalized except for words such as a, an, and, and, as,
+% at, but, by, for, in, nor, of, on, or, the, to and up, which are usually
+% not capitalized unless they are the first or last word of the title.
+% Linebreaks \\ can be used within to get better formatting as desired.
+% Do not put math or special symbols in the title.
+\title{Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization}
+
+
+% The paper headers
+\markboth{IEEE TRANSACTIONS ON ROBOTICS}%
+{Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization}
+
+\maketitle
+
+\begin{abstract}
+The robot workspace characterizes the complete set of reachable end-effector positions and orientations. While critical for functional capability, quantitative workspace design remains an open challenge in soft robotics due to complicated implicit kinematics governed by nonlinear continuum mechanics and the prohibitive computational cost of evaluating the robot's deformation across the full actuation spectrum. This article presents a computational morphogenesis framework for the automated, \textcolor{blue}{offline} optimization of position and orientation workspaces in soft pneumatic robots. Our approach is built on three key innovations: \textcolor{blue}{(i) a continuum Jacobian, defined as the derivative of the end-effector's degrees of freedom (DoFs) with respect to the actuation inputs, which transforms the workspace integral from the configuration space to the actuation space, making the volume computation analytically tractable;} (ii) a second-order adjoint method to derive the analytical shape derivatives of both the displacement field and this Jacobian, \textcolor{blue}{providing the explicit gradient of the workspace volume with respect to the robot's morphology;} and (iii) a differentiable, singularity-free geometric model, complemented by an adaptive surface reconstruction algorithm, \textcolor{blue}{to represent and evolve the robot's free-form shape}. \textcolor{blue}{The framework is validated through the design of multi-chamber pneumatic soft actuators, demonstrating significant improvement of the position and orientation workspace volume.} This framework offers an end-to-end pipeline for soft robotic workspace optimization.
+\end{abstract}
+
+\begin{IEEEkeywords}
+  Soft robotics, Workspace optimization, Computational Morphogenesis, Jacobian shape derivative.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:introduction}
+
+The workspace, encompassing all achievable end-effector positions and orientations, is a pivotal performance metric for robotic systems in both manipulation \cite{Jain_Dontu_Teoh_Alvarado_2023} and locomotion tasks \cite{Zhang_Yang_Yan_Zhou_Zou_Gu_2022}. While workspace synthesis and optimization have been addressed in the context of rigid-linked robots by leveraging well-established geometric kinematics \cite{doi:10.1177/027836499701600407}, \textcolor{blue}{\cite{9097447}}, soft robots demand fundamentally different analytical approaches. This distinction arises from their contrasting motion-generation principles: rigid robots rely on discrete joint articulations, while soft robots produce continuous deformation under distributed actuation. \textcolor{blue}{This results in an implicit kinematic relationship governed by nonlinear continuum mechanics, where the robot's configuration is not an explicit function of its actuation inputs.} Consequently, soft robotic workspaces exhibit an implicit and highly nonlinear dependence on actuation inputs and structural characteristics. To date, an end-to-end design methodology for maximizing the workspace of soft robots remains underdeveloped, hindering the full exploitation of soft materials' deformation potential.
+
+\textcolor{blue}{For a generic soft pneumatic robot, this work focuses on the workspace of its end-effector, which is considered to have $6$ degrees of freedom (DoFs), denoted by $(U_1,U_2,\cdots,U_6)$.} The workspace $\mathbb{W}$ is mapped from the input pressure space $\mathbb{P}$ through structural parameters $\mathbf{s}$. The analysis of workspace volume $|\mathbb{W}|$ necessitates defining the implicit relationship
+\begin{equation}
+|\mathbb{W}| = \int w(U_1,U_2,\cdots,U_6)\ \mathrm{d}U_1 \mathrm{d}U_2 \cdots \mathrm{d}U_6 = F(\mathbf{s})
+\label{eq:workspace}
+\end{equation}
+where $w(\cdot)$ weighs each state's contribution. Equation (\ref{eq:workspace}) reveals that the workspace, derived from integration over a high-dimensional configuration space, is fundamentally governed by the structural parameters. However, this relationship is not only inherently implicit and computationally intensive, but also becomes increasingly \textcolor{blue}{computationally expensive} when the robot features free-form structural characteristics, which is necessary for enabling a broad design space. The critical challenge, from a design perspective, is to establish an analytical relationship between the workspace volume $\left|\mathbb{W}\right|$ and free-form design parameters $\mathbf{s}$, as well as the sensitivity $\partial \left|\mathbb{W}\right|/\partial \mathbf{s}$, thereby facilitating efficient gradient-based optimization for workspace maximization of soft robots.
+
+Initial progress has been made in addressing workspace design for soft robots. Existing studies predominantly focus on workspace analysis for pre-designed configurations, primarily employing numerical methods \textcolor{blue}{\cite{9488225, 10.1115_1.4003414, 9340011}}. \textcolor{blue}{However, these approaches typically lack a differentiable mapping from the morphological design parameters to the workspace volume, which is required for design purposes.} Conversely, emerging inverse design strategies for achieving prescribed deformations of soft robots mark early progress toward workspace optimization. Notable examples include shape and topology optimization methods developed to determine the optimal dielectric elastomer actuation fields \cite{chen2020design, Chen_Wang_Zhang_Chen_2020}, pneumatic chamber morphology \cite{chen_morphological_2023, Caasenbrood_Pogromsky_Nijmeijer_2020} and passive structural geometry \cite{Chen_Chen_Cao_Wang_Miao_Gu_Zhu_2021, KOPPEN2022104743, Kobayashi_Gholami_Montgomery_Tanaka_Yue_Yuhn_Sato_Kawamoto_Qi_Nomura_2024}, for achieving target deformations under discrete actuation inputs. While these approaches successfully incorporate free-form structural features for localized deformation goals, they inherently fail to address the high-dimensional kinematic integration challenges central to workspace optimization, which requires performance evaluation across the entire input-output spectrum.
+
+In this paper, we study the workspace volume maximization for soft pneumatic robots through automated morphological optimization, termed \textit{computational morphogenesis}. \textcolor{blue}{We first introduce the soft robot's continuum Jacobian $\mathbf{J}$, defined as the derivative of end-effector DoFs with respect to actuation inputs ($\partial \mathbf{U}/\partial \mathbf{p}$), to transform workspace analysis from the solution-dependent configuration space to the predefined actuation space.} Crucially, this formulation enables workspace-morphology sensitivity evaluation, which involves the shape derivatives of displacement fields and the Jacobian operator, as we will prove in Section \ref{sec:sensitivity}. To derive the Jacobian shape derivative, we develop a second-order adjoint method that propagates gradients through nonlinear deformation kinematics. We then propose a differentiable, singularity-free closed-surface geometric model to dynamically track the air chamber's morphology. This framework supports both free-form design exploration and parametric implicit kinematic mapping. The parametric morphological representation and differentiable Jacobian formulation collectively establish a gradient-based, end-to-end morphogenesis pipeline for evolving free-form soft pneumatic robots. Additionally, an adaptive surface reconstruction algorithm is proposed to ensure high-quality and high-fidelity geometric representation throughout the optimization process.
+
+This paper is organized as follows. Section \ref{sec:related_works} introduces related works. Section \ref{sec:workspace_formulate} presents the mathematical formulation of the workspace metric. In Section \ref{sec:sensitivity}, we derive the Jacobian shape derivative using a second-order adjoint method. Section \ref{sec:sphere_mapping} provides a detailed description of the closed-surface geometric model for morphogenesis, and Section \ref{sec:optimization} presents the optimization method. 
+\textcolor{blue}{Section \ref{sec:fabrication_exp} details the fabrication and experimental procedures.}
+Section \ref{sec:results} demonstrates the application of our framework to multi-chamber pneumatic soft actuators for maximizing their position and orientation workspaces, with validation through both finite element analysis (FEA) and experiments. 
+Finally, Section \ref{sec:discussion} discusses the computational costs, potential extensions and current limitations of the work, and Section \ref{sec:conclusion} concludes the work.
+
+\section{Related Works}
+\label{sec:related_works}
+
+\textbf{Workspace Design.} The workspace design paradigm differs fundamentally between rigid and soft robots. For rigid robots, where analytical kinematics enable computationally efficient analysis, design optimization typically focuses on geometric parameters (e.g., link lengths) to maximize reachable volume \cite{Hosseini_Daniali_Taghirad_2011, Zhao_Wu_Yang_Chen_Chen_Xiong_Zhang_2022} and minimize the Jacobian condition number to enhance dexterity \cite{Kucuk_2018}. In contrast, soft robots present unique challenges in workspace synthesis due to their continuum kinematics and nonlinear response across the full actuation spectrum. Current approaches for soft robot workspace characterization predominantly employ numerical methods. While recent efforts like the optimization-based boundary detection method in \cite{9488225} have advanced the field, significant limitations persist in design optimization. Existing strategies lack analytical relationships between morphology and workspace characteristics, relying instead on heuristic searches that are constrained to low-dimensional parameter spaces and simplified configurations \cite{Peng_Zhang_Ge_Gu_2019, Huang_Zhao_Liu_Chen_Liu_2024, amehri_tel_04028186}. \textit{Our work bridges this gap by quantifying the analytical derivative of workspace volume with respect to free-form morphological parameters, enabling gradient-based computational morphogenesis for workspace optimization.}
+
+\textbf{Jacobian.} In rigid robotics, the Jacobian matrix serves as a fundamental kinematic operator that relates actuator velocities to end-effector velocities, simultaneously encoding dual relationships between joint-space forces and task-space forces through its transpose properties \cite{Chen_Zhang_Li_2018, Chien_Chern_Cheah_Hirano_Kawamura_Arimoto_2003}. For soft robotic systems, however, the formulation of a comparable continuum Jacobian remains elusive due to its intricate dependence on structural morphology, distributed actuation, and deformation. Recently, Remy et al. formulated the Jacobian of fluid-actuated soft robots through volume expansion ratios to capture the force and motion relationships \cite{Remy_Brei_Bruder_Remy_Buffinton_Gillespie_2023}. A similar definition has also been made in multi-DoF soft manipulators to develop inverse kinematics for control purposes \cite{Chen_Renda_Gall_Mocellin_Bernabei_Dangel_Ciuti_Cianchetti_Stefanini_2024, Fang_Tian_Yang_Geraedts_Wang_2022, Giorelli_Renda_Calisti_Arienti_Ferri_Laschi_2015}. \textit{\textcolor{blue}{Compared with these Jacobian formulations, the present work places emphasis on the Jacobian's analytical expression and differentiability, based on which the shape derivative is established to enable the development of efficient, gradient-based computational morphogenesis.}}
+
+\textbf{Geometric Model for Morphogenesis.}
+The ability to automatically generate and optimize a robot's shape relies on a flexible and mathematically robust geometric model. \textcolor{blue}{For free-form shapes, B-spline surfaces are a popular choice} because they use a set of control points to define a smooth, locally adjustable surface \cite{doi:10.2514/1.J055102, chen_morphological_2023, Mosser2023}. \textcolor{blue}{However, they struggle with creating seamless closed surfaces for describing the air chambers of a soft robot, as forcing the surface to close on itself often creates mathematical singularities (``the pole problem''), which can disrupt gradient-based optimization.} To avoid this, other methods use a sphere as a base, mapping it to the desired closed shape. For example, spherical harmonics \textcolor{blue}{represent a surface as a linear combination of orthogonal basis functions defined over the entire sphere \cite{Yotter_Nenadic_Ziegler_Thompson_Gaser_2011}}. While powerful for representing complex global shapes, their basis functions exhibit global support, meaning a change in one coefficient affects the entire shape, making them unsuitable for local, iterative design changes. A more promising alternative, inspired by spherical radial basis functions \cite{Currius_Dolonius_Assarsson_Sintorn_2020, 10.1145/1141911.1141981, Flyer_Wright_2007}, \textcolor{blue}{also uses a spherical base but represents the surface as a weighted sum of locally-supported kernel functions centered at various directions on the sphere.} This allows for local control, as modifying one control point's weight only affects a nearby region of the surface. \textit{Our work builds on this idea by developing a method that \textcolor{blue}{combines the local support property of B-splines with the singularity-free nature of spherical mappings.} We represent the robot's chambers with a set of control points that define a closed surface. To ensure a stable optimization, we also introduce an adaptive reconstruction algorithm that periodically redistributes these control points, maintaining a high-quality geometric representation throughout the morphogenesis process.}
+
+\section{Workspace Formulation}
+\label{sec:workspace_formulate}
+
+\begin{table}[h!]
+\caption{\textcolor{blue}{Nomenclature for Workspace Formulation}}
+\label{tab:nomenclature_workspace}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lp{5.5cm}}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$U_i$ & The $i$-th end-effector DoF. \\
+$p_r$ & The $r$-th actuation input. \\
+$J^i_{p_r}$ & Continuum Jacobian component ($\partial U_i / \partial p_r$). \\
+$n_1\text{A}n_2\text{R}n_3\text{T}$ & Notation for a workspace problem ($n_1$: actuation, $n_2$: rotation, $n_3$: translation). \\
+$|\mathbb{W}_{X}|$ & Volume or area of the workspace $\mathbb{W}_{X}$. \\
+$w_{X}$ & Weight function for workspace $\mathbb{W}_{X}$. \\
+$\boldsymbol{\zeta}$ & Curvilinear coordinates on the actuation space boundary. \\
+$\mathbf{N}$ & Outward unit normal on the workspace boundary. \\
+$\eta$ & The orientation angle. \\
+$\hat{U}_i, i\in\left\{4,5,6\right\}$ & The orientation axis. \\
+$\bar{\mathbf{U}}, \bar{\mathbf{J}}$ & Modified displacement and Jacobian for 3-DoF orientation workspace formulation. \\
+$\mathbf{n}=\left(n_x,n_y,n_z\right)$ & End-effector normal vector. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Soft robots are inherently underactuated as the degrees of freedom are theoretically infinite. In this work, we mainly investigate the workspace of the soft pneumatic robot's end-effector, with the translational DoFs \( (U_1, U_2, U_3) \in \mathbb{R}^3 \) and the orientation DoFs \((U_4, U_5, U_6) \in \left\{\mathbf{x}\in \mathbb{R}^3 | \left\|\mathbf{x}\right\| \leq \pi\right\}\) described by exponential coordinates. \textcolor{blue}{Collectively, these form the 6-DoF end-effector configuration vector $\mathbf{U} = (U_1, \dots, U_6)$.} \textcolor{blue}{In the following notation, the workspace is expressed as $n_1 \text{A} n_2 \text{R} n_3 \text{T}$, where $n_1$ is the dimensionality of actuation space, also referred to as degree of actuation (DoA), while $n_2$ and $n_3$ correspond to the dimensions of the orientation subspace and position subspace under investigation.} All remaining unconstrained degrees of freedom are permitted to vary without restriction.
+
+\textcolor{blue}{To facilitate the computation of the workspace volume, we employ Gauss's divergence theorem to transform the volume integral into a surface integral over the workspace boundary. Since the workspace is unknown, we map the workspace boundary integral to that over the boundary of the actuation space, by defining the continuum Jacobian. This procedure requires identifying the portion of the actuation space's boundary that maps to the true workspace boundary. For workspaces without self-intersections, the integral domain corresponds to the entire boundary of the actuation space. In cases involving self-intersections, the true workspace boundary can be determined through case-by-case analysis, and numerical methods have also been developed \cite{amehri_tel_04028186, Walid_Zheng_Kruszewski_Renda_2022}.}
+
+\subsection{ Continuum Jacobian}
+To transform the workspace evaluation from the unknown configuration space to the predefined actuation space, we define the continuum Jacobian for soft robotic systems,
+\begin{equation}
+  J^i_{p_r} = \frac{\partial U_i}{\partial p_r},
+\end{equation}
+where \( U_i \) represents the \( i \)-th concerned DoF of the robot, and \( p_r \) denotes the \( r \)-th actuation input. Furthermore, when evaluating integrals over the boundary of the actuation space, we use the Jacobian of the end-effector DoFs with respect to the boundary's curvilinear coordinates $\boldsymbol{\zeta} = (\zeta_1, \dots, \zeta_{n-1})$. This is defined as:
+\begin{equation}
+  J^i_{\zeta_k} = \frac{\partial U_i}{\partial \zeta_k} = \sum_r \frac{\partial U_i}{\partial p_r} \frac{\partial p_r}{\partial \zeta_k} = \sum_r J^i_{p_r} \frac{\partial p_r}{\partial \zeta_k},
+\end{equation}
+which is computed via the chain rule, linking the displacement to the parameterization of the actuation boundary. The actuation space is given by $\mathbb{P} \subset \mathbb{R}^{n_1}$. Three distinct operational regimes emerge from the dimensional relationship between DoA ($n_1$) and DoF ($n_2+n_3$), as follows:
+\begin{itemize}
+    \item DoA$=$DoF: The actuation space can be mapped to a continuous workspace, which is mainly investigated in this work.
+    \item DoA$>$DoF: This case requires identifying the subset of the actuation space boundary \cite{amehri_tel_04028186} that, when mapped, constitutes the boundary of the workspace.
+    \item DoA$<$DoF: The workspace constitutes a manifold, which can be quantified by its hypervolume, analogous to how a surface's area quantifies a 2D manifold embedded in 3D space. Such underactuated cases exceed the scope of our current framework. 
+\end{itemize}
+
+\begin{figure}
+  \centering
+  \includegraphics[scale=1]{figs/fig_overview_workspace.png}
+  \caption{Workspace concepts and their geometric representations. The orange regions ($\mathbb{W}$) illustrate different workspace types: 
+  \textcolor{blue}{(a) A 2-DoF planar position workspace ($2\text{A}0\text{R}2\text{T}$) with the boundary's tangential vector $\mathbf{J}_{\zeta_1}$ and normal vector $\mathbf{N}$.} 
+  (b) A 3-DoF spatial position workspace ($3\text{A}0\text{R}3\text{T}$) \textcolor{blue}{with boundary tangential vectors $\mathbf{J}_{\zeta_1}, \mathbf{J}_{\zeta_2}$ and the normal vector $\mathbf{N}$.} 
+  (c) A 2-DoF orientation workspace ($3\text{A}2\text{R}0\text{T}$), \textcolor{blue}{represented as the area swept by the end-effector's normal vector $\mathbf{n}$ on the unit sphere.}
+  \textcolor{blue}{(d) A 3-DoF orientation workspace ($3\text{A}3\text{R}0\text{T}$), visualized as a volume in exponential coordinates $(U_4, U_5, U_6)$.} } 
+  \label{fig:overview_workspace}
+\end{figure}
+
+
+\subsection{Position Workspace}
+The position workspace is defined as the set of all points that the end-effector can reach when only its translational degrees of freedom are considered. The volume of the $n$-dimensional workspace ($n\in\left\{2,3\right\}$) is expressed as
+\begin{equation}
+  \left|\mathbb{W}_\text{nT}\right| = \int_{\mathbb{W}} \mathrm{d} \nu 
+  = \int_{\mathbb{W}} \mathrm{d}U_1\,\mathrm{d}U_2\,\cdots\,\mathrm{d}U_n 
+  \label{eq:position_workspace}
+\end{equation}
+where $\mathbb{W}$ denotes the domain that the workspace occupies. By noting the fact that $\nabla \cdot \mathbf{U} = n$ with $\mathbf{U}={\left(U_1, U_2, \dots, U_n\right)}$ the configuration vector, and applying Gauss's divergence theorem, the workspace can be rewritten as 
+\begin{equation}
+  \left|\mathbb{W}_\text{nT}\right| =\frac{1}{n}  \int_{\mathbb{W}} \nabla \cdot \mathbf{U}\mathrm{d}\nu
+  = \frac{1}{n} \int_{\partial \mathbb{W}} \mathbf{U} \cdot \mathbf{N}\,\mathrm{d}\Gamma
+  \label{eq:position_workspace_divergence}
+\end{equation}
+where the workspace boundary $\Gamma$ is parameterized by curvilinear coordinates, denoted as $\boldsymbol{\zeta}$, and $\mathbf{N}$ is the outward unit normal on the boundary.
+
+For the planar 2-DoF position workspace \textcolor{blue}{with 2 independent actuation inputs ($2\text{A}0\text{R}2\text{T}$) shown in Fig. \ref{fig:overview_workspace}(a),} its boundary is generally a curve, and the line element of the boundary can be expressed as
+\begin{equation}
+  \mathbf{N}\,\mathrm{d}\Gamma = \left(-J^{2}_{\zeta_1},\,J^{1}_{\zeta_1}\right)\,\mathrm{d}\zeta_1,
+\end{equation}
+where $\zeta_1$ represents the parameter that describes the boundary curve of the actuation space
+\begin{equation}
+  p_r = p_r(\zeta_1), \quad r \in \{1, 2\}.
+\end{equation}
+The 2-DoF position workspace area is then given by
+\begin{equation}
+    \left|\mathbb{W}_\text{2T}\right| = \frac{1}{2} \int_{\partial \mathbb{P}} \left(U_2 J^{1}_{\zeta_1} - U_1 J^{2}_{\zeta_1}\right) \, \mathrm{d}{\zeta_1} 
+    = \int_{\partial \mathbb{P}} w_\text{2T}\left(\mathbf{U}, \mathbf{J}_{\zeta_1}\right) \, \mathrm{d}{\zeta_1}
+  \label{eq:position_workspace_2d}
+\end{equation}
+
+For the spatial 3-DoF position workspace \textcolor{blue}{with 3 independent actuation inputs ($3\text{A}0\text{R}3\text{T}$) shown in Fig. \ref{fig:overview_workspace}(b),} its boundary is generally a curved surface, and the area element of the boundary is given by
+\begin{equation}
+  \mathbf{N}\,\mathrm{d}\Gamma = \mathbf{J}_{\zeta_1} \times \mathbf{J}_{\zeta_2}\,\mathrm{d}\zeta_1\,\mathrm{d}\zeta_2,
+\end{equation}
+where $\zeta_1$ and $\zeta_2$ are the parameters describing the boundary of the actuation surface
+\begin{equation}
+  p_r = p_r(\zeta_1,\zeta_2), \quad r \in \{1, 2, 3\},
+\end{equation}
+and
+\begin{equation}
+  \begin{split}
+    \mathbf{J}_{\zeta_1} &= \left(J^{1}_{\zeta_1},\,J^{2}_{\zeta_1},\,J^{3}_{\zeta_1}\right),\\[1mm]
+    \mathbf{J}_{\zeta_2} &= \left(J^{1}_{\zeta_2},\,J^{2}_{\zeta_2},\,J^{3}_{\zeta_2}\right).
+  \end{split}
+\end{equation}
+The volume of the 3-DoF position workspace is then expressed as
+\begin{equation}
+  \begin{split}
+    \left|\mathbb{W}_\text{3T}\right| &= \frac{1}{3} \int_{\partial \mathbb{P}} \mathbf{U} \cdot \left(\mathbf{J}_{\zeta_1} \times \mathbf{J}_{\zeta_2}\right) \, \mathrm{d}{\zeta_1}\,\mathrm{d}{\zeta_2}\\
+    &= \int_{\partial \mathbb{P}} w_\text{3T}\left(\mathbf{U},\mathbf{J}_{\zeta_1},\mathbf{J}_{\zeta_2}\right) \, \mathrm{d}{\zeta_1}\,\mathrm{d}{\zeta_2}
+  \end{split}.
+  \label{eq:position_workspace_3d}
+\end{equation}
+
+\subsection{Orientation Workspace}
+\label{sec:workspace:orientation}
+Unlike the position workspace, the orientation workspace is not within a Euclidean space. According to \cite{Chen_Jackson_2011}, it can be represented as a three-dimensional hypersphere embedded in the four-dimensional quaternion space. Thus, the orientation workspace can be quantified as the volume of the hypersphere, representing the 3 DoFs of orientation \textcolor{blue}{as depicted in Fig. \ref{fig:overview_workspace}(d)}. This concept can be reduced to represent in-plane orientation workspace volume (1 DoF) as the length of an arc on a circle. We also investigate the special case of 2-DoF orientation in 3D space, excluding rotation about its normal vector, with the workspace characterized by a portion of the unit sphere's surface, \textcolor{blue}{as shown in Fig. \ref{fig:overview_workspace}(c)}.
+
+\subsubsection{3-DoF orientation workspace with 3 independent actuation inputs ($3\text{A}3\text{R}0\text{T}$)} The orientation angle is defined as \(\eta = \sqrt{U_4^2 + U_5^2 + U_6^2}\), and the volume of the orientation workspace can be formulated in exponential coordinates \cite{Chen_Jackson_2011}
+\begin{equation}
+\begin{split}
+    \left|\mathbb{W}_\text{3R}\right| =\int_\mathbb{W}  \mathrm{d}\nu& = \int_\mathbb{W} \frac{\sin^2{\left(\eta/2\right)}}{2\eta^2}\mathrm{d}U_4\mathrm{d}U_5\mathrm{d}U_6 \\
+    &= \frac{1}{8}\int_\mathbb{W} \text{sinc}^2 \left(\frac{1}{2}\eta\right) \mathrm{d}U_4\mathrm{d}U_5\mathrm{d}U_6 
+\end{split}
+\label{eq:orientation_workspace_3d_origin}
+\end{equation}
+with $\mathrm{sinc}{(x)}=\sin x / x$ and $\eta \in \left[0, \pi\right]$. The weighting function $\text{sinc}^2(\eta/2)$ indicates that the contribution of each state is maximized at the origin ($\eta=0$) and diminishes as the orientation angle $\eta$ increases. Since the antiderivative of the sinc function lacks an elementary closed-form expression, the direct application of the divergence theorem becomes analytically intractable. \textcolor{blue}{To address this, we adopt a strategy of first approximating the integrand with its Taylor series polynomial, which then allows for the construction of a suitable vector field for the divergence theorem. We use the third-order Taylor approximation of the weight function,}
+\begin{equation}
+    \text{sinc}^2 \left(\frac{1}{2}\eta\right) \approx 1 - \frac{1}{12} \eta^2, \eta\in\left[0, \pi\right].
+\end{equation}
+
+\textcolor{blue}{Substituting this approximation into (\ref{eq:orientation_workspace_3d_origin}), the workspace volume becomes
+\begin{equation}
+    \left|\mathbb{W}_\text{3R}\right| \approx \frac{1}{8}\int_\mathbb{W} \left[1 - \frac{1}{12}\left(U_4^2+U_5^2+U_6^2\right)\right] \mathrm{d}U_4\mathrm{d}U_5\mathrm{d}U_6.
+\end{equation}
+Then a vector field $\bar{\mathbf{U}} = \left(\bar{U}_1, \bar{U}_2, \bar{U}_3\right)$ such that its divergence satisfies $\nabla \cdot \bar{\mathbf{U}} = 3 \left[1 - \frac{1}{12} \left(U_4^2+U_5^2+U_6^2\right) \right]$ is constructed by integrating the divergence term with respect to each coordinate, e.g., $\bar{U}_1 = \int \left[1 - \frac{1}{12} \left(U_4^2+U_5^2+U_6^2\right) \right] \mathrm{d}U_4$. It is noted that the choice for $\bar{\mathbf{U}}$ is not unique, but any valid choice will yield the same final workspace volume.} A common and simple choice is
+\begin{equation}
+    \bar{\mathbf{U}} = \begin{pmatrix}
+         U_4-\frac{1}{36} U_4^3-\frac{1}{12}U_4 U_5^2-\frac{1}{12}U_4U_6^2 \\[1ex] 
+         U_5-\frac{1}{36} U_5^3-\frac{1}{12}U_5 U_4^2-\frac{1}{12}U_5U_6^2 \\[1ex]
+         U_6-\frac{1}{36} U_6^3-\frac{1}{12}U_6 U_4^2-\frac{1}{12}U_6U_5^2
+    \end{pmatrix}.
+    \label{eq:orientation_workspace_3d_U}
+\end{equation}
+With this definition, we can rewrite the volume integral as a surface integral over the workspace boundary $\partial\mathbb{W}$:
+\begin{equation}
+    \left|\mathbb{W}_\text{3R}\right| \approx \frac{1}{8} \int_\mathbb{W} \frac{1}{3} (\nabla \cdot \bar{\mathbf{U}}) \,\mathrm{d}U_4\mathrm{d}U_5\mathrm{d}U_6 \\
+    = \frac{1}{24} \int_{\partial \mathbb{W}} \bar{\mathbf{U}} \cdot \mathbf{\bar{N}} \,\mathrm{d}\Gamma.
+\end{equation}
+The surface element $\mathbf{\bar{N}}\,\mathrm{d}\Gamma$ can be expressed in terms of the actuation parameters $(\zeta_1, \zeta_2)$ and the Jacobian as $\bar{\mathbf{J}}_{\zeta_1} \times \bar{\mathbf{J}}_{\zeta_2}\,\mathrm{d}\zeta_1\,\mathrm{d}\zeta_2$. This leads to the final expression:
+\begin{equation}
+  \begin{split}
+    \left|\mathbb{W}_\text{3R}\right|&\approx\frac{1}{24}\int_{\partial \mathbb{P}} \bar{\mathbf{U}} \cdot \bar{\mathbf{J}}_{\zeta_1} \times \bar{\mathbf{J}}_{\zeta_2}\,\mathrm{d}\zeta_1\,\mathrm{d}\zeta_2,\\
+    &= \int_{\partial \mathbb{P}} w_\text{3R}\left(\bar{\mathbf{U}}, \bar{\mathbf{J}}_{\zeta_1}, \bar{\mathbf{J}}_{\zeta_2}\right) \, \mathrm{d}{\zeta_1} \, \mathrm{d}\zeta_2,
+    \label{eq:orientation_workspace_3d}
+  \end{split}
+\end{equation}
+where $\zeta_1$ and $\zeta_2$ are the actuation parameters defining the boundary of the orientation workspace, with
+\begin{equation}
+  p_r = p_r(\zeta_1,\zeta_2), \quad r \in \{1, 2, 3\},
+\end{equation}
+and
+\begin{equation}
+    \bar{\mathbf{J}}_{\zeta_1} = \left(J^{4}_{\zeta_1},\,J^{5}_{\zeta_1},\,J^{6}_{\zeta_1}\right),
+    \bar{\mathbf{J}}_{\zeta_2} = \left(J^{4}_{\zeta_2},\,J^{5}_{\zeta_2},\,J^{6}_{\zeta_2}\right).
+\end{equation}
+
+\subsubsection{2-DoF orientation workspace in 3D space with 3 independent actuation inputs ($3\text{A}2\text{R}0\text{T}$)} This work considers that the three actuators are symmetrically distributed, as the workspace boundary can be intuitively identified. To characterize the orientation mobility while excluding the rotation along the robot's own axis, we subsequently introduce a 2-DoF orientation workspace representation. This reduced-order parameterization specifically captures the pointing capability of the end-effector while treating the axial rotation as unconstrained. Assuming the initial normal vector of the end-effector is \(\mathbf{n}_0=(0, 0, 1)\), the deformed normal vector of the end-effector \(\mathbf{n} = (n_x, n_y, n_z)\) can be expressed as
+\begin{equation}
+  \begin{split}
+    n_x &= \hat{U}_5 \sin\eta + \hat{U}_4 \hat{U}_6 (1 - \cos\eta),\\
+    n_y &= -\hat{U}_4 \sin\eta + \hat{U}_5 \hat{U}_6 (1 - \cos\eta),\\
+    n_z &= \cos\eta + \hat{U}_6^2 (1 - \cos\eta),
+  \end{split}
+  \label{eq:normal_vector_deformed}
+\end{equation}
+where \(\hat{U}_i = U_i / \eta\)  (\(i = 4, 5, 6\)) represent the normalized orientation axes. It is noted that point \((n_x, n_y, n_z)\) lies on the unit sphere. For the $3\text{A}2\text{R}0\text{T}$ workspace, the surface area is described using spherical coordinates,
+\begin{equation}
+  \left|\mathbb{W}_\text{2R}\right| = \int_\mathbb{W} \mathrm{d} \nu  = \int_0^{2\pi}\int_0^{\phi} \sin\psi \,\mathrm{d}\psi  \, \mathrm{d}\theta = \int_0^{2\pi} \left(1 - \cos\phi\right) \, \mathrm{d}\theta,
+  \label{eq:orientation_workspace_2d}
+\end{equation}
+where
+\begin{equation}
+    \theta = \arctan\left(\frac{n_y}{n_x}\right),
+    \phi = \arccos\left(n_z\right),
+\end{equation}
+and
+\begin{equation}
+    \mathrm{d}\theta = \frac{1}{n_x^2 + n_y^2} \left(n_x \, \mathrm{d}n_y - n_y \, \mathrm{d}n_x\right).
+\end{equation}
+Thus, the volume of the $3\text{A}2\text{R}0\text{T}$ workspace, which is actually a portion of the unit sphere's surface, can be expressed as
+\begin{equation}
+  \left|\mathbb{W}_\text{2R}\right| = \oint_{\partial \mathbb{W}} \left(1 - n_z\right) \frac{n_x \, \mathrm{d}n_y - n_y \, \mathrm{d}n_x}{n_x^2 + n_y^2}.
+  \label{eq:orientation_workspace_2d_contour}
+\end{equation}
+Since $\mathbf{n}$ is the function of $\left(U_4, U_5, U_6\right)$, (\ref{eq:orientation_workspace_2d_contour}) can be rewritten as
+\begin{equation}
+  \begin{split}
+    \left|\mathbb{W}_\text{2R}\right| &= \oint_{\partial \mathbb{P}} \frac{1}{1 + n_z} \sum_{j=4}^{6} \left(n_x \frac{\partial n_y}{\partial U_j} - n_y \frac{\partial n_x}{\partial U_j}\right) J^j_{\zeta_1} \, \mathrm{d}\zeta_1, \\
+    &= \oint_{\partial \mathbb{P}} w_{\text{2R}} \left(U_4, U_5, U_6, J^4_{\zeta_1}, J^5_{\zeta_1}, J^6_{\zeta_1}\right) \, \mathrm{d}\zeta_1,
+  \end{split}
+  \label{eq:orientation_workspace_2d_final}
+\end{equation}
+with \(\zeta_1\) the actuation parameter along the boundary curve of the orientation workspace, and \(n_x^2 + n_y^2 = 1 - n_z^2\) used to simplify the expression. 
+
+\textcolor{blue}{The preceding derivations show that the workspace volume $|\mathbb{W}_X|, X \in \left\{
+2\text{T}, 3\text{T}, 2\text{R}, 3\text{R}
+\right\}$, is an integral of a weight function $w_X$ over the actuation boundary $\partial \mathbb{P}$. The variation of this volume with respect to a change in shape can therefore be expressed via the chain rule as
+\begin{equation}
+    \delta |\mathbb{W}_X| = \int_{\partial \mathbb{P}} \left( \frac{\partial w_X}{\partial \mathbf{U}} \delta\mathbf{U} + \frac{\partial w_X}{\partial \mathbf{J}} \delta\mathbf{J} \right) \mathrm{d} \boldsymbol{\zeta}.
+    \label{eq:workspace_variation}
+\end{equation}
+Gradient-based design optimization necessitates computing the sensitivities of the displacement field ($\delta\mathbf{U}$) and the Jacobian ($\delta\mathbf{J}$) with respect to the robot's shape, known as shape derivatives. Derivation details are provided in the following section.}
+
+\section{Sensitivity Analysis}
+\label{sec:sensitivity}
+
+For soft robots composed of hyperelastic materials, the virtual work equation reveals an implicit relationship between the displacement field and the system inputs. Leveraging this relationship, both the Jacobian and its shape derivative can be obtained. All subsequent formulas adopt the Einstein summation convention unless stated otherwise.
+
+\begin{table}[h!]
+\caption{\textcolor{blue}{Nomenclature for Sensitivity Analysis}}
+\label{tab:nomenclature_sensitivity}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lp{5.5cm}}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+\multicolumn{2}{l}{\textit{Equilibrium Variables}} \\
+$\mathbf{u}, \mathbf{v}$ & Continuous actual and virtual displacement fields. \\
+$\mathbf{U}, \mathbf{V}$ & Discretized nodal actual and virtual displacement vectors. \\
+$\mathcal{L}(\mathbf{u}, \mathbf{v})$ & Residual of the principle of virtual work. \\
+$\mathcal{A}(\mathbf{u}, \mathbf{v})$ & Virtual work of internal stresses. \\
+$\mathcal{B}^q(\mathbf{u}, \mathbf{v})$ & Virtual work of pressure in the $q$-th chamber. \\
+$s_{ij}$ & First Piola-Kirchhoff stress tensor. \\
+$F_{ij}$ & Deformation gradient tensor. \\
+$L_i(\mathbf{U})$ & Discretized residual force vector. \\
+$K_{ij}$ & Tangential stiffness matrix ($\partial L_i / \partial U_j$). \\
+\midrule
+\multicolumn{2}{l}{\textit{Shape Derivatives and Variations}} \\
+$\Lambda$ & Shape perturbation field on the boundary. \\
+$\delta U_l$ & Shape derivative of the $l$-th displacement DoF. \\
+$\delta J^l_{p_r}$ & Shape derivative of the Jacobian component. \\
+$\Lambda_i^U, \Lambda_i^J$ & Result of shape sensitivity coefficients for displacement and Jacobian analysis, respectively. \\
+\midrule
+\multicolumn{2}{l}{\textit{Adjoint Variables}} \\
+$\tilde{\mathbf{v}}^0_l$ & Continuous adjoint field for the $l$-th degree of freedom sensitivity. \\
+$\tilde{\mathbf{v}}^1_l, \tilde{\mathbf{v}}^2_{lr}$ & Continuous first and second-order adjoint fields for the $l$-th degree of freedom and $r$-th pressure input Jacobian sensitivity. \\
+$\tilde{V}_i^0$ & Discretized adjoint vector for displacement sensitivity. \\
+$\tilde{V}_i^1, \tilde{V}_i^2$ & Discretized first and second-order adjoint vectors for Jacobian sensitivity. \\
+$Q^l_i$ & Selection vector with a one at the $l$-th entry. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Equilibrium Equation}
+\label{sec:sensitivity:equilibrium}
+\textcolor{blue}{We consider a pneumatic soft robot, where the static equilibrium is governed by the principle of virtual work. The total virtual work of the system consists of the internal work done by elastic forces and the external work done by pneumatic pressure terms. For any arbitrary kinematically admissible virtual displacement, it holds that}
+\begin{equation}
+  \mathcal{L} \left(\mathbf{u}, \mathbf{v}\right) = \mathcal{A}\left(\mathbf{u}, \mathbf{v}\right) - \sum_q \mathcal{B}^q\left(\mathbf{u}, \mathbf{v}\right) = 0,
+  \label{eq:virtual_work}
+\end{equation}
+where $\mathcal{L}$ is the residual of the virtual work. The term $\mathcal{A}$ represents the virtual work of the internal elastic stresses, and $\mathcal{B}^q$ is the virtual work of the external load from the $q$-th pneumatic actuator. The vector field $\mathbf{u}$ is the actual displacement of the robot, and $\mathbf{v}$ is an arbitrary virtual displacement field that respects the kinematic boundary conditions (e.g., it is zero at the fixed base).
+
+In detail, the virtual work of the internal stresses is given by the integral of the stress tensor acting over the virtual strain:
+\begin{equation}
+  \mathcal{A}\left(\mathbf{u}, \mathbf{v}\right) = \int_{\Omega_0} s_{ij} \frac{\partial v_j}{\partial x_i} \mathrm{d}\Omega,
+  \label{eq:structural_weak_form}
+\end{equation}
+\textcolor{blue}{where $s_{ij}$ is the first Piola-Kirchhoff stress tensor, defined by the Neo-Hookean hyperelastic model as a function of the deformation gradient and the material parameters $\mu$ and $\kappa$ (see Appendix \ref{sec:material_model})}. It relates forces in the deformed configuration to areas in the undeformed configuration $\Omega_0$. The term $\partial v_j / \partial x_i$ is the gradient of the virtual displacement field.
+
+\textcolor{blue}{For a multi-chamber pneumatic robot, the virtual work of the pressure $p_q$ in the $q$-th chamber is given by:}
+\begin{equation}
+  \begin{split}
+    \mathcal{B}^q\left(\mathbf{u}, \mathbf{v}\right) &= - p_q\int_{\Gamma^q_0} \left|\mathbf{F}\right| F_{ij}^{-1} v_j m_i \mathrm{d}\Gamma,\\[1mm]
+    %\mathcal{B}_f\left(\mathbf{u}, \mathbf{v}\right) &= f_i v_i,
+  \end{split}
+  \label{eq:load_weak_form}
+\end{equation}
+where the integral is taken over the undeformed chamber surface $\Gamma^q_0$. Here, Nanson's formula is used to map the pressure force, which acts on the deformed surface, back to an integral over the undeformed surface. $F_{ij}$ is the deformation gradient, and $m_i$ is the outward normal vector on the undeformed surface.
+
+To solve this system, the structure is discretized using the Finite Element Method (FEM). The continuous displacement fields $\mathbf{u}$ and $\mathbf{v}$ are interpolated from nodal values using shape functions $N^a$:
+\begin{equation}
+  u_i = N^a\,\hat{u}^a_i,\quad v_i = N^a\,\hat{v}^a_i,
+\end{equation}
+where $\hat{u}^a_i$ is the displacement of the $a$-th node. By assembling the contributions from all elements and flattening the indices, the virtual work equation (\ref{eq:virtual_work}) becomes a system of algebraic equations:
+\begin{equation}
+  L_i \left(\mathbf{U}\right) V_i = 0,
+  \label{eq:virtual_work_discrete}
+\end{equation}
+where $\mathbf{U}=\left(U_1,U_2,\cdots, U_n\right)$ is the global vector of nodal displacements, $\mathbf{V}=\left(V_1,V_2,\cdots, V_n\right)$ is the global vector of virtual nodal displacements and $\mathbf{L}(\mathbf{U})$ is the residual force vector. Since this equation must hold for any arbitrary virtual displacement $\mathbf{V}$, it implies that the residual force vector must be zero: $L_i(\mathbf{U}) = 0$.
+
+This nonlinear system is solved for $\mathbf{U}$ using the iterative Newton-Raphson method
+\begin{equation}
+  U_i \leftarrow U_i - K^{-1}_{ij} L_j,
+\end{equation}
+where the tangential stiffness matrix $K_{ij} = \partial L_i/\partial U_j$ is the Jacobian of the residual force vector.
+
+\subsection{Shape Derivative of Displacement Field}
+\label{sec:sensitivity:displacement}
+
+\textcolor{blue}{Our goal is to find how the displacement $\mathbf{U}$ changes in response to a small perturbation of the robot's shape $\Lambda$. This perturbation can be visualized as a small variation of each point on the robot's boundary surface along its normal vector. The resulting change in the displacement is denoted as $\delta \mathbf{U}$.} We derive this sensitivity using the adjoint method. The starting point is the equilibrium equation (\ref{eq:virtual_work}), which must hold true for any shape. Therefore, its variation with respect to a shape perturbation must be zero
+\begin{equation}
+  \delta \mathcal{L} \left(\mathbf{u}, \mathbf{v}\right) = \delta \mathcal{A}\left(\mathbf{u}, \mathbf{v}\right) - \sum_q \delta \mathcal{B}^q\left(\mathbf{u}, \mathbf{v}\right) = 0.
+  \label{eq:variation_virtual_work}
+\end{equation}
+
+The variation of the virtual work terms, detailed in Appendix \ref{sec:variation_results}, has two sources: (1) the change in the displacement field $\mathbf{u}$ itself, which leads to a change in the deformation gradient $\delta F_{ij}$, and (2) the direct change in the integration domain due to the shape perturbation $\Lambda$. After discretization, the variation can be written as
+\begin{equation}
+  V_i K_{ik} \delta U_k
+  +  \int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^U\left(\mathbf{u},\mathbf{v}\right) \Lambda \,\mathrm{d}\Gamma = 0.
+  \label{eq:discreted_variation_1st_virtual_work}
+\end{equation}
+\textcolor{blue}{Here, the first term, $V_i K_{ik} \delta U_k$, captures the implicit dependence on shape through the change in displacement $\delta U_k$. The second term is an integral over the boundary, representing the explicit dependence on the shape perturbation $\Lambda$.} The coefficients $\Lambda_i^U$ are the sensitivities of the virtual work terms to a boundary movement, given by:
+\begin{itemize}
+  \item For the structural stress,
+    \begin{equation}
+      \Lambda_a^U(\mathbf{u},\mathbf{v}) = s_{ij}\,\frac{\partial v_j}{\partial x_i},
+    \end{equation}
+  \item For the $q$-th actuator pressure,
+    \begin{equation}
+      \Lambda_{p_q}^U(\mathbf{u},\mathbf{v}) = \,p_q\,\frac{\partial\left(\left|\mathbf{F}\right|\,F^{-1}_{ij}\,v_j\right)}{\partial x_i}.
+    \end{equation}
+\end{itemize}
+
+\textcolor{blue}{Eq. (\ref{eq:discreted_variation_1st_virtual_work}) is an implicit equation for the displacement sensitivity $\delta U_k$. Solving it directly would require inverting the large stiffness matrix $K_{ik}$ for each design parameter, which is computationally expensive. The adjoint method provides an elegant and efficient alternative. Since the virtual displacement $V_i$ is arbitrary, we can choose it strategically. To find the sensitivity of a specific degree of freedom, $\delta U_l$, we select a special virtual displacement field, called the adjoint field $\tilde{V}^0_i$, such that:}
+\begin{equation}
+  \tilde{V}^0_i K_{ik}  = -Q^l_k \quad \text{or} \quad \tilde{V}^0_i = -Q^l_k K^{-1}_{ki} ,
+  \label{eq:adjoint_1st}
+\end{equation}
+where $\mathbf{Q}^l$ is a selection vector that is one at the $l$-th degree of freedom and zero elsewhere. \textcolor{blue}{Substituting this adjoint field for $V_i$ in (\ref{eq:discreted_variation_1st_virtual_work}) simplifies the first term to $Q^l_k \delta U_k = \delta U_l$. This isolates the desired sensitivity $\delta U_l$ and allows us to express it directly as an integral involving the adjoint field:}
+\begin{equation}
+  \delta U_l = \int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^U\left(\mathbf{u},\tilde{\mathbf{v}}^0_l\right) \Lambda \,\mathrm{d}\Gamma.
+  \label{eq:displacement_shape_derivative}
+\end{equation}
+Here, $\tilde{\mathbf{v}}^0_l$ is the continuous adjoint displacement field corresponding to the $l$-th degree of freedom.
+
+\subsection{Jacobian Analysis}
+
+\textcolor{blue}{The continuum Jacobian $J^j_{p_r} = \partial U_j / \partial p_r$ is the sensitivity of the displacement to a change in actuation pressure.} To find it, we differentiate the virtual work equation (\ref{eq:virtual_work}) with respect to the $r$-th actuation pressure $p_r$:
+\begin{equation}
+  \frac{\partial \mathcal{L}}{\partial p_r}(\mathbf{u}, \mathbf{v}) = \frac{\partial \mathcal{A}}{\partial p_r}(\mathbf{u}, \mathbf{v}) - \sum_q \frac{\partial \mathcal{B}^q}{\partial p_r}(\mathbf{u}, \mathbf{v}) = 0.
+  \label{eq:first_derivative}
+\end{equation}
+The detailed expressions (Appendix \ref{sec:derivative_results}) show that each term is not only directly affected by the actuation input $p_r$, but also indirectly influenced by the displacement field (via $\partial F_{kl}/\partial p_r$, which contains the Jacobian). After discretization, this equation becomes
+
+\begin{equation}
+  \left(\frac{\partial L_i}{\partial p_r} + \frac{\partial L_i}{\partial U_j}\frac{\partial U_j}{\partial p_r}\right)V_i = \left(\frac{\partial L_i}{\partial p_r} + K_{ij}J^j_{p_r}\right)V_i = 0.
+\end{equation}
+Since $V_i$ is arbitrary, the term in the parenthesis must be zero, which gives the expression for the Jacobian:
+\begin{equation}
+  J^j_{p_r} = -K^{-1}_{ji}\frac{\partial L_i}{\partial p_r}.
+\end{equation}
+
+\subsection{Shape Derivative of Jacobian}
+\label{sec:shape_derivative_jacobian}
+
+\textcolor{blue}{The remaining component required for the sensitivity analysis is the shape derivative of the Jacobian, $\delta J^l_{p_r}$. This is a second-order sensitivity, as it involves differentiation with respect to both shape and pressure.} We construct an augmented virtual work equation by combining (\ref{eq:virtual_work}) and (\ref{eq:first_derivative}) with two independent virtual displacement fields, $\mathbf{v}^1$ and $\mathbf{v}^2$
+\begin{equation}
+  \frac{\partial \mathcal{L}}{\partial p_r}\left(\mathbf{u}, \mathbf{v}^1\right) + \mathcal{L}\left(\mathbf{u}, \mathbf{v}^2\right) = 0.
+  \label{eq:added_virtual_work}
+\end{equation}
+Here, $\mathbf{v}^1$ and $\mathbf{v}^2$ are two independent arbitrary virtual displacement fields that satisfy the boundary conditions. Taking the variation of (\ref{eq:added_virtual_work}) yields
+\begin{equation}
+  \delta \left[ \frac{\partial \mathcal{L}}{\partial p_r}\left(\mathbf{u}, \mathbf{v}^1\right) \right] + \delta \mathcal{L}\left(\mathbf{u}, \mathbf{v}^2\right) = 0.
+  \label{eq:variation_added_virtual_work}
+\end{equation}
+Detailed expressions are provided in Appendix \ref{sec:variation_results}. After discretization and separating the terms, this equation takes the form
+\begin{equation}
+  \begin{split}
+    &V_i^1\,K_{ij}\,\delta J^j_{p_r}\\[1mm]
+    +\,&\Bigl[V_i^1\Bigl(\frac{\partial K_{ik}}{\partial p_r} + \frac{\partial K_{ij}}{\partial U_k}\,J^j_{p_r} \Bigr) + V_i^2\,K_{ik}\Bigr]\,\delta U_k\\[1mm]
+    +\,&\int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^J\left(\mathbf{u},\mathbf{v}^1,\mathbf{v}^2\right)\,\Lambda \,\mathrm{d}\Gamma = 0.
+  \end{split}
+  \label{eq:discreted_variation_2nd_virtual_work}
+\end{equation}
+The coefficients $\Lambda_i^J$, which represent the explicit shape sensitivity of the augmented virtual work, are specified as follows:
+\begin{itemize}
+  \item For the structural stress,
+    \begin{equation}
+      \Lambda^J_a\left(\mathbf{u},\mathbf{v}^1,\mathbf{v}^2\right) = s_{ij}\frac{\partial v^2_j}{\partial x_i} + \frac{\partial s_{ij}}{\partial F_{kl}}\,\frac{\partial v^1_j}{\partial x_i}\,\frac{\partial F_{kl}}{\partial p_r},
+    \end{equation}
+  \item For the $q$-th actuator pressure,
+    \begin{equation}
+      \begin{split}
+        \Lambda^J_{p_q}\left(\mathbf{u},\mathbf{v}^1,\mathbf{v}^2\right) =\,
+        &p_q\,\frac{\partial\left(\left|\mathbf{F}\right|F^{-1}_{ij}\,v^2_j\right)}{\partial x_i} \\
+        +&p_q\,\frac{\partial\left(\frac{\partial\left|\mathbf{F}\right|F^{-1}_{ij}}{\partial F_{kl}}\,v^1_j\,\frac{\partial F_{kl}}{\partial p_r}\right)}{\partial x_i}\\[1mm]
+        +&\Delta\left(q,r\right)\,\frac{\partial\left( \left|\mathbf{F}\right|F^{-1}_{ij}\,v^1_j\right)}{\partial x_i}.
+      \end{split}
+    \end{equation}
+\end{itemize}
+Here, $\Delta(q,r)$ is the Kronecker delta.
+
+\textcolor{blue}{Similar to the first-order case, we strategically choose the two arbitrary virtual fields $V_i^1$ and $V_i^2$ to isolate $\delta J^l_{p_r}$.}
+First, we select the first adjoint field $\tilde{V}_i^1$ to isolate the desired component of the Jacobian variation in the first term
+\begin{equation}
+  \tilde{V}_i^1 = -Q^l_j K^{-1}_{ji} .
+  \label{eq:first_adjoint}
+\end{equation}
+This is the same type of adjoint problem as in the first-order case.
+Next, we select the second adjoint field $\tilde{V}_i^2$ to make the entire second term in (\ref{eq:discreted_variation_2nd_virtual_work}) vanish
+\begin{equation}
+  \tilde{V}_i^2 = -K_{ki}^{-1}\,\left[ \tilde{V}_j^1\left(\frac{\partial K_{jk}}{\partial {p_r}} + \frac{\partial K_{jl}}{\partial U_k}\,J^l_{p_r}\right) \right].
+  \label{eq:second_adjoint}
+\end{equation}
+This choice eliminates the term containing the first-order sensitivity $\delta U_k$. With these two adjoint fields, (\ref{eq:discreted_variation_2nd_virtual_work}) is simplified to a direct expression for the Jacobian shape derivative
+\begin{equation}
+  \delta J^l_{p_r} = \int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^J\left(\mathbf{u},\tilde{\mathbf{v}}^1_l,\tilde{\mathbf{v}}^2_{lr}\right)\,\Lambda \,\mathrm{d}\Gamma.
+  \label{eq:jacobian_shape_derivative}
+\end{equation}
+Here, $\tilde{\mathbf{v}}^1_l$ and $\tilde{\mathbf{v}}^2_{lr}$ are the continuous adjoint displacement fields corresponding to the $l$-th degree of freedom and $r$-th pressure input.
+
+For computational efficiency, we leverage two key strategies. First, the adjoint equations (\ref{eq:adjoint_1st}) (\ref{eq:first_adjoint}) and (\ref{eq:second_adjoint}) are linear systems that share the same stiffness matrix $K_{ij}$ as the forward problem. We only need to factorize this large matrix once. All required adjoint fields can then be found rapidly by solving systems of the form $K_{ij} x_j=b_i$ using inexpensive forward/backward substitution.
+
+\textcolor{blue}{Second, we avoid explicitly forming the large and costly third-order tensor $\partial K_{ij}/\partial U_k$. Instead, we compute its product at the element level before global assembly
+\begin{equation}
+    \mathbf{\tilde{V}}^1 \left(\frac{\partial \mathbf{K}}{\partial \mathbf{U}}\right) \mathbf{J} = \sum_{e} \left[ \mathbf{\tilde{v}}^1_e \left(\frac{\partial \mathbf{k}_e}{\partial \mathbf{u}_e}\right) \mathbf{j}_e \right],
+\end{equation}
+where the product of small, local tensors $\mathbf{\tilde{v}}^1_e(\partial \mathbf{k}_e / \partial \mathbf{u}_e) \mathbf{j}_e$ is computed for each element and then assembled into a global matrix. This element-wise approach significantly reduces memory and computational costs.}
+\textcolor{blue}{Subsequently, we describe the geometric representation for shape optimization, enabling the derivation of the workspace sensitivity with respect to geometric design parameters.}
+
+\section{Geometric Model for Morphogenesis}
+\label{sec:sphere_mapping}
+
+
+
+The morphological shape of pneumatic soft robots, especially that of air chambers where the distributed pressure loads are applied, is pivotal to their performance. To enable generative shape optimization (morphogenesis), we employ the B-spline surface to represent the robot's exterior surface. \textcolor{blue}{B-spline surfaces are parametric surfaces defined by a set of control points and basis functions, offering excellent local shape control.} Tracking of the evolving internal air chambers requires a closed-surface geometric model with the following key characteristics:
+\begin{enumerate}
+  \item At least thrice-differentiable to allow accurate evaluation of geometric properties such as curvature.
+  \item Free of singular points to ensure that the objective function remains continuously differentiable.
+  \item Local support property, \textcolor{blue}{meaning that modifying a single control point affects only a localized region of the surface,} is crucial for efficient local shape modification and yields a sparse mapping function, thereby reducing computational complexity.
+
+\end{enumerate}
+
+To meet these requirements, we introduce a spherical function based on control points to represent the closed surface, ensuring high differentiability while avoiding singularities. Additionally, since non-uniform control point distributions during optimization may hinder morphogenesis, we propose a surface reconstruction algorithm that enforces uniform redistribution, thereby enhancing optimization robustness.
+
+\subsection{Closed Surface Mapping}
+\label{sec:sphere_mapping:closed_surface}
+\begin{figure}[!t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_closedsurfaceMap.png}
+  \caption{Surface mapping from the reference space (unit sphere) to the configuration space. Red points indicate the control points, each with its associated influence region.}
+  \label{fig:closedsurfaceMap}
+\end{figure}
+
+\begin{table}[t]
+\caption{\textcolor{blue}{Nomenclature for Geometric Modeling and Reconstruction}}
+\label{tab:nomenclature_geometry}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lp{5.5cm}}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$\mathbb{S}$ & Reference space (unit sphere). \\
+$f(\mathbf{S}; \hat{\mathbf{\Phi}},\hat{\boldsymbol{\phi}})$ & Mapping function from reference space (point $\mathbf{S}$) to configuration space with control points $\hat{\mathbf{\Phi}}$ and $\hat{\boldsymbol{\phi}}$.\\
+$\mathbf{S}$ & A point in the reference space $\mathbb{S}$. \\
+$\mathbf{r}$ & A point on the surface in the configuration space. \\
+$\bar{S}_1, \bar{S}_2$ & Stereographic projection coordinates. \\
+$\hat{\mathbf{\Phi}}, \mathbf{\Phi}^i$ & Set of control points and the $i$-th control point in the reference space. \\
+$\hat{\boldsymbol{\phi}}, \boldsymbol{\phi}^i$ & Set of control points and the $i$-th control point in the configuration space. \\
+$c_i(\mathbf{S})$ & Normalized weight of the $i$-th control point at $\mathbf{S}$. \\
+$C_i(\mathbf{S})$ & Initial weight of the $i$-th control point at $\mathbf{S}$. \\
+$d_0^i$ & Influence radius of the $i$-th control point. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The closed surface is constructed by mapping points from the reference space (the unit sphere $\mathbb{S}$) to the configuration space (the surface $\mathbb{R}^{3}$) using a mapping function \(f\)
+\begin{equation}
+  f: \mathbb{S} \rightarrow \mathbb{R}^{3}, \quad \mathbb{S} = \left\{ \mathbf{S} \in \mathbb{R}^{3} \mid \|\mathbf{S}\|_2 = 1 \right\}
+  \label{eq:sphere_mapping_function}
+\end{equation}
+where $\left\|\cdot\right\|_2$ is the Euclidean norm. The mapping function \(f\) is determined by control points specified in both the reference space and the configuration space. That is, each control point consists of six coordinates, three in the reference space and three in the configuration space (see Fig. \ref{fig:closedsurfaceMap}):
+\begin{equation}
+  \left( \mathbf{\Phi}^i, \boldsymbol{\phi}^i \right), \quad \|\mathbf{\Phi}^i\|_2 = 1,\quad i=1,2,\dots,n.
+  \label{eq:closed_surface_control_point}
+\end{equation}
+Once the control points are fixed, the surface is fully defined. Thus, we denote the surface representation as $\{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}$, with $\hat{\mathbf{\Phi}} = \left\{\mathbf{\Phi}^1, \mathbf{\Phi}^2, \dots, \mathbf{\Phi}^n\right\}$ representing the set of control points in the reference space, and $\hat{\boldsymbol{\phi}} = \left\{\boldsymbol{\phi}^1, \boldsymbol{\phi}^2, \dots, \boldsymbol{\phi}^n\right\}$ those in the configuration space. Here, we use the hat symbol $\hat{\left(\cdot\right)}$ to denote a set of control points in the configuration (or reference) space. 
+
+The mapping function is then expressed as
+\begin{equation}
+  \mathbf{r} = f(\mathbf{S}; \hat{\mathbf{\Phi}},\hat{\boldsymbol{\phi}}) = \sum_{i=1}^n c_i(\mathbf{S}; \hat{\mathbf{\Phi}})\,\boldsymbol{\phi}^i, \|\mathbf{S}\|_2=1,
+  \label{eq:sphere_mapping}
+\end{equation}
+where \(\mathbf{r}\) is a point on the closed surface corresponding to the coordinate \(\mathbf{S} \in \mathbb{S}\), \(c_i(\mathbf{S}; \hat{\mathbf{\Phi}})\) is the weight of the $i$-th control point, satisfying the normalization condition,
+\begin{equation}
+  \sum_{i=1}^n c_i(\mathbf{S}; \hat{\mathbf{\Phi}}) = 1, \quad \forall\, \mathbf{S} \in \mathbb{S}.
+  \label{eq:weight_sum}
+\end{equation}
+
+The weight for each control point is determined based on the distance between the control point and a query point in the reference space. \textcolor{blue}{For any two points $\mathbf{a} = \left(a_1, a_2, a_3\right)$ and $\mathbf{b} = \left(b_1, b_2, b_3\right)$ in $\mathbb{S}$, the distance is computed as
+\begin{equation}
+  d(\mathbf{a},\mathbf{b}) = \sqrt{(a_1 - b_1)^2 + (a_2 - b_2)^2 + (a_3 - b_3)^2}. 
+\end{equation}
+} 
+
+For a query point $\mathbf{S} \in \mathbb{S}$ and the $i$-th control point, the relative distance is defined by
+\begin{equation}
+  \bar{d}^i(\mathbf{S}) = \frac{d(\mathbf{S},\mathbf{\Phi}^i)}{d_0^i},
+\end{equation}
+where \(d_0^i\) represents the influence radius of the $i$-th control point. For each control point $\mathbf{\Phi}^i$, the distances to all other control points are computed and sorted in ascending order. \textcolor{blue}{The influence radius, $d_0^i$, is then defined as the distance corresponding to the $k$-th nearest control point. The parameter $k$ determines the smoothness and locality of the surface representation, analogous to the degree of a B-spline. Increasing $k$ yields a smoother surface but reduces locality and raises computational cost. If $k$ is increased without a corresponding increase in control point density, the larger influence radius leads to a loss of high-frequency surface details.} This procedure ensures that, when the control points are uniformly distributed, each query point is primarily influenced by its $k$ nearest control points ($k$ is set to $20$ in this work).
+
+The initial weight of the \(i\)-th control point is defined by a polynomial weighting function that satisfies three essential properties: (i) it vanishes beyond the influence radius, (ii) it attains a value of one at zero distance, and (iii) it maintains high-order smoothness throughout the domain \cite{Maloisel_Knoop_Schumacher_Bacher_2021}. This initial weight function is expressed as 
+\begin{equation}
+  C_i(\mathbf{S}; \mathbf{\Phi}^i) =
+  \begin{cases}
+      \begin{aligned}
+        &20\textcolor{blue}{(\bar{d}^{i})}^7 - 70\textcolor{blue}{(\bar{d}^{i})}^6 \\
+        &+ 84\textcolor{blue}{(\bar{d}^{i})}^5 - 35\textcolor{blue}{(\bar{d}^{i})}^4 + 1,
+      \end{aligned}
+      & \text{if } \bar{d}^i < 1, \\[1mm]
+      0, & \text{if } \bar{d}^i \ge 1.
+  \end{cases}
+  \label{eq:initial_weight}
+\end{equation}
+
+The normalized weight for the $i$-th control point is given by
+\begin{equation}
+  c_i(\mathbf{S}; \hat{\mathbf{\Phi}}) = \frac{C_i(\mathbf{S}; \mathbf{\Phi}^i)}{\sum_{j=1}^{n} C_j(\mathbf{S}; \mathbf{\Phi}^j)}.
+  \label{eq:normalized_weight}
+\end{equation}
+The surface formulation is fully determined through the weight normalization in (\ref{eq:normalized_weight}).  
+
+Since the mapping function is linear with respect to the control points, \textcolor{blue}{its derivatives with respect to the reference coordinates $\mathbf{S} = (S_1, S_2, S_3)$ can be computed straightforwardly. In particular, the first derivative with respect to the $j{\text{-th}} \,(j\in\left\{1,2,3\right\})$ reference coordinate $S_j$ is}
+\begin{equation}
+  \frac{\partial \mathbf{r}}{\partial S_j} = \sum_{m=1}^n \frac{\partial c_m(\mathbf{S}; \hat{\mathbf{\Phi}})}{\partial S_j}\,\boldsymbol{\phi}^m,
+\end{equation}
+and the second derivative is
+\begin{equation}
+  \frac{\partial^2 \mathbf{r}}{\partial S_j \partial S_k} = \sum_{m=1}^n \frac{\partial^2 c_m(\mathbf{S}; \hat{\mathbf{\Phi}})}{\partial S_j \partial S_k}\,\boldsymbol{\phi}^m,
+\end{equation}
+where $j,k \in \{1,2,3\}$.
+The derivatives of the normalized weights in (\ref{eq:normalized_weight}) can be derived by standard differentiation techniques and are omitted here. The sparse nature of the mapping function significantly reduces the computational cost associated with these derivatives.
+
+\subsection{Surface Evolution}
+\label{sec:sphere_mapping:surface_evolution}
+For the evolution of the surface, the control points in the configuration space are updated according to the gradient of the objective function. The derivatives of the surface with respect to the control points are expressed as
+\begin{equation}
+  \frac{\partial r_i}{\partial \phi^m_l} = \delta_{il} c_m (\mathbf{S}; \hat{\mathbf{\Phi}}),
+\end{equation}
+\begin{equation}
+  \frac{\partial\left(\partial r_i / \partial S_j\right)}{\partial \phi^m_l} = \delta_{il} \frac{\partial c_m(\mathbf{S}; \hat{\mathbf{\Phi}})}{\partial S_j},
+\end{equation}
+and
+\begin{equation}
+  \frac{\partial\left[\partial^2 r_i / \left(\partial S_j \partial S_k\right)\right]}{\partial \phi^m_l} = \delta_{il} \frac{\partial^2 c_m(\mathbf{S}; \hat{\mathbf{\Phi}})}{\partial S_j \partial S_k},
+\end{equation}
+where $i,j,k,l \in \{1,2,3\}$.
+
+Stereographic projection is introduced as a curvilinear coordinate system to compute the surface's normal vector and curvature. In this technique, the unit sphere is mapped onto a plane, establishing a one-to-one correspondence between a point \(A(S_1, S_2, S_3)\) on the sphere (excluding the North Pole, \(NP(0,0,1)\)) and a point \(B(\bar{S}_1, \bar{S}_2)\) on the plane. This mapping is achieved by drawing a ray from the North Pole through \(A\) and assigning \(B\) as the intersection of this ray with the plane \(S_3 = -1\). Notably, the North Pole is mapped to a point at infinity. The projection is defined by
+\begin{equation}
+    \bar{S}_1 = \frac{2S_1}{1 - S_3},
+    \bar{S}_2 = \frac{2S_2}{1 - S_3},
+  \label{eq:stereographic_projection}
+\end{equation}
+and the inverse projection is given by
+\begin{equation}
+    S_1 = \frac{4\bar{S}_1}{\bar{S}_1^2 + \bar{S}_2^2 + 4},
+    S_2 = \frac{4\bar{S}_2}{\bar{S}_1^2 + \bar{S}_2^2 + 4},
+    S_3 = \frac{\bar{S}_1^2 + \bar{S}_2^2 - 4}{\bar{S}_1^2 + \bar{S}_2^2 + 4}.
+  \label{eq:inverse_stereographic}
+\end{equation}
+Because the stereographic projection is highly differentiable, using \((\bar{S}_1, \bar{S}_2)\) as the curvilinear coordinate system enables straightforward computation of the tangential vectors. Consequently, the normal vector of the surface, \(\mathbf{m}\), is given by
+\begin{equation}
+  \mathbf{m} = \frac{\partial \mathbf{r}}{\partial \bar{S}_1} \times \frac{\partial \mathbf{r}}{\partial \bar{S}_2}.
+  \label{eq:normal_vector}
+\end{equation}
+Similarly, the Gaussian curvature $K$ and mean curvature $H$ can also be computed from $\frac{\partial \mathbf{r}}{\partial \bar{S}_1}$ and $\frac{\partial \mathbf{r}}{\partial \bar{S}_2}$, along with their derivatives. Detailed derivations can be found in \cite{chen_morphological_2023}.
+
+The variation of the geometric boundary $\Lambda$, as expressed in  (\ref{eq:displacement_shape_derivative}) and (\ref{eq:jacobian_shape_derivative}), can be reformulated in terms of the variations of the control points in the configuration space, given by
+\begin{equation}
+  \Lambda \, \mathrm{d}\Gamma = \sum_{i,j,l}\frac{\partial \mathbf{r}_i}{\partial \boldsymbol{\phi}^j_l} \delta \boldsymbol{\phi}^j_l m_i \, \mathrm{d}\bar{S}_1 \, \mathrm{d}\bar{S}_2 = \sum_{j, l} c_j \delta\phi^j_l m_l \, \mathrm{d} \bar{S}_1 \, \mathrm{d} \bar{S}_2.
+  \label{eq:shape_derivative_control_points}
+\end{equation}
+\textcolor{blue}{By substituting this relationship into the shape derivative expressions for displacement (\ref{eq:displacement_shape_derivative}) and Jacobian (\ref{eq:jacobian_shape_derivative}), we obtain their explicit derivatives with respect to the control points $\phi_l^m$. The derivative of the displacement is:
+\begin{equation}
+    \frac{\partial U_k}{\partial \phi_l^m} = \int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^U\left(\mathbf{u},\tilde{\mathbf{v}}^0_k\right) c_m  m_l \, \mathrm{d}\Gamma,
+    \label{eq:U_derivative}
+\end{equation}
+and for the Jacobian, it is:
+\begin{equation}
+    \frac{\partial J^k_{p_r}}{\partial \phi_l^m} = \int_{\Gamma_0} \sum_{i\in\{a,p_1,\cdots,p_q\}} \Lambda_i^J\left(\mathbf{u},\tilde{\mathbf{v}}^1_k,\tilde{\mathbf{v}}^2_{kr}\right) c_m  m_l \, \mathrm{d}\Gamma.
+    \label{eq:J_derivative}
+\end{equation}
+Here, $\tilde{\mathbf{v}}^0_k$, $\tilde{\mathbf{v}}^1_k$, and $\tilde{\mathbf{v}}^2_{kr}$ are the respective adjoint fields. With the shape derivatives of the displacement and Jacobian established, the total derivative of the workspace volume with respect to the control points can be computed by applying the chain rule to the workspace integral formulations from (\ref{eq:workspace_variation}). The sensitivity of the workspace volume $|\mathbb{W}_X|$ with respect to a control point $\phi_l^m$ is given by:
+\begin{equation}
+\begin{split}
+    \frac{\partial |\mathbb{W}_X|}{\partial \phi_l^m} &= \int_{\Gamma_0}  \int_{\partial \mathbb{P}} \sum_{i,r,k} \Biggl[ \frac{\partial w_X}{\partial U_k} \Lambda_i^U\left(\mathbf{u},\tilde{\mathbf{v}}^0_k\right) \\
+    &+ \frac{\partial w_X}{\partial J^k_{p_r}} \Lambda_i^J\left(\mathbf{u},\tilde{\mathbf{v}}^1_k,\tilde{\mathbf{v}}^2_{kr}\right) \Biggr] c_m m_l \mathrm{d}\boldsymbol{\zeta}  \mathrm{d}\Gamma.
+\end{split}
+\label{eq:workspace_derivative_control_points}
+\end{equation}}
+
+
+\subsection{Surface Reconstruction}
+\label{sec:sphere_mapping:surface_reconstruction}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_reconstruction.png}
+  \caption{The surface reconstruction workflow, which remeshes the control points to ensure geometric quality during optimization. Variables highlighted in green denote the inputs in each step, while those highlighted in orange indicate the outputs. 
+  (a) The initial surface $\{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}$ with a non-uniform control point distribution. 
+  (b) Uniformly seeding new control points in the configuration space \textcolor{blue}{to obtain the points $\hat{\mathbf{r}}_\text{opt}$.}
+  (c) Projecting these points back to the reference space and performing harmonic refinements to obtain a uniform distribution $\hat{\mathbf{\Psi}}$. 
+  (d) Minimizing the matching error \textcolor{blue}{between the original points $\mathbf{r}^m_\text{opt}$ and new surfaces $f\left(\mathbf{\Psi}^{m}; \hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}}\right)$} by adjusting the control points \textcolor{blue}{$\boldsymbol{\psi}^m$} in the configuration space, \textcolor{blue}{obtaining the final control points in the configuration space $\hat{\boldsymbol{\psi}}$.}
+  (e) The final reconstructed surface $\{\hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}}\}$ with uniformly distributed control points.}
+  \label{fig:reconstruction}
+\end{figure*}
+
+To ensure a robust and stable optimization process, we introduce a surface reconstruction algorithm that is periodically invoked to maintain a high-quality geometric representation. \textcolor{blue}{As the robot's shape evolves during morphogenesis, the control points defining the surface may become either excessively sparse or dense in distribution within certain regions [see Fig. \ref{fig:reconstruction}(a)]}. This non-uniformity degrades the accuracy of the shape representation and can lead to numerical instability (ill-conditioning), causing the optimization to stall. 
+
+The high-order differentiability of the surface allows us to employ efficient second-order optimization algorithms during reconstruction. This procedure, detailed in Algorithm \ref{ag:reconstruction} and illustrated in Fig. \ref{fig:reconstruction}, is essential for enabling large-scale shape evolution. The strategy leverages established methods for mesh parameterization \cite{Zhang_Feng_2022,10.1145/218380.218440}, where each mesh edge is treated as a spring, causing each node to converge to the barycenter of its neighbors, to ensure a smooth and uniform mesh. \textcolor{blue}{The initial surface is $\{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}$ [Fig. \ref{fig:reconstruction}(a)], and the goal is to find a new surface $\{\hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}}\}$ [Fig. \ref{fig:reconstruction}(e)]} that closely matches the shape of the original surface but with uniformly distributed control points. The surface reconstruction scheme includes the following operations.
+
+Treating each mesh edge as an elastic spring, the total energy of the surface mesh is defined as
+\begin{equation}
+  E(\hat{\mathbf{r}}, \mathbf{e}) = \frac{1}{2} \sum_{m=1}^{n} \left\|\mathbf{r}^{e^m_1} - \mathbf{r}^{e^m_2}\right\|^2,
+  \label{eq:potential_energy_harmonics}
+\end{equation}
+where \(\mathbf{r}^{e^m_1}\) and \(\mathbf{r}^{e^m_2}\) denote the endpoints of the $m$-th edge, and \(\hat{\mathbf{r}}\) is the set of all point positions $\{\mathbf{r}^1, \mathbf{r}^2, \dots, \mathbf{r}^n\}$.
+
+\textbf{Uniform seeding}. \textcolor{blue}{The first step is to uniformly seed \(n'\) control points in the configuration space [see Fig. \ref{fig:reconstruction}(b)]}. This procedure comprises two parts:
+\begin{enumerate}
+  \item \textit{Initial Sampling:} obtain initial samples \(\hat{\mathbf{r}}_\text{init} = \left\{{\mathbf{r}}_\text{init}^1,{\mathbf{r}}_\text{init}^2,\dots,{\mathbf{r}}_\text{init}^{n^\prime}\right\}\) on the surface, along with an initial connectivity $\mathbf{e} = \left\{e^1,e^2,\dots,e^m\right\}$. These samples are typically non-uniform.
+  \item \textit{Position Optimization:} optimize the control point positions for a uniform distribution by solving
+  \begin{equation}
+    \begin{aligned}
+      &\min_{\mathbf{r}^i,\, i=1,2,\dots,n'} E\left(\hat{\mathbf{r}}, \mathbf{e}\right) \\
+      &\text{subject to } \mathbf{r}^i \in \{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}, \quad i=1,2,\dots,n', \\
+      &\quad\quad \quad \frac{V-V_0}{V_0} < \epsilon,
+    \end{aligned}
+    \label{eq:potential_energy_surface}
+  \end{equation}
+with \(V\) the volume enclosed by the surface, \(V_0\) the initial volume, and \(\epsilon\) a small tolerance (set to $0.01$). Additionally, the connectivity \(\mathbf{e}\) is updated using an edge flip algorithm to further refine the mesh. This optimization problem gives the results $\hat{\mathbf{r}}_\text{opt} = \left\{{\mathbf{r}}_\text{opt}^1,{\mathbf{r}}_\text{opt}^2,\dots,{\mathbf{r}}_\text{opt}^{n^\prime}\right\}$ that are uniformly distributed in the configuration space. This procedure is illustrated in the Supplementary Video.
+\end{enumerate}
+
+\begin{algorithm}[t]
+  \caption{Surface Reconstruction Algorithm}
+  \label{ag:reconstruction}
+  \SetKwInput{Input}{\textcolor{blue}{Input}}
+  \SetKwInput{Output}{\textcolor{blue}{Output}}
+  \SetKwInput{LabelA}{Step 1: Uniform Seeding \textcolor{blue}{[Fig. \ref{fig:reconstruction}(b)]}}
+  \SetKwInput{LabelB}{Step 2: Harmonic Refinement \textcolor{blue}{[Fig. \ref{fig:reconstruction}(c)]}}
+  \SetKwInput{LabelC}{Step 3: Matching Error Minimization \textcolor{blue}{[Fig. \ref{fig:reconstruction}(d)]}}
+
+  \Input{\textcolor{blue}{Initial surface $\{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}$ with non-uniform control points \textbf{[Fig. \ref{fig:reconstruction}(a)]}.}}
+  \Output{\textcolor{blue}{Reconstructed surface $\{\hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}}\}$ with uniform control points \textbf{[Fig. \ref{fig:reconstruction}(e)]}.}}
+  \BlankLine
+
+  \LabelA{}
+  \textcolor{blue}{\textit{Input:} $\{\hat{\mathbf{\Phi}}, \hat{\boldsymbol{\phi}}\}$, initial surface.}\;
+  \textcolor{blue}{\textit{Output:} $\hat{\mathbf{r}}_\text{opt}$, a set of uniformly distributed points on the surface.}\;
+  Sample $n'$ points on the surface to get initial positions $\hat{\mathbf{r}}_\text{init}$ and connectivity $\mathbf{e}$.\;
+  Solve optimization problem (\ref{eq:potential_energy_surface}) by iteratively updating point positions $\hat{\mathbf{r}}$ and connectivity $\mathbf{e}$.\;
+  \BlankLine
+
+  \LabelB{}
+  \textcolor{blue}{\textit{Input:} $\hat{\mathbf{r}}_\text{opt}$, uniformly distributed points.}\;  
+  \textcolor{blue}{\textit{Output:} $\hat{\mathbf{\Psi}}$, new uniformly distributed reference control points.}\;
+  Obtain initial reference points $\mathbf{R}^i$ via inverse mapping $f^{-1}(\mathbf{r}^i_\text{opt})$ (\ref{eq:inverse_mapping}).\;
+  Project $\mathbf{R}^i$ onto planar disks using stereographic projection (\ref{eq:stereographic_projection}).\;
+  Optimize point distribution on disks to achieve a harmonic mesh by minimizing energy (\ref{eq:potential_energy_harmonics}).\;
+  Project refined points back to the sphere (\ref{eq:inverse_stereographic}).\;
+  \BlankLine
+
+  \LabelC{}
+  \textcolor{blue}{\textit{Input:} $\hat{\mathbf{r}}_\text{opt}$ and $\hat{\mathbf{\Psi}}$, target points and new reference points.}\;
+  \textcolor{blue}{\textit{Output:} $\hat{\boldsymbol{\psi}}$, final configuration-space control points.}\;
+  Solve the linear least-squares problem (\ref{eq:postprocess}) to find new configuration-space control points $\hat{\boldsymbol{\psi}}$ that best match the original surface shape.\;
+\end{algorithm}
+
+\textbf{Harmonic refinement}. \textcolor{blue}{Once the control points \(\hat{\mathbf{r}}_\text{opt}\) have been uniformly distributed in the configuration space, the next step is to relocate their corresponding positions in the reference space as uniformly as possible [see Fig. \ref{fig:reconstruction}(c)].} This is accomplished by applying a harmonic refinement method to the control points, which is formulated as a linear least squares problem and efficiently solved using the Newton method.
+
+The initial distribution of control points in the reference unit sphere is obtained via the inverse mapping
+\begin{equation}
+  \mathbf{R}^i = f^{-1}\left(\mathbf{r}^i_\text{opt}\right), \quad i=1,2,\dots,n',
+  \label{eq:inverse_mapping}
+\end{equation}
+which is typically non-uniform and requires further optimization. To this end, stereographic projection (\ref{eq:stereographic_projection}) is used to map the control points from the unit sphere onto a plane. The sphere is divided into two halves so that the upper hemisphere is projected from the South Pole, yielding the set $\hat{\mathbf{R}}_\text{upper} = \left\{{\mathbf{R}}_\text{upper}^1,{\mathbf{R}}_\text{upper}^2,\dots,{\mathbf{R}}_\text{upper}^{n^\prime}\right\}$, while the lower hemisphere is projected from the North Pole, yielding the set $\hat{\mathbf{R}}_\text{lower} = \left\{{\mathbf{R}}_\text{lower}^1,{\mathbf{R}}_\text{lower}^2,\dots,{\mathbf{R}}_\text{lower}^{n^\prime}\right\}$.
+
+This conformal mapping ensures that, even after optimization on the plane, the uniformity is preserved when the points are reprojected to the sphere. \textcolor{blue}{To guarantee a seamless surface, we employ a sequential optimization strategy on the planar projections. First, we optimize the point distribution for the upper hemisphere, which includes an overlapping equatorial band of points from the lower hemisphere. The resulting positions for the points in this overlapping band are then fixed. Subsequently, we optimize the point distribution for the lower hemisphere, using the fixed equatorial points as a boundary condition. This two-step process ensures a smooth stitch between the two hemispheres when they are reprojected back to the sphere.} The optimization over the plane is formulated separately for the upper and lower halves as
+\begin{equation}
+  \min_{\mathbf{R}^i_\text{upper},\, i=1,2,\dots,n'} E\left(\hat{\mathbf{R}}_\text{upper}, \mathbf{e}\right),
+\end{equation}
+\begin{equation}
+  \min_{\mathbf{R}^i_\text{lower},\, i=1,2,\dots,n'} E\left(\hat{\mathbf{R}}_\text{lower}, \mathbf{e}\right).
+\end{equation}
+These linear least squares problems are solved using the Newton method, yielding the optimized reference coordinates of control points on the plane, denoted by \(\hat{\mathbf{\Psi}}_\text{upper}\) and \(\hat{\mathbf{\Psi}}_\text{lower}\). Reprojection onto the unit sphere via the inverse stereographic projection (\ref{eq:inverse_stereographic}) then provides uniformly distributed reference control points \(\hat{\mathbf{\Psi}}= \left\{{\mathbf{\Psi}}^1,{\mathbf{\Psi}}^2,\dots,{\mathbf{\Psi}}^{n^\prime}\right\}\).
+
+
+\textbf{Matching error minimization}. At this stage, we have a new set of control points \(\{\hat{\mathbf{\Psi}}, \hat{\mathbf{r}}_\text{opt}\}\) defining a preliminary reconstructed surface. \textcolor{blue}{Since the new surface may not perfectly match the original surface, a final adjustment is made by minimizing the matching error [see Fig. \ref{fig:reconstruction}(d)].} The new control point set in the configuration space $\hat{\boldsymbol{\psi}}= \left\{{\boldsymbol{\psi}}^1,{\boldsymbol{\psi}}^2,\dots,{\boldsymbol{\psi}}^{n^\prime}\right\}$ can be obtained by solving the optimization problem
+\begin{equation}
+      \min_{\hat{\psi}} \sum_{m=1}^{n'} \left[\left\|\mathbf{r}^{m}_\text{opt} - f\left(\mathbf{\Psi}^{m}; \hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}}\right)\right\|^2 + 
+      \alpha \left\|\mathbf{r}^m_\text{opt} - \boldsymbol{\psi}^{m}\right\|^2\right].
+  \label{eq:postprocess}
+\end{equation}
+Here, the first term quantifies the discrepancy between the new and original surfaces, while the second term penalizes excessive deviation from the initial seeding, preventing overfitting and potential collapse in undersampled regions [see Fig. \ref{fig:reconstruction}(d)]. Since \(f\) is linear in the control points, this is a linear least squares problem solved directly via its Hessian matrix, yielding the final optimal control points \(\hat{\boldsymbol{\psi}}\). As a result, the matching error is minimized and the surface is accurately reconstructed, as illustrated in Fig. \ref{fig:reconstruction}(e).
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_reconstruction_history.png}
+  \caption{\textcolor{blue}{Convergence of the uniform seeding process.}}
+  \label{fig:reconstruction_history}
+\end{figure}
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_postprocess.png}
+  \caption{Effect of the regularization parameter $\alpha$ in the matching error minimization step (\ref{eq:postprocess}). \textcolor{blue}{$\varepsilon_\text{avg}$ is the average matching error.}(a) A large $\alpha$ prioritizes control point uniformity over shape fidelity, resulting in a smoother surface but a higher matching error. (b) An intermediate $\alpha=0.1$ provides a good balance. (c) With $\alpha=0$, the surface perfectly matches the target shape, but the control point distribution may become non-uniform again, compromising mesh quality.}
+  \label{fig:postprocess}
+\end{figure}
+
+\subsection{\textcolor{blue}{Analysis of Surface Reconstruction}}
+\label{sec:sphere_mapping:reconstruction_analysis}
+
+\textcolor{blue}{We employ a periodic surface reconstruction strategy to maintain mesh quality and numerical conditioning. During morphogenesis, control-point distributions tend to drift (e.g., local sparsity or clustering), which degrades the surface fidelity and deteriorates the optimization's numerical conditioning. A full reconstruction restores a near-uniform distribution at a modest cost of about 7.05 s for a typical model with 477 control points. To balance mesh quality and computational efficiency, we conduct a reconstruction every five optimization steps.}
+  
+\textcolor{blue}{The reconstruction process [Fig. \ref{fig:reconstruction}(b)] begins with the \textit{uniform seeding} step, which redistributes control points evenly across the surface in the configuration space by minimizing a potential energy function (\ref{eq:potential_energy_surface}). As shown in Fig. \ref{fig:reconstruction_history}, as the optimization converges and the objective function decreases, the control points evolve from an initial cluster to a uniform distribution, ensuring a high-quality basis for the new surface.}
+
+A key step is the final matching error minimization (\ref{eq:postprocess}), where the regularization parameter $\alpha$ plays a critical role. As illustrated in Fig. \ref{fig:postprocess}, $\alpha$ balances the trade-off between matching the original surface shape and maintaining the uniformity of the newly seeded control points. A large $\alpha$ heavily penalizes deviation from the uniform seeding, preserving mesh quality at the cost of shape accuracy. Conversely, $\alpha=0$ perfectly matches the shape but risks reverting to a non-uniform distribution. We use an intermediate value ($\alpha=0.1$) to achieve both high shape fidelity and good mesh quality.
+
+\section{Optimization Method}
+\label{sec:optimization}
+
+The morphogenesis of the soft robot's workspace is formulated as a shape optimization problem to maximize the workspace volume. \textcolor{blue}{The design variables are the coordinates of the control points defining both the exterior and interior chamber surfaces. Initially, each chamber is a unit sphere and control points are seeded with an approximate spacing of 1 mm.}
+
+Since the displacement field is obtained as an implicit solution of the state equation, the corresponding integrals must be evaluated numerically. To facilitate this, Gaussian quadrature is employed to convert the continuous integrals into a discrete summation of weighted function values at the Gaussian points. In this framework, the shape derivative of the workspace is approximated at these Gaussian points, leading to an optimization problem expressed as:
+\begin{equation}
+  \begin{aligned}
+    &\max_{\boldsymbol{\phi}^l,\; l=1,2,\dots,m} \quad \mathcal{T} = \sum_{g=1}^k \tau^g w_{X}\left(\mathbf{U}^g, \mathbf{J}^g\right)\\[1mm]
+    &\text{s.t. } \sum_{i}L_i\left(\mathbf{U}^g, \mathbf{p}^g\right)V_i = 0,\quad g=1,2,\dots,k
+  \end{aligned}
+  \label{eq:optimization_problem}
+\end{equation}
+where $\tau^g$ is the Gaussian weight for each case, \(\mathbf{U}^g\) and $\mathbf{J}^g$ denote the DoFs and the Jacobian under the $g$-th load condition $\mathbf{p}^g$, and $w_X$ represents the integrand of the workspace volume integral, evaluated specifically at the Gaussian points. $L_i\left(\mathbf{U}^g,\mathbf{p}^g\right) V_i=0$ is the state equation as given in (\ref{eq:virtual_work_discrete}). \textcolor{blue}{The specific values for the pressure conditions $\mathbf{p}^g$ and their corresponding weights $\tau^g$ for each optimization case are detailed in the Supplementary Material (Table S1-Table S5).} These values are determined by applying Gaussian quadrature rules to the workspace integrals defined in Section \ref{sec:workspace_formulate} and considering the symmetry of the robot designs.
+
+To solve this large-scale optimization problem efficiently, we adopt a trust-region method. This iterative approach approximates the objective function at each step with its first-order Taylor expansion, forming a simpler sub-optimization problem within a trusted local region. \textcolor{blue}{Additionally, the optimization must also ensure the manufacturability and structural integrity of the resulting design. To this end, we introduce two key geometric constraints. First, to prevent sharp features that can cause stress concentrations, we impose a curvature constraint. The principal curvatures, $c_1$ and $c_2$, at any point $\mathbf{r}$ on any surface $\mathcal{S}$ are limited by
+\begin{equation}
+    c_1^2 + c_2^2 \le C_{max}^2, \quad \forall \mathbf{r} \in \mathcal{S},
+\end{equation}
+where the maximum allowable curvature $C_{max}$ is set to $1.0$. Second, to ensure structural viability and prevent self-intersection or intersections between adjacent chambers, we enforce a minimum thickness constraint. The distance between any two points on distinct surfaces, $\mathcal{S}_i$ and $\mathcal{S}_j$, must exceed a minimum threshold
+\begin{equation}
+    \min_{\mathbf{r}_i \in \mathcal{S}_i, \mathbf{r}_j \in \mathcal{S}_j} \text{dist}(\mathbf{r}_i, \mathbf{r}_j) \ge d_{min}, \quad i \neq j,
+\end{equation}
+where $d_{min}$ is set to $2.5$ mm. These constraints are integrated into the sub-optimization problem as penalty terms \cite{chen_morphological_2023}, which guide the solver towards feasible solutions.} 
+
+At each iteration of the trust-region method, the sub-optimization problem is formulated as
+\begin{equation}
+  \min_{\Delta \boldsymbol{\phi}^i,\; i=1,2,\dots,n} \quad -\frac{\partial\mathcal{T}}{\partial \boldsymbol{\phi}^i}\Delta \boldsymbol{\phi}^i + \sum_j \mathcal{C}_j,
+  \label{eq:sub_optimization}
+\end{equation}
+where \(\Delta \boldsymbol{\phi}^i\) represents the update direction for the $i$-th control point, and \(\mathcal{C}_j\) is the penalty term associated with the constraints. This sub-optimization problem is solved to update the design variables
+\begin{equation}
+  \boldsymbol{\phi}^i \leftarrow \boldsymbol{\phi}^i + \Delta \boldsymbol{\phi}^i,\quad i=1,2,\dots,n.
+  \label{eq:update_design_variable}
+\end{equation}
+Within the trust region, (\ref{eq:sub_optimization}) is solved using the quasi-Newton method. Once the sub-optimization is complete, the design variables are updated and FEA simulations and sensitivity analysis are performed for the next iteration. \textcolor{blue}{The convergence criterion was set to a relative change in the objective function of less than $10^{-2}$ over the last five iterations.}
+
+\section{\textcolor{blue}{Fabrication and Experimental Setup}}
+\label{sec:fabrication_exp}
+
+
+
+To validate the optimized designs, physical prototypes were fabricated and tested. \textcolor{blue}{The FEA simulations are performed using a custom implicit static solver developed in PyTorch. The robot is modeled using the Neo-Hookean hyperelastic material model and discretized using 10-node quadratic tetrahedral elements. For the boundary conditions, the base of the robot is fully constrained, while the nodes on the end-effector surface are coupled to a central reference point whose displacement and orientation define the robot's end-effector configuration.} With the actuator pressure as the only input, the dimensionless analysis implies that the deformation is governed by the pressure to shear modulus ratio, i.e., \(\tilde{p} = \frac{p}{\mu}\) (see Appendix \ref{sec:normalization}). The maximum value of \(\tilde{p}\) is set to $0.12$ \textcolor{blue}{to generate sufficient deformation. This dimensionless limit, combined with the experimentally measured shear modulus, determines the maximum pressure applied in the experimental validation.}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_fabrication2.png}
+  \caption{Fabrication process of the soft robot by the lost-wax method.}
+  \label{fig:fabrication}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_materials.png}
+  \caption{\textcolor{blue}{Tension tests of the silicone rubber material. Curve fitting of the stress-strain data yields shear moduli \(\mu = 465\,\text{kPa}\) for the unheated sample (left) and \(\mu = 471\,\text{kPa}\) for the heated sample (right).}}
+  \label{fig:materials}
+\end{figure}
+
+\textcolor{blue}{Fabricating soft robots with complex internal geometries presents significant challenges. While direct 3D printing of soft materials offers a path to creating intricate structures, the selection of available materials is often limited and exhibits lower mechanical strength compared to castable silicones. Another common approach involves using water-soluble materials as sacrificial supports for internal cavities \cite{Silva_Fonseca_Neto_Babcinschi_Neto_2024}, but their complete removal from complex, curved channels can be difficult.} To overcome these limitations, we adopt the lost-wax casting method, as shown in Fig. \ref{fig:fabrication}. In this process, the interior molds are fabricated from wax, which can be easily removed by heating, while the exterior molds are produced using 3D printing. First, a hard model of the chamber is 3D printed, and then a silicone rubber mold is created from this model. Liquid wax is subsequently poured into the silicone mold to form the wax mold. Once the wax mold is obtained, the soft robot is fabricated by casting silicone rubber (Posilicone 40, \textcolor{blue}{from Shenzhen Puston Silicone Materials Co., Ltd}), which possesses a Shore hardness of 40A. \textcolor{blue}{We acknowledge that manufacturing variations can introduce geometric inaccuracies. The primary sources of error in our lost-wax casting process include the fabrication tolerance of the 3D-printed rigid molds (<0.2\%), the wax shrinkage (<0.4\%) and mold assembly errors ($\sim$0.1 mm). These factors contribute to a cumulative geometric deviation of less than 0.12 mm. The cumulative effect of these factors on the experimental results is evaluated on a case-by-case basis. For instance, the workspace error for the $2\text{A}0\text{R}2\text{T}$ case was approximately 1.03\%, whereas that for the $3\text{A}2\text{R}0\text{T}$ case is about 4.44\%.}
+
+\textcolor{blue}{Uniaxial tensile tests were performed using an Instron 68SC universal testing machine to calibrate the shear modulus. The samples, with dimensions of $33\,\text{mm} \times 6\,\text{mm} \times 2\,\text{mm}$, were stretched to 200\% strain at a constant rate of 20 mm/min, with tests performed under two conditions: without heat treatment and after a 20-minute boiling treatment to mimic the wax removal process. Fitting the stress-strain curves yields $\mu = 465\,\text{kPa}$ (unheated) and $\mu = 471\,\text{kPa}$ (heated), corresponding to a relative change of $1.2\%$. This indicates that the heat treatment has a negligible effect on the material's shear modulus. The bulk modulus $\kappa$ is set to $100\mu$ to enforce near-incompressibility. The stress-strain curves and fitting results are presented in Fig. \ref{fig:materials}.}
+
+\textcolor{blue}{The Neo-Hookean model proves effective for capturing the strain range of the soft actuators. The FEA results show that the maximum principal strain across all cases does not exceed 100\%, and the tensile tests indicate that the Neo-Hookean model provides accurate stress-strain predictions up to 120\% strain. Additionally, other material models, such as the Mooney-Rivlin model and Ogden model, can be readily integrated into the proposed design framework. Only a modification to the strain energy density function is required, while the analytical expression of the shape derivative and the entire optimization algorithm remain unchanged.}
+
+To validate the optimized designs, physical prototypes were tested. \textcolor{blue}{The loading was applied by controlling the pressure in the pneumatic chambers. To ensure quasi-static loading, a low pressurization rate of $1.0\,\text{kPa/s}$ was adopted, and the maximum pressure reached $56.52\,\text{kPa}$ (i.e., corresponding to $\tilde{p}=0.12$) to align with the FEA simulations.} \textcolor{blue}{Open-loop pressure control} was achieved using a 12-channel custom regulator (Deli Group) equipped with HUBA 528 sensors, \textcolor{blue}{with a control accuracy of $0.1\,\text{kPa}$}, operated via a dSPACE MicroLabBox 1202 module. The end-effector's position and orientation were measured using an OptiTrack motion capture system, with three markers attached \textcolor{blue}{and a calibrated measurement accuracy better than $0.2\,\text{mm}$.}
+
+\section{Results}
+\label{sec:results}
+
+This section presents the workspace optimization for five distinct design problems. The Supplementary Video shows the morphogenesis processes, FEA and experimental results of all investigated cases. We mainly focus on five representative workspace problems summarized below
+\begin{itemize}
+    \item $2\text{A}0\text{R}2\text{T}$: Planar position workspace in the $x$-$z$ plane, under two independent actuation inputs.
+    \item $3\text{A}0\text{R}3\text{T}$: 3D position workspace under three independent actuation inputs.
+    \item $3\text{A}2\text{R}0\text{T}$: \textcolor{blue}{2-DoF orientation workspace} describing the set of achievable end-effector's pointing directions, characterized by an area on the unit sphere.
+    \item $3\text{A}3\text{R}0\text{T}$: \textcolor{blue}{3-DoF orientation workspace}, characterized by the volume of the set of all attainable end-effector rotational configurations.
+    \item $3\text{A}1\text{R}2\text{T}$: \textcolor{blue}{Workspace combining 2D planar position ($x$-$z$ plane) with 1-DoF in-plane orientation.}
+\end{itemize}
+
+% \begin{figure*}[!t]
+%   \centering
+%   \includegraphics[scale=1]{figs/fig2_workspace_2d_opt.png}
+%   \caption{$2 \text{A} 0 \text{R} 2 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace area. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.}
+%   \label{fig:workspace_2d_opt}
+% \end{figure*}
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[scale=1]{figs/fig3_workspace_2d_opt.png}
+  \caption{$2 \text{A} 0 \text{R} 2 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace area. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.}
+  \label{fig:workspace_2d_opt}
+\end{figure}
+
+\subsection{$2 \text{A} 0 \text{R} 2 \text{T}$ Workspace}
+
+We investigate the position workspace in the $x$-$z$ plane, and assume that the structure is symmetric with respect to the \(y\)-\(z\) plane. Due to the symmetry, it suffices to evaluate only the Gaussian points on half of the boundary of the actuation space. In particular, by employing a two-point Gaussian quadrature, 4 Gaussian points are selected (see Table S1). The shape derivative of the workspace is then evaluated at these points.
+
+The initial design and iteration history are illustrated in Fig. \ref{fig:workspace_2d_opt}(a). The optimization results shown in Fig. \ref{fig:workspace_2d_opt}(b) yield two symmetric bellows-like chambers that combine the characteristics of both bending and elongation actuators, thereby enhancing the workspace in both the \(x\) and \(z\) directions. FEA simulations are conducted on the boundary within the allowable pressure range at an interval of $\Delta \tilde{p} = 0.006$ to evaluate the workspace. The total workspace area is \(1314.05 \, \text{mm}^2\), while the Gaussian quadrature evaluation yields \(1359.28 \, \text{mm}^2\). The error between the two results is less than $3.5\%$, which indicates the accuracy of the method. The average experimental workspace area is \(1300.50 \, \text{mm}^2\), which closely matches the FEA result with an error of less than $1.03\%$, as shown in Fig. \ref{fig:workspace_2d_opt}(c).
+
+
+
+\subsection{$3 \text{A} 0 \text{R} 3 \text{T}$ Workspace}
+
+% \begin{figure*}[ht]
+%   \centering
+%   \includegraphics[scale=1]{figs/fig2_workspace_3d_opt.png}
+%   \caption{$3 \text{A} 0 \text{R} 3 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace volume. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.}
+%   \label{fig:workspace_3d_opt}
+% \end{figure*}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[scale=1]{figs/fig3_workspace_3d_opt.png}
+  \caption{$3 \text{A} 0 \text{R} 3 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace volume. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.}
+  \label{fig:workspace_3d_opt}
+\end{figure}
+
+In the $3 \text{A} 0 \text{R} 3 \text{T}$ case, the three air chambers are rotationally symmetric about the $z$-axis and each chamber is axisymmetric. Using Gauss's divergence theorem, the shape derivative of the workspace is evaluated over the boundary surface. Owing to symmetry, this derivative is computed at 6 Gaussian points (see Table S2).
+
+Fig. \ref{fig:workspace_3d_opt} presents the optimization results for the $3 \text{A} 0 \text{R} 3 \text{T}$ workspace. The optimized design exhibits bellows-like structures, analogous to the $2 \text{A} 0 \text{R} 2 \text{T}$ workspace result, and yields a total workspace volume of $89364.4 \, \text{mm}^3$ as evaluated by FEA. The mean deviation of experimental displacements at sampling points from the FEA results is approximately $9.3\,\text{mm}$ [see Fig. \ref{fig:workspace_3d_opt}(c)]. This discrepancy is mainly attributed to self-contact during large deformation, which was not incorporated in the optimization, as discussed in Section \ref{sec:discussion:limitations}.
+
+\subsection{$3 \text{A} 2 \text{R} 0 \text{T}$ Workspace}
+
+% \begin{figure*}[ht] 
+%   \centering \includegraphics[scale=1]{figs/fig2_workspace_rot_opt.png} 
+%   \caption{$3 \text{A} 2 \text{R} 0 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace area. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.} 
+%   \label{fig:workspace_rot_opt} 
+% \end{figure*}
+
+\begin{figure}[t] 
+  \centering \includegraphics[scale=1]{figs/fig3_workspace_rot_opt.png} 
+  \caption{$3 \text{A} 2 \text{R} 0 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace area. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.} 
+  \label{fig:workspace_rot_opt} 
+\end{figure}
+
+For the $3 \text{A} 2 \text{R} 0 \text{T}$ workspace design, the symmetry is analogous to that in the $3 \text{A} 0 \text{R} 3 \text{T}$ case. The workspace boundary can be evaluated with one chamber pressurized to its maximum value, another chamber depressurized, and the third chamber's pressure varying. Consequently, the integration in evaluating (\ref{eq:orientation_workspace_2d_final}) is performed along 6 lines on the boundary surface of the actuation space. Owing to the workspace's symmetry, two Gaussian points are required (see Table S3).
+
+The optimization outcomes are presented in Fig. \ref{fig:workspace_rot_opt}. When one chamber is pressurized to $\tilde{p}=0.12$ while the other two remain at zero, the end-effector rotates by approximately \(77.7\degree\). With two chambers at $\tilde{p} =0.12$ and one at zero, the rotation is approximately \(74.3\degree\). The minimum bending angle is around \(66.1\degree\). The overall area of the reachable orientation on the unit sphere is measured as $4.05$. Experimental validation in Fig. \ref{fig:workspace_rot_opt}(c) shows that the average orientation deviation from the FEA results is around $5.09\degree$ and the workspace area is \(3.87\), which is close to the FEA result with an error of less than $4.44\%$.
+
+
+
+\subsection{\textcolor{blue}{Comparison of Optimization Results}}
+\label{sec:results:comparison}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[scale=1]{figs/fig_workspace_2d_ref.png}
+  \caption{Comparison between the optimized design and the empirical Pneu-Nets design.}
+  \label{fig:workspace_2d_ref}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[scale=1]{figs/fig_workspace_compare.png}
+    \caption{Comparative analysis of workspace volume between $3\text{A}0\text{R}3\text{T}$, $3\text{A}2\text{R}0\text{T}$, and conventional Pneu-Nets designs. (a) Morphological comparison of optimized designs versus baseline Pneu-Nets design. (b) Quantitative comparison of the workspace volume. (c) Demonstration of the workspaces.}
+    \label{fig:comparison}
+\end{figure}
+
+\textcolor{blue}{Pneu-Nets actuators are among the most widely used pneumatic actuators, owing to their excellent elongation and bending deformability \cite{https://doi.org/10.1002/adfm.201303288}. As such, they were selected as the benchmark for comparison. For a fair comparison, the Pneu-Nets actuators were selected such that their dimensions, materials, and wall thickness align with our optimized designs, and were actuated under the identical pressure range ($\tilde{p} \in [0, 0.12]$).}
+
+The performance gains from our free-form optimization are substantial. Compared to the baseline Pneu-Nets actuators, the optimized designs show significant improvements across all cases:
+\begin{itemize}
+    \item {In the 2D case, the workspace area increased by $291\%$ (Fig. \ref{fig:workspace_2d_ref}).}
+    \item {For the 3D position-optimized design ($3\text{A}0\text{R}3\text{T}$), the workspace volume increased by $828\%$ (Fig. \ref{fig:comparison}).}
+    \item {For the 3D orientation-optimized design ($3\text{A}2\text{R}0\text{T}$), the workspace area increased by $158\%$ (Fig. \ref{fig:comparison}).}
+\end{itemize} 
+
+\subsection{$3\text{A}3\text{R}0\text{T}$ Workspace}
+
+% \begin{figure*}
+%   \centering \includegraphics[scale=1]{figs/fig2_workspace_rot3_opt.png} 
+%   \caption{$3 \text{A} 3 \text{R} 0 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace volume. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.} 
+%   \label{fig:workspace_rot3_opt} 
+% \end{figure*}
+
+\begin{figure}[!t]
+  \centering \includegraphics[scale=1]{figs/fig3_workspace_rot3_opt.png} 
+  \caption{$3 \text{A} 3 \text{R} 0 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace volume. (b) The final optimized design. (c) Comparison of deformation and resulting workspace between FEA and experimental validation.} 
+  \label{fig:workspace_rot3_opt} 
+\end{figure}
+
+\begin{figure*}[!ht]
+  \centering
+  \includegraphics[scale=1]{figs/fig2_workspace_2dr_opt.png}
+  \caption{$3 \text{A} 1 \text{R} 2 \text{T}$ workspace design. (a) Initial design and \textcolor{blue}{optimization history}, showing the evolution of morphology and workspace volume. (b) The final optimized design. (c) The workspace and the reachable range of orientation angles at different positions. (d) FEA and experiment results for fixed position deformation. (e) FEA and experiment results for fixed orientation angle deformation.}
+  \label{fig:workspace_2dR_opt}
+\end{figure*}
+
+The $3\text{A}3\text{R}0\text{T}$ workspace optimization \textcolor{blue}{addresses the 3-DoF orientation space}, aiming to maximize the volume of the set of all attainable end-effector rotational configurations. The design incorporates rotational symmetry for both the exterior surface and internal chamber geometry, while deliberately excluding axial symmetry to enhance orientation capability. A total of 8 Gaussian points are employed to evaluate the shape derivative of the workspace (see Table S4).
+
+As demonstrated in Fig. \ref{fig:workspace_rot3_opt}, each chamber possesses both bending and twisting capabilities. Deformation patterns are shown for 1-, 2-, and 3-chamber pressurization cases. The total volume of the orientation workspace is $0.0299$ as measured by FEA. 
+
+
+
+Unlike the previous example $3\text{A}2\text{R}0\text{T}$ (which excludes axial rotation), the optimized design in this case further incorporates a helical feature, enabling twisting motion, which is consistent with the characteristics of previously reported twisting actuators (e.g., \cite{9403872, https://doi.org/10.1002/advs.201901371}). Under most actuation pressures, the robot outputs combined bending and twisting motions. When the pressures in all three chambers are equal, the bending effects cancel out, resulting in pure twisting motion.
+
+The $3\text{A}2\text{R}0\text{T}$ workspace optimization yields a $U_4, U_5, U_6$ workspace that manifests as a shell without thickness, effectively prioritizing a wider range of bending angles at the expense of axial rotation. In contrast, the current $3\text{A}3\text{R}0\text{T}$ optimized design achieves omnidirectional bending capabilities with a maximum angle of $40.1\degree$ and a minimum of $28.7\degree$. When the pressures in all three chambers are equal, the resulting pure twisting motion achieves an angle of $53.3\degree$. This indicates a design trade-off where some bending capacity is exchanged for enhanced twisting motion, leading to a 3-DoF orientation workspace.
+
+
+\subsection{$3 \text{A} 1 \text{R} 2 \text{T}$ Workspace}
+
+
+Finally, we present the in-plane $3\text{A}1\text{R}2\text{T}$ workspace design, which comprehensively accounts for both translational and rotational DoFs. This provides complete control over the end-effector's in-plane configuration. Specifically, for in-plane deformation within the $x$-$z$ plane, the translational DoFs are characterized by $U_1$ and $U_3$ displacements, while the rotational DoF is represented by $U_5$ about the $y$-axis. By considering both the position and orientation workspaces, the overall $3 \text{A} 1 \text{R} 2 \text{T}$ workspace is defined by
+\begin{equation}
+  \mathbb{W} = \int_{\Omega_{2}}\int_{\Omega_{1}} \mathrm{d}\nu_1\,\mathrm{d}\nu_2,
+\end{equation}
+where $\Omega_1$ denotes the position domain and $\Omega_2$ denotes the orientation domain. Similarly to the $3 \text{A} 0 \text{R} 3 \text{T}$ case, this case is evaluated using Gauss's divergence  theorem. The objective function in (\ref{eq:optimization_problem}) is then formulated as
+\begin{equation}
+  w_{1 \text{R} 2 \text{T}} \left(\mathbf{U}, \mathbf{J}\right)= \frac{1}{3} 
+    \mathbf{\tilde{U}} \cdot \Bigl( \mathbf{\tilde{J}}_{\zeta_1} \times \mathbf{\tilde{J}}_{\zeta_2} \Bigr)
+  ,
+\end{equation}
+with $\mathbf{\tilde{U}} = \left(U_1, U_3, U_5\right)$ and $
+\mathbf{\tilde{J}}_{\zeta_i} = \left(J^1_{\zeta_i},\, J^3_{\zeta_i},\, J^5_{\zeta_i}\right), i=1,2
+$. Since this case lacks symmetry, the shape derivative is evaluated at all 24 Gaussian points on the boundary (see Table S5).
+
+The optimization results reveal a design with three chambers exhibiting a $180\degree$ rotational symmetry about the line $y=0,\, z=50$, as illustrated in Fig. \ref{fig:workspace_2dR_opt}(b). Notably, the orientation near the robot's base has a significant effect on the end-effector position, while its contribution to orientation is nearly uniform across different positions. As a result, chambers 2 and 3 bend in the same direction to counterbalance the bending of chamber 1, thereby effectively enlarging the $3 \text{A} 1 \text{R} 2 \text{T}$ workspace.
+
+Fig. \ref{fig:workspace_2dR_opt}(c) illustrates the workspace of the optimized design, with the orientation angles converted from radians to degrees. This demonstrates that the soft arm can achieve an orientation greater than $50.00\degree$ over most reachable areas. Moreover, the optimized design exhibits significant kinematic decoupling capabilities. Fig. \ref{fig:workspace_2dR_opt}(d) showcases the ability to control orientation while \textcolor{blue}{maintaining a fixed end-effector position}, while Fig. \ref{fig:workspace_2dR_opt}(e) demonstrates translational motion \textcolor{blue}{at a constant end-effector orientation.} To determine the pressure for each chamber corresponding to the above motions, inverse kinematics is formulated based on FEA. This inverse problem is set up as a nonlinear least squares problem
+\begin{equation}
+    \min_{\tilde{\mathbf{p}}(\tilde{p}_1, \tilde{p}_2, \tilde{p}_3)} \frac{1}{2}  \left\|\tilde{\mathbf{U}}(\tilde{p}_1, \tilde{p}_2, \tilde{p}_3) - \tilde{\mathbf{U}}^\star\right\|^2
+\end{equation}
+with $\tilde{\mathbf{U}}^\star$ the target displacement. This optimization problem is solved via the Gauss-Newton method using the Jacobian matrix
+$
+  \mathbf{J} = \partial \tilde{\mathbf{U}}/\partial \tilde{\mathbf{p}}
+$
+and the updating scheme
+\begin{equation}
+  \tilde{\mathbf{p}} \leftarrow \tilde{\mathbf{p}} - \left(\mathbf{J}^T \mathbf{J}\right)^{-1} \mathbf{J}^T \left(\tilde{\mathbf{U}} - \tilde{\mathbf{U}}^\star\right).
+\end{equation}
+Based on the pressures derived from this optimization, the experimental tests are carried out as shown in Figs. \ref{fig:workspace_2dR_opt}(d) and (e). The results indicate that the mean deviation is less than \(1.0 \, \text{mm}\) for the fixed position task, and \(5.2\degree\), \(3.9 \, \text{mm}\) for the fixed orientation task.
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Computational Cost}
+\label{sec:discussion:cost}
+The computational cost of the optimization process arises mainly from the FEA. To accurately evaluate both the workspace and its shape derivative, FEA must be performed along the boundaries of the actuation space. If the dimension of the actuation is denoted by \(n\), then the allowable input space is a \(n\)-dimensional hypercube with \(2n\) faces, each an ($n-1$)-dimensional hypercube. Consequently, FEA must be performed on each of these faces, leading to a total of \(2nm^{n-1}\) simulations, where \(m\) is the number of Gaussian points. While this computational effort is manageable for up to 3 DoAs (with 2 Gaussian points yielding 24 simulations), the cost escalates exponentially with increasing DoAs. For example, with 6 DoAs and 2 Gaussian points, a total of $384$ FEA simulations would be required.
+
+\textcolor{blue}{The computational cost for each optimization case is summarized in Table~\ref{tab:comp_cost}, which reports the total number of iterations, the number of FEA simulations per iteration, the average time per iteration, and the total optimization time. Notably, since the workspace evaluation entails numerous FEA simulations at the boundary of the actuation space, gradient-free methods such as genetic algorithms are impractical, as they incur prohibitive computational cost due to the need for workspace evaluations of randomly generated design candidates. Likewise, gradient estimation via finite difference methods is also computationally prohibitive, as it requires at least $N{+}1$ workspace evaluations per iteration for $N$ design variables. This underscores the necessity of deriving the shape derivative to enable gradient-based morphogenesis with a minimal number of workspace evaluations, which constitutes a key contribution of the present work.}
+
+\begin{table}
+  \centering
+  \caption{\textcolor{blue}{The Computational Cost of Workspace Optimization}}
+  \label{tab:comp_cost}
+  \begin{threeparttable}
+  \begin{tabular}{lcccc}
+    \toprule
+    Case & Iter. & FEA per Iter. & Time per Iter. (min) & Total (min) \\
+    \midrule
+    $2$A$0$R$2$T & 140 & 4 & 4.5 & 628 \\
+    $3$A$0$R$3$T & 200 & 6 & 9.2 & 1841 \\
+    $3$A$2$R$0$T & 175 & 2 & 8.2 & 1432 \\
+    $3$A$3$R$0$T & 180 & 8 & 9.9 & 1785 \\
+    $3$A$1$R$2$T & 103 & 24 & 11.3 & 1164 \\
+    \bottomrule
+  \end{tabular}
+  \begin{tablenotes}
+    \item[*] \footnotesize{\textcolor{blue}{Tests on Intel Core i9-12900K, NVIDIA Titan V, 128 GB RAM.}}
+  \end{tablenotes}
+  \end{threeparttable}
+\end{table}
+
+To mitigate this computational burden, two potential strategies can be employed. The first is to exploit the inherent symmetry of the workspace. For instance, in the \(3\text{A}0\text{R}3\text{T}\) workspace, rotational symmetry about the \(z\)-axis and axisymmetry can be leveraged to reduce the number of required FEA simulations. The second solution involves using parallel computing to accelerate the FEA process since the simulations are independent of each other.
+
+\subsection{Possible Extensions}
+\label{sec:discussion:extensions}
+
+\textbf{Other actuation methods.} Although this work investigates only pneumatic actuation, the developed workspace optimization method can be extended to various actuation modalities such as \textcolor{blue}{cable actuation}, dielectric elastomers, magnetic actuation, or their combinations. The required modifications primarily involve the external work terms in (\ref{eq:structural_weak_form}) and (\ref{eq:load_weak_form}), the constitutive models of the incorporated active materials, and their corresponding geometric model and FEA simulators. Nevertheless, the core methodological workflow remains unchanged, including the second-order adjoint sensitivity analysis and the optimization algorithms.
+
+\textbf{$6\text{A}3\text{R}3\text{T}$ workspace design.} The inverse design can be further extended to the $6\text{A}3\text{R}3\text{T}$ workspace. Combining  (\ref{eq:position_workspace}) and (\ref{eq:orientation_workspace_3d_origin}), a 6D integration over \(\left(U_1, U_2, U_3, U_4, U_5, U_6\right)\) can be employed as the objective function for workspace optimization. Moreover, by applying Gauss's divergence  theorem to evaluate the workspace at the boundary, the high-dimensional integration problem can be effectively reduced to a 5D integration.
+
+\textbf{Workspace shape design.} This work primarily focuses on maximizing the overall workspace volume, assigning uniform weight to all points within the reachable space. However, the framework can be readily extended to optimize the workspace shape by introducing a non-uniform weight function within the workspace integral defined in (\ref{eq:workspace}). This allows prioritizing specific regions of the workspace based on task requirements. For instance, in the design of inchworm-inspired soft robots \cite{Zhang_Yang_Yan_Zhou_Zou_Gu_2022}, a large position workspace achieved while maintaining a specific range of end-effector orientations (e.g., bends by approximately  $90\degree$) is critical for surface transitioning (e.g., wall-climbing). This requirement translates into assigning higher weights to states with the desired orientation in the workspace optimization, thereby tailoring the workspace shape to enhance the transitioning performance.
+
+\subsection{\textcolor{blue}{Limitations}}
+\label{sec:discussion:limitations}
+\textcolor{blue}{First, self-contact is not accounted for in the FEA model, which may give rise to the sim-to-exp error as observed in the 3A0R3T case. To precisely capture contact behaviors while ensuring the differentiability of the Jacobian, a differentiable contact model is indispensable for contact-aware design. Potential approaches encompass third-medium methods \cite{Frederiksen_Dalklint_Sigmund_Poulios_2025}, differentiable simulators \cite{Menager_Montaut_Lidec_Carpentier_2025}, and the Incremental Potential Contact model \cite{Huang_Tozoni_Gjoka_Ferguson_Schneider_Panozzo_Zorin_2024}.}
+
+\textcolor{blue}{Second, our framework employs a deterministic gradient-based optimization method. As is typical of gradient-based optimization methods, the optimization process may converge to a local optimum, implying that different initial designs may lead to different local minima. Nevertheless, our numerical results indicate that, while the final morphologies may exhibit variations, they typically converge to designs with analogous key features and comparable performance.}
+
+\textcolor{blue}{Finally, this work formulates, optimizes, and validates the workspace under a quasi-static assumption, with a primary focus on static reachability. Unlike rigid robots, soft robots exhibit dynamic deformation induced by inertia, which can transiently extend their workspace. This represents a promising direction for future research.}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This work presents a computational morphogenesis framework for optimizing the workspace of soft pneumatic robots. By integrating a continuum Jacobian analysis with its analytical shape derivative obtained via a second-order adjoint method, and employing a novel differentiable closed-surface geometric model with adaptive reconstruction, our method effectively addresses the challenge of optimizing robot morphology for the rational design of workspace. We demonstrate the framework's effectiveness through the optimization of various workspace design problems ($2\text{A}0\text{R}2\text{T}$, $3\text{A}0\text{R}3\text{T}$, $3\text{A}2\text{R}0\text{T}$, $3\text{A}3\text{R}0\text{T}$ and $3\text{A}1\text{R}2\text{T}$). \textcolor{blue}{As validated through both simulation and experiments, the optimized designs show significant improvement over intuitive, manually-derived morphologies.} This work establishes a theoretical foundation and provides an end-to-end gradient-based approach for automated soft robot workspace design. The enhanced dexterity and reachability enabled by this approach are anticipated to facilitate broader practical implementations of soft robots across various domains.
+
+
+\appendices
+
+\section{Hyperelastic Material Model and Its Derivative}
+\label{sec:material_model}
+The Neo-Hookean model is used as the hyperelastic material model. The strain energy density is defined as
+\begin{equation}
+  E = \frac{\mu}{2} \left( \bar{I}_1 - 3 \right) + \frac{\kappa}{2} \left( \left|\mathbf{F}\right| - 1 \right)^2
+\end{equation}
+with
+\begin{equation}
+  \bar{I}_1 = \frac{F_{ij}F_{ji}}{\left|\mathbf{F}\right|^{2/3}}
+\end{equation}
+where $\mu$ is the shear modulus, $\kappa$ is the bulk modulus, $\bar{I}_1$ is the first invariant of the right Cauchy-Green deformation tensor and $\mathbf{F}$ is the deformation gradient tensor.
+
+The first Piola-Kirchhoff stress tensor is
+\begin{equation}
+  s_{ij} = \frac{\partial E}{\partial F_{ji}} = \mu\left(\frac{1}{\left|\mathbf{F}\right|^{2/3}}F_{ji} - \frac{1}{3} \bar{I}_1 F_{ij}^{-1}\right) + \kappa \left|\mathbf{F}\right|\left(\left|\mathbf{F}\right| - 1\right)F_{ij}^{-1}
+  \label{eq:stress_tensor}
+\end{equation}
+and its derivative with respect to the deformation gradient (material tensor) is
+\begin{equation}
+  \begin{split}
+    &\frac{\partial s_{ij}}{\partial F_{kl}} = \mu\left(
+      -\frac{2}{3}\left|\mathbf{F}\right|^{-2/3}F_{ji}F_{lk}^{-1} + \left|\mathbf{F}\right|^{-2/3}\delta_{jk}\delta_{il}
+    \right) \\
+    &+ \mu\left(
+      -\frac{2}{3} \left|\mathbf{F}\right|^{-2/3}F_{kl}F_{ij}^{-1} + \frac{2}{9} \bar{I}_1 F_{lk}^{-1}F_{ij}^{-1} + \frac{1}{3} \bar{I}_1 F_{ik}^{-1}F_{lj}^{-1}
+    \right) \\
+    &+ \kappa\left[
+      \left|\mathbf{F}\right|\left(2\left|\mathbf{F}\right| - 1\right)F_{lk}^{-1}F_{ij}^{-1} + \left|\mathbf{F}\right|\left(\left|\mathbf{F}\right| - 1\right)F_{ik}^{-1}F_{lj}^{-1}
+    \right].
+  \end{split}
+\end{equation}
+
+\section{Derivative of the Virtual Work}
+\label{sec:derivative_results}
+
+\begin{equation}
+  \frac{\partial \mathcal{A}}{\partial p_r}(\mathbf{u}, \mathbf{v}) = \int_{\Omega_0} \frac{\partial s_{ij}}{\partial F_{kl}} \frac{\partial v_j}{\partial x_i}\frac{\partial F_{kl}}{\partial p_r} \mathrm{d}\Omega
+  \label{eq:derivative_A}
+\end{equation}
+\begin{equation}
+\begin{split}
+  \frac{\partial \mathcal{B}^q}{\partial p_r}(\mathbf{u}, \mathbf{v}) = &- p_q\int_{\Gamma_0^q} 
+  \frac{\partial \left|\mathbf{F}\right|F_{ij}^{-1}}{\partial F_{kl}}  v_j m_i
+  \frac{\partial F_{kl}}{\partial p_r} \mathrm{d}\Gamma \\
+  &- \delta \left(q, r\right) \int_{\Gamma^q_0} \left|\mathbf{F}\right|F_{ij}^{-1} v_j m_i \mathrm{d}\Gamma \\
+\end{split}
+\label{eq:derivative_Bp}
+\end{equation}
+% \begin{equation}
+% \frac{\partial \mathcal{B}_g}{\partial p}(\mathbf{u}, \mathbf{v}) = \Delta \left(p, g_i\right) \int_{\Omega_0}  v_i \mathrm{d}\Omega,
+% \end{equation}
+% \begin{equation}
+% \frac{\partial \mathcal{B}_f}{\partial p}(\mathbf{u}, \mathbf{v}) = 0,
+% \label{eq:derivative_Bf}
+% \end{equation}
+
+\section{Variation of the Virtual Work}
+\label{sec:variation_results}
+
+
+\begin{equation}
+    \delta \mathcal{A}(\mathbf{u}, \mathbf{v}) = \int_{\Omega_0}  \frac{\partial s_{ij}}{\partial F_{mn}} \frac{\partial v_j}{\partial x_i} \delta F_{mn} \mathrm{d}\Omega
+    + \int_{\Gamma_0} s_{ij} \frac{\partial v_j}{\partial x_i} \Lambda \mathrm{d}\Gamma
+  \label{eq:variation_A}
+\end{equation}
+
+\begin{equation}
+  \begin{split}
+  \delta \mathcal{B}^q(\mathbf{u}, \mathbf{v}) = &- p_q\int_{\Gamma^q_0} \frac{\partial\left( \left|\mathbf{F}\right|F_{ij}^{-1}\right)}{\partial F_{mn}} v_j m_i \delta F_{mn} \mathrm{d}\Gamma \\
+  &-p_q \int_{\Gamma^q_0} \frac{\partial\left( \left|\mathbf{F}\right|F^{-1}_{ij}v_j\right)}{\partial x_i} \Lambda\mathrm{d}\Gamma
+  \end{split}
+  \label{eq:variation_Bp}
+\end{equation}
+
+% \begin{equation}
+%     \delta \mathcal{B}_g(\mathbf{u}, \mathbf{v}) = \int_{\Gamma_0}  g_i v_i \Lambda\mathrm{d}\Gamma,
+% \end{equation}
+
+% \begin{equation}
+%   \delta \mathcal{B}_f(\mathbf{u}, \mathbf{v}) = 0,
+%   \label{eq:variation_Bf}
+% \end{equation}
+
+\begin{equation}
+  \begin{split}
+    \delta \frac{\partial \mathcal{A}}{\partial p_r}(\mathbf{u}, \mathbf{v}) = &\int_{\Omega_0} \frac{\partial^2 s_{ij}}{\partial F_{kl} \partial F_{mn}} \frac{\partial v_j}{\partial x_i}\frac{\partial F_{kl}}{\partial p_r} \delta F_{mn} \mathrm{d}\Omega \\
+    +&\int_{\Gamma_0} \frac{\partial s_{ij}}{\partial F_{kl}} \frac{\partial v_j}{\partial x_i}\frac{\partial F_{kl}}{\partial p_r} \Lambda \mathrm{d}\Gamma
+  \end{split}
+  \label{eq:variation_A_xi}
+\end{equation}
+
+\begin{equation}
+  \begin{split}
+    \delta \frac{\partial{\mathcal{B}^q}}{\partial p_r}(\mathbf{u}, \mathbf{v}) = -& p_q\int_{\Gamma_0^q} 
+     \frac{\partial^2 \left(\left|\mathbf{F}\right|F_{ij}^{-1}\right)}{\partial F_{kl} \partial F_{mn}}  v_j m_i \frac{\partial F_{kl}}{\partial p_r}
+    \delta F_{mn} \mathrm{d}\Gamma \\
+    - &\Delta \left(q,r\right) \int_{\Gamma^q_0} \frac{\partial \left(\left|\mathbf{F}\right|F_{ij}^{-1}\right)}{\partial F_{mn}} v_j m_i \delta F_{mn} \mathrm{d}\Gamma \\
+    - & p_q \int_{\Gamma^q_0} \frac{\partial \left(\frac{\partial \left|\mathbf{F}\right|F_{ij}^{-1}}{\partial F_{kl}}  v_j
+    \frac{\partial F_{kl}}{\partial p_r}\right)}{\partial x_i} \Lambda \mathrm{d}\Gamma \\
+    - &\Delta \left(q,r\right) \int_{\Gamma^q_0} \frac{\partial \left(\left|\mathbf{F}\right|F_{ij}^{-1} v_j\right)}{\partial x_i}\Lambda\mathrm{d}\Gamma
+  \end{split}
+  \label{eq:variation_Bp_xi}
+\end{equation}
+
+% \begin{equation}
+%   \delta \frac{\partial \mathcal{B}_g}{\partial p}(\mathbf{u}, \mathbf{v}) = \Delta \left(p, g_i\right) \int_{\Gamma_0} v_i \Lambda \mathrm{d}\Gamma,
+% \end{equation}
+
+% \begin{equation}
+%   \delta \frac{\partial \mathcal{B}_f}{\partial p}(\mathbf{u}, \mathbf{v}) = 0,
+%   \label{eq:variation_Bf_xi}
+% \end{equation}
+
+\section{Dimensionless Analysis of the Pneumatic Actuation}
+\label{sec:normalization}
+
+In this section, we perform a dimensionless analysis for pneumatic actuation, taking into account both size and system input. Equation (\ref{eq:virtual_work}) describes the virtual work associated with pneumatic actuation. According to the Neo-Hookean model, the strain energy density is governed by the shear modulus $\mu$, and the bulk modulus $\kappa$. For hyperelastic materials, the bulk modulus is significantly larger than the shear modulus, indicating that these materials behave as nearly incompressible. Consequently, we can approximate the bulk modulus as linearly dependent on the shear modulus, which results in the first Piola-Kirchhoff stress tensor being linearly dependent on the shear modulus.
+
+Let \( \iota \) represent the characteristic length of the system. The dimensionless quantity for pressure is defined as:
+\begin{equation}
+  \tilde{p} = \frac{p}{\mu}.
+\end{equation}
+% The dimensionless quantity for concentrated force is given by:
+% \begin{equation}
+%   C_f = \frac{F}{\mu \iota^2},
+% \end{equation}
+The dimensionless quantity for gravitational acceleration is expressed as:
+\begin{equation}
+  \tilde{g} = \frac{\rho g \iota}{\mu}.
+\end{equation}
+The dimensionless analysis yields the following conclusions:
+\begin{enumerate}
+  \item If the size of the system is sufficiently small, the effects of gravity can be neglected.
+  \item If pressure is the only input, the deformation of the soft robots is governed by \( \tilde{p} \) and is independent of the robot's size.
+\end{enumerate}
+
+
+% \section{Gaussian Points of Workspace Optimization}
+
+% \begin{table}[h]  
+%   \renewcommand{\arraystretch}{1.5}
+%   \centering  
+%   \caption{Gaussian points (labelled as $g$) for $2 \text{A} 0 \text{R} 2 \text{T}$ workspace optimization}  
+%   \begin{tabular}{clccc}  
+%       \toprule  
+%       \centering
+%       $g$ &  $\tau^g$&$\zeta_i^g$ & $\tilde{p}_1^g$ & $\tilde{p}_2^g$ \\ 
+%       \midrule  
+%       \centering
+%       1 &  $-2\times 0.06$&$(\tilde{p}_1)$ & 0.02536 & 0.00 \\ 
+%       2 &  $-2\times0.06$&$(\tilde{p}_1)$ & 0.09464 & 0.00 \\ 
+%       3 &  $2\times0.06$&$(\tilde{p}_1)$ & 0.02536 & 0.12 \\ 
+%       4 &  $2\times0.06$&$(\tilde{p}_1)$ & 0.09464 & 0.12 \\ 
+%       \bottomrule  
+%   \end{tabular}  
+%   \label{tab:gaussian_points_2d}
+% \end{table}
+
+% \begin{table}[h]  
+%   \renewcommand{\arraystretch}{1.5}
+%   \centering  
+%   \caption{Gaussian points for $3 \text{A} 0 \text{R} 3 \text{T}$ workspace optimization}  
+%   \begin{tabular}{cccccc}  
+%       \toprule  
+%       \centering
+%       $g$ & $\tau^g$ & $\zeta_i^g$ & $\tilde{p}_1^g$ & $\tilde{p}_2^g$ & $\tilde{p}_3^g$ \\ 
+%       \midrule  
+%       \centering
+%       1 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.00 \\ 
+%       2 & $2\times 0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.00 \\ 
+%       3 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.00 \\ 
+%       4 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.12 \\ 
+%       5 & $-2\times 0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.12 \\
+%       6 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.12 \\
+%       \bottomrule  
+%   \end{tabular}  
+%   \label{tab:gaussian_points_3d}
+% \end{table}
+
+% \begin{table}[h]  
+%   \renewcommand{\arraystretch}{1.5}
+%   \centering  
+%   \caption{Gaussian points for $3 \text{A} 2 \text{R} 0 \text{T}$ workspace optimization}  
+%   \begin{tabular}{cclccc}  
+%       \toprule  
+%       \centering
+%       $g$ & $\tau^g$  &$\zeta_i^g$& $\tilde{p}_1^g$ & $\tilde{p}_2^g$ & $\tilde{p}_3^g$ \\ 
+%       \midrule  
+%       \centering
+%       1 & $6\times 0.06$ &$(\tilde{p}_1)$& 0.02536 & 0.00 & 0.12 \\ 
+%       2 & $6\times 0.06$ &$(\tilde{p}_1)$& 0.09464 & 0.00 & 0.12 \\ 
+%       \bottomrule  
+%   \end{tabular}  
+%   \label{tab:gaussian_points_rot}
+% \end{table}
+
+% \begin{table}[h]  
+%   \renewcommand{\arraystretch}{1.5}
+%   \centering  
+%   \caption{Gaussian points for $3 \text{A} 3 \text{R} 0 \text{T}$ workspace optimization}  
+%   \begin{tabular}{cccccc}  
+%       \toprule  
+%       \centering
+%       $g$ & $\tau^g$ & $\zeta_i^g$ & $\tilde{p}_1^g$ & $\tilde{p}_2^g$ & $\tilde{p}_3^g$ \\ 
+%       \midrule  
+%       \centering
+%       1 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.00 \\ 
+%       2 & $0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.00 \\
+%       3& $0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.02536 &0.00 \\ 
+%       4 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.00 \\ 
+%       5 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.12 \\ 
+%       6 & $-0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.12 \\
+%       7 & $-0.06^2$& $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.02536 &0.12 \\
+%       8 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.12 \\
+%       \bottomrule  
+%   \end{tabular}  
+%   \label{tab:gaussian_points_rot3}
+% \end{table}
+
+% \begin{table}[h]  
+%   \renewcommand{\arraystretch}{1.5}
+%   \centering  
+%   \caption{Gaussian points for $3 \text{A} 1 \text{R} 2 \text{T}$ workspace optimization}  
+%   \begin{tabular}{cccccc}  
+%       \toprule  
+%       \centering
+%       $g$ & $\tau^g$ & $\zeta_i^g$ & $\tilde{p}_1^g$ & $\tilde{p}_2^g$ & $\tilde{p}_3^g$ \\ 
+%       \midrule  
+%       \centering
+%       1 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.00 \\ 
+%       2 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.00 \\ 
+%       3 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.02536 & 0.00 \\ 
+%       4 & $0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.00 \\ 
+%       5 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.02536 & 0.12 \\
+%       6 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.02536 & 0.09464 & 0.12 \\
+%       7 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.02536 & 0.12 \\ 
+%       8 & $-0.06^2$ & $(\tilde{p}_1, \tilde{p}_2)$ & 0.09464 & 0.09464 & 0.12 \\ 
+%       9  & $0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.02536 & 0.00 & 0.02536 \\ 
+%       10 & $0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.02536 & 0.00 & 0.09464 \\ 
+%       11 & $0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.09464 & 0.00 & 0.02536 \\
+%       12 & $0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.09464 & 0.00 & 0.09464 \\
+%       13 & $-0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.02536 & 0.12 & 0.02536 \\ 
+%       14 & $-0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.02536 & 0.12 & 0.09464 \\ 
+%       15 & $-0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.09464 & 0.12 & 0.02536 \\ 
+%       16 & $-0.06^2$ & $(\tilde{p}_3, \tilde{p}_1)$ & 0.09464 & 0.12 & 0.09464 \\ 
+%       17  & $0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.00 & 0.02536 & 0.02536 \\
+%       18  & $0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.00 & 0.02536 & 0.09464 \\
+%       19  & $0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.00 & 0.09464 & 0.02536 \\ 
+%       20  & $0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.00 & 0.09464 & 0.09464 \\ 
+%       21 & $-0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.12 & 0.02536 & 0.02536 \\ 
+%       22 & $-0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.12 & 0.02536 & 0.09464 \\ 
+%       23 & $-0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.12 & 0.09464 & 0.02536 \\
+%       24 & $-0.06^2$ & $(\tilde{p}_2, \tilde{p}_3)$ & 0.12 & 0.09464 & 0.09464 \\
+%       \bottomrule  
+%   \end{tabular}  
+%   \label{tab:gaussian_points_2dR}
+% \end{table}
+
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,TRO2025Jacobian}
+
+\end{document}
+
+

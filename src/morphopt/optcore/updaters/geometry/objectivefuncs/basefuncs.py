@@ -15,8 +15,10 @@ class BaseConstraints():
         The scaler to process the objective function.
         """
 
+        self.if_update: list[bool] = None
 
-    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor], weights: list[torch.Tensor], *args, **kwargs):
+
+    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor], weights: list[torch.Tensor], if_update: list[bool], *args, **kwargs):
         
         self.scaler = []
         for i in range(len(sensitivity)):
@@ -26,6 +28,8 @@ class BaseConstraints():
             else:
                 sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
             self.scaler.append(sen_now * weights[i])
+
+        self.if_update = if_update
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
         """
@@ -87,16 +91,23 @@ class BaseObjective():
         Sensitivity of the shape derivative with respect to the contact forces.
         """
 
-    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], *args, **kwargs) -> None:
+        self.if_update: list[bool] = None
+        """
+        A list indicating whether each point should be updated.
+        """
+
+    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], if_update: list[bool], *args, **kwargs) -> None:
         """
         Initialize the objective function with the given parameters.
 
         Args:
             gradient (torch.Tensor): The gradient of the objective function.
             weights (list[torch.Tensor]): The weights for each point.
+            if_update (list[bool]): A list indicating whether each point should be updated.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
         """
+        self.if_update = if_update
         pass
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:

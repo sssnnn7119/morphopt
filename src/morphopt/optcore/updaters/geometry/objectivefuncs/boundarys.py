@@ -27,6 +27,9 @@ class MinRadius(BaseConstraints):
         
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
         for i in range(len(r)):
+
+            if self.if_update is not None and not self.if_update[i]:
+                continue
             
             length_r = -(r[i][:, 0]**2 + r[i][:, 1]**2).sqrt() + self._radius
             
@@ -72,6 +75,9 @@ class Cylinder(BaseConstraints):
         
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
         for i in range(len(r)):
+
+            if self.if_update is not None and not self.if_update[i]:
+                continue
             
             length_r = (r[i][:, 0]**2 + r[i][:, 1]**2).sqrt() - self._radius
             length_bottom = -r[i][:, 2] + self._bottom

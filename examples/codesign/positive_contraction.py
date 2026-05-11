@@ -1,7 +1,4 @@
 ﻿
-
-import cpgeo.utils
-
 import morphopt
 import torch
 import cpgeo
@@ -12,7 +9,9 @@ minratio = 1e-6
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='Twist_Energy')
+                         opt_label='Positive_Contraction')
+        # super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
+        #                  opt_label='Positive_Contraction')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
@@ -38,27 +37,14 @@ class ThisController(morphopt.Controller):
 
         def objective_function(self):
 
+            loss_motion = self.fe_results[0].GC[-4]
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
-
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
-
-            return E1 - E0
+            return loss_motion
 
         def get_metrics(self):
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
-
-            return [self.fe_results[1].GC[-1],
-                    E0, E1,
-                    self.get_volume_fraction()]
+            return [self.fe_results[0].GC[-4],
+                self.get_volume_fraction()]
 
     class Params(morphopt.Params):
 
@@ -132,15 +118,12 @@ class ThisController(morphopt.Controller):
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=5), name='penalty_RP_head')
+                
 
             def define_steps(self):
-                self.set_step_num(2)
-                self.set_step_params(0, "pressure_1", [0.06])
-                self.set_step_params(0, "penalty_RP_head", [1e5, 0.0])
+                self.set_step_num(1)
 
-                self.set_step_params(1, "pressure_1", [0.06])
-                self.set_step_params(1, "penalty_RP_head", [0e5, 0.0])
+                self.set_step_params(0, "pressure_1", [0.06])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
             
@@ -231,8 +214,8 @@ class ThisController(morphopt.Controller):
 
             super().__init__(params=params,
                             num_process=1,
-                            task_index_list=[[0, 1]],
-                            available_gpus=['cuda:0'],)
+                            task_index_list=[[0]],
+                            available_gpus=['cuda:2'],)
 
     class Updater(morphopt.Updaters):
         """
