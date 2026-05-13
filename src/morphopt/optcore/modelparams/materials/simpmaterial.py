@@ -8,7 +8,7 @@ import torchfea
 from ..base_params import BaseParams
 import bspmap
 
-
+import pyvista as pv
 class SIMPMaterials(BaseParams):
     """
     Class to handle the materials of the morphable model.
@@ -327,6 +327,8 @@ class SIMPMaterials(BaseParams):
         nodes_normalized[:, 1] = (nodes[:, 1] - self._bounding_box[2]) / (self._bounding_box[3] - self._bounding_box[2])
         nodes_normalized[:, 2] = (nodes[:, 2] - self._bounding_box[4]) / (self._bounding_box[5] - self._bounding_box[4])
 
+        idx_remain = (nodes_normalized[:, 0] >= 0.0) & (nodes_normalized[:, 0] <= 1.0) & (nodes_normalized[:, 1] >= 0.0) & (nodes_normalized[:, 1] <= 1.0) & (nodes_normalized[:, 2] >= 0.0) & (nodes_normalized[:, 2] <= 1.0)
+
         weights, indices = self.simp_field.get_weights(nodes_normalized.detach().cpu().numpy())
 
         weights = torch.from_numpy(weights).to(nodes.device, dtype=self._cps.dtype).flatten()
@@ -336,9 +338,15 @@ class SIMPMaterials(BaseParams):
         indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
 
         num_pts = nodes.shape[0]
+
+        idx_remain_flatten = torch.where(torch.isin(indices[0], torch.where(idx_remain)[0]))[0]
+        weights = weights[idx_remain_flatten]
+        indices = indices[:, idx_remain_flatten]
         
         result = torch.zeros([num_pts, 1], dtype=self._cps.dtype, device=nodes.device)
         result[:, 0].scatter_add_(0, indices[0], weights * self._cps[indices[1], 0])
+
+        result[~idx_remain] = 0.0
 
         return result
     
@@ -491,14 +499,7 @@ class SIMPMaterials(BaseParams):
         # Keep BSP map synchronized with control points used in optimization.
         self.simp_field.control_points = self._cps.detach().cpu().numpy().reshape([-1, 1])
 
-    def plot(self, plotter=None) -> None:
-        import pyvista as pv
-
-        close_after = False
-        if plotter is None:
-            plotter = pv.Plotter(window_size=(1400, 1000))
-            close_after = True
-
+    def get_volume(self):
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
         nx, ny, nz = self._bsp_size
 
@@ -514,12 +515,7 @@ class SIMPMaterials(BaseParams):
         xg, yg, zg = np.meshgrid(xq, yq, zq, indexing="ij")
         pts_query = np.stack([xg, yg, zg], axis=-1).reshape(-1, 3)
 
-        nodes_normalized = np.zeros_like(pts_query)
-        nodes_normalized[:, 0] = (pts_query[:, 0] - self._bounding_box[0]) / (self._bounding_box[1] - self._bounding_box[0])
-        nodes_normalized[:, 1] = (pts_query[:, 1] - self._bounding_box[2]) / (self._bounding_box[3] - self._bounding_box[2])
-        nodes_normalized[:, 2] = (pts_query[:, 2] - self._bounding_box[4]) / (self._bounding_box[5] - self._bounding_box[4])
-
-        ratio_query = self.simp_field.map(nodes_normalized).reshape(nx_q, ny_q, nz_q)
+        ratio_query = self.get_ratio(torch.from_numpy(pts_query).to(torch.get_default_device()).to(torch.get_default_dtype())).reshape(nx_q, ny_q, nz_q).cpu().numpy()
         ratio_grid = np.clip(ratio_query, 0.0, 1.0)
 
         sx = (xmax - xmin) / max(nx_q - 1, 1)
@@ -532,6 +528,16 @@ class SIMPMaterials(BaseParams):
             origin=(xmin, ymin, zmin),
         )
         grid.point_data["ratio"] = ratio_grid.flatten(order="F")
+
+        return grid
+
+    def plot(self, plotter=None):
+        import pyvista as pv
+
+        if plotter is None:
+            plotter = pv.Plotter(window_size=(1400, 1000))
+
+        grid = self.get_volume()
 
         plotter.set_background("#ffffff")
         volume_actor = plotter.add_volume(
@@ -548,17 +554,6 @@ class SIMPMaterials(BaseParams):
         )
         if hasattr(volume_actor, 'mapper'):
             volume_actor.mapper.scalar_range = (0.0, 1.0)
-
-        # Layer several isosurfaces to make the density field structure easier to read.
-        # contours = grid.contour(isosurfaces=[0.25, 0.5, 0.75], scalars="ratio")
-        # plotter.add_mesh(
-        #     contours,
-        #     scalars="ratio",
-        #     cmap="viridis",
-        #     opacity=0.25,
-        #     show_scalar_bar=False,
-        #     smooth_shading=True,
-        # )
 
         plotter.add_bounding_box(color="black", line_width=1.2)
         plotter.show_bounds(xtitle="X", ytitle="Y", ztitle="Z", color="black")
@@ -582,12 +577,8 @@ class SIMPMaterials(BaseParams):
         plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(elevation))))
-
-        if close_after:
-            plotter.show()
-            plotter.close()
         
-
+        return plotter
     def _get_gaussian_points(self, assembly: torchfea.Assembly) -> torch.Tensor:
         """
         Get the normalized Gaussian points for the elements in the assembly.

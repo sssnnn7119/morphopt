@@ -193,7 +193,7 @@ class CPGEOInterface(CpBasedInterface):
         mesh = pv.PolyData(vertices, faces_with_count)
         
         # Output STL file
-        output_file = path_output + name_output + '.stl'
+        output_file = path_output + '/' + name_output + '.stl'
         mesh.save(output_file)
         
         return output_file

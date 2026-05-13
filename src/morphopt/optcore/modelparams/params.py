@@ -1,4 +1,6 @@
 
+import tempfile
+
 from torchfea import Assembly
 
 import torch
@@ -43,14 +45,23 @@ class Params(BaseObject):
         self.feamodel.initialize()
         self.materials.initialize()
         
-    def create_feamodel(self, path_result: str, pools=None):
+    def create_feamodel(self, path_result: str=None, pools=None):
         """
         Create the finite element model for sensitivity analysis.
 
         Args:
-            assembly (Assembly): The assembly to create the finite element model for.
+            path_result (str, optional): The path to the result folder. If None, a temporary directory will be used. Defaults to None.
+            pools (list[torch.multiprocessing.Pool], optional): A list of multiprocessing pools for parallel processing. Defaults to None.
+        Returns:
+            feamodel: The created finite element model.
         """
-        part = self.geometry.generate(path_result=path_result, pools=pools)
+
+        if path_result is None:
+            with tempfile.TemporaryDirectory(prefix='morphopt_') as tempdir:
+                part = self.geometry.generate(path_result=tempdir, pools=pools)
+        else:
+            part = self.geometry.generate(path_result=path_result, pools=pools)
+
         fe = self.feamodel.create_fea(part=part)
         self.materials.set_materials(fe)
         fe.initialize()

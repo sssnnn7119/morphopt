@@ -647,18 +647,18 @@ class GeometryParams(BaseParams):
                               (i, iteration))
             # self.surface_list[i].initialize()
             
-    def plot(self, plotter=None):
+    def plot(self, plotter=None, opacity:list[float] = None):
         if plotter is None:
             import pyvista as pv
             plotter = pv.Plotter()
+
+        if opacity is None:
+            opacity = [0.6 if i == 0 else 1.0 for i in range(self.num_surface)]
             
         for sf in range(self.num_surface):
-            if sf == 0:
-                alpha = 0.6
-            else:
-                alpha = 1
+            opacity_now = opacity[sf] if sf < len(opacity) else 1.0
             mesh = self.surface_list[sf].get_mesh()
-            plotter.add_mesh(mesh, opacity=alpha,  color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
+            plotter.add_mesh(mesh, opacity=opacity_now,  color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
                            diffuse=0.8, specular=0.2, ambient=0.3, specular_power=10,
                            smooth_shading=True, show_edges=False)
             
@@ -777,11 +777,6 @@ class GeometryParams(BaseParams):
         for i in range(self.num_surface):
             surf_name0 = '__surface-%d' % i
             self.surface_list[i].output_data(path_output=foldpath, name_output=surf_name0, flip=(i!=0))
-
-        files = sorted(glob.glob(foldpath + "__surface-*.stp"))
-        if not files:
-            print("No __surface-*.stp files found.")
-            return
 
 
     def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:

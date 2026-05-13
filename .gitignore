@@ -10,6 +10,10 @@ __pycache__/
 # temperary files
 .temp/
 
+# results of optimization
+.results/
+*results/
+
 .vs/
 # Distribution / packaging
 .Python

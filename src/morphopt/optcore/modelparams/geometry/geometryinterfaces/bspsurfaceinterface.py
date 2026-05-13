@@ -539,7 +539,7 @@ class BspInterface(CpBasedInterface):
     def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
         generator = BspInterface.BSplineSolidGenerator(P0=control_points, degree_u=degree_u, degree_v=degree_v)
         generator.build()
-        output_file = path_output + name_output + '.stp'
+        output_file = path_output + '/' + name_output + '.stp'
         generator.export_step(output_file)
         generator.finalize()
 

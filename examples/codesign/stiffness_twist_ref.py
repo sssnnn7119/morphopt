@@ -9,9 +9,9 @@ minratio = 1e-6
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/results/', 
-                         opt_label='Elongate_Stiffness')
+                         opt_label='Twist_Stiffness')
         # super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
-        #                  opt_label='Elongate_Stiffness')
+        #                  opt_label='Twist_Stiffness')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
@@ -46,11 +46,12 @@ class ThisController(morphopt.Controller):
             jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
                                         self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            loss_motion = torch.exp((20-self.fe_results[1].GC[-4]) / 5.0)
+            loss_motion = torch.exp((2.0-self.fe_results[1].GC[-1])*4)
 
-            loss_stiffness = (jacobian_end_0[-3:, -3:]**2).sum().sqrt() + (jacobian_end_1[-3:, -3:]**2).sum().sqrt()
+            loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
+            loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
-            return loss_motion + loss_stiffness * 1e4
+            return loss_motion + loss_stiffness * 1e4 + loss_contraction * 1e3
 
         def get_metrics(self):
 
@@ -59,9 +60,11 @@ class ThisController(morphopt.Controller):
             
             jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
                                         self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
+            loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
+            loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
 
-            return [self.get_volume_fraction()] + jacobian_end_0[-3:, -3:].flatten().tolist() + jacobian_end_1[-3:, -3:].flatten().tolist()
+            return [self.get_volume_fraction(), self.fe_results[1].GC[-1], loss_stiffness, loss_contraction]
 
     class Params(morphopt.Params):
 
@@ -71,7 +74,7 @@ class ThisController(morphopt.Controller):
                 def reinitialize(self):
                     super().reinitialize()
                     
-                    result = cpgeo.capi.rotational_symmetry_z(
+                    result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
                             faces=self.model._cp_faces,
                             periods=3
@@ -85,7 +88,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=2.5, 
+                super().__init__(fea_seed_size=2.3, 
                                  reinitialize_per_iter=10,
                                  thickness=2.0,
                                  num_layers=1,
@@ -99,9 +102,9 @@ class ThisController(morphopt.Controller):
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.3,
                                                 flip=True,
-                                                r0=14.,
+                                                r0=12.,
                                                 init_location=[0., 0., 20.],
                                                 MaxC=1.5,
                     ))
@@ -165,6 +168,7 @@ class ThisController(morphopt.Controller):
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
                                  penalfactor=1e-2)
+                
         
             def get_ratio(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
@@ -226,6 +230,20 @@ class ThisController(morphopt.Controller):
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
 
+            def reinitialize(self, iteration, *args, **kwargs):
+                super().reinitialize(iteration, *args, **kwargs)
+
+                size_cps = self.simp_field.size
+                
+                cp_now = self.simp_field.control_points.reshape(size_cps[0], size_cps[1], size_cps[2])
+
+                cp_now[:, :, :int(size_cps[2]/(40/3))] = 1.0
+                cp_now[:, :, int(size_cps[2]/(40/3)):int(size_cps[2] - int(size_cps[2]/(40/3)))] = 0.0
+                cp_now[:, :, int(size_cps[2] - int(size_cps[2]/(40/3))):] = 1.0
+
+                self._cps = torch.from_numpy(cp_now).to(torch.get_default_device()).to(torch.get_default_dtype()).reshape(-1, 1)
+                self.simp_field.control_points = cp_now.reshape(-1, 1)
+            
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
@@ -250,8 +268,8 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
-                            materials=self.UpdaterMaterials(params=params),
                             *args, **kwargs)
+            
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
             Updater class for morphopt.
@@ -259,11 +277,11 @@ class ThisController(morphopt.Controller):
             """
 
             def __init__(self, params: morphopt.Params):
-
+                
                 super().__init__(
                     params=params,
                     max_step_iter=100)
-                
+
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
@@ -280,30 +298,7 @@ class ThisController(morphopt.Controller):
 
                 self.if_update = [False, True]
 
-        class UpdaterMaterials(morphopt.UpdaterMaterials):
-            """
-            Material updater based on SIMP control points.
-            """
-
-            def __init__(self, params: morphopt.Params):
-                super().__init__(
-                    params=params,
-                    max_step_iter=200,
-                    max_step_length=0.1,
-                )
-
-                shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
-                self.add_objective_function(shape_derivative)
-
-                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-10)
-                self.add_objective_function(density_regularization)
-
-                # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
-
-                self.if_update = True
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=20)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=10)

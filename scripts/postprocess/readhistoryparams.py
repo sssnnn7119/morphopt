@@ -31,28 +31,17 @@ def readhistoryparams(path_result: str, iteration: int = -1) -> morphopt.Params:
 if __name__ == "__main__":
 
 
-    path_result = 'Z:/Results/EXAMPLE_T20260420_190258'
+    path_result = 'Z:/Results/Twist_Energy_T20260512_141203/'
     
-    controller: morphopt.Controller = readhistoryparams(path_result, 55)
+    controller: morphopt.Controller = readhistoryparams(path_result, 216)
 
-    mat: morphopt.codesign.CodesignMaterials = controller.params.materials
+    fe = controller.params.create_feamodel()
 
-    quiry_points = np.meshgrid(np.linspace(-20, 20, 50), np.linspace(-20, 20, 50), np.linspace(0, 50, 50))
+    mat: morphopt.SIMPMaterials = controller.params.materials
+    
+    plotter = mat.plot()
 
-    quiry_points = np.stack(quiry_points, axis=-1).reshape(-1, 3)
+    controller.params.geometry.plot(plotter=plotter, opacity=[0.0, 1.0])
 
-    cps = mat.get_ratio(torch.from_numpy(quiry_points))
+    plotter.show()
 
-    mask = quiry_points[:, 0]**2 + quiry_points[:, 1]**2 < 20**2
-    cps = cps[mask] * mat._mumax
-
-    plt.figure()
-    plt.hist(cps, bins=50, color='tab:blue', edgecolor='black', density=True)
-    plt.title('CPS Distribution Histogram')
-    plt.xlabel('CPS value')
-    plt.ylabel('Frequency')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.show()
-
-    raise Exception("For Debugging Only")

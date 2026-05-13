@@ -25,10 +25,9 @@ def readhistoryparams(path_result: str, iteration: int = -1):
 
     controller._load_history(path_result=path_result, target_iteration=iteration)
 
-
+    
     with tempfile.TemporaryDirectory(prefix='morphopt_') as tmpdir:
         fe = controller.params.create_feamodel(tmpdir + '/')
-
 
     return fe
 
