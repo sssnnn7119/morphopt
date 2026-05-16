@@ -1,6 +1,8 @@
 ﻿
 
 import cpgeo.utils
+from numpy import ma
+import torchfea
 
 import morphopt
 import torch
@@ -46,7 +48,25 @@ class ThisController(morphopt.Controller):
             E0 = assembly._total_Potential_Energy(RGC=RGC0)
             E1 = assembly._total_Potential_Energy(RGC=RGC1)
 
-            return E1 - E0
+            elems: torchfea.elements.C3D4 = assembly.get_part('final_model').elems['C3D4']
+
+            energy_density = elems.get_potential_energy_density(U=RGC1[0])
+            gaussian_weight = elems.gaussian_weight
+            gaussian_points = elems.get_gaussian_points(nodes=assembly.get_instance('final_model').nodes)
+
+            loss_work = E1 - E0
+            V = gaussian_weight.sum()
+            avg_density = (energy_density * gaussian_weight).sum() / V
+
+            t = 10
+            p = 2
+
+            matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
+            ratio = matpara.get_ratio(nodes=gaussian_points.reshape(-1, 3)).flatten()
+
+            penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
+
+            return loss_work + penalty.sum() * 1e-4
 
         def get_metrics(self):
 
@@ -56,8 +76,26 @@ class ThisController(morphopt.Controller):
             E0 = assembly._total_Potential_Energy(RGC=RGC0)
             E1 = assembly._total_Potential_Energy(RGC=RGC1)
 
+            elems: torchfea.elements.C3D4 = assembly.get_part('final_model').elems['C3D4']
+
+            energy_density = elems.get_potential_energy_density(U=RGC1[0])
+            gaussian_weight = elems.gaussian_weight
+            gaussian_points = elems.get_gaussian_points(nodes=assembly.get_instance('final_model').nodes)
+
+            loss_work = E1 - E0
+            V = gaussian_weight.sum()
+            avg_density = (energy_density * gaussian_weight).sum() / V
+            t = 10
+            p = 2
+
+            matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
+            ratio = matpara.get_ratio(nodes=gaussian_points.reshape(-1, 3)).flatten()
+
+            penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
+
+
             return [self.fe_results[1].GC[-1],
-                    E0, E1,
+                    E0, E1, penalty.sum(),
                     self.get_volume_fraction()]
 
     class Params(morphopt.Params):
@@ -68,7 +106,7 @@ class ThisController(morphopt.Controller):
                 def reinitialize(self):
                     super().reinitialize()
                     
-                    result = cpgeo.capi.rotational_symmetry_z(
+                    result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
                             faces=self.model._cp_faces,
                             periods=3
@@ -82,7 +120,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=2.5, 
+                super().__init__(fea_seed_size=2.0, 
                                  reinitialize_per_iter=10,
                                  thickness=2.5,
                                  num_layers=1,
@@ -90,7 +128,7 @@ class ThisController(morphopt.Controller):
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=20.,
-                                                    length=50.,
+                                                    length=40.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
@@ -99,7 +137,7 @@ class ThisController(morphopt.Controller):
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
                                                 r0=15.,
-                                                init_location=[0., 0., 25.],
+                                                init_location=[0., 0., 20.],
                                                 MaxC=1.5,
                     ))
                     
@@ -262,10 +300,10 @@ class ThisController(morphopt.Controller):
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[2.5, 2.5],
-                                                                [2.5, 2.0]]))
+                                                                [[0.0, 0.0],
+                                                                [0.0, 2.5]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=18., height=47., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=16., height=37., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
@@ -287,7 +325,7 @@ class ThisController(morphopt.Controller):
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
                 self.add_objective_function(shape_derivative)
 
-                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-10)
+                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-8)
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.
@@ -298,4 +336,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=20)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=50)

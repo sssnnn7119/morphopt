@@ -3,6 +3,7 @@ import os
 import sys
 import cpgeo.utils
 import numpy as np
+from numpy.random import normal
 import torch
 import gmsh
 
@@ -33,6 +34,9 @@ class CPGEOInterface(CpBasedInterface):
         
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
+
+        self._is_first_initialize = True
+        """Flag to indicate whether it is the first initialization, used for controlling the initial volume calculation."""
 
     def synchronize(self):
         self.model._control_points = self._cps.detach().cpu().numpy()
@@ -97,17 +101,56 @@ class CPGEOInterface(CpBasedInterface):
         # Initialize CPGEO knots and thresholds
         self.model.initialize()
 
+        self._is_first_initialize = True
+
+    def _reconstruction_check(self):
+        """Check the reconstruction accuracy of the CPGEO model."""
+        
+
+        # calculate the gaussian determinant of the first fundamental form
+        gaussian_points = self.model._knots[self.model._cp_faces].mean(axis=1)
+        gaussian_points = gaussian_points / np.linalg.norm(gaussian_points, axis=1, keepdims=True)
+
+        indices_cps, indices_pts = self.model.get_weights3(gaussian_points)[:2]
+        indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
+        indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
+
+        weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
+        indices_pts_t = torch.repeat_interleave(
+            torch.arange(gaussian_points.shape[0], dtype=torch.long,
+                         device=torch.get_default_device()),
+            weights_per_query)
+        
+        # the triangular areas for each face
+        r = self.model.map3(self.model._knots)
+        area = 0.5 * np.linalg.norm(np.cross(r[self.model._cp_faces][:, 1] - r[self.model._cp_faces][:, 0],
+                                            r[self.model._cp_faces][:, 2] - r[self.model._cp_faces][:, 0]), axis=1)
+
+        # influence of control points
+        area_g = torch.zeros(self.model.control_points.shape[0], device=torch.get_default_device())
+        area_g.index_add_(0, indices_cps_t, torch.from_numpy(area).to(torch.get_default_device()).flatten()[indices_pts_t])
+
+        if area_g.max() / area_g.min() > 5:
+            return True
+        else:
+            return False
+
     def reinitialize(self):
+        """Reinitialize the CPGEO model if the volume change is significant."""
 
-        
-        self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+        if_reconstruct = self._reconstruction_check()
 
-        # Load control points into torch tensor
-        self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-        
-        # Get knot points from the CPGEO model
-        # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
-        self._num_knots = self.model._knots.shape[0]
+        if if_reconstruct or self._is_first_initialize:
+            self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+
+            # Load control points into torch tensor
+            self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
+            
+            # Get knot points from the CPGEO model
+            # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
+            self._num_knots = self.model._knots.shape[0]
+
+            self._is_first_initialize = False
 
         return self
 

@@ -116,7 +116,7 @@ class ObjectiveFunction(BaseObject):
         return len(self.fe_results)
     
     def pathlog_required(self):
-        return ['deformation']
+        return ['deformation', 'femodel&results']
 
     def __str__(self) -> str:
 
@@ -215,3 +215,11 @@ class ObjectiveFunction(BaseObject):
             save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.stl"
             mesh.save(save_filepath, binary=True)
             plotter.close()
+
+        
+
+        # save the FEA model and results
+        self.fe.save_model(f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}")
+
+        for case in range(self.num_tasks):
+            self.fe_results[case].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{case}_iter_{iteration}.npz")

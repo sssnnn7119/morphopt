@@ -1,4 +1,6 @@
 import os
+
+import torchfea
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 import numpy as np
@@ -10,7 +12,7 @@ import importlib.util
 import matplotlib.pyplot as plt
 
 torch.set_default_dtype(torch.float64)
-torch.set_default_device('cpu')
+torch.set_default_device('cuda')
 
 
 def readhistoryparams(path_result: str, iteration: int = -1) -> morphopt.Params:
@@ -37,11 +39,47 @@ if __name__ == "__main__":
 
     fe = controller.params.create_feamodel()
 
-    mat: morphopt.SIMPMaterials = controller.params.materials
-    
-    plotter = mat.plot()
+    controller.params.feamodel.process_fea(fe=fe, step_index=1)
 
-    controller.params.geometry.plot(plotter=plotter, opacity=[0.0, 1.0])
+    result: torchfea.solver.StaticResult = fe.solve()
+    U = fe.assembly._GC2RGC(result.GC)[0]
+
+    elems: torchfea.elements.Element_3D = fe.assembly.get_instance('final_model').elems['C3D4']
+
+    gaussian_nodes = elems.get_gaussian_points(nodes=fe.assembly.get_instance('final_model').nodes).reshape(-1, 3)
+    strain_energy = elems.get_potential_energy_density(U=U).flatten()
+
+    mu = list(elems.materials.values())[0]._mu.flatten() + 0.2
+
+
+    import pyvista as pv
+
+    points = np.asarray(gaussian_nodes.detach().cpu()) if torch.is_tensor(gaussian_nodes) else np.asarray(gaussian_nodes)
+    energy = np.asarray(strain_energy.detach().cpu()).ravel() if torch.is_tensor(strain_energy) else np.asarray(strain_energy).ravel()
+    mu_values = np.asarray(mu.detach().cpu()).ravel() if torch.is_tensor(mu) else np.asarray(mu).ravel()
+
+    cloud = pv.PolyData(points)
+    cloud['strain_energy'] = energy
+    cloud['mu'] = mu_values
+
+    glyphs = cloud.glyph(
+        geom=pv.Sphere(radius=1.0),
+        scale='mu',
+        orient=False,
+        factor=0.5
+    )
+
+    plotter = pv.Plotter()
+    plotter.add_mesh(
+        glyphs,
+        scalars='strain_energy',
+        cmap='viridis',
+        scalar_bar_args={'title': 'Strain Energy'}
+    )
+
+    controller.params.materials.plot(plotter=plotter)
+
 
     plotter.show()
 
+    raise NotImplementedError()

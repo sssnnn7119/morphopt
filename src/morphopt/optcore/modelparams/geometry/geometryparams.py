@@ -349,7 +349,7 @@ class GeometryParams(BaseParams):
     from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
     from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
 
-    def __init__(self, fea_seed_size: float, reinitialize_per_iter: int = 5, mesh_order: int = 1, *args, **kwargs) -> None:
+    def __init__(self, fea_seed_size: float, mesh_order: int = 1, *args, **kwargs) -> None:
         """
         Initialize the Surfaces class.
 
@@ -373,11 +373,6 @@ class GeometryParams(BaseParams):
         A mapping from the first-order nodes to the second-order nodes for second-order meshing.
         """
 
-        self.reinitialize_per_iter = reinitialize_per_iter
-        """
-        The number of iterations after which the surfaces are reinitialized.
-        This is useful for ensuring that the surfaces are updated periodically during the optimization process.
-        """
         self.fea_seed_size = fea_seed_size
         """
         The seed size for the finite element analysis (FEA).
@@ -418,9 +413,8 @@ class GeometryParams(BaseParams):
             determine which surfaces need to be updated.
             initialize the surfaces.
         """
-        if iteration % self.reinitialize_per_iter == 0:
-            for i in range(self.num_surface):
-                self.surface_list[i].reinitialize()
+        for i in range(self.num_surface):
+            self.surface_list[i].reinitialize()
             # import copy
             # result = []
             # pools = morphopt.controller.pools
@@ -437,8 +431,6 @@ class GeometryParams(BaseParams):
             #     self.surface_list[i] = result[i].get()
             #     morphopt.controller.change_device(device=torch.get_default_device(), obj=self.surface_list[i])
 
-            morphopt.controller.objfun.inp = None
-        
         self.apply_surface_constraints()
 
     def add_surface(self, surface_new: BaseInterface) -> None:

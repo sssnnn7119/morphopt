@@ -9,14 +9,12 @@ class CodesignGeometry(GeometryParams):
     def __init__(self, 
                  fea_seed_size: float,
                  mesh_order: int = 1,
-                 reinitialize_per_iter: int = 5,
                  thickness=1.0,
                  num_layers=1,
                  **kwargs):
         super().__init__(
             fea_seed_size=fea_seed_size,
             mesh_order=mesh_order,
-            reinitialize_per_iter=reinitialize_per_iter,
             **kwargs,
         )
         self.shell_thickness: float = float(thickness)
