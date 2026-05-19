@@ -255,6 +255,11 @@ class Controller:
                 self.pools.join()
                 return
             
+            if self.history.iteration == 2:
+                self.pools.close()
+                self.pools.join()
+                return
+            
             self.history.iteration += 1
             
 
@@ -273,16 +278,10 @@ class Controller:
             os.remove(self.path_result + '/cache/TopOptRun.inp')
 
         # Initialize the workflow
-        if if_first_step_restart:
-            self.params.reinitialize(iteration = 0)
-            self.solver.reinitialize(iteration = 0)
-            self.updater.reinitialize(iteration = 0)
-            self.objfun.reinitialize(iteration = 0)
-        else:
-            self.params.reinitialize(iteration = self.history.iteration)
-            self.solver.reinitialize(iteration = self.history.iteration)
-            self.updater.reinitialize(iteration = self.history.iteration)
-            self.objfun.reinitialize(iteration = self.history.iteration)
+        self.params.reinitialize(iteration = self.history.iteration)
+        self.solver.reinitialize(iteration = self.history.iteration)
+        self.updater.reinitialize(iteration = self.history.iteration)
+        self.objfun.reinitialize(iteration = self.history.iteration)
 
         # Perform the optimization step
         self.objfun.fe = self.params.create_feamodel(path_result=self.path_result + '/cache/', pools=self.pools)

@@ -821,7 +821,7 @@ class BspInterface(CpBasedInterface):
         min_dist_uv = initpts[min_dist_uv_idx]                  # (N, 2)
 
         # --- Newton refinement in batches (reduces peak memory) ---
-        max_iter = 50
+        max_iter = 10
         tol = 1e-6
         
         if batch_size is None:

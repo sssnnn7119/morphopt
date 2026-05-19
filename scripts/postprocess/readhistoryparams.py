@@ -33,23 +33,24 @@ def readhistoryparams(path_result: str, iteration: int = -1) -> morphopt.Params:
 if __name__ == "__main__":
 
 
-    path_result = 'Z:/Results/Twist_Energy_T20260512_141203/'
+    path_result = 'Z:/Results/Twist_Energy_T20260518_094234/'
     
-    controller: morphopt.Controller = readhistoryparams(path_result, 216)
+    controller: morphopt.Controller = readhistoryparams(path_result, 130)
 
     fe = controller.params.create_feamodel()
+    fe.initialize()
 
     controller.params.feamodel.process_fea(fe=fe, step_index=1)
 
-    result: torchfea.solver.StaticResult = fe.solve()
-    U = fe.assembly._GC2RGC(result.GC)[0]
+    # result: torchfea.solver.StaticResult = fe.solve()
+    U = fe.assembly._GC2RGC(fe.assembly.GC)[0]
 
     elems: torchfea.elements.Element_3D = fe.assembly.get_instance('final_model').elems['C3D4']
 
     gaussian_nodes = elems.get_gaussian_points(nodes=fe.assembly.get_instance('final_model').nodes).reshape(-1, 3)
     strain_energy = elems.get_potential_energy_density(U=U).flatten()
 
-    mu = list(elems.materials.values())[0]._mu.flatten() + 0.2
+    mu = list(elems.materials.values())[0]._mu.flatten()
 
 
     import pyvista as pv
@@ -62,21 +63,23 @@ if __name__ == "__main__":
     cloud['strain_energy'] = energy
     cloud['mu'] = mu_values
 
-    glyphs = cloud.glyph(
-        geom=pv.Sphere(radius=1.0),
-        scale='mu',
-        orient=False,
-        factor=0.5
-    )
+    # glyphs = cloud.glyph(
+    #     geom=pv.Sphere(radius=1.0),
+    #     scale='mu',
+    #     orient=False,
+    #     factor=0.5,
+    # )
 
     plotter = pv.Plotter()
-    plotter.add_mesh(
-        glyphs,
-        scalars='strain_energy',
-        cmap='viridis',
-        scalar_bar_args={'title': 'Strain Energy'}
-    )
+    # plotter.add_mesh(
+    #     glyphs,
+    #     scalars='strain_energy',
+    #     cmap='viridis',
+    #     scalar_bar_args={'title': 'Strain Energy'}
+    # )
 
+
+    controller.params.geometry.plot(plotter=plotter)
     controller.params.materials.plot(plotter=plotter)
 
 

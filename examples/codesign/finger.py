@@ -1,4 +1,4 @@
-﻿
+
 
 import cpgeo.utils
 from numpy import ma
@@ -113,7 +113,7 @@ class ThisController(morphopt.Controller):
     class Params(morphopt.Params):
 
         class GeometryParams(morphopt.codesign.CodesignGeometry):
-            class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
+            class CPGEO_Symmetry(morphopt.GeometryParams.CPGEO):
 
                 def reinitialize(self):
                     super().reinitialize()
@@ -139,8 +139,8 @@ class ThisController(morphopt.Controller):
                                  mesh_order=2)
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=20.,
-                                                    length=50.,
+                    self.BSP.initialize_cylinder(r0=12.,
+                                                    length=80.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
@@ -148,49 +148,49 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=15.,
-                                                init_location=[0., 0., 25.],
+                                                r0=8.,
+                                                init_location=[0., 0., 60.],
+                                                MaxC=1.5,
+                    ))
+                
+                self.add_surface(
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
+                                                flip=True,
+                                                r0=8.,
+                                                init_location=[0., 0., 20.],
                                                 MaxC=1.5,
                     ))
                     
 
+            def _symmetry_constraint(self, P0: torch.Tensor):
+                P0_ = P0.reshape([2, -1, 3])
+                P0_[1, :, 0] = -P0_[1, :, 0]
+                P0_[1, :, 1] = P0_[1, :, 1]
+                P0_[1, :, 2] = P0_[1, :, 2]
+                return P0_.reshape([-1, 3])
+
             def apply_surface_constraints(self):
-                surf1: morphopt.GeometryParams.CPGEO = self.surface_list[1]
-
-                cp0 = surf1._cps.clone()
-                cp0 = cp0.reshape([3, -1, 3])[0]
-                cp120 = torch.stack([
-                    np.cos(2.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(2.0 * np.pi / 3.0) * cp0[:, 1],
-                    np.sin(2.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(2.0 * np.pi / 3.0) * cp0[:, 1],
-                    cp0[:, 2],
-                ], dim=1)
-                cp240 = torch.stack([
-                    np.cos(4.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(4.0 * np.pi / 3.0) * cp0[:, 1],
-                    np.sin(4.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(4.0 * np.pi / 3.0) * cp0[:, 1],
-                    cp0[:, 2],
-                ], dim=1)
-
-                surf1._cps = torch.cat([cp0, cp120, cp240], dim=0).reshape(-1, 3)
+                self.surface_list[1]._cps = self._symmetry_constraint(self.surface_list[1]._cps)
+                self.surface_list[2]._cps = self._symmetry_constraint(self.surface_list[2]._cps)
 
         class FEAParams(morphopt.codesign.CodesignFEAParams):
                 
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RP_head', s=5), name='penalty_RP_head')
+                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_offset'),
+                                        name='pressure_2')
 
             def define_steps(self):
                 self.set_step_num(2)
                 self.set_step_params(0, "pressure_1", [0.06])
-                self.set_step_params(0, "penalty_RP_head", [1e5, 0.0])
 
                 self.set_step_params(1, "pressure_1", [0.06])
-                self.set_step_params(1, "penalty_RP_head", [0e5, 0.0])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
             

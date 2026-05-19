@@ -155,7 +155,8 @@ class SIMPMaterials(BaseParams):
                  degree: int,
                  density: float,
                  initial_ratio: float = 0.5,
-                 penalfactor: float = 1e-2
+                 penalfactor: float = 1e-2,
+                 densitypenal: int = 1,
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -170,6 +171,7 @@ class SIMPMaterials(BaseParams):
             density (float): The density of the material.
             initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
             penalfactor (float): The penalization factor for the SIMP material.
+            densitypenal (int): The penalization power for the density in the SIMP method.
         """
         super().__init__()
         self._mumax: float = float(mumax)
@@ -231,6 +233,8 @@ class SIMPMaterials(BaseParams):
         self.penalfactor: float = float(penalfactor)
         """ The penalization factor for the SIMP material. This will affect the stiffness of intermediate density materials in the optimization process.
         """
+
+        self.densitypenal: int = int(densitypenal)
 
     def pathlog_required(self) -> list[str]:
         return ['materials']
@@ -428,9 +432,9 @@ class SIMPMaterials(BaseParams):
 
         ratio_now = self.get_ratio(gaussian_points_locations).reshape([shape_gaussian[0], shape_gaussian[1]])
 
-        mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
-        kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
-    
+        mu = ratio_now ** self.densitypenal * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
+        kappa = ratio_now ** self.densitypenal * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
+
         materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
         elements_new.set_materials(materials)
         elements_new.density = self.density
@@ -463,8 +467,8 @@ class SIMPMaterials(BaseParams):
 
 
         
-        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._mu = ratio_now * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
-        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._kappa = ratio_now * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._mu = ratio_now ** self.densitypenal * (self._mumax - self._mumax * self._simp_ratio_min) + self._mumax * self._simp_ratio_min
+        assembly.get_part("final_model").elems['C3D4'].materials['material-0']._kappa = ratio_now ** self.densitypenal * (self._kappamax - self._kappamax * self._simp_ratio_min) + self._kappamax * self._simp_ratio_min
 
     def save(self, foldpath: str, iteration: int) -> None:
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"

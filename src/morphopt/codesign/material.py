@@ -18,9 +18,10 @@ class CodesignMaterials(SIMPMaterials):
                  shell_mu: float, 
                  shell_kappa: float, 
                  shell_density: float,
-                 penalfactor: float = 1e-2):
+                 penalfactor: float = 1e-2,
+                 densitypenal: int = 1,):
         
-        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, penalfactor)
+        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, penalfactor, densitypenal)
 
         self.shell_mu = shell_mu
         """ The shear modulus of the shell material. """
