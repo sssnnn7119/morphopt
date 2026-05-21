@@ -5,7 +5,7 @@ import torch
 from .. import optimizer
 
 from ...modelparams.params import Params
-from ...modelparams import SIMPMaterials
+from ...modelparams import SIMP_BSPFieldMaterials
 from tabulate import tabulate
 from ..base_updater import BaseUpdater
 
@@ -16,14 +16,14 @@ class UpdaterMaterials(BaseUpdater):
     """
     from . import objectivefuncs
 
-    def __init__(self, params: Params, max_step_iter: int = 50, max_step_length: float = 0.1, reset_sensitivity_scaler_per_iter: int = 1) -> None:
+    def __init__(self, params: Params, max_step_iter: int = 50, max_step_length: float = 1.) -> None:
         """
         Initialize the Updater class with the given parameters.
         
         Parameters:
             surfaces (Surfaces): The surfaces object that contains the design variables.
             max_step_iter (int): The maximum number of iterations for the sub-optimization process.
-            max_step_length_surf (list[float]): The maximum step length for each surface in the optimization process.
+            max_step_length (float): The maximum step length for each surface in the optimization process.
         """
 
         super().__init__(params)
@@ -50,14 +50,9 @@ class UpdaterMaterials(BaseUpdater):
         The previous change in material control points.
         """
 
-        self.params_update: SIMPMaterials = params.materials
+        self.params_update: SIMP_BSPFieldMaterials = params.materials
         """
         The materials object that contains the design variables.
-        """
-
-        self._reset_sensitivity_scaler_per_iter = reset_sensitivity_scaler_per_iter
-        """
-        The number of iterations after which the scaler is reset.
         """
 
         self._max_step_length_max: float = max_step_length
@@ -203,20 +198,18 @@ class UpdaterMaterials(BaseUpdater):
         # update the step length based on the number of variables
         if self._delta_control_points_previous is not None:
             if self._delta_control_points_previous.shape != delta_control_points.shape:
-                self._max_step_length = self._max_step_length.mean().repeat(delta_control_points.size)
+                pass
             else:
-                denom = np.linalg.norm(delta_control_points) * np.linalg.norm(self._delta_control_points_previous)
-                if denom > 0:
-                    delta_difference = np.sum(self._delta_control_points_previous * delta_control_points) / denom
-                else:
-                    delta_difference = 0.0
+                delta_difference = (delta_control_points * self._delta_control_points_previous).flatten()
 
-                if delta_difference > -0.5:
-                    self._max_step_length = torch.clamp(self._max_step_length * self._step_length_increase,
-                                                        max=self._max_step_length_max)
-                else:
-                    self._max_step_length = torch.clamp(self._max_step_length * self._step_length_decay,
-                                                        min=self._max_step_length_max * self._step_length_min_ratio)
+                idx_positive = delta_difference > 0
+                idx_negative = delta_difference < 0
+
+                self._max_step_length[idx_positive] = torch.clamp(self._max_step_length[idx_positive] * self._step_length_increase,
+                                                    max=self._max_step_length_max)
+
+                self._max_step_length[idx_negative] = torch.clamp(self._max_step_length[idx_negative] * self._step_length_decay,
+                                                    min=self._max_step_length_max * self._step_length_min_ratio)
 
         if not self.if_update:
             self._max_step_length *= 0.0
@@ -289,7 +282,7 @@ class UpdaterMaterials(BaseUpdater):
                 print(
                     f"Low step length detected ({low_step_length_iter} iterations), stopping optimization."
                 )
-                # break
+                break
 
             # get current objective function value
             if self.iteration_total % 10 == 0:
@@ -320,8 +313,6 @@ class UpdaterMaterials(BaseUpdater):
         control_points0 = self.params_update.get_control_points_list()[0].detach().clone().cpu().numpy()
 
         self.params_update.update_variables(x_change=dx, max_step_length=self._max_step_length)
-
-        self.params_update._cps = torch.clamp(self.params_update._cps, 0.0, 1.0)
 
         control_points_new = self.params_update.get_control_points_list()[0].detach().clone().cpu().numpy()
         delta_control_points = control_points_new - control_points0

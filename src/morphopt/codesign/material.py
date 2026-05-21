@@ -5,11 +5,11 @@ import torch
 import numpy as np
 
 import torchfea
-from .. import SIMPMaterials
+from .. import SIMP_BSPFieldMaterials
 import bspmap
 
 
-class CodesignMaterials(SIMPMaterials):
+class CodesignMaterials(SIMP_BSPFieldMaterials):
     """
     Class to handle the materials of the model for codesign optimization.
     """
@@ -18,10 +18,9 @@ class CodesignMaterials(SIMPMaterials):
                  shell_mu: float, 
                  shell_kappa: float, 
                  shell_density: float,
-                 penalfactor: float = 1e-2,
-                 densitypenal: int = 1,):
+                 voidpenalfactor: float = 1e-2,):
         
-        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, penalfactor, densitypenal)
+        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, voidpenalfactor)
 
         self.shell_mu = shell_mu
         """ The shear modulus of the shell material. """

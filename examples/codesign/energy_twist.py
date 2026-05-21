@@ -1,15 +1,14 @@
 ﻿
 
 import cpgeo.utils
-from numpy import ma
 import torchfea
 
 import morphopt
 import torch
 import cpgeo
 import numpy as np
-mumax = 4.82
-minratio = 1e-6
+mumax = 11.76 / (2 * (1 + 0.45))
+minratio = 1e-5
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -72,13 +71,15 @@ class ThisController(morphopt.Controller):
             p = 2
 
             matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
-            ratio = matpara.get_ratio(nodes=gaussian_points.reshape(-1, 3)).flatten()
+
+            designfield = matpara._map_bsp_designfield(nodes=gaussian_points.reshape(-1, 3)).flatten()
+            ratio = matpara.get_material_ratio(designfield).flatten()
 
             penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
 
-            ratio = 1e-7 if self.second_step else 0.
+            weight_penalty = 1e-7 if self.second_step else 0.
 
-            return loss_work + penalty.sum() * ratio
+            return loss_work + penalty.sum() * weight_penalty
 
         def get_metrics(self):
 
@@ -101,7 +102,8 @@ class ThisController(morphopt.Controller):
             p = 2
 
             matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
-            ratio = matpara.get_ratio(nodes=gaussian_points.reshape(-1, 3)).flatten()
+            designfield = matpara._map_bsp_designfield(nodes=gaussian_points.reshape(-1, 3)).flatten()
+            ratio = matpara.get_material_ratio(designfield).flatten()
 
             penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
 
@@ -206,10 +208,9 @@ class ThisController(morphopt.Controller):
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 penalfactor=1e-1,
-                                 densitypenal=3,)
+                                 voidpenalfactor=1e-2,)
         
-            def get_ratio(self, nodes):
+            def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
                 theta240 = 4.0 * torch.pi / 3.0
 
@@ -233,13 +234,13 @@ class ThisController(morphopt.Controller):
                     nodes[:, 2],
                 ], dim=1)
 
-                ratio0 = super().get_ratio(nodes_rot0)
-                ratio120 = super().get_ratio(nodes_rot120)
-                ratio240 = super().get_ratio(nodes_rot240)
+                ratio0 = super()._map_bsp_designfield(nodes_rot0)
+                ratio120 = super()._map_bsp_designfield(nodes_rot120)
+                ratio240 = super()._map_bsp_designfield(nodes_rot240)
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
             
-            def get_ratio_with_spatial_derivative(self, nodes):
+            def _map_bsp_designfield_with_spartial_derivative(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
                 theta240 = 4.0 * torch.pi / 3.0
 
@@ -263,9 +264,9 @@ class ThisController(morphopt.Controller):
                     nodes[:, 2],
                 ], dim=1)
 
-                ratio0 = super().get_ratio_with_spatial_derivative(nodes_rot0)
-                ratio120 = super().get_ratio_with_spatial_derivative(nodes_rot120)
-                ratio240 = super().get_ratio_with_spatial_derivative(nodes_rot240)
+                ratio0 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot0)
+                ratio120 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot120)
+                ratio240 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot240)
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
 
@@ -305,7 +306,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(
                     params=params,
-                    max_step_iter=100)
+                    max_step_iter=200)
                 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
@@ -331,8 +332,8 @@ class ThisController(morphopt.Controller):
             def __init__(self, params: morphopt.Params):
                 super().__init__(
                     params=params,
-                    max_step_iter=200,
-                    max_step_length=0.1,
+                    max_step_iter=500,
+                    max_step_length=1.0,
                 )
 
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
@@ -342,8 +343,8 @@ class ThisController(morphopt.Controller):
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-10, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
 
                 self.if_update = True
     

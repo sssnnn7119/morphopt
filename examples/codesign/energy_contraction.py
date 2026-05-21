@@ -158,9 +158,9 @@ class ThisController(morphopt.Controller):
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 penalfactor=1e-1)
+                                 voidpenalfactor=1e-1)
         
-            def get_ratio(self, nodes):
+            def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
                 theta240 = 4.0 * torch.pi / 3.0
 
@@ -184,13 +184,13 @@ class ThisController(morphopt.Controller):
                     nodes[:, 2],
                 ], dim=1)
 
-                ratio0 = super().get_ratio(nodes_rot0)
-                ratio120 = super().get_ratio(nodes_rot120)
-                ratio240 = super().get_ratio(nodes_rot240)
+                ratio0 = super()._map_bsp_designfield(nodes_rot0)
+                ratio120 = super()._map_bsp_designfield(nodes_rot120)
+                ratio240 = super()._map_bsp_designfield(nodes_rot240)
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
             
-            def get_ratio_with_spatial_derivative(self, nodes):
+            def _map_bsp_designfield_with_spartial_derivative(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
                 theta240 = 4.0 * torch.pi / 3.0
 
@@ -214,9 +214,9 @@ class ThisController(morphopt.Controller):
                     nodes[:, 2],
                 ], dim=1)
 
-                ratio0 = super().get_ratio_with_spatial_derivative(nodes_rot0)
-                ratio120 = super().get_ratio_with_spatial_derivative(nodes_rot120)
-                ratio240 = super().get_ratio_with_spatial_derivative(nodes_rot240)
+                ratio0 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot0)
+                ratio120 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot120)
+                ratio240 = super()._map_bsp_designfield_with_spartial_derivative(nodes_rot240)
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
 

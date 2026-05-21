@@ -1,6 +1,6 @@
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMPMaterials
+from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMP_BSPFieldMaterials
 from .optcore.solver import MorphSolver
 from .optcore.updaters.geometry import UpdaterGeometries
 from .optcore.updaters.materials import UpdaterMaterials
