@@ -732,7 +732,7 @@ class BspInterface(CpBasedInterface):
         [y, x] = torch.meshgrid(y, x, indexing='ij')
         theta = 2 * torch.pi * x + (1 / numU) * torch.pi
 
-        if flip != 0:
+        if not flip:
             theta = -theta
 
         P0[:, :, 0] = torch.cos(theta) * r0
@@ -822,7 +822,7 @@ class BspInterface(CpBasedInterface):
 
         # --- Newton refinement in batches (reduces peak memory) ---
         max_iter = 10
-        tol = 1e-6
+        tol = 1e-2
         
         if batch_size is None:
             batch_size = N if N <= 40960 else 40960

@@ -142,6 +142,8 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         hard_violation_beta: float = 8.0,
         normal_sign: float = 1.0,
         normal_opposition_thre: float = 0.0,
+        normal_min: float = -0.7,
+        normal_max: float = -0.5,
     ) -> None:
         super().__init__()
 
@@ -158,6 +160,8 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         self.hard_violation_beta = float(hard_violation_beta)
         self.normal_sign = 1.0 if normal_sign >= 0 else -1.0
         self.normal_opposition_thre = float(normal_opposition_thre)
+        self.normal_min = float(normal_min)
+        self.normal_max = float(normal_max)
 
         self._neighbor_pairs: dict[int, torch.Tensor] = {}
         self._neighbor_mindist: dict[int, torch.Tensor] = {}
@@ -225,21 +229,39 @@ class OffsetSurfaceMinThickness(BaseConstraints):
             if pairs is None or pairs.numel() == 0:
                 continue
 
+            # Base surface normals (offset surface shares same normal direction)
+            normals = self._surface_normals(rdu_sf=rdu[sf_idx])
+            dotn = (normals[pairs[0]] * normals[pairs[1]]).sum(dim=1)
+
+            # Pre-filter pairs where normals are not opposing enough
+            mask_n = dotn < self.normal_max
+            if not mask_n.any():
+                continue
+
+            pairs_n = pairs[:, mask_n]
+            dotn_n = dotn[mask_n]
+            mindist_n = self._neighbor_mindist[sf_idx][mask_n].to(
+                device=r[sf_idx].device, dtype=r[sf_idx].dtype)
+            scaler_n0 = self.scaler[sf_idx][pairs_n[0]]
+            scaler_n1 = self.scaler[sf_idx][pairs_n[1]]
+
+            # Offset points and distance
             roff, _ = self._offset_points(r_sf=r[sf_idx], rdu_sf=rdu[sf_idx])
-            delta = roff[pairs[0]] - roff[pairs[1]]
+            delta = roff[pairs_n[0]] - roff[pairs_n[1]]
             dist = torch.sqrt((delta * delta).sum(dim=1) + 1e-18)
 
-            mindist = self._neighbor_mindist[sf_idx].to(device=dist.device, dtype=dist.dtype)
-            violation = mindist - dist + barrier_thre
+            violation = mindist_n - dist + barrier_thre
+            indexl, l = self.barrier_function(violation, barrier_thre, self.barrier_ratio, self.p)
 
-            index, penalty = self.barrier_function(violation, barrier_thre, self.barrier_ratio, self.p)
-            if index.numel() > 0:
-                rel_violation = (violation[index] / barrier_thre).clamp(min=0.0)
+            if indexl.numel() > 0:
+                # Smooth normal penalty (same as Distance class)
+                np_val = (self.normal_max - torch.clamp(dotn_n[indexl], self.normal_min, self.normal_max)) / (self.normal_max - self.normal_min)
+                np_smooth = (6 * np_val**2 - 15 * np_val + 10) * np_val**3
+
+                rel_violation = (violation[indexl] / barrier_thre).clamp(min=0.0)
                 hard_boost = torch.exp((self.hard_violation_beta * (rel_violation - 1.0)).clamp(min=0.0, max=20.0))
-                penalty_strong = self.penalty_scale * penalty * hard_boost
+                penalty_strong = self.penalty_scale * l * hard_boost * np_smooth
 
-                w0 = self.scaler[sf_idx][pairs[0, index]]
-                w1 = self.scaler[sf_idx][pairs[1, index]]
-                loss = loss + (penalty_strong * w0 * w1).sum()
+                loss = loss + (penalty_strong * scaler_n0[indexl] * scaler_n1[indexl]).sum()
 
         return loss

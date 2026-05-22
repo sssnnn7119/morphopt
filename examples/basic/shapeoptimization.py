@@ -3,7 +3,7 @@ import morphopt
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='/home/song/文档/code/morphopt/.temp', 
+        super().__init__(path_result_folder='Z:/results/', 
                          opt_label='EXAMPLE')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
@@ -134,4 +134,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.debug_optimization(device='cuda:0', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=10)

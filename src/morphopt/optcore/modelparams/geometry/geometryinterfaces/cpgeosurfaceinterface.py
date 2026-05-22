@@ -152,6 +152,8 @@ class CPGEOInterface(CpBasedInterface):
 
             self._is_first_initialize = False
 
+            self.pre_load()
+
         return self
 
     def get_preloaddata(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None):
@@ -466,7 +468,7 @@ class CPGEOInterface(CpBasedInterface):
         phi = np.arccos(1 - 2*indices/num_points) + 1e-9  # small offset to avoid north pole singularity
         theta = np.pi * (1 + 5**0.5) * indices
 
-        x = r0 * np.cos(theta) * np.sin(phi) + init_location[0]
+        x = -r0 * np.cos(theta) * np.sin(phi) + init_location[0]
         y = r0 * np.sin(theta) * np.sin(phi) + init_location[1]
         z = r0 * np.cos(phi) + init_location[2]
 

@@ -8,7 +8,7 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 11.76 / (2 * (1 + 0.45))
-minratio = 1e-5
+minratio = 1e-4
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -77,7 +77,7 @@ class ThisController(morphopt.Controller):
 
             penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
 
-            weight_penalty = 1e-7 if self.second_step else 0.
+            weight_penalty = 0e-7 if self.second_step else 0.
 
             return loss_work + penalty.sum() * weight_penalty
 

@@ -68,16 +68,21 @@ class Distance(BaseConstraints):
         self.points_surface_index = torch.cat(index_Surf,
                                               dim=0).type(torch.int64)
 
+        r0_combined = torch.cat(r0, dim=0)
         
         # get the neighbor points
         import scipy.spatial
-        kdtree = scipy.spatial.KDTree(torch.cat(r0, dim=0).cpu().numpy())
+        kdtree = scipy.spatial.KDTree(r0_combined.cpu().numpy())
         self.neighbor_points = kdtree.query_pairs(r=self.distance_threshold, output_type='ndarray').T
 
         self.neighbor_points = torch.from_numpy(self.neighbor_points).type(torch.int64).to(r0[0].device)
 
         # determine the minimum distance between the neighbor points
         self.neighbor_mindist = torch.zeros(self.neighbor_points.shape[1], dtype=torch.float32)
+
+        
+        index_remain = torch.ones(self.neighbor_points.shape[1], dtype=torch.bool)
+
         for i in range(self.min_distance.shape[0]):
             for j in range(self.min_distance.shape[1]):
                 # Find indices where points are from surface i and j
@@ -85,39 +90,62 @@ class Distance(BaseConstraints):
                     (self.points_surface_index[self.neighbor_points[0]] == i) &
                     (self.points_surface_index[self.neighbor_points[1]] == j))[0]
                 
-                if len(index) > 0:
-                    if i == j:  # Same surface case
-                        # Use normal vector direction to determine distance for same surface
-                        self.neighbor_mindist[index] = self.min_distance[i, j] * (-normal0[self.neighbor_points[0][index], :] *
-                            normal0[self.neighbor_points[1][index], :]).sum(dim=1)
-                    else:  
-                        # Different surfaces
-                        self.neighbor_mindist[index] = self.min_distance[i, j]
+                self.neighbor_mindist[index] = self.min_distance[i, j]
 
-        index_pos = self.neighbor_mindist > 0
-        self.neighbor_points = self.neighbor_points[:, index_pos]
-        self.neighbor_mindist = self.neighbor_mindist[index_pos]
+                if i == j:
+                    distance0 = torch.sqrt(((r0_combined[self.neighbor_points[0, index]] - r0_combined[self.neighbor_points[1, index]])**2).sum(dim=1))
+                    index_remain[index] = distance0 > self.distance_threshold * 0.5
+
+        self.neighbor_points = self.neighbor_points[:, index_remain]
+        self.neighbor_mindist = self.neighbor_mindist[index_remain]
 
         logging.debug(f"Distance Objective Function: {self.neighbor_points.shape[1]} point pairs within threshold {self.distance_threshold}")
 
-    def __call__(self, r, *args, **kwargs):
+    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], *args, **kwargs):
 
         R = torch.cat(r, dim=0).type(torch.float32)
+        RDU = torch.cat(rdu, dim=0).type(torch.float32)
+        normal_vector = torch.cross(RDU[:, :, 1], RDU[:, :, 0], dim=1)
+
         thre = 0.01
         degree = 5
         loss_distance = torch.tensor(0.0, dtype=torch.float32)
         weight_flatten = torch.cat(self.scaler, dim=0).type(torch.float32)
-        if torch.numel(self.neighbor_points) != 0:
 
-            deltaR = R[self.neighbor_points[0], :] - R[self.neighbor_points[1], :]
+        
+        normal_min = -0.7
+        normal_max = -0.5
+
+        normal_remain = normal_vector[self.neighbor_points, :]
+        normal_remain = normal_remain / (normal_remain.norm(dim=2, keepdim=True) + 1e-8)
+
+        normal_penalty = (normal_remain[0] * normal_remain[1]).sum(dim=1)
+
+        index_remain = normal_penalty < normal_max
+
+        normal_penalty = normal_penalty[index_remain]
+        neighbor_points = self.neighbor_points[:, index_remain]
+        neighbor_mindist = self.neighbor_mindist[index_remain]
+
+        if torch.numel(neighbor_points) != 0:
+
+            deltaR = R[neighbor_points[0], :] - R[neighbor_points[1], :]
             distance = torch.sqrt(((deltaR)**2).sum(dim=1))
 
-            dist = self.neighbor_mindist - distance + thre
+            dist = neighbor_mindist - distance + thre
 
             indexl, l = self.barrier_function(dist, thre, 0, degree)
-
+            
             if len(indexl) > 0:
-                loss_distance += (l * weight_flatten[self.neighbor_points[0, indexl]] *
-                                  weight_flatten[self.neighbor_points[1, indexl]]).sum()
+                
+
+
+
+                normal_penalty = (normal_max - torch.clamp(normal_penalty[indexl], normal_min, normal_max)) / (normal_max - normal_min)
+
+                loss_distance += (l * 
+                                  (6 * normal_penalty**2 - 15 * normal_penalty + 10) * normal_penalty**3 *
+                                  weight_flatten[neighbor_points[0, indexl]] *
+                                  weight_flatten[neighbor_points[1, indexl]]).sum()
                 
         return loss_distance
