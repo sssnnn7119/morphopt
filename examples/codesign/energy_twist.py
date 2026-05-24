@@ -8,7 +8,7 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 11.76 / (2 * (1 + 0.45))
-minratio = 1e-4
+minratio = 1e-6
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -208,7 +208,7 @@ class ThisController(morphopt.Controller):
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 voidpenalfactor=1e-2,)
+                                 voidpenalfactor=1e-1,)
         
             def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0

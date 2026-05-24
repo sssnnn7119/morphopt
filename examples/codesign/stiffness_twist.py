@@ -3,7 +3,7 @@ import morphopt
 import torch
 import cpgeo
 import numpy as np
-mumax = 4.82
+mumax = 11.76 / (2 * (1 + 0.45))
 minratio = 1e-6
 
 class ThisController(morphopt.Controller):
@@ -88,24 +88,24 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=2.3, 
+                super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
-                                 thickness=2.0,
+                                 thickness=2.5,
                                  num_layers=1,
                                  mesh_order=2)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=20.,
-                                                    length=40.,
+                                                    length=50.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.3,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=12.,
-                                                init_location=[0., 0., 20.],
+                                                r0=15.,
+                                                init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
                     
@@ -133,7 +133,7 @@ class ThisController(morphopt.Controller):
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 40.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
@@ -161,7 +161,7 @@ class ThisController(morphopt.Controller):
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
                                  initial_ratio=0.5,
-                                 bounding_box=[-25, 25, -25, 25, 0, 40], 
+                                 bounding_box=[-25, 25, -25, 25, 0, 50], 
                                  simp_field_resolution=1.0, 
                                  degree=3,
                                  shell_mu=0.48,
@@ -265,7 +265,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(
                     params=params,
-                    max_step_iter=100)
+                    max_step_iter=200)
                 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
@@ -273,10 +273,10 @@ class ThisController(morphopt.Controller):
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[2.5, 2.5],
-                                                                [2.5, 2.0]]))
+                                                                [[0.0, 0.0],
+                                                                [0.0, 2.5]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=15., height=37., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=17., height=47., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
@@ -291,22 +291,22 @@ class ThisController(morphopt.Controller):
             def __init__(self, params: morphopt.Params):
                 super().__init__(
                     params=params,
-                    max_step_iter=200,
+                    max_step_iter=500,
                     max_step_length=0.1,
                 )
 
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
                 self.add_objective_function(shape_derivative)
 
-                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-10)
+                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-8)
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-10, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
 
                 self.if_update = True
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cuda:2', restart_per_iteration=20)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)

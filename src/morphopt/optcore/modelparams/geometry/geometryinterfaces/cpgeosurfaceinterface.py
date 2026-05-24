@@ -38,6 +38,12 @@ class CPGEOInterface(CpBasedInterface):
         self._is_first_initialize = True
         """Flag to indicate whether it is the first initialization, used for controlling the initial volume calculation."""
 
+        self._output_rsphere: np.ndarray
+        """The output spherical parameterization points for visualization or debugging."""
+
+        self._output_cpfaces: np.ndarray
+        """The output control point faces for visualization or debugging."""
+
     def synchronize(self):
         self.model._control_points = self._cps.detach().cpu().numpy()
 
@@ -257,8 +263,15 @@ class CPGEOInterface(CpBasedInterface):
         """
         
         pools = morphopt.controller.pools
-        r = self.model.map3(self.model._knots)
-        cpfaces = cpgeo.capi.optimize_mesh_by_edge_flipping(vertices=r, faces=self.model._cp_faces)
+
+        r_sphere, cpfaces = self.model.uniformly_mesh(seed_size=self.init_size, max_iterations=2)
+        r = self.model.map3(r_sphere)
+
+        self._output_rsphere = r_sphere
+        self._output_cpfaces = cpfaces
+
+        # r = self.model.map3(self.model._knots)
+        # cpfaces = cpgeo.capi.optimize_mesh_by_edge_flipping(vertices=r, faces=self.model._cp_faces)
         result = pools.apply_async(self.output_stl_file, args=(
             r,
             cpfaces,
@@ -512,7 +525,8 @@ class CPGEOInterface(CpBasedInterface):
         N = nodes.shape[0]
 
         # evaluate surface at seed points (M x 3)
-        preuv = self.model.reference_to_curvilinear(self.model._knots)
+        preuv = self.model.reference_to_curvilinear(self._output_rsphere)
+
         r0 = self.model.map2(preuv)  # (M, 3)
 
         # --- find nearest seed for each node (memory-efficient) ---
@@ -536,7 +550,7 @@ class CPGEOInterface(CpBasedInterface):
 
         # --- Newton refinement in batches (reduces peak memory) ---
         max_iter = 5
-        tol = 1e-6
+        tol = 1e-2
         
         if batch_size is None:
             batch_size = N if N <= 4096 else 4096

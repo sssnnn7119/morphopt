@@ -18,8 +18,8 @@ class InwardCurvatureRadius(BaseConstraints):
         geometry: CodesignGeometry,
         surface_start: int = 1,
         surface_ids: list[int] | None = None,
-        margin: float = 0.2,
-        margin_ratio: float = 0.25,
+        margin: float = 0.4,
+        margin_ratio: float = 0.45,
         barrier_thre_ratio: float = 0.1,
         barrier_ratio: float = 0.0,
         p: int = 8,
@@ -34,8 +34,8 @@ class InwardCurvatureRadius(BaseConstraints):
             geometry (CodesignGeometry): The geometry parameters containing the surfaces.
             surface_start (int, optional): The starting index of surfaces to apply the constraint. Defaults to 1.
             surface_ids (list[int] | None, optional): The specific surface indices to apply the constraint. If None, applies to all surfaces starting from surface_start. Defaults to None.
-            margin (float, optional): The absolute margin added to thickness for curvature limit. Defaults to 0.2.
-            margin_ratio (float, optional): The ratio of thickness to determine margin if margin is None. Defaults to 0.25.
+            margin (float, optional): The absolute margin added to thickness for curvature limit. Defaults to 0.4.
+            margin_ratio (float, optional): The ratio of thickness to determine margin if margin is None. Defaults to 0.45.
             barrier_thre_ratio (float, optional): The ratio of curvature limit to determine the barrier threshold. Defaults to 0.1.
             barrier_ratio (float, optional): The ratio to scale the barrier penalty. Defaults to 0.0.
             p (int, optional): The power for the barrier function. Defaults to 8.

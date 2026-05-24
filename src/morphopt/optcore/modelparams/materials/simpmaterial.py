@@ -599,7 +599,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
             torch.Tensor: The penalty factor for the given design field.
         """
 
-        influence_max = -5
+        influence_max = -3
         influence_min = -6
 
         normalized_designfield = (influence_max - designfield) / (influence_max - influence_min)
