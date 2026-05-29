@@ -13,7 +13,7 @@ import pyvista as pv
 # region for void elements penalization
 class SIMPElementFgrad(torchfea.elements.Element_3D):
 
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', 'penalfactor']
+    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
@@ -91,26 +91,46 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
 
 class SIMPElementFskew(torchfea.elements.Element_3D):
 
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', 'penalfactor']
+    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
 
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
         if isinstance(penalfactor, float):
-            penalfactor = torch.tensor([penalfactor], dtype=torch.get_default_dtype())
+            penalfactor = torch.tensor([penalfactor], dtype=torch.float32)
 
             
         if penalfactor.dim() == 0 or penalfactor.shape == (1,):
             penalfactor = penalfactor.reshape(1, 1)
 
-        self.penalfactor = penalfactor
+        self._penalfactor = penalfactor
         """the penalization factor for SIMP material"""
-        
+    
+    @property
+    def penalfactor(self) -> torch.Tensor:
+        return self._penalfactor
+    
+    @penalfactor.setter
+    def penalfactor(self, value: torch.Tensor) -> None:
+        if isinstance(value, float):
+            value = torch.tensor([value], dtype=torch.float32)
+
+        if value.dim() == 0 or value.shape == (1,):
+            value = value.reshape(1, 1)
+
+        self._penalfactor = value.to(torch.float32)
+
     def initialize(self, *args, **kwargs):
         super().initialize(*args, **kwargs)
 
+        self._initialize_simppenalty()
 
-        self._dN2WP = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight * self.penalfactor)
+
+    def _initialize_simppenalty(self):
+        """
+                initialize the penalty for SIMP material, which will be used in the energy and force calculations.
+        """
+        self._dN2WP = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight * self._penalfactor)
 
         self._EmdUe_2 = torch.zeros([self.num_nodes_per_elem, 3, self.num_nodes_per_elem, 3, self._elems.shape[0]])
 
@@ -187,20 +207,20 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         return EmdUe + result0[0], self._EmdUe_2 + result0[1]
 
 class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', 'penalfactor']
+    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
-        self.penalfactor = penalfactor
+        self._penalfactor = penalfactor
         """the penalization factor for SIMP material"""
 
     def initialize(self, *args, **kwargs):
         super().initialize(*args, **kwargs)
 
-        if self.penalfactor.dim() == 0 or self.penalfactor.shape == (1,):
-            self.penalfactor = self.penalfactor.reshape(1, 1)
+        if self._penalfactor.dim() == 0 or self._penalfactor.shape == (1,):
+            self._penalfactor = self._penalfactor.reshape(1, 1)
 
-        self._dN2WP = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight * self.penalfactor)
+        self._dN2WP = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight * self._penalfactor)
 
 
         self._EmdUe_2 = torch.zeros([self.num_nodes_per_elem, 3, self.num_nodes_per_elem, 3, self._elems.shape[0]])
@@ -250,7 +270,7 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
         for i in range(3):
             Er -= 0.5 * (Ugrad2[:, :, :, i, i]**2).sum([-1]) / 3
 
-        Er = (Er * self.gaussian_weight * self.penalfactor).sum()
+        Er = (Er * self.gaussian_weight * self._penalfactor).sum()
 
         return Ea + Er
     
@@ -326,6 +346,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
                  density: float,
                  initial_ratio: float = 0.5,
                  voidpenalfactor: float = 1e-2,
+                 materialpenalty: int = 8,
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -340,6 +361,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
             density (float): The density of the material.
             initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
             voidpenalfactor (float): The penalization factor for the SIMP material.
+            materialpenalty (int): The penalization power for the SIMP interpolation.
         """
         super().__init__()
         self._mumax: float = float(mumax)
@@ -400,6 +422,10 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
         self.voidpenalfactor: float = float(voidpenalfactor)
         """ The penalization factor for the SIMP material. This will affect the stiffness of intermediate density materials in the optimization process.
+        """
+
+        self.materialpenalty: int = 8
+        """The penalization power for the SIMP interpolation. This will affect the nonlinearity of the material interpolation in the optimization process.
         """
 
     def pathlog_required(self) -> list[str]:
@@ -582,7 +608,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
         rho = 1 / (1 + torch.exp(-designfield))
 
-        rho_penalty = RAMP_interpolation(rho, p=8)
+        rho_penalty = RAMP_interpolation(rho, p=self.materialpenalty)
 
         ratio = rho_penalty * (1 - self._simp_ratio_min) + self._simp_ratio_min
 
@@ -676,6 +702,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         elems.materials['material-0']._mu = ratio_now * self._mumax
         elems.materials['material-0']._kappa = ratio_now * self._kappamax
         elems.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
+        elems._initialize_simppenalty()
 
 
     def save(self, foldpath: str, iteration: int) -> None:

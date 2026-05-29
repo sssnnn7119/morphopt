@@ -30,21 +30,21 @@ class ThisController(morphopt.Controller):
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
                 
-                # self.add_surface(
-                #     self.BSP.initialize_cylinder(r0=4.,
-                #                                     length=74.,
-                #                                     seed_size=1.0,
-                #                                     symmetric=[1, [1]],
-                #                                     init_location=[0, 0, 3],
-                #                                     flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
-                
                 self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
-                                                flip=True,
-                                                r0=4.,
-                                                init_location=[0., 0., 40.],
-                                                MaxC=1.5,
-                    ))
+                    self.BSP.initialize_cylinder(r0=4.,
+                                                    length=74.,
+                                                    seed_size=1.0,
+                                                    symmetric=[1, [1]],
+                                                    init_location=[0, 0, 3],
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                
+                # self.add_surface(
+                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
+                #                                 flip=True,
+                #                                 r0=4.,
+                #                                 init_location=[0., 0., 40.],
+                #                                 MaxC=1.5,
+                #     ))
 
             def apply_surface_constraints(self) -> None:
                 """
@@ -106,7 +106,8 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
-                            loads=None, *args, **kwargs)
+                            device='cuda:1',
+                            *args, **kwargs)
 
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
@@ -134,4 +135,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.debug_optimization(device='cpu', restart_per_iteration=10)

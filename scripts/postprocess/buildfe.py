@@ -34,8 +34,8 @@ def readhistoryparams(path_result: str, iteration: int = -1):
 
 if __name__ == "__main__":
 
-    fe = readhistoryparams('/mnt/d/Work/results/FRONT_T20260421_190912_YCX/FRONT_T20260421_190912_YCX/', iteration=124)
-    fe.assembly._loads['P_s1'].pressure = -0.08
+    fe = readhistoryparams('d:/Work/results/locomotion/FRONT_T20260421_190912_YCX/', iteration=124)
+    fe.assembly._loads['P_s1'].pressure = 0.08
     fe.assembly._loads['P_s2'].pressure = 0.08
     fe.assembly._loads['P_s3'].pressure = 0.08
     result = fe.solve()

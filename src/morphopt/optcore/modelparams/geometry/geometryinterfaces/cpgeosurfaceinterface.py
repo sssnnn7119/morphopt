@@ -147,20 +147,24 @@ class CPGEOInterface(CpBasedInterface):
         if_reconstruct = self._reconstruction_check()
 
         if if_reconstruct or self._is_first_initialize:
-            self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
-
-            # Load control points into torch tensor
-            self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-            
-            # Get knot points from the CPGEO model
-            # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
-            self._num_knots = self.model._knots.shape[0]
-
+            self._reinitialize()
             self._is_first_initialize = False
 
-            self.pre_load()
-
         return self
+    
+    def _reinitialize(self):
+        """Internal method to reinitialize the CPGEO model without checking."""
+        self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+
+        # Load control points into torch tensor
+        self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
+        
+        # Get knot points from the CPGEO model
+        # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
+        self._num_knots = self.model._knots.shape[0]
+
+        self.pre_load()
+
 
     def get_preloaddata(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None):
 

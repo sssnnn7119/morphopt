@@ -117,8 +117,8 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.codesign.CodesignGeometry):
             class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
 
-                def reinitialize(self):
-                    super().reinitialize()
+                def _reinitialize(self):
+                    super()._reinitialize()
                     
                     result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
@@ -208,7 +208,7 @@ class ThisController(morphopt.Controller):
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 voidpenalfactor=1e-1,)
+                                 voidpenalfactor=1e-1)
         
             def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
@@ -295,7 +295,8 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
                             materials=self.UpdaterMaterials(params=params),
-                            *args, **kwargs)
+                            device='cuda:1',
+                             *args, **kwargs)
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
             Updater class for morphopt.
@@ -347,7 +348,8 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
 
                 self.if_update = True
-    
+
+
 if __name__ == '__main__':
 
     morphopt.start_optimization(device='cpu', restart_per_iteration=50)

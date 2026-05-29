@@ -18,9 +18,10 @@ class CodesignMaterials(SIMP_BSPFieldMaterials):
                  shell_mu: float, 
                  shell_kappa: float, 
                  shell_density: float,
-                 voidpenalfactor: float = 1e-2,):
+                 voidpenalfactor: float = 1e-2,
+                 materialpenalty: int = 8,):
         
-        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, voidpenalfactor)
+        super().__init__(mumax, kappamax, simp_ratio_min, bounding_box, simp_field_resolution, degree, density, initial_ratio, voidpenalfactor, materialpenalty)
 
         self.shell_mu = shell_mu
         """ The shear modulus of the shell material. """

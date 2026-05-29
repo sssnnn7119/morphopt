@@ -30,18 +30,11 @@ class ShapeDerivative(BaseObjective):
     def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], *args, **kwargs):
 
 
-        objfun = morphopt.controller.objfun
-        fe = objfun.fe
-
-
-        part = fe.assembly.get_part('final_model')
-        
         interpolate_points = self._get_interpolate_points()
 
 
         geoparams = morphopt.controller.params.geometry
         sflist: list[morphopt.GeometryParams.CpBasedInterface] = geoparams.surface_list
-        assembly = morphopt.controller.objfun.fe.assembly
 
         self._cp0 = []
         ptidx = 0

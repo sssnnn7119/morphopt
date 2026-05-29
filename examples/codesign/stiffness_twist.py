@@ -3,8 +3,9 @@ import morphopt
 import torch
 import cpgeo
 import numpy as np
-mumax = 11.76 / (2 * (1 + 0.45))
-minratio = 1e-6
+# mumax = 11.76 / (2 * (1 + 0.45))
+mumax = 100 / (2 * (1 + 0.45))
+minratio = 1e-7
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -51,7 +52,7 @@ class ThisController(morphopt.Controller):
             loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
             loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
-            return loss_motion + loss_stiffness * 1e4 + loss_contraction * 1e3
+            return loss_motion + loss_stiffness * 1e3 + loss_contraction * 1e1
 
         def get_metrics(self):
 
@@ -71,8 +72,8 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.codesign.CodesignGeometry):
             class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
 
-                def reinitialize(self):
-                    super().reinitialize()
+                def _reinitialize(self):
+                    super()._reinitialize()
                     
                     result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
@@ -254,7 +255,8 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
                             materials=self.UpdaterMaterials(params=params),
-                            *args, **kwargs)
+                            device='cuda:1',
+                             *args, **kwargs)
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
             Updater class for morphopt.
@@ -292,7 +294,7 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     params=params,
                     max_step_iter=500,
-                    max_step_length=0.1,
+                    max_step_length=1.0,
                 )
 
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
@@ -306,7 +308,7 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
 
                 self.if_update = True
-    
+     
 if __name__ == '__main__':
 
     morphopt.start_optimization(device='cpu', restart_per_iteration=20)

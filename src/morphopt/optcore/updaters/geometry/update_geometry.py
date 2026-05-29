@@ -33,18 +33,6 @@ class UpdaterGeometries(BaseUpdater):
         The maximum number of iterations for the sub-optimization process.
         """
 
-        self.constraints_funcs: dict[str, UpdaterGeometries.objectivefuncs.BaseConstraints] = {}
-        """
-        A list of penalty functions to be optimized. \n
-        L = sum_{i=1}^{n} w_i * f_i(x)
-        """
-
-        self.obj_funcs: dict[str, UpdaterGeometries.objectivefuncs.BaseObjective] = {}
-        """
-        A list of objective functions to be optimized. \n
-        L = sum_{i=1}^{n} w_i * f_i(x)
-        """
-
         self._delta_control_points_previous: list[np.ndarray] = None
         """
         The previous change in control points for each surface.
@@ -264,13 +252,10 @@ class UpdaterGeometries(BaseUpdater):
         else:
             return sum(obj_value) + sum(constraints_value)
 
-    def update(self, gradient: torch.Tensor) -> torch.Tensor:
+    def update(self) -> torch.Tensor:
         """
         Update the parameters of the optimization process.
         """
-
-        # initialize the optimizer
-        self.reinitialize(gradient=gradient)
 
         # update the objective function
         variables = self.params_update.get_variables().detach().clone()

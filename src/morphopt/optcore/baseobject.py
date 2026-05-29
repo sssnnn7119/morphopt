@@ -4,7 +4,7 @@ class BaseObject:
 
     def initialize(self, *args, **kwargs) -> None:
         """
-        Initialize the class.
+        Initialize the class when the optimization process starts.
         
         This method should be implemented in subclasses to initialize specific attributes.
         """
@@ -12,7 +12,7 @@ class BaseObject:
 
     def reinitialize(self, iteration: int, *args, **kwargs) -> None:
         """
-        reInitialize the class.
+        reInitialize the class at each iteration.
         
         This method should be implemented in subclasses to reinitialize specific attributes.
         """

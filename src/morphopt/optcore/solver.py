@@ -75,7 +75,7 @@ class MorphSolver(BaseObject):
 
         fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
         fe_cpu.change_device(torch.device('cpu'))
-
+        
         # self._solve_FEA(fe=fe_cpu, 
         #                 feamodel=self.params.feamodel,
         #                 task_index=self.task_index_list[0],
@@ -150,7 +150,7 @@ class MorphSolver(BaseObject):
         if U_guess is not None:
             U0 = torch.from_numpy(U_guess).to(torch.float64).to(fe.assembly.device)
         else:
-            U0 = fe.assembly.GC.to(torch.get_default_device())
+            U0 = fe.assembly._GC.to(torch.get_default_device())
 
         result_list = []
         for i in range(len(task_index)):

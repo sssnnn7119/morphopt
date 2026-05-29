@@ -3,15 +3,16 @@ import morphopt
 import torch
 import cpgeo
 import numpy as np
-mumax = 4.82
-minratio = 1e-6
+mumax = 11.76 / (2 * (1 + 0.45))
+mumin = 0.048
+minratio = mumin / mumax
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/results/', 
-                         opt_label='Twist_Stiffness')
+        super().__init__(path_result_folder='Z:/Results/', 
+                         opt_label='Twist_Stiffness_SoftOut')
         # super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
-        #                  opt_label='Twist_Stiffness')
+        #                  opt_label='Twist_Stiffness_SoftOut')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
@@ -51,7 +52,7 @@ class ThisController(morphopt.Controller):
             loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
             loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
-            return loss_motion + loss_stiffness * 1e4 + loss_contraction * 1e3
+            return loss_motion + loss_stiffness * 1e3 + loss_contraction * 1e1
 
         def get_metrics(self):
 
@@ -71,8 +72,8 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.codesign.CodesignGeometry):
             class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
 
-                def reinitialize(self):
-                    super().reinitialize()
+                def _reinitialize(self):
+                    super()._reinitialize()
                     
                     result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
@@ -88,24 +89,24 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=2.3, 
+                super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
-                                 thickness=2.0,
+                                 thickness=2.5,
                                  num_layers=1,
                                  mesh_order=2)
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=20.,
-                                                    length=40.,
+                                                    length=50.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.3,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=12.,
-                                                init_location=[0., 0., 20.],
+                                                r0=15.,
+                                                init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
                     
@@ -133,7 +134,7 @@ class ThisController(morphopt.Controller):
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 40.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
@@ -161,14 +162,13 @@ class ThisController(morphopt.Controller):
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
                                  initial_ratio=0.5,
-                                 bounding_box=[-25, 25, -25, 25, 0, 40], 
+                                 bounding_box=[-25, 25, -25, 25, 0, 50], 
                                  simp_field_resolution=1.0, 
                                  degree=3,
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 voidpenalfactor=1e-2)
-                
+                                 voidpenalfactor=1e-1)
         
             def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
@@ -230,20 +230,6 @@ class ThisController(morphopt.Controller):
 
                 return (ratio0 + ratio120 + ratio240) / 3.0
 
-            def reinitialize(self, iteration, *args, **kwargs):
-                super().reinitialize(iteration, *args, **kwargs)
-
-                size_cps = self.simp_field.size
-                
-                cp_now = self.simp_field.control_points.reshape(size_cps[0], size_cps[1], size_cps[2])
-
-                cp_now[:, :, :int(size_cps[2]/(40/3))] = 1.0
-                cp_now[:, :, int(size_cps[2]/(40/3)):int(size_cps[2] - int(size_cps[2]/(40/3)))] = 0.0
-                cp_now[:, :, int(size_cps[2] - int(size_cps[2]/(40/3))):] = 1.0
-
-                self._cps = torch.from_numpy(cp_now).to(torch.get_default_device()).to(torch.get_default_dtype()).reshape(-1, 1)
-                self.simp_field.control_points = cp_now.reshape(-1, 1)
-            
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
@@ -268,8 +254,9 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
-                            *args, **kwargs)
-            
+                            materials=self.UpdaterMaterials(params=params),
+                            device='cuda:1',
+                             *args, **kwargs)
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
             Updater class for morphopt.
@@ -277,28 +264,51 @@ class ThisController(morphopt.Controller):
             """
 
             def __init__(self, params: morphopt.Params):
-                
+
                 super().__init__(
                     params=params,
-                    max_step_iter=100)
-
+                    max_step_iter=200)
+                
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
                     self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=
-                                                                [[2.5, 2.5],
-                                                                [2.5, 2.0]]))
+                                                                [[0.0, 0.0],
+                                                                [0.0, 2.5]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=15., height=37., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=17., height=47., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
 
                 self.if_update = [False, True]
 
-    
+        class UpdaterMaterials(morphopt.UpdaterMaterials):
+            """
+            Material updater based on SIMP control points.
+            """
+
+            def __init__(self, params: morphopt.Params):
+                super().__init__(
+                    params=params,
+                    max_step_iter=500,
+                    max_step_length=1.0,
+                )
+
+                shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
+                self.add_objective_function(shape_derivative)
+
+                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-8)
+                self.add_objective_function(density_regularization)
+
+                # Keep SIMP control points within [0, 1] and avoid singular material values.
+                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-10, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
+
+                self.if_update = True
+     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)

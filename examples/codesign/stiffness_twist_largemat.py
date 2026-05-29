@@ -1,34 +1,23 @@
-
-
-import cpgeo.utils
-from numpy import ma
-import torchfea
-
+﻿
 import morphopt
 import torch
 import cpgeo
 import numpy as np
-mumax = 4.82
-minratio = 1e-6
+# mumax = 11.76 / (2 * (1 + 0.45))
+mumax = 100 / (2 * (1 + 0.45))
+minratio = 1e-7
 
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='Twist_Energy')
+                         opt_label='Twist_Stiffness_LargeMat')
+        # super().__init__(path_result_folder='/run/media/song/缓存/Results/', 
+        #                  opt_label='Twist_Stiffness')
         
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-
-            self.second_step = False
-
-        def reinitialize(self, *args, **kwargs):
-            super().reinitialize(*args, **kwargs)
-
-            if morphopt.controller.history.iteration > 50:
-                if np.abs(morphopt.controller.history.history_objective[-1] / np.mean(morphopt.controller.history.history_objective[-15:])) > 0.9:
-                    self.second_step = True
-                    print("Switching to second step with energy-based objective.")
+            self.jacobian_needed = ['force_RP_head', 'moment_RP_head']
 
         def get_volume_fraction(self):
             elems = self.fe.assembly._parts['final_model'].elems['C3D4']
@@ -51,76 +40,45 @@ class ThisController(morphopt.Controller):
         def objective_function(self):
 
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
+            jacobian_end_0 = torch.cat([self.fe_results[0].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[0].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
 
-            elems: torchfea.elements.C3D4 = assembly.get_part('final_model').elems['C3D4']
+            jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            energy_density = elems.get_potential_energy_density(U=RGC1[0])
-            gaussian_weight = elems.gaussian_weight
-            gaussian_points = elems.get_gaussian_points(nodes=assembly.get_instance('final_model').nodes)
+            loss_motion = torch.exp((2.0-self.fe_results[1].GC[-1])*4)
 
-            loss_work = E1 - E0
-            V = gaussian_weight.sum()
-            avg_density = (energy_density * gaussian_weight).sum() / V
+            loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
+            loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
-            t = 10
-            p = 2
-
-            matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
-            ratio = matpara._map_bsp_designfield(nodes=gaussian_points.reshape(-1, 3)).flatten()
-
-            penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
-
-            ratio = 1e-7 if self.second_step else 0.
-
-            return loss_work + penalty.sum() * ratio
+            return loss_motion + loss_stiffness * 1e3 + loss_contraction * 1e1
 
         def get_metrics(self):
 
-            assembly = self.fe.assembly
-            RGC0 = assembly._GC2RGC(self.fe_results[0].GC)
-            RGC1 = assembly._GC2RGC(self.fe_results[1].GC)
-            E0 = assembly._total_Potential_Energy(RGC=RGC0)
-            E1 = assembly._total_Potential_Energy(RGC=RGC1)
-
-            elems: torchfea.elements.C3D4 = assembly.get_part('final_model').elems['C3D4']
-
-            energy_density = elems.get_potential_energy_density(U=RGC1[0])
-            gaussian_weight = elems.gaussian_weight
-            gaussian_points = elems.get_gaussian_points(nodes=assembly.get_instance('final_model').nodes)
-
-            loss_work = E1 - E0
-            V = gaussian_weight.sum()
-            avg_density = (energy_density * gaussian_weight).sum() / V
-            t = 10
-            p = 2
-
-            matpara: morphopt.codesign.CodesignMaterials = morphopt.controller.params.materials
-            ratio = matpara._map_bsp_designfield(nodes=gaussian_points.reshape(-1, 3)).flatten()
-
-            penalty = (gaussian_weight.flatten() * (torch.clamp(energy_density / avg_density - t, min=0).flatten() * ratio) ** p)
+            jacobian_end_0 = torch.cat([self.fe_results[0].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[0].jacobian['moment_RP_head'][-6:]], dim=1)
+            
+            jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
+                                        self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
+            loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
+            loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
 
 
-            return [self.fe_results[1].GC[-1],
-                    E0, E1, penalty.sum(),
-                    self.get_volume_fraction()]
+            return [self.get_volume_fraction(), self.fe_results[1].GC[-1], loss_stiffness, loss_contraction]
 
     class Params(morphopt.Params):
 
         class GeometryParams(morphopt.codesign.CodesignGeometry):
-            class CPGEO_Symmetry(morphopt.GeometryParams.CPGEO):
+            class CPGEO_Twist(morphopt.GeometryParams.CPGEO):
 
-                def reinitialize(self):
-                    super().reinitialize()
+                def _reinitialize(self):
+                    super()._reinitialize()
                     
-                    result = cpgeo.utils.enforce_axial_symmetry(
+                    result = cpgeo.utils.enforce_rotational_symmetry_z(
                             vertices=self._cps.detach().cpu().numpy(),
                             faces=self.model._cp_faces,
+                            periods=3
                         )
                     self._cps = torch.from_numpy(result[0]).to(self._cps.device)
                     self.model._cp_faces = result[1]
@@ -138,58 +96,63 @@ class ThisController(morphopt.Controller):
                                  mesh_order=2)
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=12.,
-                                                    length=80.,
+                    self.BSP.initialize_cylinder(r0=20.,
+                                                    length=50.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2))
  
                 self.add_surface(
-                    self.CPGEO_Symmetry.initialize_Sphere(seed_size=1.5,
+                    self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=8.,
-                                                init_location=[0., 0., 60.],
-                                                MaxC=1.5,
-                    ))
-                
-                self.add_surface(
-                    self.CPGEO_Symmetry.initialize_Sphere(seed_size=1.5,
-                                                flip=True,
-                                                r0=8.,
-                                                init_location=[0., 0., 20.],
+                                                r0=15.,
+                                                init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
                     
 
-            def _symmetry_constraint(self, P0: torch.Tensor):
-                P0_ = P0.reshape([2, -1, 3])
-                P0_[1, :, 0] = -P0_[1, :, 0]
-                P0_[1, :, 1] = P0_[1, :, 1]
-                P0_[1, :, 2] = P0_[1, :, 2]
-                return P0_.reshape([-1, 3])
-
             def apply_surface_constraints(self):
-                self.surface_list[1]._cps = self._symmetry_constraint(self.surface_list[1]._cps)
-                self.surface_list[2]._cps = self._symmetry_constraint(self.surface_list[2]._cps)
+                surf1: morphopt.GeometryParams.CPGEO = self.surface_list[1]
+
+                cp0 = surf1._cps.clone()
+                cp0 = cp0.reshape([3, -1, 3])[0]
+                cp120 = torch.stack([
+                    np.cos(2.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(2.0 * np.pi / 3.0) * cp0[:, 1],
+                    np.sin(2.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(2.0 * np.pi / 3.0) * cp0[:, 1],
+                    cp0[:, 2],
+                ], dim=1)
+                cp240 = torch.stack([
+                    np.cos(4.0 * np.pi / 3.0) * cp0[:, 0] - np.sin(4.0 * np.pi / 3.0) * cp0[:, 1],
+                    np.sin(4.0 * np.pi / 3.0) * cp0[:, 0] + np.cos(4.0 * np.pi / 3.0) * cp0[:, 1],
+                    cp0[:, 2],
+                ], dim=1)
+
+                surf1._cps = torch.cat([cp0, cp120, cp240], dim=0).reshape(-1, 3)
 
         class FEAParams(morphopt.codesign.CodesignFEAParams):
                 
             def define_interface(self):
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 50.]), name='RP_head')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
 
                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
                                         name='pressure_1')
-                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_2_offset'),
-                                        name='pressure_2')
+                
+                self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_RP_head')
+                self.add_fea_interface(self.ConcentratedMomentInterface(rp_name='RP_head'), name='moment_RP_head')
 
             def define_steps(self):
                 self.set_step_num(2)
-                self.set_step_params(0, "pressure_1", [0.06])
+
+                self.set_step_params(0, "pressure_1", [0.0])
+                self.set_step_params(0, "force_RP_head", [0., 0., 0.0])
+                self.set_step_params(0, "moment_RP_head", [0., 0., 0.0])
 
                 self.set_step_params(1, "pressure_1", [0.06])
+                self.set_step_params(1, "force_RP_head", [0., 0., 0.0])
+                self.set_step_params(1, "moment_RP_head", [0., 0., 0.0])
 
         class MaterialParams(morphopt.codesign.CodesignMaterials):
             
@@ -206,7 +169,8 @@ class ThisController(morphopt.Controller):
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
                                  voidpenalfactor=1e-1,
-                                 densitypenal=3,)
+                                 materialpenalty=1
+                                 )
         
             def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
@@ -293,7 +257,8 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
                             materials=self.UpdaterMaterials(params=params),
-                            *args, **kwargs)
+                            device='cuda:1',
+                             *args, **kwargs)
         class UpdaterGeometries(morphopt.UpdaterGeometries):
             """
             Updater class for morphopt.
@@ -304,7 +269,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(
                     params=params,
-                    max_step_iter=100)
+                    max_step_iter=200)
                 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
@@ -330,8 +295,8 @@ class ThisController(morphopt.Controller):
             def __init__(self, params: morphopt.Params):
                 super().__init__(
                     params=params,
-                    max_step_iter=200,
-                    max_step_length=0.1,
+                    max_step_iter=500,
+                    max_step_length=1.0,
                 )
 
                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
@@ -341,11 +306,11 @@ class ThisController(morphopt.Controller):
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-10, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
 
                 self.if_update = True
-    
+     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=50)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)

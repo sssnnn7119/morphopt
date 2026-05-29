@@ -12,7 +12,7 @@ class Updaters(BaseObject):
     This class is responsible for updating the morphologies of the neurons.
     """
 
-    def __init__(self, surfaces: UpdaterGeometries = None, materials: UpdaterMaterials = None, *args, **kwargs):
+    def __init__(self, surfaces: UpdaterGeometries = None, materials: UpdaterMaterials = None, device: str = None, *args, **kwargs):
         """
         Initialize the Updaters class with a neuron object.
 
@@ -20,6 +20,7 @@ class Updaters(BaseObject):
             surfaces (UpdaterSurfaces, optional): An instance of the UpdaterSurfaces class for updating the surfaces.
             loads (UpdaterLoads, optional): An instance of the UpdaterLoads class for updating the loads.
             materials (UpdaterMaterials, optional): An instance of the UpdaterMaterials class for updating the materials.
+            device (str, optional): The device to use for computating the objective function and sensitivity analysis. If None, it will use the default device.
         """
         self._surface: UpdaterGeometries = None
         """
@@ -54,6 +55,11 @@ class Updaters(BaseObject):
         var_material: The updated material variables.
         """
 
+        self._device: str = device
+        """
+        The device to use for computating the objective function and sensitivity analysis. If None, it will be cpu by default.
+        """
+
     def reinitialize(self, iteration: int) -> None:
         """
         reInitialize the Updaters class.
@@ -76,10 +82,25 @@ class Updaters(BaseObject):
         Update the morphology of the neuron.
         """
         
+        default_device = torch.get_default_device()
+
+        if self._device is not None:
+            torch.set_default_device(self._device)
+            morphopt.controller._change_device_recursive(self, self._device)
+            morphopt.controller._change_device_recursive(gradients, self._device)
+
         if self.if_update_surface:
-            self._var_surface = self._surface.update(gradients['geometry'])
+            
+            self._surface.reinitialize(gradient=gradients['geometry'])
+            self._var_surface = self._surface.update()
         if self.if_update_material:
-            self._var_material = self._materials.update(gradients['materials'])
+            
+            self._materials.reinitialize(gradient=gradients['materials'])
+            self._var_material = self._materials.update()
+
+        if self._device is not None:
+            torch.set_default_device(default_device)
+            morphopt.controller._change_device_recursive(self, default_device)
     
     def update_variables(self) -> None:
         """
