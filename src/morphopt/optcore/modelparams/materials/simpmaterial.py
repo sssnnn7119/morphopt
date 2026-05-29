@@ -13,7 +13,7 @@ import pyvista as pv
 # region for void elements penalization
 class SIMPElementFgrad(torchfea.elements.Element_3D):
 
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
+    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
@@ -91,7 +91,7 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
 
 class SIMPElementFskew(torchfea.elements.Element_3D):
 
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
+    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
 
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
@@ -207,7 +207,7 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         return EmdUe + result0[0], self._EmdUe_2 + result0[1]
 
 class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
-    _serialized_attributes: list[str] = ['_elems_index', '_elems', '_density', 'materials', '_penalfactor']
+    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
