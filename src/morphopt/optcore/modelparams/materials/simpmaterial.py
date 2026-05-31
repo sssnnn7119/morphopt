@@ -13,7 +13,7 @@ import pyvista as pv
 # region for void elements penalization
 class SIMPElementFgrad(torchfea.elements.Element_3D):
 
-    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
+    _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
@@ -91,7 +91,7 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
 
 class SIMPElementFskew(torchfea.elements.Element_3D):
 
-    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
+    _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
 
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
@@ -207,7 +207,7 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         return EmdUe + result0[0], self._EmdUe_2 + result0[1]
 
 class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
-    _serialized_attributes_exclude = ['_EmdUe_2', '_dN2WP']
+    _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
     def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
         super().__init__(elems_index, elems)
 
@@ -347,6 +347,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
                  initial_ratio: float = 0.5,
                  voidpenalfactor: float = 1e-2,
                  materialpenalty: int = 8,
+                 elementname: str = "C3D4",
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -427,6 +428,9 @@ class SIMP_BSPFieldMaterials(BaseParams):
         self.materialpenalty: int = 8
         """The penalization power for the SIMP interpolation. This will affect the nonlinearity of the material interpolation in the optimization process.
         """
+
+        self.elementname = elementname
+        """ The name of the element type to which the SIMP material will be applied. """
 
     def pathlog_required(self) -> list[str]:
         return ['materials']
@@ -644,10 +648,10 @@ class SIMP_BSPFieldMaterials(BaseParams):
         """
 
         # Set the SIMP materials for the solid elements
-        elements = fe.assembly.get_part('final_model').elems['C3D4']
+        elements = fe.assembly.get_part('final_model').elems[self.elementname]
 
         elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-        fe.assembly.get_part('final_model').elems['C3D4'] = elements_new
+        fe.assembly.get_part('final_model').elems[self.elementname] = elements_new
 
         nodes = fe.assembly.get_part('final_model').nodes
         elements_new._pre_load_gaussian(nodes=nodes)
@@ -697,7 +701,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         ratio_now = self.get_material_ratio(designfield)
 
 
-        elems: SIMPElementC3D10 = assembly.get_part("final_model").elems['C3D4']
+        elems: SIMPElementC3D10 = assembly.get_part("final_model").elems[self.elementname]
         
         elems.materials['material-0']._mu = ratio_now * self._mumax
         elems.materials['material-0']._kappa = ratio_now * self._kappamax
@@ -831,6 +835,6 @@ class SIMP_BSPFieldMaterials(BaseParams):
         Returns:
             torch.Tensor: The normalized Gaussian points.
         """
-        gaussian_points_locations = assembly.get_part('final_model').elems['C3D4'].get_gaussian_points(assembly.get_part('final_model').nodes)
+        gaussian_points_locations = assembly.get_part('final_model').elems[self.elementname].get_gaussian_points(assembly.get_part('final_model').nodes)
 
         return gaussian_points_locations

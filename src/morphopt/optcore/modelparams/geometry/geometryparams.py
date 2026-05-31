@@ -1,22 +1,29 @@
 
-import datetime
-import glob
+
 import math
 import os
-import shutil
 import gmsh
-
-import pypardiso
-from scipy.stats import f
-from scipy.stats.mstats import sen_seasonal_slopes
 import torchfea
 import numpy as np
 import torch
 import multiprocessing as mp
 
-import morphopt
-from .geometryinterfaces.basesurfaceinterface import BaseInterface
 from ..base_params import BaseParams
+
+class BaseGeometry(BaseParams):
+    """
+    Base class for geometry parameter classes.
+
+    Subclasses must provide the mesh/geometry generation and assembly modification
+    behavior used by the optimization pipeline.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+
+    def generate(self, path_result: str, pools=None):
+        """Generate the FEA part for the current geometry."""
+        raise NotImplementedError
 
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
@@ -341,7 +348,36 @@ class MeshGenerator:
             generator.finalize()
 
 
-class GeometryParams(BaseParams):
+class FixedMeshGeometry(BaseGeometry):
+    """
+    Class to handle the geometry of the morphable model when using a fixed mesh.
+
+    This geometry is read from a fixed Abaqus .inp file and does not change
+    during optimization iterations.
+    """
+    def __init__(self, mesh_file: str):
+        super().__init__()
+        self.mesh_file = mesh_file
+        self.part = None
+        """
+        The file path of the mesh to be loaded for the geometry.
+        """
+
+    def initialize(self, *args, **kwargs):
+        super().initialize(*args, **kwargs)
+
+        inp = torchfea.FEA_INP()
+        inp.read_inp(self.mesh_file)
+
+        fe_ext = torchfea.from_inp(inp)
+        self.part = fe_ext.assembly.get_part('final_model')
+
+    def generate(self, path_result: str, pools=None):
+        """Load the fixed mesh from the Abaqus INP and return a torchfea.Part."""
+
+        return self.part
+
+class GeometryParams(BaseGeometry):
     """
     Class to handle the surfaces of the morphable model.
     """

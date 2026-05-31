@@ -4,7 +4,7 @@ import torch
 import cpgeo
 import numpy as np
 mumax = 11.76 / (2 * (1 + 0.45))
-minratio = 1e-6
+minratio = 1e-7
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -46,7 +46,7 @@ class ThisController(morphopt.Controller):
             jacobian_end_1 = torch.cat([self.fe_results[1].jacobian['force_RP_head'][-6:],
                                         self.fe_results[1].jacobian['moment_RP_head'][-6:]], dim=1)
 
-            loss_motion = torch.exp((20.0-self.fe_results[1].GC[-4]) * 0.5)
+            loss_motion = torch.exp((25.0-self.fe_results[1].GC[-4]) * 0.5)
 
             loss_stiffness = (jacobian_end_0[-3:, -3:]**2).sum().sqrt() + (jacobian_end_1[-3:, -3:]**2).sum().sqrt()
 
@@ -94,7 +94,7 @@ class ThisController(morphopt.Controller):
                                  mesh_order=2)
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=20.,
+                    self.BSP.initialize_cylinder(r0=25.,
                                                     length=50.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
@@ -103,7 +103,7 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=15.,
+                                                r0=18.,
                                                 init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
@@ -276,7 +276,7 @@ class ThisController(morphopt.Controller):
                                                                 [[0.0, 0.0],
                                                                 [0.0, 2.5]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=17., height=47., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=22., height=47., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
@@ -302,8 +302,8 @@ class ThisController(morphopt.Controller):
                 self.add_objective_function(density_regularization)
 
                 # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-10, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=10, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-15, threshold=0.0, p=2))
+                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=15, threshold=0.0, p=2))
 
                 self.if_update = True
      

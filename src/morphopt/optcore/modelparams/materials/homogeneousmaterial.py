@@ -7,13 +7,14 @@ class Materials(BaseParams):
     Class to handle the materials of the morphable model.
     """
 
-    def __init__(self, mu: float, kappa: float, density: float) -> None:
+    def __init__(self, mu: float, kappa: float, density: float, elementname: str = "C3D4") -> None:
         """
         Initialize the Materials class.
 
         Args:
             mu (float): The shear modulus of the material.
             kappa (float): The bulk modulus of the material.
+            elementname (str): The name of the element type.
         """
         super().__init__()
         self._mu: float
@@ -23,6 +24,9 @@ class Materials(BaseParams):
         self.mu = mu
         self.kappa = kappa
         self.density = density
+
+        self.elementname = elementname
+        """ The name of the element type. """
 
     @property
     def mu(self) -> float:
@@ -91,7 +95,7 @@ class Materials(BaseParams):
         Args:
             fe (torchfea.FEAController): The FEA controller.
         """
-        elements = fe.assembly.get_part('final_model').elems['C3D4']
+        elements = fe.assembly.get_part('final_model').elems[self.elementname]
         mu = self.mu
         kappa = self.kappa
         materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)

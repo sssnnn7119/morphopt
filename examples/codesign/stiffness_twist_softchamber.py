@@ -3,8 +3,10 @@ import morphopt
 import torch
 import cpgeo
 import numpy as np
+import torchfea
 mumax = 11.76 / (2 * (1 + 0.45))
-minratio = 1e-7
+mumin = 0.106
+minratio = mumin / mumax
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -50,6 +52,13 @@ class ThisController(morphopt.Controller):
 
             loss_stiffness = (jacobian_end_0[-3:-1, -3:-1]**2).sum().sqrt() + (jacobian_end_1[-3:-1, -3:-1]**2).sum().sqrt()
             loss_contraction = jacobian_end_0[-4, -4].abs() + jacobian_end_1[-4, -4].abs()
+
+            RGC1 = self.fe.GC2RGC(self.fe_results[1].GC)
+
+            mat: torchfea.elements.Element_3D = self.fe.assembly.get_part('final_model').elems['C3D4']
+            DG = mat.get_deformation_gradient(RGC1[0])
+
+            loss_strain = (DG**2).sum([-1, -2])
 
             return loss_motion + loss_stiffness * 1e3 + loss_contraction * 1e1
 
@@ -104,7 +113,7 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=15.,
+                                                r0=13.,
                                                 init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
@@ -164,8 +173,8 @@ class ThisController(morphopt.Controller):
                                  bounding_box=[-25, 25, -25, 25, 0, 50], 
                                  simp_field_resolution=1.0, 
                                  degree=3,
-                                 shell_mu=0.48,
-                                 shell_kappa=4.8,
+                                 shell_mu=mumin,
+                                 shell_kappa=mumin * 10,
                                  shell_density=1.08e-9,
                                  voidpenalfactor=1e-1)
         
@@ -277,7 +286,7 @@ class ThisController(morphopt.Controller):
                                                                 [[0.0, 0.0],
                                                                 [0.0, 2.5]]))
                 self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=17., height=47., bottom=3.))
+                    self.objectivefuncs.boundarys.Cylinder(radius=16., height=47., bottom=3.))
                 
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))

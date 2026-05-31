@@ -48,7 +48,7 @@ class BaseParams(BaseObject):
         Returns:
             torch.Tensor: The variables of the parameters.
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        return torch.zeros(0)
     
     def update_variables(self, x_change: torch.Tensor) -> None:
         """
@@ -57,7 +57,7 @@ class BaseParams(BaseObject):
         Args:
             x_change (torch.Tensor): The change in variables.
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        pass
     
     def set_parameters(self, xlist: list[torch.Tensor]) -> None:
         """
@@ -67,7 +67,6 @@ class BaseParams(BaseObject):
         Args:
             xlist (list[torch.Tensor]): The new parameters for the class.
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
     
     def get_parameters(self) -> list[torch.Tensor]:
         """
@@ -77,7 +76,7 @@ class BaseParams(BaseObject):
         Returns:
             list[torch.Tensor]: The parameters of the class.
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        return []
     
     def plot(self) -> None:
         """
@@ -85,7 +84,7 @@ class BaseParams(BaseObject):
         
         This method should be implemented in subclasses to plot specific parameters.
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        pass
 
     def _export_data(self, foldpath: str):
         """

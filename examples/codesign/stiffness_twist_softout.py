@@ -91,7 +91,7 @@ class ThisController(morphopt.Controller):
 
                 super().__init__(fea_seed_size=2.5, 
                                  reinitialize_per_iter=10,
-                                 thickness=2.5,
+                                 thickness=2.0,
                                  num_layers=1,
                                  mesh_order=2)
 
@@ -105,7 +105,7 @@ class ThisController(morphopt.Controller):
                 self.add_surface(
                     self.CPGEO_Twist.initialize_Sphere(seed_size=1.5,
                                                 flip=True,
-                                                r0=15.,
+                                                r0=14.,
                                                 init_location=[0., 0., 25.],
                                                 MaxC=1.5,
                     ))
@@ -150,7 +150,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(0, "force_RP_head", [0., 0., 0.0])
                 self.set_step_params(0, "moment_RP_head", [0., 0., 0.0])
 
-                self.set_step_params(1, "pressure_1", [0.06])
+                self.set_step_params(1, "pressure_1", [0.08])
                 self.set_step_params(1, "force_RP_head", [0., 0., 0.0])
                 self.set_step_params(1, "moment_RP_head", [0., 0., 0.0])
 
@@ -168,7 +168,7 @@ class ThisController(morphopt.Controller):
                                  shell_mu=0.48,
                                  shell_kappa=4.8,
                                  shell_density=1.08e-9,
-                                 voidpenalfactor=1e-1)
+                                 voidpenalfactor=0e-1)
         
             def _map_bsp_designfield(self, nodes):
                 theta120 = 2.0 * torch.pi / 3.0
