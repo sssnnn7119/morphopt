@@ -1,4 +1,5 @@
 
+import math
 import tempfile
 
 from torchfea import Assembly
@@ -8,6 +9,9 @@ from ..baseobject import BaseObject
 from .feamodel import FEAParams
 from .geometry import GeometryParams
 from .materials import Materials
+
+
+import pyvista as pv
 class Params(BaseObject):
     """
     Class to handle the parameters of the model.
@@ -28,6 +32,19 @@ class Params(BaseObject):
         """
         Materials: An instance of the Materials class from the ModelParams module.
         """
+
+    def pathlog_required(self) -> list[str]:
+        """
+        Allocate the path for saving data.
+        
+        Args:
+            foldpath (str): The path to allocate.
+        """
+        paths = []
+        paths += self.geometry.pathlog_required()
+        paths += self.feamodel.pathlog_required()
+        paths += self.materials.pathlog_required()
+        return paths + ['params']
 
     def reinitialize(self, iteration: int) -> None:
         """
@@ -114,6 +131,25 @@ class Params(BaseObject):
         self.feamodel.save(foldpath=foldpath, iteration=iteration)
         self.materials.save(foldpath=foldpath, iteration=iteration)
 
+    
+        import pyvista as pv
+        plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
+        plotter.set_background('white')
+
+        self.plot(plotter=plotter)
+
+        plotter.enable_parallel_projection()
+        azimuth = 210
+        elevation = 20
+        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(elevation))))
+        
+        plotter.screenshot(foldpath + self.pathlog_required()[-1] + '/%d.jpg'%iteration)
+        plotter.close()
+
+
+
     def load(self, foldpath: str, iteration: int) -> None:
         """
         Load the parameters from a file.
@@ -135,16 +171,27 @@ class Params(BaseObject):
         self.geometry._export_data(filepath=filepath)
         self.feamodel._export_data(foldpath=filepath)
         self.materials._export_data(foldpath=filepath)
+    
+    def plot(self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None) -> pv.Plotter:
+        """
+        Plot the geometry and other relevant information using PyVista.
 
-    def pathlog_required(self) -> list[str]:
-        """
-        Allocate the path for saving data.
-        
         Args:
-            foldpath (str): The path to allocate.
+            plotter (pv.Plotter, optional): An optional PyVista Plotter object to use for plotting. If None, a new Plotter will be created. Defaults to None.
+
+        Returns:
+            pv.Plotter: The PyVista Plotter object used for plotting.
         """
-        paths = []
-        paths += self.geometry.pathlog_required()
-        paths += self.feamodel.pathlog_required()
-        paths += self.materials.pathlog_required()
-        return paths
+
+        if plotter is None:
+            plotter = pv.Plotter()
+    
+        self.geometry.plot(plotter=plotter, meshes=meshes)
+        self.materials.plot(plotter=plotter, meshes=meshes)
+        self.feamodel.plot(plotter=plotter, meshes=meshes)
+
+        return plotter
+    
+    def get_meshes(self):
+        """Get the meshes associated with the geometry."""
+        return self.geometry.get_meshes() + self.feamodel.get_meshes() + self.materials.get_meshes()

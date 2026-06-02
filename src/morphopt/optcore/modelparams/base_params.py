@@ -3,6 +3,7 @@
 import torch
 from ..baseobject import BaseObject
 import torchfea
+import pyvista as pv
 
 class BaseParams(BaseObject):
     """
@@ -78,13 +79,28 @@ class BaseParams(BaseObject):
         """
         return []
     
-    def plot(self) -> None:
+    def plot(self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None) -> pv.Plotter:
         """
         Plot the parameters.
         
         This method should be implemented in subclasses to plot specific parameters.
+        
+        Args:
+            plotter (pv.Plotter, optional): An optional PyVista Plotter object to use for plotting. If None, a new Plotter will be created. Defaults to None.
+            meshes (list[pv.DataSet], optional): An optional list of PyVista DataSet objects to plot. Defaults to None.
+
+        Returns:
+            pv.Plotter: The PyVista Plotter object used for plotting.
         """
-        pass
+        if plotter is None:
+            plotter = pv.Plotter()
+
+        return plotter
+    
+    def get_meshes(self):
+        """Get the meshes associated with the geometry."""
+        return []
+
 
     def _export_data(self, foldpath: str):
         """

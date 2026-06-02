@@ -732,8 +732,8 @@ class BspInterface(CpBasedInterface):
         [y, x] = torch.meshgrid(y, x, indexing='ij')
         theta = 2 * torch.pi * x + (1 / numU) * torch.pi
 
-        if not flip:
-            theta = -theta
+        # if not flip:
+        #     theta = -theta
 
         P0[:, :, 0] = torch.cos(theta) * r0
         P0[:, :, 1] = torch.sin(theta) * r0

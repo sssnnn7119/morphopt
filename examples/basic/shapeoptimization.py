@@ -135,4 +135,4 @@ class ThisController(morphopt.Controller):
     
 if __name__ == '__main__':
 
-    morphopt.debug_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=10)

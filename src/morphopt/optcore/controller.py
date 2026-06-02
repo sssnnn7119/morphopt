@@ -229,13 +229,8 @@ class Controller:
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            seed_size0 = self.params.geometry.fea_seed_size
-            # self.params.geometry.fea_seed_size = seed_size0 * np.random.uniform(0.9, 1.0)
-
             loss, t0, t1, t2, t3 = self.step(if_first_step_restart=if_first_step_restart)
             if_first_step_restart = False
-            
-            self.params.geometry.fea_seed_size = seed_size0
 
             # Record the history of the optimization process
             self.record_history(loss, t0, t1, t2, t3)
@@ -350,10 +345,6 @@ class Controller:
         """
         Clear the cache directory.
         """
-        self.objfun.K_sp = []
-        self.objfun.K_solver = []
-        self.objfun.U = None
-        self.objfun.ADJu = None
         self.objfun.fe = None
 
         torch.cuda.empty_cache()

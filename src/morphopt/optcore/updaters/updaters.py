@@ -84,18 +84,20 @@ class Updaters(BaseObject):
         
         default_device = torch.get_default_device()
 
+        # reinitialize each updater with the corresponding gradient, and update the variables for surfaces and materials.
+        if self.if_update_surface:
+            self._surface.reinitialize(gradient=gradients['geometry'])
+        if self.if_update_material:
+            self._materials.reinitialize(gradient=gradients['materials'])
+
         if self._device is not None:
             torch.set_default_device(self._device)
             morphopt.controller._change_device_recursive(self, self._device)
             morphopt.controller._change_device_recursive(gradients, self._device)
 
         if self.if_update_surface:
-            
-            self._surface.reinitialize(gradient=gradients['geometry'])
             self._var_surface = self._surface.update()
         if self.if_update_material:
-            
-            self._materials.reinitialize(gradient=gradients['materials'])
             self._var_material = self._materials.update()
 
         if self._device is not None:

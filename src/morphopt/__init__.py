@@ -1,6 +1,6 @@
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMP_BSPFieldMaterials
+from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMP_BSPFieldMaterials, FixedGeometryINP, FixedGeometryNodeElement
 from .optcore.solver import MorphSolver
 from .optcore.updaters.geometry import UpdaterGeometries
 from .optcore.updaters.materials import UpdaterMaterials
@@ -18,26 +18,4 @@ from . import codesign
 # endregion
 
 controller: Controller = None
-
-__all__ = [
-    "Controller",
-    "GeometryParams",
-    "FEAParams",
-    "Materials",
-    "SIMPMaterials",
-    "MorphSolver",
-    "UpdaterGeometries",
-    "UpdaterMaterials",
-    "Updaters",
-    "Params",
-    "ObjectiveFunction",
-    "History",
-    "BaseObject",
-
-    "start_optimization",
-    "debug_optimization",
-    "view_optimization_result",
-
-    'codesign',
-]
 

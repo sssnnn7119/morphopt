@@ -299,6 +299,9 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
 
 class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFskew):
     pass
+
+class SIMPElementC3D8(torchfea.elements.C3D8, SIMPElementFskew):
+    pass
 # endregion
 
 
@@ -425,7 +428,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         """ The penalization factor for the SIMP material. This will affect the stiffness of intermediate density materials in the optimization process.
         """
 
-        self.materialpenalty: int = 8
+        self.materialpenalty: int = int(materialpenalty)
         """The penalization power for the SIMP interpolation. This will affect the nonlinearity of the material interpolation in the optimization process.
         """
 
@@ -434,6 +437,17 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
     def pathlog_required(self) -> list[str]:
         return ['materials']
+
+
+    @property
+    def if_use_simppenalty(self) -> bool:
+        """
+        Whether to use the SIMP penalty in the finite element analysis. If True, the stiffness of intermediate density materials will be penalized, which can help to achieve a more discrete material distribution in the optimization process.
+
+        Returns:
+            bool: True if SIMP penalty is used, False otherwise.
+        """
+        return self.voidpenalfactor > 0
 
 
     def initialize(self, *args, **kwargs):
@@ -510,16 +524,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         """
         self._density = float(value)
 
-    def _map_bsp_designfield(self, nodes: torch.Tensor) -> torch.Tensor:
-        """
-        Get the ratio of maximum to minimum modulus for the given nodes.
-
-        Args:
-            nodes (torch.Tensor): The coordinates of the nodes for which to compute the ratio.
-
-        Returns:
-            torch.Tensor: The ratio of maximum to minimum modulus for the given nodes.
-        """
+    def _get_indices_weight_for_nodes(self, nodes: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
 
         nodes_normalized = torch.zeros_like(nodes)
         nodes_normalized[:, 0] = (nodes[:, 0] - self._bounding_box[0]) / (self._bounding_box[1] - self._bounding_box[0])
@@ -536,16 +541,32 @@ class SIMP_BSPFieldMaterials(BaseParams):
         indices_pts = torch.arange(nodes.shape[0], device=nodes.device).reshape([-1,1]).repeat(1, indices_cps.shape[1])
         indices = torch.stack([indices_pts, indices_cps], dim=0).reshape(2, -1)
 
-        num_pts = nodes.shape[0]
+        
 
         idx_remain_flatten = torch.where(torch.isin(indices[0], torch.where(idx_remain)[0]))[0]
         weights = weights[idx_remain_flatten]
         indices = indices[:, idx_remain_flatten]
+
+        return indices, weights
+    def _map_bsp_designfield(self, nodes: torch.Tensor) -> torch.Tensor:
+        """
+        Get the ratio of maximum to minimum modulus for the given nodes.
+
+        Args:
+            nodes (torch.Tensor): The coordinates of the nodes for which to compute the ratio.
+
+        Returns:
+            torch.Tensor: The ratio of maximum to minimum modulus for the given nodes.
+        """
+
+        if nodes[:, 0].min() < self._bounding_box[0] or nodes[:, 0].max() > self._bounding_box[1] or nodes[:, 1].min() < self._bounding_box[2] or nodes[:, 1].max() > self._bounding_box[3] or nodes[:, 2].min() < self._bounding_box[4] or nodes[:, 2].max() > self._bounding_box[5]:
+            raise ValueError("Some nodes are out of the bounding box of the SIMP field.")
+
+        indices, weights = self._get_indices_weight_for_nodes(nodes)
         
+        num_pts = nodes.shape[0]
         result = torch.zeros([num_pts, 1], dtype=self._cps.dtype, device=nodes.device)
         result[:, 0].scatter_add_(0, indices[0], weights * self._cps[indices[1], 0])
-
-        result[~idx_remain] = 0.0
 
         return result
     
@@ -650,7 +671,12 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Set the SIMP materials for the solid elements
         elements = fe.assembly.get_part('final_model').elems[self.elementname]
 
-        elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+        if self.if_use_simppenalty:
+            elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+        else:
+            elements_new = elements
+
+
         fe.assembly.get_part('final_model').elems[self.elementname] = elements_new
 
         nodes = fe.assembly.get_part('final_model').nodes
@@ -668,9 +694,12 @@ class SIMP_BSPFieldMaterials(BaseParams):
         kappa = ratio_now * self._kappamax
 
         materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
+        elements_new.delete_material()
         elements_new.set_materials(materials)
         elements_new.density = self.density
-        elements_new.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
+
+        if self.if_use_simppenalty:
+            elements_new.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
 
 
     def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:
@@ -705,8 +734,10 @@ class SIMP_BSPFieldMaterials(BaseParams):
         
         elems.materials['material-0']._mu = ratio_now * self._mumax
         elems.materials['material-0']._kappa = ratio_now * self._kappamax
-        elems.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
-        elems._initialize_simppenalty()
+
+        if self.if_use_simppenalty:
+            elems.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
+            elems._initialize_simppenalty()
 
 
     def save(self, foldpath: str, iteration: int) -> None:
@@ -742,12 +773,11 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Keep BSP map synchronized with control points used in optimization.
         self.simp_field.control_points = self._cps.detach().cpu().numpy().reshape([-1, 1])
 
-    def get_volume(self):
+    def get_meshes(self):
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
         nx, ny, nz = self._bsp_size
 
-        # Query a denser field (3x control-point resolution per axis) instead of
-        # visualizing control points directly.
+        # Sample at the BSP control-point resolution × 2 for smooth rendering
         nx_q = max(2, (nx - 1) * 2 + 1)
         ny_q = max(2, (ny - 1) * 2 + 1)
         nz_q = max(2, (nz - 1) * 2 + 1)
@@ -758,71 +788,53 @@ class SIMP_BSPFieldMaterials(BaseParams):
         xg, yg, zg = np.meshgrid(xq, yq, zq, indexing="ij")
         pts_query = np.stack([xg, yg, zg], axis=-1).reshape(-1, 3)
 
-        designfield = self._map_bsp_designfield(torch.from_numpy(pts_query).to(torch.get_default_device()).to(torch.get_default_dtype()))
-
+        designfield = self._map_bsp_designfield(
+            torch.from_numpy(pts_query).to(torch.get_default_device()).to(torch.get_default_dtype())
+        )
         ratio_query = self.get_material_ratio(designfield).reshape(nx_q, ny_q, nz_q).cpu().numpy()
         ratio_grid = np.clip(ratio_query, 0.0, 1.0)
 
-        sx = (xmax - xmin) / max(nx_q - 1, 1)
-        sy = (ymax - ymin) / max(ny_q - 1, 1)
-        sz = (zmax - zmin) / max(nz_q - 1, 1)
-
+        spacing = (
+            (xmax - xmin) / max(nx_q - 1, 1),
+            (ymax - ymin) / max(ny_q - 1, 1),
+            (zmax - zmin) / max(nz_q - 1, 1),
+        )
         grid = pv.ImageData(
             dimensions=(nx_q, ny_q, nz_q),
-            spacing=(sx, sy, sz),
+            spacing=spacing,
             origin=(xmin, ymin, zmin),
         )
-        grid.point_data["ratio"] = ratio_grid.flatten(order="F")
+        grid.point_data["density"] = ratio_grid.flatten(order="F")
+        grid.point_data["opacity"] = ratio_grid.flatten(order="F") ** 2
 
-        return grid
+        return [grid]
 
-    def plot(self, plotter=None):
+    def plot(self, plotter=None, meshes=None):
         import pyvista as pv
 
         if plotter is None:
             plotter = pv.Plotter(window_size=(1400, 1000))
 
-        grid = self.get_volume()
+        if meshes is None:
+            meshes = self.get_meshes()[0]
 
-        plotter.set_background("#ffffff")
-        volume_actor = plotter.add_volume(
-            grid,
-            scalars="ratio",
-            cmap="viridis",
-            clim=[0.0, 1.0],
-            opacity=[0.0, 0.02, 0.08, 0.2, 0.45, 0.75, 1.0],
-            shade=True,
-            ambient=0.25,
-            diffuse=0.7,
-            specular=0.15,
-            specular_power=8.0,
-        )
-        if hasattr(volume_actor, 'mapper'):
-            volume_actor.mapper.scalar_range = (0.0, 1.0)
+        # Threshold to convert ImageData → UnstructuredGrid with all cells
+        # preserved, so per-element opacity works (add_mesh on raw ImageData
+        # only renders the outer surface).
+        thresh = meshes.threshold(value=0.3, scalars="density")
 
-        plotter.add_bounding_box(color="black", line_width=1.2)
-        plotter.show_bounds(xtitle="X", ytitle="Y", ztitle="Z", color="black")
-        plotter.add_text("SIMP Density Field", position="upper_left", font_size=12, color="black")
-        plotter.add_scalar_bar(mapper=volume_actor.mapper if hasattr(volume_actor, 'mapper') else None, title="Density Ratio", n_labels=5, bold=True)
+        if thresh.n_cells > 0:
+            plotter.add_mesh(
+                thresh,
+                scalars="density",
+                cmap="viridis",
+                opacity="opacity",
+                show_edges=False,
+                lighting=True,
+                clim=[0, 1],
+                smooth_shading=True,
+            )
 
-        plotter.enable_parallel_projection()
-        # Add some padding to the bounds
-        padding = 0.05 * max(self._bounding_box[1] - self._bounding_box[0], 
-                             self._bounding_box[3] - self._bounding_box[2], 
-                             self._bounding_box[5] - self._bounding_box[4])
-        
-        plotter.show_bounds(xtitle='X', ytitle='Y', ztitle='Z', color='black',
-                            bounds=[self._bounding_box[0]-padding, self._bounding_box[1]+padding, 
-                                    self._bounding_box[2]-padding, self._bounding_box[3]+padding, 
-                                    self._bounding_box[4]-padding, self._bounding_box[5]+padding])
-        
-        plotter.enable_parallel_projection()
-        azimuth = 210
-        elevation = 20
-        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(elevation))))
-        
         return plotter
     
     def _get_gaussian_points(self, assembly: torchfea.Assembly) -> torch.Tensor:

@@ -16,7 +16,7 @@ class UpdaterMaterials(BaseUpdater):
     """
     from . import objectivefuncs
 
-    def __init__(self, params: Params, max_step_iter: int = 50, max_step_length: float = 1.) -> None:
+    def __init__(self, params: Params, max_step_iter: int = 50, max_step_length: float = 1.0) -> None:
         """
         Initialize the Updater class with the given parameters.
         

@@ -9,21 +9,7 @@ import torch
 import multiprocessing as mp
 
 from ..base_params import BaseParams
-
-class BaseGeometry(BaseParams):
-    """
-    Base class for geometry parameter classes.
-
-    Subclasses must provide the mesh/geometry generation and assembly modification
-    behavior used by the optimization pipeline.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(**kwargs)
-
-    def generate(self, path_result: str, pools=None):
-        """Generate the FEA part for the current geometry."""
-        raise NotImplementedError
+from .basegeometry import BaseGeometry
 
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
@@ -347,36 +333,6 @@ class MeshGenerator:
         finally:
             generator.finalize()
 
-
-class FixedMeshGeometry(BaseGeometry):
-    """
-    Class to handle the geometry of the morphable model when using a fixed mesh.
-
-    This geometry is read from a fixed Abaqus .inp file and does not change
-    during optimization iterations.
-    """
-    def __init__(self, mesh_file: str):
-        super().__init__()
-        self.mesh_file = mesh_file
-        self.part = None
-        """
-        The file path of the mesh to be loaded for the geometry.
-        """
-
-    def initialize(self, *args, **kwargs):
-        super().initialize(*args, **kwargs)
-
-        inp = torchfea.FEA_INP()
-        inp.read_inp(self.mesh_file)
-
-        fe_ext = torchfea.from_inp(inp)
-        self.part = fe_ext.assembly.get_part('final_model')
-
-    def generate(self, path_result: str, pools=None):
-        """Load the fixed mesh from the Abaqus INP and return a torchfea.Part."""
-
-        return self.part
-
 class GeometryParams(BaseGeometry):
     """
     Class to handle the surfaces of the morphable model.
@@ -632,41 +588,6 @@ class GeometryParams(BaseGeometry):
         for i in range(self.num_surface):
             self.surface_list[i].save(foldpath + self.pathlog_required()[0] + '/Surface-%d_iter-%d' %
                               (i, iteration))
-        import pyvista as pv
-
-        plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
-        plotter.set_background('white')
-
-        self.plot(plotter=plotter)
-        
-        # Get all points to determine bounding box
-        all_points = []
-        for i in range(self.num_surface):
-            r, _, _ = self.surface_list[i].get_geometry_values()
-            all_points.append(r)
-
-        all_points = torch.cat(all_points, dim=0)
-        x_min, x_max = all_points[:, 0].min().item(), all_points[:, 0].max().item()
-        y_min, y_max = all_points[:, 1].min().item(), all_points[:, 1].max().item()
-        z_min, z_max = all_points[:, 2].min().item(), all_points[:, 2].max().item()
-
-        # Add some padding to the bounds
-        padding = 0.05 * max(x_max-x_min, y_max-y_min, z_max-z_min)
-        
-        plotter.show_bounds(xtitle='X', ytitle='Y', ztitle='Z', color='black',
-                            bounds=[x_min-padding, x_max+padding, 
-                                    y_min-padding, y_max+padding, 
-                                    z_min-padding, z_max+padding])
-        
-        plotter.enable_parallel_projection()
-        azimuth = 210
-        elevation = 20
-        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(elevation))))
-        
-        plotter.screenshot(foldpath + self.pathlog_required()[0] + '/%d.jpg'%iteration)
-        plotter.close()
 
         
     def load(self, foldpath, iteration):
@@ -675,7 +596,7 @@ class GeometryParams(BaseGeometry):
                               (i, iteration))
             # self.surface_list[i].initialize()
             
-    def plot(self, plotter=None, opacity:list[float] = None):
+    def plot(self, plotter=None, opacity:list[float] = None, meshes=None):
         if plotter is None:
             import pyvista as pv
             plotter = pv.Plotter()
@@ -683,9 +604,12 @@ class GeometryParams(BaseGeometry):
         if opacity is None:
             opacity = [0.6 if i == 0 else 1.0 for i in range(self.num_surface)]
             
+        if meshes is None:
+            meshes = self.get_meshes()
+
         for sf in range(self.num_surface):
             opacity_now = opacity[sf] if sf < len(opacity) else 1.0
-            mesh = self.surface_list[sf].get_mesh()
+            mesh = meshes[sf] if sf < len(meshes) else None
             plotter.add_mesh(mesh, opacity=opacity_now,  color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
                            diffuse=0.8, specular=0.2, ambient=0.3, specular_power=10,
                            smooth_shading=True, show_edges=False)
