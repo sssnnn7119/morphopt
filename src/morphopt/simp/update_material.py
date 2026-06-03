@@ -2,12 +2,11 @@
 import numpy as np
 
 import torch
-from .. import optimizer
 
-from ...modelparams.params import Params
-from ...modelparams import SIMP_BSPFieldMaterials
+from ..optcore.modelparams.params import Params
+from .simpmaterial import SIMP_BSPFieldMaterials
 from tabulate import tabulate
-from ..base_updater import BaseUpdater
+from ..optcore import BaseUpdater
 
 class UpdaterMaterials(BaseUpdater):
     """
@@ -178,7 +177,7 @@ class UpdaterMaterials(BaseUpdater):
             constraints.initialize(cps0=cps0, sensitivity=sensitivity, material_params=self.params_update)
 
     def _initialize_optimizer(self) -> None:
-        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
+        self.optimizer = UpdaterMaterials.Optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
         self.iteration_total = 0
 
     def _update_step_length(self, delta_control_points: np.ndarray) -> None:

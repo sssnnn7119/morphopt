@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 import torchfea
-from ..base_params import BaseParams
+from ..optcore import BaseParams
 import bspmap
 
 import pyvista as pv
@@ -672,7 +672,12 @@ class SIMP_BSPFieldMaterials(BaseParams):
         elements = fe.assembly.get_part('final_model').elems[self.elementname]
 
         if self.if_use_simppenalty:
-            elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            if elements.__class__.__name__ == "C3D10":
+                elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            elif elements.__class__.__name__ == "C3D8":
+                elements_new = SIMPElementC3D8(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            else:
+                elements_new = elements
         else:
             elements_new = elements
 

@@ -1,11 +1,9 @@
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import GeometryParams, FEAParams, Materials, SIMP_BSPFieldMaterials, FixedGeometryINP, FixedGeometryNodeElement
-from .optcore.solver import MorphSolver
-from .optcore.updaters.geometry import UpdaterGeometries
-from .optcore.updaters.materials import UpdaterMaterials
-from .optcore.updaters.updaters import Updaters
+from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometryNodeElement, HomogeneousMaterial
+from .optcore.solver import Solver
 from .optcore.modelparams import Params
+from .optcore.updaters import Updaters
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.history import History
 from .optcore.baseobject import BaseObject
@@ -13,8 +11,10 @@ from .optcore.baseobject import BaseObject
 
 from .opt_runner import start_optimization, debug_optimization, view_optimization_result
 
-# region codesign imports
+# region modules
+from . import shapeopt
 from . import codesign
+from . import simp
 # endregion
 
 controller: Controller = None

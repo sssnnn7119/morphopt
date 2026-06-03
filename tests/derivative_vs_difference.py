@@ -125,7 +125,7 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-    class Solver(morphopt.MorphSolver):
+    class Solver(morphopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.

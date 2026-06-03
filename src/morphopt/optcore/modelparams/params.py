@@ -6,17 +6,21 @@ from torchfea import Assembly
 
 import torch
 from ..baseobject import BaseObject
-from .feamodel import FEAParams
-from .geometry import GeometryParams
-from .materials import Materials
+from .feaparams import FEAParams
+from .geometry import BaseGeometry
+from .materials import BaseMaterials
 
 
 import pyvista as pv
+
+
+
+
 class Params(BaseObject):
     """
     Class to handle the parameters of the model.
     """
-    def __init__(self, surfaces: GeometryParams, feamodel: FEAParams, materials: Materials) -> None:
+    def __init__(self, surfaces: BaseGeometry, feamodel: FEAParams, materials: BaseMaterials) -> None:
         """
         Initialize the Params class.
         """

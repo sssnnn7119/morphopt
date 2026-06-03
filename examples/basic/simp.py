@@ -43,7 +43,7 @@ class ThisController(morphopt.Controller):
             return [energy, self.get_volume_fraction()]
 
     class Params(morphopt.Params):
-        class GeometryParams(morphopt.GeometryParams):
+        class GeometryParams(morphopt.shapeopt.GeometryParams):
 
             def __init__(self):
 
@@ -86,7 +86,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(0, "force_1", [1., 0., -0.])
                 
 
-        class MaterialParams(morphopt.SIMPMaterials):
+        class MaterialParams(morphopt.simp.SIMPMaterials):
             
             def __init__(self):
                 super().__init__(mumax=4.82, 
@@ -100,7 +100,7 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-    class Solver(morphopt.MorphSolver):
+    class Solver(morphopt.simp.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
@@ -121,7 +121,7 @@ class ThisController(morphopt.Controller):
             super().__init__(materials=self.UpdaterMaterials(params=params),
                             *args, **kwargs)
 
-        class UpdaterMaterials(morphopt.UpdaterMaterials):
+        class UpdaterMaterials(morphopt.simp.UpdaterMaterials):
             """
             Material updater based on SIMP control points.
             """

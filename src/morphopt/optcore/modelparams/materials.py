@@ -1,8 +1,24 @@
 
 import torchfea
-from ..base_params import BaseParams
+from .baseparam import BaseParams
 
-class Materials(BaseParams):
+
+class BaseMaterials(BaseParams):
+    """
+    Base class for materials parameter classes.
+
+    Subclasses must provide the material definition and assignment behavior
+    used by the optimization pipeline.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def set_materials(self, fe: torchfea.FEAController) -> None:
+        """Set the materials of the FEA model."""
+        raise NotImplementedError
+
+class HomogeneousMaterial(BaseParams):
     """
     Class to handle the materials of the morphable model.
     """

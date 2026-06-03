@@ -3,7 +3,7 @@ import torchfea
 import numpy as np
 import torch
 
-from ..base_params import BaseParams
+from .baseparam import BaseParams
 from .feainterface.basefeainterface import BaseFEAInterface
 
 from torchfea import FEA_INP, FEAController

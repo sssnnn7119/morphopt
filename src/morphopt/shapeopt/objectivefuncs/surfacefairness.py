@@ -1,6 +1,6 @@
 ﻿import torch
 from .basefuncs import BaseConstraints
-from ....modelparams import GeometryParams
+from .. import GeometryParams
 from . import ShapeDerivative
 class Fairness(BaseConstraints):
     """

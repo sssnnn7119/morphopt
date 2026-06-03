@@ -2,12 +2,11 @@
 import numpy as np
 
 import torch
-from .. import optimizer
 
-from ...modelparams.params import Params
-from ...modelparams import GeometryParams, FEAParams, Materials
+from ..optcore.modelparams.params import Params
+from . import GeometryParams
 from tabulate import tabulate
-from ..base_updater import BaseUpdater
+from ..optcore import BaseUpdater
 
 class UpdaterGeometries(BaseUpdater):
     """
@@ -192,7 +191,7 @@ class UpdaterGeometries(BaseUpdater):
             constraints.initialize(r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity, weights=self._weight_points, if_update=self.if_update)
 
     def _initialize_optimizer(self) -> None:
-        self.optimizer = optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
+        self.optimizer = UpdaterGeometries.Optimizer.LBFGS(closure=self.closure, num_limit=20, tol_error=1e-10)
         self.iteration_total = 0
 
     def _update_step_length(self, delta_control_points: list[np.ndarray]) -> None:

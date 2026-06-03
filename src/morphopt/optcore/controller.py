@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .. import Params, MorphSolver, Updaters, ObjectiveFunction
+    from .. import Params, Solver, Updaters, ObjectiveFunction
 from .history import History
 import datetime
 import importlib
@@ -44,7 +44,7 @@ class Controller:
         Params: An instance of the Params class from the ModelParams module.
         """
 
-        self.solver: MorphSolver
+        self.solver: Solver
         """
         Solver: An instance of the Solver class from the Solve module.
         """

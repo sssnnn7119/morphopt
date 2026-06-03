@@ -1,5 +1,5 @@
 import torch
-
+from ..simpmaterial import SIMP_BSPFieldMaterials
 from .basefuncs import BaseConstraints
 import morphopt
 class VolFrac(BaseConstraints):
@@ -21,7 +21,7 @@ class VolFrac(BaseConstraints):
         self._weights: torch.Tensor | None = None
 
 
-    def initialize(self, material_params: morphopt.SIMP_BSPFieldMaterials, *args, **kwargs):
+    def initialize(self, material_params: SIMP_BSPFieldMaterials, *args, **kwargs):
         part = morphopt.controller.objfun.fe.assembly.get_part('final_model')
         elems = part.elems[self.element_name]
         self.gaussian_points = elems.get_gaussian_points(part.nodes).reshape(-1, 3)
@@ -32,7 +32,7 @@ class VolFrac(BaseConstraints):
 
 
 
-    def __call__(self, material_params: morphopt.SIMP_BSPFieldMaterials, *args, **kwargs):
+    def __call__(self, material_params: SIMP_BSPFieldMaterials, *args, **kwargs):
         
         
         num_pts = self.gaussian_points.shape[0]

@@ -1,13 +1,12 @@
-
-
 import torch
-from ..baseobject import BaseObject
 import torchfea
 import pyvista as pv
+from ..baseobject import BaseObject
+
 
 class BaseParams(BaseObject):
     """
-    Base class for all parameter classes.
+    Base class for all parameter classes including geometry, feamodel, and materials.
     """
     def __init__(self, **kwargs):
         """

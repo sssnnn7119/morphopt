@@ -5,11 +5,11 @@ import copy
 import torchfea
 import multiprocessing as mp
 
-from .modelparams import Params, FEAParams, Materials
+from .modelparams import Params, FEAParams
 
 from .baseobject import BaseObject
 import morphopt
-class MorphSolver(BaseObject):
+class Solver(BaseObject):
     """
     This class is responsible for solving the FEA and get the displacement of the soft robot.
     """
@@ -63,7 +63,7 @@ class MorphSolver(BaseObject):
         """
         pass
 
-    def solve(self):
+    def solve(self, U_guess: np.ndarray = None):
         """
         Solve the optimization problem using the specified solver.
 
@@ -89,7 +89,8 @@ class MorphSolver(BaseObject):
                                             kwds={'fe': fe_cpu,
                                                     'feamodel': self.params.feamodel,
                                                     'task_index': self.task_index_list[i],
-                                                    'available_gpus': self.available_gpus}))
+                                                    'available_gpus': self.available_gpus,
+                                                    'U_guess': U_guess[self.task_index_list[i][0]] if U_guess is not None else None}))
 
         # get the result
         results = []
@@ -148,7 +149,7 @@ class MorphSolver(BaseObject):
         fe.change_device(device_now)
 
         if U_guess is not None:
-            U0 = torch.from_numpy(U_guess).to(torch.float64).to(fe.assembly.device)
+            U0 = torch.from_numpy(U_guess).to(torch.float64).to(torch.get_default_device())
         else:
             U0 = fe.assembly._GC.to(torch.get_default_device())
 

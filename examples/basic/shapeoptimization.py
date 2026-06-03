@@ -17,7 +17,7 @@ class ThisController(morphopt.Controller):
             return [self.fe_results[0].GC[-2]]
 
     class Params(morphopt.Params):
-        class GeometryParams(morphopt.GeometryParams):
+        class GeometryParams(morphopt.shapeopt.GeometryParams):
 
             def __init__(self):
 
@@ -77,7 +77,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(0, "pressure_1", [0.06])
                 
 
-        class MaterialParams(morphopt.Materials):
+        class MaterialParams(morphopt.HomogeneousMaterial):
             
             def __init__(self):
                 super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
@@ -87,7 +87,7 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-    class Solver(morphopt.MorphSolver):
+    class Solver(morphopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
@@ -109,7 +109,7 @@ class ThisController(morphopt.Controller):
                             device='cuda:1',
                             *args, **kwargs)
 
-        class UpdaterGeometries(morphopt.UpdaterGeometries):
+        class UpdaterGeometries(morphopt.shapeopt.UpdaterGeometries):
             """
             Updater class for morphopt.
             This class is responsible for updating the design variables based on the results of the optimization process.

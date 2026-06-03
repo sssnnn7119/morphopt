@@ -8,8 +8,8 @@ import numpy as np
 import torch
 import multiprocessing as mp
 
-from ..base_params import BaseParams
-from .basegeometry import BaseGeometry
+from ..optcore import BaseParams
+from ..optcore import BaseGeometry
 
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
