@@ -1,9 +1,14 @@
 # MorphOpt Docs
 
-本目录提供两类文档：
+本文档覆盖 MorphOpt v3.1.5 的模块定义方式和优化任务开发流程。
 
-- 模块参考：按包/文件说明定义方式与职责。
-- 定义指南：按开发流程说明如何扩展新的优化任务。
+项目按功能拆分为三个子包：
+
+- `shapeopt`：形状优化（BSP 曲面参数化）
+- `simp`：SIMP 拓扑优化（材料场）
+- `codesign`：壳层协同设计
+
+核心框架位于 `optcore`，被三个子包共享。
 
 ## 文档索引
 
@@ -19,4 +24,4 @@
 
 1. 先看 `module_definition_guide.md`，建立任务定义全流程。
 2. 再看 `module_reference.md`，按需定位某个子模块的实现细节。
-3. 最后对照 `examples/codesign/twist.py` 完成脚本实现。
+3. 最后对照 `myjobs/` 下的任务脚本完成实现。

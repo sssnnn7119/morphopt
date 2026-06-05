@@ -302,6 +302,9 @@ class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFskew):
 
 class SIMPElementC3D8(torchfea.elements.C3D8, SIMPElementFskew):
     pass
+
+class SIMPElementC3D20(torchfea.elements.C3D20, SIMPElementFskew):
+    pass
 # endregion
 
 
@@ -810,7 +813,6 @@ class SIMP_BSPFieldMaterials(BaseParams):
             origin=(xmin, ymin, zmin),
         )
         grid.point_data["density"] = ratio_grid.flatten(order="F")
-        grid.point_data["opacity"] = ratio_grid.flatten(order="F") ** 2
 
         return [grid]
 
@@ -826,14 +828,13 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Threshold to convert ImageData → UnstructuredGrid with all cells
         # preserved, so per-element opacity works (add_mesh on raw ImageData
         # only renders the outer surface).
-        thresh = meshes.threshold(value=0.3, scalars="density")
+        thresh = meshes.threshold(value=0.5, scalars="density")
 
         if thresh.n_cells > 0:
             plotter.add_mesh(
                 thresh,
                 scalars="density",
                 cmap="viridis",
-                opacity="opacity",
                 show_edges=False,
                 lighting=True,
                 clim=[0, 1],

@@ -158,7 +158,7 @@ class UpdaterMaterials(BaseUpdater):
 
     def _initialize_objectives(self, gradient: torch.Tensor, cps0: torch.Tensor) -> None:
         for obj_func in self.obj_funcs.values():
-            obj_func.initialize(gradient=gradient, cps0=cps0, material_params=self.params_update)
+            obj_func.initialize(gradient=gradient, cps0=cps0, material_params=self.params_update, step_length = self._max_step_length)
 
     def _get_total_sensitivity(self) -> torch.Tensor:
         sensitivity_all = []

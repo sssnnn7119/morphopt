@@ -4,7 +4,7 @@ import torchfea
 import torch
 from torchfea import controller
 import morphopt
-
+from . import Params
 from .baseobject import BaseObject
 
 from typing import Callable
@@ -64,7 +64,7 @@ class ObjectiveFunction(BaseObject):
         self.fe_results = fe_results
         return self.objective_function()
     
-    def sensitivity_analysis(self, params: morphopt.Params) -> dict[str, torch.Tensor]:
+    def sensitivity_analysis(self, params: Params) -> dict[str, torch.Tensor]:
         """
         Perform sensitivity analysis to compute the design sensitivity variables.
 

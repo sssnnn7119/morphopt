@@ -6,7 +6,7 @@ class ThisController(morphopt.Controller):
         super().__init__(path_result_folder='Z:/results/', 
                          opt_label='EXAMPLE')
         
-    class ObjectiveFunction(morphopt.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
 
@@ -16,7 +16,7 @@ class ThisController(morphopt.Controller):
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
 
-    class Params(morphopt.Params):
+    class Params(morphopt.shapeopt.Params):
         class GeometryParams(morphopt.shapeopt.GeometryParams):
 
             def __init__(self):
@@ -28,7 +28,7 @@ class ThisController(morphopt.Controller):
                                                     length=80.,
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
-                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=10.))
                 
                 self.add_surface(
                     self.BSP.initialize_cylinder(r0=4.,
@@ -36,7 +36,7 @@ class ThisController(morphopt.Controller):
                                                     seed_size=1.0,
                                                     symmetric=[1, [1]],
                                                     init_location=[0, 0, 3],
-                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+                                                    flip=True, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=10.))
                 
                 # self.add_surface(
                 #     self.CPGEO.initialize_Sphere(seed_size=1.0,
@@ -58,7 +58,7 @@ class ThisController(morphopt.Controller):
                 cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
 
 
-        class FEAParams(morphopt.FEAParams):
+        class FEAParams(morphopt.shapeopt.FEAParams):
             
             def __init__(self):
                 super().__init__()
@@ -77,7 +77,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_params(0, "pressure_1", [0.06])
                 
 
-        class MaterialParams(morphopt.HomogeneousMaterial):
+        class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
             
             def __init__(self):
                 super().__init__(mu=0.482, kappa=4.8, density=1.08e-9,)
@@ -87,24 +87,24 @@ class ThisController(morphopt.Controller):
         def __init__(self):
             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
 
-    class Solver(morphopt.Solver):
+    class Solver(morphopt.shapeopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
         """
 
-        def __init__(self, params: morphopt.Params):
+        def __init__(self, params: morphopt.shapeopt.Params):
 
             super().__init__(params=params,
                             num_process=1)
 
-    class Updater(morphopt.Updaters):
+    class Updater(morphopt.shapeopt.Updaters):
         """
         Updater class for morphopt.
         This class is responsible for updating the design variables based on the results of the optimization process.
         """
 
-        def __init__(self, params: morphopt.Params, *args, **kwargs):
+        def __init__(self, params: morphopt.shapeopt.Params, *args, **kwargs):
             super().__init__(surfaces=self.UpdaterGeometries(params=params),
                             device='cuda:1',
                             *args, **kwargs)
@@ -115,7 +115,7 @@ class ThisController(morphopt.Controller):
             This class is responsible for updating the design variables based on the results of the optimization process.
             """
 
-            def __init__(self, params: morphopt.Params):
+            def __init__(self, params: morphopt.shapeopt.Params):
 
                 super().__init__(
                     params=params,

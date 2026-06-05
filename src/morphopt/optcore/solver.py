@@ -161,4 +161,7 @@ class Solver(BaseObject):
             result_list.append(result)
             fe._change_device_recursive(result, torch.device('cpu'))
             U0 = result.GC.detach().clone()
+
+        del fe
+        torch.cuda.empty_cache()
         return result_list

@@ -1,6 +1,6 @@
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometryNodeElement, HomogeneousMaterial
+from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometryNodeElement, HomogeneousMaterial, Params
 from .optcore.solver import Solver
 from .optcore.modelparams import Params
 from .optcore.updaters import Updaters
