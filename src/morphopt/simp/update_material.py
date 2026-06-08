@@ -124,13 +124,10 @@ class UpdaterMaterials(BaseUpdater):
         cps0 = self.params_update._cps.detach().clone()
 
         # initialize objective functions with material variables only
-        self._initialize_objectives(gradient=gradient, cps0=cps0)
-        
-        # get the total sensitivity
-        sensitivity = self._get_total_sensitivity()
+        self._initialize_objectives(gradient=gradient.flatten(), cps0=cps0)
 
         # initialize the constraint functions
-        self._initialize_constraints(cps0=cps0, sensitivity=sensitivity)
+        self._initialize_constraints(cps0=cps0, sensitivity=gradient.flatten())
             
         # initialize the optimizer
         self._initialize_optimizer()
@@ -144,7 +141,7 @@ class UpdaterMaterials(BaseUpdater):
                 self._max_step_length = self._max_step_length.mean().repeat(num_vars)
 
         # save the sensitivity for the next iteration
-        self.sensitivity_previous = sensitivity
+        self.sensitivity_previous = gradient.flatten()
           
     def initialize(self):
         num_vars = self.params_update._cps.numel()

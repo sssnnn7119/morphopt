@@ -5,7 +5,7 @@ description = "A morphing optimization framework using PyTorch and Abaqus."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "torch==2.9.1",
+    "torch>=2.9.1",
     "torchvision>=0.15.1",
     "numpy>=2.0.0",
     "pypardiso>=0.4.7",

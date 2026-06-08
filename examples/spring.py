@@ -79,7 +79,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, "force_x", [1e4, 0])
                 self.set_step_params(0, "force_y", [1e4, 0])
-                self.set_step_params(0, "force_z", [1e2, 10e0])
+                self.set_step_params(0, "force_z", [1e4, 10e0])
                 self.set_step_params(0, "force_rx", [1e4, 0])
                 self.set_step_params(0, "force_ry", [1e4, 0])
                 self.set_step_params(0, "force_rz", [1e4, 0])
@@ -92,7 +92,7 @@ class ThisController(morphopt.Controller):
                                  density=1.08e-9, 
                                  simp_ratio_min=minratio, 
                                  bounding_box=[-10, 10, -10, 10, -0, 40], 
-                                 simp_field_resolution=1.0, 
+                                 simp_field_resolution=0.5, 
                                  degree=2,
                                  voidpenalfactor=1e-4,
                                  initial_ratio=-1,

@@ -438,6 +438,22 @@ class SIMP_BSPFieldMaterials(BaseParams):
         self.elementname = elementname
         """ The name of the element type to which the SIMP material will be applied. """
 
+
+
+
+        R0 = torch.ones([self._bsp_size[0], self._bsp_size[1], self._bsp_size[2], 1]) * self._initial_ratio
+
+        basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
+        basis_y = bspmap.BasisClamped(num_cps=self._bsp_size[1], degree=self._degree)
+        basis_z = bspmap.BasisClamped(num_cps=self._bsp_size[2], degree=self._degree)
+
+        bsp = bspmap.BSP(basis=[basis_x, basis_y, basis_z],
+                         degree=self._degree,
+                         size=self._bsp_size,
+                         control_points=R0.cpu().numpy().reshape([-1, 1]))
+        self.simp_field = bsp
+
+
     def pathlog_required(self) -> list[str]:
         return ['materials']
 
@@ -456,21 +472,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
     def initialize(self, *args, **kwargs):
         super().initialize(*args, **kwargs)
 
-
-
-        R0 = torch.ones([self._bsp_size[0], self._bsp_size[1], self._bsp_size[2], 1]) * self._initial_ratio
-
-        basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
-        basis_y = bspmap.BasisClamped(num_cps=self._bsp_size[1], degree=self._degree)
-        basis_z = bspmap.BasisClamped(num_cps=self._bsp_size[2], degree=self._degree)
-
-        bsp = bspmap.BSP(basis=[basis_x, basis_y, basis_z],
-                         degree=self._degree,
-                         size=self._bsp_size,
-                         control_points=R0.cpu().numpy().reshape([-1, 1]))
-        self.simp_field = bsp
-
-        self._cps = torch.from_numpy(bsp.control_points).to(
+        self._cps = torch.from_numpy(self.simp_field.control_points).to(
             device=torch.get_default_device(),
             dtype=torch.get_default_dtype(),
         ).reshape(self._bsp_size + [1]).reshape([-1, 1])
@@ -773,13 +775,30 @@ class SIMP_BSPFieldMaterials(BaseParams):
         self._cps = torch.from_numpy(cps_np).to(
             device=torch.get_default_device(),
             dtype=torch.get_default_dtype(),
-        ).reshape_as(self._cps)
+        )
 
-        if "density" in data:
-            self._density = float(data["density"][0])
+        bsp_size = data["bsp_size"].astype(np.int64)
+        self._bsp_size = bsp_size.tolist()
 
-        # Keep BSP map synchronized with control points used in optimization.
-        self.simp_field.control_points = self._cps.detach().cpu().numpy().reshape([-1, 1])
+        bounding_box = data["bounding_box"].astype(np.float64)
+        self._bounding_box = bounding_box.tolist()
+
+        degree = data["degree"].astype(np.int64)[0]
+        self._degree = int(degree)
+
+        density = data["density"].astype(np.float64)
+        self._density = float(density[0])
+
+        # build self.simp_field according to loaded data
+        basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
+        basis_y = bspmap.BasisClamped(num_cps=self._bsp_size[1], degree=self._degree)
+        basis_z = bspmap.BasisClamped(num_cps=self._bsp_size[2], degree=self._degree)
+
+        bsp = bspmap.BSP(basis=[basis_x, basis_y, basis_z],
+                         degree=self._degree,
+                         size=self._bsp_size,
+                         control_points=self._cps.detach().cpu().numpy().reshape([-1, 1]))
+        self.simp_field = bsp
 
     def get_meshes(self):
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
