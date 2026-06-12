@@ -79,11 +79,11 @@ class Params(BaseObject):
 
         if path_result is None:
             with tempfile.TemporaryDirectory(prefix='morphopt_') as tempdir:
-                part = self.geometry.generate(path_result=tempdir, pools=pools)
+                assembly = self.geometry.generate(path_result=tempdir, pools=pools)
         else:
-            part = self.geometry.generate(path_result=path_result, pools=pools)
+            assembly = self.geometry.generate(path_result=path_result, pools=pools)
 
-        fe = self.feamodel.create_fea(part=part)
+        fe = self.feamodel.create_fea(assembly=assembly)
         self.materials.set_materials(fe)
         fe.initialize()
         

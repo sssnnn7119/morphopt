@@ -13,6 +13,8 @@ def start_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
 
     import multiprocessing as mp
 
+    mp.set_start_method("spawn", force=True)
+
     if path_result is None:
         import __main__
         main_filepath = __main__.__file__
@@ -88,7 +90,12 @@ def view_optimization_result(path_result: str = None):
     # Send the initial data to load the result
     dataqueue.put({'iteration': last_iteration, 'path_result': path_result})
 
-    run_ui(dataqueue, main_filepath)
+    while True:
+        try:
+            run_ui(dataqueue, main_filepath)
+        except Exception as e:
+            print(f"Error in UI: {e}")
+            
 
 def debug_optimization(device='cpu', restart_per_iteration: int = 20, path_result: str=None, target_iteration=None, ):
     """
@@ -103,6 +110,8 @@ def debug_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
     from .taskoptmization import TaskOptimization
     import os
     import morphopt
+    import multiprocessing as mp
+    mp.set_start_method("spawn", force=True)
 
     if path_result is None:
         import __main__

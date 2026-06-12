@@ -145,20 +145,17 @@ class FEAParams(BaseParams):
         """
         return len(self.fea_steps_params)
 
-    def create_fea(self, part: torchfea.Part) -> FEAController:
+    def create_fea(self, assembly: torchfea.Assembly) -> FEAController:
         """
         Create an FEAController instance from the given FEA_INP file and add load interfaces
         Args:
-            part (torchfea.Part): The FEA part.
+            assembly (torchfea.Assembly): The FEA assembly.
         Returns:
             FEAController: The created FEAController instance with load interfaces added.
         """
 
         # get the FEA model
-        assembly = torchfea.Assembly()
 
-        assembly.add_part(part=part, name='final_model')
-        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
 
         fe = torchfea.FEAController()
         fe.assembly = assembly

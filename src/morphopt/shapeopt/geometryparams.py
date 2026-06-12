@@ -636,8 +636,11 @@ class GeometryParams(BaseGeometry):
         part = self._regenerate(path_result, pools)
         if self._mesh_order == 2:
             part.convert_linear_to_quadratic_elements(list(part.elems.keys()), list(part.elems.keys()))
-        
-        return part
+        assembly = torchfea.Assembly()
+
+        assembly.add_part(part=part, name='final_model')
+        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
+        return assembly
 
     def _regenerate(self, path_result: str, pools = None):
         """

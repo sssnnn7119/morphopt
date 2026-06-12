@@ -1,3 +1,5 @@
+from platform import node
+
 from .baseparam import BaseParams
 import torchfea
 
@@ -14,13 +16,13 @@ class BaseGeometry(BaseParams):
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
-    def generate(self, path_result: str, pools=None):
+    def generate(self, path_result: str, pools=None) -> torchfea.Assembly:
         """Generate the FEA part for the current geometry."""
         raise NotImplementedError
     
 
 
-class FixedMeshGeometry(BaseGeometry):
+class FixedGeometry(BaseGeometry):
     """
     Class to handle the geometry of the morphable model when using a fixed mesh.
 
@@ -29,15 +31,32 @@ class FixedMeshGeometry(BaseGeometry):
     """
     def __init__(self):
         super().__init__()
-        self.part = None
+        self.assembly: torchfea.Assembly = None
         """
-        The file path of the mesh to be loaded for the geometry.
+        The FEA assembly containing the geometry for the optimization problem. This assembly is generated from a fixed mesh and does not change during optimization iterations.
         """
-    def generate(self, *args, **kwargs):
-        """Load the fixed mesh from the Abaqus INP and return a torchfea.Part."""
-        return self.part
 
-class FixedGeometryINP(FixedMeshGeometry):
+    def define_assembly(self)-> torchfea.Assembly:
+        """
+        Define the assembly for the geometry using node and element data.
+
+        This method should be implemented in subclasses to create the assembly based on specific node and element data.
+
+        Returns:
+            torchfea.Assembly: The defined assembly for the geometry.
+        """
+        raise NotImplementedError
+    
+    def initialize(self, *args, **kwargs):
+        super().initialize(*args, **kwargs)
+        self.assembly = self.define_assembly()
+
+    def generate(self, *args, **kwargs):
+        """Load the fixed mesh from the Abaqus INP and return a torchfea.Assembly."""
+
+        return self.assembly
+
+class FixedGeometryINP(FixedGeometry):
     """
     Geometry parameters class for fixed mesh geometry using an Abaqus .inp file.
     """
@@ -51,37 +70,14 @@ class FixedGeometryINP(FixedMeshGeometry):
         self._part_name = part_name
         """The name of the part in the Abaqus INP file to be used for the geometry."""
 
-    def initialize(self, *args, **kwargs):
-        super().initialize(*args, **kwargs)
-
+    def define_assembly(self):
         inp = torchfea.FEA_INP()
         inp.read_inp(self._mesh_file)
 
         fe_ext = torchfea.from_inp(inp)
-        self.part = fe_ext.assembly.get_part(self._part_name)
+        
+        assembly = torchfea.Assembly()
 
-class FixedGeometryNodeElement(FixedMeshGeometry):
-    """
-    Geometry parameters class for fixed mesh geometry using node and element data.
-    """
-    def __init__(self, nodes: torch.Tensor, elements: torch.Tensor, element_name: str = None):
-        super().__init__()
-        self.nodes = nodes
-        self.elements = elements
-        self.element_name = element_name
-
-
-    def initialize(self, *args, **kwargs):
-        super().initialize(*args, **kwargs)
-
-        part = torchfea.Part(nodes=self.nodes)
-
-        node_per_elem = self.elements.shape[1]
-        elem_type = f'C3D{node_per_elem}'
-
-        if self.element_name is None:
-            self.element_name = elem_type
-
-        elems = torchfea.elements.initialize_element(element_type=elem_type, elems_index=torch.arange(self.elements.shape[0]), elems=self.elements)
-
-        part.add_element(elems, name=self.element_name)
+        assembly.add_part(part=fe_ext.assembly.get_part(self._part_name), name='final_model')
+        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
+        self.assembly = assembly

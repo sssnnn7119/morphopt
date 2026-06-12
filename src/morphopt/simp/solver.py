@@ -25,6 +25,12 @@ class SIMPSolver(Solver):
 
         if self._GC_pre is not None:
             U_guess = self._GC_pre
+        elif morphopt.controller.history.iteration > 0:
+            U_guess_list = []
+            for taskidx in range(self.params.feamodel.num_load_steps):
+                results = torchfea.solver.StaticResult.load(morphopt.controller.path_result + f'/log/femodel&results/result_{taskidx}_iter_{morphopt.controller.history.iteration-1}.npz')
+                U_guess_list.append(results.GC.cpu().numpy())
+            U_guess = np.stack(U_guess_list)
         output = super().solve(U_guess=U_guess)
 
         self._GC_pre = []
@@ -32,3 +38,4 @@ class SIMPSolver(Solver):
             self._GC_pre.append(output[i].GC.cpu().numpy())
 
         return output
+    

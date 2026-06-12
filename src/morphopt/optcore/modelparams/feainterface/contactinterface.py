@@ -2,14 +2,7 @@ from torchfea import FEAController
 import torch
 from .basefeainterface import BaseFEAInterface
 
-# Prefer the same import style as PressureInterface
-try:
-	from torchfea.model.loads.contact import Contact, ContactSelf  # type: ignore
-except Exception:  # Fallback if package structure differs
-	# Defer import to get_fea_load to avoid import-time failures
-	Contact = None  # type: ignore
-	ContactSelf = None  # type: ignore
-
+from torchfea.model.loads.contact import Contact, ContactSelf  # type: ignore
 
 class ContactInterface(BaseFEAInterface):
 	"""
@@ -49,12 +42,6 @@ class ContactInterface(BaseFEAInterface):
 		return 0
 
 	def modify_fea(self, fe: FEAController, name: str):
-
-		# Lazy import to be robust to different package layouts
-		global Contact
-		if Contact is None:
-			from FEA.assemble.loads.contact import Contact as _Contact  # type: ignore
-			Contact = _Contact  # type: ignore
 
 		kwargs = dict(
 			instance_name1=self.instance_name1,
@@ -100,7 +87,6 @@ class ContactSelfInterface(BaseFEAInterface):
 		return 0
 
 	def modify_fea(self, fe: FEAController, name: str):
-		from torchfea.model.loads.contact import ContactSelf
 
 		kwargs = dict(
 			instance_name=self.instance_name,

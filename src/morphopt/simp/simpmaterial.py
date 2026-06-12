@@ -1,5 +1,6 @@
 import math
 from typing import Optional
+import os
 
 import torch
 import numpy as np
@@ -761,11 +762,23 @@ class SIMP_BSPFieldMaterials(BaseParams):
             density=np.array([self._density], dtype=np.float64),
         )
 
-        import pyvista as pv
-        plotter = pv.Plotter(off_screen=True, window_size=(1400, 1000))
-        self.plot(plotter=plotter)
-        plotter.screenshot(f"{foldpath}{self.pathlog_required()[0]}/density_field_{iteration}.jpg")
-        plotter.close()
+        meshes = self.get_meshes()
+        munow = meshes[0].point_data["density"]
+
+        dirpath = os.path.dirname(path_now)
+        os.makedirs(dirpath, exist_ok=True)
+
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(8, 5))
+        plt.hist(np.ravel(munow), bins=50, color='C0', alpha=0.8)
+        plt.title(f"SIMP density histogram (iter {iteration})")
+        plt.xlabel("Density")
+        plt.ylabel("Count")
+        plt.grid(True, linestyle='--', alpha=0.4)
+
+        hist_path = os.path.join(dirpath, f"simp_material_iter_{iteration}_density_hist.png")
+        plt.savefig(hist_path, dpi=300, bbox_inches='tight')
+        plt.close()
 
     def load(self, foldpath: str, iteration: int) -> None:
         path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
@@ -831,7 +844,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
             spacing=spacing,
             origin=(xmin, ymin, zmin),
         )
-        grid.point_data["density"] = ratio_grid.flatten(order="F")
+        grid.point_data["density"] = ratio_grid.flatten(order="F") * self._mumax  # Scale by mumax for better visualization of the material distribution
 
         return [grid]
 
@@ -847,7 +860,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Threshold to convert ImageData → UnstructuredGrid with all cells
         # preserved, so per-element opacity works (add_mesh on raw ImageData
         # only renders the outer surface).
-        thresh = meshes.threshold(value=0.5, scalars="density")
+        thresh = meshes.threshold(value=0.0 * self._mumax, scalars="density")
 
         if thresh.n_cells > 0:
             plotter.add_mesh(
@@ -856,7 +869,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
                 cmap="viridis",
                 show_edges=False,
                 lighting=True,
-                clim=[0, 1],
+                clim=[0, self._mumax],
                 smooth_shading=True,
             )
 

@@ -1,4 +1,4 @@
-from .geometry import FixedGeometryINP, FixedGeometryNodeElement, BaseGeometry
+from .geometry import FixedGeometryINP, FixedGeometry, BaseGeometry
 from .feaparams import FEAParams
 from .materials import HomogeneousMaterial, BaseMaterials
 from .params import Params

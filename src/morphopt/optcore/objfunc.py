@@ -1,13 +1,11 @@
 import math
-import re
 import torchfea
 import torch
-from torchfea import controller
 import morphopt
 from . import Params
 from .baseobject import BaseObject
 
-from typing import Callable
+import pyvista as pv
 
 class ObjectiveFunction(BaseObject):
     """
@@ -153,7 +151,14 @@ class ObjectiveFunction(BaseObject):
         else:
             raise KeyError(f"'{key}' not found in FE_result")
 
-    def save(self, foldpath: str, iteration: int, insname: str = 'final_model', surface: str = 'surface_0_All') -> None:
+    def get_mesh_case(self, case: int):
+
+        # Create pyvista mesh
+        mesh = list(self.fe.assembly.get_meshes(GC=self.fe_results[case].GC).values())
+
+        return mesh
+
+    def save(self, foldpath: str, iteration: int, surface: str = 'surface_0_All') -> None:
         """
         Save the figures of the FEA results.
 
@@ -161,43 +166,19 @@ class ObjectiveFunction(BaseObject):
             foldpath (str): The path to save the figures.
             iteration (int): The current iteration number.
         """
-        ins = self.fe.assembly.get_instance(insname)
-        surfaces = [surface]
-        surface_elements: list[torchfea.elements.BaseSurface] = []
-        for i in range(len(surfaces)):
-            surface_elements = surface_elements + ins.surfaces.get_elements(surfaces[i])
-        
-        surface_connections = [surface_elements[i].surf_elems_circ.cpu().numpy() for i in range(len(surface_elements))]
 
-        for case in range(self.num_tasks):
-            deformed_nodes = (ins.nodes + self.fe.assembly._GC2RGC(self.fe_results[case].GC.to(ins.nodes.device))[ins._RGC_index]).detach().cpu().numpy()
+        color_list = [(40.0/255, 120.0/255, 181.0/255), (237.0/255, 177.0/255, 32.0/255), (175.0/255, 82.0/255, 205.0/255), (241.0/255, 88.0/255, 84.0/255), (119.0/255, 149.0/255, 72.0/255)]
 
-            import pyvista as pv
+        for caseidx in range(self.num_tasks):
 
             plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
 
             # Create faces list for pyvista
-            faces = []
-            for connection in surface_connections:
-                for face in connection:
-                    if -1 not in face:
-                        faces.append([len(face)] + list(face))
-
             # Create pyvista mesh
-            mesh = pv.PolyData(deformed_nodes, faces)
-            plotter.add_mesh(mesh, color=(40.0/255, 120.0/255, 181.0/255), opacity=1.0)
+            meshes = self.get_mesh_case(caseidx)
 
-            x_min, x_max = deformed_nodes[:,0].min().item(), deformed_nodes[:,0].max().item()
-            y_min, y_max = deformed_nodes[:,1].min().item(), deformed_nodes[:,1].max().item()
-            z_min, z_max = deformed_nodes[:,2].min().item(), deformed_nodes[:,2].max().item()
-
-            # Add some padding to the bounds
-            padding = 0.05 * max(x_max-x_min, y_max-y_min, z_max-z_min)
-            
-            plotter.show_bounds(xtitle='X', ytitle='Y', ztitle='Z', color='black',
-                                bounds=[x_min-padding, x_max+padding, 
-                                        y_min-padding, y_max+padding, 
-                                        z_min-padding, z_max+padding])
+            for meshidx, mesh in enumerate(meshes):
+                plotter.add_mesh(mesh, color=color_list[meshidx % len(color_list)], opacity=1.0)
             
             # Approximate view
             plotter.set_background('white')
@@ -209,17 +190,21 @@ class ObjectiveFunction(BaseObject):
                 math.sin(math.radians(elevation))))
 
             # Save the figure as a PNG file
-            plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.png")
+            plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{caseidx}_iter_{iteration}.png")
 
-            # Save the deformed mesh as an STL file
-            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case}_iter_{iteration}.stl"
-            mesh.save(save_filepath, binary=True)
+            # # Save the deformed mesh as an STL file
+            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{caseidx}_iter_{iteration}.stl"
+            meshall = meshes[0]
+            for meshidx in range(1, len(meshes)):
+                meshall = meshall.merge(meshes[meshidx])
+            meshall.save(save_filepath, binary=True)
             plotter.close()
 
         
 
-        # save the FEA model and results
-        self.fe.save_model(f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}")
+        # save the FEA results
+        if iteration == 0:
+            self.fe.save_model(f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}")
 
-        for case in range(self.num_tasks):
-            self.fe_results[case].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{case}_iter_{iteration}.npz")
+        for caseidx in range(self.num_tasks):
+            self.fe_results[caseidx].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{caseidx}_iter_{iteration}.npz")
