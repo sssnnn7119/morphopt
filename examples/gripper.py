@@ -37,7 +37,7 @@ class ThisController(morphopt.Controller):
             return volume_fraction
 
         def objective_function(self):
-
+            self.set_step(0)
             total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[0].GC)[0]
 
             ins_gripper = self.fe.assembly.get_instance('final_model')
@@ -45,7 +45,14 @@ class ThisController(morphopt.Controller):
 
             force_gripper = total_force[RGC_index_start[ins_gripper._RGC_index]:RGC_index_start[ins_gripper._RGC_index+1]].reshape([-1, 3])
 
-            return torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
+            # return torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
+
+
+
+            RGCindex_RPxmax = self.fe.assembly.get_reference_point('RPXmax')._RGC_index
+            RGC = self.fe.GC2RGC(self.fe_results[0].GC)
+            RPXmax_disp = RGC[RGCindex_RPxmax]
+            return RPXmax_disp[-2] + torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
 
         def get_metrics(self):
             total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[0].GC)[0]
@@ -61,11 +68,11 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.simp.FixedGeometry):
 
             def define_assembly(self):
-                part = torchfea.cad.create_box(xmin=0.0, xmax=80.0, ymin=-0.5, ymax=0.5, zmin=-30.0, zmax=0.0, nx=81, ny=2, nz=31)
+                part = torchfea.cad.create_box(xmin=0.0, xmax=80.0, ymin=-0.5, ymax=0.5, zmin=-30.0, zmax=0.0, nx=161, ny=2, nz=61)
                 part.add_surface_set('surface_0_All', part.elems['C3D8'].extract_boundary_surface_set())
 
 
-                part.convert_linear_to_quadratic_elements(element_name_list=['C3D8'], new_element_name_list=['C3D8'])
+                # part.convert_linear_to_quadratic_elements(element_name_list=['C3D8'], new_element_name_list=['C3D8'])
                 instance = torchfea.Instance(part_name='final_model')
                 instance.external_surface = 'surface_0_All'
                 assembly = torchfea.Assembly()
@@ -78,7 +85,7 @@ class ThisController(morphopt.Controller):
                 gmsh.clear()
 
                 gmsh.model.add("cylinderobject")
-                gmsh.model.occ.addCylinder(50, -15, 35, 0, 30, 0, 30, tag=1)
+                gmsh.model.occ.addCylinder(65, -10, 15, 0, 20, 0, 15, tag=1)
                 gmsh.model.occ.synchronize()
 
                 # mesh the geometry
@@ -124,11 +131,15 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.CoupleInterface(rp_name='RPBase', instance_name='final_model', set_nodes_name='nodes_xmin'))
                 self.add_fea_interface(self.BoundaryConditionRPInterface(rp_name='RPBase', index_dof=[0, 1, 2, 3, 4, 5]), name='BC_RPBase')
 
+                # Boundary the xmax as base
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[80., 0., -15.]), name='RPXmax')
+                self.add_fea_interface(self.CoupleInterface(rp_name='RPXmax', instance_name='final_model', set_nodes_name='nodes_xmax'))
+
                 # Symmetry boundary condition at the middle plane (y=0)
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='all', index_dof=[1]), name='BC_Symmetry')
 
                 # Rigid cylinder
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[50., 0., 35.]), name='RPCylinder')
+                self.add_fea_interface(self.ReferencePointInterface(rp_location=[65., 0., 15.]), name='RPCylinder')
                 self.add_fea_interface(self.CoupleInterface(rp_name='RPCylinder', instance_name='cylinder', set_nodes_name='cylinder'))
                 self.add_fea_interface(self.BoundaryConditionRPInterface(rp_name='RPCylinder', index_dof=[0, 1, 3, 4, 5]), name='BC_RPCylinder')
                 self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RPCylinder', s=2), name='Penalty_RPCylinder')
@@ -139,7 +150,7 @@ class ThisController(morphopt.Controller):
 
             def define_steps(self):
                 self.set_step_num(1)
-                self.set_step_params(step_index=0, load_name='Penalty_RPCylinder', values=[1e2, -20.])
+                self.set_step_params(step_index=0, load_name='Penalty_RPCylinder', values=[4e1, -10.])
 
         class MaterialParams(morphopt.simp.SIMP_BSPFieldMaterials):
             
@@ -149,11 +160,21 @@ class ThisController(morphopt.Controller):
                                  density=1.08e-9, 
                                  initial_ratio=2.,
                                  simp_ratio_min=minratio, 
-                                 bounding_box=[0., 80., -2., 2., -30., 0.], 
-                                 simp_field_resolution=2.0, 
+                                 bounding_box=[0., 80., -1., 1., -30., 0.], 
+                                 simp_field_resolution=1.0, 
                                  degree=2,
-                                 voidpenalfactor=1e-2,
+                                 voidpenalfactor=0e-2,
                                  elementname='C3D8')
+            
+            def reinitialize(self, iteration, *args, **kwargs):
+                cps_reshaped = self._cps.reshape(self._bsp_size[0], self._bsp_size[1], self._bsp_size[2])
+
+                cps_reshaped[:, :, -2:] = 15.
+
+                self._cps = cps_reshaped.reshape_as(self._cps)
+
+                super().reinitialize(iteration, *args, **kwargs)
+
             def get_meshes(self):
                 xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
                 nx, ny, nz = self._bsp_size
@@ -236,10 +257,10 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-15, threshold=0.0, p=2))
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=15, threshold=0.0, p=2))
 
-                # self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.4, volfrac_max=0.6, penalty=1e6, element_name='C3D8'))
+                self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.4, volfrac_max=0.6, penalty=1e6, element_name='C3D8'))
 
                 self.if_update = True
     
 if __name__ == '__main__':
 
-    morphopt.start_optimization(device='cpu', restart_per_iteration=10)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)

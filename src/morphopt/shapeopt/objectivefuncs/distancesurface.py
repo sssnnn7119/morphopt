@@ -94,7 +94,7 @@ class Distance(BaseConstraints):
 
                 if i == j:
                     distance0 = torch.sqrt(((r0_combined[self.neighbor_points[0, index]] - r0_combined[self.neighbor_points[1, index]])**2).sum(dim=1))
-                    index_remain[index] = distance0 > self.distance_threshold * 0.5
+                    index_remain[index] = distance0 > self.distance_threshold * 0.3
 
         self.neighbor_points = self.neighbor_points[:, index_remain]
         self.neighbor_mindist = self.neighbor_mindist[index_remain]
@@ -114,7 +114,7 @@ class Distance(BaseConstraints):
 
         
         normal_min = -0.7
-        normal_max = -0.5
+        normal_max = 0.0
 
         normal_remain = normal_vector[self.neighbor_points, :]
         normal_remain = normal_remain / (normal_remain.norm(dim=2, keepdim=True) + 1e-8)

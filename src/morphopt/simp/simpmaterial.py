@@ -680,8 +680,8 @@ class SIMP_BSPFieldMaterials(BaseParams):
         if self.if_use_simppenalty:
             if elements.__class__.__name__ == "C3D10":
                 elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-            elif elements.__class__.__name__ == "C3D8":
-                elements_new = SIMPElementC3D8(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            elif elements.__class__.__name__ == "C3D20":
+                elements_new = SIMPElementC3D20(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
             else:
                 elements_new = elements
         else:

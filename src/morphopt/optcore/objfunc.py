@@ -53,7 +53,7 @@ class ObjectiveFunction(BaseObject):
         Args:
             step (int): The current step index.
         """
-        self.fe.assembly.set_load_parameters(self.fe_results[step].load_params)
+        self.fe.assembly.set_work_conditions(self.fe_results[step].work_conditions)
 
     def compute_multistep_objective(self, fe_results: list[torchfea.solver.StaticResult], assembly: torchfea.Assembly) -> torch.Tensor:
         """

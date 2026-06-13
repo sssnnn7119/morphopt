@@ -82,10 +82,10 @@ class Solver(BaseObject):
         #                 available_gpus=self.available_gpus)
 
         pools = morphopt.controller.pools
-        pools.close()
-        pools.join()
-        pools = mp.Pool(processes=self.num_process)
-        morphopt.controller.pools = pools
+        # pools.close()
+        # pools.join()
+        # pools = mp.Pool(processes=self.num_process)
+        # morphopt.controller.pools = pools
         result = []
         for i in range(len(self.task_index_list)):
             result.append(
