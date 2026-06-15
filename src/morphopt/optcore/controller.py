@@ -96,6 +96,11 @@ class Controller:
         The device to run the optimization on.
         """
 
+        self._debug_mode: bool = False
+        """
+        Whether to run in debug mode, which may include additional checks and logging.
+        """
+
     def initialize_path(self, main_filepath: str = None) -> None:
         """
         Initialize the workflow by importing necessary modules and setting up the environment.
@@ -229,14 +234,14 @@ class Controller:
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            loss, t0, t1, t2, t3 = self.step(if_first_step_restart=if_first_step_restart)
+            loss, t0, t1, t2, t3, t4 = self.step(if_first_step_restart=if_first_step_restart)
             if_first_step_restart = False
 
             # Record the history of the optimization process
-            self.record_history(loss, t0, t1, t2, t3)
-            
+            self.record_history(loss, t0, t1, t2, t3, t4)
+
             # Print the information
-            self.print_info(t0, t1, t2, t3)
+            self.print_info(t0, t1, t2, t3, t4)
 
             # Save the current parameters and plot the figures
             self.save()
@@ -266,7 +271,9 @@ class Controller:
             t0 (float): The start time of the optimization step.
             t1 (float): The time after model generation.
             t2 (float): The time after finite element analysis (FEA).
-            t3 (float): The time after updating the surfaces.
+            t3 (float): The time after sensitivity analysis.
+            t4 (float): The time after updating the surfaces.
+
         """
         t0 = time.time()
         if os.path.exists(self.path_result + '/cache/TopOptRun.inp'):
@@ -291,17 +298,19 @@ class Controller:
         # sensitivity analysis
         gradients = self.objfun.sensitivity_analysis(params=self.params)
 
+        t3 = time.time()
+
         # Update the surfaces based on the FEA results
         self.updater.update(gradients=gradients)
         self.updater.update_variables()
 
         loss = self.objfun.objective_function()
 
-        t3 = time.time()
+        t4 = time.time()
 
-        return loss, t0, t1, t2, t3
+        return loss, t0, t1, t2, t3, t4
 
-    def record_history(self, loss: torch.Tensor, t0: float, t1: float, t2: float, t3: float) -> None:
+    def record_history(self, loss: torch.Tensor, t0: float, t1: float, t2: float, t3: float, t4: float) -> None:
         """
         Record the history of the optimization process.
         """
@@ -313,11 +322,11 @@ class Controller:
         self.history.append('deformation', displacement)
         self.history.append('objective', loss.item())
         self.history.append('metrics', self.objfun.get_metrics())
-        self.history.append('time', [t1-t0, t2-t1, t3-t2])
+        self.history.append('time', [t1-t0, t2-t1, t3-t2, t4-t3])
         self.history.append('num_elements', sum([elem._elems.shape[0] for elem in self.objfun.fe.assembly.get_instance('final_model').elems.values()]))
         self.history.append('num_nodes', self.objfun.fe.assembly.get_instance('final_model').nodes.shape[0])
 
-    def print_info(self, t0, t1, t2, t3) -> None:
+    def print_info(self, t0, t1, t2, t3, t4) -> None:
         """
         Print the current information of the optimization process.
         """
@@ -327,8 +336,9 @@ class Controller:
         print("Time Breakdown:")
         print(f"  Initialization Time: {t1 - t0:.2f} seconds")
         print(f"  FEA Time: {t2 - t1:.2f} seconds")
-        print(f"  Update Time: {t3 - t2:.2f} seconds")
-        print(f"  Total Time: {t3 - t0:.2f} seconds")
+        print(f"  Sensitivity Time: {t3 - t2:.2f} seconds")
+        print(f"  Update Time: {t4 - t3:.2f} seconds")
+        print(f"  Total Time: {t4 - t0:.2f} seconds")
         print("-" * 50)
 
     def save(self) -> None:

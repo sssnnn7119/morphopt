@@ -258,7 +258,7 @@ class OptimizationMonitorUI(QMainWindow):
             headers = ['Iteration', 'Objective']
             for m in range(num_metrics):
                 headers.append(f'Metric {m}')
-            headers.extend(['Init Time', 'FEA Time', 'Update Time', 'Num Elements', 'Num Nodes'])
+            headers.extend(['Init Time', 'FEA Time', 'Sensitivity Time', 'Update Time', 'Num Elements', 'Num Nodes'])
             headers.extend(def_labels)
             
             self.history_table.setColumnCount(len(headers))
@@ -286,8 +286,9 @@ class OptimizationMonitorUI(QMainWindow):
                     self.history_table.setItem(i, col, QTableWidgetItem(f'{t[0]:.2f}')); col += 1
                     self.history_table.setItem(i, col, QTableWidgetItem(f'{t[1]:.2f}')); col += 1
                     self.history_table.setItem(i, col, QTableWidgetItem(f'{t[2]:.2f}')); col += 1
-                else: col += 3
-                
+                    self.history_table.setItem(i, col, QTableWidgetItem(f'{t[3]:.2f}')); col += 1
+                else: col += 4
+
                 # Elements/Nodes
                 if i < len(history.history_num_elements):
                     self.history_table.setItem(i, col, QTableWidgetItem(str(history.history_num_elements[i]))); col += 1

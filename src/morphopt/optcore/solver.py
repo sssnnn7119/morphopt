@@ -76,10 +76,11 @@ class Solver(BaseObject):
         fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
         fe_cpu.change_device(torch.device('cpu'))
         
-        # self._solve_FEA(fe=fe_cpu, 
-        #                 feamodel=self.params.feamodel,
-        #                 task_index=self.task_index_list[0],
-        #                 available_gpus=self.available_gpus)
+        if morphopt.controller._debug_mode:
+            self._solve_FEA(fe=fe_cpu, 
+                            feamodel=self.params.feamodel,
+                            task_index=self.task_index_list[0],
+                            available_gpus=self.available_gpus)
 
         pools = morphopt.controller.pools
         # pools.close()

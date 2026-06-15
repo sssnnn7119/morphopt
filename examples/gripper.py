@@ -7,7 +7,7 @@ import torch
 import torchfea
 mumax = 10.
 minratio = 1e-7
-
+cylinder_x = [80., 70., 60., 50.]
 
 class ThisController(morphopt.Controller):
     def __init__(self):
@@ -37,35 +37,41 @@ class ThisController(morphopt.Controller):
             return volume_fraction
 
         def objective_function(self):
-            self.set_step(0)
-            total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[0].GC)[0]
+            
+            loss_list = []
+            for stepidx in range(self.num_tasks):
+                self.set_step(stepidx)
+                total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[stepidx].GC)[0]
 
-            ins_gripper = self.fe.assembly.get_instance('final_model')
-            RGC_index_start = self.fe.assembly._RGC_list_indexStart
+                ins_gripper = self.fe.assembly.get_instance('final_model')
+                RGC_index_start = self.fe.assembly._RGC_list_indexStart
 
-            force_gripper = total_force[RGC_index_start[ins_gripper._RGC_index]:RGC_index_start[ins_gripper._RGC_index+1]].reshape([-1, 3])
+                force_gripper = total_force[RGC_index_start[ins_gripper._RGC_index]:RGC_index_start[ins_gripper._RGC_index+1]].reshape([-1, 3])
+                loss_now = torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
+                loss_list.append(loss_now)
 
-            # return torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
-
-
-
-            RGCindex_RPxmax = self.fe.assembly.get_reference_point('RPXmax')._RGC_index
-            RGC = self.fe.GC2RGC(self.fe_results[0].GC)
-            RPXmax_disp = RGC[RGCindex_RPxmax]
-            return RPXmax_disp[-2] + torch.exp(force_gripper[:, 0].sum()) - force_gripper[:, 2].sum()
+            return torch.stack(loss_list).sum()
 
         def get_metrics(self):
-            total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[0].GC)[0]
+            
+            metrics_list = []
+            for stepidx in range(self.num_tasks):
+                self.set_step(stepidx)
+                total_force = self.fe.assembly._assemble_generalized_Matrix(GC=self.fe_results[stepidx].GC)[0]
 
-            ins_gripper = self.fe.assembly.get_instance('final_model')
-            RGC_index_start = self.fe.assembly._RGC_list_indexStart
+                ins_gripper = self.fe.assembly.get_instance('final_model')
+                RGC_index_start = self.fe.assembly._RGC_list_indexStart
 
-            force_gripper = total_force[RGC_index_start[ins_gripper._RGC_index]:RGC_index_start[ins_gripper._RGC_index+1]].reshape([-1, 3])
+                force_gripper = total_force[RGC_index_start[ins_gripper._RGC_index]:RGC_index_start[ins_gripper._RGC_index+1]].reshape([-1, 3])
+                metrics_list.append(force_gripper[:, 0].sum())
+                metrics_list.append(force_gripper[:, 2].sum())
 
-            return [force_gripper[:, 0].sum(), force_gripper[:, 2].sum(), self.get_volume_fraction()]
+            return metrics_list + [self.get_volume_fraction()]
 
     class Params(morphopt.simp.Params):
         class GeometryParams(morphopt.simp.FixedGeometry):
+
+            
 
             def define_assembly(self):
                 part = torchfea.cad.create_box(xmin=0.0, xmax=80.0, ymin=-0.5, ymax=0.5, zmin=-30.0, zmax=0.0, nx=161, ny=2, nz=61)
@@ -85,7 +91,7 @@ class ThisController(morphopt.Controller):
                 gmsh.clear()
 
                 gmsh.model.add("cylinderobject")
-                gmsh.model.occ.addCylinder(65, -10, 15, 0, 20, 0, 15, tag=1)
+                gmsh.model.occ.addCylinder(80, -10, 15, 0, 20, 0, 15, tag=1)
                 gmsh.model.occ.synchronize()
 
                 # mesh the geometry
@@ -114,12 +120,13 @@ class ThisController(morphopt.Controller):
                 part_cylinder.add_surface_set('extern', part_cylinder.elems['C3D4'].extract_boundary_surface_set())
                 part_cylinder.add_node_set('cylinder', np.arange(nodes.shape[0]))
 
-                
-                instance_cylinder = torchfea.Instance(part_name='cylinder')
-                instance_cylinder.external_surface = 'extern'
                 assembly.add_part(part_cylinder, name='cylinder')
-                assembly.add_instance(instance_cylinder, name='cylinder')
 
+                for i in range(len(cylinder_x)):
+                    instance_cylinder = torchfea.Instance(part_name='cylinder', translation=[cylinder_x[i] - 80, 0., 0.])
+                    instance_cylinder.external_surface = 'extern'
+                
+                    assembly.add_instance(instance_cylinder, name=f'cylinder{cylinder_x[i]}')
                 return assembly
                 
 
@@ -132,25 +139,31 @@ class ThisController(morphopt.Controller):
                 self.add_fea_interface(self.BoundaryConditionRPInterface(rp_name='RPBase', index_dof=[0, 1, 2, 3, 4, 5]), name='BC_RPBase')
 
                 # Boundary the xmax as base
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[80., 0., -15.]), name='RPXmax')
-                self.add_fea_interface(self.CoupleInterface(rp_name='RPXmax', instance_name='final_model', set_nodes_name='nodes_xmax'))
+                # self.add_fea_interface(self.ReferencePointInterface(rp_location=[80., 0., -15.]), name='RPXmax')
+                # self.add_fea_interface(self.CoupleInterface(rp_name='RPXmax', instance_name='final_model', set_nodes_name='nodes_xmax'))
 
                 # Symmetry boundary condition at the middle plane (y=0)
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='all', index_dof=[1]), name='BC_Symmetry')
 
                 # Rigid cylinder
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[65., 0., 15.]), name='RPCylinder')
-                self.add_fea_interface(self.CoupleInterface(rp_name='RPCylinder', instance_name='cylinder', set_nodes_name='cylinder'))
-                self.add_fea_interface(self.BoundaryConditionRPInterface(rp_name='RPCylinder', index_dof=[0, 1, 3, 4, 5]), name='BC_RPCylinder')
-                self.add_fea_interface(self.PenaltyDoFInterface(obj_name='RPCylinder', s=2), name='Penalty_RPCylinder')
+                for i in range(len(cylinder_x)):
+                    self.add_fea_interface(self.ReferencePointInterface(rp_location=[cylinder_x[i], 0., 15.]), name=f'RPCylinder{cylinder_x[i]}')
+                    self.add_fea_interface(self.CoupleInterface(rp_name=f'RPCylinder{cylinder_x[i]}', instance_name=f'cylinder{cylinder_x[i]}', set_nodes_name='cylinder'))
+                    self.add_fea_interface(self.BoundaryConditionRPInterface(rp_name=f'RPCylinder{cylinder_x[i]}', index_dof=[0, 1, 3, 4, 5]), name=f'BC_RPCylinder{cylinder_x[i]}')
+                    self.add_fea_interface(self.PenaltyDoFInterface(obj_name=f'RPCylinder{cylinder_x[i]}', s=2), name=f'Penalty_RPCylinder{cylinder_x[i]}_Z')
 
-                # Contact between the cylinder and the gripper
-                self.add_fea_interface(self.ContactInterface(instance_name1='final_model', surface_name1='surface_zmax', instance_name2='cylinder', surface_name2='extern'), name='Contact_Gripper_Cylinder')
+
+
+                    # Contact between the cylinder and the gripper
+                    self.add_fea_interface(self.ContactInterface(instance_name1='final_model', surface_name1='surface_zmax', instance_name2=f'cylinder{cylinder_x[i]}', surface_name2='extern'), name=f'Contact_Gripper_Cylinder{cylinder_x[i]}')
+                    
 
 
             def define_steps(self):
-                self.set_step_num(1)
-                self.set_step_params(step_index=0, load_name='Penalty_RPCylinder', values=[4e1, -10.])
+                self.set_step_num(len(cylinder_x))
+                for stepidx in range(len(cylinder_x)):
+                    for cylinderidx in range(len(cylinder_x)):
+                        self.set_step_params(step_index=stepidx, load_name=f'Penalty_RPCylinder{cylinder_x[cylinderidx]}_Z', values=[1e2, -10.] if cylinderidx==stepidx else [1e2, 0.])
 
         class MaterialParams(morphopt.simp.SIMP_BSPFieldMaterials):
             
@@ -158,7 +171,7 @@ class ThisController(morphopt.Controller):
                 super().__init__(mumax=mumax, 
                                  kappamax=mumax*10, 
                                  density=1.08e-9, 
-                                 initial_ratio=2.,
+                                 initial_ratio=-2.,
                                  simp_ratio_min=minratio, 
                                  bounding_box=[0., 80., -1., 1., -30., 0.], 
                                  simp_field_resolution=1.0, 
@@ -257,7 +270,7 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-15, threshold=0.0, p=2))
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=15, threshold=0.0, p=2))
 
-                self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.4, volfrac_max=0.6, penalty=1e6, element_name='C3D8'))
+                self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.3, volfrac_max=0.4, penalty=1e6, element_name='C3D8'))
 
                 self.if_update = True
     

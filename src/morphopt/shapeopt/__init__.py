@@ -4,4 +4,5 @@ This module implements the shape optimization framework for morphopt. It include
 
 from .geometryparams import GeometryParams
 from .update_geometry import UpdaterGeometries
-from ..optcore import FEAParams, HomogeneousMaterial, Solver, Updaters, ObjectiveFunction, Params
+from ..optcore import FEAParams, HomogeneousMaterial, Solver, Updaters, Params
+from .objfunc import ObjectiveFunction

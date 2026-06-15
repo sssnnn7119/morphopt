@@ -130,6 +130,7 @@ def debug_optimization(device='cpu', restart_per_iteration: int = 20, path_resul
     controller: morphopt.Controller = Controller()
     controller.restart_per_iteration = restart_per_iteration
     controller.optdevice = device
+    controller._debug_mode = True
 
     TaskOptimization.optmain(device=device, 
                             path_result=path_result,
