@@ -17,5 +17,9 @@ from . import codesign
 from . import simp
 # endregion
 
+# region scripts
+from .scripts import get_controller
+# endregion
+
 controller: Controller = None
 

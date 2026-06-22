@@ -31,10 +31,22 @@ class FixedGeometry(BaseGeometry):
     """
     def __init__(self):
         super().__init__()
-        self.assembly: torchfea.Assembly = None
+        self._assembly: torchfea.Assembly = None
         """
         The FEA assembly containing the geometry for the optimization problem. This assembly is generated from a fixed mesh and does not change during optimization iterations.
         """
+
+    @property
+    def assembly(self) -> torchfea.Assembly:
+        """
+        Get the FEA assembly containing the geometry for the optimization problem.
+
+        Returns:
+            torchfea.Assembly: The FEA assembly containing the geometry.
+        """
+        if self._assembly is None:
+            self._assembly = self.define_assembly()
+        return self._assembly
 
     def define_assembly(self)-> torchfea.Assembly:
         """
@@ -46,14 +58,9 @@ class FixedGeometry(BaseGeometry):
             torchfea.Assembly: The defined assembly for the geometry.
         """
         raise NotImplementedError
-    
-    def initialize(self, *args, **kwargs):
-        super().initialize(*args, **kwargs)
-        self.assembly = self.define_assembly()
 
     def generate(self, *args, **kwargs):
         """Load the fixed mesh from the Abaqus INP and return a torchfea.Assembly."""
-
         return self.assembly
 
 class FixedGeometryINP(FixedGeometry):
@@ -80,4 +87,4 @@ class FixedGeometryINP(FixedGeometry):
 
         assembly.add_part(part=fe_ext.assembly.get_part(self._part_name), name='final_model')
         assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
-        self.assembly = assembly
+        return assembly

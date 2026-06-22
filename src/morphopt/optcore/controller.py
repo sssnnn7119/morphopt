@@ -228,7 +228,7 @@ class Controller:
         """
 
         if_first_step_restart = True
-        
+
         while True:
 
             # Explicitly release large objects to ensure they are collected

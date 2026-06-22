@@ -860,7 +860,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Threshold to convert ImageData → UnstructuredGrid with all cells
         # preserved, so per-element opacity works (add_mesh on raw ImageData
         # only renders the outer surface).
-        thresh = meshes.threshold(value=0.0 * self._mumax, scalars="density")
+        thresh = meshes.threshold(value=0.5 * self._mumax, scalars="density")
 
         if thresh.n_cells > 0:
             plotter.add_mesh(

@@ -6,6 +6,9 @@ from typing import Optional
 
 import pyvista as pv
 
+import morphopt
+
+
 class BaseInterface():
     """
     Class to handle the surface of the morphable model.
@@ -58,7 +61,7 @@ class BaseInterface():
         Returns:
             torch.Tensor: The corresponding 3D coordinates in the physical space.
         """
-        raise NotImplementedError("The map method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return torch.zeros((uv.shape[0], 3), dtype=uv.dtype, device=uv.device)
 
     def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
         """
@@ -70,7 +73,7 @@ class BaseInterface():
         Returns:
             torch.Tensor: The normals of the surface at the given UV coordinates.
         """
-        raise NotImplementedError("The get_normals method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return torch.zeros((uv.shape[0], 3), dtype=uv.dtype, device=uv.device)
 
     def initialize(self) -> None:
         """
@@ -83,16 +86,6 @@ class BaseInterface():
         ReInitialize the surface.
         """
         return self
-
-    @property
-    def control_points(self) -> torch.Tensor:
-        """
-        Get the control points of the surface.
-
-        Returns:
-            torch.Tensor: The control points of the surface.
-        """
-        raise NotImplementedError("The control_points property is not implemented in the BaseInterface class. Please implement it in the derived class.")
 
     def output_data(self, path_output, name_output, seed_size=-1, flip=False, ):
         """
@@ -107,7 +100,7 @@ class BaseInterface():
         Returns:
             torch.Tensor: The design variables of the surface.
         """
-        raise NotImplementedError("The get_variables method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return torch.zeros([0], dtype=torch.float32)
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
         """
@@ -116,7 +109,7 @@ class BaseInterface():
         Parameters:
             x (torch.Tensor): The new design variables to be set.
         """
-        raise NotImplementedError("The set_variables method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        pass
 
     def update_variables(self, x_change: torch.Tensor) -> None:
         """
@@ -125,8 +118,7 @@ class BaseInterface():
         Parameters:
             x_change (torch.Tensor): The change of design variables to be applied.
         """
-
-        raise NotImplementedError("The update_variables method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        pass
 
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -138,7 +130,7 @@ class BaseInterface():
                 - rdu (torch.Tensor): The partial derivatives of the surface.
                 - rdu2 (torch.Tensor): The second partial derivatives of the surface.
         """
-        raise NotImplementedError("The get_geometry_values method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return (torch.zeros((0, 3), dtype=torch.float32), torch.zeros((0, 3), dtype=torch.float32), torch.zeros((0, 3), dtype=torch.float32))
     
     def get_penalty_fairness(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor) -> torch.Tensor:
         """
@@ -156,7 +148,7 @@ class BaseInterface():
         Returns:
             torch.Tensor: The points weight of the surface.
         """
-        raise NotImplementedError("The get_points_weight method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return torch.ones((0,), dtype=torch.float32)
     
     @staticmethod
     def barrier_function(f: torch.Tensor, f_max: torch.Tensor|float, ratio: float, p: int):
@@ -194,7 +186,7 @@ class BaseInterface():
         Returns:
             int: The number of design variables.
         """
-        raise NotImplementedError("The num_variables property is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return 0
 
     def save(self, filename: str) -> None:
         """
@@ -203,7 +195,7 @@ class BaseInterface():
         Parameters:
             filename (str): The name of the file to save the surface data.
         """
-        raise NotImplementedError("The save method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        pass
     
     def load(self, filename: str) -> None:
         """
@@ -212,7 +204,7 @@ class BaseInterface():
         Parameters:
             filename (str): The name of the file to load the surface data from.
         """
-        raise NotImplementedError("The load method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        pass
 
     def get_mesh(self) -> pv.PolyData:
         """
@@ -233,6 +225,7 @@ class BaseInterface():
         plotter.show()
 
     class MeshSurfaceConverter:
+        """A class to convert a mesh surface (defined by vertices and faces) into a STEP file format."""
         def __init__(self):
             self.vertices: np.ndarray
             self.faces: np.ndarray
@@ -645,7 +638,7 @@ class BaseInterface():
         Returns:
             np.ndarray: The nodes position updated to match the surface.
         """
-        raise NotImplementedError("The match_coordinates method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        return np.zeros([surf_node_idx.shape[0], 3], dtype=np.float32)
 
 class CpBasedInterface(BaseInterface):
     """
@@ -917,4 +910,82 @@ class CpBasedInterface(BaseInterface):
         """
         return self._cps.numel()
 
+class FixedSurface(BaseInterface):
+    """
+    Class to handle fixed surfaces that do not change during optimization.
+    """
 
+    def __init__(self, vertices: np.ndarray, faces: np.ndarray) -> None:
+        """
+        Initialize the FixedSurface class.
+
+        Parameters:
+            vertices (np.ndarray): The vertices of the surface.
+            faces (np.ndarray): The faces of the surface.
+        """
+        super().__init__()
+
+        self._vertices = vertices
+        self._faces = faces
+
+    @staticmethod
+    def initialize_from_stl_file(path_stl: str) -> 'FixedSurface':
+        """Initialize a FixedSurface instance from an STL file.
+        
+        Args:
+            path_stl (str): The path to the STL file.
+
+        Returns:
+            FixedSurface: An instance of the FixedSurface class initialized with the mesh data from the STL file.
+        """
+        import pyvista as pv
+        
+        mesh = pv.read(path_stl)
+        vertices = mesh.points
+        faces = mesh.faces.reshape(-1, 4)[:, 1:4]  # STL格式中每个面前有一个数字表示顶点数量，通常为3
+        
+        return FixedSurface(vertices, faces)
+        
+    @staticmethod
+    def output_stl_file(vertices: np.ndarray, faces: np.ndarray, path_output: str, name_output: str):
+        """Output CPGEO mesh as STL file.
+        
+        Args:
+            vertices (np.ndarray): Vertex coordinates, shape (N, 3)
+            faces (np.ndarray): Face connectivity, shape (F, 3)
+            path_output (str): Output directory path
+            name_output (str): Output file name (without extension)
+        """
+        import pyvista as pv
+        
+        # Create PyVista mesh
+        faces_with_count = np.hstack([np.full((faces.shape[0], 1), 3), faces])
+        mesh = pv.PolyData(vertices, faces_with_count)
+        
+        # Output STL file
+        output_file = path_output + '/' + name_output + '.stl'
+        mesh.save(output_file)
+        
+        return output_file
+
+    def output_data(self, path_output: str, name_output: str) -> str:
+        """Output CPGEO mesh data to STL file.
+        
+        Args:
+            path_output (str): Output directory path
+            name_output (str): Output file name
+        
+        Returns:
+            str: Output filename with extension
+        """
+        
+        pools = morphopt.controller.pools
+
+        result = pools.apply_async(self.output_stl_file, args=(
+            self._vertices,
+            self._faces,
+            path_output,
+            name_output))
+        result.get()
+
+        return name_output + '.stl'

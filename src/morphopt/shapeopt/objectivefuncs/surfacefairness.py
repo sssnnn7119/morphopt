@@ -7,7 +7,7 @@ class Fairness(BaseConstraints):
     Fairness objective function for MorphOpt.
     """
 
-    def __init__(self, surfaces: GeometryParams, sensitivity: ShapeDerivative):
+    def __init__(self, surfaces: GeometryParams):
         """
         Initialize the fairness objective function with a name.
         """
@@ -17,8 +17,6 @@ class Fairness(BaseConstraints):
         The surfaces object that contains the design variables.
         """
 
-        self.sensitivity = sensitivity
-        """the sensitivity to anchor the scaler"""
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
         """

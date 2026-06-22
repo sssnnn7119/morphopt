@@ -3,7 +3,10 @@
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder="results/", opt_label="EXAMPLE")
+        super().__init__(
+            path_result_folder="/run/media/song/缓存/results/",
+            opt_label="BendingActuator",
+        )
 
     class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
         def __init__(self):
@@ -18,14 +21,13 @@ class ThisController(morphopt.Controller):
     class Params(morphopt.shapeopt.Params):
         class GeometryParams(morphopt.shapeopt.GeometryParams):
             def __init__(self):
-
                 super().__init__(
-                    fea_seed_size=2.5, reinitialize_per_iter=5, mesh_order=2
+                    fea_seed_size=2.0, reinitialize_per_iter=5, mesh_order=2
                 )
 
                 self.add_surface(
                     self.BSP.initialize_cylinder(
-                        r0=8.0,
+                        r0=12.0,
                         length=80.0,
                         seed_size=0.8,
                         symmetric=[1, [1]],
@@ -38,27 +40,14 @@ class ThisController(morphopt.Controller):
                 )
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(
-                        r0=4.0,
-                        length=74.0,
-                        seed_size=0.8,
-                        symmetric=[1, [1]],
-                        init_location=[0, 0, 3],
+                    self.CPGEO.initialize_Sphere(
+                        seed_size=1.5,
                         flip=True,
-                        maxR=0.2,
-                        maxC=1.5,
-                        maxFF=0.2,
-                        perturbation_L=10.0,
+                        r0=7.0,
+                        init_location=[0.0, 0.0, 40.0],
+                        MaxC=1.5,
                     )
                 )
-
-                # self.add_surface(
-                #     self.CPGEO.initialize_Sphere(seed_size=1.0,
-                #                                 flip=True,
-                #                                 r0=4.,
-                #                                 init_location=[0., 0., 40.],
-                #                                 MaxC=1.5,
-                #     ))
 
             def apply_surface_constraints(self) -> None:
                 """
@@ -142,6 +131,7 @@ class ThisController(morphopt.Controller):
         def __init__(self, params: morphopt.shapeopt.Params, *args, **kwargs):
             super().__init__(
                 surfaces=self.UpdaterGeometries(params=params),
+                device="cuda:0",
                 *args,
                 **kwargs,
             )
@@ -154,24 +144,28 @@ class ThisController(morphopt.Controller):
 
             def __init__(self, params: morphopt.shapeopt.Params):
 
-                super().__init__(params=params, max_step_iter=50)
+                super().__init__(params=params, max_step_iter=200)
 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
-                    self.objectivefuncs.Fairness(
-                        surfaces=params.geometry, sensitivity=shape_derivative
-                    )
+                    self.objectivefuncs.Fairness(surfaces=params.geometry)
                 )
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])
                 )
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(
-                        radius=12.0, height=80.0, bottom=0.0
+                        radius=14.0, height=80.0, bottom=0.0
+                    )
+                )
+
+                self.add_constraints(
+                    self.objectivefuncs.VolumeMaximization(
+                        geometryparam=self.params_update, surf_idx=1, weight=0.1
                     )
                 )
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device="cpu", restart_per_iteration=10)
+    morphopt.start_optimization(device="cpu", restart_per_iteration=10, no_gui=True)

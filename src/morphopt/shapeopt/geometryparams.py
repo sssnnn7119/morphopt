@@ -340,6 +340,7 @@ class GeometryParams(BaseGeometry):
     from .geometryinterfaces.bspsurfaceinterface import BspInterface as BSP
     from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
     from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
+    from .geometryinterfaces.basesurfaceinterface import FixedSurface
 
     def __init__(self, fea_seed_size: float, mesh_order: int = 1, *args, **kwargs) -> None:
         """

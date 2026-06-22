@@ -158,7 +158,7 @@ class ObjectiveFunction(BaseObject):
 
         return mesh
 
-    def save(self, foldpath: str, iteration: int, surface: str = 'surface_0_All') -> None:
+    def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the figures of the FEA results.
 

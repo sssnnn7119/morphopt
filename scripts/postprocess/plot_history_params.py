@@ -120,7 +120,7 @@ class SurfacesFigurePlotter:
 
         self.plot_surfaces(iteration=history_index, plotter=plotter)
         plotter.enable_parallel_projection()
-        azimuth = 0
+        azimuth = 90
         elevation = 0
         plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
@@ -142,9 +142,9 @@ class SurfacesFigurePlotter:
         plotter.close()
 
 if __name__ == "__main__":
-    plotobject = SurfacesFigurePlotter(restart_path='/run/media/song/SS/MineData/Learning/Publications/RAL2026FEA/results/case1beamsimp/BeamMinEnergy_T20260604_164718/')
+    plotobject = SurfacesFigurePlotter(restart_path='/run/media/song/SS/MineData/Learning/Publications/RAL2026FEA/results/gripper/BeamMinEnergy_T20260615_132949')
 
-    plotobject.plot_history_all_surfaces(history_index=56,
+    plotobject.plot_history_all_surfaces(history_index=113,
                                          output_gif='history_all_surfaces.gif', 
                                          output_jpg_foldpath='/run/media/song/缓存/cache/')
     # plotter = plotobject.plot_surfaces(iteration=30)
