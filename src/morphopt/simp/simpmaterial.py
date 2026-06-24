@@ -735,6 +735,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
 
         self._cps = design_sensitivity_vars.reshape_as(self._cps)
+        self.simp_field._control_points = self._cps.reshape(self.simp_field._control_points.shape).detach().cpu().numpy()
 
         designfield = self._map_bsp_designfield_with_spartial_derivative(gaussian_points_locations).reshape([shape_gaussian[0], shape_gaussian[1]])
 

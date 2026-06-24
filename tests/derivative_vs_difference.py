@@ -14,68 +14,241 @@ N_MAT_CHECK = 4
 FD_EPS = 1e-4
 MIN_GRAD_ABS = 1e-10
 
+# class ThisController(morphopt.Controller):
+#     def __init__(self):
+#         super().__init__(path_result_folder='Z:/Results/', 
+#                          opt_label='EXAMPLE')
+        
+#     class ObjectiveFunction(morphopt.codesign.ObjectiveFunction):
+#         def __init__(self):
+#             super().__init__()
+#             self.jacobian_needed = ['pressure_1']
+
+#         def get_volume_fraction(self):
+#             elems = self.fe.assembly._parts['final_model'].elems['C3D4']
+
+#             materials = elems.materials
+
+#             mu = materials._mu
+#             gaussian_weight = elems.gaussian_weight  # [gaussian, element]
+
+#             ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))
+#             ratio_now = ratio_now.clamp(0.0, 1.0)
+
+#             volume = gaussian_weight * ratio_now
+#             volume_total = gaussian_weight.sum()
+
+#             volume_fraction = volume.sum() / volume_total
+
+#             return volume_fraction
+
+#         def objective_function(self):
+            
+#             self.set_step(1)
+#             total_energy1 = self.fe.assembly._total_Potential_Energy(GC=self.fe_results[1].GC)
+#             return self.fe_results[0].GC[-2] * total_energy1 * self.fe_results[0].jacobian['pressure_1'][-2, 0]
+
+#         def get_metrics(self):
+#             return [self.fe_results[0].GC[-2]]
+
+#     class Params(morphopt.codesign.Params):
+#         class GeometryParams(morphopt.codesign.CodesignGeometry):
+
+#             def __init__(self):
+
+#                 super().__init__(fea_seed_size=3.0, 
+#                                  fea_mesh_order=1, 
+#                                  reinitialize_per_iter=5,
+#                                  thickness=1.5,
+#                                  num_layers=2,)
+
+#                 self.add_surface(
+#                     self.BSP.initialize_cylinder(r0=12.,
+#                                                     length=80.,
+#                                                     seed_size=1.0,
+#                                                     symmetric=[1, [1]],
+#                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
+ 
+#                 self.add_surface(
+#                     self.CPGEO.initialize_Sphere(seed_size=1.0,
+#                                                 flip=True,
+#                                                 r0=6.,
+#                                                 init_location=[0., 0., 40.],
+#                                                 MaxC=1.5,
+#                     ))
+
+#             def apply_surface_constraints(self) -> None:
+#                 """
+#                 Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+#                 """
+#                 a: ThisController.Params.GeometryParams.BSP = self.surface_list[0]
+#                 cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)
+#                 import torch
+#                 cp0[:, :, 0] = (cp0[:, :, 0] + torch.flip(cp0[:, :, 0], dims=[1])) / 2
+#                 cp0[:, :, 1] = (cp0[:, :, 1] - torch.flip(cp0[:, :, 1], dims=[1])) / 2
+#                 cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
+
+
+#         class FEAParams(morphopt.codesign.CodesignFEAParams):
+
+#             def define_interface(self):
+#                 # Common BC / RP / Couple
+#                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+#                 self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
+#                 self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+
+#                 self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
+#                                         name='pressure_1')
+#                 # self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
+
+#             def define_steps(self):
+#                 self.set_step_num(2)
+#                 self.set_step_params(0, "pressure_1", [0.06])
+#                 self.set_step_params(1, "pressure_1", [0.04])
+                
+
+#         class MaterialParams(morphopt.codesign.CodesignMaterials):
+            
+#             def __init__(self):
+#                 super().__init__(mumax=4.82, 
+#                                  kappamax=48, 
+#                                  density=1.08e-9, 
+#                                  simp_ratio_min=0.01, 
+#                                  initial_ratio=0.01,
+#                                  bounding_box=[-15, 15, -15, 15, 0, 80], 
+#                                  simp_field_resolution=1.0, 
+#                                  degree=3,
+#                                  shell_mu=0.48,
+#                                  shell_kappa=4.8,
+#                                  shell_density=1.08e-9,
+#                                  voidpenalfactor=0.0)
+        
+#         def __init__(self):
+#             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+
+#     class Solver(morphopt.codesign.Solver):
+#         """
+#         Solver class for morphopt.
+#         This class is responsible for solving the finite element analysis (FEA) problem.
+#         """
+
+#         def __init__(self, params: morphopt.codesign.Params):
+
+#             super().__init__(params=params,
+#                             num_process=1)
+
+#     class Updater(morphopt.codesign.Updaters):
+#         """
+#         Updater class for morphopt.
+#         This class is responsible for updating the design variables based on the results of the optimization process.
+#         """
+
+#         def __init__(self, params: morphopt.codesign.Params, *args, **kwargs):
+#             super().__init__(surfaces=self.UpdaterGeometries(params=params),
+#                             materials=self.UpdaterMaterials(params=params),
+#                             *args, **kwargs)
+
+#         class UpdaterGeometries(morphopt.codesign.UpdaterGeometries):
+#             """
+#             Updater class for morphopt.
+#             This class is responsible for updating the design variables based on the results of the optimization process.
+#             """
+
+#             def __init__(self, params: morphopt.codesign.Params):
+
+#                 super().__init__(
+#                     params=params,
+#                     max_step_iter=100)
+
+#                 shape_derivative = self.objectivefuncs.ShapeDerivative()
+#                 self.add_objective_function(shape_derivative)
+#                 self.add_constraints(
+#                     self.objectivefuncs.Fairness(surfaces=params.geometry))
+#                 self.add_constraints(
+#                     self.objectivefuncs.Distance(min_distance=
+#                                                                 [[2.5, 2.5],
+#                                                                 [2.5, 2.0]]))
+#                 self.add_constraints(
+#                     self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
+                
+#                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
+#                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
+
+#                 self.if_update = [False, True]
+
+#         class UpdaterMaterials(morphopt.codesign.UpdaterMaterials):
+#             """
+#             Material updater based on SIMP control points.
+#             """
+
+#             def __init__(self, params: morphopt.codesign.Params):
+#                 super().__init__(
+#                     params=params,
+#                     max_step_iter=50,
+#                     max_step_length=0.2,
+#                 )
+
+#                 shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
+#                 self.add_objective_function(shape_derivative)
+
+#                 density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-12)
+#                 self.add_objective_function(density_regularization)
+
+#                 # Keep SIMP control points within [0, 1] and avoid singular material values.
+#                 self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
+#                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
+
+#                 self.if_update = True
+
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/Results/', 
-                         opt_label='EXAMPLE')
-        
-    class ObjectiveFunction(morphopt.ObjectiveFunction):
+        super().__init__(path_result_folder="/run/media/song/缓存/results/", opt_label="BendingActuator")
+
+    class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
-            self.jacobian_needed = ['pressure_1']
-
-        def get_volume_fraction(self):
-            elems = self.fe.assembly._parts['final_model'].elems['C3D4']
-
-            materials = elems.materials
-
-            mu = materials._mu
-            gaussian_weight = elems.gaussian_weight  # [gaussian, element]
-
-            ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))
-            ratio_now = ratio_now.clamp(0.0, 1.0)
-
-            volume = gaussian_weight * ratio_now
-            volume_total = gaussian_weight.sum()
-
-            volume_fraction = volume.sum() / volume_total
-
-            return volume_fraction
 
         def objective_function(self):
-            
-            self.set_step(1)
-            total_energy1 = self.fe.assembly._total_Potential_Energy(GC=self.fe_results[1].GC)
-            return self.fe_results[0].GC[-2] * total_energy1 * self.fe_results[0].jacobian['pressure_1'][-2, 0]
+            return self.fe_results[0].GC[-2]
 
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
 
-    class Params(morphopt.Params):
-        class GeometryParams(morphopt.codesign.CodesignGeometry):
-
+    class Params(morphopt.shapeopt.Params):
+        class GeometryParams(morphopt.shapeopt.GeometryParams):
             def __init__(self):
 
-                super().__init__(fea_seed_size=3.0, 
-                                 fea_mesh_order=1, 
-                                 reinitialize_per_iter=5,
-                                 thickness=1.5,
-                                 num_layers=2,)
+                super().__init__(
+                    fea_seed_size=2.0, reinitialize_per_iter=5, mesh_order=2
+                )
+                self.add_surface(
+                    self.BSP.initialize_cylinder(
+                        r0=8.0,
+                        length=80.0,
+                        seed_size=0.8,
+                        symmetric=[1, [1]],
+                        flip=False,
+                        maxR=0.2,
+                        maxC=1.5,
+                        maxFF=0.2,
+                        perturbation_L=10.0,
+                    )
+                )
 
                 self.add_surface(
-                    self.BSP.initialize_cylinder(r0=12.,
-                                                    length=80.,
-                                                    seed_size=1.0,
-                                                    symmetric=[1, [1]],
-                                                    flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
- 
-                self.add_surface(
-                    self.CPGEO.initialize_Sphere(seed_size=1.0,
-                                                flip=True,
-                                                r0=6.,
-                                                init_location=[0., 0., 40.],
-                                                MaxC=1.5,
-                    ))
+                    self.BSP.initialize_cylinder(
+                        r0=4.0,
+                        length=74.0,
+                        seed_size=0.8,
+                        symmetric=[1, [1]],
+                        init_location=[0, 0, 3],
+                        flip=True,
+                        maxR=0.2,
+                        maxC=1.5,
+                        maxFF=0.2,
+                        perturbation_L=10.0,
+                    )
+                )
 
             def apply_surface_constraints(self) -> None:
                 """
@@ -84,120 +257,111 @@ class ThisController(morphopt.Controller):
                 a: ThisController.Params.GeometryParams.BSP = self.surface_list[0]
                 cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)
                 import torch
+
                 cp0[:, :, 0] = (cp0[:, :, 0] + torch.flip(cp0[:, :, 0], dims=[1])) / 2
                 cp0[:, :, 1] = (cp0[:, :, 1] - torch.flip(cp0[:, :, 1], dims=[1])) / 2
                 cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
 
-
-        class FEAParams(morphopt.codesign.CodesignFEAParams):
+        class FEAParams(morphopt.shapeopt.FEAParams):
+            def __init__(self):
+                super().__init__()
 
             def define_interface(self):
                 # Common BC / RP / Couple
-                self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-                self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
-                self.add_fea_interface(self.CoupleInterface(rp_name='RP_head', instance_name='final_model', set_nodes_name='surface_0_Head'))
+                self.add_fea_interface(
+                    self.BoundaryConditionInterface(
+                        instance_name="final_model",
+                        set_nodes_name="surface_0_Bottom",
+                        index_dof=[0, 1, 2],
+                    )
+                )
+                self.add_fea_interface(
+                    self.ReferencePointInterface(rp_location=[0.0, 0.0, 80.0]),
+                    name="RP_head",
+                )
+                self.add_fea_interface(
+                    self.CoupleInterface(
+                        rp_name="RP_head",
+                        instance_name="final_model",
+                        set_nodes_name="surface_0_Head",
+                    )
+                )
 
-                self.add_fea_interface(self.PressureInterface(instance_name='final_model', surface_name='surface_1_offset'),
-                                        name='pressure_1')
-                # self.add_fea_interface(self.ConcentratedForceInterface(rp_name='RP_head'), name='force_1')
+                self.add_fea_interface(
+                    self.PressureInterface(
+                        instance_name="final_model", surface_name="surface_1_All"
+                    ),
+                    name="pressure_1",
+                )
 
             def define_steps(self):
-                self.set_step_num(2)
+                self.set_step_num(1)
                 self.set_step_params(0, "pressure_1", [0.06])
-                self.set_step_params(1, "pressure_1", [0.04])
-                
 
-        class MaterialParams(morphopt.codesign.CodesignMaterials):
-            
+        class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
             def __init__(self):
-                super().__init__(mumax=4.82, 
-                                 kappamax=48, 
-                                 density=1.08e-9, 
-                                 simp_ratio_min=0.01, 
-                                 initial_ratio=0.01,
-                                 bounding_box=[-15, 15, -15, 15, 0, 80], 
-                                 simp_field_resolution=1.0, 
-                                 degree=3,
-                                 shell_mu=0.48,
-                                 shell_kappa=4.8,
-                                 shell_density=1.08e-9)
-        
-        def __init__(self):
-            super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+                super().__init__(
+                    mu=0.482,
+                    kappa=4.8,
+                    density=1.08e-9,
+                )
 
-    class Solver(morphopt.Solver):
+        def __init__(self):
+            super().__init__(
+                surfaces=self.GeometryParams(),
+                feamodel=self.FEAParams(),
+                materials=self.MaterialParams(),
+            )
+
+    class Solver(morphopt.shapeopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
         """
 
-        def __init__(self, params: morphopt.Params):
+        def __init__(self, params: morphopt.shapeopt.Params):
 
-            super().__init__(params=params,
-                            num_process=1)
+            super().__init__(params=params, available_gpus=["cuda:0"], num_process=1)
 
-    class Updater(morphopt.Updaters):
+    class Updater(morphopt.shapeopt.Updaters):
         """
         Updater class for morphopt.
         This class is responsible for updating the design variables based on the results of the optimization process.
         """
 
-        def __init__(self, params: morphopt.Params, *args, **kwargs):
-            super().__init__(surfaces=self.UpdaterGeometries(params=params),
-                            materials=self.UpdaterMaterials(params=params),
-                            *args, **kwargs)
+        def __init__(self, params: morphopt.shapeopt.Params, *args, **kwargs):
+            super().__init__(
+                surfaces=self.UpdaterGeometries(params=params),
+                device="cuda:0",
+                *args,
+                **kwargs,
+            )
 
-        class UpdaterGeometries(morphopt.UpdaterGeometries):
+        class UpdaterGeometries(morphopt.shapeopt.UpdaterGeometries):
             """
             Updater class for morphopt.
             This class is responsible for updating the design variables based on the results of the optimization process.
             """
 
-            def __init__(self, params: morphopt.Params):
+            def __init__(self, params: morphopt.shapeopt.Params):
 
-                super().__init__(
-                    params=params,
-                    max_step_iter=100)
+                super().__init__(params=params, max_step_iter=200)
 
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
-                    self.objectivefuncs.Fairness(surfaces=params.geometry, sensitivity=shape_derivative))
-                self.add_constraints(
-                    self.objectivefuncs.Distance(min_distance=
-                                                                [[2.5, 2.5],
-                                                                [2.5, 2.0]]))
-                self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
-                
-                self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
-                self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
-
-                self.if_update = [False, True]
-
-        class UpdaterMaterials(morphopt.UpdaterMaterials):
-            """
-            Material updater based on SIMP control points.
-            """
-
-            def __init__(self, params: morphopt.Params):
-                super().__init__(
-                    params=params,
-                    max_step_iter=50,
-                    max_step_length=0.2,
+                    self.objectivefuncs.Fairness(
+                        surfaces=params.geometry
+                    )
                 )
-
-                shape_derivative = self.objectivefuncs.Sensitivity(normalize_gradient=False)
-                self.add_objective_function(shape_derivative)
-
-                density_regularization = self.objectivefuncs.DensityFieldMinimize(scale=1e-12)
-                self.add_objective_function(density_regularization)
-
-                # Keep SIMP control points within [0, 1] and avoid singular material values.
-                self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-                self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
-
-                self.if_update = True
+                self.add_constraints(
+                    self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])
+                )
+                self.add_constraints(
+                    self.objectivefuncs.boundarys.Cylinder(
+                        radius=10.0, height=80.0, bottom=0.0
+                    )
+                )
 
 
 def run_once(
@@ -236,13 +400,6 @@ def central_difference(
         fm = run_once(controller, fe_template, xm_dict)
         grad_fd[i] = (fp - fm) / (2.0 * eps)
     return grad_fd
-
-
-def sample_ids(total_numel: int, count: int, device: torch.device) -> torch.Tensor:
-    if count >= total_numel:
-        return torch.arange(total_numel, device=device, dtype=torch.long)
-    return torch.linspace(0, total_numel - 1, steps=count, device=device).round().long().unique()
-
 
 def sample_ids_by_gradient(
     grad_full: torch.Tensor,
@@ -306,6 +463,9 @@ def main():
             (geom_key, geom_ids, 'Geometry'),
             (mat_key, mat_ids, 'Material-SIMP'),
         ]:
+            if ids.numel() == 0:
+                print(f'No {title} gradient exceeds the minimum threshold of {MIN_GRAD_ABS:.3e}. Skipping derivative check.')
+                continue
             grad_fd = central_difference(controller, fe0, x0_full, key=key, sampled_ids=ids, eps=FD_EPS)
             grad_ad = grad_ad_dict[key][ids]
 

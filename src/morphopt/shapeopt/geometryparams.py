@@ -772,6 +772,7 @@ class GeometryParams(BaseGeometry):
             nodes_new[surf_node_idx] = node_update
 
         if self._mesh_order == 2:
+            nodes_new = nodes_new.clone()
             nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (nodes_new[part.mid_pt_idxmap_torch[:, 0]] + nodes_new[part.mid_pt_idxmap_torch[:, 1]]) / 2
 
         part.nodes = nodes_new

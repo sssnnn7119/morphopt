@@ -157,6 +157,36 @@ class ObjectiveFunction(BaseObject):
         mesh = list(self.fe.assembly.get_meshes(GC=self.fe_results[case].GC).values())
 
         return mesh
+    
+    def plot(self, case: int) -> None:
+        """
+        Plot the FEA results for a specific case.
+
+        Parameters:
+            case (int): The index of the case to plot.
+        """
+
+        color_list = [(40.0/255, 120.0/255, 181.0/255), (237.0/255, 177.0/255, 32.0/255), (175.0/255, 82.0/255, 205.0/255), (241.0/255, 88.0/255, 84.0/255), (119.0/255, 149.0/255, 72.0/255)]
+
+        plotter = pv.Plotter(window_size=(1200, 1200))
+
+        # Create faces list for pyvista
+        # Create pyvista mesh
+        meshes = self.get_mesh_case(case)
+
+        for meshidx, mesh in enumerate(meshes):
+            plotter.add_mesh(mesh, color=color_list[meshidx % len(color_list)], opacity=1.0)
+        
+        # Approximate view
+        plotter.set_background('white')
+        plotter.enable_parallel_projection()
+        azimuth = 210
+        elevation = 20
+        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+            math.sin(math.radians(elevation))))
+
+        plotter.show()
 
     def save(self, foldpath: str, iteration: int) -> None:
         """

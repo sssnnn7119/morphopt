@@ -18,7 +18,7 @@ from . import simp
 # endregion
 
 # region scripts
-from .scripts import get_controller
+from .utils import check_gradients, get_controller
 # endregion
 
 controller: Controller = None
