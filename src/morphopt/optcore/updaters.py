@@ -4,6 +4,9 @@ from .baseobject import BaseObject
 import morphopt
 from .modelparams import Params
 
+import logging
+logger = logging.getLogger(__name__)
+
 class BaseUpdater(BaseObject):
     """
     Base class for all Updaters.

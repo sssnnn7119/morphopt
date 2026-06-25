@@ -116,22 +116,6 @@ class ObjectiveFunction(BaseObject):
     def pathlog_required(self):
         return ['deformation', 'femodel&results']
 
-    def __str__(self) -> str:
-
-        result = ["FE_result Summary:"]
-        
-        for i in range(self.num_tasks):
-            result.append(f"=================================Task {i+1}=================================")
-            
-            
-            # 格式化位移向量（一维）
-            u_vector = self.fe_results[i].GC[-6:].tolist()
-            u_str = " ".join([f"{x:.6f}" for x in u_vector])
-            result.append(f"  Displacement U: {u_str}")
-
-            result.append(f"============================================================================")
-        
-        return "\n".join(result)
         
     def __getitem__(self, key):
         """

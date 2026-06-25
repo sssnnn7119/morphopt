@@ -3,6 +3,8 @@ import torch
 from .basefuncs import BaseConstraints
 import logging
 
+logger = logging.getLogger(__name__)
+
 class Distance(BaseConstraints):
     """
     Distance objective function for MorphOpt.
@@ -99,7 +101,7 @@ class Distance(BaseConstraints):
         self.neighbor_points = self.neighbor_points[:, index_remain]
         self.neighbor_mindist = self.neighbor_mindist[index_remain]
 
-        logging.debug(f"Distance Objective Function: {self.neighbor_points.shape[1]} point pairs within threshold {self.distance_threshold}")
+        logger.debug(f"Distance Objective Function: {self.neighbor_points.shape[1]} point pairs within threshold {self.distance_threshold}")
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], *args, **kwargs):
 

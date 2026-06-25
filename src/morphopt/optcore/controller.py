@@ -17,6 +17,9 @@ import morphopt
 import multiprocessing as mp
 from multiprocessing import get_context
 
+import logging
+logger = logging.getLogger(__name__)
+
 class Controller:
 
     class Params:
@@ -226,6 +229,9 @@ class Controller:
         This function runs the optimization loop for a specified number of iterations.
         It calls the opt_step function in each iteration.
         """
+        import torchfea
+        torchfea.enable_logging(log_file=os.path.join(self.path_result, 'log', 'torchfea.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.INFO)
+        morphopt.enable_logging(log_file=os.path.join(self.path_result, 'log', 'morphopt.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.INFO)
 
         if_first_step_restart = True
 
@@ -279,6 +285,8 @@ class Controller:
         if os.path.exists(self.path_result + '/cache/TopOptRun.inp'):
             os.remove(self.path_result + '/cache/TopOptRun.inp')
 
+        logger.info("\n" + "=" * 50 + f"\nStarting optimization step {self.history.iteration}...\n" + "=" * 50)
+
         # Initialize the workflow
         self.params.reinitialize(iteration = self.history.iteration)
         self.solver.reinitialize(iteration = self.history.iteration)
@@ -286,21 +294,25 @@ class Controller:
         self.objfun.reinitialize(iteration = self.history.iteration)
 
         # Perform the optimization step
+        logger.info(f"Creating FEA model for iteration {self.history.iteration}...")
         self.objfun.fe = self.params.create_feamodel(path_result=self.path_result + '/cache/', pools=self.pools)
 
         t1 = time.time()
 
         # Perform finite element analysis (FEA)
+        logger.info(f"Performing FEA for iteration {self.history.iteration}...")
         self.objfun.fe_results = self.solver.solve()
 
         t2 = time.time()
 
         # sensitivity analysis
+        logger.info(f"Performing sensitivity analysis for iteration {self.history.iteration}...")
         gradients = self.objfun.sensitivity_analysis(params=self.params)
 
         t3 = time.time()
 
         # Update the surfaces based on the FEA results
+        logger.info(f"Updating surfaces for iteration {self.history.iteration}...")
         self.updater.update(gradients=gradients)
         self.updater.update_variables()
 
@@ -314,12 +326,6 @@ class Controller:
         """
         Record the history of the optimization process.
         """
-        if self.objfun.fe.assembly._reference_points.get('RP_head') is None:
-            displacement = []
-        else:
-            GC_start_index = self.objfun.fe.assembly._GC_list_indexStart[self.objfun.fe.assembly.get_reference_point('RP_head')._RGC_index]
-            displacement = [self.objfun.fe_results[i].GC[GC_start_index:GC_start_index+6].tolist() for i in range(self.objfun.num_tasks)]
-        self.history.append('deformation', displacement)
         self.history.append('objective', loss.item())
         self.history.append('metrics', self.objfun.get_metrics())
         self.history.append('time', [t1-t0, t2-t1, t3-t2, t4-t3])
@@ -330,16 +336,15 @@ class Controller:
         """
         Print the current information of the optimization process.
         """
-        print(f"Iteration: {self.history.iteration}")
-        print(self.objfun)
-        print(f"Loss: {self.history.history_objective[-1]:.6f}")
-        print("Time Breakdown:")
-        print(f"  Initialization Time: {t1 - t0:.2f} seconds")
-        print(f"  FEA Time: {t2 - t1:.2f} seconds")
-        print(f"  Sensitivity Time: {t3 - t2:.2f} seconds")
-        print(f"  Update Time: {t4 - t3:.2f} seconds")
-        print(f"  Total Time: {t4 - t0:.2f} seconds")
-        print("-" * 50)
+        logger.info(f"Iteration: {self.history.iteration}")
+        logger.info(f"Loss: {self.history.history_objective[-1]:.6f}")
+        logger.info("Time Breakdown:")
+        logger.info(f"  Initialization Time: {t1 - t0:.2f} seconds")
+        logger.info(f"  FEA Time: {t2 - t1:.2f} seconds")
+        logger.info(f"  Sensitivity Time: {t3 - t2:.2f} seconds")
+        logger.info(f"  Update Time: {t4 - t3:.2f} seconds")
+        logger.info(f"  Total Time: {t4 - t0:.2f} seconds")
+        logger.info("-" * 50)
 
     def save(self) -> None:
         """
@@ -359,7 +364,7 @@ class Controller:
 
         torch.cuda.empty_cache()
         data = gc.collect()
-        print(f"Garbage collector: collected {data} objects.")
+        logger.info(f"Garbage collector: collected {data} objects.")
 
     def change_device(self, device: torch.device, obj: object = None) -> None:
         """

@@ -1,4 +1,6 @@
 
+from math import log
+
 import numpy as np
 
 import torch
@@ -7,6 +9,9 @@ from ..optcore.modelparams.params import Params
 from .simpmaterial import SIMP_BSPFieldMaterials
 from tabulate import tabulate
 from ..optcore import BaseUpdater
+
+import logging
+logger = logging.getLogger(__name__)
 
 class UpdaterMaterials(BaseUpdater):
     """
@@ -242,9 +247,7 @@ class UpdaterMaterials(BaseUpdater):
         variables = self.params_update.get_variables().detach().clone()
 
         # print the information
-        print("\n\n")
-        print("Start updating the materials...")
-
+        logger.info("Start updating the materials...")
 
         low_step_length_iter = 0
         gk_new = None
@@ -260,9 +263,7 @@ class UpdaterMaterials(BaseUpdater):
                 low_step_length_iter += 1
 
             if low_step_length_iter > 10:
-                print(
-                    f"Low step length detected ({low_step_length_iter} iterations), stopping optimization."
-                )
+                logger.info(f"Low step length detected ({low_step_length_iter} iterations), stopping optimization.")
                 break
 
             # get current objective function value
@@ -284,6 +285,7 @@ class UpdaterMaterials(BaseUpdater):
 
                 string = tabulate(data, headers=headers, tablefmt="grid")
                 print(string, end="\r")
+                logger.debug(string)
 
         return variables.detach().clone()
 

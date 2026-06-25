@@ -8,6 +8,10 @@ from . import GeometryParams
 from tabulate import tabulate
 from ..optcore import BaseUpdater
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 class UpdaterGeometries(BaseUpdater):
     """
     The Updater class is responsible for updating the parameters of the optimization process.
@@ -262,9 +266,7 @@ class UpdaterGeometries(BaseUpdater):
         variables = self.params_update.get_variables().detach().clone()
 
         # print the information
-        print("\n\n")
-        print("Start updating the surfaces...")
-
+        logger.info("Start updating the surfaces...")
 
         low_step_length_iter = 0
         gk_new = None
@@ -280,9 +282,7 @@ class UpdaterGeometries(BaseUpdater):
                 low_step_length_iter += 1
 
             if low_step_length_iter > 10:
-                print(
-                    f"Low step length detected ({low_step_length_iter} iterations), stopping optimization."
-                )
+                logger.info(f"Low step length detected ({low_step_length_iter} iterations), stopping optimization.")
                 break
 
             # get current objective function value
@@ -303,7 +303,9 @@ class UpdaterGeometries(BaseUpdater):
                         [f"{val.item():.6e}" for val in constraints_values]]
 
                 string = tabulate(data, headers=headers, tablefmt="grid")
+                
                 print(string, end="\r")
+                logger.debug(string)
 
         return variables.detach().clone()
 

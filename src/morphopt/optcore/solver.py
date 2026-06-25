@@ -95,7 +95,10 @@ class Solver(BaseObject):
                                                     'feamodel': self.params.feamodel,
                                                     'task_index': self.task_index_list[i],
                                                     'available_gpus': self.available_gpus,
-                                                    'U_guess': U_guess[self.task_index_list[i][0]] if U_guess is not None else None}))
+                                                    'U_guess': U_guess[self.task_index_list[i][0]] if U_guess is not None else None,
+                                                    'path_result': morphopt.controller.path_result}
+                                            )
+                        )
 
         # get the result
         results = []
@@ -124,12 +127,16 @@ class Solver(BaseObject):
                    feamodel: FEAParams, 
                    task_index: list[int], 
                    available_gpus: list[str], 
-                   U_guess: np.ndarray = None):
+                   U_guess: np.ndarray = None,
+                   path_result: str = None):
         import os
         os.environ['KMP_DUPLICATE_LIB_OK']='True'
         import sys
         import torch
         sys.path.append(os.getcwd())
+
+        import torchfea
+        torchfea.enable_logging(log_file=os.path.join(path_result, 'log', 'torchfea.log'))
  
         current_process_name = mp.current_process().name
         try:
