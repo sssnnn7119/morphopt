@@ -305,7 +305,7 @@ class UpdaterGeometries(BaseUpdater):
                 string = tabulate(data, headers=headers, tablefmt="grid")
                 
                 print(string, end="\r")
-                logger.debug(string)
+                logger.debug("\n" + string)
 
         return variables.detach().clone()
 

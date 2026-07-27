@@ -217,7 +217,6 @@ class Controller:
         self.solver.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
         self.updater.load(foldpath=self.path_result + '/log/', iteration=target_iteration)
 
-        self.history.iteration += 1
 
     def restart_optimization(self, path_result: str, target_iteration: int = None) -> None:
 
@@ -230,18 +229,15 @@ class Controller:
         It calls the opt_step function in each iteration.
         """
         import torchfea
-        torchfea.enable_logging(log_file=os.path.join(self.path_result, 'log', 'torchfea.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.INFO)
-        morphopt.enable_logging(log_file=os.path.join(self.path_result, 'log', 'morphopt.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.INFO)
-
-        if_first_step_restart = True
+        torchfea.enable_logging(log_file=os.path.join(self.path_result, 'log', 'torchfea.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.DEBUG)
+        morphopt.enable_logging(log_file=os.path.join(self.path_result, 'log', 'morphopt.log'), file_log_level=logging.DEBUG if self._debug_mode else logging.DEBUG)
 
         while True:
 
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            loss, t0, t1, t2, t3, t4 = self.step(if_first_step_restart=if_first_step_restart)
-            if_first_step_restart = False
+            loss, t0, t1, t2, t3, t4 = self.step()
 
             # Record the history of the optimization process
             self.record_history(loss, t0, t1, t2, t3, t4)
@@ -266,10 +262,8 @@ class Controller:
                 self.pools.join()
                 return
             
-            self.history.iteration += 1
-            
 
-    def step(self, if_first_step_restart: bool = False):
+    def step(self):
         """
         Perform a single optimization step.
         Returns:

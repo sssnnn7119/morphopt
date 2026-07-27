@@ -6,7 +6,7 @@ A differentiable structural optimization framework that eliminates manual sensit
 # region: Logging Configuration
 import logging as __logging
 
-def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging.INFO):
+def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging.DEBUG):
     """
     Enable logging for the FEA package.
 
