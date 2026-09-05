@@ -1,6 +1,6 @@
 [project]
 name = "morphopt"
-version = "3.1.5"
+version = "3.1.6"
 description = "A morphing optimization framework using PyTorch and Abaqus."
 readme = "README.md"
 requires-python = ">=3.12"
