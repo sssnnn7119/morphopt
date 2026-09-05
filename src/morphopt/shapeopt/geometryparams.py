@@ -581,7 +581,7 @@ class GeometryParams(BaseGeometry):
 
     def apply_surface_constraints(self) -> None:
         """
-        Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+        Apply the constraints (e.g. the surface constraint) of the surfaces.
         """
         pass
 

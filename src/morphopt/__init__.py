@@ -66,7 +66,7 @@ from .optcore.history import History
 from .optcore.baseobject import BaseObject
 # endregion
 
-from .opt_runner import start_optimization, debug_optimization, view_optimization_result
+from .opt_runner import start_optimization, debug_optimization
 
 # region modules
 from . import shapeopt

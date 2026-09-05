@@ -36,7 +36,7 @@ class BspInterface(CpBasedInterface):
             
         def build(self):
             """
-            构建版本 - 改用 addBSplineSurface + Symmetric Wrapping + Trim
+            构建版本 - 改用 addBSplineSurface + Wrapping + Trim
             通过上下游双重延伸(Padding)确保接缝处C2连续性
             """
             self.volume_tag = None
@@ -392,8 +392,8 @@ class BspInterface(CpBasedInterface):
             gmsh.fltk.run()
 
 
-    def __init__(self, surface: bspmap.BSP, init_size: float, symmetric = [0], MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
-        super().__init__(surface, symmetric)
+    def __init__(self, surface: bspmap.BSP, init_size: float, MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
+        super().__init__(surface)
 
         self.model = surface
         """The B-spline surface model."""
@@ -691,7 +691,7 @@ class BspInterface(CpBasedInterface):
 
 
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, num_U_ratio: int = 1, num_V_ratio: int = 1, symmetric: list[int] = [0], degree = 3, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
+    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, num_U_ratio: int = 1, num_V_ratio: int = 1, degree = 3, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
         """
         Initialize the B-spline surface for the optimization process.
 
@@ -701,7 +701,6 @@ class BspInterface(CpBasedInterface):
             seed_size (float): The size of the seed for the B-spline surface.
             num_U_ratio (int, optional): The ratio for the number of points in the U direction. Default is 1.
             num_V_ratio (int, optional): The ratio for the number of points in the V direction. Default is 1.
-            symmetric (list[int]): The symmetry of the surface.
             flip (bool): Whether to flip the surface or not.
             degree (int, optional): The degree of the B-spline surface. Default is 3.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
@@ -713,7 +712,6 @@ class BspInterface(CpBasedInterface):
         Returns:
             BSP (BSP_Surf): The initialized B-spline surface object.
             surf_type (int): The type of the surface (0 for B-spline surface).
-            symmetric (list[int]): The symmetry of the surface.
         """
 
         numU = round(r0 * 2 * np.pi / seed_size)
@@ -757,7 +755,7 @@ class BspInterface(CpBasedInterface):
                          size=[numV, numU],
                          control_points=P0.cpu().numpy().reshape([-1, 3]))
 
-        output = cls(bsp, init_size=seed_size, symmetric=symmetric, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
+        output = cls(bsp, init_size=seed_size, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
         output.flip = flip
 
         return output

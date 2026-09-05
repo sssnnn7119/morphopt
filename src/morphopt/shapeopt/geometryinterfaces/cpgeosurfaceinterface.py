@@ -20,8 +20,8 @@ class CPGEOInterface(CpBasedInterface):
     providing a flexible alternative to B-spline surfaces for complex geometries.
     """
 
-    def __init__(self, surface: cpgeo.CPGEO, init_size: float, symmetric = [0], MaxC = 1.0):
-        super().__init__(surface, symmetric)
+    def __init__(self, surface: cpgeo.CPGEO, init_size: float, MaxC = 1.0):
+        super().__init__(surface)
 
         self.model = surface
         """The CPGEO surface model."""
@@ -363,7 +363,7 @@ class CPGEOInterface(CpBasedInterface):
 
     @classmethod
     def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, 
-                          num_U_ratio: int = 1, num_V_ratio: int = 1, symmetric: list[int] = [0], 
+                          num_U_ratio: int = 1, num_V_ratio: int = 1, 
                           degree = 3, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, 
                           perturbation_L = -1.):
         """
@@ -376,7 +376,6 @@ class CPGEOInterface(CpBasedInterface):
             flip (bool): Whether to flip the surface normal or not.
             num_U_ratio (int, optional): The ratio for mesh density in circumferential direction. Default is 1.
             num_V_ratio (int, optional): The ratio for mesh density in axial direction. Default is 1.
-            symmetric (list[int]): The symmetry of the surface.
             degree (int, optional): Unused for CPGEO. Default is 3.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
             maxR (float, optional): The maximum curvature derivative constraint. Default is 0.2.
@@ -451,14 +450,14 @@ class CPGEOInterface(CpBasedInterface):
         )
         
         # Create interface
-        output = cls(cpgeo_model, init_size=seed_size, symmetric=symmetric, 
+        output = cls(cpgeo_model, init_size=seed_size, 
                     MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
         output.flip = flip
 
         return output
     
     @classmethod
-    def initialize_Sphere(cls, r0: float, seed_size: float, flip: bool, symmetric: list[int] = [0], init_location = [0.,0.,0.], 
+    def initialize_Sphere(cls, r0: float, seed_size: float, flip: bool, init_location = [0.,0.,0.], 
                           MaxC = 1.0):
         """
         Initialize the CPGEO surface for sphere shape optimization.
@@ -467,7 +466,6 @@ class CPGEOInterface(CpBasedInterface):
             r0 (float): The radius of the sphere.
             seed_size (float): The size of the mesh seed.
             flip (bool): Whether to flip the surface normal or not.
-            symmetric (list[int]): The symmetry of the surface.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
             MaxC (float, optional): The maximum curvature constraint. Default is 1.0
         Returns:
@@ -505,7 +503,7 @@ class CPGEOInterface(CpBasedInterface):
         )
         
         # Create interface
-        output = cls(cpgeo_model, init_size=seed_size, symmetric=symmetric, MaxC=MaxC)
+        output = cls(cpgeo_model, init_size=seed_size, MaxC=MaxC)
         output.flip = flip
 
         return output

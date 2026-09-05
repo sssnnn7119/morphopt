@@ -1,4 +1,4 @@
-﻿
+
 import copy
 import os
 import tempfile
@@ -13,28 +13,6 @@ class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='Z:/Results/', 
                          opt_label='EXAMPLE')
-        
-    class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def __init__(self):
-            super().__init__()
-
-        def get_volume_fraction(self):
-            elems = self.fe.assembly._parts['final_model'].elems['C3D4']
-
-            materials = elems.materials
-
-            mu = materials._mu
-            gaussian_weight = elems.gaussian_weight  # [gaussian, element]
-
-            ratio_now = (mu - mumax * minratio) / (mumax * (1 - minratio))
-            ratio_now = ratio_now.clamp(0.0, 1.0)
-
-            volume = gaussian_weight * ratio_now
-            volume_total = gaussian_weight.sum()
-
-            volume_fraction = volume.sum() / volume_total
-
-            return volume_fraction
 
         def objective_function(self):
 
@@ -60,7 +38,6 @@ class ThisController(morphopt.Controller):
                     self.BSP.initialize_cylinder(r0=12.,
                                                     length=80.,
                                                     seed_size=1.0,
-                                                    symmetric=[1, [1]],
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
  
                 self.add_surface(
@@ -73,7 +50,7 @@ class ThisController(morphopt.Controller):
 
             def apply_surface_constraints(self) -> None:
                 """
-                Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+                Apply the constraints (e.g. the surface constraint) of the surfaces.
                 """
                 a: ThisController.Params.GeometryParams.BSP = self.surface_list[0]
                 cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)

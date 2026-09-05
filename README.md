@@ -1,4 +1,4 @@
-# MorphOpt —— A Differentiable Optimization Framework for Soft Structure & Morphology Design
+# MorphOpt — A Differentiable Optimization Framework for Soft Structure & Morphology Design
 
 **Developed by Zenan Song**
 
@@ -21,14 +21,23 @@ pip install morphopt
 2. Run a minimal example:
 
 ```bash
-# Shape optimization
-python examples/basic/shapeoptimization.py
+# Shape optimization (pneumatic bending actuator)
+python examples/bendingactuator.py
 
-# SIMP topology optimization
-python examples/basic/simp.py
+# SIMP topology optimization (compliant gripper)
+python examples/gripper.py
 ```
 
-3. More usage examples:
+3. **Launch the GUI (recommended)** — define, run and observe an optimization all inside one window:
+
+```bash
+morphopt-ui            # console command, available after `pip install morphopt`
+# python -m morphopt.ui works too (handy when running from a source code directory)
+```
+
+The complete UI workflow (definition part + observer part) is described in [`docs/UI_usage.md`](docs/UI_usage.md).
+
+Further references:
 
 - Task definition guide: `docs/module_definition_guide.md`
 - Module API reference: `docs/module_reference.md`
@@ -40,9 +49,13 @@ python examples/basic/simp.py
   - `optcore` — Core package (controller, params, solver, objective, updaters)
   - `shapeopt/` — B-spline shape optimization
   - `simp/` — SIMP topology optimization
+  - `codesign/` — Shell co-design (shape + material)
+  - `ui/` — PySide6 graphical UI (definition + observer in one window)
 - `examples/` — Example tasks (bending actuator, gripper, etc.)
-- `docs/` — Usage guides, API reference, and theory papers
+- `docs/` — Usage guides, API reference, theory papers
+  - [`UI_usage.md`](docs/UI_usage.md) — graphical UI user guide
 - `tests/` — Gradient checks, geometry tests, UI tests
+- `ui_runs/` — runs launched from the UI and their results (`<label>_T<timestamp>/`)
 
 ## License
 

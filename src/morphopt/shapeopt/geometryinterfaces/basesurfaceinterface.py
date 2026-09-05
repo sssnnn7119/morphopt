@@ -14,7 +14,7 @@ class BaseInterface():
     Class to handle the surface of the morphable model.
     """
     
-    def __init__(self, symmetric: list[int] = None, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         """
         Initialize the Surface class.
 
@@ -23,22 +23,6 @@ class BaseInterface():
             surf_type (int) : The type of the surface.
                 - 0: bspline surface
                 - 1: closed surface
-            symmetric (list[int]) : The symmetry of the surface.
-                - 0: no symmetry
-                - 1: axis symmetry
-                    0: x-axis symmetry
-                    1: y-axis symmetry
-                    2: z-axis symmetry
-        """
-
-        self.symmetric: list[int] = symmetric
-        """
-        the symmetry of the surface.
-        # 0: no symmetry
-        # 1: axis symmetry
-            ## 0: x-axis symmetry
-            ## 1: y-axis symmetry
-            ## 2: z-axis symmetry
         """
 
         self.surf_node_idx: np.ndarray
@@ -737,12 +721,6 @@ class CpBasedInterface(BaseInterface):
             surf_type (int) : The type of the surface.
                 - 0: bspline surface
                 - 1: closed surface
-            symmetric (list[int]) : The symmetry of the surface.
-                - 0: no symmetry
-                - 1: axis symmetry
-                    0: x-axis symmetry
-                    1: y-axis symmetry
-                    2: z-axis symmetry
         """
 
         super().__init__(*args, **kwargs)

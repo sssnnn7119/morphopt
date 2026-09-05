@@ -3,26 +3,25 @@ import multiprocessing as mp
 
 class TaskOptimization:
     @classmethod
-    def task_optimization(cls, path_result: str = None, 
-                            main_filepath: str = None,
-                            device: str = 'cpu', 
-                            target_iteration: int = None,
-                            restart_per_iteration: int = 20, 
-                            dataqueue: mp.Queue = None):
-        
+    def task_optimization(cls, path_result: str = None,
+                          main_filepath: str = None,
+                          device: str = 'cpu',
+                          target_iteration: int = None,
+                          restart_per_iteration: int = 20):
+        """Restart loop: run ``restart_per_iteration``-iteration chunks, then
+        automatically continue from the latest iteration of the same folder.
+        """
         import warnings
         warnings.filterwarnings("ignore", category=UserWarning)
 
-
         path_queue = mp.Queue()
         while True:
-            process = mp.Process(target=cls.optmain, kwargs={'device': device, 
-                                                        'target_iteration': target_iteration, 
-                                                        'path_result': path_result, 
-                                                        'restart_per_iteration': restart_per_iteration, 
-                                                        'main_filepath': main_filepath, 
-                                                        'pathqueue': path_queue,
-                                                        'dataqueue': dataqueue})
+            process = mp.Process(target=cls.optmain, kwargs={'device': device,
+                                                        'target_iteration': target_iteration,
+                                                        'path_result': path_result,
+                                                        'restart_per_iteration': restart_per_iteration,
+                                                        'main_filepath': main_filepath,
+                                                        'pathqueue': path_queue})
             process.start()
             try:
                 process.join()  # Wait for process to finish
@@ -36,10 +35,9 @@ class TaskOptimization:
             target_iteration = None  # after first restart, always continue to the latest iteration
 
     @classmethod
-    def optmain(cls, device='cpu', target_iteration: int = 0, path_result: str = None, restart_per_iteration: int = 20, main_filepath: str = None, pathqueue: mp.Queue = None, dataqueue: mp.Queue = None):
+    def optmain(cls, device='cpu', target_iteration: int = 0, path_result: str = None, restart_per_iteration: int = 20, main_filepath: str = None, pathqueue: mp.Queue = None):
         import os
-        os.environ['KMP_DUPLICATE_LIB_OK']='True'
-        
+        os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
         import warnings
         warnings.filterwarnings("ignore", category=UserWarning)
@@ -50,24 +48,21 @@ class TaskOptimization:
 
         import morphopt
 
-        filename = os.path.splitext(os.path.basename(main_filepath))[0] 
+        filename = os.path.splitext(os.path.basename(main_filepath))[0]
         filepath = os.path.dirname(main_filepath)
         os.chdir(filepath)
         import sys
         sys.path.append(os.getcwd())
 
-        
-
         Controller: morphopt.Controller = getattr(__import__(filename), 'ThisController')
 
         controller: morphopt.Controller = Controller()
         controller.restart_per_iteration = restart_per_iteration
-        controller.dataqueue = dataqueue
         controller.optdevice = device
 
         if target_iteration == 0 or path_result is None:
             controller.start_optimization(main_filepath=main_filepath)
-        else: 
+        else:
             controller.restart_optimization(path_result=path_result, target_iteration=target_iteration)
 
         if pathqueue is not None:

@@ -1,4 +1,4 @@
-﻿import morphopt
+import morphopt
 
 
 class ThisController(morphopt.Controller):
@@ -27,7 +27,6 @@ class ThisController(morphopt.Controller):
                         r0=8.0,
                         length=80.0,
                         seed_size=0.8,
-                        symmetric=[1, [1]],
                         flip=False,
                         maxR=0.2,
                         maxC=1.5,
@@ -41,7 +40,6 @@ class ThisController(morphopt.Controller):
                         r0=4.0,
                         length=74.0,
                         seed_size=0.8,
-                        symmetric=[1, [1]],
                         init_location=[0, 0, 3],
                         flip=True,
                         maxR=0.2,
@@ -53,7 +51,7 @@ class ThisController(morphopt.Controller):
 
             def apply_surface_constraints(self) -> None:
                 """
-                Apply the constraints (e.g. the symmetric constraint) of the surfaces.
+                Apply the constraints (e.g. the surface constraint) of the surfaces.
                 """
                 a: ThisController.Params.GeometryParams.BSP = self.surface_list[0]
                 cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)
@@ -166,4 +164,4 @@ class ThisController(morphopt.Controller):
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device="cpu", restart_per_iteration=10, no_gui=True)
+    morphopt.start_optimization(device="cpu", restart_per_iteration=10)
