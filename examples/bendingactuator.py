@@ -3,7 +3,7 @@
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder="/run/media/song/缓存/results/", opt_label="BendingActuator")
+        super().__init__(path_result_folder=".results/", opt_label="BendingActuator")
 
     class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
         def __init__(self):
