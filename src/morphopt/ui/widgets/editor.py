@@ -25,6 +25,7 @@ from ..model.schemas import (
 )
 from .codeeditor import CodeEditor
 from .values import parse_vec_text, DOF_LABELS
+from ..i18n import T, pick
 
 
 def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
@@ -73,7 +74,7 @@ def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
     if problem.scheme == "codesign":
         for i in range(1, n):
             surface_sets.append(f"surface_{i}_offset")
-    surface_sets += ["surface_0_Bottom", "surface_0_Head", "surface_0_Top"]
+    surface_sets += ["surface_0_Bottom", "surface_0_Head"]
 
     rp_names = [nd.name for nd in problem.interfaces()
                 if nd.params.get("type") == "ReferencePoint"]
@@ -139,9 +140,12 @@ class PropertyEditor(QWidget):
         self._title.setText(node.name or node.kind)
         if node.kind == "interface":
             name_edit = QLineEdit(node.name or "")
-            name_edit.setToolTip("载荷名称（在载荷步矩阵 / jacobian_needed 中引用）。改名会自动级联更新。")
+            name_edit.setToolTip(T(
+                "载荷名称（在载荷步矩阵 / jacobian_needed 中引用）。改名会自动级联更新。",
+                "Load name (referenced by the step matrix / jacobian_needed). "
+                "Renaming cascades automatically."))
             name_edit.editingFinished.connect(lambda e=name_edit: self._rename_node(e.text()))
-            self._form.addRow("名称", name_edit)
+            self._form.addRow(T("名称", "Name"), name_edit)
         if subtitle:
             lbl = QLabel(subtitle)
             lbl.setWordWrap(True)
@@ -169,8 +173,8 @@ class PropertyEditor(QWidget):
         cur = node.params.get(key, f["default"])
         typ = f["type"]
 
-        label = QLabel(f["label"])
-        label.setToolTip(f.get("doc", ""))
+        label = QLabel(pick(f["label"], f.get("label_en")))
+        label.setToolTip(pick(f.get("doc", ""), f.get("doc_en")))
 
         if typ == "bool":
             w = QCheckBox()
@@ -276,8 +280,9 @@ class PropertyEditor(QWidget):
 
     def _browse(self, edit: QLineEdit) -> None:
         start = edit.text() or "."
-        path, _ = QFileDialog.getOpenFileName(self, "选择文件", start,
-                                              "Mesh / geometry (*.inp *.stl *.step *.stp)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, T("选择文件", "Select file"), start,
+            "Mesh / geometry (*.inp *.stl *.step *.stp)")
         if path:
             edit.setText(path)
             if self._node is not None and edit in self._controls.values():

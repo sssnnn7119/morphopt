@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..model.schemas import fld, clone_defaults
 from .values import parse_vec_text, parse_mat, DOF_LABELS
+from ..i18n import T, pick
 
 
 def _text_of(value) -> str:
@@ -50,7 +51,7 @@ class ParamForm(QWidget):
     def _add(self, f: dict, cur) -> None:
         key = f["key"]
         typ = f["type"]
-        label = f["label"]
+        label = pick(f["label"], f.get("label_en"))
         if typ == "bool":
             w = QCheckBox(label)
             w.setChecked(bool(cur))
@@ -130,7 +131,7 @@ class ParamForm(QWidget):
         return w
 
     def _browse(self, edit: QLineEdit, key: str) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择文件", edit.text() or ".")
+        path, _ = QFileDialog.getOpenFileName(self, T("选择文件", "Select file"), edit.text() or ".")
         if path:
             edit.setText(path)
             self._set(key, path)

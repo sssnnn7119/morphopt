@@ -30,6 +30,8 @@ import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
 
+from .i18n import T
+
 
 # ---------------------------------------------------------------------------
 # tiny helpers
@@ -275,20 +277,20 @@ class ObserverUI(QMainWindow):
         tb.setMovable(False)
         self.addToolBar(tb)
 
-        act_open = QAction("打开结果…", self)
+        act_open = QAction(T("打开结果…", "Open Results…"), self)
         act_open.triggered.connect(self._open_result_folder)
         tb.addAction(act_open)
         tb.addSeparator()
 
-        act_export = QAction("导出当前定义 .py", self)
+        act_export = QAction(T("导出当前定义 .py", "Export Current Definition .py"), self)
         act_export.triggered.connect(self._export_definition)
         tb.addAction(act_export)
         tb.addSeparator()
 
-        self.follow_btn = QPushButton("跟随运行")
+        self.follow_btn = QPushButton(T("跟随运行", "Follow Run"))
         self.follow_btn.setCheckable(True)
         self.follow_btn.setChecked(True)
-        self.follow_btn.setToolTip("自动跳到最新迭代（运行中）")
+        self.follow_btn.setToolTip(T("自动跳到最新迭代（运行中）", "Jump to the latest iteration (while running)"))
         tb.addWidget(self.follow_btn)
 
     def _build_ui(self) -> None:
@@ -323,8 +325,8 @@ class ObserverUI(QMainWindow):
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
         self.options.setFixedWidth(170)
-        self.options.addItem("优化指标")
-        self.options.addItem("几何展示")
+        self.options.addItem(T("优化指标", "Metrics"))
+        self.options.addItem(T("几何展示", "Geometry"))
         self.options.currentRowChanged.connect(self._on_option)
         split.addWidget(self.options)
 
@@ -444,11 +446,12 @@ class ObserverUI(QMainWindow):
             page = _CasePage(case)
             self._case_pages[case] = page
             self.stack.addWidget(page)
-            self.options.addItem(f"工况 {case}")
+            self.options.addItem(f"{T('工况', 'Case')} {case}")
 
     # -------------------------------------------------------------- actions
     def _open_result_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "选择结果文件夹", os.getcwd())
+        folder = QFileDialog.getExistingDirectory(
+            self, T("选择结果文件夹", "Select result folder"), os.getcwd())
         if folder:
             self.path_result = folder
             # reload as the last iteration of that run
@@ -463,23 +466,29 @@ class ObserverUI(QMainWindow):
 
     def _export_definition(self) -> None:
         if not self.path_result:
-            QMessageBox.information(self, "导出", "还没有可导出的优化定义。")
+            QMessageBox.information(
+                self, T("导出", "Export"),
+                T("还没有可导出的优化定义。", "No runnable definition to export yet."))
             return
         src = os.path.join(self.path_result, "scripts", "MAIN_SCRIPT_FOR_RESTART.py")
         if not os.path.exists(src):
-            QMessageBox.warning(self, "导出", f"未找到定义脚本：{src}")
+            QMessageBox.warning(self, T("导出", "Export"),
+                                T("未找到定义脚本：", "Definition script not found: ") + src)
             return
         out, _ = QFileDialog.getSaveFileName(
-            self, "导出当前优化定义", os.path.basename(src) + ".py", "Python (*.py)")
+            self, T("导出当前优化定义", "Export current optimization definition"),
+            os.path.basename(src) + ".py", "Python (*.py)")
         if out:
             with open(src, "r", encoding="utf-8") as f:
                 text = f.read()
             with open(out, "w", encoding="utf-8") as f:
                 f.write(text)
-            self.statusBar().showMessage(f"已导出：{out}", 4000)
+            self.statusBar().showMessage(T("已导出：", "Exported: ") + out, 4000)
 
     def closeEvent(self, event):  # noqa: N802
-        reply = QMessageBox.question(self, "退出确认", "确定要关闭观察器吗？",
+        reply = QMessageBox.question(
+            self, T("退出确认", "Exit confirmation"),
+            T("确定要关闭观察器吗？", "Close the observer?"),
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:

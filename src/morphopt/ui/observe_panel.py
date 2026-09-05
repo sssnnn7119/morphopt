@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from . import launcher
 from .monitor import _MetricsPage, _GeometryPage, _CasePage
+from .i18n import T
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ class ObserverPanel(QWidget):
         self.btn_next.clicked.connect(lambda: self._nudge(1))
         self.iter_label = QLabel("0 / 0")
         self.iter_label.setMinimumWidth(70)
-        self.chk_follow = QCheckBox("自动跟踪最新")
+        self.chk_follow = QCheckBox(T("自动跟踪最新", "Follow latest"))
         self.chk_follow.setChecked(True)
         self.chk_follow.toggled.connect(self._on_follow)
         top.addWidget(self.btn_prev)
@@ -117,8 +118,8 @@ class ObserverPanel(QWidget):
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
         self.options.setFixedWidth(160)
-        self.options.addItem("优化指标")
-        self.options.addItem("几何展示")
+        self.options.addItem(T("优化指标", "Metrics"))
+        self.options.addItem(T("几何展示", "Geometry"))
         self.options.currentRowChanged.connect(self._on_option)
         split.addWidget(self.options)
 
@@ -183,6 +184,19 @@ class ObserverPanel(QWidget):
         elif row >= 2 and row - 2 in self._case_pages:
             self._refresh_case(row - 2)
 
+    # ------------------------------------------------------------ language
+    def apply_language(self) -> None:
+        """Re-apply the current language to the panel's static texts."""
+        self.chk_follow.setText(T("自动跟踪最新", "Follow latest"))
+        self.options.item(0).setText(T("优化指标", "Metrics"))
+        self.options.item(1).setText(T("几何展示", "Geometry"))
+        for row, case in enumerate(list(self._case_pages.keys())):
+            if self.options.count() > row + 2:
+                self.options.item(row + 2).setText(f"{T('工况', 'Case')} {case}")
+        row = self.options.currentRow()
+        if row == 1:
+            self._refresh_geometry()
+
     # -------------------------------------------------------------- options
     def _on_option(self, row: int) -> None:
         if row < 0 or row >= self.stack.count():
@@ -233,7 +247,7 @@ class ObserverPanel(QWidget):
         for case in sorted(found - existing):
             self._case_pages[case] = _CasePage(case)
             self.stack.addWidget(self._case_pages[case])
-            self.options.addItem(f"工况 {case}")
+            self.options.addItem(f"{T('工况', 'Case')} {case}")
 
 
 # ---------------------------------------------------------------------------
@@ -245,13 +259,15 @@ class _ContinueDialog(QDialog):
 
     def __init__(self, max_step: int, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("继续优化")
-        self.setMinimumWidth(360)
+        self.setWindowTitle(T("继续优化", "Continue Optimization"))
+        self.setMinimumWidth(380)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(f"当前结果已完成至第 {max_step} 步。请选择续跑起始位置："))
-        self.rb_last = QRadioButton("从结果最后一步续跑")
+        lay.addWidget(QLabel(T(
+            f"当前结果已完成至第 {max_step} 步。请选择续跑起始位置：",
+            f"The result has reached step {max_step}. Choose where to resume:")))
+        self.rb_last = QRadioButton(T("从结果最后一步续跑", "Resume from the last step"))
         self.rb_last.setChecked(True)
-        self.rb_step = QRadioButton("从指定步骤续跑：")
+        self.rb_step = QRadioButton(T("从指定步骤续跑：", "Resume from a chosen step:"))
         self.spin = QSpinBox()
         self.spin.setRange(1, max(1, max_step))
         self.spin.setValue(max(1, max_step))
@@ -263,9 +279,9 @@ class _ContinueDialog(QDialog):
         lay.addWidget(self.rb_last)
         lay.addLayout(row)
         btns = QHBoxLayout()
-        ok = QPushButton("继续")
+        ok = QPushButton(T("继续", "Continue"))
         ok.clicked.connect(self.accept)
-        cancel = QPushButton("取消")
+        cancel = QPushButton(T("取消", "Cancel"))
         cancel.clicked.connect(self.reject)
         btns.addStretch(1)
         btns.addWidget(cancel)
@@ -300,19 +316,26 @@ class ObserverControls(QWidget):
 
         # top control bar ---------------------------------------------------
         bar = QHBoxLayout()
-        self.btn_open = QPushButton("0 · 打开结果…")
-        self.btn_open.setToolTip("打开已有优化结果，查看几何 / 指标 / 载荷工况；此后可继续优化")
+        self.btn_open = QPushButton(T("0 · 打开结果…", "0 · Open Results…"))
+        self.btn_open.setToolTip(T(
+            "打开已有优化结果，查看几何 / 指标 / 载荷工况；此后可继续优化",
+            "Open an existing result (geometry / metrics / load cases); "
+            "may then continue the optimization."))
         self.btn_open.clicked.connect(self._open_result)
         bar.addWidget(self.btn_open)
-        self.btn_start = QPushButton("1 · 开始优化")
-        self.btn_start.setToolTip("无结果时从头开始优化；已打开结果时变为“继续优化”")
+        self.btn_start = QPushButton(T("1 · 开始优化", "1 · Start"))
+        self.btn_start.setToolTip(T(
+            "无结果时从头开始优化；已打开结果时变为“继续优化”",
+            "Start from scratch; becomes Continue when a result is open."))
         self.btn_start.clicked.connect(self._start)
         bar.addWidget(self.btn_start)
-        self.btn_stop = QPushButton("2 · 停止优化")
-        self.btn_stop.setToolTip("终止当前优化任务，但保留当前可视化")
+        self.btn_stop = QPushButton(T("2 · 停止优化", "2 · Stop"))
+        self.btn_stop.setToolTip(T(
+            "终止当前优化任务，但保留当前可视化",
+            "Stop the running task, keeping the current visualization."))
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
-        self.status = QLabel("尚未接收优化定义")
+        self.status = QLabel(T("尚未接收优化定义", "No definition received yet."))
         self.status.setStyleSheet("color:#9aa4b2;")
         bar.addWidget(self.status, 1)
         outer.addLayout(bar)
@@ -321,11 +344,13 @@ class ObserverControls(QWidget):
         outer.addWidget(self.panel, 1)
 
         # bottom-right: back to the definition page (mirrors the definition
-        # footer's right-aligned ▶ 导入观察部分 button)
+        # footer's right-aligned ▶ 导入优化器 button)
         foot = QHBoxLayout()
         foot.addStretch(1)
-        self.btn_back = QPushButton("◀ 返回定义")
-        self.btn_back.setToolTip("返回定义页；若优化正在运行，将先请求确认终止")
+        self.btn_back = QPushButton(T("◀ 返回定义", "◀ Back to Definition"))
+        self.btn_back.setToolTip(T(
+            "返回定义页；若优化正在运行，将先请求确认终止",
+            "Return to the definition page; running tasks ask for confirmation."))
         self.btn_back.setStyleSheet(
             "background-color:#37474f; font-weight:600; padding:6px 18px;")
         self.btn_back.clicked.connect(self._on_back)
@@ -338,13 +363,19 @@ class ObserverControls(QWidget):
         self._update_buttons()
 
     # ------------------------------------------------------------------ api
+    def is_running(self) -> bool:
+        """Whether an optimization task is currently running."""
+        return self._proc is not None
+
     def set_definition(self, problem) -> None:
         """Called when the definition page hands over a finished problem."""
         self._problem = problem
         self._folder = None
         self._saved_def = set()
         self._stop_job()
-        self.status.setText(f"定义已就绪：{problem.label}。可从头开始优化。")
+        self.status.setText(T(
+            f"定义已就绪：{problem.label}。可从头开始优化。",
+            f"Definition ready: {problem.label}. Start from scratch."))
         self._update_buttons()
 
     # ------------------------------------------------------------- buttons
@@ -356,9 +387,14 @@ class ObserverControls(QWidget):
         """
         if self._proc is not None:
             ret = QMessageBox.warning(
-                self, "返回定义页",
-                "当前优化仍在运行。\n\n返回定义页将终止该优化进程；"
-                "已保存的迭代仍可通过“打开结果”查看。\n\n确认终止并返回定义页吗？",
+                self, T("返回定义页", "Back to Definition"),
+                T(
+                    "当前优化仍在运行。\n\n返回定义页将终止该优化进程；"
+                    "已保存的迭代仍可通过“打开结果”查看。\n\n确认终止并返回定义页吗？",
+                    "The optimization is still running.\n\nReturning to the "
+                    "definition page will terminate this process; completed "
+                    "iterations remain available via \u201cOpen Results\u201d."
+                    "\n\nTerminate and return to the definition page?"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
             if ret != QMessageBox.StandardButton.Yes:
@@ -369,11 +405,14 @@ class ObserverControls(QWidget):
     def _open_result(self) -> None:
         if self._proc is not None:
             return
-        folder = QFileDialog.getExistingDirectory(self, "选择优化结果文件夹", os.getcwd())
+        folder = QFileDialog.getExistingDirectory(
+            self, T("选择优化结果文件夹", "Select result folder"), os.getcwd())
         if not folder:
             return
         self._adopt(folder)
-        self.status.setText(f"已打开结果目录：{os.path.basename(folder)}。可选择“继续优化”。")
+        self.status.setText(T(
+            f"已打开结果目录：{os.path.basename(folder)}。可选择“继续优化”。",
+            f"Opened results: {os.path.basename(folder)}. Continue is available."))
         self._update_buttons()
 
     def _adopt(self, folder: str) -> None:
@@ -394,7 +433,9 @@ class ObserverControls(QWidget):
         elif self._problem is not None:
             self._launch_fresh()
         else:
-            self.status.setText("请先更换优化问题，或打开已有结果目录。")
+            self.status.setText(T(
+                "请先更换优化问题，或打开已有结果目录。",
+                "Choose a problem type or open an existing result folder."))
 
     def _continue_flow(self) -> None:
         folder = self._folder
@@ -410,13 +451,15 @@ class ObserverControls(QWidget):
                 folder, target_iteration=target, device=device,
                 restart_per_iteration=restart)
         except Exception as exc:
-            QMessageBox.warning(self, "继续失败", str(exc))
+            QMessageBox.warning(self, T("继续失败", "Continue failed"), str(exc))
             return
         self._save_definition(folder)
         self._run_mode = "continue"
         self._launch_t0 = time.time()
         self._last_shown = max(0, target or last)
-        self.status.setText(f"正在继续优化：自第 {target if target else last} 步起。")
+        self.status.setText(T(
+            f"正在继续优化：自第 {target if target else last} 步起。",
+            f"Continuing optimization from step {target if target else last}."))
         self._timer.start()
         self._update_buttons()
 
@@ -427,7 +470,7 @@ class ObserverControls(QWidget):
         try:
             job, self._proc = launcher.run_job(problem)
         except Exception as exc:
-            QMessageBox.warning(self, "启动失败", str(exc))
+            QMessageBox.warning(self, T("启动失败", "Launch failed"), str(exc))
             return
         self._folder = None
         self._fresh_label = launcher._sanitize(problem.label)
@@ -435,16 +478,20 @@ class ObserverControls(QWidget):
         self._launch_t0 = time.time()
         self._last_shown = 0
         self._run_mode = "fresh"
-        self.status.setText("正在从头开始优化…等待首轮结果。")
+        self.status.setText(T(
+            "正在从头开始优化…等待首轮结果。",
+            "Starting optimization from scratch… waiting for the first step."))
         self._timer.start()
         self._update_buttons()
 
     def _stop(self) -> None:
         self._stop_job()
         if self._folder:
-            self.status.setText("优化任务已停止，当前可视化已保留；可继续浏览或续跑。")
+            self.status.setText(T(
+                "优化任务已停止，当前可视化已保留；可继续浏览或续跑。",
+                "Optimization stopped; current visualization kept. Browse or continue."))
         else:
-            self.status.setText("优化任务已停止。")
+            self.status.setText(T("优化任务已停止。", "Optimization stopped."))
         self._update_buttons()
 
     def _save_definition(self, folder: str) -> None:
@@ -503,7 +550,9 @@ class ObserverControls(QWidget):
         if last >= 1 and last != self._last_shown:
             self._last_shown = last
             self.panel.show_iteration(folder, last)
-            self.status.setText(f"优化运行中：已完成第 {last} 步。")
+            self.status.setText(T(
+                f"优化运行中：已完成第 {last} 步。",
+                f"Optimization running: step {last} completed."))
         self._check_exit()
 
     def _check_exit(self) -> None:
@@ -515,7 +564,7 @@ class ObserverControls(QWidget):
                 if last >= 1 and last != self._last_shown:
                     self._last_shown = last
                     self.panel.show_iteration(self._folder, last)
-            self.status.setText("优化任务已结束。")
+            self.status.setText(T("优化任务已结束。", "Optimization finished."))
             self._update_buttons()
 
     def _update_buttons(self) -> None:
@@ -523,11 +572,41 @@ class ObserverControls(QWidget):
         self.btn_open.setEnabled(not running)
         self.btn_stop.setEnabled(running)
         if self._folder is not None:
-            self.btn_start.setText("1 · 继续优化")
+            self.btn_start.setText(T("1 · 继续优化", "1 · Continue"))
         else:
-            self.btn_start.setText("1 · 开始优化")
+            self.btn_start.setText(T("1 · 开始优化", "1 · Start"))
         self.btn_start.setEnabled(not running and (self._folder is not None
                                                    or self._problem is not None))
+
+    # ------------------------------------------------------------ language
+    def apply_language(self) -> None:
+        """Re-apply the current language to the observer's static texts."""
+        self.btn_open.setText(T("0 · 打开结果…", "0 · Open Results…"))
+        self.btn_open.setToolTip(T(
+            "打开已有优化结果，查看几何 / 指标 / 载荷工况；此后可继续优化",
+            "Open an existing result (geometry / metrics / load cases); "
+            "may then continue the optimization."))
+        self.btn_start.setToolTip(T(
+            "无结果时从头开始优化；已打开结果时变为“继续优化”",
+            "Start from scratch; becomes Continue when a result is open."))
+        self.btn_stop.setText(T("2 · 停止优化", "2 · Stop"))
+        self.btn_stop.setToolTip(T(
+            "终止当前优化任务，但保留当前可视化",
+            "Stop the running task, keeping the current visualization."))
+        self.btn_back.setText(T("◀ 返回定义", "◀ Back to Definition"))
+        self.btn_back.setToolTip(T(
+            "返回定义页；若优化正在运行，将先请求确认终止",
+            "Return to the definition page; running tasks ask for confirmation."))
+        self.panel.apply_language()
+        self._update_buttons()
+        if self._proc is not None:
+            self.status.setText(T("优化运行中。", "Optimization running."))
+        elif self._folder is not None:
+            self.status.setText(T("已打开结果。", "Results open."))
+        elif self._problem is not None:
+            self.status.setText(T("定义已就绪。", "Definition ready."))
+        else:
+            self.status.setText(T("尚未接收优化定义。", "No definition received yet."))
 
     def close_cleanup(self) -> None:
         self._stop_job()

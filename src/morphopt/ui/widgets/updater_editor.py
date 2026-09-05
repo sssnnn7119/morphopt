@@ -18,11 +18,17 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QHBoxLayout, QLabel, QComboBox,
 )
 
-from ..model.problem import Node
+from ..model.problem import Node, ProblemDefinition
 from ..model import schemas as S
 from .param_form import ParamForm
+from .solver_editor import detect_devices
+from ..i18n import T, pick
 
-CATEGORY_LABEL = {"objectives": "目标函数 (objective)", "constraints": "约束 (constraint)"}
+
+def _category_label(category: str) -> str:
+    if category == "objectives":
+        return T("目标函数 (objective)", "Objective functions")
+    return T("约束 (constraint)", "Constraints")
 
 
 class UpdaterEditor(QWidget):
@@ -32,7 +38,28 @@ class UpdaterEditor(QWidget):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        hint = QLabel("为每个子优化器选择目标函数与约束（非代码方式）；参数改动立即生效并同步到生成代码。")
+
+        # run-level compute device (used by the generated Updater and worker)
+        devrow = QHBoxLayout()
+        devrow.addWidget(QLabel(T("计算设备 device", "Compute device (device)")))
+        self._device = QComboBox()
+        self._device.setEditable(True)
+        self._device.addItem("cpu")
+        for dev in detect_devices():
+            if dev != "cpu":
+                self._device.addItem(dev)
+        self._device.setToolTip(T(
+            "计算设备（如 cpu / cuda:0），写入当前优化定义并作用于 Updater 与启动参数。",
+            "Compute device (e.g. cpu / cuda:0); stored on the definition and "
+            "used by the Updater and the launch arguments."))
+        self._device.currentTextChanged.connect(self._save_device)
+        devrow.addWidget(self._device, 1)
+        outer.addLayout(devrow)
+
+        hint = QLabel(T(
+            "为每个子优化器选择目标函数与约束（非代码方式）；参数改动立即生效并同步到生成代码。",
+            "Choose objective functions and constraints per sub-optimizer "
+            "(no code); edits apply immediately and update the generated code."))
         hint.setStyleSheet("color:#7f8c8d;")
         outer.addWidget(hint)
         scroll = QScrollArea()
@@ -42,12 +69,24 @@ class UpdaterEditor(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
         self._node: Node | None = None
+        self._problem: ProblemDefinition | None = None
         self._scheme = "shapeopt"
+        self._loading = False
 
     # ------------------------------------------------------------------ api
     def edit_node(self, node: Node, problem) -> None:
         self._node = node
+        self._problem = problem
         self._scheme = problem.scheme if problem is not None else "shapeopt"
+        # show the current compute device without re-triggering a save
+        self._loading = True
+        try:
+            dev = problem.device if problem is not None else "cpu"
+            if self._device.findText(dev) < 0:
+                self._device.addItem(dev)
+            self._device.setCurrentText(dev if dev else "cpu")
+        finally:
+            self._loading = False
         # clear
         while self._layout.count():
             item = self._layout.takeAt(0)
@@ -62,7 +101,21 @@ class UpdaterEditor(QWidget):
         if mats:
             self._layout.addWidget(self._section_box("UpdaterMaterials", mats, "materials"))
         if not geom and not mats:
-            self._layout.addWidget(QLabel("(该方案没有可编辑的子优化器)"))
+            self._layout.addWidget(QLabel(T(
+                "(该方案没有可编辑的子优化器)",
+                "(this scheme has no editable sub-optimizer)")))
+
+    def _save_device(self, text: str) -> None:
+        """Persist the compute device on the definition (problem.device)."""
+        if self._loading or self._problem is None:
+            return
+        text = (text or "").strip()
+        if not text:
+            return
+        if text != self._problem.device:
+            self._problem.device = text
+        if self._node is not None:
+            self.changed.emit(self._node)
 
     # ------------------------------------------------------------- builders
     def _section_box(self, title: str, cfg: dict, group: str) -> QWidget:
@@ -103,7 +156,7 @@ def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
-    cap = QLabel("目标函数 (objective，方案默认)")
+    cap = QLabel(T("目标函数 (objective，方案默认)", "Objective functions (scheme default)"))
     cap.setStyleSheet("color:#9aa4b2;")
     lay.addWidget(cap)
     items = cfg.get("objective_functions") or []
@@ -114,7 +167,7 @@ def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     for it in items:
         itype = it.get("type", "?")
         spec = specs.get(itype) or {}
-        line = QLabel(f"• {itype} — {spec.get('label', '')}")
+        line = QLabel(f"• {itype} — {pick(spec.get('label', ''), spec.get('label_en'))}")
         line.setStyleSheet("color:#c8d0da;")
         lay.addWidget(line)
     return w
@@ -127,7 +180,7 @@ def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change) -> 
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
-    cap = QLabel(CATEGORY_LABEL[category])
+    cap = QLabel(_category_label(category))
     cap.setStyleSheet("color:#9aa4b2;")
     lay.addWidget(cap)
 
@@ -137,13 +190,13 @@ def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change) -> 
     for it in items:
         itype = it.get("type", "")
         spec = specs.get(itype) or _find_spec(itype, category)
-        label = spec["label"] if spec else itype
+        label = pick(spec["label"], spec.get("label_en")) if spec else itype
         grp = QGroupBox(label)
         col = QVBoxLayout(grp)
         top = QHBoxLayout()
         top.addWidget(QLabel(itype))
         top.addStretch(1)
-        btn_del = QPushButton("删除")
+        btn_del = QPushButton(T("删除", "Delete"))
         btn_del.setFixedWidth(52)
         btn_del.clicked.connect(lambda _=False, i=it: _remove(items, i, on_change))
         top.addWidget(btn_del)
@@ -156,10 +209,10 @@ def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change) -> 
 
     # add row
     addbar = QHBoxLayout()
-    addbar.addWidget(QLabel("添加："))
+    addbar.addWidget(QLabel(T("添加：", "Add:")))
     combo = QComboBox()
     for spec in specs.values():
-        combo.addItem(spec["label"], spec.get("_type"))
+        combo.addItem(pick(spec["label"], spec.get("label_en")), spec.get("_type"))
     combo.setCurrentIndex(-1)
     addbar.addWidget(combo, 1)
     btn_add = QPushButton("＋")

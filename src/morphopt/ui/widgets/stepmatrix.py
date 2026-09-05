@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from ..model.problem import Node
 from ..model.schemas import INTERFACE_TYPES
+from ..i18n import T
 
 
 class StepMatrix(QWidget):
@@ -145,7 +146,9 @@ class StepMatrix(QWidget):
         self.changed.emit(self._node)
 
     def _ramp(self):
-        ok = QMessageBox.getText(self, "Linear ramp", "从 0 线性增加到最后一列幅值？（y/n）")
+        ok = QMessageBox.getText(self, "Linear ramp", T(
+            "从 0 线性增加到最后一列幅值？（y/n）",
+            "Linearly ramp from 0 to the final column amplitude? (y/n)"))
         if not ok or not ok[1].lower().startswith("y"):
             return
         n = int(self._node.params.get("num_steps", 1))

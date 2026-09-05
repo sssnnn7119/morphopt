@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..model.problem import Node
+from ..i18n import T
 
 
 def detect_devices() -> list[str]:
@@ -42,7 +43,8 @@ class SolverEditor(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         form = QFormLayout()
-        hint = QLabel("设备（可多选 GPU；勾选 CPU 则只用 CPU）")
+        hint = QLabel(T("设备（可多选 GPU；勾选 CPU 则只用 CPU）",
+                        "Devices (multi-select GPUs; checking CPU uses CPU only)"))
         hint.setStyleSheet("color:#7f8c8d;")
         form.addRow(hint)
         self._device_box = QHBoxLayout()
@@ -55,25 +57,29 @@ class SolverEditor(QWidget):
         self._device_box.addStretch(1)
         devhost = QWidget()
         devhost.setLayout(self._device_box)
-        form.addRow("设备", devhost)
+        form.addRow(T("设备", "Devices"), devhost)
 
         self._numproc = QSpinBox()
         self._numproc.setRange(1, 64)
         self._numproc.valueChanged.connect(self._on_numproc)
-        form.addRow("进程数 num_process", self._numproc)
+        form.addRow(T("进程数 num_process", "Processes (num_process)"), self._numproc)
         lay.addLayout(form)
 
-        grp_title = QLabel("工况(载荷步) → 进程任务分组")
+        grp_title = QLabel(T("工况(载荷步) → 进程任务分组", "Load steps → process task groups"))
         grp_title.setStyleSheet("font-weight:600;")
         lay.addWidget(grp_title)
-        help = QLabel("同组工况在同一个进程内先后求解，下一步用上一步结果（热启动）。"
-                      "默认：每个工况各自一个进程。")
+        help = QLabel(T(
+            "同组工况在同一个进程内先后求解，下一步用上一步结果（热启动）。"
+            "默认：每个工况各自一个进程。",
+            "Load steps in the same group are solved sequentially in one process "
+            "(warm start). Default: one process per load step."))
         help.setStyleSheet("color:#7f8c8d;")
         help.setWordWrap(True)
         lay.addWidget(help)
         self._table = QTableWidget()
         self._table.setColumnCount(2)
-        self._table.setHorizontalHeaderLabels(["载荷步", "进程组号"])
+        self._table.setHorizontalHeaderLabels(
+            [T("载荷步", "Step"), T("进程组号", "Process group")])
         self._table.cellChanged.connect(self._on_cell)
         lay.addWidget(self._table, 1)
 

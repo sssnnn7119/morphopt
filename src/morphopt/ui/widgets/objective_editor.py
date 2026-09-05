@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from ..model.problem import Node, ProblemDefinition
 from ..codegen.objective_templates import OBJECTIVE_TEMPLATES
 from .codeeditor import CodeEditor
+from ..i18n import T
 
 
 class ObjectiveEditor(QWidget):
@@ -30,7 +31,10 @@ class ObjectiveEditor(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        head = QLabel("目标函数（唯一可手写代码区，其余生成代码为只读）")
+        head = QLabel(T(
+            "目标函数（唯一可手写代码区，其余生成代码为只读）",
+            "Objective function (the only hand-written area; the rest is "
+            "read-only generated code)"))
         head.setStyleSheet("font-weight:600; color:#e0e0e0;")
         lay.addWidget(head)
 
@@ -38,24 +42,30 @@ class ObjectiveEditor(QWidget):
         # template chooser
         tbar = QHBoxLayout()
         self.tpl_combo = QComboBox()
-        self.btn_apply = QPushButton("插入模板")
+        self.btn_apply = QPushButton(T("插入模板", "Insert template"))
         self.btn_apply.clicked.connect(self._apply_template)
         tbar.addWidget(self.tpl_combo, 1)
         tbar.addWidget(self.btn_apply)
-        form.addRow("模板", self._wrap(tbar))
+        form.addRow(T("模板", "Template"), self._wrap(tbar))
 
         self.jac = QLineEdit()
-        self.jac.setPlaceholderText("例如 force_RP_head, moment_RP_head（逗号分隔）")
+        self.jac.setPlaceholderText(T(
+            "例如 force_RP_head, moment_RP_head（逗号分隔）",
+            "e.g. force_RP_head, moment_RP_head (comma-separated)"))
         self.jac.editingFinished.connect(self._save_jacobian)
         form.addRow("jacobian_needed", self.jac)
 
         lay.addLayout(form)
 
-        self.obj_editor = CodeEditor("objective_function() 函数体（可编辑）")
+        self.obj_editor = CodeEditor(T(
+            "objective_function() 函数体（可编辑）",
+            "objective_function() body (editable)"))
         self.obj_editor.edit.textChanged.connect(self._save_objective)
         lay.addWidget(self.obj_editor, 1)
 
-        self.met_editor = CodeEditor("get_metrics() 函数体（可编辑）")
+        self.met_editor = CodeEditor(T(
+            "get_metrics() 函数体（可编辑）",
+            "get_metrics() body (editable)"))
         self.met_editor.edit.textChanged.connect(self._save_metrics)
         lay.addWidget(self.met_editor, 1)
 

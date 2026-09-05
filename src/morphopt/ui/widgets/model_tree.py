@@ -20,6 +20,7 @@ from PySide6.QtGui import QAction
 
 from ..model.problem import Node, ProblemDefinition
 from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES
+from ..i18n import T
 
 #: containers that hold children we show in the tree
 CONTAINER_ORDER = ["geometry", "loads", "steps", "material", "objective", "solver", "updater"]
@@ -159,7 +160,7 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "loads":
-            sub = menu.addMenu("添加载荷 ▸")
+            sub = menu.addMenu(T("添加载荷 ▸", "Add load ▸"))
             for itype, spec in INTERFACE_TYPES.items():
                 act = QAction(spec["label"], sub)
                 act.setData(itype)

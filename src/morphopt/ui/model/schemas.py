@@ -26,9 +26,12 @@ from typing import Any, Optional
 def fld(key: str, label: str, typ: str, default: Any = "",
         doc: str = "", choices: Optional[list] = None,
         size: Optional[int] = None, minimum: Optional[float] = None,
-        maximum: Optional[float] = None, ints: Optional[bool] = None) -> dict:
+        maximum: Optional[float] = None, ints: Optional[bool] = None,
+        label_en: Optional[str] = None, doc_en: Optional[str] = None) -> dict:
     """Build a field spec dict (see module docstring for types).
 
+    ``label_en`` / ``doc_en`` provide the English variants of ``label`` /
+    ``doc`` when they are localized (pick() selects them in English mode).
     ``ints=True`` marks index-like list fields (kept as int on parse).
     """
     spec = {
@@ -36,6 +39,10 @@ def fld(key: str, label: str, typ: str, default: Any = "",
         "doc": doc, "choices": choices, "size": size,
         "min": minimum, "max": maximum,
     }
+    if label_en is not None:
+        spec["label_en"] = label_en
+    if doc_en is not None:
+        spec["doc_en"] = doc_en
     if ints is not None:
         spec["ints"] = ints
     return spec
@@ -202,7 +209,9 @@ INTERFACE_TYPES: dict[str, dict] = {
             fld("instance_name", "Instance", "str", "final_model"),
             fld("set_nodes_name", "Node set", "combo", "surface_0_Bottom", "", choices=[]),
             fld("index_dof", "固定自由度 index_dof", "dofs", [0, 1, 2],
-                "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).", size=6),
+                "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).", size=6,
+                label_en="Fixed DOFs (index_dof)",
+                doc_en="Check DOFs to fix (X, Y, Z, Rx, Ry, Rz)."),
         ],
     },
     "BoundaryConditionRP": {
@@ -211,7 +220,9 @@ INTERFACE_TYPES: dict[str, dict] = {
         "name_hint": "bc_rp_",
         "params": [fld("rp_name", "Reference point", "combo", "", "", choices=[]),
                   fld("index_dof", "固定自由度 index_dof", "dofs", [0, 1, 2],
-                      "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).", size=6)],
+                      "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).", size=6,
+                      label_en="Fixed DOFs (index_dof)",
+                      doc_en="Check DOFs to fix (X, Y, Z, Rx, Ry, Rz).")],
     },
     "Couple": {
         "label": "Couple (RP <-> surface nodes)",
@@ -235,9 +246,11 @@ INTERFACE_TYPES: dict[str, dict] = {
         "name_hint": "contact_",
         "params": [
             fld("instance_name1", "Instance 1", "str", "final_model"),
-            fld("surface_name1", "Surface 1", "combo", "", "可下拉选择或手输另一部件的表面集。", choices=[]),
+            fld("surface_name1", "Surface 1", "combo", "", "可下拉选择或手输另一部件的表面集。", choices=[],
+                doc_en="Select or type a surface set of another part."),
             fld("instance_name2", "Instance 2", "str", ""),
-            fld("surface_name2", "Surface 2", "combo", "", "可下拉选择或手输表面集。", choices=[]),
+            fld("surface_name2", "Surface 2", "combo", "", "可下拉选择或手输表面集。", choices=[],
+                doc_en="Select or type a surface set."),
             fld("penalty_threshold_h", "penalty_threshold_h", "float", 3.0),
         ],
     },
@@ -247,7 +260,8 @@ INTERFACE_TYPES: dict[str, dict] = {
         "name_hint": "contact_self_",
         "params": [
             fld("instance_name", "Instance", "str", "final_model"),
-            fld("surface_name", "Surface", "combo", "", "可下拉选择或手输表面集。", choices=[]),
+            fld("surface_name", "Surface", "combo", "", "可下拉选择或手输表面集。", choices=[],
+                doc_en="Select or type a surface set."),
         ],
     },
 }
@@ -364,17 +378,20 @@ def _mat2d(d: Any) -> Any:
 UPDATER_OBJECTIVES: dict[str, dict] = {
     "ShapeDerivative": {
         "label": "ShapeDerivative (线性化形状灵敏度)",
+        "label_en": "ShapeDerivative (linearized shape sensitivity)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.ShapeDerivative()", "params": [],
     },
     "Sensitivity": {
         "label": "Sensitivity (材料灵敏度线性项)",
+        "label_en": "Sensitivity (linear material-sensitivity term)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
         "params": [fld("normalize_gradient", "normalize_gradient", "bool", False)],
     },
     "DensityFieldMinimize": {
         "label": "DensityFieldMinimize (密度回归惩罚)",
+        "label_en": "DensityFieldMinimize (density-regression penalty)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
         "params": [fld("scale", "scale", "float", 1e-7)],
@@ -384,11 +401,13 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
 UPDATER_CONSTRAINTS: dict[str, dict] = {
     "Fairness": {
         "label": "Fairness (表面曲率正则)",
+        "label_en": "Fairness (surface-curvature regularization)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Fairness(surfaces=params.geometry)", "params": [],
     },
     "Distance": {
         "label": "Distance (表面间最小距离)",
+        "label_en": "Distance (minimum inter-surface distance)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Distance(min_distance={min_distance})",
         "params": [fld("min_distance", "min_distance [[i][j]]", "mat",
@@ -396,6 +415,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
     },
     "Cylinder": {
         "label": "Cylinder boundary (柱面包络)",
+        "label_en": "Cylinder boundary (cylindrical envelope)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.Cylinder(radius={radius}, height={height}, bottom={bottom})",
         "params": [fld("radius", "radius", "float", 10.0),
@@ -404,12 +424,14 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
     },
     "MinRadius": {
         "label": "MinRadius (最小半径约束)",
+        "label_en": "MinRadius (minimum-radius constraint)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinRadius(radius={radius})",
         "params": [fld("radius", "radius", "float", 2.0)],
     },
     "VolumeMaximization": {
         "label": "VolumeMaximization (腔体体积最大化)",
+        "label_en": "VolumeMaximization (cavity-volume maximization)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.VolumeMaximization(geometryparam=self.params_update, surf_idx={surf_idx}, weight={weight})",
         "params": [fld("surf_idx", "surf_idx", "int", 1, minimum=1),
@@ -433,6 +455,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
     },
     "VolFrac": {
         "label": "VolFrac (体积分数带约束)",
+        "label_en": "VolFrac (volume-fraction band constraint)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": ("self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, "
                 "penalty={penalty}, element_name={element_name})"),
@@ -444,6 +467,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
     },
     "MinValue": {
         "label": "MinValue (控制点下界)",
+        "label_en": "MinValue (control-point lower bound)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinValue(xmin={xmin}, threshold={threshold}, p={p})",
         "params": [fld("xmin", "xmin", "float", -15.0),
@@ -452,6 +476,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
     },
     "MaxValue": {
         "label": "MaxValue (控制点上界)",
+        "label_en": "MaxValue (control-point upper bound)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MaxValue(xmax={xmax}, threshold={threshold}, p={p})",
         "params": [fld("xmax", "xmax", "float", 15.0),
