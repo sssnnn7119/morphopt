@@ -22,20 +22,25 @@ class StepMatrix(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("Load steps:"))
+        bar.addWidget(QLabel(T("载荷工况：", "Load steps:")))
         self._nspin = QSpinBox()
         self._nspin.setRange(1, 200)
         self._nspin.valueChanged.connect(self._on_n_steps)
         bar.addWidget(self._nspin)
-        for text, fn in [("Add step", self._add_step), ("Remove step", self._remove_step),
-                         ("Copy previous", self._copy_previous), ("Linear ramp…", self._ramp)]:
-            b = QPushButton(text)
+        for zh, en, fn in [
+                ("添加工况", "Add step", self._add_step),
+                ("删除工况", "Remove step", self._remove_step),
+                ("复制上一步", "Copy previous", self._copy_previous),
+                ("线性插值…", "Linear ramp…", self._ramp)]:
+            b = QPushButton(T(zh, en))
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch(1)
         lay.addLayout(bar)
 
-        hint = QLabel("Amplitude interfaces (rows=step). Empty cells keep the previous value / zero.")
+        hint = QLabel(T(
+            "幅值载荷接口（行=工况）。空格沿用上一工况/置零。",
+            "Amplitude interfaces (rows = steps). Empty cells keep the previous value / zero."))
         hint.setStyleSheet("color:#7f8c8d; font-size:11px;")
         lay.addWidget(hint)
 

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from .model.problem import ProblemDefinition
 from .model.loaders import load_morph, save_morph, MORPH_SUFFIX
-from .model.schemas import SCHEME_LABELS
+from .model.schemas import SCHEME_LABELS, SCHEME_LABELS_EN, scheme_label
 from .schemes.base import get_template
 from .i18n import LanguageSelector, T
 from .workbench import Workbench
@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------- problem type
     def change_problem(self) -> None:
         """更换优化问题: pick a type; replace the current definition."""
-        entries = [f"{SCHEME_LABELS.get(s, s)} ({s})" for s in PROBLEM_TYPES]
+        entries = [scheme_label(s) for s in PROBLEM_TYPES]
         text, ok = QInputDialog.getItem(
             self, T("更换优化问题", "Change optimization problem"),
             T("请选择优化问题类型：", "Select the optimization problem type:"),
@@ -106,8 +106,8 @@ class MainWindow(QMainWindow):
         problem = tpl.create_problem(f"{scheme}_untitled")
         self.set_problem(problem)
         self.statusBar().showMessage(
-            T(f"已创建{SCHEME_LABELS.get(scheme, scheme)}问题",
-              f"Created: {SCHEME_LABELS.get(scheme, scheme)}"), 3000)
+            T(f"已创建 {SCHEME_LABELS.get(scheme, scheme)} 问题",
+              f"Created: {SCHEME_LABELS_EN.get(scheme, scheme)}"), 3000)
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
         self.set_problem(problem)
         self.statusBar().showMessage(
             T(f"已打开：{problem.label} [{SCHEME_LABELS.get(problem.scheme, problem.scheme)}]",
-              f"Opened: {problem.label} [{SCHEME_LABELS.get(problem.scheme, problem.scheme)}]"), 4000)
+              f"Opened: {problem.label} [{SCHEME_LABELS_EN.get(problem.scheme, problem.scheme)}]"), 4000)
 
     def export_morph(self) -> None:
         if self._problem is None:
@@ -182,8 +182,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self._observer)
         self._set_titles()
         self.statusBar().showMessage(
-            T("优化器：可打开结果、开始/继续/停止优化。",
-              "Observer: open results, start/continue/stop."), 3000)
+            T("优化器：点击 0 选择任务来源，再开始/停止优化。",
+              "Observer: choose a task source with 0, then start / stop."), 3000)
 
     def show_definition(self) -> None:
         if self._workbench is not None:

@@ -81,8 +81,13 @@ class _CodeEdit(QPlainTextEdit):
     def keyPressEvent(self, event) -> None:
         key = event.key()
         mods = event.modifiers()
-        if key == Qt.Key.Key_Tab and not (mods & Qt.KeyboardModifier.ControlModifier):
-            if mods & Qt.KeyboardModifier.ShiftModifier:
+        # Note: on most platforms Shift+Tab arrives as Key_Backtab (not
+        # Key_Tab), so we must treat both as Tab / Shift+Tab and consume them,
+        # otherwise Qt would fall through to widget focus traversal.
+        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and \
+                not (mods & Qt.KeyboardModifier.ControlModifier):
+            if (mods & Qt.KeyboardModifier.ShiftModifier) or \
+                    key == Qt.Key.Key_Backtab:
                 self._unindent()
             else:
                 self._indent()
@@ -127,7 +132,11 @@ class _CodeEdit(QPlainTextEdit):
         self._transform_lines(drop)
 
     def _transform_lines(self, fn) -> None:
-        """Apply ``fn`` to every fully-selected line (indent / outdent)."""
+        """Apply ``fn`` to every fully-selected line (indent / outdent).
+
+        Each affected line's text is *replaced* by ``fn(line)`` instead of being
+        inserted in front of it, so indenting a selection never duplicates it.
+        """
         tc = self.textCursor()
         doc = tc.document()
         start = doc.findBlock(tc.selectionStart())
@@ -140,7 +149,10 @@ class _CodeEdit(QPlainTextEdit):
         cur.beginEditBlock()
         block = start
         while True:
+            # select the whole line (minus its trailing newline) and replace it
             cur.setPosition(block.position())
+            cur.setPosition(block.position() + block.length() - 1,
+                            cur.MoveMode.KeepAnchor)
             cur.insertText(fn(block.text()))
             if block == end:
                 break

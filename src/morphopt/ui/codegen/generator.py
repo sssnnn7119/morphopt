@@ -222,7 +222,7 @@ def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
     a(f"                super().__init__({kw})" if kw else "                super().__init__()")
     for i, srf in enumerate(surfaces):
         a("")
-        a("                # %s (surface index %d)" % (SURFACE_TYPES[srf.params["type"]]["label"], i))
+        a("                # %s (surface index %d)" % (SURFACE_TYPES[srf.params["type"]]["label_en"], i))
         a(f"                self.add_surface({render_surface_call(srf)})")
 
 

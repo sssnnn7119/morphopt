@@ -83,7 +83,8 @@ def v3(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> list[float]:
 #: name -> (display label, import factory string, field specs)
 SURFACE_TYPES: dict[str, dict] = {
     "bsp_cylinder": {
-        "label": "BSP cylinder (B-spline)",
+        "label": "B样条圆柱面 (bsp_cylinder)",
+        "label_en": "B-spline cylinder (bsp_cylinder)",
         "factory": "BSP.initialize_cylinder",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 4.0, "Initial outer/inner radius.", minimum=0.0),
@@ -100,7 +101,8 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "cpgeo_cylinder": {
-        "label": "CPGEO cylinder",
+        "label": "CPGEO 圆柱面 (cpgeo_cylinder)",
+        "label_en": "CPGEO cylinder (cpgeo_cylinder)",
         "factory": "CPGEO.initialize_cylinder",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 4.0, "Initial radius.", minimum=0.0),
@@ -117,7 +119,8 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "cpgeo_sphere": {
-        "label": "CPGEO sphere",
+        "label": "CPGEO 球面 (cpgeo_sphere)",
+        "label_en": "CPGEO sphere (cpgeo_sphere)",
         "factory": "CPGEO.initialize_Sphere",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 7.0, "Initial radius.", minimum=0.0),
@@ -127,17 +130,14 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "fixed_stl": {
-        "label": "Fixed surface (STL)",
+        "label": "固定 STL 曲面 (fixed_stl)",
+        "label_en": "Fixed STL surface (fixed_stl)",
         "factory": None,  # FixedSurface.initialize_from_stl_file(path_stl)
         "params": fields_from_specs([
             fld("path_stl", "STL file", "file", "", "Path to an STL surface."),
         ]),
     },
 }
-
-#: role labels shown in the tree (index 0 is special)
-SURFACE_ROLE_NAMES = {0: "Outer boundary", 1: "Inner cavity 1", 2: "Inner cavity 2",
-                      3: "Inner cavity 3", 4: "Inner cavity 4", 5: "Inner cavity 5"}
 
 # --------------------------------------------------------------------------
 # loads / BC / contact: interface type -> schema
@@ -150,7 +150,8 @@ def _surf_interfacedoc() -> str:
 
 INTERFACE_TYPES: dict[str, dict] = {
     "Pressure": {
-        "label": "Pressure",
+        "label": "气压 (Pressure)",
+        "label_en": "Surface pressure (Pressure)",
         "num_values": 1,
         "name_hint": "pressure_",
         "params": [
@@ -160,19 +161,22 @@ INTERFACE_TYPES: dict[str, dict] = {
         ],
     },
     "ConcentratedForce": {
-        "label": "Concentrated force (on RP)",
+        "label": "参考点集中力 (ConcentratedForce)",
+        "label_en": "Concentrated force at RP (ConcentratedForce)",
         "num_values": 3,
         "name_hint": "force_",
         "params": [fld("rp_name", "Reference point", "combo", "", "RP created by a ReferencePoint interface.", choices=[])],
     },
     "ConcentratedMoment": {
-        "label": "Concentrated moment (on RP)",
+        "label": "参考点集中力矩 (ConcentratedMoment)",
+        "label_en": "Concentrated moment at RP (ConcentratedMoment)",
         "num_values": 3,
         "name_hint": "moment_",
         "params": [fld("rp_name", "Reference point", "combo", "", "RP created by a ReferencePoint interface.", choices=[])],
     },
     "Bodyforce": {
-        "label": "Body force",
+        "label": "体力 (Bodyforce)",
+        "label_en": "Body force (Bodyforce)",
         "num_values": 3,
         "name_hint": "body_",
         "params": [
@@ -181,20 +185,23 @@ INTERFACE_TYPES: dict[str, dict] = {
         ],
     },
     "SpringToGround": {
-        "label": "Spring to ground (RP)",
+        "label": "接地弹簧 (SpringToGround)",
+        "label_en": "Spring to ground (SpringToGround)",
         "num_values": 5,
         "name_hint": "spring_",
         "params": [fld("rp_name", "Reference point", "combo", "", "", choices=[])],
     },
     "SpringBetweenRPs": {
-        "label": "Spring between RPs",
+        "label": "参考点间弹簧 (SpringBetweenRPs)",
+        "label_en": "Spring between RPs (SpringBetweenRPs)",
         "num_values": 2,
         "name_hint": "spring_",
         "params": [fld("rp_name1", "RP 1", "combo", "", "", choices=[]),
                   fld("rp_name2", "RP 2", "combo", "", "", choices=[])],
     },
     "PenaltyDoF": {
-        "label": "Penalty DoF",
+        "label": "自由度罚约束 (PenaltyDoF)",
+        "label_en": "Penalty DOF constraint (PenaltyDoF)",
         "num_values": 2,
         "name_hint": "lock_",
         "params": [fld("obj_name", "Object", "str", ""),
@@ -202,7 +209,8 @@ INTERFACE_TYPES: dict[str, dict] = {
                   fld("obj_type", "obj_type", "combo", "auto", "", choices=["auto", "node", "element", "part"])],
     },
     "BoundaryCondition": {
-        "label": "Boundary condition (surface nodes)",
+        "label": "位移边界条件 (BoundaryCondition)",
+        "label_en": "Displacement boundary condition (BoundaryCondition)",
         "num_values": 0,
         "name_hint": "bc_",
         "params": [
@@ -215,7 +223,8 @@ INTERFACE_TYPES: dict[str, dict] = {
         ],
     },
     "BoundaryConditionRP": {
-        "label": "Boundary condition (RP)",
+        "label": "参考点边界条件 (BoundaryConditionRP)",
+        "label_en": "Boundary condition at RP (BoundaryConditionRP)",
         "num_values": 0,
         "name_hint": "bc_rp_",
         "params": [fld("rp_name", "Reference point", "combo", "", "", choices=[]),
@@ -225,7 +234,8 @@ INTERFACE_TYPES: dict[str, dict] = {
                       doc_en="Check DOFs to fix (X, Y, Z, Rx, Ry, Rz).")],
     },
     "Couple": {
-        "label": "Couple (RP <-> surface nodes)",
+        "label": "参考点-表面耦合 (Couple)",
+        "label_en": "RP-surface coupling (Couple)",
         "num_values": 0,
         "name_hint": "couple_",
         "params": [
@@ -235,13 +245,15 @@ INTERFACE_TYPES: dict[str, dict] = {
         ],
     },
     "ReferencePoint": {
-        "label": "Reference point",
+        "label": "参考点 (ReferencePoint)",
+        "label_en": "Reference point (ReferencePoint)",
         "num_values": 0,
         "name_hint": "RP_",
         "params": [fld("rp_location", "RP location", "vec3", v3(), "Reference point position.")],
     },
     "Contact": {
-        "label": "Contact (surface pair)",
+        "label": "接触对 (Contact)",
+        "label_en": "Contact pair (Contact)",
         "num_values": 0,
         "name_hint": "contact_",
         "params": [
@@ -255,7 +267,8 @@ INTERFACE_TYPES: dict[str, dict] = {
         ],
     },
     "ContactSelf": {
-        "label": "Self contact",
+        "label": "自接触 (ContactSelf)",
+        "label_en": "Self contact (ContactSelf)",
         "num_values": 0,
         "name_hint": "contact_self_",
         "params": [
@@ -272,7 +285,8 @@ INTERFACE_TYPES: dict[str, dict] = {
 
 MATERIAL_TYPES: dict[str, dict] = {
     "HomogeneousMaterial": {
-        "label": "Homogeneous (NeoHookean)",
+        "label": "均质超弹性材料 (HomogeneousMaterial)",
+        "label_en": "Homogeneous hyperelastic material (HomogeneousMaterial)",
         "params": [
             fld("mu", "mu", "float", 0.482, "Shear modulus."),
             fld("kappa", "kappa", "float", 4.8, "Bulk modulus."),
@@ -281,7 +295,8 @@ MATERIAL_TYPES: dict[str, dict] = {
         ],
     },
     "SIMP_BSPFieldMaterials": {
-        "label": "SIMP BSP density field",
+        "label": "SIMP B样条密度场材料 (SIMP_BSPFieldMaterials)",
+        "label_en": "SIMP B-spline density-field material (SIMP_BSPFieldMaterials)",
         "params": [
             fld("mumax", "mu max", "float", 10.0),
             fld("kappamax", "kappa max", "float", 100.0),
@@ -297,7 +312,8 @@ MATERIAL_TYPES: dict[str, dict] = {
         ],
     },
     "CodesignMaterials": {
-        "label": "Co-design (SIMP field + shell)",
+        "label": "协同设计材料 · SIMP 体+壳 (CodesignMaterials)",
+        "label_en": "Co-design material · SIMP solid + shell (CodesignMaterials)",
         "params": [
             fld("mumax", "mu max", "float", 4.5),
             fld("kappamax", "kappa max", "float", 45.0),
@@ -358,10 +374,21 @@ SOLVER_FIELDS: list[dict] = fields_from_specs([
 CODE_SLOT_KEYS = ("apply_surface_constraints", "map_bsp_designfield", "objective_function", "get_metrics")
 
 SCHEME_LABELS = {
-    "simp": "SIMP · topology / material field",
-    "shapeopt": "Shape optimization",
-    "codesign": "Co-design · shape + material",
+    "simp": "拓扑/材料场优化 (simp)",
+    "shapeopt": "形状优化 (shapeopt)",
+    "codesign": "协同设计优化 (codesign)",
 }
+SCHEME_LABELS_EN = {
+    "simp": "Topology / material-field optimization (simp)",
+    "shapeopt": "Shape optimization (shapeopt)",
+    "codesign": "Co-design optimization (codesign)",
+}
+
+
+def scheme_label(scheme: str) -> str:
+    """Localized (中文/English) label of an optimization scheme."""
+    from ..i18n import pick
+    return pick(SCHEME_LABELS.get(scheme, scheme), SCHEME_LABELS_EN.get(scheme))
 
 
 # --------------------------------------------------------------------------
@@ -377,21 +404,21 @@ def _mat2d(d: Any) -> Any:
 
 UPDATER_OBJECTIVES: dict[str, dict] = {
     "ShapeDerivative": {
-        "label": "ShapeDerivative (线性化形状灵敏度)",
-        "label_en": "ShapeDerivative (linearized shape sensitivity)",
+        "label": "结构灵敏度 (ShapeDerivative)",
+        "label_en": "Structural sensitivity (ShapeDerivative)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.ShapeDerivative()", "params": [],
     },
     "Sensitivity": {
-        "label": "Sensitivity (材料灵敏度线性项)",
+        "label": "材料灵敏度 (Sensitivity)",
         "label_en": "Sensitivity (linear material-sensitivity term)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
         "params": [fld("normalize_gradient", "normalize_gradient", "bool", False)],
     },
     "DensityFieldMinimize": {
-        "label": "DensityFieldMinimize (密度回归惩罚)",
-        "label_en": "DensityFieldMinimize (density-regression penalty)",
+        "label": "密度场正则化 (DensityFieldMinimize)",
+        "label_en": "Density field regularization (DensityFieldMinimize)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
         "params": [fld("scale", "scale", "float", 1e-7)],
@@ -400,22 +427,22 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
 
 UPDATER_CONSTRAINTS: dict[str, dict] = {
     "Fairness": {
-        "label": "Fairness (表面曲率正则)",
-        "label_en": "Fairness (surface-curvature regularization)",
+        "label": "表面曲率正则化 (Fairness)",
+        "label_en": "surface-curvature regularization (Fairness)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Fairness(surfaces=params.geometry)", "params": [],
     },
     "Distance": {
-        "label": "Distance (表面间最小距离)",
-        "label_en": "Distance (minimum inter-surface distance)",
+        "label": "表面间最小距离约束 (Distance)",
+        "label_en": "minimum inter-surface distance constraint (Distance)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Distance(min_distance={min_distance})",
         "params": [fld("min_distance", "min_distance [[i][j]]", "mat",
                       [[2.5, 2.5], [2.5, 2.5]])],
     },
     "Cylinder": {
-        "label": "Cylinder boundary (柱面包络)",
-        "label_en": "Cylinder boundary (cylindrical envelope)",
+        "label": "最大圆柱包络约束 (Cylinder)",
+        "label_en": "maximum cylindrical envelope constraint (Cylinder)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.Cylinder(radius={radius}, height={height}, bottom={bottom})",
         "params": [fld("radius", "radius", "float", 10.0),
@@ -423,22 +450,23 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
                   fld("bottom", "bottom", "float", 0.0)],
     },
     "MinRadius": {
-        "label": "MinRadius (最小半径约束)",
-        "label_en": "MinRadius (minimum-radius constraint)",
+        "label": "最小半径约束 (MinRadius)",
+        "label_en": "minimum-radius constraint (MinRadius)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinRadius(radius={radius})",
         "params": [fld("radius", "radius", "float", 2.0)],
     },
     "VolumeMaximization": {
-        "label": "VolumeMaximization (腔体体积最大化)",
-        "label_en": "VolumeMaximization (cavity-volume maximization)",
+        "label": "腔体体积最大化 (VolumeMaximization)",
+        "label_en": "cavity-volume maximization (VolumeMaximization)",
         "group": "geometry", "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.VolumeMaximization(geometryparam=self.params_update, surf_idx={surf_idx}, weight={weight})",
         "params": [fld("surf_idx", "surf_idx", "int", 1, minimum=1),
                   fld("weight", "weight", "float", 1e-2)],
     },
     "InwardCurvatureRadius": {
-        "label": "InwardCurvatureRadius (codesign)",
+        "label": "内曲率半径约束 (InwardCurvatureRadius)",
+        "label_en": "inward curvature radius constraint (InwardCurvatureRadius)",
         "group": "geometry", "schemes": ["codesign"],
         "gen": ("morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry, "
                 "margin={margin}, margin_ratio={margin_ratio}, p={p}, penalty_scale={penalty_scale})"),
@@ -448,14 +476,15 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
                   fld("penalty_scale", "penalty_scale", "float", 1e3)],
     },
     "OffsetSurfaceMinThickness": {
-        "label": "OffsetSurfaceMinThickness (codesign)",
+        "label": "偏置后表面最小厚度约束 (OffsetSurfaceMinThickness)",
+        "label_en": "minimum thickness constraint for offset surfaces (OffsetSurfaceMinThickness)",
         "group": "geometry", "schemes": ["codesign"],
         "gen": "morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance={min_distance})",
         "params": [fld("min_distance", "min_distance", "float", 2.0)],
     },
     "VolFrac": {
-        "label": "VolFrac (体积分数带约束)",
-        "label_en": "VolFrac (volume-fraction band constraint)",
+        "label": "体积分数约束 (VolFrac)",
+        "label_en": "volume-fraction band constraint (VolFrac)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": ("self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, "
                 "penalty={penalty}, element_name={element_name})"),
@@ -466,8 +495,8 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
                       "", choices=["C3D4", "C3D8", "C3D10", "C3D6"])],
     },
     "MinValue": {
-        "label": "MinValue (控制点下界)",
-        "label_en": "MinValue (control-point lower bound)",
+        "label": "最小密度约束 (MinValue)",
+        "label_en": "minimum density constraint (MinValue)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinValue(xmin={xmin}, threshold={threshold}, p={p})",
         "params": [fld("xmin", "xmin", "float", -15.0),
@@ -475,8 +504,8 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
                   fld("p", "p", "int", 2, minimum=1)],
     },
     "MaxValue": {
-        "label": "MaxValue (控制点上界)",
-        "label_en": "MaxValue (control-point upper bound)",
+        "label": "最大密度约束 (MaxValue)",
+        "label_en": "maximum density constraint (MaxValue)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MaxValue(xmax={xmax}, threshold={threshold}, p={p})",
         "params": [fld("xmax", "xmax", "float", 15.0),

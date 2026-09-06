@@ -71,12 +71,10 @@ class CodesignTemplate(SchemeTemplate):
         geo.params["_apply_surface_constraints"] = self.default_apply_surface_constraints()
 
         outer = self.new_surface_node("bsp_cylinder", 0)
-        outer.name = "Outer surface (BSP cylinder, frozen)"
         outer.params.update(r0=10.0, length=100.0, seed_size=1.0,
                             degree=3, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=-1.0)
 
         inner = self.new_surface_node("cpgeo_sphere", 1)
-        inner.name = "Inner cavity (CPGEO sphere, designable)"
         inner.params.update(r0=7.0, seed_size=1.5,
                             init_location=[0.0, 0.0, 50.0], MaxC=1.5)
         geo.add_child(outer)
@@ -139,7 +137,7 @@ class CodesignTemplate(SchemeTemplate):
         # updater (geometry + materials together) ----------------------------
         upd = Node("updater", name="Updater")
         upd.params["geometry"] = {
-            "max_step_iter": 200,
+            "max_step_iter": 50,
             "if_update": [False, True],
             "objective_functions": [
                 {"type": "ShapeDerivative", "params": {}},
@@ -155,7 +153,7 @@ class CodesignTemplate(SchemeTemplate):
             "code": "",
         }
         upd.params["materials"] = {
-            "max_step_iter": 200,
+            "max_step_iter": 50,
             "if_update": True,
             "objective_functions": [
                 {"type": "Sensitivity", "params": {"normalize_gradient": False}},

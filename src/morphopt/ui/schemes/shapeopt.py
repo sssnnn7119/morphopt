@@ -46,12 +46,10 @@ class ShapeoptTemplate(SchemeTemplate):
         )
         # outer boundary (surface index 0)
         outer = self.new_surface_node("bsp_cylinder", 0)
-        outer.name = "Outer surface (BSP cylinder)"
         outer.params.update(r0=8.0, length=80.0, seed_size=0.8,
                             degree=3, maxR=0.2, maxC=1.5, maxFF=0.2, perturbation_L=10.0)
         # inner cavity (surface index 1)
         inner = self.new_surface_node("bsp_cylinder", 1)
-        inner.name = "Inner cavity (BSP cylinder)"
         inner.params.update(r0=4.0, length=74.0, seed_size=0.8,
                             init_location=[0.0, 0.0, 3.0],
                             maxR=0.2, maxC=1.5, maxFF=0.2, perturbation_L=10.0)
@@ -109,7 +107,7 @@ class ShapeoptTemplate(SchemeTemplate):
         # updater -----------------------------------------------------------
         upd = Node("updater", name="Updater")
         upd.params["geometry"] = {
-            "max_step_iter": 200,
+            "max_step_iter": 50,
             "if_update": [True, True],
             "objective_functions": [
                 {"type": "ShapeDerivative", "params": {}},

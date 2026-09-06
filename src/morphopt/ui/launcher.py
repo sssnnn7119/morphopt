@@ -102,6 +102,51 @@ def run_continue(path_result: str, target_iteration: int | None = None,
                             start_new_session=True)
 
 
+def parse_job_location(py_path: str) -> tuple[str, str]:
+    """Read where a definition script writes its results.
+
+    A runnable definition declares ``opt_label`` and ``path_result_folder`` in
+    ``Controller.__init__``; results go to ``<path_result_folder>/<opt_label>_T*``
+    relative to the script's directory.  Falls back to ``.results/`` + script
+    stem when the file does not carry them.
+    """
+    label = os.path.splitext(os.path.basename(py_path))[0]
+    folder = ".results/"
+    try:
+        text = Path(py_path).read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    m = re.search(r"\bopt_label\s*=\s*(['\"])(.*?)\1", text)
+    if m:
+        label = m.group(2)
+    m = re.search(r"\bpath_result_folder\s*=\s*(['\"])(.*?)\1", text)
+    if m:
+        folder = m.group(2)
+    py_dir = os.path.dirname(os.path.abspath(py_path))
+    if not os.path.isabs(folder):
+        folder = os.path.join(py_dir, folder)
+    return os.path.normpath(folder), label
+
+
+def run_py_definition(py_path: str, workdir: str | None = None
+                      ) -> tuple[str, str, subprocess.Popen]:
+    """Run an existing definition ``.py`` from scratch (headless job).
+
+    The script keeps its own result location (``opt_label`` +
+    ``path_result_folder``), so the caller can discover the fresh result with
+    :func:`latest_result_dir`.  Returns ``(root, label, process)``.
+    """
+    if workdir is None:
+        workdir = os.path.dirname(os.path.abspath(py_path))
+    os.makedirs(workdir, exist_ok=True)
+    root, label = parse_job_location(py_path)
+    env = dict(os.environ)
+    env.setdefault("PYVISTA_QT_BINDING", "pyside6")
+    proc = subprocess.Popen([sys.executable, os.path.abspath(py_path)],
+                            cwd=workdir, env=env, start_new_session=True)
+    return root, label, proc
+
+
 def stop_job(proc: subprocess.Popen | None) -> None:
     """Terminate a launched job and its whole process group (best effort)."""
     if proc is None or proc.poll() is not None:

@@ -180,6 +180,17 @@ class _MetricsPage(QWidget):
         ax.grid(True, color="white", linestyle="--", linewidth=0.5)
         self.canvas.draw()
 
+    def clear(self) -> None:
+        """Drop all result content (history table + curve)."""
+        self._objectives = []
+        self._headers = []
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.axis("off")
+        self.canvas.draw()
+
 
 class _GeometryPage(QWidget):
     """几何展示: current geometry of the selected iteration."""
@@ -210,6 +221,16 @@ class _GeometryPage(QWidget):
             self.view.rebuild(_build)
         except Exception as exc:  # pragma: no cover - best effort rendering
             print(f"Geometry preview failed at iter {iteration}: {exc}")
+
+    def clear_view(self) -> None:
+        """Empty the viewport and forget the last shown state."""
+        self._built_iter = -1
+        self._params = None
+        self._path_result = None
+        try:
+            self.view.rebuild(lambda plotter: None)
+        except Exception as exc:  # pragma: no cover - best effort rendering
+            print(f"geometry clear failed: {exc}")
 
 
 class _CasePage(QWidget):

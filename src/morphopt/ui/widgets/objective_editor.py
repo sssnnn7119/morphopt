@@ -57,14 +57,14 @@ class ObjectiveEditor(QWidget):
         lay.addLayout(form)
 
         self.obj_editor = CodeEditor(T(
-            "objective_function() 函数体（可编辑）",
-            "objective_function() body (editable)"))
+            "objective_function() 函数体",
+            "objective_function() body"))
         self.obj_editor.edit.textChanged.connect(self._save_objective)
         lay.addWidget(self.obj_editor, 1)
 
         self.met_editor = CodeEditor(T(
-            "get_metrics() 函数体（可编辑）",
-            "get_metrics() body (editable)"))
+            "get_metrics() 函数体",
+            "get_metrics() body"))
         self.met_editor.edit.textChanged.connect(self._save_metrics)
         lay.addWidget(self.met_editor, 1)
 

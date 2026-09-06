@@ -27,8 +27,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont
 
 from .model.problem import Node, ProblemDefinition
-from .model.schemas import SCHEME_LABELS
-from .widgets.model_tree import ModelTree
+from .model.schemas import scheme_label, MATERIAL_TYPES
+from .widgets.model_tree import (
+    ModelTree, surface_title_text, surface_index, container_title, _full_label,
+)
 from .widgets.editor import PropertyEditor, fields_for_node
 from .widgets.solver_editor import SolverEditor, detect_devices
 from .widgets.stepmatrix import StepMatrix
@@ -107,7 +109,7 @@ class Workbench(QWidget):
         head.addSpacing(10)
         head.addWidget(QLabel(T("输出路径", "Output folder")))
         self._path_edit = QLineEdit()
-        self._path_edit.setMinimumWidth(240)
+        self._path_edit.setMinimumWidth(120)
         self._path_edit.setToolTip(T(
             "结果输出目录（Controller.path_result_folder）",
             "Result output directory (Controller.path_result_folder)"))
@@ -237,7 +239,7 @@ class Workbench(QWidget):
 
     def _update_caption(self) -> None:
         self.title.setText(
-            f"[{SCHEME_LABELS.get(self.problem.scheme, self.problem.scheme)}]  "
+            f"[{scheme_label(self.problem.scheme)}]  "
             f"{self.problem.label}")
 
     # -------------------------------------------- name / output-path slots
@@ -312,8 +314,20 @@ class Workbench(QWidget):
         else:
             fields, code_slots, extra = fields_for_node(node, self.problem)
             subtitle = self._subtitle(node)
+            title = None
+            if node.kind == "surface":
+                idx = surface_index(self.problem, node)
+                if idx is not None:
+                    title = surface_title_text(node, idx)
+            elif node.kind == "material":
+                mt = node.params.get("type", "")
+                spec = MATERIAL_TYPES.get(mt, {})
+                title = _full_label(spec, mt)
+            elif node.kind == "geometry":
+                title = container_title("geometry")
             self.prop_editor.edit_node(node, fields=fields, code_slots=code_slots,
-                                       extra_choices=extra, subtitle=subtitle)
+                                       extra_choices=extra, subtitle=subtitle,
+                                       title=title)
             self._stack.setCurrentWidget(self.prop_editor)
 
     def _maybe_cascade_rename(self, node: Node) -> None:

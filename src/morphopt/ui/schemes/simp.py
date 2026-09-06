@@ -96,7 +96,7 @@ class SIMPTemplate(SchemeTemplate):
         upd = Node("updater", name="Updater")
         upd.params["geometry"] = None
         upd.params["materials"] = {
-            "max_step_iter": 100,
+            "max_step_iter": 50,
             "if_update": True,
             "objective_functions": [
                 {"type": "Sensitivity", "params": {"normalize_gradient": False}},

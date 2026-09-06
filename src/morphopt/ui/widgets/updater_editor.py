@@ -15,11 +15,13 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QGroupBox, QFormLayout, QSpinBox,
-    QLineEdit, QPushButton, QHBoxLayout, QLabel, QComboBox,
+    QCheckBox, QPushButton, QHBoxLayout, QLabel, QComboBox,
+    QToolButton, QMenu, QFrame, QWidgetAction,
 )
 
 from ..model.problem import Node, ProblemDefinition
 from ..model import schemas as S
+from .model_tree import surface_title_text
 from .param_form import ParamForm
 from .solver_editor import detect_devices
 from ..i18n import T, pick
@@ -27,8 +29,8 @@ from ..i18n import T, pick
 
 def _category_label(category: str) -> str:
     if category == "objectives":
-        return T("目标函数 (objective)", "Objective functions")
-    return T("约束 (constraint)", "Constraints")
+        return T("目标函数", "Objective functions")
+    return T("约束函数", "Constraints")
 
 
 class UpdaterEditor(QWidget):
@@ -41,7 +43,7 @@ class UpdaterEditor(QWidget):
 
         # run-level compute device (used by the generated Updater)
         devrow = QHBoxLayout()
-        devrow.addWidget(QLabel(T("Updater 设备 device", "Updater device (device)")))
+        devrow.addWidget(QLabel(T("Updater 设备", "Updater device")))
         self._device = QComboBox()
         self._device.setEditable(True)
         self._device.addItem("cpu")
@@ -57,9 +59,8 @@ class UpdaterEditor(QWidget):
         outer.addLayout(devrow)
 
         hint = QLabel(T(
-            "为每个子优化器选择目标函数与约束（非代码方式）；参数改动立即生效并同步到生成代码。",
-            "Choose objective functions and constraints per sub-optimizer "
-            "(no code); edits apply immediately and update the generated code."))
+            "为每个子优化器选择目标函数与约束。",
+            "Choose objective functions and constraints per sub-optimizer."))
         hint.setStyleSheet("color:#7f8c8d;")
         outer.addWidget(hint)
         scroll = QScrollArea()
@@ -97,9 +98,13 @@ class UpdaterEditor(QWidget):
         geom = node.params.get("geometry")
         mats = node.params.get("materials")
         if geom:
-            self._layout.addWidget(self._section_box("UpdaterGeometries", geom, "geometry"))
+            self._layout.addWidget(self._section_box(
+                T("几何更新器 (UpdaterGeometries)", "Geometry updater (UpdaterGeometries)"),
+                geom, "geometry"))
         if mats:
-            self._layout.addWidget(self._section_box("UpdaterMaterials", mats, "materials"))
+            self._layout.addWidget(self._section_box(
+                T("材料更新器 (UpdaterMaterials)", "Material updater (UpdaterMaterials)"),
+                mats, "materials"))
         if not geom and not mats:
             self._layout.addWidget(QLabel(T(
                 "(该方案没有可编辑的子优化器)",
@@ -127,20 +132,37 @@ class UpdaterEditor(QWidget):
         spin.setRange(1, 100000)
         spin.setValue(int(cfg.get("max_step_iter", 50)))
         spin.valueChanged.connect(lambda v: self._set(cfg, "max_step_iter", int(v)))
-        form.addRow("max_step_iter", spin)
+        form.addRow(T("最大迭代次数", "max_step_iter"), spin)
 
-        ifup = QLineEdit()
         cur = cfg.get("if_update")
-        ifup.setText("" if cur is None else str(cur))
-        ifup.editingFinished.connect(
-            lambda: self._set(cfg, "if_update", _parse_literal(ifup.text(), cur)))
-        form.addRow("if_update", ifup)
+        form.addRow(T("曲面更新与否", "if_update"),
+                    self._if_update_control(cfg, cur, group))
 
         # objectives are scheme-default and read-only (no add/edit window)
         form.addRow(_objective_readonly(cfg, group, self._scheme))
         # constraints are user-selectable / parameter-editable
         form.addRow(_item_list(cfg, group, "constraints", self._scheme, self._on_change))
         return g
+
+    # -------------------------------------------------------- if_update ui
+    def _if_update_control(self, cfg: dict, cur, group: str) -> QWidget:
+        """Checkbox widget for ``if_update``.
+
+        * geometry sub-optimizer: one checkbox per surface (index 0, 1, …);
+          the stored value is a bool list aligned to the surface list.
+        * other sub-optimizers (materials…): a single bool checkbox.
+        """
+        if group == "geometry":
+            surfaces = self._problem.surfaces() if self._problem is not None else []
+            if surfaces:
+                return _IfUpdateDropDown(cfg, cur, surfaces, self._on_change)
+        chk = QCheckBox()
+        chk.setChecked(True if cur is None else bool(cur))
+        chk.setToolTip(T(
+            "勾选 = 该曲面参与更新。",
+            "Checked = this surface participates in the update."))
+        chk.toggled.connect(lambda v: self._set(cfg, "if_update", bool(v)))
+        return chk
 
     # ------------------------------------------------------------- helpers
     def _set(self, cfg: dict, key: str, value) -> None:
@@ -152,12 +174,95 @@ class UpdaterEditor(QWidget):
             self.changed.emit(self._node)
 
 
+class _IfUpdateDropDown(QToolButton):
+    """Collapsible multi-select: one checkbox per surface, in a dropdown.
+
+    The button shows ``<checked>/<total>``; opening the menu lets you toggle
+    each surface (or use all / clear) while the popup stays open, so many
+    surfaces stay compact in the form.
+    """
+
+    def __init__(self, cfg: dict, cur, surfaces: list, on_change, parent=None):
+        super().__init__(parent)
+        self._cfg = cfg
+        self._on_change = on_change
+        self._checks: list[QCheckBox] = []
+
+        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self)
+        self.setMenu(menu)
+
+        act = QWidgetAction(menu)
+        panel = QWidget()
+        panel.setMinimumWidth(250)
+        col = QVBoxLayout(panel)
+        col.setContentsMargins(8, 6, 8, 6)
+        col.setSpacing(4)
+
+        bar = QHBoxLayout()
+        b_all = QPushButton(T("全选", "All"))
+        b_none = QPushButton(T("清空", "None"))
+        b_all.clicked.connect(lambda: self._set_all(True))
+        b_none.clicked.connect(lambda: self._set_all(False))
+        bar.addWidget(b_all)
+        bar.addWidget(b_none)
+        bar.addStretch(1)
+        col.addLayout(bar)
+
+        states = _as_bool_list(cur, len(surfaces))
+        body = QWidget()
+        vb = QVBoxLayout(body)
+        vb.setContentsMargins(0, 0, 0, 0)
+        vb.setSpacing(2)
+        for i, srf in enumerate(surfaces):
+            cb = QCheckBox(surface_title_text(srf, i))
+            cb.setChecked(states[i])
+            vb.addWidget(cb)
+            self._checks.append(cb)
+        vb.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setFixedHeight(min(200, 18 + 26 * max(len(surfaces), 1)))
+        scroll.setWidget(body)
+        col.addWidget(scroll)
+
+        act.setDefaultWidget(panel)
+        menu.addAction(act)
+
+        for cb in self._checks:
+            cb.toggled.connect(self._commit)
+        self._update_text()
+
+    # ------------------------------------------------------------ helpers
+    def _set_all(self, state: bool) -> None:
+        for cb in self._checks:
+            cb.blockSignals(True)
+            cb.setChecked(state)
+            cb.blockSignals(False)
+        self._commit()
+
+    def _commit(self, *_args) -> None:
+        self._cfg["if_update"] = [c.isChecked() for c in self._checks]
+        self._update_text()
+        self._on_change()
+
+    def _update_text(self) -> None:
+        names = [c.text() for c in self._checks if c.isChecked()]
+        self.setText(f"{len(names)}/{len(self._checks)}")
+        self.setMinimumWidth(80)
+        self.setToolTip(T(
+            f"勾选参与更新的曲面：{', '.join(names) or '无'}",
+            f"Surfaces to update: {', '.join(names) or 'none'}"))
+
+
 def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     """Read-only summary of the scheme-default objective functions."""
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
-    cap = QLabel(T("目标函数 (objective，方案默认)", "Objective functions (scheme default)"))
+    cap = QLabel(T("子优化目标函数", "Objective functions per sub-optimizer"))
     cap.setStyleSheet("color:#9aa4b2;")
     lay.addWidget(cap)
     items = cfg.get("objective_functions") or []
@@ -257,12 +362,14 @@ def _remove(items: list, item: dict, on_change) -> None:
         on_change()
 
 
-def _parse_literal(text: str, default):
-    import ast
-    text = text.strip()
-    if not text:
-        return default
-    try:
-        return ast.literal_eval(text)
-    except Exception:
-        return text
+def _as_bool_list(cur, n: int, default: bool = True) -> list[bool]:
+    """Coerce an ``if_update`` value into a length-``n`` bool list.
+
+    One entry per surface (index 0, 1, …).  ``None`` / scalars are expanded;
+    a too-short list is padded with ``default``.
+    """
+    if isinstance(cur, (list, tuple)):
+        return [bool(cur[i]) if i < len(cur) else default for i in range(n)]
+    if cur is None:
+        return [default] * n
+    return [bool(cur)] * n

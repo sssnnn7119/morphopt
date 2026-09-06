@@ -118,11 +118,14 @@ class PropertyEditor(QWidget):
 
     # ------------------------------------------------------------- content
     def edit_node(self, node: Node, fields=None, code_slots=None,
-                  extra_choices=None, subtitle: str = "") -> None:
+                  extra_choices=None, subtitle: str = "",
+                  title: str | None = None) -> None:
         # Re-selecting the SAME node object (e.g. auto-refresh after a field /
         # code-slot edit) must not tear down and rebuild the form: that would
         # drop focus and clear the undo history of the editor being typed in.
         if node is self._node and self._form.rowCount():
+            # Keep the form; only refresh the header (a surface may have moved).
+            self._title.setText(title if title is not None else (node.name or node.kind))
             return
         if fields is None:
             fields, code_slots, extra_choices = fields_for_node(node)
@@ -137,7 +140,7 @@ class PropertyEditor(QWidget):
         while self._form.rowCount():
             self._form.removeRow(0)
 
-        self._title.setText(node.name or node.kind)
+        self._title.setText(title if title is not None else (node.name or node.kind))
         if node.kind == "interface":
             name_edit = QLineEdit(node.name or "")
             name_edit.setToolTip(T(

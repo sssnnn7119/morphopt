@@ -19,6 +19,7 @@ from pyvistaqt import QtInteractor
 
 from ..model.problem import Node, ProblemDefinition
 from ..model.schemas import INTERFACE_TYPES
+from ..i18n import T
 
 
 class _PlotHost(QWidget):
@@ -40,13 +41,13 @@ class PreviewViewer(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("Step:"))
+        bar.addWidget(QLabel(T("工况：", "Step:")))
         self.step_combo = QComboBox()
-        self.step_combo.addItem("(none)")
+        self.step_combo.addItem(T("(无)", "(none)"))
         self.step_combo.currentIndexChanged.connect(self._redraw_loads)
         bar.addWidget(self.step_combo)
         bar.addStretch(1)
-        btn_reset = QPushButton("Reset view")
+        btn_reset = QPushButton(T("重置视角", "Reset view"))
         btn_reset.clicked.connect(self._reset_view)
         bar.addWidget(btn_reset)
         outer.addLayout(bar)
@@ -103,9 +104,9 @@ class PreviewViewer(QWidget):
         n = int(steps.params.get("num_steps", 1)) if steps is not None else 1
         self.step_combo.blockSignals(True)
         self.step_combo.clear()
-        self.step_combo.addItem("(none)")
+        self.step_combo.addItem(T("(无)", "(none)"))
         for s in range(n):
-            self.step_combo.addItem(f"Step {s}")
+            self.step_combo.addItem(T(f"工况 {s}", f"Step {s}"))
         self.step_combo.blockSignals(False)
 
     # ------------------------------------------------------------- geometry

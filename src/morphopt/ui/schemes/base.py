@@ -38,8 +38,9 @@ class SchemeTemplate:
         params = {"type": surface_type}
         params.update(clone_defaults(spec["params"]))
         params["flip"] = index > 0  # inner cavities flip their normals
-        role = S.SURFACE_ROLE_NAMES.get(index, f"Surface {index}")
-        return Node("surface", name=f"{spec['label']} · {role}", params=params)
+        # Surfaces carry no descriptive name: they are identified by their
+        # 0-based index (0 = outer, >= 1 = inner cavity).
+        return Node("surface", name="", params=params)
 
     def new_interface_node(self, interface_type: str) -> Node:
         spec = S.interface_spec(interface_type)
@@ -52,7 +53,9 @@ class SchemeTemplate:
         spec = S.material_spec(mtype)
         params = {"type": mtype}
         params.update(clone_defaults(spec["params"]))
-        return Node("material", name=spec["label"], params=params)
+        # Materials carry no stored name: the header shows the localized type
+        # label ('解释 (MaterialClass)') from the type catalogue.
+        return Node("material", name="", params=params)
 
     # ----------------------------------------------------- objective slots
     def default_objective_slot(self) -> str:

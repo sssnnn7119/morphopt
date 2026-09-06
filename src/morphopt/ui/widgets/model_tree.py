@@ -12,6 +12,8 @@ the viewer and the read-only generated code.
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QMenu,
@@ -20,20 +22,69 @@ from PySide6.QtGui import QAction
 
 from ..model.problem import Node, ProblemDefinition
 from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES
-from ..i18n import T
+from ..i18n import T, pick
 
 #: containers that hold children we show in the tree
 CONTAINER_ORDER = ["geometry", "loads", "steps", "material", "objective", "solver", "updater"]
 
-CONTAINER_LABELS = {
+#: top-level container row titles: 中文 (带英文括号) / 纯英文 (English mode).
+CONTAINER_TITLES_ZH = {
+    "geometry": "几何 (Geometry)",
+    "loads": "载荷 (Loads)",
+    "steps": "载荷工况 (Load steps)",
+    "material": "材料 (Materials)",
+    "objective": "目标函数 (Objective)",
+    "solver": "求解器 (Solver)",
+    "updater": "更新器 (Updater)",
+}
+CONTAINER_TITLES_EN = {
     "geometry": "Geometry",
     "loads": "Loads",
     "steps": "Load steps",
     "material": "Materials",
-    "objective": "Objective Function",
+    "objective": "Objective function",
     "solver": "Solver",
     "updater": "Updater",
 }
+
+
+def container_title(kind: str) -> str:
+    """Localized title of one top-level container row in the model tree."""
+    return pick(CONTAINER_TITLES_ZH.get(kind, kind), CONTAINER_TITLES_EN.get(kind))
+
+
+def _full_label(spec: dict, key: str) -> str:
+    """Localized full label ``解释 (TypeName)`` of a schema entry."""
+    return pick(spec.get("label", key), spec.get("label_en"))
+
+
+def _short_phrase(spec: dict, key: str) -> str:
+    """``解释 (TypeName)`` -> just the readable phrase ``解释``."""
+    full = _full_label(spec, key)
+    return re.sub(r"\s*\([^)]*\)\s*$", "", full).strip() or full
+
+
+def surface_title_text(srf: Node, index: int) -> str:
+    """Tree/editor label for one geometry surface: ``"0: 圆柱面"``.
+
+    Surfaces are *not* given descriptive names; they are identified by their
+    0-based index inside the Geometry node (0 = outer boundary, >= 1 = inner
+    cavity).  The index comes from the current position, so moving a surface
+    up/down renumbers it automatically.
+    """
+    st = srf.params.get("type", "?")
+    spec = SURFACE_TYPES.get(st, {})
+    return f"{index}: {_short_phrase(spec, st)}"
+
+
+def surface_index(problem: ProblemDefinition | None, srf: Node) -> int | None:
+    """Return the 0-based position of ``srf`` inside the Geometry node."""
+    if problem is None:
+        return None
+    for i, s in enumerate(problem.surfaces()):
+        if s is srf:
+            return i
+    return None
 
 
 class ModelTree(QTreeWidget):
@@ -71,11 +122,11 @@ class ModelTree(QTreeWidget):
                 node = next((c for c in root.children if c.kind == kind), None)
             if node is None:
                 continue
-            item = self._make_item(CONTAINER_LABELS.get(kind, kind), node, bold=True)
+            item = self._make_item(container_title(kind), node, bold=True)
             self.addTopLevelItem(item)
             if kind == "geometry":
-                for srf in node.children:
-                    it = self._make_item(self._surface_title(srf), srf)
+                for i, srf in enumerate(c for c in node.children if c.kind == "surface"):
+                    it = self._make_item(self._surface_title(srf, i), srf)
                     item.addChild(it)
             elif kind == "loads":
                 # one row per load; its parameters are edited in the right pane
@@ -101,19 +152,15 @@ class ModelTree(QTreeWidget):
         return item
 
     @staticmethod
-    def _surface_title(srf: Node) -> str:
-        st = srf.params.get("type", "?")
-        spec = SURFACE_TYPES.get(st, {})
-        r0 = srf.params.get("r0")
-        rtxt = f", r0={r0}" if r0 is not None else ""
-        return f"{srf.name or spec.get('label', st)}{rtxt}"
+    def _surface_title(srf: Node, index: int) -> str:
+        return surface_title_text(srf, index)
 
     @staticmethod
     def _interface_title(iface: Node) -> str:
         it = iface.params.get("type", "?")
         spec = INTERFACE_TYPES.get(it, {})
-        label = spec.get("label", it)
-        return f"{iface.name or label}  [{label}]"
+        phrase = _short_phrase(spec, it)
+        return f"{iface.name}  [{phrase}]" if iface.name else phrase
 
     # -------------------------------------------------------------- events
     def _on_current(self, cur, _prev) -> None:
@@ -139,20 +186,20 @@ class ModelTree(QTreeWidget):
         scheme = self._problem.scheme if self._problem else "shapeopt"
 
         if kind == "geometry" and scheme != "simp":
-            sub = menu.addMenu("Add surface")
+            sub = menu.addMenu(T("添加曲面 ▸", "Add surface ▸"))
             for stype, spec in SURFACE_TYPES.items():
-                act = QAction(spec["label"], sub)
+                act = QAction(_full_label(spec, stype), sub)
                 act.setData(stype)
                 sub.addAction(act)
             sub.triggered.connect(lambda a: self._add_surface(a.data()))
             menu.addSeparator()
 
         if kind == "surface":
-            act_up = QAction("Move up", menu)
+            act_up = QAction(T("上移", "Move up"), menu)
             act_up.triggered.connect(lambda: self._move_surface(node, -1))
-            act_dn = QAction("Move down", menu)
+            act_dn = QAction(T("下移", "Move down"), menu)
             act_dn.triggered.connect(lambda: self._move_surface(node, 1))
-            act_del = QAction("Delete surface", menu)
+            act_del = QAction(T("删除曲面", "Delete surface"), menu)
             act_del.triggered.connect(lambda: self._remove_surface(node))
             menu.addAction(act_up)
             menu.addAction(act_dn)
@@ -162,17 +209,17 @@ class ModelTree(QTreeWidget):
         if kind == "loads":
             sub = menu.addMenu(T("添加载荷 ▸", "Add load ▸"))
             for itype, spec in INTERFACE_TYPES.items():
-                act = QAction(spec["label"], sub)
+                act = QAction(_full_label(spec, itype), sub)
                 act.setData(itype)
                 sub.addAction(act)
             sub.triggered.connect(lambda a: self._add_interface(a.data()))
 
         if kind == "interface":
-            act_up = QAction("Move up", menu)
+            act_up = QAction(T("上移", "Move up"), menu)
             act_up.triggered.connect(lambda: self._move_interface(node, -1))
-            act_dn = QAction("Move down", menu)
+            act_dn = QAction(T("下移", "Move down"), menu)
             act_dn.triggered.connect(lambda: self._move_interface(node, 1))
-            act_del = QAction("Delete", menu)
+            act_del = QAction(T("删除", "Delete"), menu)
             act_del.triggered.connect(lambda: self._remove_interface(node))
             menu.addAction(act_up)
             menu.addAction(act_dn)
