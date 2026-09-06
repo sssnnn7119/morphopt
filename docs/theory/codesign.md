@@ -383,7 +383,7 @@ morphopt/
 │   ├── updaters/materials/
 │   │   └── objectivefuncs/  ← Sensitivity、DensityFieldMinimize
 │   └── solver.py           ← 伴随法灵敏度求解
-└── examples/codesign/       ← 示例脚本
+└── myjobs/codesign/        ← 任务脚本（协同设计）
 ```
 
 ### 7.2 类继承链
@@ -579,7 +579,7 @@ def set_materials(self, fe):
 #### 8.2.6 壳材料处理（`CodesignMaterials`）
 
 ```python
-class CodesignMaterials(SIMPMaterials):
+class CodesignMaterials(SIMP_BSPFieldMaterials):
     def set_materials(self, fe):
         # 为壳单元设置均匀材料
         elements_shell = fe.assembly.get_part('final_model').elems['C3D6']
@@ -772,7 +772,7 @@ Controller                         → 优化主循环 (optcore/controller.py)
 │       ├── get_material_ratio()    → Sigmoid + RAMP(p=8) 密度插值
 │       ├── get_penalty_factor()    → Smoothstep 逐高斯点惩罚系数
 │       └── set_materials()         → 分配 μ(φ), κ(φ) + penalfactor
-├── MorphSolver                    → FEA 求解 (optcore/solver.py)
+├── Solver                    → FEA 求解 (optcore/solver.py)
 ├── ObjectiveFunction              → 目标函数 (由示例定义)
 └── Updaters                       → 设计变量更新 (optcore/updaters/updaters.py)
     ├── UpdaterGeometries          → 几何子优化
@@ -789,7 +789,7 @@ Controller                         → 优化主循环 (optcore/controller.py)
 
 ### 9.3 设计变量数量参考
 
-以 `examples/codesign/twist.py` 为例：
+以 `myjobs/codesign/twist.py` 为例：
 
 | 变量 | 数量 | 描述 |
 |-----|------|------|
@@ -804,7 +804,7 @@ Controller                         → 优化主循环 (optcore/controller.py)
 
 ### 10.1 示例脚本结构
 
-以 `examples/codesign/twist.py` 为例，展示如何定义协同优化任务：
+以 `myjobs/codesign/twist.py` 为例，展示如何定义协同优化任务：
 
 ```python
 import morphopt
@@ -818,7 +818,7 @@ minratio = 1e-6       # 最小密度比
 class ThisController(morphopt.Controller):
 
     # ---- 目标函数 ----
-    class ObjectiveFunction(morphopt.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.codesign.ObjectiveFunction):
         def objective_function(self):
             # 两个载荷步的势能差（扭转能量）
             E0 = assembly._total_Potential_Energy(RGC=RGC0)
@@ -826,7 +826,7 @@ class ThisController(morphopt.Controller):
             return E1 - E0
 
     # ---- 参数定义 ----
-    class Params(morphopt.Params):
+    class Params(morphopt.codesign.Params):
         class GeometryParams(morphopt.codesign.CodesignGeometry):
             def __init__(self):
                 super().__init__(fea_seed_size=2.5,
@@ -853,8 +853,8 @@ class ThisController(morphopt.Controller):
                     penalfactor=1e-1)                  # Fscrw 系数
 
     # ---- 更新器 ----
-    class Updater(morphopt.Updaters):
-        class UpdaterGeometries(morphopt.UpdaterGeometries):
+    class Updater(morphopt.codesign.Updaters):
+        class UpdaterGeometries(morphopt.codesign.UpdaterGeometries):
             def __init__(self, params):
                 super().__init__(params, max_step_iter=100)
                 self.add_objective_function(ShapeDerivative())
@@ -864,7 +864,7 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(OffsetSurfaceMinThickness(geometry=params.geometry))
                 self.if_update = [False, True]  # 只更新气腔
 
-        class UpdaterMaterials(morphopt.UpdaterMaterials):
+        class UpdaterMaterials(morphopt.codesign.UpdaterMaterials):
             def __init__(self, params):
                 super().__init__(params, max_step_iter=200, max_step_length=0.1)
                 self.add_objective_function(Sensitivity())
@@ -878,7 +878,7 @@ if __name__ == '__main__':
 
 ### 10.2 其他 codesign 示例
 
-`examples/codesign/` 中包含多个协同优化示例：
+`myjobs/codesign/` 中包含多个协同优化任务脚本：
 
 | 示例文件 | 目标 | 特点 |
 |---------|------|------|
@@ -892,9 +892,9 @@ if __name__ == '__main__':
 
 ## 11. 参考文献
 
-1. **Chen F, Song Z, et al.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023. (TRO2023Morph)
+1. **Chen F, Song Z, et al.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023.
 
-2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2025. (TRO2025Jacobian)
+2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2025.
 
 ---
 

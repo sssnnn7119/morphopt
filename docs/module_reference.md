@@ -268,5 +268,5 @@ src/morphopt/
 | 新几何接口 | 新增 `geometryinterfaces` 实现，在 `GeometryParams` 中注册 |
 | 新 FEA 接口 | 新增 `feainterface` 子类，在 `define_interface()` 中调用 |
 | 新目标/约束 | 新增 `objectivefuncs` 类，挂到对应更新器 |
-| 新材料参数化 | 继承 `SIMP_BSPFieldMaterials`，重写 `get_ratio`, `set_materials` |
+| 新材料参数化 | 继承 `SIMP_BSPFieldMaterials`，重写 `_map_bsp_designfield` |
 | 新优化类型 | 创建新的子包（如 `shapeopt` / `simp` 模式），继承 `BaseUpdater` |

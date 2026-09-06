@@ -142,10 +142,10 @@ $$
 s_{ij} = \frac{\partial W}{\partial F_{ji}} = \mu\left(\frac{1}{J^{2/3}}F_{ji} - \frac{1}{3}\bar{I}_1 F^{-1}_{ij}\right) + \kappa J(J-1)F^{-1}_{ij}
 $$
 
-**代码对应**：`examples/basic/shapeoptimization.py` 中设置材料参数：
+**代码对应**：`myjobs/ral2026fea/shapeoptimization.py` 中设置材料参数：
 
 ```python
-class MaterialParams(morphopt.Materials):
+class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
     def __init__(self):
         super().__init__(mu=0.482, kappa=4.8, density=1.08e-9)
 ```
@@ -177,7 +177,7 @@ $$
 \mathbf{U} \leftarrow \mathbf{U} - \mathbf{K}^{-1} \mathbf{L}, \quad K_{ij} = \frac{\partial L_i}{\partial U_j}
 $$
 
-**代码对应**：`src/morphopt/optcore/solver.py` 中 `MorphSolver.solve()` 方法：
+**代码对应**：`src/morphopt/optcore/solver.py` 中 `Solver.solve()` 方法：
 
 ```python
 def solve(self):
@@ -211,10 +211,10 @@ $$
 
 #### 代码对应
 
-在 `examples/` 中，目标函数通过继承 `morphopt.ObjectiveFunction` 实现。例如在 `shapeoptimization.py` 中最大化末端轴向位移：
+在 `myjobs/ral2026fea/shapeoptimization.py`（或 `examples/bendingactuator.py`）中，目标函数通过继承 `morphopt.shapeopt.ObjectiveFunction` 实现，例如最大化末端轴向位移：
 
 ```python
-class ObjectiveFunction(morphopt.ObjectiveFunction):
+class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
     def objective_function(self):
         return self.fe_results[0].GC[-2]  # 末端位移的 z 分量
 ```
@@ -756,7 +756,7 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 │   ├── GeometryParams        → 几何参数 (BSP/球面映射)
 │   ├── FEAParams             → FEA 参数（加载步、BC、RP）
 │   └── Materials             → 材料参数（μ, κ, ρ）
-├── MorphSolver               → FEA 并行求解 (optcore/solver.py)
+├── Solver                   → FEA 并行求解 (optcore/solver.py)
 │   └── torchfea.solver       → 隐式静力求解器 + 伴随求解
 ├── ObjectiveFunction         → 目标函数 + 灵敏度分析 (optcore/objfunc.py)
 │   ├── compute_multistep_objective() → 多工况目标定义
@@ -782,6 +782,6 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 
 ## 10. 参考文献
 
-1. **Chen F, Song Z, Chen S, Gu G, Zhu X.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023. (`TRO2023Morph`)
-2. **Chen F, Song Z, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2025. (`TRO2025Jacobian`)
+1. **Chen F, Song Z, Chen S, Gu G, Zhu X.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023.
+2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2026.
 3. Choi K K, Kim N-H. *Structural Sensitivity Analysis and Optimization 1: Linear Systems.* Springer, 2006.
