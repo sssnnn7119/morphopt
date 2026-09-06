@@ -32,9 +32,8 @@ class ObjectiveEditor(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         head = QLabel(T(
-            "目标函数（唯一可手写代码区，其余生成代码为只读）",
-            "Objective function (the only hand-written area; the rest is "
-            "read-only generated code)"))
+            "目标函数（建议在IDE中编辑）",
+            "Objective function (edit in IDE recommended)"))
         head.setStyleSheet("font-weight:600; color:#e0e0e0;")
         lay.addWidget(head)
 

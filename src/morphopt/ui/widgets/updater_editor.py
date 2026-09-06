@@ -39,9 +39,9 @@ class UpdaterEditor(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        # run-level compute device (used by the generated Updater and worker)
+        # run-level compute device (used by the generated Updater)
         devrow = QHBoxLayout()
-        devrow.addWidget(QLabel(T("计算设备 device", "Compute device (device)")))
+        devrow.addWidget(QLabel(T("Updater 设备 device", "Updater device (device)")))
         self._device = QComboBox()
         self._device.setEditable(True)
         self._device.addItem("cpu")
@@ -49,9 +49,9 @@ class UpdaterEditor(QWidget):
             if dev != "cpu":
                 self._device.addItem(dev)
         self._device.setToolTip(T(
-            "计算设备（如 cpu / cuda:0），写入当前优化定义并作用于 Updater 与启动参数。",
-            "Compute device (e.g. cpu / cuda:0); stored on the definition and "
-            "used by the Updater and the launch arguments."))
+            "Updater 专用计算设备（cpu / cuda:0…），与运行设备（start_optimization）独立；留空默认跟随运行设备。",
+            "Device for the Updater only (cpu / cuda:0…); independent from the "
+            "run device (start_optimization). Empty = follow the run device."))
         self._device.currentTextChanged.connect(self._save_device)
         devrow.addWidget(self._device, 1)
         outer.addLayout(devrow)
@@ -78,10 +78,10 @@ class UpdaterEditor(QWidget):
         self._node = node
         self._problem = problem
         self._scheme = problem.scheme if problem is not None else "shapeopt"
-        # show the current compute device without re-triggering a save
+        # show the current updater device without re-triggering a save
         self._loading = True
         try:
-            dev = problem.device if problem is not None else "cpu"
+            dev = problem.updater_device or (problem.device if problem is not None else "cpu")
             if self._device.findText(dev) < 0:
                 self._device.addItem(dev)
             self._device.setCurrentText(dev if dev else "cpu")
@@ -106,14 +106,15 @@ class UpdaterEditor(QWidget):
                 "(this scheme has no editable sub-optimizer)")))
 
     def _save_device(self, text: str) -> None:
-        """Persist the compute device on the definition (problem.device)."""
+        """Persist the (Updater-only) device on the definition."""
         if self._loading or self._problem is None:
             return
         text = (text or "").strip()
-        if not text:
-            return
-        if text != self._problem.device:
-            self._problem.device = text
+        if text:
+            if text != self._problem.updater_device:
+                self._problem.updater_device = text
+        else:
+            self._problem.updater_device = None  # empty -> follow run device
         if self._node is not None:
             self.changed.emit(self._node)
 

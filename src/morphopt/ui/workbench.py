@@ -8,7 +8,7 @@ Layout:
                                objective pages)
                 2. 代码(只读) -> generated ``ThisController`` (auto-synced)
   right       PyVista preview of the initial geometry + per-step loads
-  footer      ▶ 导入优化器 (hand the definition to the observer page)
+  footer      ▶ 进入优化器 (hand the definition to the observer page)
 
 Interchange is the ``*.morph`` JSON (open/export); the runnable ``*.py`` is
 generated from the model in the read-only code tab (no .py import).
@@ -205,7 +205,7 @@ class Workbench(QWidget):
         self._msg = QLabel("")
         self._msg.setStyleSheet("color:#9aa4b2;")
         foot.addWidget(self._msg, 1)
-        b_import = QPushButton(T("▶ 导入优化器", "▶ Send to Observer"))
+        b_import = QPushButton(T("▶ 进入优化器", "▶ Send to Observer"))
         b_import.setToolTip(T(
             "将当前定义提交至优化器，以开始或继续优化",
             "Hand the current definition to the observer page to start or continue"))

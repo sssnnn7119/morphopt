@@ -101,6 +101,7 @@ class ProblemDefinition:
         label: str = "Untitled",
         result_folder: str = ".results/",
         device: str = "cpu",
+        updater_device: Optional[str] = None,
         restart_per_iteration: int = 10,
         root: Optional[Node] = None,
     ) -> None:
@@ -110,6 +111,8 @@ class ProblemDefinition:
         self.label = label
         self.result_folder = result_folder
         self.device = device
+        # device for the Updater only; None -> follow ``device``
+        self.updater_device = updater_device
         self.restart_per_iteration = restart_per_iteration
         self.root = root if root is not None else Node("problem", name=label)
 
@@ -134,6 +137,7 @@ class ProblemDefinition:
             "label": self.label,
             "result_folder": self.result_folder,
             "device": self.device,
+            "updater_device": self.updater_device,
             "restart_per_iteration": self.restart_per_iteration,
             "root": self.root.to_dict(),
         }
@@ -145,6 +149,7 @@ class ProblemDefinition:
             label=data.get("label", "Untitled"),
             result_folder=data.get("result_folder", ".results/"),
             device=data.get("device", "cpu"),
+            updater_device=data.get("updater_device"),
             restart_per_iteration=data.get("restart_per_iteration", 10),
             root=Node.from_dict(data.get("root", {"kind": "problem"})),
         )

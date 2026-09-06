@@ -93,7 +93,10 @@ def generate_source(problem: ProblemDefinition) -> str:
     a = L.append
 
     controller_ref = B["controller"]  # morphopt.Controller
-    device = repr(problem.device if problem.device else "cpu")
+    run_dev = problem.device or "cpu"
+    upd_dev = problem.updater_device or run_dev
+    device = repr(run_dev)      # -> morphopt.start_optimization(device=...)
+    upd_device = repr(upd_dev)  # -> Updater(..., device=...) (independent)
 
     a("import morphopt")
     a("")
@@ -182,7 +185,7 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
 
     # -------- Updater -----------------------------------------------------
-    _emit_updater(a, problem, template, device)
+    _emit_updater(a, problem, template, upd_device)
 
     # -------- main --------------------------------------------------------
     a("")

@@ -344,7 +344,7 @@ class ObserverControls(QWidget):
         outer.addWidget(self.panel, 1)
 
         # bottom-right: back to the definition page (mirrors the definition
-        # footer's right-aligned ▶ 导入优化器 button)
+        # footer's right-aligned ▶ 进入优化器 button)
         foot = QHBoxLayout()
         foot.addStretch(1)
         self.btn_back = QPushButton(T("◀ 返回定义", "◀ Back to Definition"))
