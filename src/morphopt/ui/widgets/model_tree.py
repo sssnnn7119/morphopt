@@ -139,6 +139,19 @@ class ModelTree(QTreeWidget):
             if it is not None:
                 self.setCurrentItem(it)
 
+    # ------------------------------------------------------------ language
+    def apply_language(self) -> None:
+        """Re-localize the tree titles in place (keeps the selection)."""
+        for item, node in list(self._item_node.items()):
+            if node.kind in CONTAINER_ORDER:
+                item.setText(0, container_title(node.kind))
+            elif node.kind == "surface":
+                idx = surface_index(self._problem, node)
+                if idx is not None:
+                    item.setText(0, self._surface_title(node, idx))
+            elif node.kind == "interface":
+                item.setText(0, self._interface_title(node))
+
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])
@@ -195,12 +208,15 @@ class ModelTree(QTreeWidget):
             menu.addSeparator()
 
         if kind == "surface":
+            act_copy = QAction(T("复制", "Copy"), menu)
+            act_copy.triggered.connect(lambda: self._copy_surface(node))
             act_up = QAction(T("上移", "Move up"), menu)
             act_up.triggered.connect(lambda: self._move_surface(node, -1))
             act_dn = QAction(T("下移", "Move down"), menu)
             act_dn.triggered.connect(lambda: self._move_surface(node, 1))
             act_del = QAction(T("删除曲面", "Delete surface"), menu)
             act_del.triggered.connect(lambda: self._remove_surface(node))
+            menu.addAction(act_copy)
             menu.addAction(act_up)
             menu.addAction(act_dn)
             menu.addSeparator()
@@ -215,12 +231,15 @@ class ModelTree(QTreeWidget):
             sub.triggered.connect(lambda a: self._add_interface(a.data()))
 
         if kind == "interface":
+            act_copy = QAction(T("复制", "Copy"), menu)
+            act_copy.triggered.connect(lambda: self._copy_interface(node))
             act_up = QAction(T("上移", "Move up"), menu)
             act_up.triggered.connect(lambda: self._move_interface(node, -1))
             act_dn = QAction(T("下移", "Move down"), menu)
             act_dn.triggered.connect(lambda: self._move_interface(node, 1))
             act_del = QAction(T("删除", "Delete"), menu)
             act_del.triggered.connect(lambda: self._remove_interface(node))
+            menu.addAction(act_copy)
             menu.addAction(act_up)
             menu.addAction(act_dn)
             menu.addSeparator()
@@ -242,6 +261,17 @@ class ModelTree(QTreeWidget):
         geo.add_child(srf)
         self._renumber_surfaces()
         self.rebuild(select=srf)
+        self.treeChanged.emit()
+
+    def _copy_surface(self, srf: Node) -> None:
+        geo = self._geometry()
+        if geo is None:
+            return
+        idx = geo.children.index(srf)
+        copy = srf.clone()
+        geo.add_child(copy, index=idx + 1)   # place right below the original
+        self._renumber_surfaces()
+        self.rebuild(select=copy)
         self.treeChanged.emit()
 
     def _remove_surface(self, srf: Node) -> None:
@@ -298,6 +328,21 @@ class ModelTree(QTreeWidget):
         iface.name = self._unique_interface_name(spec.get("name_hint", "load_"))
         loads.add_child(iface)
         self.rebuild(select=iface)
+        self.treeChanged.emit()
+
+    def _copy_interface(self, iface: Node) -> None:
+        loads = self._loads()
+        if loads is None:
+            return
+        idx = loads.children.index(iface)
+        copy = iface.clone()
+        # a copied load is a new load: give it a fresh unique name so it does
+        # not collide with the original (it starts unset / zero in the steps)
+        itype = copy.params.get("type", "")
+        hint = INTERFACE_TYPES.get(itype, {}).get("name_hint", "load_")
+        copy.name = self._unique_interface_name(hint)
+        loads.add_child(copy, index=idx + 1)   # place right below the original
+        self.rebuild(select=copy)
         self.treeChanged.emit()
 
     def _move_interface(self, iface: Node, delta: int) -> None:

@@ -9,4 +9,4 @@ if __name__ == "__main__":
     from morphopt.ui.monitor import view_optimization_result
 
     view_optimization_result(
-        '/mnt/a/MineData/Learning/Code/projects/morphopt/examples/codesign/Z:/Results/Twist_Energy_T20260512_094822')
+        '/run/media/song/SS/minedata/learning/code/projects/morphopt/ui_runs/results/shapeopt_untitled_T20260906_221229')

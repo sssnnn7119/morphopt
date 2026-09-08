@@ -36,7 +36,6 @@ class MainWindow(QMainWindow):
         self._problem: ProblemDefinition | None = None
         self._workbench: Workbench | None = None
         self._observer: ObserverControls | None = None
-        self._lang_dirty = False  # definition texts need re-applying (deferred)
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
@@ -56,30 +55,16 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._lang_switch)
 
     def _apply_language(self) -> None:
-        # remember which part is being shown; re-apply observer texts in place
-        was_observer = self.stack.currentWidget() is self._observer
+        # Directly re-apply the current language to both parts in place: no
+        # viewport is recreated, so it is safe regardless of which page is
+        # currently shown (recreating a PyVista viewport while the observer's
+        # GL pages are shown would blacken the observer).
         if self._observer is not None:
             self._observer.apply_language()
-        # Only rebuild the (GL-bearing) definition page when it is the visible
-        # part: recreating a PyVista viewport while the observer's GL pages are
-        # shown blackens the observer.  Otherwise defer until it is opened.
-        if self._problem is not None and not was_observer:
-            self._rebuild_workbench()
-            self._lang_dirty = False
-        elif self._problem is not None:
-            self._lang_dirty = True
-        self.stack.setCurrentWidget(self._observer if was_observer
-                                    else self._workbench)
+        if self._workbench is not None:
+            self._workbench.apply_language()
         self._set_titles()
         self.statusBar().showMessage(T("就绪", "Ready"), 3000)
-
-    def _rebuild_workbench(self) -> None:
-        if self._workbench is not None and self._problem is not None:
-            idx = self.stack.indexOf(self._workbench)
-            self._workbench.deleteLater()
-            self._build_workbench(self._problem)
-            if idx >= 0:
-                self.stack.insertWidget(idx, self._workbench)
 
     def _set_titles(self) -> None:
         if self.stack.currentWidget() is self._observer:
@@ -187,10 +172,6 @@ class MainWindow(QMainWindow):
 
     def show_definition(self) -> None:
         if self._workbench is not None:
-            if self._lang_dirty and self._problem is not None:
-                # re-apply definition language now that its GL view can be rebuilt
-                self._rebuild_workbench()
-                self._lang_dirty = False
             self.stack.setCurrentWidget(self._workbench)
             self._set_titles()
 

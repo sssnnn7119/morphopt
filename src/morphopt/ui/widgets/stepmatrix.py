@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
+    QTableWidget, QTableWidgetItem, QHeaderView,
 )
 
 from ..model.problem import Node
@@ -29,9 +29,8 @@ class StepMatrix(QWidget):
         bar.addWidget(self._nspin)
         for zh, en, fn in [
                 ("添加工况", "Add step", self._add_step),
-                ("删除工况", "Remove step", self._remove_step),
-                ("复制上一步", "Copy previous", self._copy_previous),
-                ("线性插值…", "Linear ramp…", self._ramp)]:
+                ("复制选中行", "Copy selected row", self._copy_selected_row),
+                ("删除选中行", "Delete selected row", self._remove_selected_row)]:
             b = QPushButton(T(zh, en))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -46,6 +45,8 @@ class StepMatrix(QWidget):
 
         self._table = QTableWidget()
         self._table.setMinimumHeight(220)
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.cellChanged.connect(self._on_cell_changed)
         lay.addWidget(self._table, 1)
 
@@ -128,48 +129,61 @@ class StepMatrix(QWidget):
     def _add_step(self):
         self._nspin.setValue(self._nspin.value() + 1)
 
-    def _remove_step(self):
-        self._nspin.setValue(max(1, self._nspin.value() - 1))
+    def _selected_row(self) -> int:
+        """The currently selected row, or -1 when none is selected."""
+        return self._table.currentRow()
 
-    def _copy_previous(self):
+    def _copy_selected_row(self):
+        """Insert a copy of the selected row right below it."""
+        if self._node is None or self._problem is None:
+            return
         n = int(self._node.params.get("num_steps", 1))
-        if n < 2:
+        r = self._selected_row()
+        if r < 0:
+            r = n - 1  # nothing selected -> treat the last row as the source
+        if r < 0 or r >= n or n >= self._nspin.maximum():
             return
-        vals = self._node.params.get("step_values")
-        if not vals:
-            return
+        vals = self._node.params.get("step_values") or []
+        while len(vals) < n:
+            vals.append({})
+        src = dict(vals[r] or {})
+        new_row = {k: list(v) for k, v in src.items()}
         newvals = list(vals)
-        last = newvals[-2] if len(newvals) >= 2 else {}
-        # grow newvals to n rows
-        while len(newvals) < n - 1:
-            newvals.append({})
-        prev = dict(newvals[-1]) if len(newvals) >= 1 else {}
-        newvals.append({k: list(v) for k, v in prev.items()})
-        self._node.params["step_values"] = newvals[-n:]
-        self._node.params["num_steps"] = n
+        newvals.insert(r + 1, new_row)
+        self._node.params["step_values"] = newvals
+        self._node.params["num_steps"] = n + 1
+        self._nspin.blockSignals(True)
+        self._nspin.setValue(n + 1)
+        self._nspin.blockSignals(False)
         self._rebuild()
+        if r + 1 < self._table.rowCount():
+            self._table.setCurrentCell(r + 1, 0)
         self.changed.emit(self._node)
 
-    def _ramp(self):
-        ok = QMessageBox.getText(self, "Linear ramp", T(
-            "从 0 线性增加到最后一列幅值？（y/n）",
-            "Linearly ramp from 0 to the final column amplitude? (y/n)"))
-        if not ok or not ok[1].lower().startswith("y"):
+    def _remove_selected_row(self):
+        """Delete the selected row (keeps at least one load step)."""
+        if self._node is None or self._problem is None:
             return
         n = int(self._node.params.get("num_steps", 1))
-        vals = self._node.params.get("step_values") or []
-        if not vals or n < 2:
+        r = self._selected_row()
+        if r < 0:
+            r = n - 1
+        if r < 0 or r >= n or n <= 1:
             return
-        for name, amps in (vals[-1] or {}).items():
-            if not isinstance(amps, (list, tuple)) or not amps:
-                continue
-            for s in range(n - 1):
-                factor = (s + 1) / (n - 1) if n > 1 else 1.0
-                scaled = [a * factor for a in amps]
-                # ensure dict row exists
-                vals[s] = {**vals[s], name: scaled}
+        vals = self._node.params.get("step_values") or []
+        while len(vals) < n:
+            vals.append({})
+        del vals[r]
         self._node.params["step_values"] = vals
+        self._node.params["num_steps"] = n - 1
+        self._nspin.blockSignals(True)
+        self._nspin.setValue(n - 1)
+        self._nspin.blockSignals(False)
         self._rebuild()
+        # keep a sensible row selected after the deletion
+        new_r = min(r, n - 2)
+        if new_r >= 0:
+            self._table.setCurrentCell(new_r, 0)
         self.changed.emit(self._node)
 
     # ------------------------------------------------------------- cells

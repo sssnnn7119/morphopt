@@ -253,11 +253,23 @@ def _emit_steps(a, problem: ProblemDefinition) -> None:
     values = steps.params.get("step_values") or [{} for _ in range(n)]
     while len(values) < n:
         values.append({})
+
+    # every amplitude-bearing load interface must be set for every step, so a
+    # load that was added but left unset in a step is written explicitly as a
+    # zero amplitude (matching the step-matrix UI, where an empty cell is 0).
+    amps: dict[str, int] = {}
+    for it in problem.interfaces():
+        nv = INTERFACE_TYPES.get(it.params.get("type", ""), {}).get("num_values", 0)
+        if nv and it.name:
+            amps[it.name] = nv
+
     a(f"                self.set_step_num({n})")
     for s in range(n):
-        step_dict = values[s] or {}
-        for name, amps in step_dict.items():
-            a(f"                self.set_step_params({s}, {name!r}, {amps!r})")
+        step_dict = (values[s] if s < len(values) else {}) or {}
+        for name, nv in amps.items():
+            stored = step_dict.get(name)
+            amps_values = stored if stored is not None else [0.0] * nv
+            a(f"                self.set_step_params({s}, {name!r}, {amps_values!r})")
 
 
 def _emit_material_init(a, problem: ProblemDefinition, template) -> None:

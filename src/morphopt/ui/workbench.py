@@ -98,7 +98,8 @@ class Workbench(QWidget):
 
         # header: optimization name + output path (editable) + scheme caption
         head = QHBoxLayout()
-        head.addWidget(QLabel(T("优化名称", "Label")))
+        self._lbl_name = QLabel(T("优化名称", "Label"))
+        head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
         self._name_edit.setFixedWidth(180)
         self._name_edit.setToolTip(T(
@@ -107,7 +108,8 @@ class Workbench(QWidget):
         self._name_edit.editingFinished.connect(self._apply_name)
         head.addWidget(self._name_edit)
         head.addSpacing(10)
-        head.addWidget(QLabel(T("输出路径", "Output folder")))
+        self._lbl_path = QLabel(T("输出路径", "Output folder"))
+        head.addWidget(self._lbl_path)
         self._path_edit = QLineEdit()
         self._path_edit.setMinimumWidth(120)
         self._path_edit.setToolTip(T(
@@ -121,7 +123,8 @@ class Workbench(QWidget):
         head.addWidget(btn_dir)
         head.addSpacing(12)
         # global compute device (used by start_optimization and the Updater)
-        head.addWidget(QLabel(T("设备", "Device")))
+        self._lbl_device = QLabel(T("设备", "Device"))
+        head.addWidget(self._lbl_device)
         self._device = QComboBox()
         self._device.setEditable(True)
         self._device.setFixedWidth(150)
@@ -155,34 +158,7 @@ class Workbench(QWidget):
         self._center = center
 
         self._stack = QStackedWidget()
-        self.prop_editor = PropertyEditor()
-        self.solver_editor = SolverEditor()
-        self.step_matrix = StepMatrix()
-        self.updater_editor = UpdaterEditor()
-        self.objective_editor = ObjectiveEditor()
-        for w in (self.prop_editor, self.solver_editor, self.step_matrix,
-                  self.updater_editor, self.objective_editor):
-            self._stack.addWidget(w)
-            w.changed.connect(self._schedule_rebuild)
-
-        # loads hint: loads are added/edited in the left tree per type
-        self._loads_hint = QLabel(T(
-            "Loads：左树\u201cLoads\u201d下列出每个载荷（可展开查看参数）。\n"
-            "• 右键 Loads → 添加载荷类型\n"
-            "• 右键单个载荷：删除 / 上移 / 下移\n"
-            "• 点选单个载荷，按该类型专属字段编辑参数与名称",
-            "Loads: each load is listed under the Loads node (params editable).\n"
-            "• Right-click Loads → add a load type\n"
-            "• Right-click a load: delete / move up / move down\n"
-            "• Select a load to edit its type-specific fields and its name"))
-        self._loads_hint.setWordWrap(True)
-        self._loads_hint.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._loads_hint.setContentsMargins(12, 12, 12, 12)
-        self._stack.addWidget(self._loads_hint)
-
-        # when a load name is edited in the property form, cascade the rename
-        self._open_name: str | None = None
-        self.prop_editor.changed.connect(self._maybe_cascade_rename)
+        self._repopulate_stack()
         center.addTab(self._stack, T("编辑", "Edit"))
 
         self.code_view = QPlainTextEdit()
@@ -207,15 +183,64 @@ class Workbench(QWidget):
         self._msg = QLabel("")
         self._msg.setStyleSheet("color:#9aa4b2;")
         foot.addWidget(self._msg, 1)
-        b_import = QPushButton(T("▶ 进入优化器", "▶ Send to Observer"))
-        b_import.setToolTip(T(
+        self._b_import = QPushButton(T("▶ 进入优化器", "▶ Send to Observer"))
+        self._b_import.setToolTip(T(
             "将当前定义提交至优化器，以开始或继续优化",
             "Hand the current definition to the observer page to start or continue"))
-        b_import.setStyleSheet(
+        self._b_import.setStyleSheet(
             "background-color:#00695c; font-weight:600; padding:6px 18px;")
-        b_import.clicked.connect(lambda: self.importToObserver.emit(self.problem))
-        foot.addWidget(b_import)
+        self._b_import.clicked.connect(lambda: self.importToObserver.emit(self.problem))
+        foot.addWidget(self._b_import)
         outer.addLayout(foot)
+
+    # --------------------------------------------------------- center stack
+    def _repopulate_stack(self) -> None:
+        """(Re)build the editor pages of the center "编辑" tab.
+
+        Recreates the (cheap, form-only) editors in place so all their
+        localized texts are regenerated in the current language.  All data
+        lives on the model nodes, so nothing is lost.  The PyVista preview
+        viewport and the tree are *not* rebuilt here.
+        """
+        stack = self._stack
+        while stack.count():
+            w = stack.widget(0)
+            stack.removeWidget(w)
+            w.deleteLater()
+
+        self.prop_editor = PropertyEditor()
+        self.solver_editor = SolverEditor()
+        self.step_matrix = StepMatrix()
+        self.updater_editor = UpdaterEditor()
+        self.objective_editor = ObjectiveEditor()
+        for w in (self.prop_editor, self.solver_editor, self.step_matrix,
+                  self.updater_editor, self.objective_editor):
+            stack.addWidget(w)
+            w.changed.connect(self._schedule_rebuild)
+
+        # loads hint: loads are added/edited in the left tree per type
+        self._loads_hint = self._make_loads_hint()
+        stack.addWidget(self._loads_hint)
+
+        # when a load name is edited in the property form, cascade the rename
+        self._open_name: str | None = None
+        self.prop_editor.changed.connect(self._maybe_cascade_rename)
+
+    @staticmethod
+    def _make_loads_hint() -> QLabel:
+        hint = QLabel(T(
+            "Loads：左树\u201cLoads\u201d下列出每个载荷（可展开查看参数）。\n"
+            "• 右键 Loads → 添加载荷类型\n"
+            "• 右键单个载荷：删除 / 上移 / 下移\n"
+            "• 点选单个载荷，按该类型专属字段编辑参数与名称",
+            "Loads: each load is listed under the Loads node (params editable).\n"
+            "• Right-click Loads → add a load type\n"
+            "• Right-click a load: delete / move up / move down\n"
+            "• Select a load to edit its type-specific fields and its name"))
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignmentFlag.AlignTop)
+        hint.setContentsMargins(12, 12, 12, 12)
+        return hint
 
     # ------------------------------------------------------------- reload
     def reload(self) -> None:
@@ -241,6 +266,65 @@ class Workbench(QWidget):
         self.title.setText(
             f"[{scheme_label(self.problem.scheme)}]  "
             f"{self.problem.label}")
+
+    # ------------------------------------------------------------ language
+    def apply_language(self) -> None:
+        """Re-apply the current language to the whole definition page in place.
+
+        Unlike the old behaviour this does *not* destroy and recreate the whole
+        workbench (which recreated the PyVista viewport and blackened the
+        observer's GL pages).  The shell texts, the model-tree titles and the
+        centre editors are all refreshed; the preview viewport keeps its state.
+        """
+        act_text = {
+            "change": (T("更换优化问题", "Change Problem"),
+                       T("更换优化问题类型（形状 / 拓扑 / 协同）",
+                         "Change the optimization problem type (shape / topology / co-design)")),
+            "open": (T("打开 .morph", "Open .morph"),
+                     T("打开已有的 .morph 定义", "Open an existing .morph definition")),
+            "export": (T("导出 .morph", "Export .morph"),
+                       T("把当前定义保存为 .morph",
+                         "Save the current definition as .morph")),
+            "runpy": (T("导出运行 .py", "Export Run .py"),
+                      T("由当前定义生成可运行的无界面 .py",
+                        "Generate a headless runnable .py from the current definition")),
+        }
+        for key, (text, tip) in act_text.items():
+            b = self._act_buttons.get(key)
+            if b is not None:
+                b.setText(text)
+                b.setToolTip(tip)
+        self._lbl_name.setText(T("优化名称", "Label"))
+        self._lbl_path.setText(T("输出路径", "Output folder"))
+        self._lbl_device.setText(T("设备", "Device"))
+        self._name_edit.setToolTip(T(
+            "优化问题名称（导出/运行的 opt_label）",
+            "Problem name (opt_label used when exporting / running)"))
+        self._path_edit.setToolTip(T(
+            "结果输出目录（Controller.path_result_folder）",
+            "Result output directory (Controller.path_result_folder)"))
+        self._device.setToolTip(T(
+            "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
+            "Global compute device (cpu / cuda:0…); used by start_optimization "
+            "and the Updater."))
+        self._update_caption()
+        self._center.setTabText(0, T("编辑", "Edit"))
+        self._center.setTabText(1, T("代码 (只读)", "Code (read-only)"))
+        self._b_import.setText(T("▶ 进入优化器", "▶ Send to Observer"))
+        self._b_import.setToolTip(T(
+            "将当前定义提交至优化器，以开始或继续优化",
+            "Hand the current definition to the observer page to start or continue"))
+
+        # Refresh the model-tree titles and the centre editors in the new
+        # language.  Only the cheap form editors are re-created (data lives on
+        # the model nodes); the PyVista preview viewport is left untouched.
+        self.tree.apply_language()
+        center_idx = self._center.currentIndex()
+        self._repopulate_stack()
+        self._select_editor(self._last_selected)
+        self._center.setCurrentIndex(center_idx)
+
+        self.viewer.apply_language()
 
     # -------------------------------------------- name / output-path slots
     def _apply_name(self) -> None:

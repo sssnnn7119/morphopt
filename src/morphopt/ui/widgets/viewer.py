@@ -41,15 +41,16 @@ class PreviewViewer(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel(T("工况：", "Step:")))
+        self._lbl_step = QLabel(T("工况：", "Step:"))
+        bar.addWidget(self._lbl_step)
         self.step_combo = QComboBox()
         self.step_combo.addItem(T("(无)", "(none)"))
         self.step_combo.currentIndexChanged.connect(self._redraw_loads)
         bar.addWidget(self.step_combo)
         bar.addStretch(1)
-        btn_reset = QPushButton(T("重置视角", "Reset view"))
-        btn_reset.clicked.connect(self._reset_view)
-        bar.addWidget(btn_reset)
+        self._btn_reset = QPushButton(T("重置视角", "Reset view"))
+        self._btn_reset.clicked.connect(self._reset_view)
+        bar.addWidget(self._btn_reset)
         outer.addLayout(bar)
 
         self.host = _PlotHost(self)
@@ -67,6 +68,22 @@ class PreviewViewer(QWidget):
     def refresh(self) -> None:
         self._rebuild_all()
 
+    # ------------------------------------------------------------ language
+    def apply_language(self) -> None:
+        """Re-apply the viewer's static texts in place (keeps the viewport)."""
+        self._lbl_step.setText(T("工况：", "Step:"))
+        self._btn_reset.setText(T("重置视角", "Reset view"))
+        # Keep whichever load step is selected while re-localizing the combo.
+        # Signals are blocked so a hidden viewer is not forced to re-render
+        # (rendering a backgrounded viewport is what used to blacken the
+        # observer's GL pages during a language switch).
+        idx = self.step_combo.currentIndex()
+        self._sync_step_combo()
+        self.step_combo.blockSignals(True)
+        if 0 <= idx < self.step_combo.count():
+            self.step_combo.setCurrentIndex(idx)
+        self.step_combo.blockSignals(False)
+
     # ------------------------------------------------------------- rebuilds
     def _rebuild_all(self) -> None:
         plotter = self.host.plotter
@@ -76,14 +93,12 @@ class PreviewViewer(QWidget):
             plotter.render()
             return
         surfaces = [s for s in self._problem.surfaces()]
-        colors = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6", "#e74c3c", "#f1c40f"]
         for i, srf in enumerate(surfaces):
             mesh = self._surface_mesh(srf)
             if mesh is None:
                 continue
-            opacity = 0.30 if i == 0 else 0.18
-            actor = plotter.add_mesh(mesh, color=colors[i % len(colors)], opacity=opacity,
-                                     show_edges=(i == 0))
+            opacity = 0.30
+            actor = plotter.add_mesh(mesh, color=[40/255, 120/255, 181/255], opacity=opacity)
             self._base_meshes.append((srf, mesh, actor))
 
         # material bounding box (SIMP / codesign)
@@ -180,8 +195,14 @@ class PreviewViewer(QWidget):
             if iface is None:
                 continue
             itype = iface.params.get("type")
-            amps = list(amps or [])
+            amps = [float(a) for a in (amps or [])]
             if itype == "Pressure":
+                # Only show a pressure surface when it is actually loaded in
+                # this step; a zeroed / off pressure must not remain visible
+                # (otherwise a later step appears to still carry an earlier
+                # step's load).
+                if not any(abs(v) > 1e-12 for v in amps):
+                    continue
                 # tint the referenced surface with a semi-transparent copy
                 surf_name = str(iface.params.get("surface_name", ""))
                 srf_idx = _surface_index_from_name(surf_name)
@@ -203,10 +224,11 @@ class PreviewViewer(QWidget):
                 vec = np.array(vals)
                 if np.allclose(vec, 0.0):
                     continue
-                direction = vec / np.linalg.norm(vec) * (scale_len * 0.12)
+                arrow_length = _load_arrow_length(scale_len)
+                direction = vec / np.linalg.norm(vec)
                 color = "#e74c3c" if itype == "ConcentratedForce" else "#f1c40f"
-                arrow = pv.Arrow(start=loc, direction=direction, scale=1.0,
-                                 tip_length=0.35, tip_radius=0.06, shaft_radius=0.02)
+                arrow = pv.Arrow(start=loc, direction=direction, scale=arrow_length,
+                                 tip_length=0.30, tip_radius=0.08, shaft_radius=0.025)
                 act = plotter.add_mesh(arrow, color=color)
                 self._overlay_actors.append(act)
         plotter.render()
@@ -228,6 +250,11 @@ def _diag(problem) -> float:
         return 10.0
     d = float(np.linalg.norm(hi - lo))
     return d if d > 0 else 10.0
+
+
+def _load_arrow_length(characteristic_length: float) -> float:
+    """Map the model characteristic length to a readable load-arrow length."""
+    return float(characteristic_length) * 0.20
 
 
 def _surface_bounds(srf: Node):

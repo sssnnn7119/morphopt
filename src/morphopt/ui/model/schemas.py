@@ -291,7 +291,7 @@ MATERIAL_TYPES: dict[str, dict] = {
             fld("mu", "mu", "float", 0.482, "Shear modulus."),
             fld("kappa", "kappa", "float", 4.8, "Bulk modulus."),
             fld("density", "density", "float", 1.08e-9, "Mass density."),
-            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D6"]),
+            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
         ],
     },
     "SIMP_BSPFieldMaterials": {
@@ -308,7 +308,7 @@ MATERIAL_TYPES: dict[str, dict] = {
             fld("initial_ratio", "initial_ratio", "float", 0.5),
             fld("voidpenalfactor", "void penal", "float", 1e-2),
             fld("materialpenalty", "material penalty", "float", 8.0),
-            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D6"]),
+            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
         ],
     },
     "CodesignMaterials": {
@@ -325,7 +325,7 @@ MATERIAL_TYPES: dict[str, dict] = {
             fld("initial_ratio", "initial_ratio", "float", 0.5),
             fld("voidpenalfactor", "void penal", "float", 1e-1),
             fld("materialpenalty", "material penalty", "float", 8.0),
-            fld("elementname", "Solid element", "combo", "C3D4", "", choices=["C3D4", "C3D8"]),
+            fld("elementname", "Solid element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
             fld("shell_mu", "shell mu", "float", 0.48),
             fld("shell_kappa", "shell kappa", "float", 4.8),
             fld("shell_density", "shell density", "float", 1.08e-9),
