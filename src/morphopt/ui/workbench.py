@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont
 
 from .model.problem import Node, ProblemDefinition
-from .model.schemas import scheme_label, MATERIAL_TYPES
+from .model.schemas import MATERIAL_TYPES
+from .schemes.base import scheme_label
 from .widgets.model_tree import (
     ModelTree, surface_title_text, surface_index, container_title, _full_label,
 )
@@ -404,39 +405,33 @@ class Workbench(QWidget):
                 if idx is not None:
                     title = surface_title_text(node, idx)
             elif node.kind == "material":
-                mt = node.params.get("type", "")
+                mt = node.material_type
                 spec = MATERIAL_TYPES.get(mt, {})
                 title = _full_label(spec, mt)
             elif node.kind == "geometry":
                 title = container_title("geometry")
             self.prop_editor.edit_node(node, fields=fields, code_slots=code_slots,
                                        extra_choices=extra, subtitle=subtitle,
-                                       title=title)
+                                       title=title,
+                                       completion_problem=self.problem)
             self._stack.setCurrentWidget(self.prop_editor)
 
     def _maybe_cascade_rename(self, node: Node) -> None:
-        """Keep step-matrix keys / jacobian_needed consistent on load rename."""
+        """Delegate load rename invariants to the problem aggregate."""
         if node.kind != "interface" or self._open_name is None:
             return
         old, new = self._open_name, node.name
         if old == new or not new:
             return
-        loads = next((n for n in self.problem.root.children if n.kind == "loads"), None)
-        if loads is not None and any(i is not node and i.name == new for i in loads.children):
-            node.name = old  # reject duplicate names
+        # PropertyEditor applies its local text field before emitting changed.
+        # Restore the original name so ``rename_interface`` can atomically
+        # validate uniqueness and update all cross-references.
+        node.name = old
+        if self.problem.rename_interface(node, new):
+            self._open_name = new
+        else:
             self._open_name = old
-            self._schedule_rebuild()
-            return
-        steps = next((n for n in self.problem.root.iter_nodes() if n.kind == "steps"), None)
-        if steps is not None:
-            for row in steps.params.get("step_values", []):
-                if old in row:
-                    row[new] = row.pop(old)
-        obj = self.problem.node("objective")
-        if obj is not None:
-            obj.params["jacobian_needed"] = [
-                new if x == old else x for x in obj.params.get("jacobian_needed", [])]
-        self._open_name = new
+        self._schedule_rebuild()
 
     @staticmethod
     def _subtitle(node: Node) -> str:

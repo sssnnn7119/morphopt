@@ -9,6 +9,10 @@ Each scheme module knows:
 The actual source rendering lives in :mod:`morphopt.ui.codegen`.
 """
 
-from .base import SchemeTemplate, get_template, SCHEME_REGISTRY
+from .base import SchemeTemplate, get_template, scheme_label, SCHEME_REGISTRY
+from .snippets import CodeSnippet, SnippetParameter
 
-__all__ = ["SchemeTemplate", "get_template", "SCHEME_REGISTRY"]
+__all__ = [
+    "CodeSnippet", "SnippetParameter", "SchemeTemplate", "get_template",
+    "scheme_label", "SCHEME_REGISTRY",
+]

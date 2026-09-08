@@ -8,14 +8,17 @@ material.
 
 from __future__ import annotations
 
-from ..model.problem import Node
+from ..model.problem import Node, ProblemNode
 from ..model import schemas as S
 from .base import SchemeTemplate
 
 
 class CodesignTemplate(SchemeTemplate):
     scheme = "codesign"
-    label = S.SCHEME_LABELS["codesign"]
+    label = "协同设计优化 (codesign)"
+    label_en = "Co-design optimization (codesign)"
+    MATERIAL_TYPE = "CodesignMaterials"
+    geometry_title = "Geometry (+ offset shell)"
 
     BASES = {
         "controller": "morphopt.Controller",
@@ -31,7 +34,7 @@ class CodesignTemplate(SchemeTemplate):
     }
 
     def default_objective_slot(self) -> str:
-        # Tip displacement produced by the pressurised step (step index 1).
+        # Minimal valid scalar placeholder for the pressurised load step.
         return (
             "return self.fe_results[1].GC[-2] - self.fe_results[0].GC[-2]\n"
         )
@@ -57,115 +60,81 @@ class CodesignTemplate(SchemeTemplate):
         )
 
     def build_root(self) -> Node:
-        root = Node("problem")
+        root = ProblemNode()
 
-        # geometry ----------------------------------------------------------
-        geo = Node("geometry", name="Geometry (+ offset shell)")
-        geo.params.update({
-            "fea_seed_size": 2.5,
-            "mesh_order": 2,
-            "reinitialize_per_iter": 10,
-            "thickness": 2.0,
-            "num_layers": 1,
-        })
-        geo.params["_apply_surface_constraints"] = self.default_apply_surface_constraints()
+        # geometry: frozen outer cylinder (0) + designable inner cavity (1) --
+        geometry = self.make_geometry()
+        geometry.add_surface(self.make_surface(
+            "bsp_cylinder", 0,
+            r0=10.0, length=100.0, seed_size=1.0, degree=3,
+            maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=-1.0))
+        geometry.add_surface(self.make_surface(
+            "cpgeo_sphere", 1,
+            r0=7.0, seed_size=1.5,
+            init_location=[0.0, 0.0, 50.0], MaxC=1.5))
+        root.add_section(geometry)
 
-        outer = self.new_surface_node("bsp_cylinder", 0)
-        outer.params.update(r0=10.0, length=100.0, seed_size=1.0,
-                            degree=3, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=-1.0)
+        # loads: pressure acts on the offset-shell face surface_1_offset -----
+        loads = self.make_loads()
+        loads.add_interface(self.make_interface(
+            "BoundaryCondition", "bc_fix",
+            instance_name="final_model", set_nodes_name="surface_0_Bottom",
+            index_dof=[0, 1, 2]))
+        loads.add_interface(self.make_interface(
+            "ReferencePoint", "RP_head", rp_location=[0.0, 0.0, 100.0]))
+        loads.add_interface(self.make_interface(
+            "Couple", "couple_head",
+            rp_name="RP_head", instance_name="final_model",
+            set_nodes_name="surface_0_Head"))
+        loads.add_interface(self.make_interface(
+            "Pressure", "pressure_1",
+            instance_name="final_model", surface_name="surface_1_offset"))
+        root.add_section(loads)
 
-        inner = self.new_surface_node("cpgeo_sphere", 1)
-        inner.params.update(r0=7.0, seed_size=1.5,
-                            init_location=[0.0, 0.0, 50.0], MaxC=1.5)
-        geo.add_child(outer)
-        geo.add_child(inner)
-        root.add_child(geo)
+        # steps: un-pressurised reference (0) then pressurised (1) -----------
+        root.add_section(self.make_steps(2, [{}, {"pressure_1": [0.1]}]))
 
-        # loads (pressure acts on the offset shell face surface_1_offset) ----
-        loads = Node("loads", name="Loads")
-        bc = self.new_interface_node("BoundaryCondition")
-        bc.name = "bc_fix"
-        bc.params.update(instance_name="final_model", set_nodes_name="surface_0_Bottom",
-                         index_dof=[0, 1, 2])
-        rp = self.new_interface_node("ReferencePoint")
-        rp.name = "RP_head"
-        rp.params.update(rp_location=[0.0, 0.0, 100.0])
-        cp = self.new_interface_node("Couple")
-        cp.name = "couple_head"
-        cp.params.update(rp_name="RP_head", instance_name="final_model", set_nodes_name="surface_0_Head")
-        pr = self.new_interface_node("Pressure")
-        pr.name = "pressure_1"
-        pr.params.update(instance_name="final_model", surface_name="surface_1_offset")
-        for n in (bc, rp, cp, pr):
-            loads.add_child(n)
-        root.add_child(loads)
+        # material: SIMP solid core + homogeneous offset shell ---------------
+        root.add_section(self.make_material(
+            mumax=4.5, kappamax=45.0, simp_ratio_min=1e-4,
+            density=1.08e-9, initial_ratio=0.5,
+            bounding_box=[-10.0, 10.0, -10.0, 10.0, 0.0, 100.0],
+            simp_field_resolution=1.0, degree=3, voidpenalfactor=1e-1,
+            elementname="C3D4",
+            shell_mu=0.48, shell_kappa=4.8, shell_density=1.08e-9,
+            shell_elementname="C3D6"))
 
-        # steps (two steps: un-pressurised reference then pressurised) -------
-        steps = Node("steps", name="Load steps")
-        steps.params.update(
-            num_steps=2,
-            step_values=[{}, {"pressure_1": [0.1]}],
-        )
-        root.add_child(steps)
+        # objective + solver -------------------------------------------------
+        root.add_section(self.make_objective())
+        root.add_section(self.make_solver(num_process=1))
 
-        # materials ---------------------------------------------------------
-        mat = self.new_material_node()
-        mat.params.update(mumax=4.5, kappamax=45.0, simp_ratio_min=1e-4,
-                          density=1.08e-9, initial_ratio=0.5,
-                          bounding_box=[-10.0, 10.0, -10.0, 10.0, 0.0, 100.0],
-                          simp_field_resolution=1.0, degree=3, voidpenalfactor=1e-1,
-                          elementname="C3D4",
-                          shell_mu=0.48, shell_kappa=4.8, shell_density=1.08e-9,
-                          shell_elementname="C3D6")
-        mat.params["_map_bsp_designfield"] = self.default_map_bsp_designfield()
-        root.add_child(mat)
-
-        # objective ---------------------------------------------------------
-        obj = Node("objective", name="Objective Function")
-        obj.params.update(
-            jacobian_needed=[],
-            _objective_function=self.default_objective_slot(),
-            _get_metrics=self.default_metrics_slot(),
-        )
-        root.add_child(obj)
-
-        # solver ------------------------------------------------------------
-        solver = Node("solver", name="Solver")
-        solver.params.update(num_process=1, gpus=[], task_index_list=[])
-        root.add_child(solver)
-
-        # updater (geometry + materials together) ----------------------------
-        upd = Node("updater", name="Updater")
-        upd.params["geometry"] = {
-            "max_step_iter": 50,
-            "if_update": [False, True],
-            "objective_functions": [
-                {"type": "ShapeDerivative", "params": {}},
-            ],
-            "constraints": [
-                {"type": "Fairness", "params": {}},
-                {"type": "Distance", "params": {"min_distance": [[0.0, 0.0], [0.0, 2.5]]}},
-                {"type": "Cylinder", "params": {"radius": 9.0, "height": 97.0, "bottom": 3.0}},
-                {"type": "InwardCurvatureRadius", "params": {}},
-                {"type": "OffsetSurfaceMinThickness", "params": {"min_distance": 2.0}},
-                {"type": "VolumeMaximization", "params": {"surf_idx": 1, "weight": 1e-2}},
-            ],
-            "code": "",
-        }
-        upd.params["materials"] = {
-            "max_step_iter": 50,
-            "if_update": True,
-            "objective_functions": [
-                {"type": "Sensitivity", "params": {"normalize_gradient": False}},
-            ],
-            "constraints": [
-                {"type": "VolFrac", "params": {"volfrac_min": 0.0, "volfrac_max": 0.7,
-                                               "penalty": 1e4, "element_name": "C3D4"}},
-                {"type": "MinValue", "params": {"xmin": -15.0, "threshold": 0.0, "p": 2}},
-                {"type": "MaxValue", "params": {"xmax": 15.0, "threshold": 0.0, "p": 2}},
-            ],
-            "code": "",
-        }
-        root.add_child(upd)
+        # updater: shape geometry AND material co-optimised ------------------
+        root.add_section(self.make_updater(
+            geometry=S.geometry_updater_config(
+                max_step_iter=50,
+                if_update=[False, True],           # keep the outer surface frozen
+                objective_functions=(S.updater_objective("ShapeDerivative"),),
+                constraints=(S.updater_constraint("Fairness"),
+                             S.updater_constraint(
+                                 "Distance",
+                                 min_distance=[[0.0, 0.0], [0.0, 2.5]]),
+                             S.updater_constraint("Cylinder",
+                                                  radius=9.0, height=97.0, bottom=3.0),
+                             S.updater_constraint("InwardCurvatureRadius"),
+                             S.updater_constraint("OffsetSurfaceMinThickness"),
+                             S.updater_constraint("VolumeMaximization")),
+            ),
+            materials=S.materials_updater_config(
+                max_step_iter=50,
+                if_update=True,
+                objective_functions=(S.updater_objective("Sensitivity"),),
+                constraints=(S.updater_constraint(
+                                 "VolFrac",
+                                 volfrac_min=0.0, volfrac_max=0.7,
+                                 penalty=1e4, element_name="C3D4"),
+                             S.updater_constraint("MinValue"),
+                             S.updater_constraint("MaxValue")),
+            ),
+        ))
 
         return root

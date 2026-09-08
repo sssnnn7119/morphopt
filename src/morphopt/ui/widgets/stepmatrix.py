@@ -59,7 +59,7 @@ class StepMatrix(QWidget):
         self._node = node
         self._problem = problem
         self._nspin.blockSignals(True)
-        self._nspin.setValue(int(node.params.get("num_steps", 1)))
+        self._nspin.setValue(int(node.num_steps))
         self._nspin.blockSignals(False)
         self._rebuild()
 
@@ -67,16 +67,13 @@ class StepMatrix(QWidget):
     def _amplitude_interfaces(self):
         if self._problem is None:
             return []
-        out = []
-        for nd in self._problem.interfaces():
-            it = nd.params.get("type", "")
-            nv = INTERFACE_TYPES.get(it, {}).get("num_values", 0)
-            if nv and nd.name:
-                out.append((nd.name, nv))
-        return out
+        return [
+            (interface.name, INTERFACE_TYPES[interface.interface_type]["num_values"])
+            for interface in self._problem.amplitude_interfaces()
+        ]
 
     def _step_values(self) -> list[dict]:
-        return self._node.params.get("step_values") or []
+        return list(self._node.step_values)
 
     def _value(self, step: int, name: str, comp: int):
         d = self._step_values()
@@ -99,7 +96,7 @@ class StepMatrix(QWidget):
             else:
                 for c in range(nv):
                     cols.append((name, c, f"{name}.{c}"))
-        n = int(self._node.params.get("num_steps", 1))
+        n = int(self._node.num_steps)
         self._table.blockSignals(True)
         self._table.clear()
         self._table.setColumnCount(len(cols))
@@ -116,13 +113,13 @@ class StepMatrix(QWidget):
     def _on_n_steps(self, n: int) -> None:
         if self._node is None:
             return
-        old = self._node.params.get("step_values") or []
+        old = list(self._node.step_values)
         if n < len(old):
             old = old[:n]
         while len(old) < n:
             old.append({})   # empty dict -> interface amplitude zero/unset
-        self._node.params["num_steps"] = n
-        self._node.params["step_values"] = old
+        self._node.num_steps = n
+        self._node.step_values = old
         self._rebuild()
         self.changed.emit(self._node)
 
@@ -137,21 +134,21 @@ class StepMatrix(QWidget):
         """Insert a copy of the selected row right below it."""
         if self._node is None or self._problem is None:
             return
-        n = int(self._node.params.get("num_steps", 1))
+        n = int(self._node.num_steps)
         r = self._selected_row()
         if r < 0:
             r = n - 1  # nothing selected -> treat the last row as the source
         if r < 0 or r >= n or n >= self._nspin.maximum():
             return
-        vals = self._node.params.get("step_values") or []
+        vals = list(self._node.step_values)
         while len(vals) < n:
             vals.append({})
         src = dict(vals[r] or {})
         new_row = {k: list(v) for k, v in src.items()}
         newvals = list(vals)
         newvals.insert(r + 1, new_row)
-        self._node.params["step_values"] = newvals
-        self._node.params["num_steps"] = n + 1
+        self._node.step_values = newvals
+        self._node.num_steps = n + 1
         self._nspin.blockSignals(True)
         self._nspin.setValue(n + 1)
         self._nspin.blockSignals(False)
@@ -164,18 +161,18 @@ class StepMatrix(QWidget):
         """Delete the selected row (keeps at least one load step)."""
         if self._node is None or self._problem is None:
             return
-        n = int(self._node.params.get("num_steps", 1))
+        n = int(self._node.num_steps)
         r = self._selected_row()
         if r < 0:
             r = n - 1
         if r < 0 or r >= n or n <= 1:
             return
-        vals = self._node.params.get("step_values") or []
+        vals = list(self._node.step_values)
         while len(vals) < n:
             vals.append({})
         del vals[r]
-        self._node.params["step_values"] = vals
-        self._node.params["num_steps"] = n - 1
+        self._node.step_values = vals
+        self._node.num_steps = n - 1
         self._nspin.blockSignals(True)
         self._nspin.setValue(n - 1)
         self._nspin.blockSignals(False)
@@ -209,12 +206,12 @@ class StepMatrix(QWidget):
             idx += nv
         if name is None:
             return
-        vals = self._node.params.get("step_values") or []
+        vals = list(self._node.step_values)
         while len(vals) <= r:
             vals.append({})
         row = dict(vals[r])
         try:
-            itype = next(p.params["type"] for p in self._problem.interfaces()
+            itype = next(p.interface_type for p in self._problem.interfaces()
                          if p.name == name)
             nvals = INTERFACE_TYPES[itype].get("num_values", 1)
         except (StopIteration, KeyError):
@@ -225,5 +222,5 @@ class StepMatrix(QWidget):
         cur[comp] = value
         row[name] = cur
         vals[r] = row
-        self._node.params["step_values"] = vals
+        self._node.step_values = vals
         self.changed.emit(self._node)

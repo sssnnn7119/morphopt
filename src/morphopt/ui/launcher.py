@@ -16,12 +16,38 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Sequence
 
 from .model.problem import ProblemDefinition
 from .codegen.generator import generate_source
 
 #: where UI-launched runs are written by default (job cwd)
 UI_RUN_DIR = os.path.join(os.getcwd(), "ui_runs")
+
+
+def _start_headless_process(command: Sequence[str], working_directory: str
+                            ) -> subprocess.Popen:
+    """Start one UI-managed job in its own process group.
+
+    All launch paths use this helper so Stop can reliably terminate spawned
+    worker children and PyVista consistently selects PySide6 when a job
+    imports visualization-adjacent dependencies.  The job's combined output
+    is piped back to :class:`ObserverControls` for display in the UI.
+    """
+    environment = dict(os.environ)
+    environment.setdefault("PYVISTA_QT_BINDING", "pyside6")
+    # A pipe is not a terminal, so make Python flush progress messages as
+    # they are produced instead of waiting for its normal block buffer.
+    environment.setdefault("PYTHONUNBUFFERED", "1")
+    return subprocess.Popen(
+        list(command),
+        cwd=working_directory,
+        env=environment,
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=0,
+    )
 
 
 def export_to_py(problem: ProblemDefinition, path) -> str:
@@ -76,10 +102,7 @@ def run_job(problem: ProblemDefinition, workdir: str | None = None) -> tuple[str
     job_path = os.path.join(tempfile.gettempdir(), f"{stem}_{os.getpid()}.py")
     export_to_py(problem, job_path)
 
-    env = dict(os.environ)
-    env.setdefault("PYVISTA_QT_BINDING", "pyside6")
-    proc = subprocess.Popen([sys.executable, job_path], cwd=base, env=env,
-                            start_new_session=True)
+    proc = _start_headless_process([sys.executable, job_path], base)
     return job_path, proc
 
 
@@ -96,10 +119,7 @@ def run_continue(path_result: str, target_iteration: int | None = None,
         "device=%r, restart_per_iteration=%r)"
         % (path_result, target_iteration, device, restart_per_iteration)
     )
-    env = dict(os.environ)
-    env.setdefault("PYVISTA_QT_BINDING", "pyside6")
-    return subprocess.Popen([sys.executable, "-c", code], cwd=workdir, env=env,
-                            start_new_session=True)
+    return _start_headless_process([sys.executable, "-c", code], workdir)
 
 
 def parse_job_location(py_path: str) -> tuple[str, str]:
@@ -140,10 +160,8 @@ def run_py_definition(py_path: str, workdir: str | None = None
         workdir = os.path.dirname(os.path.abspath(py_path))
     os.makedirs(workdir, exist_ok=True)
     root, label = parse_job_location(py_path)
-    env = dict(os.environ)
-    env.setdefault("PYVISTA_QT_BINDING", "pyside6")
-    proc = subprocess.Popen([sys.executable, os.path.abspath(py_path)],
-                            cwd=workdir, env=env, start_new_session=True)
+    proc = _start_headless_process([sys.executable, os.path.abspath(py_path)],
+                                   workdir)
     return root, label, proc
 
 

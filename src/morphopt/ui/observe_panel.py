@@ -23,23 +23,49 @@ import importlib.util
 import os
 import re
 import sys
+import threading
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
     QListWidget, QStackedWidget, QSplitter, QMessageBox, QFileDialog,
-    QDialog, QRadioButton, QSpinBox, QCheckBox,
+    QDialog, QRadioButton, QSpinBox, QCheckBox, QPlainTextEdit,
 )
 
 from . import launcher
-from .monitor import _MetricsPage, _GeometryPage, _CasePage
 from .i18n import T
+from .widgets.observation_pages import (
+    DeformationCasePage, GeometryPage, MetricsPage,
+)
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+# The optimization worker writes to a real terminal when run directly.  Its
+# color and cursor-control sequences need to be removed before sending text to
+# a QPlainTextEdit, which is deliberately not a terminal emulator.
+_ANSI_CONTROL_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])")
+_CURSOR_MOTION_RE = re.compile(r"\x1b\[[0-9;]*[ABEFG]")
+
+
+def _clean_terminal_line(text: str) -> tuple[str, bool]:
+    """Return printable text and whether it came from a terminal redraw."""
+    is_redraw = bool(_CURSOR_MOTION_RE.search(text))
+    text = _ANSI_CONTROL_RE.sub("", text).replace("\r\n", "\n")
+    # A lone carriage return means "overwrite this terminal line".  Preserve
+    # only the final value, which is the meaningful one in a static log.
+    if "\r" in text:
+        text = text.rsplit("\r", 1)[-1]
+    return text.rstrip("\n"), is_redraw
+
+
+def _is_progress_header(line: str) -> bool:
+    """Recognize the compact iteration-table header used by the FEA solver."""
+    words = line.strip().lower().split()
+    return len(words) >= 3 and words[0] == "iter" and "total" in words
 
 def controller_class_from_folder(path_result: str):
     """Import ``ThisController`` from a result folder's frozen MAIN_SCRIPT."""
@@ -89,7 +115,7 @@ class ObserverPanel(QWidget):
         self._controller = None
         self._params = None
         self._history = None
-        self._case_pages: dict[int, _CasePage] = {}
+        self._case_pages: dict[int, DeformationCasePage] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -126,8 +152,8 @@ class ObserverPanel(QWidget):
         split.addWidget(self.options)
 
         self.stack = QStackedWidget()
-        self._metrics_page = _MetricsPage()
-        self._geometry_page = _GeometryPage()
+        self._metrics_page = MetricsPage()
+        self._geometry_page = GeometryPage()
         self.stack.addWidget(self._metrics_page)
         self.stack.addWidget(self._geometry_page)
         split.addWidget(self.stack)
@@ -275,7 +301,7 @@ class ObserverPanel(QWidget):
                     pass
         existing = set(self._case_pages)
         for case in sorted(found - existing):
-            self._case_pages[case] = _CasePage(case)
+            self._case_pages[case] = DeformationCasePage(case)
             self.stack.addWidget(self._case_pages[case])
             self.options.addItem(f"{T('工况', 'Case')} {case}")
 
@@ -393,6 +419,7 @@ class ObserverControls(QWidget):
     """Definition/observer bridge: 0·选择任务来源, 1·开始/继续, 2·停止."""
 
     backRequested = Signal()
+    outputReceived = Signal(int, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -407,6 +434,8 @@ class ObserverControls(QWidget):
         self._saved_def = set()  # result folders whose definition (.morph) was written
         self._source = None                      # chosen run source (dict or None)
         self._save_morph_def = True              # write companion .morph for definition runs
+        self._output_run_id = 0
+        self._progress_headers: set[str] = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -439,8 +468,34 @@ class ObserverControls(QWidget):
         bar.addWidget(self.status, 1)
         outer.addLayout(bar)
 
+        content = QSplitter(Qt.Orientation.Vertical)
         self.panel = ObserverPanel()
-        outer.addWidget(self.panel, 1)
+        content.addWidget(self.panel)
+
+        output_area = QWidget()
+        output_layout = QVBoxLayout(output_area)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_header = QHBoxLayout()
+        self.output_label = QLabel(T("运行输出", "Run output"))
+        output_header.addWidget(self.output_label)
+        output_header.addStretch(1)
+        self.btn_clear_output = QPushButton(T("清空", "Clear"))
+        self.btn_clear_output.clicked.connect(self._clear_output)
+        output_header.addWidget(self.btn_clear_output)
+        output_layout.addLayout(output_header)
+        self.output_view = QPlainTextEdit()
+        self.output_view.setReadOnly(True)
+        self.output_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.output_view.setMaximumBlockCount(10_000)
+        self.output_view.setPlaceholderText(T(
+            "优化任务的标准输出和错误输出会显示在这里。",
+            "Standard output and errors from optimization tasks appear here."))
+        output_layout.addWidget(self.output_view, 1)
+        content.addWidget(output_area)
+        content.setStretchFactor(0, 5)
+        content.setStretchFactor(1, 1)
+        content.setSizes([700, 180])
+        outer.addWidget(content, 1)
 
         # bottom-right: back to the definition page (mirrors the definition
         # footer's right-aligned ▶ 进入优化器 button)
@@ -459,6 +514,7 @@ class ObserverControls(QWidget):
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll_once)
+        self.outputReceived.connect(self._append_process_output)
         self._update_buttons()
         self._refresh_status()
 
@@ -665,6 +721,7 @@ class ObserverControls(QWidget):
         if self._save_morph_def:
             self._save_definition(folder)
         self._run_mode = "continue"
+        self._capture_process_output()
         self._launch_t0 = time.time()
         self._last_shown = max(0, target or last)
         self.status.setText(T(
@@ -690,6 +747,7 @@ class ObserverControls(QWidget):
         self._launch_t0 = time.time()
         self._last_shown = 0
         self._run_mode = "fresh"
+        self._capture_process_output()
         self.status.setText(T(
             "正在从头开始优化…等待首轮结果。",
             "Starting optimization from scratch… waiting for the first step."))
@@ -713,6 +771,7 @@ class ObserverControls(QWidget):
         self._launch_t0 = time.time()
         self._last_shown = 0
         self._run_mode = "fresh"
+        self._capture_process_output()
         self.status.setText(T(
             f"正在从脚本优化：{os.path.basename(py)}…等待首轮结果。",
             f"Optimizing from {os.path.basename(py)}… waiting for the first step."))
@@ -765,6 +824,57 @@ class ObserverControls(QWidget):
                 self._last_shown = last
                 self.panel.show_iteration(self._folder, last)
         self._update_buttons()
+
+    # ------------------------------------------------------------ run output
+    def _clear_output(self) -> None:
+        """Remove the displayed output without affecting a running task."""
+        self.output_view.clear()
+        self._progress_headers.clear()
+
+    def _capture_process_output(self) -> None:
+        """Stream this UI-launched process's combined output into the log box."""
+        process = self._proc
+        self._output_run_id += 1
+        run_id = self._output_run_id
+        self._clear_output()
+        if process is None or process.stdout is None:
+            self._append_process_output(
+                run_id,
+                T("无法捕获该任务的输出。", "Unable to capture this task's output."))
+            return
+        reader = threading.Thread(
+            target=self._read_process_output,
+            args=(process, run_id),
+            name="morphopt-ui-output-reader",
+            daemon=True,
+        )
+        reader.start()
+
+    def _read_process_output(self, process, run_id: int) -> None:
+        """Read a process pipe off the Qt thread and deliver complete lines."""
+        stream = process.stdout
+        if stream is None:
+            return
+        try:
+            for raw_line in iter(stream.readline, b""):
+                self.outputReceived.emit(
+                    run_id, raw_line.decode("utf-8", errors="replace"))
+        finally:
+            stream.close()
+
+    def _append_process_output(self, run_id: int, text: str) -> None:
+        """Append current-run output in the UI thread, ignoring stale readers."""
+        if run_id != self._output_run_id:
+            return
+        line, is_redraw = _clean_terminal_line(text)
+        if not line:
+            return
+        header_key = " ".join(line.split())
+        if _is_progress_header(line):
+            if is_redraw and header_key in self._progress_headers:
+                return
+            self._progress_headers.add(header_key)
+        self.output_view.appendPlainText(line)
 
     # -------------------------------------------------------------- polling
     def _poll_once(self) -> None:
@@ -841,6 +951,11 @@ class ObserverControls(QWidget):
         self.btn_back.setToolTip(T(
             "返回定义页；若优化正在运行，将先请求确认终止",
             "Return to the definition page; running tasks ask for confirmation."))
+        self.output_label.setText(T("运行输出", "Run output"))
+        self.btn_clear_output.setText(T("清空", "Clear"))
+        self.output_view.setPlaceholderText(T(
+            "优化任务的标准输出和错误输出会显示在这里。",
+            "Standard output and errors from optimization tasks appear here."))
         self.panel.apply_language()
         self._update_buttons()
         if self._proc is not None:

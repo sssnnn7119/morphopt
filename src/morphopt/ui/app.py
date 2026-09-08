@@ -38,13 +38,20 @@ def configure_environment() -> None:
     os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "True")
 
 
-def main() -> int:
+def create_application(argv: list[str] | None = None):
+    """Create the shared QApplication with MorphOpt's process-wide settings."""
     configure_environment()
 
     from PySide6.QtWidgets import QApplication
 
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(argv or sys.argv)
     app.setStyleSheet(_DARK_QSS)
+    return app
+
+
+def main() -> int:
+    """Launch the definition page in the main application window."""
+    app = create_application()
 
     from .mainwindow import MainWindow
 

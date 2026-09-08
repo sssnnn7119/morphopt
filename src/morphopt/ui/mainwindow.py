@@ -19,8 +19,7 @@ from PySide6.QtWidgets import (
 
 from .model.problem import ProblemDefinition
 from .model.loaders import load_morph, save_morph, MORPH_SUFFIX
-from .model.schemas import SCHEME_LABELS, SCHEME_LABELS_EN, scheme_label
-from .schemes.base import get_template
+from .schemes.base import get_template, scheme_label
 from .i18n import LanguageSelector, T
 from .workbench import Workbench
 from .observe_panel import ObserverControls
@@ -75,7 +74,8 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------- problem type
     def change_problem(self) -> None:
         """更换优化问题: pick a type; replace the current definition."""
-        entries = [scheme_label(s) for s in PROBLEM_TYPES]
+        entries = [T(scheme_label(s), scheme_label(s, english=True))
+                   for s in PROBLEM_TYPES]
         text, ok = QInputDialog.getItem(
             self, T("更换优化问题", "Change optimization problem"),
             T("请选择优化问题类型：", "Select the optimization problem type:"),
@@ -91,8 +91,8 @@ class MainWindow(QMainWindow):
         problem = tpl.create_problem(f"{scheme}_untitled")
         self.set_problem(problem)
         self.statusBar().showMessage(
-            T(f"已创建 {SCHEME_LABELS.get(scheme, scheme)} 问题",
-              f"Created: {SCHEME_LABELS_EN.get(scheme, scheme)}"), 3000)
+            T(f"已创建 {scheme_label(scheme)} 问题",
+              f"Created: {scheme_label(scheme, english=True)}"), 3000)
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
@@ -108,8 +108,8 @@ class MainWindow(QMainWindow):
             return
         self.set_problem(problem)
         self.statusBar().showMessage(
-            T(f"已打开：{problem.label} [{SCHEME_LABELS.get(problem.scheme, problem.scheme)}]",
-              f"Opened: {problem.label} [{SCHEME_LABELS_EN.get(problem.scheme, problem.scheme)}]"), 4000)
+            T(f"已打开：{problem.label} [{scheme_label(problem.scheme)}]",
+              f"Opened: {problem.label} [{scheme_label(problem.scheme, english=True)}]"), 4000)
 
     def export_morph(self) -> None:
         if self._problem is None:
@@ -159,16 +159,21 @@ class MainWindow(QMainWindow):
         """Jump from the definition part to the in-window observer part."""
         if problem is not None:
             self._problem = problem
-        if self._observer is None:
-            self._observer = ObserverControls()
-            self._observer.backRequested.connect(self.show_definition)
-            self.stack.addWidget(self._observer)
+        self._ensure_observer()
         self._observer.set_definition(self._problem)
         self.stack.setCurrentWidget(self._observer)
         self._set_titles()
         self.statusBar().showMessage(
             T("优化器：点击 0 选择任务来源，再开始/停止优化。",
               "Observer: choose a task source with 0, then start / stop."), 3000)
+
+    def _ensure_observer(self) -> None:
+        """Create and connect the observer page once."""
+        if self._observer is not None:
+            return
+        self._observer = ObserverControls()
+        self._observer.backRequested.connect(self.show_definition)
+        self.stack.addWidget(self._observer)
 
     def show_definition(self) -> None:
         if self._workbench is not None:

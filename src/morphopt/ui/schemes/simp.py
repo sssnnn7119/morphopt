@@ -7,14 +7,17 @@ SIMP density field (``SIMP_BSPFieldMaterials``), updated by ``UpdaterMaterials``
 
 from __future__ import annotations
 
-from ..model.problem import Node
+from ..model.problem import Node, ProblemNode
 from ..model import schemas as S
 from .base import SchemeTemplate
 
 
 class SIMPTemplate(SchemeTemplate):
     scheme = "simp"
-    label = S.SCHEME_LABELS["simp"]
+    label = "拓扑/材料场优化 (simp)"
+    label_en = "Topology / material-field optimization (simp)"
+    MATERIAL_TYPE = "SIMP_BSPFieldMaterials"
+    geometry_title = "Geometry (fixed mesh)"
 
     BASES = {
         "controller": "morphopt.Controller",
@@ -39,77 +42,55 @@ class SIMPTemplate(SchemeTemplate):
         return "return []\n"
 
     def build_root(self) -> Node:
-        root = Node("problem")
+        root = ProblemNode()
 
-        # geometry = fixed mesh ---------------------------------------------
-        geo = Node("geometry", name="Geometry (fixed mesh)")
-        geo.params.update(mesh_file="", _apply_surface_constraints="pass\n")
-        root.add_child(geo)
+        # geometry: fixed mesh, no designable surface ------------------------
+        root.add_section(self.make_geometry())
 
-        # loads -------------------------------------------------------------
-        loads = Node("loads", name="Loads")
-        bc = self.new_interface_node("BoundaryCondition")
-        bc.name = "bc_fix"
-        bc.params.update(instance_name="final_model", set_nodes_name="fix", index_dof=[0, 1, 2])
-        rp = self.new_interface_node("ReferencePoint")
-        rp.name = "RP_load"
-        rp.params.update(rp_location=[0.0, 0.0, 10.0])
-        cp = self.new_interface_node("Couple")
-        cp.name = "couple_load"
-        cp.params.update(rp_name="RP_load", instance_name="final_model", set_nodes_name="loadedge")
-        fo = self.new_interface_node("ConcentratedForce")
-        fo.name = "force_1"
-        fo.params.update(rp_name="RP_load")
-        for n in (bc, rp, cp, fo):
-            loads.add_child(n)
-        root.add_child(loads)
+        # loads: fix the mesh, couple the loading RP to a node edge ----------
+        loads = self.make_loads()
+        loads.add_interface(self.make_interface(
+            "BoundaryCondition", "bc_fix",
+            instance_name="final_model", set_nodes_name="fix", index_dof=[0, 1, 2]))
+        loads.add_interface(self.make_interface(
+            "ReferencePoint", "RP_load", rp_location=[0.0, 0.0, 10.0]))
+        loads.add_interface(self.make_interface(
+            "Couple", "couple_load",
+            rp_name="RP_load", instance_name="final_model",
+            set_nodes_name="loadedge"))
+        loads.add_interface(self.make_interface(
+            "ConcentratedForce", "force_1", rp_name="RP_load"))
+        root.add_section(loads)
 
-        # steps -------------------------------------------------------------
-        steps = Node("steps", name="Load steps")
-        steps.params.update(num_steps=1, step_values=[{"force_1": [0.0, 0.0, -1e-1]}])
-        root.add_child(steps)
+        # steps: single load step carrying the tip force ---------------------
+        root.add_section(self.make_steps(1, [{"force_1": [0.0, 0.0, -1e-1]}]))
 
-        # materials (the SIMP design field) ---------------------------------
-        mat = self.new_material_node()
-        mat.params.update(mumax=10.0, kappamax=100.0, simp_ratio_min=1e-7,
-                          density=1.08e-9, initial_ratio=0.5, bounding_box=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                          simp_field_resolution=0.5, degree=2, voidpenalfactor=1e-2,
-                          materialpenalty=8.0, elementname="C3D8")
-        mat.params["_map_bsp_designfield"] = self.default_map_bsp_designfield()
-        root.add_child(mat)
+        # material: the SIMP B-spline density design field -------------------
+        root.add_section(self.make_material(
+            mumax=10.0, kappamax=100.0, simp_ratio_min=1e-7,
+            density=1.08e-9, initial_ratio=0.5,
+            bounding_box=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            simp_field_resolution=0.5, degree=2, voidpenalfactor=1e-2,
+            materialpenalty=8.0, elementname="C3D8"))
 
-        # objective ---------------------------------------------------------
-        obj = Node("objective", name="Objective Function")
-        obj.params.update(
-            jacobian_needed=[],
-            _objective_function=self.default_objective_slot(),
-            _get_metrics=self.default_metrics_slot(),
-        )
-        root.add_child(obj)
+        # objective + solver -------------------------------------------------
+        root.add_section(self.make_objective())
+        root.add_section(self.make_solver(num_process=1))
 
-        # solver ------------------------------------------------------------
-        solver = Node("solver", name="Solver")
-        solver.params.update(num_process=1, gpus=[], task_index_list=[])
-        root.add_child(solver)
-
-        # updater (material only) -------------------------------------------
-        upd = Node("updater", name="Updater")
-        upd.params["geometry"] = None
-        upd.params["materials"] = {
-            "max_step_iter": 50,
-            "if_update": True,
-            "objective_functions": [
-                {"type": "Sensitivity", "params": {"normalize_gradient": False}},
-                {"type": "DensityFieldMinimize", "params": {"scale": 1e-7}},
-            ],
-            "constraints": [
-                {"type": "MinValue", "params": {"xmin": -15.0, "threshold": 0.0, "p": 2}},
-                {"type": "MaxValue", "params": {"xmax": 15.0, "threshold": 0.0, "p": 2}},
-                {"type": "VolFrac", "params": {"volfrac_min": 0.4, "volfrac_max": 0.6,
-                                               "penalty": 1e6, "element_name": "C3D8"}},
-            ],
-            "code": "",
-        }
-        root.add_child(upd)
+        # updater: material-field optimiser only -----------------------------
+        root.add_section(self.make_updater(
+            geometry=None,
+            materials=S.materials_updater_config(
+                max_step_iter=50,
+                if_update=True,
+                objective_functions=(S.updater_objective("Sensitivity"),
+                                     S.updater_objective("DensityFieldMinimize")),
+                constraints=(S.updater_constraint("MinValue"),
+                             S.updater_constraint("MaxValue"),
+                             S.updater_constraint("VolFrac",
+                                                  volfrac_min=0.4, volfrac_max=0.6,
+                                                  penalty=1e6, element_name="C3D8")),
+            ),
+        ))
 
         return root

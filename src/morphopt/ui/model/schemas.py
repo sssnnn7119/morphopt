@@ -9,9 +9,10 @@ Field ``type`` values understood by the schema-driven editors:
     int, float, str, bool, vec3, vec6, vecN, text (multiline),
     file (path picker), combo (fixed ``choices``), code (python slot).
 
-The dictionaries below are the single source of truth for both the default
-parameters assigned when a node is created and the forms rendered in the
-property editor.  Keys match the backend constructor arguments.
+The dictionaries below are the single source of truth for field defaults and
+forms rendered in the property editor.  They do *not* choose an optimization
+scheme's default problem tree, generated backend classes, display label, or
+code snippets; those belong to :mod:`morphopt.ui.schemes`.
 """
 
 from __future__ import annotations
@@ -334,13 +335,6 @@ MATERIAL_TYPES: dict[str, dict] = {
     },
 }
 
-#: which material types may be used by each scheme
-MATERIAL_BY_SCHEME: dict[str, list[str]] = {
-    "simp": ["SIMP_BSPFieldMaterials"],
-    "shapeopt": ["HomogeneousMaterial"],
-    "codesign": ["CodesignMaterials"],
-}
-
 #: scheme -> kind of geometry params node ("geometry") extra field group
 GEOMETRY_SCHEMES: dict[str, list[dict]] = {
     "shapeopt": fields_from_specs([
@@ -372,24 +366,6 @@ SOLVER_FIELDS: list[dict] = fields_from_specs([
 
 # code slots (python fields) rendered with the code editor
 CODE_SLOT_KEYS = ("apply_surface_constraints", "map_bsp_designfield", "objective_function", "get_metrics")
-
-SCHEME_LABELS = {
-    "simp": "拓扑/材料场优化 (simp)",
-    "shapeopt": "形状优化 (shapeopt)",
-    "codesign": "协同设计优化 (codesign)",
-}
-SCHEME_LABELS_EN = {
-    "simp": "Topology / material-field optimization (simp)",
-    "shapeopt": "Shape optimization (shapeopt)",
-    "codesign": "Co-design optimization (codesign)",
-}
-
-
-def scheme_label(scheme: str) -> str:
-    """Localized (中文/English) label of an optimization scheme."""
-    from ..i18n import pick
-    return pick(SCHEME_LABELS.get(scheme, scheme), SCHEME_LABELS_EN.get(scheme))
-
 
 # --------------------------------------------------------------------------
 # updater: structured objective / constraint catalogue (UI chooser, no code)
@@ -529,6 +505,61 @@ def updater_item_defaults(item_type: str, category: str) -> dict:
     if spec is None:
         return {}
     return clone_defaults(spec["params"])
+
+
+# --------------------------------------------------------------------------
+# updater term / section factories
+#
+# These build the plain config dicts that live on the ``UpdaterNode`` from
+# the catalogued defaults, so scheme templates declare only the *deviations*
+# (``Distance(min_distance=...)`` instead of a full hand-written dict).  The
+# code generator keeps reading the very same ``{"type", "params"}`` layout.
+# --------------------------------------------------------------------------
+
+def updater_objective(item_type: str, **overrides) -> dict:
+    """One objective term: schema defaults + ``overrides`` for item ``type``."""
+    spec = UPDATER_OBJECTIVES[item_type]
+    params = clone_defaults(spec["params"])
+    params.update(overrides)
+    return {"type": item_type, "params": params}
+
+
+def updater_constraint(item_type: str, **overrides) -> dict:
+    """One constraint term: schema defaults + ``overrides`` for item ``type``."""
+    spec = UPDATER_CONSTRAINTS[item_type]
+    params = clone_defaults(spec["params"])
+    params.update(overrides)
+    return {"type": item_type, "params": params}
+
+
+def geometry_updater_config(max_step_iter: int = 50,
+                            if_update: Optional[list] = None,
+                            objective_functions: tuple = (),
+                            constraints: tuple = (),
+                            code: str = "") -> dict:
+    """Config dict of the geometry sub-updater (per-surface ``if_update``)."""
+    return {
+        "max_step_iter": int(max_step_iter),
+        "if_update": list(if_update) if if_update is not None else [],
+        "objective_functions": list(objective_functions),
+        "constraints": list(constraints),
+        "code": code,
+    }
+
+
+def materials_updater_config(max_step_iter: int = 50,
+                             if_update: Any = True,
+                             objective_functions: tuple = (),
+                             constraints: tuple = (),
+                             code: str = "") -> dict:
+    """Config dict of the material sub-updater (scalar ``if_update``)."""
+    return {
+        "max_step_iter": int(max_step_iter),
+        "if_update": if_update,
+        "objective_functions": list(objective_functions),
+        "constraints": list(constraints),
+        "code": code,
+    }
 
 
 def surface_spec(surface_type: str) -> dict:

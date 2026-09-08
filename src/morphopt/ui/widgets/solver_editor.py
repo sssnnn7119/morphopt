@@ -93,9 +93,8 @@ class SolverEditor(QWidget):
         self._problem = problem
         self._loading = True
         try:
-            params = node.params
-            self._numproc.setValue(int(params.get("num_process", 1)))
-            gpus = list(params.get("gpus", []) or [])
+            self._numproc.setValue(int(node.get_field("num_process", 1)))
+            gpus = list(node.get_field("gpus", []) or [])
             cpu_cb = self._device_checks.get("cpu")
             for name, cb in self._device_checks.items():
                 cb.blockSignals(True)
@@ -112,7 +111,7 @@ class SolverEditor(QWidget):
     def _on_numproc(self, value: int) -> None:
         if self._loading or self._node is None:
             return
-        self._node.params["num_process"] = int(value)
+        self._node.set_field("num_process", int(value))
         self._emit()
 
     def _on_devices_changed(self, *_a) -> None:
@@ -132,17 +131,17 @@ class SolverEditor(QWidget):
                 cb.blockSignals(True)
                 cb.setChecked(desired)
                 cb.blockSignals(False)
-        self._node.params["gpus"] = gpus
+        self._node.set_field("gpus", gpus)
         self._emit()
 
     # ------------------------------------------------------------- tasks
     def _n_steps(self) -> int:
         steps = next((n for n in self._problem.root.iter_nodes() if n.kind == "steps"), None)
-        return int(steps.params.get("num_steps", 1)) if steps is not None else 1
+        return int(steps.get_field("num_steps", 1)) if steps is not None else 1
 
     def _task_list(self) -> list[list[int]]:
         """task_index_list stored on the solver node, or default per-step."""
-        return self._node.params.get("task_index_list")
+        return self._node.get_field("task_index_list", [])
 
     def _fill_task_table(self) -> None:
         n = self._n_steps()
@@ -178,7 +177,7 @@ class SolverEditor(QWidget):
             g = gi if s == r else int(it.text())
             groups.setdefault(g, []).append(s)
         tl = [groups[k] for k in sorted(groups)]
-        self._node.params["task_index_list"] = tl
+        self._node.set_field("task_index_list", tl)
         self._emit()
 
     # ------------------------------------------------------------- misc

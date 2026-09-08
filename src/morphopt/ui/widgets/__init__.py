@@ -1,1 +1,1 @@
-"""Reusable widgets for the MorphOpt definition workbench."""
+"""Reusable widgets for MorphOpt's definition workbench and observer page."""

@@ -21,7 +21,8 @@ ui/widgets/          modeltree / editor / stepmatrix / codeeditor / viewer
 ui/schemes/          per-scheme templates + generators
 ui/launcher.py       headless job launch / continue / result helpers
 
-The design spec lives at the repository root in ``UIprompt.md``.
+The maintainability contract lives in
+``docs/codestructure/ui_code_design.md``.
 """
 
 from __future__ import annotations

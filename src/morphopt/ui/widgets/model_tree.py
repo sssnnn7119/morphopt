@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction
 
-from ..model.problem import Node, ProblemDefinition
+from ..model.problem import (
+    Node, ProblemDefinition, SurfaceNode, InterfaceNode,
+)
 from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES
 from ..i18n import T, pick
 
@@ -72,7 +74,7 @@ def surface_title_text(srf: Node, index: int) -> str:
     cavity).  The index comes from the current position, so moving a surface
     up/down renumbers it automatically.
     """
-    st = srf.params.get("type", "?")
+    st = srf.surface_type or "?"
     spec = SURFACE_TYPES.get(st, {})
     return f"{index}: {_short_phrase(spec, st)}"
 
@@ -105,6 +107,8 @@ class ModelTree(QTreeWidget):
     # ------------------------------------------------------------------ api
     def set_problem(self, problem: ProblemDefinition) -> None:
         self._problem = problem
+        # Loaded definitions can predate the current number of surfaces.
+        problem.align_surface_dependent_state()
         self.rebuild()
 
     def rebuild(self, select: Node | None = None) -> None:
@@ -113,24 +117,21 @@ class ModelTree(QTreeWidget):
         self._node_item.clear()
         if self._problem is None:
             return
-        # top-level containers present in the model root
-        root = self._problem.root
+        # Top-level sections are supplied by the model aggregate; the widget
+        # only turns them into rows.
         for kind in CONTAINER_ORDER:
-            node = root.child(kind) if root.kind == "problem" else None
-            # find direct child of root by kind
-            if node is None:
-                node = next((c for c in root.children if c.kind == kind), None)
+            node = self._problem.section(kind)
             if node is None:
                 continue
             item = self._make_item(container_title(kind), node, bold=True)
             self.addTopLevelItem(item)
             if kind == "geometry":
-                for i, srf in enumerate(c for c in node.children if c.kind == "surface"):
+                for i, srf in enumerate(self._problem.surfaces()):
                     it = self._make_item(self._surface_title(srf, i), srf)
                     item.addChild(it)
             elif kind == "loads":
                 # one row per load; its parameters are edited in the right pane
-                for iface in node.children:
+                for iface in self._problem.interfaces():
                     it = self._make_item(self._interface_title(iface), iface)
                     item.addChild(it)
         self.expandAll()
@@ -170,7 +171,7 @@ class ModelTree(QTreeWidget):
 
     @staticmethod
     def _interface_title(iface: Node) -> str:
-        it = iface.params.get("type", "?")
+        it = iface.interface_type or "?"
         spec = INTERFACE_TYPES.get(it, {})
         phrase = _short_phrase(spec, it)
         return f"{iface.name}  [{phrase}]" if iface.name else phrase
@@ -246,130 +247,79 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
     # --------------------------------------------------------------- edits
-    def _geometry(self) -> Node:
-        return next((n for n in self._problem.root.children if n.kind == "geometry"), None)
-
     def _add_surface(self, stype: str) -> None:
-        geo = self._geometry()
-        if geo is None:
+        if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
-        index = len([c for c in geo.children if c.kind == "surface"])
-        srf = tpl.new_surface_node(stype, index)
-        geo.add_child(srf)
-        self._renumber_surfaces()
+        index = len(self._problem.surfaces())
+        srf = tpl.make_surface(stype, index)
+        self._problem.add_surface(srf)
         self.rebuild(select=srf)
         self.treeChanged.emit()
 
     def _copy_surface(self, srf: Node) -> None:
-        geo = self._geometry()
-        if geo is None:
+        if self._problem is None or not isinstance(srf, SurfaceNode):
             return
-        idx = geo.children.index(srf)
-        copy = srf.clone()
-        geo.add_child(copy, index=idx + 1)   # place right below the original
-        self._renumber_surfaces()
+        copy = self._problem.clone_surface(srf)
         self.rebuild(select=copy)
         self.treeChanged.emit()
 
     def _remove_surface(self, srf: Node) -> None:
-        geo = self._geometry()
-        if geo is None:
+        if self._problem is None or not isinstance(srf, SurfaceNode):
             return
-        surfaces = [c for c in geo.children if c.kind == "surface"]
-        if len(surfaces) <= 1:
+        try:
+            self._problem.remove_surface(srf)
+        except ValueError:
             return  # keep at least one surface
-        geo.remove_child(srf)
-        self._renumber_surfaces()
         self.rebuild()
         self.treeChanged.emit()
 
     def _move_surface(self, srf: Node, delta: int) -> None:
-        geo = self._geometry()
-        if geo is None:
+        if self._problem is None or not isinstance(srf, SurfaceNode):
             return
-        idx = geo.children.index(srf)
-        new = idx + delta
-        if new < 0 or new >= len(geo.children):
+        if not self._problem.move_surface(srf, delta):
             return
-        geo.children[idx], geo.children[new] = geo.children[new], geo.children[idx]
-        self._renumber_surfaces()
         self.rebuild(select=srf)
         self.treeChanged.emit()
 
-    def _renumber_surfaces(self) -> None:
-        geo = self._geometry()
-        if geo is None:
-            return
-        for i, child in enumerate([c for c in geo.children if c.kind == "surface"]):
-            child.params["flip"] = i > 0
-
-    def _loads(self) -> Node:
-        return next((n for n in self._problem.root.children if n.kind == "loads"), None)
-
-    def _unique_interface_name(self, hint: str) -> str:
-        existing = {i.name for i in self._loads().children}
-        n = 1
-        while f"{hint}{n}" in existing:
-            n += 1
-        return f"{hint}{n}"
-
     def _add_interface(self, itype: str) -> None:
-        loads = self._loads()
-        if loads is None:
+        if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
-        iface = tpl.new_interface_node(itype)
+        iface = tpl.make_interface(itype)
         spec = INTERFACE_TYPES.get(itype, {})
-        iface.name = self._unique_interface_name(spec.get("name_hint", "load_"))
-        loads.add_child(iface)
+        iface.name = self._problem.suggest_interface_name(
+            spec.get("name_hint", "load_"))
+        self._problem.add_interface(iface)
         self.rebuild(select=iface)
         self.treeChanged.emit()
 
     def _copy_interface(self, iface: Node) -> None:
-        loads = self._loads()
-        if loads is None:
+        if self._problem is None or not isinstance(iface, InterfaceNode):
             return
-        idx = loads.children.index(iface)
-        copy = iface.clone()
         # a copied load is a new load: give it a fresh unique name so it does
         # not collide with the original (it starts unset / zero in the steps)
-        itype = copy.params.get("type", "")
+        itype = iface.interface_type
         hint = INTERFACE_TYPES.get(itype, {}).get("name_hint", "load_")
-        copy.name = self._unique_interface_name(hint)
-        loads.add_child(copy, index=idx + 1)   # place right below the original
+        copy = self._problem.clone_interface(iface, hint)
         self.rebuild(select=copy)
         self.treeChanged.emit()
 
     def _move_interface(self, iface: Node, delta: int) -> None:
-        loads = self._loads()
-        if loads is None:
+        if self._problem is None or not isinstance(iface, InterfaceNode):
             return
-        idx = loads.children.index(iface)
-        new = idx + delta
-        if new < 0 or new >= len(loads.children):
+        if not self._problem.move_interface(iface, delta):
             return
-        loads.children[idx], loads.children[new] = loads.children[new], loads.children[idx]
         self.rebuild(select=iface)
         self.treeChanged.emit()
 
     def _remove_interface(self, iface: Node) -> None:
-        loads = self._loads()
-        if loads is None:
+        if self._problem is None or not isinstance(iface, InterfaceNode):
             return
-        loads.remove_child(iface)
-        # remove references from the load-step matrix and jacobian_needed
-        steps = next((n for n in self._problem.root.iter_nodes() if n.kind == "steps"), None)
-        if steps is not None:
-            for row in steps.params.get("step_values", []):
-                row.pop(iface.name, None)
-        obj = self._problem.node("objective")
-        if obj is not None:
-            jac = obj.params.get("jacobian_needed", [])
-            obj.params["jacobian_needed"] = [x for x in jac if x != iface.name]
+        self._problem.remove_interface(iface)
         self.rebuild()
         self.treeChanged.emit()

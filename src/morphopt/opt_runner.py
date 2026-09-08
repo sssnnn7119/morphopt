@@ -2,8 +2,8 @@
 
 Runs started from *code* never open a UI: the PySide6 observer lives inside the
 MorphOpt UI and simply polls the result folder on disk (per finished
-iteration).  The old ``no_gui`` flag and the separate observer process were
-therefore removed; ``view_optimization_result`` lives on the UI side now.
+iteration).  The old ``no_gui`` flag and separate observer process were
+therefore removed; browse results from the observer page in the main UI.
 """
 
 

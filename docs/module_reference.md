@@ -28,28 +28,23 @@ src/morphopt/
 
 - 核心流程：`Controller`, `Params`, `Solver`, `Updaters`, `ObjectiveFunction`, `History`
 - 参数模块：`FEAParams`, `HomogeneousMaterial`, `FixedGeometryINP`, `FixedGeometryNodeElement`
-- 运行入口：`start_optimization`, `debug_optimization`, `view_optimization_result`
+- 运行入口：`start_optimization`, `debug_optimization`
 - 子包：`morphopt.shapeopt`, `morphopt.simp`, `morphopt.codesign`
 
 ### 2.2 `opt_runner.py`
 
-定义方式：函数式入口封装，内部通过多进程启动优化和 UI。
+定义方式：函数式入口封装，内部通过多进程启动优化。
 
-- `start_optimization(...)`：启动优化主进程，可选 GUI
+- `start_optimization(...)`：启动无界面优化主进程
 - `debug_optimization(...)`：在当前进程调试运行
-- `view_optimization_result(...)`：读取历史结果并启动可视化
+
+已有结果从主 UI 的观察页中打开：选择任务来源后选择已有结果目录。
 
 ### 2.3 `taskoptmization.py`
 
 定义方式：`TaskOptimization` 类，提供类方法 `task_optimization` 和 `optmain`。
 
 负责"可重启"优化循环管理，每次子进程运行结束后根据结果路径继续下一段迭代。
-
-### 2.4 `taskui.py`
-
-定义方式：PyQt6 界面组件 + 监控线程。
-
-实时显示历史曲线、表格和 PyVista 网格，通过消息队列读取当前迭代并刷新视图。
 
 ---
 

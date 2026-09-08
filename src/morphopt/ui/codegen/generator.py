@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import ast
 
-from ..model.problem import Node, ProblemDefinition
+from ..model.problem import (
+    Node, ProblemDefinition,
+    GeometryNode, StepsNode, MaterialNode, ObjectiveNode, SolverNode,
+    UpdaterNode,
+)
 from ..model.schemas import (
     SURFACE_TYPES, INTERFACE_TYPES, UPDATER_CATALOG,
 )
@@ -43,31 +47,32 @@ def indent_block(text: str, spaces: int) -> str:
 # --------------------------------------------------------------------------
 
 def _surface_factory(surface: Node) -> str:
-    return SURFACE_TYPES[surface.params["type"]]["factory"]
+    return SURFACE_TYPES[surface.surface_type]["factory"]
 
 
 def render_surface_call(surface: Node) -> str:
     factory = _surface_factory(surface)
     if factory is None:  # fixed_stl
         return "self.FixedSurface.initialize_from_stl_file(%s)" % _literal(
-            surface.params.get("path_stl", "")
-        )
+            surface.path_stl or "")
     kwargs = []
-    for key, value in surface.params.items():
-        if key in ("type", "flip") or value is None:
+    for field in SURFACE_TYPES[surface.surface_type]["params"]:
+        key = field["key"]
+        value = surface.get_field(key)
+        if value is None:
             continue
         kwargs.append(f"{key}={_literal(value)}")
-    flip = surface.params.get("flip", False)
-    kwargs.append(f"flip={_literal(flip)}")
+    kwargs.append(f"flip={_literal(surface.flip)}")
     return f"self.{factory}({', '.join(kwargs)})"
 
 
 def render_interface_call(interface: Node) -> str:
-    itype = interface.params["type"]
-    cls = f"{itype}Interface"
+    cls = f"{interface.interface_type}Interface"
     kwargs = []
-    for key, value in interface.params.items():
-        if key == "type" or value is None:
+    for field in INTERFACE_TYPES[interface.interface_type]["params"]:
+        key = field["key"]
+        value = interface.get_field(key)
+        if value is None:
             continue
         kwargs.append(f"{key}={_literal(value)}")
     return f"self.{cls}({', '.join(kwargs)})"
@@ -110,10 +115,10 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
 
     # -------- ObjectiveFunction ------------------------------------------
-    objective = problem.node("objective") or Node("objective", params={})
-    jac = list(objective.params.get("jacobian_needed", []) or [])
-    obj_body = objective.params.get("_objective_function", template.default_objective_slot())
-    met_body = objective.params.get("_get_metrics", template.default_metrics_slot())
+    objective = problem.objective or ObjectiveNode()
+    jac = list(objective.jacobian_needed)
+    obj_body = objective._objective_function or template.default_objective_slot()
+    met_body = objective._get_metrics or template.default_metrics_slot()
 
     a(f"    class ObjectiveFunction({B['objective']}):")
     a("")
@@ -171,10 +176,10 @@ def generate_source(problem: ProblemDefinition) -> str:
     a(f"    class Solver({B['solver']}):")
     a("")
     a("        def __init__(self, params):")
-    solver = problem.node("solver") or Node("solver", params={})
-    np_ = int(solver.params.get("num_process", 1))
-    gpus = list(solver.params.get("gpus", []) or [])
-    tasklist = list(solver.params.get("task_index_list", []) or [])
+    solver = problem.solver or SolverNode()
+    np_ = int(solver.num_process)
+    gpus = list(solver.gpus)
+    tasklist = list(solver.task_index_list)
     args = [f"params=params", f"num_process={np_}"]
     if gpus:
         args.append(f"available_gpus={gpus!r}")
@@ -200,35 +205,34 @@ def generate_source(problem: ProblemDefinition) -> str:
 # --------------------------------------------------------------------------
 
 def _geometry_kwargs(problem: ProblemDefinition) -> str:
-    geo = problem.node("geometry") or Node("geometry", params={})
-    geo_fields = {
-        "fea_seed_size", "mesh_order", "reinitialize_per_iter",
-        "thickness", "num_layers",
-    }
+    geo = problem.geometry or GeometryNode()
+    geo_fields = ("fea_seed_size", "mesh_order", "reinitialize_per_iter",
+                  "thickness", "num_layers")
     kw = []
-    for k, v in geo.params.items():
-        if k in geo_fields and v is not None:
-            kw.append(f"{k}={_literal(v)}")
+    for key in geo_fields:
+        value = geo.get_field(key)
+        if value is not None:
+            kw.append(f"{key}={_literal(value)}")
     return ", ".join(kw)
 
 
 def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
     surfaces = problem.surfaces()
     if problem.scheme == "simp":
-        geo = problem.node("geometry") or Node("geometry", params={})
-        a(f"                super().__init__(mesh_file={_literal(geo.params.get('mesh_file', ''))})")
+        geo = problem.geometry or GeometryNode()
+        a(f"                super().__init__(mesh_file={_literal(geo.mesh_file)})")
         return
     kw = _geometry_kwargs(problem)
     a(f"                super().__init__({kw})" if kw else "                super().__init__()")
     for i, srf in enumerate(surfaces):
         a("")
-        a("                # %s (surface index %d)" % (SURFACE_TYPES[srf.params["type"]]["label_en"], i))
+        a("                # %s (surface index %d)" % (SURFACE_TYPES[srf.surface_type]["label_en"], i))
         a(f"                self.add_surface({render_surface_call(srf)})")
 
 
 def _emit_apply_constraints(a, problem: ProblemDefinition, template) -> None:
-    geo = problem.node("geometry") or Node("geometry", params={})
-    body = geo.params.get("_apply_surface_constraints") or template.default_apply_surface_constraints()
+    geo = problem.geometry or GeometryNode()
+    body = geo._apply_surface_constraints or template.default_apply_surface_constraints()
     body = str(body).strip()
     if not body or body == "pass":
         return
@@ -238,8 +242,7 @@ def _emit_apply_constraints(a, problem: ProblemDefinition, template) -> None:
 
 
 def _emit_interfaces(a, problem: ProblemDefinition) -> None:
-    interfaces = [n for n in problem.root.iter_nodes()
-                  if n.kind == "interface" and n.params.get("type")]
+    interfaces = [it for it in problem.interfaces() if it.interface_type]
     if not interfaces:
         a("                pass")
         return
@@ -248,9 +251,11 @@ def _emit_interfaces(a, problem: ProblemDefinition) -> None:
 
 
 def _emit_steps(a, problem: ProblemDefinition) -> None:
-    steps = problem.node("steps") or Node("steps", params={"num_steps": 1, "step_values": [{}]})
-    n = int(steps.params.get("num_steps", 1))
-    values = steps.params.get("step_values") or [{} for _ in range(n)]
+    steps = problem.steps or StepsNode(name="Load steps",
+                                       params={"num_steps": 1, "step_values": [{}]})
+    n = int(steps.num_steps)
+
+    values = list(steps.step_values) or [{} for _ in range(n)]
     while len(values) < n:
         values.append({})
 
@@ -259,7 +264,7 @@ def _emit_steps(a, problem: ProblemDefinition) -> None:
     # zero amplitude (matching the step-matrix UI, where an empty cell is 0).
     amps: dict[str, int] = {}
     for it in problem.interfaces():
-        nv = INTERFACE_TYPES.get(it.params.get("type", ""), {}).get("num_values", 0)
+        nv = INTERFACE_TYPES.get(it.interface_type, {}).get("num_values", 0)
         if nv and it.name:
             amps[it.name] = nv
 
@@ -273,28 +278,26 @@ def _emit_steps(a, problem: ProblemDefinition) -> None:
 
 
 def _emit_material_init(a, problem: ProblemDefinition, template) -> None:
-    mat = problem.node("material") or Node("material", params={})
-    mtype = mat.params.get("type", template.BASES["material"].rsplit(".", 1)[-1])
-    spec = None
+    mat = problem.material or MaterialNode()
+    mtype = mat.material_type or template.BASES["material"].rsplit(".", 1)[-1]
     from ..model import schemas as S
     try:
         spec = S.MATERIAL_TYPES[mtype]
-        allowed = {f["key"] for f in spec["params"]}
+        keys = [f["key"] for f in spec["params"]]
     except KeyError:
-        allowed = set(mat.params)
+        keys = list(mat.field_names())
     kw = []
-    for k, v in mat.params.items():
-        if k in ("type",) or k.startswith("_") or v is None:
+    for key in keys:
+        value = mat.get_field(key)
+        if value is None:
             continue
-        if k not in allowed:
-            continue
-        kw.append(f"{k}={_literal(v)}")
+        kw.append(f"{key}={_literal(value)}")
     a(f"                super().__init__({', '.join(kw)})" if kw else "                super().__init__()")
 
 
 def _emit_map_designfield(a, problem: ProblemDefinition, template) -> None:
-    mat = problem.node("material") or Node("material", params={})
-    body = mat.params.get("_map_bsp_designfield") or template.default_map_bsp_designfield()
+    mat = problem.material or MaterialNode()
+    body = mat._map_bsp_designfield or template.default_map_bsp_designfield()
     body = str(body).strip()
     if not body or "return nodes" in body:
         return
@@ -304,9 +307,9 @@ def _emit_map_designfield(a, problem: ProblemDefinition, template) -> None:
 
 
 def _emit_updater(a, problem: ProblemDefinition, template, device: str) -> None:
-    upd = problem.node("updater") or Node("updater", params={})
-    geom_cfg = upd.params.get("geometry")
-    mat_cfg = upd.params.get("materials")
+    upd = problem.updater or UpdaterNode()
+    geom_cfg = upd.geometry_config()
+    mat_cfg = upd.materials_config()
     has_geom = bool(geom_cfg)
     has_mat = bool(mat_cfg)
     if not has_geom and not has_mat:

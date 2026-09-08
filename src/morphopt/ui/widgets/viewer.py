@@ -102,9 +102,9 @@ class PreviewViewer(QWidget):
             self._base_meshes.append((srf, mesh, actor))
 
         # material bounding box (SIMP / codesign)
-        mat = next((n for n in self._problem.root.iter_nodes() if n.kind == "material"), None)
+        mat = self._problem.material
         if mat is not None:
-            bb = mat.params.get("bounding_box")
+            bb = mat.bounding_box
             if bb and any(bb) and len(bb) == 6:
                 box = pv.Box(bounds=[bb[0], bb[1], bb[2], bb[3], bb[4], bb[5]])
                 plotter.add_mesh(box, style="wireframe", color="#7f8c8d", opacity=0.6)
@@ -115,8 +115,8 @@ class PreviewViewer(QWidget):
         self._redraw_loads()
 
     def _sync_step_combo(self) -> None:
-        steps = next((n for n in self._problem.root.iter_nodes() if n.kind == "steps"), None)
-        n = int(steps.params.get("num_steps", 1)) if steps is not None else 1
+        steps = self._problem.steps
+        n = int(steps.num_steps) if steps is not None else 1
         self.step_combo.blockSignals(True)
         self.step_combo.clear()
         self.step_combo.addItem(T("(无)", "(none)"))
@@ -126,8 +126,8 @@ class PreviewViewer(QWidget):
 
     # ------------------------------------------------------------- geometry
     def _surface_mesh(self, srf: Node):
-        st = srf.params.get("type", "bsp_cylinder")
-        p = srf.params
+        st = srf.surface_type
+        p = dict(srf.field_items())
         if st in ("bsp_cylinder", "cpgeo_cylinder"):
             loc = p.get("init_location") or [0.0, 0.0, 0.0]
             z0 = loc[2]
@@ -148,17 +148,14 @@ class PreviewViewer(QWidget):
 
     # ----------------------------------------------------------------- loads
     def _interfaces_by_name(self) -> dict[str, Node]:
-        out = {}
-        for nd in self._problem.root.iter_nodes():
-            if nd.kind == "interface" and nd.name:
-                out[nd.name] = nd
-        return out
+        return {interface.name: interface for interface in self._problem.interfaces()
+                if interface.name}
 
     def _rp_location(self, rp_name: str):
-        for nd in self._problem.root.iter_nodes():
-            if nd.kind == "interface" and nd.name == rp_name and \
-                    nd.params.get("type") == "ReferencePoint":
-                loc = nd.params.get("rp_location") or [0.0, 0.0, 0.0]
+        for interface in self._problem.interfaces():
+            if (interface.name == rp_name
+                    and interface.interface_type == "ReferencePoint"):
+                loc = interface.rp_location or [0.0, 0.0, 0.0]
                 return [float(x) for x in loc]
         return None
 
@@ -179,10 +176,10 @@ class PreviewViewer(QWidget):
             plotter.render()
             return
 
-        steps = next((n for n in self._problem.root.iter_nodes() if n.kind == "steps"), None)
+        steps = self._problem.steps
         if steps is None:
             return
-        values = steps.params.get("step_values") or []
+        values = list(steps.step_values)
         if idx >= len(values):
             return
         step = values[idx] or {}
@@ -194,7 +191,7 @@ class PreviewViewer(QWidget):
             iface = by_name.get(name)
             if iface is None:
                 continue
-            itype = iface.params.get("type")
+            itype = iface.interface_type
             amps = [float(a) for a in (amps or [])]
             if itype == "Pressure":
                 # Only show a pressure surface when it is actually loaded in
@@ -204,7 +201,7 @@ class PreviewViewer(QWidget):
                 if not any(abs(v) > 1e-12 for v in amps):
                     continue
                 # tint the referenced surface with a semi-transparent copy
-                surf_name = str(iface.params.get("surface_name", ""))
+                surf_name = str(iface.surface_name or "")
                 srf_idx = _surface_index_from_name(surf_name)
                 if 0 <= srf_idx < len(surfaces):
                     mesh = self._surface_mesh(surfaces[srf_idx])
@@ -214,7 +211,7 @@ class PreviewViewer(QWidget):
                                                show_edges=False)
                         self._overlay_actors.append(act)
             elif itype in ("ConcentratedForce", "ConcentratedMoment"):
-                rp = iface.params.get("rp_name", "")
+                rp = iface.rp_name or ""
                 loc = self._rp_location(rp)
                 if loc is None:
                     continue
@@ -258,8 +255,8 @@ def _load_arrow_length(characteristic_length: float) -> float:
 
 
 def _surface_bounds(srf: Node):
-    st = srf.params.get("type", "bsp_cylinder")
-    p = srf.params
+    st = srf.surface_type
+    p = dict(srf.field_items())
     if st in ("bsp_cylinder", "cpgeo_cylinder"):
         loc = p.get("init_location") or [0, 0, 0]
         length = float(p.get("length", 1))

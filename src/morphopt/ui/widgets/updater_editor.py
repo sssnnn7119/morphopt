@@ -16,7 +16,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QGroupBox, QFormLayout, QSpinBox,
     QCheckBox, QPushButton, QHBoxLayout, QLabel, QComboBox,
-    QToolButton, QMenu, QFrame, QWidgetAction,
+    QToolButton, QMenu, QFrame, QWidgetAction, QTableWidget,
+    QTableWidgetItem, QHeaderView,
 )
 
 from ..model.problem import Node, ProblemDefinition
@@ -95,8 +96,8 @@ class UpdaterEditor(QWidget):
             if w is not None:
                 w.deleteLater()
 
-        geom = node.params.get("geometry")
-        mats = node.params.get("materials")
+        geom = node.geometry_config()
+        mats = node.materials_config()
         if geom:
             self._layout.addWidget(self._section_box(
                 T("几何更新器 (UpdaterGeometries)", "Geometry updater (UpdaterGeometries)"),
@@ -141,7 +142,9 @@ class UpdaterEditor(QWidget):
         # objectives are scheme-default and read-only (no add/edit window)
         form.addRow(_objective_readonly(cfg, group, self._scheme))
         # constraints are user-selectable / parameter-editable
-        form.addRow(_item_list(cfg, group, "constraints", self._scheme, self._on_change))
+        n_surfaces = len(self._problem.surfaces()) if self._problem is not None else 0
+        form.addRow(_item_list(cfg, group, "constraints", self._scheme,
+                               self._on_change, n_surfaces))
         return g
 
     # -------------------------------------------------------- if_update ui
@@ -257,6 +260,147 @@ class _IfUpdateDropDown(QToolButton):
             f"Surfaces to update: {', '.join(names) or 'none'}"))
 
 
+class _DistanceMatrixDropDown(QToolButton):
+    """Popup matrix editor for the Distance constraint's ``min_distance``.
+
+    The button (``<N>×<N>``) opens a panel holding an editable N x N grid of
+    inter-surface minimum distances (N = number of surfaces, rows/columns are
+    the surface indices).  Editing a cell writes straight back into the
+    Distance constraint's ``params['min_distance']`` so the generated code and
+    the model stay in sync.
+    """
+
+    _DEFAULT = 2.5
+
+    def __init__(self, params: dict, n: int, on_change, parent=None):
+        super().__init__(parent)
+        self._params = params
+        self._n = max(1, int(n))
+        self._on_change = on_change
+        self._loading = False
+
+        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.setMinimumWidth(110)
+        self.setToolTip(T(
+            "编辑各表面之间的最小距离矩阵 min_distance[i][j]",
+            "Edit the inter-surface minimum-distance matrix min_distance[i][j]"))
+        self._update_text()
+
+        menu = QMenu(self)
+        self.setMenu(menu)
+        act = QWidgetAction(menu)
+        panel = QWidget()
+        col = QVBoxLayout(panel)
+        col.setContentsMargins(8, 8, 8, 8)
+        col.setSpacing(6)
+
+        cap = QLabel(T("表面间最小距离  min_distance[i][j]",
+                       "Inter-surface minimum distance  min_distance[i][j]"))
+        cap.setStyleSheet("color:#9aa4b2;")
+        col.addWidget(cap)
+
+        self._table = QTableWidget(self._n, self._n)
+        self._table.setHorizontalHeaderLabels([str(j) for j in range(self._n)])
+        self._table.setVerticalHeaderLabels([str(i) for i in range(self._n)])
+        self._table.setMaximumHeight(min(440, 40 + 30 * self._n))
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self._table.verticalHeader().setDefaultSectionSize(26)
+        col.addWidget(self._table)
+
+        bar = QHBoxLayout()
+        bar.addStretch(1)
+        b_reset = QPushButton(T("全部设为默认", "Reset to default"))
+        b_reset.clicked.connect(self._reset_defaults)
+        bar.addWidget(b_reset)
+        col.addLayout(bar)
+
+        act.setDefaultWidget(panel)
+        menu.addAction(act)
+
+        self._load_matrix()
+        self._table.cellChanged.connect(self._on_cell)
+
+    # ------------------------------------------------------------ helpers
+    def _matrix(self) -> list[list[float]]:
+        """Current N x N matrix (stored value padded / squared to N x N)."""
+        default = self._DEFAULT
+        n = self._n
+        stored = self._params.get("min_distance")
+        rows: list[list[float]] = []
+        if isinstance(stored, (list, tuple)):
+            for r in stored:
+                if isinstance(r, (list, tuple)):
+                    rows.append([float(x) for x in r])
+                elif isinstance(r, (int, float)):
+                    rows.append([float(r)])
+        out = []
+        for i in range(n):
+            row = rows[i] if i < len(rows) else []
+            row = [float(x) for x in row]
+            out.append(row[:n] + [default] * (n - len(row)))
+        return out
+
+    def _load_matrix(self) -> None:
+        mat = self._matrix()
+        self._loading = True
+        try:
+            for i in range(self._n):
+                for j in range(self._n):
+                    self._table.setItem(i, j, QTableWidgetItem(f"{mat[i][j]:g}"))
+        finally:
+            self._loading = False
+        self._params["min_distance"] = mat
+        self._update_text()
+
+    def _on_cell(self, r: int, c: int) -> None:
+        if self._loading:
+            return
+        item = self._table.item(r, c)
+        if item is None:
+            return
+        try:
+            val = float(item.text())
+        except ValueError:
+            return
+        mat = self._matrix()
+        mat[r][c] = val
+        self._params["min_distance"] = mat
+        self._update_text()
+        self._on_change()
+
+    def _reset_defaults(self) -> None:
+        default = self._DEFAULT
+        mat = [[default] * self._n for _ in range(self._n)]
+        self._params["min_distance"] = mat
+        self._loading = True
+        try:
+            for i in range(self._n):
+                for j in range(self._n):
+                    item = self._table.item(i, j)
+                    if item is not None:
+                        item.setText(f"{default:g}")
+        finally:
+            self._loading = False
+        self._update_text()
+        self._on_change()
+
+    def _update_text(self) -> None:
+        self.setText(f"{self._n}×{self._n}")
+        self.setFixedHeight(26)
+
+
+def _distance_params_form(item: dict, n_surfaces: int, on_change) -> QWidget:
+    """Form for a Distance constraint: a labelled matrix dropdown."""
+    w = QWidget()
+    form = QFormLayout(w)
+    form.setContentsMargins(0, 0, 0, 0)
+    params = item.setdefault("params", {})
+    dd = _DistanceMatrixDropDown(params, n_surfaces, on_change)
+    form.addRow(T("min_distance [[i][j]]", "min_distance [[i][j]]"), dd)
+    return w
+
+
 def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     """Read-only summary of the scheme-default objective functions."""
     w = QWidget()
@@ -279,10 +423,9 @@ def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     return w
 
 
-def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change) -> QWidget:
+def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change,
+               n_surfaces: int = 0) -> QWidget:
     """A compact list manager for one category of the section."""
-    from PySide6.QtWidgets import QGridLayout
-
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
@@ -308,9 +451,14 @@ def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change) -> 
         top.addWidget(btn_del)
         col.addLayout(top)
         if spec and spec.get("params"):
-            pf = ParamForm(it.setdefault("params", {}), spec["params"])
-            pf.changed.connect(lambda _k, i=it: on_change(i))
-            col.addWidget(pf)
+            if itype == "Distance" and n_surfaces:
+                # Distance carries an N x N min_distance matrix; edit it in a
+                # dedicated popup grid instead of a raw text field.
+                col.addWidget(_distance_params_form(it, n_surfaces, on_change))
+            else:
+                pf = ParamForm(it.setdefault("params", {}), spec["params"])
+                pf.changed.connect(lambda _k, i=it: on_change(i))
+                col.addWidget(pf)
         lay.addWidget(grp)
 
     # add row

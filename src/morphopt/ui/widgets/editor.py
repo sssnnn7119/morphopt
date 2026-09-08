@@ -33,11 +33,11 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
     kind = node.kind
     scheme = problem.scheme if problem is not None else "shapeopt"
     if kind == "surface":
-        st = node.params.get("type", "bsp_cylinder")
+        st = node.get_field("type", "bsp_cylinder")
         spec = SURFACE_TYPES.get(st, {})
         return list(spec.get("params", [])), {}, {}
     if kind == "interface":
-        it = node.params.get("type", "Pressure")
+        it = node.get_field("type", "Pressure")
         spec = INTERFACE_TYPES.get(it, {})
         choices: dict[str, list[str]] = {}
         if problem is not None:
@@ -45,7 +45,7 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
             choices = dynamic_choices(problem, it, node)
         return list(spec.get("params", [])), {}, choices
     if kind == "material":
-        mt = node.params.get("type", "")
+        mt = node.get_field("type", "")
         spec = MATERIAL_TYPES.get(mt, {})
         code_slots = {}
         if mt in ("SIMP_BSPFieldMaterials", "CodesignMaterials"):
@@ -77,7 +77,7 @@ def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
     surface_sets += ["surface_0_Bottom", "surface_0_Head"]
 
     rp_names = [nd.name for nd in problem.interfaces()
-                if nd.params.get("type") == "ReferencePoint"]
+                if nd.get_field("type") == "ReferencePoint"]
     choices: dict[str, list[str]] = {}
     spec = INTERFACE_TYPES.get(itype, {})
     for f in spec.get("params", []):
@@ -112,6 +112,7 @@ class PropertyEditor(QWidget):
         outer.addWidget(scroll, 1)
 
         self._node: Node | None = None
+        self._completion_problem = None
         self._controls: dict[str, QWidget] = {}
         self._code_controls: dict[str, CodeEditor] = {}
         self._dof_groups: dict[str, list[QCheckBox]] = {}
@@ -119,10 +120,11 @@ class PropertyEditor(QWidget):
     # ------------------------------------------------------------- content
     def edit_node(self, node: Node, fields=None, code_slots=None,
                   extra_choices=None, subtitle: str = "",
-                  title: str | None = None) -> None:
+                  title: str | None = None, completion_problem=None) -> None:
         # Re-selecting the SAME node object (e.g. auto-refresh after a field /
         # code-slot edit) must not tear down and rebuild the form: that would
         # drop focus and clear the undo history of the editor being typed in.
+        self._completion_problem = completion_problem
         if node is self._node and self._form.rowCount():
             # Keep the form; only refresh the header (a surface may have moved).
             self._title.setText(title if title is not None else (node.name or node.kind))
@@ -173,7 +175,7 @@ class PropertyEditor(QWidget):
     def _add_field(self, f: dict, choices: list[str] | None) -> None:
         key = f["key"]
         node = self._node
-        cur = node.params.get(key, f["default"])
+        cur = node.get_field(key, f["default"])
         typ = f["type"]
 
         label = QLabel(pick(f["label"], f.get("label_en")))
@@ -257,8 +259,12 @@ class PropertyEditor(QWidget):
 
     def _add_code_slot(self, key: str, caption: str) -> None:
         node = self._node
-        editor = CodeEditor(caption)
-        editor.set_body(str(node.params.get(key, "") or ""))
+        editor = CodeEditor(
+            caption,
+            completion_context=key,
+            completion_problem=self._completion_problem,
+        )
+        editor.set_body(str(node.get_field(key, "") or ""))
         editor.edit.textChanged.connect(lambda: self._sync_code(key, editor))
         self._code_controls[key] = editor
         self._form.addRow(editor)
@@ -272,13 +278,13 @@ class PropertyEditor(QWidget):
     def _set(self, key: str, value) -> None:
         if self._node is None:
             return
-        self._node.params[key] = value
+        self._node.set_field(key, value)
         self.changed.emit(self._node)
 
     def _sync_code(self, key: str, editor: CodeEditor) -> None:
         if self._node is None:
             return
-        self._node.params[key] = editor.body()
+        self._node.set_field(key, editor.body())
         self.changed.emit(self._node)
 
     def _browse(self, edit: QLineEdit) -> None:
