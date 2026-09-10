@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..model.schemas import fld, clone_defaults
-from .values import parse_vec_text, parse_mat, DOF_LABELS
+from .values import (combo_value, display_choice, parse_vec_text, parse_mat,
+                     DOF_LABELS)
 from ..i18n import T, pick
 
 
@@ -73,9 +74,14 @@ class ParamForm(QWidget):
             w.setEditable(True)
             items = list(f.get("choices") or []) + list(self.extra_choices.get(key) or [])
             for it in items:
-                w.addItem(str(it))
-            w.setCurrentText(str(cur) if cur is not None else "")
-            w.editTextChanged.connect(lambda t, k=key: self._set(k, str(t)))
+                w.addItem(display_choice(key, it), it)
+            index = w.findData(cur)
+            if index >= 0:
+                w.setCurrentIndex(index)
+            else:
+                w.setEditText(str(cur) if cur is not None else "")
+            w.currentTextChanged.connect(
+                lambda _text, k=key, combo=w: self._set(k, combo_value(combo)))
             self._form.addRow(label, w)
             return
         if typ == "file":

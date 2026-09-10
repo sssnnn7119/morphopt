@@ -17,6 +17,8 @@ from matplotlib.figure import Figure
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 
+from ..i18n import T
+
 
 class PlotViewport(QWidget):
     """A PyVista viewport with a resettable scene."""
@@ -50,18 +52,25 @@ class MetricsPage(QWidget):
         self.figure = Figure(facecolor="#121212")
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas, 2)
+        self._last_history = None
+        self._last_iteration = 0
 
     def update_from_history(self, history, iteration: int) -> None:
         """Render all available history records up to ``iteration``."""
+        self._last_history = history
+        self._last_iteration = iteration
         objectives = list(history.history_objective)
         metrics = history.history_metrics
         deformation = history.history_deformation
         metric_count = self._metric_count(metrics)
         deformation_labels, flat_deformation = self._deformation_columns(deformation)
         headers = (
-            ["Iteration", "Objective"]
-            + [f"Metric {index}" for index in range(metric_count)]
-            + ["Init", "FEA", "Sens", "Update", "Elements", "Nodes"]
+            [T("迭代", "Iteration"), T("目标值", "Objective")]
+            + [T(f"指标 {index}", f"Metric {index}")
+               for index in range(metric_count)]
+            + [T("初始化", "Init"), T("有限元", "FEA"),
+               T("灵敏度", "Sens"), T("更新", "Update"),
+               T("单元数", "Elements"), T("节点数", "Nodes")]
             + deformation_labels
         )
         self.table.setColumnCount(len(headers))
@@ -93,11 +102,12 @@ class MetricsPage(QWidget):
         if deformation is None or deformation.size == 0:
             return [], None
         if deformation.ndim == 2:
-            return ([f"U0-{index}" for index in range(deformation.shape[1])],
+            return ([T(f"位移 U0-{index}", f"U0-{index}")
+                     for index in range(deformation.shape[1])],
                     deformation)
         if deformation.ndim == 3:
             tasks, dimensions = deformation.shape[1:]
-            labels = [f"U{task}-{dimension}"
+            labels = [T(f"位移 U{task}-{dimension}", f"U{task}-{dimension}")
                       for task in range(tasks)
                       for dimension in range(dimensions)]
             return labels, deformation.reshape(deformation.shape[0], -1)
@@ -130,17 +140,30 @@ class MetricsPage(QWidget):
 
     def _draw_objectives(self, objectives: list[float]) -> None:
         plt.style.use("dark_background")
+        # Prefer an installed CJK font so translated chart labels do not turn
+        # into tofu boxes on Linux; Matplotlib silently falls back elsewhere.
+        plt.rcParams["font.sans-serif"] = [
+            "Noto Sans CJK SC", "Noto Sans CJK TC", "DejaVu Sans", "sans-serif",
+        ]
+        plt.rcParams["axes.unicode_minus"] = False
         self.figure.clear()
         axes = self.figure.add_subplot(111)
         axes.plot(range(1, len(objectives) + 1), objectives, marker="o", color="cyan")
-        axes.set_xlabel("Iteration")
-        axes.set_ylabel("Objective")
-        axes.set_title("Objective vs Iteration")
+        axes.set_xlabel(T("迭代", "Iteration"))
+        axes.set_ylabel(T("目标值", "Objective"))
+        axes.set_title(T("目标值随迭代变化", "Objective vs Iteration"))
         axes.grid(True, color="white", linestyle="--", linewidth=0.5)
         self.canvas.draw()
 
+    def apply_language(self) -> None:
+        """Refresh translated table headers and chart labels."""
+        if self._last_history is not None:
+            self.update_from_history(self._last_history, self._last_iteration)
+
     def clear(self) -> None:
         """Drop all history data and reset the chart."""
+        self._last_history = None
+        self._last_iteration = 0
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
         self.figure.clear()

@@ -2,9 +2,11 @@
 
 Left-hand navigation + structure editing.  Context menus:
 
-* ``geometry`` (shape/codesign): add a surface (outer/inner), surfaces can be
+* ``geometry`` (shape): add a surface (outer/inner), surfaces can be
   deleted / reordered.
 * ``loads``: add / delete load-interface entries.
+* ``updater``: choose the global objective, geometry/material optimizer, or
+  one of the optimizer's objective/equality/penalty sections.
 
 Any structural change emits :attr:`treeChanged` so the workbench can refresh
 the viewer and the read-only generated code.
@@ -27,32 +29,88 @@ from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES
 from ..i18n import T, pick
 
 #: containers that hold children we show in the tree
-CONTAINER_ORDER = ["geometry", "loads", "steps", "material", "objective", "solver", "updater"]
+CONTAINER_ORDER = ["geometry", "loads_group", "material", "solver", "updater"]
 
-#: top-level container row titles: 中文 (带英文括号) / 纯英文 (English mode).
+#: Localized tree labels.  The parenthesized suffix is a generated-code
+#: location, not a translation.
 CONTAINER_TITLES_ZH = {
-    "geometry": "几何 (Geometry)",
-    "loads": "载荷 (Loads)",
-    "steps": "载荷工况 (Load steps)",
-    "material": "材料 (Materials)",
-    "objective": "目标函数 (Objective)",
-    "solver": "求解器 (Solver)",
-    "updater": "更新器 (Updater)",
+    "geometry": "几何（初始构型）",
+    "loads_group": "载荷",
+    "loads": "载荷定义",
+    "steps": "载荷工况",
+    "material": "材料",
+    "objective": "优化目标",
+    "solver": "求解器",
+    "updater": "优化问题定义",
 }
 CONTAINER_TITLES_EN = {
-    "geometry": "Geometry",
-    "loads": "Loads",
-    "steps": "Load steps",
+    "geometry": "Geometry — Initial configuration",
+    "loads_group": "Loads",
+    "loads": "Load definition",
+    "steps": "Load cases",
     "material": "Materials",
-    "objective": "Objective function",
+    "objective": "Optimization objective",
+    "solver": "Solver",
+    "updater": "Optimization definition",
+}
+
+CODE_REFERENCES = {
+    "geometry": "GeometryParams",
+    "loads_group": "FEAParams",
+    "loads": "define_interface",
+    "steps": "define_steps",
+    "material": "MaterialParams",
+    "objective": "ObjectiveFunction",
     "solver": "Solver",
     "updater": "Updater",
 }
 
 
+class LoadsTreeNode(Node):
+    """Transient parent for load definitions and load-step cases."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="loads_group", name=T("载荷", "Loads"))
+
+
+class UpdaterTreeNode(Node):
+    """Transient tree entry for an updater section or one of its groups.
+
+    Updater configuration remains owned by :class:`UpdaterNode`; these nodes
+    are navigation handles only and are intentionally not inserted into the
+    persisted problem tree.
+    """
+
+    def __init__(self, updater: Node, group: str) -> None:
+        label = {
+            "geometry": T("几何优化器", "Geometry optimizer"),
+            "materials": T("材料优化器", "Material optimizer"),
+            "geometry_objectives": T("子优化目标函数", "Sub-optimizer objectives"),
+            "geometry_equality": T("几何等式约束", "Geometry equality constraints"),
+            "geometry_penalty": T("几何罚函数约束", "Geometry penalty constraints"),
+            "materials_objectives": T("子优化目标函数", "Sub-optimizer objectives"),
+            "materials_penalty": T("材料罚函数约束", "Material penalty constraints"),
+        }.get(group, group)
+        super().__init__(kind=f"updater_{group}", name=label)
+        self.updater_parent = updater
+        self.group = group
+        self.code_reference = (
+            "UpdaterGeometries"
+            if group.startswith("geometry") else
+            "UpdaterMaterials"
+        )
+
+    @property
+    def section_group(self) -> str:
+        """Canonical updater section owning this navigation entry."""
+        return "geometry" if self.group.startswith("geometry") else "materials"
+
+
 def container_title(kind: str) -> str:
-    """Localized title of one top-level container row in the model tree."""
-    return pick(CONTAINER_TITLES_ZH.get(kind, kind), CONTAINER_TITLES_EN.get(kind))
+    """Localized title with its generated-code location in parentheses."""
+    label = pick(CONTAINER_TITLES_ZH.get(kind, kind), CONTAINER_TITLES_EN.get(kind))
+    reference = CODE_REFERENCES.get(kind)
+    return f"{label} ({reference})" if reference else label
 
 
 def _full_label(spec: dict, key: str) -> str:
@@ -112,14 +170,24 @@ class ModelTree(QTreeWidget):
         self.rebuild()
 
     def rebuild(self, select: Node | None = None) -> None:
+        select_key = self._node_key(select) if select is not None else None
         self.clear()
         self._item_node.clear()
         self._node_item.clear()
         if self._problem is None:
             return
         # Top-level sections are supplied by the model aggregate; the widget
-        # only turns them into rows.
+        # only turns them into rows.  Loads and load cases share one visual
+        # parent even though they remain separate model sections and are
+        # serialized unchanged.
         for kind in CONTAINER_ORDER:
+            if kind == "loads_group":
+                group_node = LoadsTreeNode()
+                group_item = self._make_item(
+                    container_title("loads_group"), group_node, bold=True)
+                self.addTopLevelItem(group_item)
+                self._add_loads_children(group_item)
+                continue
             node = self._problem.section(kind)
             if node is None:
                 continue
@@ -129,14 +197,17 @@ class ModelTree(QTreeWidget):
                 for i, srf in enumerate(self._problem.surfaces()):
                     it = self._make_item(self._surface_title(srf, i), srf)
                     item.addChild(it)
-            elif kind == "loads":
-                # one row per load; its parameters are edited in the right pane
-                for iface in self._problem.interfaces():
-                    it = self._make_item(self._interface_title(iface), iface)
-                    item.addChild(it)
+            elif kind == "updater":
+                self._add_updater_children(item, node)
         self.expandAll()
         if select is not None:
             it = self._node_item.get(select)
+            if it is None and select_key is not None:
+                it = next(
+                    (candidate_item for candidate_item, candidate_node in self._node_item.items()
+                     if self._node_key(candidate_node) == select_key),
+                    None,
+                )
             if it is not None:
                 self.setCurrentItem(it)
 
@@ -152,6 +223,12 @@ class ModelTree(QTreeWidget):
                     item.setText(0, self._surface_title(node, idx))
             elif node.kind == "interface":
                 item.setText(0, self._interface_title(node))
+            elif node.kind in {"loads", "steps"}:
+                item.setText(0, container_title(node.kind))
+            elif node.kind == "objective":
+                item.setText(0, container_title("objective"))
+            elif node.kind.startswith("updater_"):
+                item.setText(0, self._updater_title(node))
 
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
@@ -175,6 +252,89 @@ class ModelTree(QTreeWidget):
         spec = INTERFACE_TYPES.get(it, {})
         phrase = _short_phrase(spec, it)
         return f"{iface.name}  [{phrase}]" if iface.name else phrase
+
+    @staticmethod
+    def _updater_title(node: Node) -> str:
+        """Return the localized title for a transient updater tree entry."""
+        if node.kind.startswith("updater_"):
+            labels = {
+                "geometry": ("几何优化器", "Geometry optimizer"),
+                "materials": ("材料优化器", "Material optimizer"),
+                "geometry_objectives": ("子优化目标函数", "Sub-optimizer objectives"),
+                "geometry_equality": ("几何等式约束", "Geometry equality constraints"),
+                "geometry_penalty": ("几何罚函数约束", "Geometry penalty constraints"),
+                "materials_objectives": ("子优化目标函数", "Sub-optimizer objectives"),
+                "materials_penalty": ("材料罚函数约束", "Material penalty constraints"),
+            }
+            if node.group not in labels:
+                return container_title("updater")
+            label = T(
+                *labels[node.group],
+            )
+            return f"{label} ({node.code_reference})"
+        return container_title("updater")
+
+    @staticmethod
+    def _node_key(node: Node | None):
+        """Stable identity for transient updater entries across rebuilds."""
+        if node is None:
+            return None
+        if hasattr(node, "updater_parent"):
+            return (
+                "updater",
+                id(node.updater_parent),
+                getattr(node, "group", None),
+            )
+        return ("node", id(node))
+
+    def _add_updater_children(self, parent_item: QTreeWidgetItem,
+                              updater: Node) -> None:
+        """Render objective plus nested geometry/material updater groups."""
+        if self._problem is not None and self._problem.objective is not None:
+            objective = self._problem.objective
+            objective_item = self._make_item(
+                container_title("objective"), objective, bold=True)
+            parent_item.addChild(objective_item)
+
+        if updater.geometry_config() is not None:
+            geometry_node = UpdaterTreeNode(updater, "geometry")
+            geometry_item = self._make_item(
+                self._updater_title(geometry_node), geometry_node, bold=True)
+            parent_item.addChild(geometry_item)
+            for group in ("geometry_objectives", "geometry_equality", "geometry_penalty"):
+                child_node = UpdaterTreeNode(updater, group)
+                child_item = self._make_item(
+                    self._updater_title(child_node), child_node)
+                geometry_item.addChild(child_item)
+
+        if updater.materials_config() is not None:
+            materials_node = UpdaterTreeNode(updater, "materials")
+            materials_item = self._make_item(
+                self._updater_title(materials_node), materials_node, bold=True)
+            parent_item.addChild(materials_item)
+            for group in ("materials_objectives", "materials_penalty"):
+                child_node = UpdaterTreeNode(updater, group)
+                child_item = self._make_item(
+                    self._updater_title(child_node), child_node)
+                materials_item.addChild(child_item)
+
+    def _add_loads_children(self, parent_item: QTreeWidgetItem) -> None:
+        """Render load definitions and load cases under the shared parent."""
+        loads = self._problem.loads if self._problem is not None else None
+        if loads is not None:
+            loads_item = self._make_item(
+                container_title("loads"), loads, bold=True)
+            parent_item.addChild(loads_item)
+            for iface in self._problem.interfaces():
+                interface_item = self._make_item(
+                    self._interface_title(iface), iface)
+                loads_item.addChild(interface_item)
+
+        steps = self._problem.steps if self._problem is not None else None
+        if steps is not None:
+            steps_item = self._make_item(
+                container_title("steps"), steps, bold=True)
+            parent_item.addChild(steps_item)
 
     # -------------------------------------------------------------- events
     def _on_current(self, cur, _prev) -> None:

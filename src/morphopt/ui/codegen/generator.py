@@ -232,7 +232,53 @@ def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
 
 def _emit_apply_constraints(a, problem: ProblemDefinition, template) -> None:
     geo = problem.geometry or GeometryNode()
-    body = geo._apply_surface_constraints or template.default_apply_surface_constraints()
+    updater = problem.updater
+    geometry_config = updater.geometry_config() if updater is not None else None
+    body = None
+    if geometry_config is not None:
+        # Equality constraints are kept separate from penalty constraints in
+        # the model tree.  Their implementation is still emitted on
+        # GeometryParams because that is where the backend invokes
+        # ``apply_surface_constraints()`` after every variable update.
+        equality_items = geometry_config.get("equality_constraints")
+        found_equality = False
+        equality_bodies = []
+        for item in equality_items or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") not in {"MirrorSymmetry", "SurfaceEquality"}:
+                continue
+            found_equality = True
+            equality_bodies.append((item.get("params") or {}).get("code", ""))
+
+        # Definitions written before equality_constraints was introduced may
+        # still contain the item in the penalty list.  Read it once so old
+        # files keep generating the same source; the UI migrates it on edit.
+        if not found_equality:
+            for item in geometry_config.get("constraints", []) or []:
+                if (isinstance(item, dict)
+                        and item.get("type") in {"MirrorSymmetry", "SurfaceEquality"}):
+                    found_equality = True
+                    equality_bodies.append(
+                        (item.get("params") or {}).get("code", ""))
+
+        if found_equality:
+            # The backend exposes one hook, so several UI templates are
+            # composed in their tree order into that hook.
+            body = "\n\n".join(str(part).strip()
+                                  for part in equality_bodies if str(part).strip())
+
+        if not found_equality:
+            # Legacy definitions stored this body directly on GeometryNode.
+            # Do not inject a template default here: an explicitly empty
+            # equality list means the user removed the constraint.
+            body = geo._apply_surface_constraints
+            if not body and "equality_constraints" not in geometry_config:
+                # Very old updater configs had no equality list at all and
+                # relied on the scheme template's default hook.
+                body = template.default_apply_surface_constraints()
+    else:
+        body = geo._apply_surface_constraints or template.default_apply_surface_constraints()
     body = str(body).strip()
     if not body or body == "pass":
         return

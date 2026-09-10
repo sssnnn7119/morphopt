@@ -246,6 +246,7 @@ class ObserverPanel(QWidget):
         self.chk_follow.setText(T("自动跟踪最新", "Follow latest"))
         self.options.item(0).setText(T("优化指标", "Metrics"))
         self.options.item(1).setText(T("几何展示", "Geometry"))
+        self._metrics_page.apply_language()
         for row, case in enumerate(list(self._case_pages.keys())):
             if self.options.count() > row + 2:
                 self.options.item(row + 2).setText(f"{T('工况', 'Case')} {case}")

@@ -156,7 +156,8 @@ class SolverEditor(QWidget):
         self._table.setRowCount(n)
         self._table.setColumnCount(2)
         for s in range(n):
-            self._table.setItem(s, 0, QTableWidgetItem(f"step {s}"))
+            self._table.setItem(s, 0, QTableWidgetItem(
+                T(f"工况 {s}", f"Step {s}")))
             self._table.setItem(s, 1, QTableWidgetItem(str(assign.get(s, s))))
         self._table.blockSignals(False)
 

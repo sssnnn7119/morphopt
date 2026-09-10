@@ -70,7 +70,7 @@ dict 仅存在于“叶子参数”（字段值）和 updater 配置的内部结
 
 ## 2. 任务树节点体系（model/problem.py）
 
-一个优化问题是一棵固定的、有序的树，根为 `ProblemNode`，直接子节点为七个分区：
+模型层保存的是一棵固定的、有序的树，根为 `ProblemNode`，直接子节点为七个分区：
 
 ```
 problem (ProblemNode)
@@ -82,6 +82,39 @@ problem (ProblemNode)
 ├── solver    (SolverNode)
 └── updater   (UpdaterNode)      .geometry / .materials = 配置 dict
 ```
+
+这是持久化模型的结构，不等同于左侧 Qt 任务树的视觉分组。任务树为了便于
+理解和操作，会把 `loads` 与 `steps` 合并显示为：
+
+```
+载荷 (FEAParams)
+├── 载荷定义 (define_interface)  -> LoadsNode / InterfaceNode*
+└── 载荷工况 (define_steps)      -> StepsNode
+```
+
+同理，`ObjectiveNode` 在任务树中挂在 `优化问题定义 (Updater)` 下，和
+`几何优化器 (UpdaterGeometries)`、`材料优化器 (UpdaterMaterials)` 并列。
+唯一的等式约束、罚函数约束和子优化目标函数挂在对应的几何/材料优化器下面；优化器节点
+本身只编辑最大迭代次数与曲面更新开关，子节点分别显示自己的内容。实际数据仍由
+`ProblemDefinition.objective` 和 `ProblemDefinition.updater` 持有。
+
+对应的视觉结构为：
+
+```
+优化问题定义 (Updater)
+├── 优化目标 (ObjectiveFunction)
+├── 几何优化器 (UpdaterGeometries)
+│   ├── 子优化目标函数 (UpdaterGeometries)
+│   ├── 几何等式约束（单个代码框）(UpdaterGeometries)
+│   └── 几何罚函数约束 (UpdaterGeometries)
+└── 材料优化器 (UpdaterMaterials)       # 仅 codesign 等启用材料更新的方案
+    ├── 子优化目标函数 (UpdaterMaterials)
+    └── 材料罚函数约束 (UpdaterMaterials)
+```
+
+任务树节点标题中的括号只保留生成代码的最后一级类名或方法名，例如
+`GeometryParams`、`FEAParams`、`UpdaterGeometries`；括号不是英文翻译。临时的
+视觉分组节点不得写回 `ProblemNode` 或 `.morph` 文件。
 
 | 类型化类          | kind 常量        | 关键访问器 / 工厂                                        |
 |-------------------|------------------|----------------------------------------------------------|
@@ -149,7 +182,7 @@ problem (ProblemNode)
       MATERIAL_TYPE = "SomeMaterial"
       geometry_title = "Geometry (...)"          # 树里几何分区的显示标题
       BASES = {...}                              # 生成代码用的后端类名映射
-      def default_apply_surface_constraints(self) -> str: ...
+      def default_apply_surface_constraints(self) -> str: ...  # MirrorSymmetry default
       def default_objective_slot(self) -> str: ...
       def default_metrics_slot(self) -> str: ...
       def default_map_bsp_designfield(self) -> str: ...
@@ -205,6 +238,10 @@ problem (ProblemNode)
   point 使用 `assembly.get_reference_point(name)`，其 RGC 段为 6 分量（平动 0..2、转角
   3..5）。广义残量/力则用 `_RGC_list_indexStart` 切出对应段；Instance 段可 `reshape(-1, 3)`，
   Reference point 段保留为 `[Fx, Fy, Fz, Mx, My, Mz]`，不要把两种量混用。
+- 6×6 刚度/Jacobian 片段必须让用户选择参考点，再用
+  `assembly._GC_list_indexStart[reference_point._RGC_index]` 和下一个边界定位该参考点的
+  广义自由度行；禁止用 `[-6:, :]` 假设参考点恰好位于全局自由度末尾。集中力和集中力矩
+  应施加在同一个参考点，并由用户手动勾选 `jacobian_needed`；插入前由对话框强制校验三者一致。
 - 高斯点字段从 `instance.elems[element_name]` 取得：
   `get_potential_energy_density(U=node_displacement)` 返回 `[num_gaussian, num_elements]`，
   `get_deformation_gradient(U=node_displacement)` 返回
@@ -229,11 +266,16 @@ problem (ProblemNode)
 
 ### 3.3 updater 配置工厂（schemas.py，单一事实来源）
 
-目标/约束项全部来自目录 `UPDATER_OBJECTIVES` / `UPDATER_CONSTRAINTS`。方案里声明“项”
+目标/罚函数约束项全部来自目录 `UPDATER_OBJECTIVES` / `UPDATER_CONSTRAINTS`；
+等式约束项来自 `EQUALITY_CONSTRAINTS`。方案里声明“项”
 时用目录工厂，只写**偏离默认的覆写**，默认值由目录给出（不要重新硬编码一遍默认值）：
 
 ```python
 objective_functions=(S.updater_objective("ShapeDerivative"),),
+equality_constraints=(  # 每个几何优化器最多一个
+    S.equality_constraint("MirrorSymmetry",
+                          code=self.default_apply_surface_constraints()),
+),
 constraints=(
     S.updater_constraint("Fairness"),
     S.updater_constraint("Distance", min_distance=[[2.5, 2.5], [2.5, 2.5]]),
@@ -241,11 +283,16 @@ constraints=(
 ),
 ```
 
-分区配置再用 `S.geometry_updater_config(...)` / `S.materials_updater_config(...)` 封装
-成 `{"max_step_iter","if_update","objective_functions","constraints","code"}`。
+分区配置再用 `S.geometry_updater_config(...)` / `S.materials_updater_config(...)` 封装。
+几何配置包含并列的 `equality_constraints` 与 `constraints`：前者最多保存一个等式/投影约束，
+后者是可包含多个小项的罚函数约束；材料配置目前只有 `constraints` 罚函数约束。`MirrorSymmetry`
+是内置的镜面对称模板，`SurfaceEquality` 保留为自定义/旧文件迁移入口。等式项代码存放在
+`params["code"]`，生成器把它输出为 `GeometryParams.apply_surface_constraints()`，
+不会作为 `add_constraints()` 的罚函数重复注册。
 
-新增一种目标/约束：**只改 `schemas.py` 的目录项**（label/gen/params），编辑器与代码
-生成自动跟随，不要在模板/生成器里再复制一份。
+新增一种目标、罚函数约束或等式约束：**只改 `schemas.py` 的对应目录项**
+（`UPDATER_OBJECTIVES`、`UPDATER_CONSTRAINTS` 或 `EQUALITY_CONSTRAINTS` 的
+label/gen/params），编辑器与代码生成自动跟随，不要在模板/生成器里再复制一份。
 
 ---
 
@@ -294,6 +341,11 @@ constraints=(
   补全目录由 `widgets/code_completion.py` 集中维护；新增代码槽时传入其 model
   storage key 和当前 `ProblemDefinition`，不要在单个 editor 中硬编码候选词。
 - i18n：界面文案一律 `T(zh, en)` / `pick(zh, en)`；节点名/载荷名等数据不翻译。
+  字段编辑器的参数名称和提示统一由 `model/schemas.py::fld()` 生成：新字段必须
+  在 `_FIELD_LABELS_ZH` / `_FIELD_DOCS_ZH` 中补齐中文，英文保留在 `label_en` /
+  `doc_en`；目录项（表面、载荷、材料、updater 目标/约束）必须同时声明 `label`
+  和 `label_en`。表格标题、弹窗、按钮、下拉选项等运行时文案不能直接写单语
+  英文；切换语言时由各页面的 `apply_language()` 原地刷新，不能丢失当前编辑状态。
 
 ---
 

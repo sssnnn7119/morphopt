@@ -7,8 +7,10 @@ from typing import Any, Iterable, Iterator, Optional
 # ---------------------------------------------------------------------------
 # Node kinds of the problem-definition task tree (the explicit taxonomy).
 #
-# A problem is a fixed, ordered set of top-level sections rooted at a
-# ``ProblemNode``::
+# A problem is a fixed, ordered set of persisted sections rooted at a
+# ``ProblemNode``.  The visual model tree may group related sections (the UI
+# shows ``loads`` and ``steps`` under one ``loads_group`` row), but that
+# presentation node is transient and is not serialized::
 #
 #     problem
 #     ├── geometry   -- children: SurfaceNode*  (index 0 = outer, 1.. = cavities)
@@ -231,13 +233,15 @@ class GeometryNode(Node):
         self.thickness: Optional[float] = data.get("thickness")
         self.num_layers: Optional[int] = data.get("num_layers")
         self.mesh_file: str = str(data.get("mesh_file") or "")
-        # code slot: symmetry constraint inside GeometryParams
+        # Legacy storage for symmetry/equality code.  New definitions store
+        # this body in the updater's equality-constraint item (MirrorSymmetry
+        # by default).
         self._apply_surface_constraints: str = str(
             data.get("_apply_surface_constraints") or "")
 
     @property
     def apply_surface_constraints(self) -> str:
-        """Geometry BC code slot (stored under ``_apply_surface_constraints``)."""
+        """Legacy geometry BC slot kept for loading old definitions."""
         return self._apply_surface_constraints
 
     @apply_surface_constraints.setter
@@ -568,8 +572,10 @@ class UpdaterNode(Node):
     """Optimisation sub-updater configuration (geometry / materials section).
 
     Each section is a config dict (or ``None`` when that sub-optimiser is not
-    active); it is stored as the explicit ``geometry`` / ``materials``
-    attributes declared in ``__init__``.
+    active); geometry configs keep one ``equality_constraints`` item and a
+    separate ``constraints`` list, while materials currently keep penalty
+    ``constraints``.  It is stored as the explicit ``geometry`` /
+    ``materials`` attributes declared in ``__init__``.
     """
 
     kind = KIND_UPDATER

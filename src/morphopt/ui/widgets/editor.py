@@ -3,9 +3,11 @@
 ``fields_for_node`` decides which parameter fields / code slots belong to each
 tree-node kind (surface / interface / material / geometry / solver / ...);
 ``PropertyEditor`` renders those fields into editable widgets and keeps them in
-sync with the node's ``params`` dict.  Hand-written python code slots
-(``_apply_surface_constraints`` / ``_map_bsp_designfield``) are edited with the
-:class:`~morphopt.ui.widgets.codeeditor.CodeEditor` widget.
+sync with the node's typed fields.  Hand-written Python code slots such as
+``_map_bsp_designfield`` are edited with the
+:class:`~morphopt.ui.widgets.codeeditor.CodeEditor` widget; the geometry
+``apply_surface_constraints`` body belongs to an equality constraint item
+(normally the ``MirrorSymmetry`` template) in the updater editor.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from ..model.schemas import (
     GEOMETRY_SCHEMES,
 )
 from .codeeditor import CodeEditor
-from .values import parse_vec_text, DOF_LABELS
+from .values import combo_value, display_choice, parse_vec_text, DOF_LABELS
 from ..i18n import T, pick
 
 
@@ -52,11 +54,7 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
             code_slots["_map_bsp_designfield"] = "map_bsp_designfield(nodes)"
         return list(spec.get("params", [])), code_slots, {}
     if kind == "geometry":
-        fields = list(GEOMETRY_SCHEMES.get(scheme, []))
-        code_slots = {}
-        if scheme in ("shapeopt", "codesign"):
-            code_slots["_apply_surface_constraints"] = "apply_surface_constraints()"
-        return fields, code_slots, {}
+        return list(GEOMETRY_SCHEMES.get(scheme, [])), {}, {}
     if kind == "solver":
         return list(SOLVER_FIELDS), {}, {}
     if kind == "objective":
@@ -198,9 +196,14 @@ class PropertyEditor(QWidget):
             w.setEditable(True)
             items = list(f.get("choices") or []) + list(choices or [])
             for it in items:
-                w.addItem(str(it))
-            w.setCurrentText(str(cur) if cur is not None else "")
-            w.editTextChanged.connect(lambda t, k=key: self._set(k, str(t)))
+                w.addItem(display_choice(key, it), it)
+            index = w.findData(cur)
+            if index >= 0:
+                w.setCurrentIndex(index)
+            else:
+                w.setEditText(str(cur) if cur is not None else "")
+            w.currentTextChanged.connect(
+                lambda _text, k=key, combo=w: self._set(k, combo_value(combo)))
         elif typ == "file":
             w = QWidget()
             lay = QHBoxLayout(w)

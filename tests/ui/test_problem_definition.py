@@ -37,6 +37,39 @@ class ProblemDefinitionMutationTests(unittest.TestCase):
                 self.assertEqual(restored.to_dict(), original.to_dict())
                 compile(generate_source(restored), f"<{scheme}-generated>", "exec")
 
+    def test_surface_equality_is_a_geometry_constraint_item(self):
+        for scheme in ("shapeopt", "codesign"):
+            with self.subTest(scheme=scheme):
+                problem = get_template(scheme).create_problem("equality")
+                config = problem.updater.geometry_config()
+                equality = next(
+                    item for item in config["equality_constraints"]
+                    if item["type"] == "MirrorSymmetry"
+                )
+                self.assertTrue(equality["params"]["code"].strip())
+                self.assertEqual(config["constraints"][0]["type"], "Fairness")
+                source = generate_source(problem)
+                self.assertIn("def apply_surface_constraints(self):", source)
+                # The hard projection is emitted on GeometryParams, not
+                # incorrectly registered as a penalty constraint.
+                self.assertNotIn("SurfaceEquality", source)
+                self.assertNotIn("MirrorSymmetry", source)
+                compile(source, f"<{scheme}-equality>", "exec")
+
+    def test_multiple_equality_templates_are_composed_in_order(self):
+        problem = get_template("shapeopt").create_problem("equality-composition")
+        config = problem.updater.geometry_config()
+        config["equality_constraints"].append({
+            "type": "SurfaceEquality",
+            "params": {"code": "self.extra_constraint_marker = True"},
+        })
+        source = generate_source(problem)
+        self.assertLess(
+            source.index("cp0 ="),
+            source.index("self.extra_constraint_marker = True"),
+        )
+        compile(source, "<equality-composition>", "exec")
+
     def test_surface_mutations_keep_updater_state_in_surface_order(self):
         problem = _codesign_problem()
         original_outer, original_inner = problem.surfaces()

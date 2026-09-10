@@ -10,11 +10,34 @@ from __future__ import annotations
 import ast
 import re
 
+from ..i18n import T
+
 _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
 #: labels for degree-of-freedom check boxes (dof index -> short name)
 DOF_LABELS = {0: "X", 1: "Y", 2: "Z", 3: "Rx", 4: "Ry", 5: "Rz"}
 DOF_COUNT = 6
+
+_CHOICE_LABELS = {
+    ("obj_type", "auto"): ("自动", "Auto"),
+    ("obj_type", "node"): ("节点", "Node"),
+    ("obj_type", "element"): ("单元", "Element"),
+    ("obj_type", "part"): ("部件", "Part"),
+}
+
+
+def display_choice(key: str, value) -> str:
+    """Return a localized label while retaining the backend choice value."""
+    labels = _CHOICE_LABELS.get((key, str(value)))
+    return T(*labels) if labels else str(value)
+
+
+def combo_value(combo) -> object:
+    """Read a combo's backend value, or custom text when it was edited."""
+    index = combo.currentIndex()
+    if index >= 0 and combo.currentText() == combo.itemText(index):
+        return combo.itemData(index)
+    return combo.currentText()
 
 
 def _normalize(v, ints: bool = False):

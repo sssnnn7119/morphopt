@@ -26,7 +26,9 @@ from .observe_panel import ObserverControls
 from . import launcher
 
 #: problem types offered by the "更换优化问题" dialog (definition order)
-PROBLEM_TYPES = ["shapeopt", "simp", "codesign"]
+# Co-design is kept in the backend for opening legacy definitions, but is not
+# offered as a new UI problem type until its workflow is implemented.
+PROBLEM_TYPES = ["shapeopt", "simp"]
 
 
 class MainWindow(QMainWindow):

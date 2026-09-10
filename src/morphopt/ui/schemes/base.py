@@ -82,8 +82,6 @@ class SchemeTemplate:
         defaults = clone_defaults(list(GEOMETRY_SCHEMES.get(self.scheme, [])))
         defaults.update(overrides)
         geo = GeometryNode(name=self.geometry_title, params=defaults)
-        geo.set_field("_apply_surface_constraints",
-                      self.default_apply_surface_constraints())
         return geo
 
     def make_loads(self) -> LoadsNode:

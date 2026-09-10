@@ -113,6 +113,15 @@ class ObjectiveEditor(QWidget):
         self.jacobian_loads = JacobianLoadSelector()
         self.jacobian_loads.selectionChanged.connect(self._save_jacobian)
         form.addRow(T("需要计算 Jacobian 的载荷", "Jacobian needed"), self.jacobian_loads)
+        self.jacobian_hint = QLabel(T(
+            "刚度模板不会自动选择载荷。请先在同一个参考点上添加集中力和集中力矩，"
+            "并手动勾选需要计算 Jacobian 的载荷。",
+            "Stiffness templates do not select loads automatically. Add a "
+            "concentrated force and moment at the same reference point, then "
+            "manually check the loads that need Jacobians."))
+        self.jacobian_hint.setWordWrap(True)
+        self.jacobian_hint.setStyleSheet("color:#9aa4b2;")
+        form.addRow("", self.jacobian_hint)
 
         lay.addLayout(form)
 
@@ -218,6 +227,7 @@ class ObjectiveEditor(QWidget):
         dialog = TemplateInsertDialog(snippet, self._problem, self)
         if not dialog.exec():
             return
-        source = snippet.render(dialog.parameter_values())
+        values = dialog.parameter_values()
+        source = snippet.render(values)
         editor = self._active_editor or self.obj_editor
         editor.insert_snippet(source, at_cursor=self._active_editor is not None)

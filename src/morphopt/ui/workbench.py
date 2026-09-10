@@ -73,8 +73,8 @@ class Workbench(QWidget):
         self._act_buttons: dict[str, QPushButton] = {}
         actions = [
             ("change", T("更换优化问题", "Change Problem"),
-             T("更换优化问题类型（形状 / 拓扑 / 协同）",
-               "Change the optimization problem type (shape / topology / co-design)"),
+             T("更换优化问题类型（形状 / 拓扑）",
+               "Change the optimization problem type (shape / topology)"),
              self.changeProblemRequested.emit),
             ("open", T("打开 .morph", "Open .morph"),
              T("打开已有的 .morph 定义", "Open an existing .morph definition"),
@@ -99,7 +99,7 @@ class Workbench(QWidget):
 
         # header: optimization name + output path (editable) + scheme caption
         head = QHBoxLayout()
-        self._lbl_name = QLabel(T("优化名称", "Label"))
+        self._lbl_name = QLabel(T("优化名称", "Optimization name"))
         head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
         self._name_edit.setFixedWidth(180)
@@ -214,10 +214,17 @@ class Workbench(QWidget):
         self.step_matrix = StepMatrix()
         self.updater_editor = UpdaterEditor()
         self.objective_editor = ObjectiveEditor()
+        self.optimizer_overview = self._make_optimizer_overview()
         for w in (self.prop_editor, self.solver_editor, self.step_matrix,
-                  self.updater_editor, self.objective_editor):
+                  self.updater_editor, self.objective_editor,
+                  self.optimizer_overview):
             stack.addWidget(w)
-            w.changed.connect(self._schedule_rebuild)
+            changed = getattr(w, "changed", None)
+            if changed is not None:
+                changed.connect(self._schedule_rebuild)
+            code_changed = getattr(w, "codeChanged", None)
+            if code_changed is not None:
+                code_changed.connect(self.refresh_code)
 
         # loads hint: loads are added/edited in the left tree per type
         self._loads_hint = self._make_loads_hint()
@@ -228,14 +235,34 @@ class Workbench(QWidget):
         self.prop_editor.changed.connect(self._maybe_cascade_rename)
 
     @staticmethod
+    def _make_optimizer_overview() -> QLabel:
+        """Concise landing page for the model-tree optimization definition."""
+        overview = QLabel(T(
+            "优化问题定义\n\n"
+            "这里集中管理优化目标、几何优化器和材料优化器。\n"
+            "各优化器下分别管理子优化目标、等式约束和罚函数约束。\n"
+            "请在左侧展开并选择具体项目后编辑详细参数。",
+            "Optimization definition\n\n"
+            "This section contains the optimization objective, geometry "
+            "optimizer, and material optimizer.\n"
+            "Each optimizer contains its sub-objectives, equality constraints, "
+            "and penalty constraints.\n"
+            "Expand the section on the left and select a concrete item to edit "
+            "its details."))
+        overview.setWordWrap(True)
+        overview.setAlignment(Qt.AlignmentFlag.AlignTop)
+        overview.setContentsMargins(16, 16, 16, 16)
+        return overview
+
+    @staticmethod
     def _make_loads_hint() -> QLabel:
         hint = QLabel(T(
-            "Loads：左树\u201cLoads\u201d下列出每个载荷（可展开查看参数）。\n"
-            "• 右键 Loads → 添加载荷类型\n"
+            "载荷：左树的“载荷”节点下分为“载荷定义”和“载荷工况”。\n"
+            "• 右键“载荷定义” → 添加载荷类型\n"
             "• 右键单个载荷：删除 / 上移 / 下移\n"
             "• 点选单个载荷，按该类型专属字段编辑参数与名称",
-            "Loads: each load is listed under the Loads node (params editable).\n"
-            "• Right-click Loads → add a load type\n"
+            "Loads are grouped into Load definition and Load cases.\n"
+            "• Right-click Load definition → add a load type\n"
             "• Right-click a load: delete / move up / move down\n"
             "• Select a load to edit its type-specific fields and its name"))
         hint.setWordWrap(True)
@@ -279,8 +306,8 @@ class Workbench(QWidget):
         """
         act_text = {
             "change": (T("更换优化问题", "Change Problem"),
-                       T("更换优化问题类型（形状 / 拓扑 / 协同）",
-                         "Change the optimization problem type (shape / topology / co-design)")),
+                       T("更换优化问题类型（形状 / 拓扑）",
+                         "Change the optimization problem type (shape / topology)")),
             "open": (T("打开 .morph", "Open .morph"),
                      T("打开已有的 .morph 定义", "Open an existing .morph definition")),
             "export": (T("导出 .morph", "Export .morph"),
@@ -295,7 +322,7 @@ class Workbench(QWidget):
             if b is not None:
                 b.setText(text)
                 b.setToolTip(tip)
-        self._lbl_name.setText(T("优化名称", "Label"))
+        self._lbl_name.setText(T("优化名称", "Optimization name"))
         self._lbl_path.setText(T("输出路径", "Output folder"))
         self._lbl_device.setText(T("设备", "Device"))
         self._name_edit.setToolTip(T(
@@ -334,7 +361,7 @@ class Workbench(QWidget):
             self.problem.label = v
             self._update_caption()
             self.refresh_code()
-            self.notify.emit(T(f"优化名称：{v}", f"Label: {v}"))
+            self.notify.emit(T(f"优化名称：{v}", f"Optimization name: {v}"))
         else:
             self._name_edit.setText(self.problem.label)
 
@@ -385,13 +412,18 @@ class Workbench(QWidget):
         if kind == "solver":
             self.solver_editor.edit_node(node, self.problem)
             self._stack.setCurrentWidget(self.solver_editor)
-        elif kind == "loads":
+        elif kind in {"loads_group", "loads"}:
             self._stack.setCurrentWidget(self._loads_hint)
         elif kind == "steps":
             self.step_matrix.edit_node(node, self.problem)
             self._stack.setCurrentWidget(self.step_matrix)
         elif kind == "updater":
-            self.updater_editor.edit_node(node, self.problem)
+            self._stack.setCurrentWidget(self.optimizer_overview)
+        elif kind.startswith("updater_"):
+            # These transient leaf nodes point at the canonical updater
+            # configuration and open the selected sub-optimizer in full.
+            self.updater_editor.edit_node(
+                node.updater_parent, self.problem, focus=node)
             self._stack.setCurrentWidget(self.updater_editor)
         elif kind == "objective":
             self.objective_editor.set_problem(self.problem)
@@ -442,9 +474,10 @@ class Workbench(QWidget):
                 "The preview updates automatically.")
         if node.kind == "geometry":
             return T(
-                "几何网格/壳层参数；下层表面列表可在左树右键增删排序。",
-                "Mesh / shell parameters; manage the surfaces below via "
-                "right-click in the tree.")
+                "这里定义优化的初始构型（几何模型与初始尺寸）；下层表面列表可在左树右键增删排序。",
+                "Define the optimization's initial configuration here (geometry "
+                "model and initial dimensions); manage surfaces below via the "
+                "tree.")
         return ""
 
     # ------------------------------------------------------ change refresh

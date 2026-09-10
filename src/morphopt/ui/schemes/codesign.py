@@ -114,6 +114,9 @@ class CodesignTemplate(SchemeTemplate):
                 max_step_iter=50,
                 if_update=[False, True],           # keep the outer surface frozen
                 objective_functions=(S.updater_objective("ShapeDerivative"),),
+                equality_constraints=(S.equality_constraint(
+                                          "MirrorSymmetry",
+                                          code=self.default_apply_surface_constraints()),),
                 constraints=(S.updater_constraint("Fairness"),
                              S.updater_constraint(
                                  "Distance",

@@ -24,6 +24,163 @@ from typing import Any, Optional
 # --------------------------------------------------------------------------
 
 
+_FIELD_LABELS_ZH = {
+    "r0": "半径 r0",
+    "length": "长度",
+    "seed_size": "网格种子尺寸",
+    "num_U_ratio": "U 方向控制网格比例",
+    "num_V_ratio": "V 方向控制网格比例",
+    "degree": "B 样条阶次",
+    "init_location": "初始位置",
+    "maxR": "最大半径变化",
+    "maxC": "最大控制点变化",
+    "MaxC": "最大控制点变化",
+    "maxFF": "最大形状因子变化",
+    "perturbation_L": "初始扰动波长",
+    "path_stl": "STL 文件",
+    "instance_name": "实体",
+    "instance_name1": "实体 1",
+    "instance_name2": "实体 2",
+    "surface_name": "表面",
+    "surface_name1": "表面 1",
+    "surface_name2": "表面 2",
+    "set_nodes_name": "节点集",
+    "rp_name": "参考点",
+    "rp_name1": "参考点 1",
+    "rp_name2": "参考点 2",
+    "rp_location": "参考点位置",
+    "element_name": "单元类型",
+    "elementname": "单元类型",
+    "shell_elementname": "壳层单元类型",
+    "obj_name": "对象",
+    "s": "自由度",
+    "obj_type": "对象类型",
+    "penalty_threshold_h": "罚函数阈值 h",
+    "mu": "剪切模量 μ",
+    "kappa": "体积模量 κ",
+    "density": "密度",
+    "mumax": "最大剪切模量",
+    "kappamax": "最大体积模量",
+    "simp_ratio_min": "最小密度比例",
+    "bounding_box": "设计域边界框",
+    "simp_field_resolution": "密度场分辨率",
+    "initial_ratio": "初始密度比例",
+    "voidpenalfactor": "空域惩罚因子",
+    "materialpenalty": "材料惩罚指数",
+    "shell_mu": "壳层剪切模量",
+    "shell_kappa": "壳层体积模量",
+    "shell_density": "壳层密度",
+    "fea_seed_size": "FEA 网格种子尺寸",
+    "mesh_order": "网格阶次",
+    "reinitialize_per_iter": "重新划分网格间隔",
+    "thickness": "壳层厚度",
+    "num_layers": "壳层层数",
+    "mesh_file": "网格文件 (.inp)",
+    "num_process": "进程数",
+    "gpus": "GPU 设备",
+    "task_index_list": "工况任务分组",
+    "normalize_gradient": "梯度归一化",
+    "scale": "缩放系数",
+    "min_distance": "表面间最小距离矩阵",
+    "radius": "半径",
+    "height": "高度",
+    "bottom": "底部位置",
+    "surf_idx": "表面索引",
+    "weight": "权重",
+    "margin": "边界余量",
+    "margin_ratio": "边界余量比例",
+    "p": "惩罚指数 p",
+    "penalty_scale": "惩罚缩放系数",
+    "volfrac_min": "最小体积分数",
+    "volfrac_max": "最大体积分数",
+    "penalty": "惩罚系数",
+    "xmin": "最小值",
+    "xmax": "最大值",
+    "threshold": "阈值",
+    "code": "等式约束代码",
+}
+
+_FIELD_DOCS_ZH = {
+    "r0": "初始构型的内/外半径。",
+    "length": "圆柱沿 Z 轴的长度。",
+    "seed_size": "该表面的网格种子尺寸。",
+    "num_U_ratio": "U 方向控制网格比例。",
+    "num_V_ratio": "V 方向控制网格比例。",
+    "degree": "B 样条阶次。",
+    "init_location": "表面的初始偏移位置。",
+    "maxR": "每次迭代允许的最大半径变化。",
+    "maxC": "每次迭代允许的最大控制点变化。",
+    "MaxC": "每次迭代允许的最大控制点变化。",
+    "maxFF": "每次迭代允许的最大形状因子变化。",
+    "perturbation_L": "初始缺陷波长；小于等于 0 表示不添加缺陷。",
+    "path_stl": "STL 曲面文件路径。",
+    "instance_name": "载荷作用的实体名称。",
+    "instance_name1": "第一个实体名称。",
+    "instance_name2": "第二个实体名称。",
+    "surface_name": "实体上的表面集名称。",
+    "surface_name1": "第一个实体上的表面集名称。",
+    "surface_name2": "第二个实体上的表面集名称。",
+    "set_nodes_name": "实体上的节点集名称。",
+    "rp_name": "由参考点接口创建的参考点名称。",
+    "rp_name1": "第一个参考点名称。",
+    "rp_name2": "第二个参考点名称。",
+    "rp_location": "参考点坐标。",
+    "element_name": "单元类型名称。",
+    "elementname": "单元类型名称。",
+    "shell_elementname": "壳层单元类型名称。",
+    "obj_name": "被约束对象的名称。",
+    "s": "自由度编号。",
+    "obj_type": "被约束对象的类型。",
+    "penalty_threshold_h": "罚函数阈值。",
+    "mu": "剪切模量。",
+    "kappa": "体积模量。",
+    "density": "质量密度。",
+    "mumax": "最大剪切模量。",
+    "kappamax": "最大体积模量。",
+    "simp_ratio_min": "密度场允许的最小比例。",
+    "bounding_box": "设计域边界框 [xmin, xmax, ymin, ymax, zmin, zmax]。",
+    "simp_field_resolution": "密度场分辨率。",
+    "initial_ratio": "密度场初始比例。",
+    "voidpenalfactor": "空域惩罚因子。",
+    "materialpenalty": "材料惩罚指数。",
+    "shell_mu": "壳层剪切模量。",
+    "shell_kappa": "壳层体积模量。",
+    "shell_density": "壳层质量密度。",
+    "fea_seed_size": "全局 Gmsh 网格种子尺寸。",
+    "mesh_order": "网格阶次。",
+    "reinitialize_per_iter": "每隔多少次迭代重新生成网格。",
+    "thickness": "内表面的偏置壳层厚度。",
+    "num_layers": "壳层中的 C3D6 楔形单元层数。",
+    "mesh_file": "由 FixedGeometryINP 读取的固定网格文件。",
+    "num_process": "FEA 求解进程数。",
+    "gpus": "GPU 编号列表；为空时使用 CPU。",
+    "task_index_list": "将载荷工况分配到进程的分组；为空时自动分配。",
+    "normalize_gradient": "是否对材料梯度进行归一化。",
+    "scale": "目标项的缩放系数。",
+    "min_distance": "表面两两之间的最小距离矩阵。",
+    "radius": "圆柱或半径约束的半径。",
+    "height": "圆柱包络高度。",
+    "bottom": "圆柱包络底部位置。",
+    "surf_idx": "参与目标或约束的表面索引。",
+    "weight": "目标项权重。",
+    "margin": "曲率约束边界余量。",
+    "margin_ratio": "曲率约束边界余量比例。",
+    "p": "惩罚指数。",
+    "penalty_scale": "惩罚项缩放系数。",
+    "volfrac_min": "允许的最小体积分数。",
+    "volfrac_max": "允许的最大体积分数。",
+    "penalty": "体积分数偏差的惩罚系数。",
+    "xmin": "允许的最小密度值。",
+    "xmax": "允许的最大密度值。",
+    "threshold": "密度阈值。",
+    "code": "在每次几何变量更新后执行的曲面等式约束代码。",
+}
+
+
+def _contains_chinese(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
 def fld(key: str, label: str, typ: str, default: Any = "",
         doc: str = "", choices: Optional[list] = None,
         size: Optional[int] = None, minimum: Optional[float] = None,
@@ -35,15 +192,24 @@ def fld(key: str, label: str, typ: str, default: Any = "",
     ``doc`` when they are localized (pick() selects them in English mode).
     ``ints=True`` marks index-like list fields (kept as int on parse).
     """
+    # Most schemas are keyed by backend names.  Keep those names as the
+    # English text, but provide a centralized Chinese label/tooltip whenever
+    # a field declaration did not already supply localized text.
+    label_zh = label if _contains_chinese(label) else _FIELD_LABELS_ZH.get(key, label)
+    label_en_value = label_en if label_en is not None else (
+        label if label_zh != label else None)
+    doc_zh = doc if _contains_chinese(doc) else _FIELD_DOCS_ZH.get(key, doc)
+    doc_en_value = doc_en if doc_en is not None else (
+        doc if doc_zh != doc else None)
     spec = {
-        "key": key, "label": label, "type": typ, "default": default,
-        "doc": doc, "choices": choices, "size": size,
+        "key": key, "label": label_zh, "type": typ, "default": default,
+        "doc": doc_zh, "choices": choices, "size": size,
         "min": minimum, "max": maximum,
     }
-    if label_en is not None:
-        spec["label_en"] = label_en
-    if doc_en is not None:
-        spec["doc_en"] = doc_en
+    if label_en_value is not None:
+        spec["label_en"] = label_en_value
+    if doc_en_value is not None:
+        spec["doc_en"] = doc_en_value
     if ints is not None:
         spec["ints"] = ints
     return spec
@@ -84,8 +250,8 @@ def v3(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> list[float]:
 #: name -> (display label, import factory string, field specs)
 SURFACE_TYPES: dict[str, dict] = {
     "bsp_cylinder": {
-        "label": "B样条圆柱面 (bsp_cylinder)",
-        "label_en": "B-spline cylinder (bsp_cylinder)",
+        "label": "初始构型：B样条圆柱面",
+        "label_en": "Initial configuration: B-spline cylinder",
         "factory": "BSP.initialize_cylinder",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 4.0, "Initial outer/inner radius.", minimum=0.0),
@@ -102,8 +268,8 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "cpgeo_cylinder": {
-        "label": "CPGEO 圆柱面 (cpgeo_cylinder)",
-        "label_en": "CPGEO cylinder (cpgeo_cylinder)",
+        "label": "初始构型参数化圆柱面（控制点模型）",
+        "label_en": "Initial parametric cylinder (control-point model)",
         "factory": "CPGEO.initialize_cylinder",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 4.0, "Initial radius.", minimum=0.0),
@@ -120,8 +286,8 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "cpgeo_sphere": {
-        "label": "CPGEO 球面 (cpgeo_sphere)",
-        "label_en": "CPGEO sphere (cpgeo_sphere)",
+        "label": "初始构型参数化球面（控制点模型）",
+        "label_en": "Initial parametric sphere (control-point model)",
         "factory": "CPGEO.initialize_Sphere",
         "params": fields_from_specs([
             fld("r0", "Radius r0", "float", 7.0, "Initial radius.", minimum=0.0),
@@ -131,8 +297,8 @@ SURFACE_TYPES: dict[str, dict] = {
         ]),
     },
     "fixed_stl": {
-        "label": "固定 STL 曲面 (fixed_stl)",
-        "label_en": "Fixed STL surface (fixed_stl)",
+        "label": "初始构型：固定 STL 曲面",
+        "label_en": "Initial configuration: fixed STL surface",
         "factory": None,  # FixedSurface.initialize_from_stl_file(path_stl)
         "params": fields_from_specs([
             fld("path_stl", "STL file", "file", "", "Path to an STL surface."),
@@ -364,11 +530,13 @@ SOLVER_FIELDS: list[dict] = fields_from_specs([
     fld("task_index_list", "task_index_list", "vecN", [], "Partition of load steps over processes (empty = auto)."),
 ])
 
-# code slots (python fields) rendered with the code editor
-CODE_SLOT_KEYS = ("apply_surface_constraints", "map_bsp_designfield", "objective_function", "get_metrics")
+# Code slots (Python fields) rendered with the code editor.  Surface equality
+# is intentionally not a GeometryNode code slot; it is an updater equality
+# item whose body is stored in ``params['code']``.
+CODE_SLOT_KEYS = ("map_bsp_designfield", "objective_function", "get_metrics")
 
 # --------------------------------------------------------------------------
-# updater: structured objective / constraint catalogue (UI chooser, no code)
+# updater: structured objective / constraint catalogues (UI chooser, no code)
 # group: which sub-optimizer the term belongs to; gen: code template using
 # {param} placeholders replaced by repr() of the stored value.
 # --------------------------------------------------------------------------
@@ -398,6 +566,32 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
         "params": [fld("scale", "scale", "float", 1e-7)],
+    },
+}
+
+_EQUALITY_CODE_FIELD = fld(
+    "code", "等式约束代码", "code", "",
+    "每次几何变量更新后执行，用于投影/修正曲面控制点。",
+    label_en="Equality-constraint code",
+    doc_en="Runs after each geometry update to project or correct "
+           "surface control points.")
+
+EQUALITY_CONSTRAINTS: dict[str, dict] = {
+    "MirrorSymmetry": {
+        "label": "镜面对称",
+        "label_en": "Mirror symmetry",
+        "group": "geometry", "schemes": ["shapeopt", "codesign"],
+        "special": "surface_equality",
+        "params": [_EQUALITY_CODE_FIELD],
+    },
+    # Generic entry retained for custom/legacy definitions.  New templates
+    # use the named MirrorSymmetry template above.
+    "SurfaceEquality": {
+        "label": "自定义曲面等式约束 (SurfaceEquality)",
+        "label_en": "Custom surface equality constraint (SurfaceEquality)",
+        "group": "geometry", "schemes": ["shapeopt", "codesign"],
+        "special": "surface_equality",
+        "params": [_EQUALITY_CODE_FIELD],
     },
 }
 
@@ -493,6 +687,33 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
 UPDATER_CATALOG = {"objectives": UPDATER_OBJECTIVES, "constraints": UPDATER_CONSTRAINTS}
 
 
+def equality_constraint_specs(scheme: str) -> list[dict]:
+    """Return equality-constraint templates available for a scheme."""
+    out = []
+    for name, spec in EQUALITY_CONSTRAINTS.items():
+        if scheme in spec["schemes"]:
+            item = dict(spec)
+            item["_type"] = name
+            out.append(item)
+    return out
+
+
+def equality_constraint_defaults(item_type: str) -> dict:
+    """Return defaults for one equality-constraint template."""
+    spec = EQUALITY_CONSTRAINTS.get(item_type)
+    if spec is None:
+        return {}
+    return clone_defaults(spec["params"])
+
+
+def equality_constraint(item_type: str, **overrides) -> dict:
+    """Build one equality-constraint item from the template catalogue."""
+    spec = EQUALITY_CONSTRAINTS[item_type]
+    params = equality_constraint_defaults(item_type)
+    params.update(overrides)
+    return {"type": item_type, "params": params}
+
+
 def updater_item_specs(scheme: str, group: str, category: str) -> list[dict]:
     """Return the item specs (label/fields/gen) usable for scheme+group."""
     cat = UPDATER_CATALOG.get(category, {})
@@ -536,13 +757,15 @@ def geometry_updater_config(max_step_iter: int = 50,
                             if_update: Optional[list] = None,
                             objective_functions: tuple = (),
                             constraints: tuple = (),
-                            code: str = "") -> dict:
-    """Config dict of the geometry sub-updater (per-surface ``if_update``)."""
+                            code: str = "",
+                            equality_constraints: tuple = ()) -> dict:
+    """Config with one geometry equality item and penalty-constraint list."""
     return {
         "max_step_iter": int(max_step_iter),
         "if_update": list(if_update) if if_update is not None else [],
         "objective_functions": list(objective_functions),
         "constraints": list(constraints),
+        "equality_constraints": list(equality_constraints),
         "code": code,
     }
 
@@ -552,7 +775,7 @@ def materials_updater_config(max_step_iter: int = 50,
                              objective_functions: tuple = (),
                              constraints: tuple = (),
                              code: str = "") -> dict:
-    """Config dict of the material sub-updater (scalar ``if_update``)."""
+    """Config dict of the material sub-updater (penalty constraints only)."""
     return {
         "max_step_iter": int(max_step_iter),
         "if_update": if_update,
