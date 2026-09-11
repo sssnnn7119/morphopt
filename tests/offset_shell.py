@@ -232,7 +232,7 @@ def validate_generated_inp() -> None:
             )
             surfcenter = surfnodes.mean(dim=1)
 
-            fe.assembly.get_instance('final_model').external_surface = 'surface_1_offset'
+            fe.assembly.get_instance('final_model').exterior_surface = 'surface_1_offset'
 
             print(f'from_inp elements: {list(fe_part.elems.keys())}')
 
@@ -374,4 +374,3 @@ def validate_generated_inp() -> None:
 
 if __name__ == '__main__':
     validate_generated_inp()
-

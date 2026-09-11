@@ -104,10 +104,10 @@ class ThisController(morphopt.Controller):
 
                 # part.convert_linear_to_quadratic_elements(element_name_list=['C3D8'], new_element_name_list=['C3D8'])
                 instance = torchfea.Instance(part_name="final_model")
-                instance.external_surface = "surface_0_All"
                 assembly = torchfea.Assembly()
                 assembly.add_part(part, name="final_model")
                 assembly.add_instance(instance, name="final_model")
+                instance.exterior_surface = "surface_0_All"
 
                 import gmsh
 
@@ -154,11 +154,10 @@ class ThisController(morphopt.Controller):
                     instance_cylinder = torchfea.Instance(
                         part_name="cylinder", translation=[cylinder_x[i] - 80, 0.0, 0.0]
                     )
-                    instance_cylinder.external_surface = "extern"
-
                     assembly.add_instance(
                         instance_cylinder, name=f"cylinder{cylinder_x[i]}"
                     )
+                    instance_cylinder.exterior_surface = "extern"
                 return assembly
 
         class FEAParams(morphopt.simp.FEAParams):

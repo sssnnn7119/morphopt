@@ -86,5 +86,7 @@ class FixedGeometryINP(FixedGeometry):
         assembly = torchfea.Assembly()
 
         assembly.add_part(part=fe_ext.assembly.get_part(self._part_name), name='final_model')
-        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
+        instance = torchfea.Instance(part_name='final_model')
+        assembly.add_instance(instance=instance, name='final_model')
+        instance.exterior_surface = 'surface_0_All'
         return assembly

@@ -640,7 +640,9 @@ class GeometryParams(BaseGeometry):
         assembly = torchfea.Assembly()
 
         assembly.add_part(part=part, name='final_model')
-        assembly.add_instance(instance=torchfea.Instance(part_name='final_model', external_surface='surface_0_All'), name='final_model')
+        instance = torchfea.Instance(part_name='final_model')
+        assembly.add_instance(instance=instance, name='final_model')
+        instance.exterior_surface = 'surface_0_All'
         return assembly
 
     def _regenerate(self, path_result: str, pools = None):
@@ -776,4 +778,3 @@ class GeometryParams(BaseGeometry):
             nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (nodes_new[part.mid_pt_idxmap_torch[:, 0]] + nodes_new[part.mid_pt_idxmap_torch[:, 1]]) / 2
 
         part.nodes = nodes_new
-        
