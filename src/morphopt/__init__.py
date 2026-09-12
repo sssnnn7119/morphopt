@@ -57,7 +57,7 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
 
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometry, HomogeneousMaterial, Params
+from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry, HomogeneousMaterial, Params
 from .optcore.solver import Solver
 from .optcore.modelparams import Params
 from .optcore.updaters import Updaters
@@ -79,4 +79,3 @@ from .utils import check_gradients, get_controller
 # endregion
 
 controller: Controller = None
-

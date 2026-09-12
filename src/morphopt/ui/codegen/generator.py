@@ -16,6 +16,7 @@ from ..model.schemas import (
     SURFACE_TYPES, INTERFACE_TYPES, UPDATER_CATALOG,
 )
 from ..schemes.base import get_template
+from ...optcore.modelparams.geometry import inspect_model
 
 
 # --------------------------------------------------------------------------
@@ -220,7 +221,23 @@ def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
     surfaces = problem.surfaces()
     if problem.scheme == "simp":
         geo = problem.geometry or GeometryNode()
-        a(f"                super().__init__(mesh_file={_literal(geo.mesh_file)})")
+        if geo.model_directory and geo.model_filename:
+            model = inspect_model(geo.model_directory, geo.model_filename)
+            _validate_simp_interface_selections(problem, model)
+            material = problem.material
+            if material is not None:
+                parts = {item.name: item for item in model.parts}
+                part_name = str(material.part_name or "").strip()
+                if part_name not in parts:
+                    raise ValueError("Select an imported Part for the SIMP material.")
+                if material.elementname not in parts[part_name].element_types:
+                    raise ValueError(
+                        f"Element {material.elementname!r} does not exist on imported "
+                        f"Part {part_name!r}.")
+        a("                super().__init__(")
+        a(f"                    model_directory={_literal(geo.model_directory)},")
+        a(f"                    model_filename={_literal(geo.model_filename)},")
+        a("                )")
         return
     kw = _geometry_kwargs(problem)
     a(f"                super().__init__({kw})" if kw else "                super().__init__()")
@@ -228,6 +245,56 @@ def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
         a("")
         a("                # %s (surface index %d)" % (SURFACE_TYPES[srf.surface_type]["label_en"], i))
         a(f"                self.add_surface({render_surface_call(srf)})")
+
+
+def _validate_simp_interface_selections(problem: ProblemDefinition, model) -> None:
+    """Validate all Assembly-backed names before emitting runnable source."""
+    instances = {item.name: item for item in model.instances}
+    parts = {item.name: item for item in model.parts}
+    for interface in problem.interfaces():
+        spec = INTERFACE_TYPES.get(interface.interface_type, {})
+        fields_for_type = {field["key"] for field in spec.get("params", [])}
+        for instance_key in ("instance_name", "instance_name1", "instance_name2"):
+            if instance_key not in fields_for_type:
+                continue
+            selected = str(interface.get_field(instance_key, "") or "").strip()
+            if not selected:
+                raise ValueError(
+                    f"Interface {interface.name!r} must select {instance_key}.")
+            if selected not in instances:
+                raise ValueError(
+                    f"Interface {interface.name!r} references unknown TorchFEA "
+                    f"Instance {selected!r}.")
+
+        selections = (
+            ("set_nodes_name", "instance_name", "node_sets"),
+            ("surface_name", "instance_name", "surface_sets"),
+            ("surface_name1", "instance_name1", "surface_sets"),
+            ("surface_name2", "instance_name2", "surface_sets"),
+        )
+        for key, instance_key, set_attribute in selections:
+            if key not in fields_for_type:
+                continue
+            selected = str(interface.get_field(key, "") or "").strip()
+            instance_name = str(interface.get_field(instance_key, "") or "").strip()
+            if not selected:
+                raise ValueError(f"Interface {interface.name!r} must select {key}.")
+            instance = instances.get(instance_name)
+            part = parts.get(instance.part_name) if instance is not None else None
+            available = getattr(part, set_attribute, ()) if part is not None else ()
+            if selected not in available:
+                raise ValueError(
+                    f"Interface {interface.name!r} references unknown {key} "
+                    f"{selected!r} on Instance {instance_name!r}.")
+
+        if "element_name" in fields_for_type:
+            element_name = str(interface.element_name or "").strip()
+            instance = instances.get(str(interface.instance_name or "").strip())
+            part = parts.get(instance.part_name) if instance is not None else None
+            if part is None or element_name not in part.element_types:
+                raise ValueError(
+                    f"Interface {interface.name!r} references unknown element "
+                    f"{element_name!r} on Instance {interface.instance_name!r}.")
 
 
 def _emit_apply_constraints(a, problem: ProblemDefinition, template) -> None:

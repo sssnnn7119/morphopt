@@ -323,8 +323,22 @@ class Controller:
         self.history.append('objective', loss.item())
         self.history.append('metrics', self.objfun.get_metrics())
         self.history.append('time', [t1-t0, t2-t1, t3-t2, t4-t3])
-        self.history.append('num_elements', sum([elem._elems.shape[0] for elem in self.objfun.fe.assembly.get_instance('final_model').elems.values()]))
-        self.history.append('num_nodes', self.objfun.fe.assembly.get_instance('final_model').nodes.shape[0])
+        # Shape/codesign jobs historically used one ``final_model`` instance,
+        # while a SIMP job may import an Assembly from torchfea-ui with
+        # arbitrary Part/Instance names (for example ``Part-1-1``).  Record
+        # statistics from the actual Assembly instead of assuming a name.
+        instances = self.objfun.fe.assembly._instances.values()
+        num_elements = sum(
+            element._elems.shape[0]
+            for instance in instances
+            for element in instance.elems.values()
+        )
+        num_nodes = sum(
+            instance.nodes.shape[0]
+            for instance in self.objfun.fe.assembly._instances.values()
+        )
+        self.history.append('num_elements', num_elements)
+        self.history.append('num_nodes', num_nodes)
 
     def print_info(self, t0, t1, t2, t3, t4) -> None:
         """

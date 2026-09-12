@@ -1,7 +1,7 @@
-"""SIMP topology-optimization scheme template (fixed mesh + density field).
+"""SIMP topology optimization from a TorchFEA-authored fixed Assembly.
 
 Mirrors the structure of ``myjobs/ral2026fea/beamsimp.py`` / ``examples/gripper.py``:
-the mesh is fixed (``FixedGeometryINP``), the design variables live in a B-spline
+the imported mesh is fixed, the design variables live in a B-spline
 SIMP density field (``SIMP_BSPFieldMaterials``), updated by ``UpdaterMaterials``.
 """
 
@@ -17,12 +17,12 @@ class SIMPTemplate(SchemeTemplate):
     label = "拓扑/材料场优化 (simp)"
     label_en = "Topology / material-field optimization (simp)"
     MATERIAL_TYPE = "SIMP_BSPFieldMaterials"
-    geometry_title = "Geometry (fixed mesh)"
+    geometry_title = "Initial geometry (TorchFEA Assembly)"
 
     BASES = {
         "controller": "morphopt.Controller",
         "params": "morphopt.simp.Params",
-        "geometry": "morphopt.simp.FixedGeometryINP",  # used as GeometryParams base
+        "geometry": "morphopt.simp.FixedGeometryTorchFEA",
         "fea": "morphopt.simp.FEAParams",
         "material": "morphopt.simp.SIMP_BSPFieldMaterials",
         "objective": "morphopt.simp.ObjectiveFunction",
@@ -31,47 +31,58 @@ class SIMPTemplate(SchemeTemplate):
         "updater_mat": "morphopt.simp.UpdaterMaterials",
     }
 
+    def make_interface(self, interface_type: str, name=None,
+                       **overrides):
+        """Create an interface without conventional model-selection names."""
+        spec = S.INTERFACE_TYPES.get(interface_type, {})
+        for field in spec.get("params", []):
+            if field["key"] in {
+                "instance_name", "instance_name1", "instance_name2",
+                "surface_name", "surface_name1", "surface_name2",
+                "set_nodes_name",
+            }:
+                overrides.setdefault(field["key"], "")
+        return super().make_interface(interface_type, name=name, **overrides)
+
     def default_objective_slot(self) -> str:
-        # strain-energy / compliance objective on the first load step
+        # Total strain energy / compliance of every imported instance.
         return (
             "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\n"
-            "return self.fe.assembly.get_instance('final_model').potential_energy(RGC=RGC)\n"
+            "return sum(instance.potential_energy(RGC=RGC)\n"
+            "           for instance in self.fe.assembly._instances.values())\n"
         )
 
     def default_metrics_slot(self) -> str:
         return "return []\n"
 
+    def default_map_bsp_designfield(self) -> str:
+        """Use the backend material class's standard spatial field mapping."""
+        return "return nodes\n"
+
     def build_root(self) -> Node:
         root = ProblemNode()
 
-        # geometry: fixed mesh, no designable surface ------------------------
-        root.add_section(self.make_geometry())
+        # The selected TorchFEA file supplies Parts, Instances and their sets.
+        # Loads and constraints remain entirely user-defined in MorphOpt.
+        root.add_section(self.make_geometry(
+            model_directory="",
+            model_filename="",
+        ))
 
-        # loads: fix the mesh, couple the loading RP to a node edge ----------
-        loads = self.make_loads()
-        loads.add_interface(self.make_interface(
-            "BoundaryCondition", "bc_fix",
-            instance_name="final_model", set_nodes_name="fix", index_dof=[0, 1, 2]))
-        loads.add_interface(self.make_interface(
-            "ReferencePoint", "RP_load", rp_location=[0.0, 0.0, 10.0]))
-        loads.add_interface(self.make_interface(
-            "Couple", "couple_load",
-            rp_name="RP_load", instance_name="final_model",
-            set_nodes_name="loadedge"))
-        loads.add_interface(self.make_interface(
-            "ConcentratedForce", "force_1", rp_name="RP_load"))
-        root.add_section(loads)
+        # No default named faces, boundaries or loads: the user defines all
+        # problem-specific dependencies explicitly.
+        root.add_section(self.make_loads())
 
-        # steps: single load step carrying the tip force ---------------------
-        root.add_section(self.make_steps(1, [{"force_1": [0.0, 0.0, -1e-1]}]))
+        root.add_section(self.make_steps(1, [{}]))
 
         # material: the SIMP B-spline density design field -------------------
         root.add_section(self.make_material(
+            part_name="",
             mumax=10.0, kappamax=100.0, simp_ratio_min=1e-7,
             density=1.08e-9, initial_ratio=0.5,
-            bounding_box=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            bounding_box=[0.0, 20.0, 0.0, 10.0, 0.0, 5.0],
             simp_field_resolution=0.5, degree=2, voidpenalfactor=1e-2,
-            materialpenalty=8.0, elementname="C3D8"))
+            materialpenalty=8.0, elementname="C3D4"))
 
         # objective + solver -------------------------------------------------
         root.add_section(self.make_objective())
@@ -89,7 +100,7 @@ class SIMPTemplate(SchemeTemplate):
                              S.updater_constraint("MaxValue"),
                              S.updater_constraint("VolFrac",
                                                   volfrac_min=0.4, volfrac_max=0.6,
-                                                  penalty=1e6, element_name="C3D8")),
+                                                  penalty=1e6, element_name="C3D4")),
             ),
         ))
 

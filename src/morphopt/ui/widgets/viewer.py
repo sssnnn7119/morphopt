@@ -20,6 +20,8 @@ from pyvistaqt import QtInteractor
 from ..model.problem import Node, ProblemDefinition
 from ..model.schemas import INTERFACE_TYPES
 from ..i18n import T
+from ...optcore.modelparams.geometry import (
+    load_geometry_assembly, resolve_model_path)
 
 
 class _PlotHost(QWidget):
@@ -29,7 +31,10 @@ class _PlotHost(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.plotter = QtInteractor(self)
         lay.addWidget(self.plotter.interactor)
-        self.plotter.set_background("#0d1117")
+        # Keep the preview consistent with the deformation pages used by the
+        # optimization monitor: a dark canvas plus PyVista's soft light kit.
+        self.plotter.set_background("black")
+        self.plotter.enable_lightkit()
 
 
 class PreviewViewer(QWidget):
@@ -59,6 +64,9 @@ class PreviewViewer(QWidget):
         self._problem: ProblemDefinition | None = None
         self._base_meshes: list = []
         self._overlay_actors: list = []
+        self._model_cache_key: tuple[str, int] | None = None
+        self._model_meshes: dict = {}
+        self._model_assembly = None
 
     # ------------------------------------------------------------------ api
     def set_problem(self, problem: ProblemDefinition) -> None:
@@ -88,18 +96,23 @@ class PreviewViewer(QWidget):
     def _rebuild_all(self) -> None:
         plotter = self.host.plotter
         plotter.clear()
+        plotter.enable_lightkit()
         self._base_meshes = []
         if self._problem is None:
             plotter.render()
             return
-        surfaces = [s for s in self._problem.surfaces()]
-        for i, srf in enumerate(surfaces):
-            mesh = self._surface_mesh(srf)
-            if mesh is None:
-                continue
-            opacity = 0.30
-            actor = plotter.add_mesh(mesh, color=[40/255, 120/255, 181/255], opacity=opacity)
-            self._base_meshes.append((srf, mesh, actor))
+        geometry = self._problem.geometry
+        if self._problem.scheme == "simp" and geometry is not None:
+            self._draw_torchfea_model(geometry)
+        else:
+            surfaces = [s for s in self._problem.surfaces()]
+            for i, srf in enumerate(surfaces):
+                mesh = self._surface_mesh(srf)
+                if mesh is None:
+                    continue
+                opacity = 0.30
+                actor = plotter.add_mesh(mesh, color=[40/255, 120/255, 181/255], opacity=opacity)
+                self._base_meshes.append((srf, mesh, actor))
 
         # material bounding box (SIMP / codesign)
         mat = self._problem.material
@@ -111,8 +124,53 @@ class PreviewViewer(QWidget):
                 plotter.add_mesh(box, color="#7f8c8d", opacity=0.03)
 
         plotter.show_axes()
+        # The model may contain several Parts/Instances with very different
+        # extents.  Fit once after all actors are present, like the monitor's
+        # result viewport does after rebuilding a scene.
+        plotter.reset_camera()
         self._sync_step_combo()
         self._redraw_loads()
+
+    def _draw_torchfea_model(self, geometry: Node) -> None:
+        """Render every Instance from the linked TorchFEA Assembly."""
+        plotter = self.host.plotter
+        if not geometry.model_directory or not geometry.model_filename:
+            plotter.add_text(
+                T("请在初始几何节点导入 TorchFEA 模型",
+                  "Import a TorchFEA model from Initial Geometry"),
+                position="upper_left", color="#9aa4b2", font_size=10)
+            return
+        try:
+            path = resolve_model_path(
+                geometry.model_directory, geometry.model_filename)
+            cache_key = (str(path), path.stat().st_mtime_ns)
+            if cache_key != self._model_cache_key:
+                assembly = load_geometry_assembly(
+                    geometry.model_directory, geometry.model_filename)
+                assembly.initialize()
+                self._model_meshes = assembly.get_meshes()
+                self._model_assembly = assembly
+                self._model_cache_key = cache_key
+            # Match DeformationCasePage: opaque blue mesh, visible but subtle
+            # element edges, and lightkit shading.  This makes an imported
+            # model read like an optimization result rather than a translucent
+            # CAD preview.  The monitor does not put a legend over the model,
+            # so instance names stay in the model tree instead of becoming a
+            # distracting ``Part-1-1`` badge in the viewport.
+            mesh_color = (40 / 255, 120 / 255, 181 / 255)
+            for name, mesh in self._model_meshes.items():
+                actor = plotter.add_mesh(
+                    mesh, color=mesh_color, opacity=1.0,
+                    show_edges=True)
+                self._base_meshes.append((name, mesh, actor))
+        except Exception as exc:
+            self._model_cache_key = None
+            self._model_meshes = {}
+            self._model_assembly = None
+            plotter.add_text(
+                T(f"TorchFEA 模型预览：{exc}",
+                  f"TorchFEA model preview: {exc}"),
+                position="upper_left", color="#e74c3c", font_size=10)
 
     def _sync_step_combo(self) -> None:
         steps = self._problem.steps
@@ -185,7 +243,7 @@ class PreviewViewer(QWidget):
         step = values[idx] or {}
         by_name = self._interfaces_by_name()
         surfaces = [s for s in self._problem.surfaces()]
-        scale_len = _diag(self._problem)
+        scale_len = self._model_diagonal() if self._model_meshes else _diag(self._problem)
 
         for name, amps in step.items():
             iface = by_name.get(name)
@@ -202,14 +260,22 @@ class PreviewViewer(QWidget):
                     continue
                 # tint the referenced surface with a semi-transparent copy
                 surf_name = str(iface.surface_name or "")
-                srf_idx = _surface_index_from_name(surf_name)
-                if 0 <= srf_idx < len(surfaces):
-                    mesh = self._surface_mesh(surfaces[srf_idx])
-                    if mesh is not None:
-                        over = mesh.copy()
-                        act = plotter.add_mesh(over, color="#1abc9c", opacity=0.45,
-                                               show_edges=False)
-                        self._overlay_actors.append(act)
+                mesh = None
+                if self._problem.scheme == "simp" and self._model_assembly is not None:
+                    try:
+                        mesh = self._model_assembly.get_instance(
+                            iface.instance_name).get_mesh(surf_name=surf_name)
+                    except (KeyError, ValueError):
+                        mesh = None
+                else:
+                    srf_idx = _surface_index_from_name(surf_name)
+                    if 0 <= srf_idx < len(surfaces):
+                        mesh = self._surface_mesh(surfaces[srf_idx])
+                if mesh is not None:
+                    over = mesh.copy()
+                    act = plotter.add_mesh(over, color="#1abc9c", opacity=0.45,
+                                           show_edges=False)
+                    self._overlay_actors.append(act)
             elif itype in ("ConcentratedForce", "ConcentratedMoment"):
                 rp = iface.rp_name or ""
                 loc = self._rp_location(rp)
@@ -229,6 +295,16 @@ class PreviewViewer(QWidget):
                 act = plotter.add_mesh(arrow, color=color)
                 self._overlay_actors.append(act)
         plotter.render()
+
+    def _model_diagonal(self) -> float:
+        bounds = [mesh.bounds for mesh in self._model_meshes.values()
+                  if mesh.n_points]
+        if not bounds:
+            return 10.0
+        lo = np.min(np.asarray([[b[0], b[2], b[4]] for b in bounds]), axis=0)
+        hi = np.max(np.asarray([[b[1], b[3], b[5]] for b in bounds]), axis=0)
+        diagonal = float(np.linalg.norm(hi - lo))
+        return diagonal if diagonal > 0 else 10.0
 
     def _reset_view(self) -> None:
         self.host.plotter.reset_camera()

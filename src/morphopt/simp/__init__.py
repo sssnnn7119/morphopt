@@ -6,4 +6,4 @@ This module implements the SIMP (Solid Isotropic Material with Penalization) met
 from .solver import SIMPSolver
 from .update_material import UpdaterMaterials
 from .simpmaterial import SIMP_BSPFieldMaterials
-from ..optcore import FEAParams, HomogeneousMaterial, Solver, Updaters, ObjectiveFunction, Params, FixedGeometry, FixedGeometryINP
+from ..optcore import FEAParams, HomogeneousMaterial, Solver, Updaters, ObjectiveFunction, Params, FixedGeometry, FixedGeometryINP, FixedGeometryTorchFEA

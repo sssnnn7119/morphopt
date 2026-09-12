@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTabWidget, QLabel,
     QPlainTextEdit, QPushButton, QFileDialog, QStackedWidget, QLineEdit,
-    QComboBox,
+    QComboBox, QMessageBox,
 )
 from PySide6.QtGui import QFont
 
@@ -37,6 +37,7 @@ from .widgets.solver_editor import SolverEditor, detect_devices
 from .widgets.stepmatrix import StepMatrix
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.objective_editor import ObjectiveEditor
+from .widgets.torchfea_model_editor import TorchFEAModelEditor
 from .widgets.viewer import PreviewViewer
 from .codegen.generator import generate_source
 from .i18n import T
@@ -190,7 +191,7 @@ class Workbench(QWidget):
             "Hand the current definition to the observer page to start or continue"))
         self._b_import.setStyleSheet(
             "background-color:#00695c; font-weight:600; padding:6px 18px;")
-        self._b_import.clicked.connect(lambda: self.importToObserver.emit(self.problem))
+        self._b_import.clicked.connect(self._submit_to_observer)
         foot.addWidget(self._b_import)
         outer.addLayout(foot)
 
@@ -214,10 +215,11 @@ class Workbench(QWidget):
         self.step_matrix = StepMatrix()
         self.updater_editor = UpdaterEditor()
         self.objective_editor = ObjectiveEditor()
+        self.torchfea_model_editor = TorchFEAModelEditor()
         self.optimizer_overview = self._make_optimizer_overview()
         for w in (self.prop_editor, self.solver_editor, self.step_matrix,
                   self.updater_editor, self.objective_editor,
-                  self.optimizer_overview):
+                  self.torchfea_model_editor, self.optimizer_overview):
             stack.addWidget(w)
             changed = getattr(w, "changed", None)
             if changed is not None:
@@ -225,6 +227,8 @@ class Workbench(QWidget):
             code_changed = getattr(w, "codeChanged", None)
             if code_changed is not None:
                 code_changed.connect(self.refresh_code)
+        self.torchfea_model_editor.changed.connect(
+            self._sync_single_imported_part)
 
         # loads hint: loads are added/edited in the left tree per type
         self._loads_hint = self._make_loads_hint()
@@ -286,9 +290,13 @@ class Workbench(QWidget):
         self._update_caption()
         self.tree.set_problem(self.problem)
         self.objective_editor.set_problem(self.problem)
+        self._select_editor(self._last_selected)
+        if self.problem.scheme == "simp" and self.problem.geometry is not None:
+            # Validate persisted TorchFEA links even when the geometry editor
+            # is not the currently selected page.
+            self.torchfea_model_editor.validate_link(self.problem.geometry)
         self.refresh_code()
         self.viewer.set_problem(self.problem)
-        self._select_editor(self._last_selected)
 
     def _update_caption(self) -> None:
         self.title.setText(
@@ -428,6 +436,9 @@ class Workbench(QWidget):
         elif kind == "objective":
             self.objective_editor.set_problem(self.problem)
             self._stack.setCurrentWidget(self.objective_editor)
+        elif kind == "geometry" and self.problem.scheme == "simp":
+            self.torchfea_model_editor.edit_node(node)
+            self._stack.setCurrentWidget(self.torchfea_model_editor)
         else:
             fields, code_slots, extra = fields_for_node(node, self.problem)
             subtitle = self._subtitle(node)
@@ -464,6 +475,19 @@ class Workbench(QWidget):
         else:
             self._open_name = old
         self._schedule_rebuild()
+
+    def _sync_single_imported_part(self, _node: Node) -> None:
+        """Select unambiguous imported material targets without name conventions."""
+        summary = self.problem.imported_model_summary()
+        material = self.problem.material
+        if summary is None or material is None or len(summary.parts) != 1:
+            return
+        part = summary.parts[0]
+        if not material.part_name:
+            material.part_name = part.name
+        if (len(part.element_types) == 1
+                and material.elementname not in part.element_types):
+            material.elementname = part.element_types[0]
 
     @staticmethod
     def _subtitle(node: Node) -> str:
@@ -502,5 +526,24 @@ class Workbench(QWidget):
         self.reload()
 
     # --------------------------------------------------------- footer slots
+    def _submit_to_observer(self) -> None:
+        if self.problem.scheme == "simp":
+            summary = self.problem.imported_model_summary()
+            if summary is None:
+                QMessageBox.warning(
+                    self, T("缺少 TorchFEA 模型", "TorchFEA model required"),
+                    T("请先在初始几何节点选择模型目录并导入有效的 .npz 模型。",
+                      "Select a model directory and import a valid .npz model "
+                      "from the initial-geometry node first."))
+                return
+        try:
+            generate_source(self.problem)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, T("优化定义不完整", "Incomplete optimization definition"),
+                str(exc))
+            return
+        self.importToObserver.emit(self.problem)
+
     def set_message(self, text: str) -> None:
         self._msg.setText(text)

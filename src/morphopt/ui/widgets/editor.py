@@ -52,7 +52,11 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
         code_slots = {}
         if mt in ("SIMP_BSPFieldMaterials", "CodesignMaterials"):
             code_slots["_map_bsp_designfield"] = "map_bsp_designfield(nodes)"
-        return list(spec.get("params", [])), code_slots, {}
+        choices = {}
+        if problem is not None and mt == "SIMP_BSPFieldMaterials":
+            choices["part_name"] = problem.part_names()
+            choices["elementname"] = problem.element_names(node.part_name)
+        return list(spec.get("params", [])), code_slots, choices
     if kind == "geometry":
         return list(GEOMETRY_SCHEMES.get(scheme, [])), {}, {}
     if kind == "solver":
@@ -66,23 +70,41 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
 
 def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
     """Fill combo lists from the current problem tree."""
-    surfaces = [s for s in problem.surfaces()]
-    n = len(surfaces)
-    surface_sets = [f"surface_{i}_All" for i in range(n)]
-    if problem.scheme == "codesign":
-        for i in range(1, n):
-            surface_sets.append(f"surface_{i}_offset")
-    surface_sets += ["surface_0_Bottom", "surface_0_Head"]
+    is_imported_simp = problem.scheme == "simp" and problem.geometry is not None
+    if not is_imported_simp:
+        surfaces = [s for s in problem.surfaces()]
+        n = len(surfaces)
+        surface_sets = [f"surface_{i}_All" for i in range(n)]
+        if problem.scheme == "codesign":
+            for i in range(1, n):
+                surface_sets.append(f"surface_{i}_offset")
+        surface_sets += ["surface_0_Bottom", "surface_0_Head"]
 
     rp_names = [nd.name for nd in problem.interfaces()
                 if nd.get_field("type") == "ReferencePoint"]
     choices: dict[str, list[str]] = {}
     spec = INTERFACE_TYPES.get(itype, {})
     for f in spec.get("params", []):
-        if f["key"] in ("surface_name", "set_nodes_name", "surface_name1", "surface_name2"):
-            choices[f["key"]] = surface_sets
-        elif f["key"] in ("rp_name", "rp_name1", "rp_name2"):
-            choices[f["key"]] = rp_names
+        key = f["key"]
+        if key in ("instance_name", "instance_name1", "instance_name2"):
+            choices[key] = problem.instance_names()
+        elif key == "set_nodes_name" and is_imported_simp:
+            choices[key] = problem.node_set_names(iface.instance_name or "")
+        elif key == "surface_name" and is_imported_simp:
+            choices[key] = problem.surface_set_names(iface.instance_name or "")
+        elif key == "surface_name1" and is_imported_simp:
+            choices[key] = problem.surface_set_names(iface.instance_name1 or "")
+        elif key == "surface_name2" and is_imported_simp:
+            choices[key] = problem.surface_set_names(iface.instance_name2 or "")
+        elif key in ("surface_name", "set_nodes_name", "surface_name1", "surface_name2"):
+            choices[key] = surface_sets
+        elif key == "element_name" and is_imported_simp:
+            summary = problem.imported_model_summary()
+            part = summary.part_for_instance(iface.instance_name or "") \
+                if summary is not None else None
+            choices[key] = list(part.element_types) if part is not None else []
+        elif key in ("rp_name", "rp_name1", "rp_name2"):
+            choices[key] = rp_names
     return choices
 
 

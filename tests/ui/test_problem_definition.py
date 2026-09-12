@@ -6,11 +6,19 @@ new tree editing entry point.
 """
 
 import unittest
+from pathlib import Path
+import tempfile
+
+import numpy as np
+import torch
+import torchfea
 
 from morphopt.ui.codegen.generator import generate_source
 from morphopt.ui.model.problem import ProblemDefinition
 from morphopt.ui.model.schemas import INTERFACE_TYPES
 from morphopt.ui.schemes.base import get_template
+from morphopt.optcore.modelparams.geometry import (
+    inspect_model, load_geometry_assembly)
 
 
 def _codesign_problem():
@@ -27,6 +35,107 @@ def _distance_matrix(problem):
 
 
 class ProblemDefinitionMutationTests(unittest.TestCase):
+    @staticmethod
+    def _write_torchfea_model(directory: str) -> Path:
+        part = torchfea.Part(torch.tensor([
+            [0.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
+        ]))
+        part.add_element(torchfea.elements.C3D4(
+            elems_index=torch.tensor([0]),
+            elems=torch.tensor([[0, 1, 2, 3]])), name="C3D4")
+        part.add_node_set("fixed_nodes", np.array([0, 1, 2]))
+        part.add_element_set("design_cells", np.array([0]))
+        part.add_surface_set("loaded_surface", [(np.array([0]), 0)])
+        part.exterior_surface = "loaded_surface"
+        assembly = torchfea.Assembly()
+        assembly.add_part(part, "body")
+        second_part = torchfea.Serializable._deserialize(part._serialize())
+        assembly.add_part(second_part, "frame")
+        assembly.add_instance(torchfea.Instance("body"), "body-1")
+        assembly.add_instance(
+            torchfea.Instance("frame", translation=[2.0, 0.0, 0.0]),
+            "frame-1")
+        # Analysis-layer data may exist in a saved TorchFEA model, but the
+        # MorphOpt geometry bridge must discard it.
+        assembly.add_reference_point(
+            torchfea.ReferencePoint([0.0, 0.0, 0.0]), "source-only-rp")
+        controller = torchfea.FEAController()
+        controller.assembly = assembly
+        path = Path(directory) / "assembly.npz"
+        controller.save_model(str(path), if_save_source_code=False)
+        return path
+
+    def test_simp_torchfea_model_has_no_preset_load_dependencies(self):
+        problem = get_template("simp").create_problem("imported-domain")
+
+        self.assertEqual(problem.geometry.model_directory, "")
+        self.assertEqual(problem.geometry.model_filename, "")
+        self.assertEqual(problem.interfaces(), [])
+        self.assertEqual(problem.steps.step_values, [{}])
+        boundary = get_template("simp").make_interface("BoundaryCondition")
+        pressure = get_template("simp").make_interface("Pressure")
+        self.assertEqual(boundary.instance_name, "")
+        self.assertEqual(boundary.set_nodes_name, "")
+        self.assertEqual(pressure.instance_name, "")
+        self.assertEqual(pressure.surface_name, "")
+
+        source = generate_source(problem)
+        self.assertIn("morphopt.simp.FixedGeometryTorchFEA", source)
+        self.assertIn("model_directory=''", source)
+        self.assertNotIn("FixedGeometryINP", source)
+        self.assertNotIn("loadedge", source)
+        self.assertNotIn("bc_fix", source)
+        compile(source, "<empty-imported-domain>", "exec")
+
+    def test_simp_import_reads_assembly_names_and_strips_analysis_objects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_torchfea_model(directory)
+            problem = get_template("simp").create_problem("linked-assembly")
+            problem.geometry.model_directory = directory
+            problem.geometry.model_filename = path.name
+            problem.material.part_name = "body"
+
+            summary = inspect_model(directory, path.name)
+            self.assertEqual([part.name for part in summary.parts],
+                             ["body", "frame"])
+            self.assertEqual(
+                summary.part_for_instance("body-1").node_sets,
+                ("fixed_nodes",))
+            self.assertEqual(
+                summary.part_for_instance("body-1").surface_sets,
+                ("loaded_surface",))
+            self.assertEqual(
+                summary.part_for_instance("body-1").element_sets,
+                ("design_cells",))
+            self.assertEqual(problem.instance_names(), ["body-1", "frame-1"])
+            self.assertEqual(problem.surface_set_names("body-1"),
+                             ["loaded_surface"])
+
+            boundary = get_template("simp").make_interface(
+                "BoundaryCondition", "clamp", instance_name="body-1",
+                set_nodes_name="fixed_nodes")
+            problem.add_interface(boundary)
+
+            restored = ProblemDefinition.from_dict(problem.to_dict())
+            self.assertEqual(restored.geometry.model_filename, "assembly.npz")
+            source = generate_source(restored)
+            self.assertIn("FixedGeometryTorchFEA", source)
+            self.assertIn("model_filename='assembly.npz'", source)
+            compile(source, "<linked-assembly>", "exec")
+
+            clean = load_geometry_assembly(directory, path.name)
+            self.assertEqual(list(clean._parts), ["body", "frame"])
+            self.assertEqual(list(clean._instances), ["body-1", "frame-1"])
+            self.assertEqual(len(clean._loads), 0)
+            self.assertEqual(len(clean._boundarys), 0)
+            self.assertEqual(len(clean._constraints), 0)
+            self.assertEqual(len(clean._reference_points), 0)
+
+            boundary.set_nodes_name = "missing"
+            with self.assertRaisesRegex(ValueError, "unknown set_nodes_name"):
+                generate_source(problem)
+
     def test_default_schemes_round_trip_and_generate_valid_python(self):
         for scheme in ("shapeopt", "simp", "codesign"):
             with self.subTest(scheme=scheme):

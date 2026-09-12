@@ -210,15 +210,18 @@ class ProblemNode(Node):
 
 
 class GeometryNode(Node):
-    """Remeshed-geometry parameters + the ordered list of boundary surfaces.
+    """Initial-geometry definition for every optimization scheme.
 
     Canonical parameters are explicit, typed attributes assigned in
     ``__init__``; their names match the legacy ``params`` / ``*.morph`` keys.
+    SIMP links to one model exported by TorchFEA; shape optimization continues
+    to store its ordered boundary surfaces as child nodes.
     """
 
     kind = KIND_GEOMETRY
     _FIELDS = ("fea_seed_size", "mesh_order", "reinitialize_per_iter",
-               "thickness", "num_layers", "mesh_file",
+               "thickness", "num_layers",
+               "model_directory", "model_filename",
                "_apply_surface_constraints")
 
     def __init__(self, kind: Optional[str] = None, name: str = "Geometry",
@@ -232,7 +235,8 @@ class GeometryNode(Node):
         self.reinitialize_per_iter: Optional[int] = data.get("reinitialize_per_iter")
         self.thickness: Optional[float] = data.get("thickness")
         self.num_layers: Optional[int] = data.get("num_layers")
-        self.mesh_file: str = str(data.get("mesh_file") or "")
+        self.model_directory: str = str(data.get("model_directory") or "")
+        self.model_filename: str = str(data.get("model_filename") or "")
         # Legacy storage for symmetry/equality code.  New definitions store
         # this body in the updater's equality-constraint item (MirrorSymmetry
         # by default).
@@ -445,7 +449,7 @@ class MaterialNode(Node):
     """
 
     kind = KIND_MATERIAL
-    _FIELDS = ("type", "mu", "kappa", "density", "elementname", "mumax",
+    _FIELDS = ("type", "part_name", "mu", "kappa", "density", "elementname", "mumax",
                "kappamax", "simp_ratio_min", "bounding_box",
                "simp_field_resolution", "degree", "initial_ratio",
                "voidpenalfactor", "materialpenalty", "shell_mu",
@@ -459,6 +463,7 @@ class MaterialNode(Node):
         data = dict(params or {})
         # ---- explicit typed parameters (union of material schema fields) --
         self.type: str = str(data.get("type") or "")
+        self.part_name: str = str(data.get("part_name") or "")
         self.mu: Optional[float] = data.get("mu")
         self.kappa: Optional[float] = data.get("kappa")
         self.density: Optional[float] = data.get("density")
@@ -687,18 +692,60 @@ class ProblemDefinition:
     def instance_names(self) -> list[str]:
         """Known FEA instance names, in first-use order.
 
-        The task model does not own an imported FEA assembly, so interface
-        parameters are its authoritative discoverable source.  ``final_model``
-        remains the useful default for a new definition; UI callers may still
-        offer an editable selector for instances created by custom FEA code.
+        SIMP reads these from the linked TorchFEA Assembly.  Other schemes use
+        their generated ``final_model`` instance plus any custom names already
+        present in the interface tree.
         """
-        names = ["final_model"]
+        names = [] if self.scheme == "simp" else ["final_model"]
+        summary = self.imported_model_summary()
+        if summary is not None:
+            names.extend(item.name for item in summary.instances)
         for interface in self.interfaces():
             for field in ("instance_name", "instance_name1", "instance_name2"):
                 value = getattr(interface, field, None)
                 if isinstance(value, str) and value.strip():
                     names.append(value.strip())
         return list(dict.fromkeys(names))
+
+    def part_names(self) -> list[str]:
+        summary = self.imported_model_summary()
+        return [part.name for part in summary.parts] if summary is not None else []
+
+    def imported_model_summary(self):
+        """Inspect the linked TorchFEA model, returning ``None`` if unset."""
+        geometry = self.geometry
+        if (self.scheme != "simp" or geometry is None
+                or not geometry.model_directory or not geometry.model_filename):
+            return None
+        try:
+            from ...optcore.modelparams.geometry import inspect_model
+            return inspect_model(
+                geometry.model_directory, geometry.model_filename)
+        except Exception:
+            return None
+
+    def _part_summary(self, instance_name: str = "", part_name: str = ""):
+        summary = self.imported_model_summary()
+        if summary is None:
+            return None
+        if instance_name:
+            return summary.part_for_instance(instance_name)
+        if part_name:
+            return next(
+                (item for item in summary.parts if item.name == part_name), None)
+        return summary.parts[0] if len(summary.parts) == 1 else None
+
+    def node_set_names(self, instance_name: str = "") -> list[str]:
+        part = self._part_summary(instance_name=instance_name)
+        return list(part.node_sets) if part is not None else []
+
+    def surface_set_names(self, instance_name: str = "") -> list[str]:
+        part = self._part_summary(instance_name=instance_name)
+        return list(part.surface_sets) if part is not None else []
+
+    def element_set_names(self, instance_name: str = "") -> list[str]:
+        part = self._part_summary(instance_name=instance_name)
+        return list(part.element_sets) if part is not None else []
 
     def reference_point_names(self) -> list[str]:
         """Names of reference points declared by the load-interface tree."""
@@ -707,9 +754,12 @@ class ProblemDefinition:
             if interface.interface_type == "ReferencePoint" and interface.name
         ]
 
-    def element_names(self) -> list[str]:
+    def element_names(self, part_name: str = "") -> list[str]:
         """Material and load element-family names, in stable unique order."""
         names: list[str] = []
+        part = self._part_summary(part_name=part_name)
+        if part is not None:
+            names.extend(part.element_types)
         if self.material is not None:
             for field in ("elementname", "shell_elementname"):
                 value = getattr(self.material, field, None)

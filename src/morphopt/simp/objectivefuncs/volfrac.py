@@ -22,7 +22,7 @@ class VolFrac(BaseConstraints):
 
 
     def initialize(self, material_params: SIMP_BSPFieldMaterials, *args, **kwargs):
-        part = morphopt.controller.objfun.fe.assembly.get_part('final_model')
+        part = morphopt.controller.objfun.fe.assembly.get_part(material_params.part_name)
         elems = part.elems[self.element_name]
         self.gaussian_points = elems.get_gaussian_points(part.nodes).reshape(-1, 3)
         self.gaussian_weights = elems.gaussian_weight.flatten()

@@ -75,7 +75,9 @@ _FIELD_LABELS_ZH = {
     "reinitialize_per_iter": "重新划分网格间隔",
     "thickness": "壳层厚度",
     "num_layers": "壳层层数",
-    "mesh_file": "网格文件 (.inp)",
+    "part_name": "设计 Part",
+    "model_directory": "TorchFEA 模型目录",
+    "model_filename": "TorchFEA 模型文件",
     "num_process": "进程数",
     "gpus": "GPU 设备",
     "task_index_list": "工况任务分组",
@@ -151,7 +153,9 @@ _FIELD_DOCS_ZH = {
     "reinitialize_per_iter": "每隔多少次迭代重新生成网格。",
     "thickness": "内表面的偏置壳层厚度。",
     "num_layers": "壳层中的 C3D6 楔形单元层数。",
-    "mesh_file": "由 FixedGeometryINP 读取的固定网格文件。",
+    "part_name": "承载 SIMP 设计材料场的 TorchFEA Part。",
+    "model_directory": "监视 torchfea-ui 模型导出的目录。",
+    "model_filename": "目录中当前链接的 TorchFEA .npz 模型。",
     "num_process": "FEA 求解进程数。",
     "gpus": "GPU 编号列表；为空时使用 CPU。",
     "task_index_list": "将载荷工况分配到进程的分组；为空时自动分配。",
@@ -322,7 +326,7 @@ INTERFACE_TYPES: dict[str, dict] = {
         "num_values": 1,
         "name_hint": "pressure_",
         "params": [
-            fld("instance_name", "Instance", "str", "final_model"),
+            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld("surface_name", "Surface", "combo", "surface_1_All", _surf_interfacedoc(),
                 choices=[]),  # choices filled dynamically by UI
         ],
@@ -348,7 +352,7 @@ INTERFACE_TYPES: dict[str, dict] = {
         "name_hint": "body_",
         "params": [
             fld("element_name", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D6", "C3D20"]),
-            fld("instance_name", "Instance", "str", "final_model"),
+            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
         ],
     },
     "SpringToGround": {
@@ -381,7 +385,7 @@ INTERFACE_TYPES: dict[str, dict] = {
         "num_values": 0,
         "name_hint": "bc_",
         "params": [
-            fld("instance_name", "Instance", "str", "final_model"),
+            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld("set_nodes_name", "Node set", "combo", "surface_0_Bottom", "", choices=[]),
             fld("index_dof", "固定自由度 index_dof", "dofs", [0, 1, 2],
                 "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).", size=6,
@@ -407,7 +411,7 @@ INTERFACE_TYPES: dict[str, dict] = {
         "name_hint": "couple_",
         "params": [
             fld("rp_name", "Reference point", "combo", "", "", choices=[]),
-            fld("instance_name", "Instance", "str", "final_model"),
+            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld("set_nodes_name", "Node set", "combo", "surface_0_Head", "", choices=[]),
         ],
     },
@@ -424,10 +428,10 @@ INTERFACE_TYPES: dict[str, dict] = {
         "num_values": 0,
         "name_hint": "contact_",
         "params": [
-            fld("instance_name1", "Instance 1", "str", "final_model"),
+            fld("instance_name1", "Instance 1", "combo", "final_model", choices=[]),
             fld("surface_name1", "Surface 1", "combo", "", "可下拉选择或手输另一部件的表面集。", choices=[],
                 doc_en="Select or type a surface set of another part."),
-            fld("instance_name2", "Instance 2", "str", ""),
+            fld("instance_name2", "Instance 2", "combo", "", choices=[]),
             fld("surface_name2", "Surface 2", "combo", "", "可下拉选择或手输表面集。", choices=[],
                 doc_en="Select or type a surface set."),
             fld("penalty_threshold_h", "penalty_threshold_h", "float", 3.0),
@@ -439,7 +443,7 @@ INTERFACE_TYPES: dict[str, dict] = {
         "num_values": 0,
         "name_hint": "contact_self_",
         "params": [
-            fld("instance_name", "Instance", "str", "final_model"),
+            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld("surface_name", "Surface", "combo", "", "可下拉选择或手输表面集。", choices=[],
                 doc_en="Select or type a surface set."),
         ],
@@ -465,6 +469,7 @@ MATERIAL_TYPES: dict[str, dict] = {
         "label": "SIMP B样条密度场材料 (SIMP_BSPFieldMaterials)",
         "label_en": "SIMP B-spline density-field material (SIMP_BSPFieldMaterials)",
         "params": [
+            fld("part_name", "Design Part", "combo", "", "Part carrying the SIMP design field.", choices=[]),
             fld("mumax", "mu max", "float", 10.0),
             fld("kappamax", "kappa max", "float", 100.0),
             fld("simp_ratio_min", "ratio min", "float", 1e-7),
@@ -515,9 +520,8 @@ GEOMETRY_SCHEMES: dict[str, list[dict]] = {
         fld("thickness", "Shell thickness", "float", 2.0, "Offset thickness of inner surfaces.", minimum=0.0),
         fld("num_layers", "Shell layers", "int", 1, "C3D6 wedge layers through the shell.", minimum=1),
     ]),
-    "simp": fields_from_specs([
-        fld("mesh_file", "Mesh (.inp)", "file", "", "Fixed mesh file read by FixedGeometryINP."),
-    ]),
+    # SIMP uses its dedicated TorchFEA model-directory editor.
+    "simp": [],
 }
 
 # --------------------------------------------------------------------------

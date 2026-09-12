@@ -298,6 +298,18 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
 
         return EmdUe + result0[0], self._EmdUe_2 + result0[1]
 
+class SIMPElementC3D4(torchfea.elements.C3D4, SIMPElementFskew):
+    """C3D4 adapter for the optional SIMP Fskew penalty.
+
+    C3D4 is a linear tetrahedral element, so its second shape-function
+    derivatives are zero and the Fskew term evaluates to zero.  It still
+    needs the adapter when the penalty option is enabled because the
+    sensitivity update refreshes the penalty caches uniformly for all SIMP
+    elements.
+    """
+    pass
+
+
 class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFskew):
     pass
 
@@ -355,6 +367,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
                  voidpenalfactor: float = 1e-2,
                  materialpenalty: int = 8,
                  elementname: str = "C3D4",
+                 part_name: str = "",
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -438,6 +451,9 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
         self.elementname = elementname
         """ The name of the element type to which the SIMP material will be applied. """
+
+        self.part_name = str(part_name).strip()
+        """Name of the imported Part carrying the SIMP design field."""
 
 
 
@@ -675,22 +691,37 @@ class SIMP_BSPFieldMaterials(BaseParams):
         """
 
         # Set the SIMP materials for the solid elements
-        elements = fe.assembly.get_part('final_model').elems[self.elementname]
+        if not self.part_name:
+            raise ValueError("Select the imported Part for the SIMP material.")
+        part = fe.assembly.get_part(self.part_name)
+        elements = part.elems[self.elementname]
 
         if self.if_use_simppenalty:
-            if elements.__class__.__name__ == "C3D10":
+            # The fixed geometry is reused between optimization iterations;
+            # once an element has been wrapped, keep that wrapper instead of
+            # trying to wrap it again based on its new class name.
+            if isinstance(elements, SIMPElementFskew):
+                elements_new = elements
+            elif elements.__class__.__name__ == "C3D4":
+                elements_new = SIMPElementC3D4(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            elif elements.__class__.__name__ == "C3D10":
                 elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
+            elif elements.__class__.__name__ == "C3D8":
+                elements_new = SIMPElementC3D8(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
             elif elements.__class__.__name__ == "C3D20":
                 elements_new = SIMPElementC3D20(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
             else:
-                elements_new = elements
+                raise ValueError(
+                    f"SIMP Fskew penalty is not implemented for element type "
+                    f"'{elements.__class__.__name__}'. Set voidpenalfactor=0 "
+                    "or use a supported solid element type.")
         else:
             elements_new = elements
 
 
-        fe.assembly.get_part('final_model').elems[self.elementname] = elements_new
+        part.elems[self.elementname] = elements_new
 
-        nodes = fe.assembly.get_part('final_model').nodes
+        nodes = part.nodes
         elements_new._pre_load_gaussian(nodes=nodes)
 
         gaussian_points_locations = elements_new.get_gaussian_points(nodes=nodes)
@@ -742,7 +773,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         ratio_now = self.get_material_ratio(designfield)
 
 
-        elems: SIMPElementC3D10 = assembly.get_part("final_model").elems[self.elementname]
+        elems: torchfea.elements.Element_3D = assembly.get_part(self.part_name).elems[self.elementname]
         
         elems.materials['material-0']._mu = ratio_now * self._mumax
         elems.materials['material-0']._kappa = ratio_now * self._kappamax
@@ -886,6 +917,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         Returns:
             torch.Tensor: The normalized Gaussian points.
         """
-        gaussian_points_locations = assembly.get_part('final_model').elems[self.elementname].get_gaussian_points(assembly.get_part('final_model').nodes)
+        part = assembly.get_part(self.part_name)
+        gaussian_points_locations = part.elems[self.elementname].get_gaussian_points(part.nodes)
 
         return gaussian_points_locations

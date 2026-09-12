@@ -26,6 +26,7 @@ src/morphopt/ui/
 │   └── codesign.py        # 协同设计优化模板
 ├── codegen/generator.py   # 由 ProblemDefinition 渲染可运行的 morphopt 模块
 ├── widgets/               # Qt 视图层：模型树 / 属性编辑器 / 步矩阵 / updater 编辑器 …
+│   ├── torchfea_model_editor.py # SIMP 模型目录选择、torchfea-ui 启动与导出捕获
 │   ├── observation_pages.py # 观察器的指标、几何与工况展示页（不管理进程）
 │   └── template_insert_dialog.py # 代码片段参数选择
 ├── workbench.py            # 优化问题定义页：组合 widgets，发出意图信号
@@ -36,7 +37,8 @@ src/morphopt/ui/
 **依赖方向（禁止反向）**：`widgets` → `schemes`/`model`；`schemes` → `model`；
 `codegen` → `schemes`/`model`；`workbench` → `widgets`/`model`；
 `mainwindow` → `workbench`/`observe_panel`。`model/` 和 `launcher.py` 不 import
-任何 Qt 视图模块。
+任何 Qt 视图模块。仓库级纯数据适配器 `morphopt/cad.py` 是 UI 与优化后端共同依赖的
+下层模块，不得反向 import `morphopt.ui` 或优化控制器。
 
 ### 1.1 `schemas.py` 与 `schemes/` 的边界
 
@@ -74,7 +76,7 @@ dict 仅存在于“叶子参数”（字段值）和 updater 配置的内部结
 
 ```
 problem (ProblemNode)
-├── geometry  (GeometryNode)     children: SurfaceNode*（0 = 外表面, 1.. = 内腔）
+├── geometry  (GeometryNode)     shape/codesign: SurfaceNode*；SIMP: TorchFEA 模型链接
 ├── loads     (LoadsNode)        children: InterfaceNode*（BC/RP/力/力矩/接触…）
 ├── steps     (StepsNode)
 ├── material  (MaterialNode)
@@ -140,7 +142,8 @@ problem (ProblemNode)
    写出来的那几行，便于维护与自动补全。代码槽这类自由文本也存为私有属性，用公开
    property 暴露（如 `ObjectiveNode.objective_body` ↔ `_objective_function`）。
 3. 除 `UpdaterNode.geometry/materials` 的**结构化 updater 配置**外，模型里没有 dict
-   参数存储（没有 `params` / `_ParamsView` / raw 兜底）。
+   参数存储（没有 `params` / `_ParamsView` / raw 兜底）。SIMP 几何只保存明确的
+   `model_directory` 与 `model_filename` 字符串链接，不复制 TorchFEA 对象进任务树。
    每个类用类常量 `_FIELDS` 只“枚举字段名”用于：磁盘 `*.morph` 的 `params`
    映射（由 `to_dict()` → `field_items()` 生成；`from_dict` 把映射喂回 `__init__`
    还原属性）和动态表单/代码生成的按键访问 `get_field() / set_field()`。属性本身
@@ -149,8 +152,9 @@ problem (ProblemNode)
    该 `type` 用到的字段有值。
 4. 类型化 `create()` 从 `schemas` 目录填充默认参数并对未知字段名**抛错**，
    拼写错误在构建时立刻暴露，不会静默进入生成代码。
-5. 存取格式不变：`to_dict()`/`Node.from_dict()` 保留 kind，加载时按 kind 还原成对应
-   类型化节点（round-trip lossless）。**老 `.morph` 文件无需迁移**。
+5. `to_dict()`/`Node.from_dict()` 保留 kind，加载时按 kind 还原成对应类型化节点
+   （round-trip lossless）。SIMP 不保留 INP 或内嵌 CAD 编辑入口，也不得假定
+   `final_model`、`fix`、`loadedge` 等 Part/Instance/集合名称。
 6. `SurfaceNode` 不存 index：表面在 `GeometryNode.children` 中的**位置即索引**
    （0 = outer，flip 由 index>0 推导）。所有结构编辑必须走 `ProblemDefinition`：
    `add_surface()` / `clone_surface()` / `remove_surface()` / `move_surface()`，以及
@@ -169,6 +173,35 @@ problem (ProblemNode)
 ---
 
 ## 3. 方案模板规范（schemes/*）
+
+### 3.1 SIMP 的 TorchFEA Assembly 链接
+
+CAD、STEP 导入、BREP 预览、剖分、Part、Instance 及集合定义统一由独立的
+`torchfea-ui` 完成；MorphOpt 不复制第二套 CAD 编辑器。前后端边界固定为：
+
+```
+TorchFEAModelEditor（选择并监视导出目录）
+    → 启动 torchfea-ui；捕获用户保存的 *.npz
+    → GeometryNode.model_directory / model_filename
+    → codegen 生成明确的模型链接
+    → FixedGeometryTorchFEA
+    → 仅克隆 TorchFEA Assembly 的 Parts + Instances
+    → MorphOpt FEAParams 添加优化所需载荷、边界、约束与参考点
+```
+
+- `morphopt/optcore/modelparams/geometry.py` 同时包含 TorchFEA 几何模型和无 Qt
+  导入桥接，负责路径解析、模型摘要和
+  Assembly 净化；widget 不构造后端 Assembly，后端不 import Qt。
+- 导入只保留所有 Part、对应 Instance、位姿及 Part 内的面集、节点集、单元集和单元块。
+  原 TorchFEA 模型的 loads、boundarys、constraints、reference points、solver 全部丢弃。
+- 点击“打开 torchfea-ui”前必须提示：用户只需定义到 Assembly 层，并将 `.npz` 保存到
+  当前监视目录。目录监视自动选择新建或更新的模型，用户仍可从目录中的模型列表明确切换。
+- UI 从所选 Instance 对应的 Part 动态读取选择项：Pressure/Contact 用 surface set，
+  BoundaryCondition/Couple 用 node set，材料用 Part 与 element block；生成代码前再次验证
+  Instance 与集合引用，不能依赖约定名称。
+- SIMP 模板默认不添加边界、参考点、耦合、力或力矩，所有选择初始为空。
+- `.morph` 只保存目录和文件名；生成的 Python 通过同一链接加载模型。移动模型后必须在
+  几何页重新选择目录，禁止把大型 TorchFEA 运行时对象序列化进 `.morph`。
 
 - 每种优化方案 = `schemes/` 下一个继承 `SchemeTemplate` 的类（如
   `ShapeoptTemplate`）。这是该任务树“形状”的唯一来源。
