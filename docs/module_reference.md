@@ -122,10 +122,31 @@ src/morphopt/
 - 创建并管理载荷接口对象
 - 每个 load step 调用 `process_fea(...)` 应用当前幅值
 
-#### `materials.py` — HomogeneousMaterial / BaseMaterials
+#### `materialinterface/` — 材料赋值接口
 
-- `HomogeneousMaterial`：均质材料，设定 `mu/kappa/density`
-- `BaseMaterials`：材料基类，提供 `set_materials()` / `obtain_design_sensitivity_vars()` 等接口
+材料接口的具体实现独立放在 `optcore/modelparams/materialinterface/`，由
+`materials.py` 统一聚合。
+
+- `basematerialinterface.py`：`BaseMaterialInterface`，一个 Part 上一个材料赋值接口；
+  `elementname=""` 表示全部单元。
+- `homogeneousmaterial.py`：`HomogeneousMaterial` 均质材料接口。
+- `materialmodels.py`：TorchFEA 本构模型与对应参数对象的集中定义。
+
+#### `materials.py` — MaterialsParams
+
+- `HomogeneousMaterial`：均质材料；通过对应的参数对象（如
+  `self.materialmodels.NeoHookeanLnJParams(...)`）选择 TorchFEA 本构模型，
+  并传入 `density`
+- `SIMP_BSPFieldMaterials`：SIMP 密度场材料，同样通过对应的参数对象选择
+  本构模型；`NeoHookeanLnJParams` 是推荐的默认模型参数类型，SIMP 另外使用
+  `mumax/kappamax` 做密度场插值。
+- `MaterialsParams`：按注册顺序聚合多个接口，并提供 `set_materials()`、设计变量和灵敏度拼接。
+
+各模型的参数类型挂在 `MaterialsParams.materialmodels` 上；在
+`define_interface()` 中直接使用 `self.materialmodels.NeoHookeanLnJParams` 等
+参数对象。参数对象的类名同时决定材料模型；可选的模型名为
+`LinearElastic`、`NeoHookean`、`NeoHookeanLnJ`、`MooneyRivlin`、`Yeoh`、
+`Gent`、`ArrudaBoyce` 和 `Ogden`。
 
 #### `feainterface/` — FEA 接口（9 种）
 
@@ -187,11 +208,11 @@ src/morphopt/
 
 ### 5.1 `simpmaterial.py` — SIMP_BSPFieldMaterials
 
-定义方式：继承 `BaseParams`，B 样条控制点场 `_cps` 作为设计变量。
+定义方式：继承 `BaseMaterialInterface`，B 样条控制点场 `_cps` 作为设计变量。
 
 - `_map_bsp_designfield(nodes)`：高斯点上计算材料密度
 - `get_material_ratio(designfield)`：RAMP 插值 + 材料惩罚
-- `set_materials(fe)`：在 FEA 元素上赋值 NeoHookean 材料
+- `set_materials(fe)`：按参数对象对应的材料模型对密度场缩放刚度参数并赋值材料
 - 自定义元素类：`SIMPElementFgrad` / `SIMPElementFskew` / `SIMPElementHuHu_LuLu`
 
 **敏感度中的正则惩罚：**
@@ -235,12 +256,23 @@ src/morphopt/
 - 用目标偏移点 + 线性插层构建 offset 层节点
 - 内置 reinitialize 后的轻量形状平滑优化
 
-### 6.2 `material.py` — CodesignMaterials
+### 6.2 `materials.py` + `materialinterface/` — 材料接口集合
 
-定义方式：`CodesignMaterials(BaseParams)`。
+材料定义由 `BaseMaterialInterface` 和 `MaterialsParams` 组成。
 
-- 分别设定壳层与体芯材料参数（`shell_mu`, `shell_kappa` 等）
-- 在 C3D6 壳单元上单独赋予壳材料参数
+- 每个接口必须绑定非空 `part_name`。
+- `elementname` 默认为空字符串；空值表示该 Part 的全部单元类型。
+- `HomogeneousMaterial` 按 `material_parameters` 对象赋予均匀材料；参数对象
+  的类型决定本构模型。
+- `SIMP_BSPFieldMaterials` 赋予 B 样条密度场材料。
+- 模型参数使用对应的参数对象，例如 `NeoHookeanParams`、
+  `MooneyRivlinParams` 和 `YeohParams`；对象类型同时决定本构模型，
+  并提供明确的参数字段提示。
+- `MaterialsParams.add_material_interface(interface, name=...)` 注册接口，并自动
+  聚合所有接口的设计变量、参数和装配修改操作。
+
+codesign 不再有复合 `CodesignMaterials` 类；实体 SIMP 和 C3D6 壳材料是两个
+独立的接口。
 
 ### 6.3 `feaparams.py` — CodesignFEAParams
 

@@ -17,7 +17,10 @@ code snippets; those belong to :mod:`morphopt.ui.schemes`.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any, Optional
+
+from ...optcore.modelparams.materialinterface import MaterialModels
 
 # --------------------------------------------------------------------------
 # small builders
@@ -50,14 +53,24 @@ _FIELD_LABELS_ZH = {
     "rp_name2": "参考点 2",
     "rp_location": "参考点位置",
     "element_name": "单元类型",
-    "elementname": "单元类型",
-    "shell_elementname": "壳层单元类型",
+    "elementname": "Elems 名称",
     "obj_name": "对象",
     "s": "自由度",
     "obj_type": "对象类型",
     "penalty_threshold_h": "罚函数阈值 h",
     "mu": "剪切模量 μ",
     "kappa": "体积模量 κ",
+    "material_model": "材料模型",
+    "E": "杨氏模量 E",
+    "nu": "泊松比 ν",
+    "c10": "Mooney-Rivlin c10",
+    "c01": "Mooney-Rivlin c01",
+    "c1": "Yeoh c1",
+    "c2": "Yeoh c2",
+    "c3": "Yeoh c3",
+    "Jm": "Gent Jm",
+    "N": "Arruda-Boyce N",
+    "alpha": "Ogden alpha",
     "density": "密度",
     "mumax": "最大剪切模量",
     "kappamax": "最大体积模量",
@@ -67,15 +80,13 @@ _FIELD_LABELS_ZH = {
     "initial_ratio": "初始密度比例",
     "voidpenalfactor": "空域惩罚因子",
     "materialpenalty": "材料惩罚指数",
-    "shell_mu": "壳层剪切模量",
-    "shell_kappa": "壳层体积模量",
-    "shell_density": "壳层密度",
     "fea_seed_size": "FEA 网格种子尺寸",
     "mesh_order": "网格阶次",
     "reinitialize_per_iter": "重新划分网格间隔",
     "thickness": "壳层厚度",
     "num_layers": "壳层层数",
     "part_name": "设计 Part",
+    "instance_name": "对应实体",
     "model_directory": "TorchFEA 模型目录",
     "model_filename": "TorchFEA 模型文件",
     "num_process": "进程数",
@@ -128,8 +139,7 @@ _FIELD_DOCS_ZH = {
     "rp_name2": "第二个参考点名称。",
     "rp_location": "参考点坐标。",
     "element_name": "单元类型名称。",
-    "elementname": "单元类型名称。",
-    "shell_elementname": "壳层单元类型名称。",
+    "elementname": "材料要赋予的 Part.elems 名称；为空时选择全部 elems。",
     "obj_name": "被约束对象的名称。",
     "s": "自由度编号。",
     "obj_type": "被约束对象的类型。",
@@ -145,15 +155,13 @@ _FIELD_DOCS_ZH = {
     "initial_ratio": "密度场初始比例。",
     "voidpenalfactor": "空域惩罚因子。",
     "materialpenalty": "材料惩罚指数。",
-    "shell_mu": "壳层剪切模量。",
-    "shell_kappa": "壳层体积模量。",
-    "shell_density": "壳层质量密度。",
     "fea_seed_size": "全局 Gmsh 网格种子尺寸。",
     "mesh_order": "网格阶次。",
     "reinitialize_per_iter": "每隔多少次迭代重新生成网格。",
     "thickness": "内表面的偏置壳层厚度。",
     "num_layers": "壳层中的 C3D6 楔形单元层数。",
     "part_name": "承载 SIMP 设计材料场的 TorchFEA Part。",
+    "instance_name": "对应的 TorchFEA Instance 名称；形状优化默认与 Part 同名。",
     "model_directory": "监视 torchfea-ui 模型导出的目录。",
     "model_filename": "目录中当前链接的 TorchFEA .npz 模型。",
     "num_process": "FEA 求解进程数。",
@@ -454,24 +462,78 @@ INTERFACE_TYPES: dict[str, dict] = {
 # materials
 # --------------------------------------------------------------------------
 
+MATERIAL_MODEL_CHOICES: list[str] = [
+    name.removesuffix("Params")
+    for name in vars(MaterialModels)
+    if name.endswith("Params")
+]
+MATERIAL_MODEL_PARAMETERS: dict[str, tuple[str, ...]] = {
+    name.removesuffix("Params"): tuple(field.name for field in fields(parameter_class))
+    for name, parameter_class in vars(MaterialModels).items()
+    if name.endswith("Params")
+}
+
+MATERIAL_MODEL_DEFAULTS: dict[str, object] = {
+    "E": 1.0,
+    "nu": 0.45,
+    "mu": 0.482,
+    "kappa": 4.8,
+    "c10": 0.241,
+    "c01": 0.241,
+    "c1": 0.482,
+    "c2": 0.0,
+    "c3": 0.0,
+    "Jm": 100.0,
+    "N": 10.0,
+    "alpha": [2.0],
+}
+
+_MATERIAL_PARAMETER_FIELDS: dict[str, dict[str, object]] = {
+    "E": fld("E", "E", "float", MATERIAL_MODEL_DEFAULTS["E"]),
+    "nu": fld("nu", "nu", "float", MATERIAL_MODEL_DEFAULTS["nu"]),
+    "mu": fld("mu", "mu", "float", MATERIAL_MODEL_DEFAULTS["mu"]),
+    "kappa": fld("kappa", "kappa", "float", MATERIAL_MODEL_DEFAULTS["kappa"]),
+    "c10": fld("c10", "c10", "float", MATERIAL_MODEL_DEFAULTS["c10"]),
+    "c01": fld("c01", "c01", "float", MATERIAL_MODEL_DEFAULTS["c01"]),
+    "c1": fld("c1", "c1", "float", MATERIAL_MODEL_DEFAULTS["c1"]),
+    "c2": fld("c2", "c2", "float", MATERIAL_MODEL_DEFAULTS["c2"]),
+    "c3": fld("c3", "c3", "float", MATERIAL_MODEL_DEFAULTS["c3"]),
+    "Jm": fld("Jm", "Jm", "float", MATERIAL_MODEL_DEFAULTS["Jm"]),
+    "N": fld("N", "N", "float", MATERIAL_MODEL_DEFAULTS["N"]),
+    "alpha": fld("alpha", "alpha", "vecN", MATERIAL_MODEL_DEFAULTS["alpha"]),
+}
+
+_ALL_MATERIAL_PARAMETER_FIELDS: list[dict] = [
+    _MATERIAL_PARAMETER_FIELDS[key]
+    for key in ("E", "nu", "mu", "kappa", "c10", "c01", "c1", "c2",
+                "c3", "Jm", "N", "alpha")
+]
+
 MATERIAL_TYPES: dict[str, dict] = {
     "HomogeneousMaterial": {
-        "label": "均质超弹性材料 (HomogeneousMaterial)",
-        "label_en": "Homogeneous hyperelastic material (HomogeneousMaterial)",
+        "label": "均质材料 (HomogeneousMaterial)",
+        "label_en": "Homogeneous material (HomogeneousMaterial)",
+        "schemes": ("shapeopt", "codesign"),
         "params": [
-            fld("mu", "mu", "float", 0.482, "Shear modulus."),
-            fld("kappa", "kappa", "float", 4.8, "Bulk modulus."),
+            fld("part_name", "Part", "combo", "final_model", "Material assignment Part.", choices=[]),
+            fld("material_model", "Material model", "combo", "NeoHookeanLnJ",
+                "TorchFEA constitutive model.", choices=MATERIAL_MODEL_CHOICES),
+            *_ALL_MATERIAL_PARAMETER_FIELDS,
             fld("density", "density", "float", 1.08e-9, "Mass density."),
-            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
+            fld("elementname", "Elems name (empty = all)", "combo", "", "Name under Part.elems; empty assigns all elems.", choices=[""]),
         ],
     },
     "SIMP_BSPFieldMaterials": {
         "label": "SIMP B样条密度场材料 (SIMP_BSPFieldMaterials)",
         "label_en": "SIMP B-spline density-field material (SIMP_BSPFieldMaterials)",
+        "schemes": ("simp", "codesign"),
         "params": [
-            fld("part_name", "Design Part", "combo", "", "Part carrying the SIMP design field.", choices=[]),
+            fld("part_name", "Design Part", "combo", "final_model", "Part carrying the SIMP design field.", choices=[]),
+            fld("material_model", "Material model", "combo", "NeoHookeanLnJ",
+                "TorchFEA constitutive model.", choices=MATERIAL_MODEL_CHOICES),
             fld("mumax", "mu max", "float", 10.0),
             fld("kappamax", "kappa max", "float", 100.0),
+            *_ALL_MATERIAL_PARAMETER_FIELDS,
             fld("simp_ratio_min", "ratio min", "float", 1e-7),
             fld("bounding_box", "bounding_box", "vec6", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "Field bounding box [xmin,xmax,ymin,ymax,zmin,zmax]."),
             fld("simp_field_resolution", "field resolution", "float", 0.5),
@@ -480,28 +542,7 @@ MATERIAL_TYPES: dict[str, dict] = {
             fld("initial_ratio", "initial_ratio", "float", 0.5),
             fld("voidpenalfactor", "void penal", "float", 1e-2),
             fld("materialpenalty", "material penalty", "float", 8.0),
-            fld("elementname", "Element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
-        ],
-    },
-    "CodesignMaterials": {
-        "label": "协同设计材料 · SIMP 体+壳 (CodesignMaterials)",
-        "label_en": "Co-design material · SIMP solid + shell (CodesignMaterials)",
-        "params": [
-            fld("mumax", "mu max", "float", 4.5),
-            fld("kappamax", "kappa max", "float", 45.0),
-            fld("simp_ratio_min", "ratio min", "float", 1e-4),
-            fld("bounding_box", "bounding_box", "vec6", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            fld("simp_field_resolution", "field resolution", "float", 1.0),
-            fld("degree", "degree", "int", 3),
-            fld("density", "density", "float", 1.08e-9),
-            fld("initial_ratio", "initial_ratio", "float", 0.5),
-            fld("voidpenalfactor", "void penal", "float", 1e-1),
-            fld("materialpenalty", "material penalty", "float", 8.0),
-            fld("elementname", "Solid element", "combo", "C3D4", "", choices=["C3D4", "C3D8", "C3D10", "C3D20"]),
-            fld("shell_mu", "shell mu", "float", 0.48),
-            fld("shell_kappa", "shell kappa", "float", 4.8),
-            fld("shell_density", "shell density", "float", 1.08e-9),
-            fld("shell_elementname", "Shell element", "combo", "C3D6", "", choices=["C3D6"]),
+            fld("elementname", "Elems name (empty = all)", "combo", "", "Name under Part.elems; empty assigns all elems.", choices=[""]),
         ],
     },
 }
@@ -512,6 +553,8 @@ GEOMETRY_SCHEMES: dict[str, list[dict]] = {
         fld("fea_seed_size", "FEA seed size", "float", 2.5, "Global Gmsh seed size.", minimum=1e-3),
         fld("mesh_order", "Mesh order", "combo", 1, "", choices=[1, 2]),
         fld("reinitialize_per_iter", "re-mesh every", "int", 5, "Regenerate mesh every N iterations.", minimum=1),
+        fld("part_name", "Part name", "str", "final_model", "Generated Part name."),
+        fld("instance_name", "Instance name", "str", "final_model", "Generated Instance name."),
     ]),
     "codesign": fields_from_specs([
         fld("fea_seed_size", "FEA seed size", "float", 2.5, "Global Gmsh seed size.", minimum=1e-3),
@@ -519,6 +562,8 @@ GEOMETRY_SCHEMES: dict[str, list[dict]] = {
         fld("reinitialize_per_iter", "re-mesh every", "int", 10, "Regenerate mesh every N iterations.", minimum=1),
         fld("thickness", "Shell thickness", "float", 2.0, "Offset thickness of inner surfaces.", minimum=0.0),
         fld("num_layers", "Shell layers", "int", 1, "C3D6 wedge layers through the shell.", minimum=1),
+        fld("part_name", "Part name", "str", "final_model", "Generated Part name."),
+        fld("instance_name", "Instance name", "str", "final_model", "Generated Instance name."),
     ]),
     # SIMP uses its dedicated TorchFEA model-directory editor.
     "simp": [],
@@ -661,12 +706,13 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label_en": "volume-fraction band constraint (VolFrac)",
         "group": "materials", "schemes": ["simp", "codesign"],
         "gen": ("self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, "
-                "penalty={penalty}, element_name={element_name})"),
+                "penalty={penalty}, elementname={elementname})"),
         "params": [fld("volfrac_min", "volfrac_min", "float", 0.0),
                   fld("volfrac_max", "volfrac_max", "float", 0.6),
                   fld("penalty", "penalty", "float", 1e4),
-                  fld("element_name", "element_name", "combo", "C3D4",
-                      "", choices=["C3D4", "C3D8", "C3D10", "C3D6"])],
+                  fld("elementname", "Elems name", "combo", "",
+                      "必须明确选择目标 Part.elems 名称。",
+                      choices=["C3D4", "C3D8", "C3D10", "C3D6"])],
     },
     "MinValue": {
         "label": "最小密度约束 (MinValue)",

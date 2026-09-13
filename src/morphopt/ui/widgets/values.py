@@ -23,6 +23,7 @@ _CHOICE_LABELS = {
     ("obj_type", "node"): ("节点", "Node"),
     ("obj_type", "element"): ("单元", "Element"),
     ("obj_type", "part"): ("部件", "Part"),
+    ("elementname", ""): ("全选", "All"),
 }
 
 

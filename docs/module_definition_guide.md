@@ -43,7 +43,7 @@ class ThisController(morphopt.Controller):
 | `Params` | `morphopt.shapeopt.Params` | `morphopt.simp.Params` | `morphopt.codesign.Params` |
 | `GeometryParams` | `morphopt.shapeopt.GeometryParams` | `morphopt.simp.FixedGeometry` / `FixedGeometryINP` | `morphopt.codesign.CodesignGeometry` |
 | `FEAParams` | `morphopt.shapeopt.FEAParams` | `morphopt.simp.FEAParams` | `morphopt.codesign.CodesignFEAParams` |
-| `MaterialParams` | `morphopt.shapeopt.HomogeneousMaterial` | `morphopt.simp.SIMP_BSPFieldMaterials` | `morphopt.codesign.CodesignMaterials` |
+| `MaterialsParams` | `morphopt.shapeopt.MaterialsParams` | `morphopt.simp.MaterialsParams` | `morphopt.codesign.MaterialsParams` |
 | `Solver` | `morphopt.shapeopt.Solver` | `morphopt.simp.SIMPSolver` | `morphopt.codesign.Solver` |
 | `Updater` | `morphopt.shapeopt.Updaters` | `morphopt.simp.Updaters` | `morphopt.codesign.Updaters` |
 | 几何更新器（Updater 内层） | `morphopt.shapeopt.UpdaterGeometries` | — | `morphopt.codesign.UpdaterGeometries` |
@@ -88,7 +88,7 @@ class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):  # simp/codesign �
 
 - `GeometryParams`：几何定义与网格生成。
 - `FEAParams`：载荷/边界/接触定义与工况幅值。
-- `MaterialParams`：材料参数化与赋值。
+- `MaterialsParams`：材料接口集合；每个接口独立指定 Part 和可选单元类型。
 
 模板：
 
@@ -108,12 +108,18 @@ class Params(morphopt.shapeopt.Params):
             self.set_step_num(1)
             self.set_step_params(0, 'pressure_1', [0.06])
 
-    class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
-        def __init__(self):
-            super().__init__(mu=0.48, kappa=4.8, density=1.08e-9)
+    class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+        def define_interface(self):
+            self.add_material_interface(
+                self.HomogeneousMaterial(
+                    material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                        mu=0.48, kappa=4.8),
+                    density=1.08e-9,
+                    part_name="final_model", elementname=""),
+                name="body")
 
     def __init__(self):
-        super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+        super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams())
 ```
 
 ### 3.1 GeometryParams 定义要点
@@ -152,16 +158,53 @@ class Params(morphopt.shapeopt.Params):
 - 参考点：`ReferencePointInterface`
 - 体力：`BodyforceInterface`
 
-### 3.3 MaterialParams 定义要点
+### 3.3 MaterialsParams 定义要点
 
 功能：
 
-- 把参数映射到材料本构。
+- 把参数映射到材料本构，并把所有材料接口的设计变量聚合给优化器。
 
 两条路线：
 
-1. 均质（shapeopt 用）：继承 `morphopt.shapeopt.HomogeneousMaterial`，直接给 `mu / kappa / density`。
-2. 拓扑场（simp / codesign 用）：继承 `morphopt.simp.SIMP_BSPFieldMaterials`（codesign 里应继承 `morphopt.codesign.CodesignMaterials`）。
+1. 先继承方案对应的 `MaterialsParams`。
+2. 在 `define_interface()` 中调用 `add_material_interface(...)` 注册一个或多个接口。
+3. 均质材料使用 `HomogeneousMaterial`；SIMP 材料使用 `SIMP_BSPFieldMaterials`。
+
+`part_name` 不能为空；`elementname=""` 表示该 Part 的所有单元类型。一个
+codesign 材料集合通常注册两个接口：实体单元上的 SIMP 接口和 `C3D6` 上的
+`HomogeneousMaterial` 接口。材料接口的设计变量由 `MaterialsParams` 自动拼接，
+因此 `simp` 和 `codesign` 的 `UpdaterMaterials` 不需要额外适配。
+
+每个材料接口通过 `material_parameters` 的参数对象选择 TorchFEA 本构模型，
+不再单独传入 `material_model`。当前可选参数类型为
+`self.materialmodels.LinearElasticParams`、`NeoHookeanParams`、
+`NeoHookeanLnJParams`、`MooneyRivlinParams`、`YeohParams`、`GentParams`、
+`ArrudaBoyceParams` 和 `OgdenParams`；参数对象的类名同时决定材料模型。
+这些参数类型由 `MaterialsParams.materialmodels` 提供，不需要从顶层
+`morphopt` 导入。
+模型所需的参数使用对应的参数类型传入，例如：
+
+```python
+self.HomogeneousMaterial(
+    material_parameters=self.materialmodels.MooneyRivlinParams(
+        c10=0.24, c01=0.12, kappa=4.8),
+    density=1.08e-9,
+    part_name="final_model")
+```
+
+SIMP 接口也使用相同的模型选择；例如 Yeoh 模型的参数通过对应类型传入：
+
+```python
+morphopt.simp.SIMP_BSPFieldMaterials(
+    material_parameters=self.materialmodels.YeohParams(
+        c1=0.48, c2=0.0, c3=0.0, kappa=4.8),
+    mumax=10.0, kappamax=100.0,
+    simp_ratio_min=1e-7,
+    bounding_box=[0, 20, 0, 10, 0, 5],
+    simp_field_resolution=0.5, degree=2,
+    density=1.08e-9,
+    part_name="final_model")
+```
 
 SIMP 场常见重写点：
 
@@ -236,11 +279,12 @@ class Updater(morphopt.codesign.Updaters):
 - `Params` → `morphopt.codesign.Params`
   - `GeometryParams` → `morphopt.codesign.CodesignGeometry`
   - `FEAParams` → `morphopt.codesign.CodesignFEAParams`
-  - `MaterialParams` → `morphopt.codesign.CodesignMaterials`
+  - `MaterialsParams` → `morphopt.codesign.MaterialsParams`
 - `Solver` → `morphopt.codesign.Solver`
 - `Updater` → `morphopt.codesign.Updaters`（内层 `UpdaterGeometries` / `UpdaterMaterials` 同样用 codesign 前缀）
 
-codesign 里自定义 CPGEO 曲面类应继承 `morphopt.codesign.GeometryParams.CPGEO`；`MaterialParams` 常重写 `_map_bsp_designfield` 加入旋转对称副本。
+codesign 里自定义 CPGEO 曲面类应继承 `morphopt.codesign.GeometryParams.CPGEO`；
+自定义 SIMP 接口常重写 `_map_bsp_designfield` 加入旋转对称副本。
 
 几何约束可直接加：
 

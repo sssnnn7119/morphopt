@@ -7,7 +7,7 @@ from typing import Optional
 from ..model.problem import (
     ProblemDefinition, Node,
     GeometryNode, SurfaceNode, InterfaceNode, LoadsNode, StepsNode,
-    MaterialNode, ObjectiveNode, SolverNode, UpdaterNode,
+    MaterialsNode, MaterialNode, ObjectiveNode, SolverNode, UpdaterNode,
 )
 from ..model import schemas as S
 from .snippets import CodeSnippet, shared_fea_snippets
@@ -57,12 +57,32 @@ class SchemeTemplate:
         """Build a fresh load interface from schema defaults."""
         return InterfaceNode.create(interface_type, name=name, **overrides)
 
-    def make_material(self, **overrides) -> MaterialNode:
+    def make_material(self, material_type: str | None = None,
+                      **overrides) -> MaterialNode:
         """Build a fresh material of this scheme's concrete type."""
-        mat = MaterialNode.create(self.material_type, **overrides)
+        selected_type = material_type or self.material_type
+        if selected_type not in self.available_material_types():
+            raise ValueError(
+                f"Material type {selected_type!r} is not available for "
+                f"scheme {self.scheme!r}.")
+        mat = MaterialNode.create(selected_type, **overrides)
         if self.scheme in ("simp", "codesign"):
             mat.set_field("_map_bsp_designfield", self.default_map_bsp_designfield())
         return mat
+
+    def available_material_types(self) -> tuple[str, ...]:
+        """Return material interfaces supported by this optimization scheme."""
+        return tuple(
+            material_type
+            for material_type, spec in S.MATERIAL_TYPES.items()
+            if self.scheme in spec.get("schemes", ()))
+
+    def make_materials(self, *materials: MaterialNode) -> MaterialsNode:
+        """Build the material-interface collection for the problem tree."""
+        section = MaterialsNode(name="Materials")
+        for material in materials:
+            section.add_material(material)
+        return section
 
     @property
     def material_type(self) -> str:

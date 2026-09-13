@@ -62,7 +62,7 @@
 | 挑战 | 解决方案 | 代码位置 |
 |------|---------|---------|
 | 薄壁密封层需精确仿真 | **偏置壳单元**：CPGEO 曲面 + 法向偏置 → C3D6 楔形元 | `codesign/geometry.py` |
-| 外骨骼需大范围拓扑优化 | **SIMP + BSP 场参数化** + **RAMP 惩罚插值** | `codesign/material.py` |
+| 外骨骼需大范围拓扑优化 | **SIMP + BSP 场参数化** + **RAMP 惩罚插值** | `simp/simpmaterial.py` |
 | 低密度区零能模式导致数值不稳定 | **Fskew 正则化**：惩罚位移二阶梯度反对称分量 + 逐高斯点自适应惩罚 | `simpmaterial.py` |
 | 壳结构在优化中可能自交或畸变 | **内凹曲率约束** + **偏移面最小距离约束** | `codesign/constraints.py` |
 
@@ -374,23 +374,29 @@ morphopt/
 ├── codesign/
 │   ├── __init__.py
 │   ├── geometry.py        ← 偏置壳构建、法向量、modify_assembly
-│   ├── material.py        ← CodesignMaterials（SIMP + 壳材料组合）
+│   ├── __init__.py        ← MaterialsParams 与材料接口导出
 │   ├── feaparams.py       ← CodesignFEAParams（FEA 参数定义）
 │   └── constraints.py     ← InwardCurvatureRadius / OffsetSurfaceMinThickness
 ├── optcore/
-│   ├── modelparams/materials/
-│   │   └── simpmaterial.py ← SIMP_BSPFieldMaterials、SIMPElementFskew/Fgrad/...
+│   ├── modelparams/materialinterface/
+│   │   ├── basematerialinterface.py
+│   │   ├── homogeneousmaterial.py
+│   │   └── materialmodels.py
+│   ├── modelparams/materials.py ← MaterialsParams 聚合
 │   ├── updaters/materials/
 │   │   └── objectivefuncs/  ← Sensitivity、DensityFieldMinimize
 │   └── solver.py           ← 伴随法灵敏度求解
+├── simp/
+│   └── simpmaterial.py     ← SIMP_BSPFieldMaterials、SIMPElementFskew/Fgrad/...
 └── myjobs/codesign/        ← 任务脚本（协同设计）
 ```
 
 ### 7.2 类继承链
 
 ```
-SIMP_BSPFieldMaterials          ← 材料场基类（BSP + RAMP + 自适应惩罚）
-  └── CodesignMaterials         ← 额外处理壳单元（C3D6）均匀材料
+MaterialsParams                 ← 聚合多个材料接口并拼接设计变量
+  ├── SIMP_BSPFieldMaterials    ← C3D4/C3D8 等实体 SIMP 密度场
+  └── HomogeneousMaterial        ← C3D6 壳等单元的均匀材料
 
 torchfea.elements.Element_3D
   ├── SIMPElementFskew          ← Fskew 正则化（推荐）
@@ -564,32 +570,35 @@ def set_materials(self, fe):
     designfield = self._map_bsp_designfield(gaussian_points_locations)
     ratio_now = self.get_material_ratio(designfield)
     
-    # SIMP 插值
-    mu = ratio_now * self._mumax
-    kappa = ratio_now * self._kappamax
-    
-    # 分配材料
-    materials = NeoHookeanLnJ(mu=mu, kappa=kappa)
+    # 对当前接口所选的 TorchFEA 本构统一做 SIMP 空间缩放
+    materials = SIMPScaledMaterial(self.create_material(), ratio_now)
     elements_new.set_materials(materials)
     
     # 每个高斯点独立惩罚因子
     elements_new.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
 ```
 
-#### 8.2.6 壳材料处理（`CodesignMaterials`）
+#### 8.2.6 壳材料处理（独立材料接口）
 
 ```python
-class CodesignMaterials(SIMP_BSPFieldMaterials):
-    def set_materials(self, fe):
-        # 为壳单元设置均匀材料
-        elements_shell = fe.assembly.get_part('final_model').elems['C3D6']
-        mu = self.shell_mu
-        kappa = self.shell_kappa
-        materials = NeoHookean(mu=mu, kappa=kappa)
-        elements_shell.set_materials(materials)
-        
-        # 为实体单元设置 SIMP 材料
-        super().set_materials(fe)
+class MaterialsParams(morphopt.codesign.MaterialsParams):
+    def define_interface(self):
+        self.add_material_interface(
+            morphopt.simp.SIMP_BSPFieldMaterials(
+                material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                    mu=4.5, kappa=45.0),
+                mumax=4.5, kappamax=45.0, simp_ratio_min=1e-4,
+                bounding_box=[-10, 10, -10, 10, 0, 100],
+                simp_field_resolution=1.0, degree=3,
+                part_name="final_model", elementname="C3D4"),
+            name="solid")
+        self.add_material_interface(
+            self.HomogeneousMaterial(
+                material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                    mu=0.48, kappa=4.8),
+                density=1.08e-9,
+                part_name="final_model", elementname="C3D6"),
+            name="shell")
 ```
 
 ---
@@ -767,7 +776,7 @@ Controller                         → 优化主循环 (optcore/controller.py)
 │   │   └── modify_assembly()      → 更新节点坐标
 │   ├── FEAParams (CodesignFEAParams) → FEA 参数 (codesign/feaparams.py)
 │   │   └── create_fea()           → 壳单元校验
-│   └── Materials (CodesignMaterials) → SIMP 材料 (codesign/material.py)
+│   └── MaterialsParams → solid SIMP + shell HomogeneousMaterial interfaces
 │       ├── SIMPElementC3D10       → C3D10 + Fskew 正则化
 │       ├── get_material_ratio()    → Sigmoid + RAMP(p=8) 密度插值
 │       ├── get_penalty_factor()    → Smoothstep 逐高斯点惩罚系数
@@ -842,15 +851,24 @@ class ThisController(morphopt.Controller):
                     surface_name='surface_1_offset'),  # 气压加载在偏移面
                     name='pressure_1')
 
-        class MaterialParams(morphopt.codesign.CodesignMaterials):
-            def __init__(self):
-                super().__init__(
+        class MaterialsParams(morphopt.codesign.MaterialsParams):
+            def define_interface(self):
+                self.add_material_interface(morphopt.simp.SIMP_BSPFieldMaterials(
+                    material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                        mu=mumax, kappa=mumax * 10),
                     mumax=mumax, kappamax=mumax * 10,
                     simp_ratio_min=minratio,
                     bounding_box=[-25, 25, -25, 25, 0, 50],
                     simp_field_resolution=1.0, degree=3,
-                    shell_mu=0.48, shell_kappa=4.8,   # 壳材料
-                    penalfactor=1e-1)                  # Fscrw 系数
+                    voidpenalfactor=1e-1,
+                    part_name="final_model", elementname="C3D4"),
+                    name="solid")
+                self.add_material_interface(self.HomogeneousMaterial(
+                    material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                        mu=0.48, kappa=4.8),
+                    density=1.08e-9,
+                    part_name="final_model", elementname="C3D6"),
+                    name="shell")
 
     # ---- 更新器 ----
     class Updater(morphopt.codesign.Updaters):

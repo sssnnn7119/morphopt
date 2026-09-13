@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..model.problem import Node
 from ..model.schemas import (
     SURFACE_TYPES, INTERFACE_TYPES, MATERIAL_TYPES, SOLVER_FIELDS,
+    MATERIAL_MODEL_PARAMETERS,
     GEOMETRY_SCHEMES,
 )
 from .codeeditor import CodeEditor
@@ -48,15 +49,40 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
         return list(spec.get("params", [])), {}, choices
     if kind == "material":
         mt = node.get_field("type", "")
+        if problem is not None:
+            from ..schemes.base import get_template
+            if mt not in get_template(problem.scheme).available_material_types():
+                return [], {}, {}
         spec = MATERIAL_TYPES.get(mt, {})
+        model = node.get_field("material_model", "NeoHookeanLnJ")
+        fields = list(spec.get("params", []))
+        if mt in ("HomogeneousMaterial", "SIMP_BSPFieldMaterials"):
+            common = {"part_name", "material_model", "density", "elementname"}
+            if mt == "SIMP_BSPFieldMaterials":
+                # Neo-Hookean SIMP uses its maximum moduli as the model
+                # parameters.  Other models expose their own TorchFEA
+                # parameters; mumax/kappamax remain internal plotting
+                # defaults and are not shown as a second parameter set.
+                if model in ("NeoHookean", "NeoHookeanLnJ"):
+                    common |= {"mumax", "kappamax"}
+                    model_parameters = {"mu", "kappa"}
+                else:
+                    model_parameters = set(MATERIAL_MODEL_PARAMETERS.get(model, ()))
+                allowed = common | model_parameters
+            else:
+                allowed = common | set(MATERIAL_MODEL_PARAMETERS.get(model, ()))
+            fields = [field for field in fields if field["key"] in allowed]
         code_slots = {}
-        if mt in ("SIMP_BSPFieldMaterials", "CodesignMaterials"):
+        if mt == "SIMP_BSPFieldMaterials":
             code_slots["_map_bsp_designfield"] = "map_bsp_designfield(nodes)"
         choices = {}
-        if problem is not None and mt == "SIMP_BSPFieldMaterials":
-            choices["part_name"] = problem.part_names()
+        if problem is not None and mt in ("SIMP_BSPFieldMaterials", "HomogeneousMaterial"):
+            part_names = problem.part_names()
+            if not part_names and problem.geometry is not None:
+                part_names = [problem.geometry.part_name]
+            choices["part_name"] = part_names
             choices["elementname"] = problem.element_names(node.part_name)
-        return list(spec.get("params", [])), code_slots, choices
+        return fields, code_slots, choices
     if kind == "geometry":
         return list(GEOMETRY_SCHEMES.get(scheme, [])), {}, {}
     if kind == "solver":

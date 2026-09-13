@@ -19,7 +19,8 @@ class ShapeoptTemplate(SchemeTemplate):
         "params": "morphopt.shapeopt.Params",
         "geometry": "morphopt.shapeopt.GeometryParams",
         "fea": "morphopt.shapeopt.FEAParams",
-        "material": "morphopt.shapeopt.HomogeneousMaterial",
+        "materials": "morphopt.shapeopt.MaterialsParams",
+        "material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
         "objective": "morphopt.shapeopt.ObjectiveFunction",
         "solver": "morphopt.shapeopt.Solver",
         "updaters": "morphopt.shapeopt.Updaters",
@@ -75,7 +76,10 @@ class ShapeoptTemplate(SchemeTemplate):
         root.add_section(self.make_steps(1, [{"pressure_1": [0.06]}]))
 
         # material: homogeneous hyperelastic --------------------------------
-        root.add_section(self.make_material(mu=0.482, kappa=4.8, density=1.08e-9))
+        root.add_section(self.make_materials(self.make_material(
+            name="body",
+            part_name="final_model",
+            mu=0.482, kappa=4.8, density=1.08e-9)))
 
         # objective + solver -------------------------------------------------
         root.add_section(self.make_objective())

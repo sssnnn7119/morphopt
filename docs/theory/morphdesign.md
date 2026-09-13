@@ -145,9 +145,15 @@ $$
 **代码对应**：`myjobs/ral2026fea/shapeoptimization.py` 中设置材料参数：
 
 ```python
-class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
-    def __init__(self):
-        super().__init__(mu=0.482, kappa=4.8, density=1.08e-9)
+class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+    def define_interface(self):
+        self.add_material_interface(
+            self.HomogeneousMaterial(
+                material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                    mu=0.482, kappa=4.8),
+                density=1.08e-9,
+                part_name="final_model", elementname=""),
+            name="body")
 ```
 
 ### 3.2 虚功原理与平衡方程

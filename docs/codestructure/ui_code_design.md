@@ -79,7 +79,7 @@ problem (ProblemNode)
 ├── geometry  (GeometryNode)     shape/codesign: SurfaceNode*；SIMP: TorchFEA 模型链接
 ├── loads     (LoadsNode)        children: InterfaceNode*（BC/RP/力/力矩/接触…）
 ├── steps     (StepsNode)
-├── material  (MaterialNode)
+├── materials (MaterialsNode)  children: MaterialNode* (Part + element assignment)
 ├── objective (ObjectiveNode)
 ├── solver    (SolverNode)
 └── updater   (UpdaterNode)      .geometry / .materials = 配置 dict
@@ -126,6 +126,7 @@ problem (ProblemNode)
 | `LoadsNode`       | `KIND_LOADS`     | `add_interface()`, `interfaces()`                        |
 | `InterfaceNode`   | `KIND_INTERFACE` | `InterfaceNode.create(type, name, **overrides)`; `.interface_type` |
 | `StepsNode`       | `KIND_STEPS`     | `.num_steps`, `.step_values`                             |
+| `MaterialsNode`   | `KIND_MATERIALS` | `add_material()`, `materials()`                          |
 | `MaterialNode`    | `KIND_MATERIAL`  | `MaterialNode.create(type, **overrides)`; `.material_type` |
 | `ObjectiveNode`   | `KIND_OBJECTIVE` | `.objective_body`, `.metrics_body`, `.jacobian_needed`   |
 | `SolverNode`      | `KIND_SOLVER`    | —                                                        |
@@ -166,7 +167,7 @@ problem (ProblemNode)
    加载旧文件后调用 `align_surface_dependent_state()` 修复尺寸不一致的 updater 状态。
 
 **读节点**：用 `ProblemDefinition` 的类型化访问器
-`problem.geometry / .loads / .steps / .material / .objective / .solver / .updater`，
+`problem.geometry / .loads / .steps / .materials / .objective / .solver / .updater`，
 以及 `problem.surfaces()` / `problem.interfaces()`。不要在新增代码里用
 `problem.node("geometry")` 这种魔法字符串查树（旧代码保留仅为兼容，逐步迁移）。
 
@@ -237,7 +238,10 @@ TorchFEAModelEditor（选择并监视导出目录）
                                               instance_name="final_model", ...))
       root.add_section(loads)
       root.add_section(self.make_steps(1, [{"pressure_1": [0.06]}]))
-      root.add_section(self.make_material(mu=0.482, kappa=4.8, density=1.08e-9))
+      root.add_section(self.make_materials(
+          self.make_material(name="body", part_name="final_model",
+                             elementname="", mu=0.482, kappa=4.8,
+                             density=1.08e-9)))
       root.add_section(self.make_objective())
       root.add_section(self.make_solver(num_process=4))
       root.add_section(self.make_updater(
@@ -289,7 +293,8 @@ TorchFEAModelEditor（选择并监视导出目录）
 |------|------|
 | `make_surface(type, index, **ovr)` | 按 schema 默认建 `SurfaceNode`（flip 自动）|
 | `make_interface(type, name, **ovr)` | 按 schema 默认建 `InterfaceNode` |
-| `make_material(**ovr)` | 用 `material_type`（scheme 决定的具体类）建 `MaterialNode` |
+| `make_material(**ovr)` | 用 `material_type`（scheme 决定的具体类）建一个 `MaterialNode` |
+| `make_materials(*items)` | 建立材料接口集合；每个 item 独立绑定 Part 和单元类型 |
 | `make_geometry(**ovr)` | `GEOMETRY_SCHEMES[scheme]` 默认 + 覆写 + BC 代码槽 |
 | `make_loads()` | 空载荷容器 |
 | `make_steps(num_steps, step_values)` | 载荷步分区 |

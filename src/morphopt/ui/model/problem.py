@@ -16,7 +16,7 @@ from typing import Any, Iterable, Iterator, Optional
 #     ├── geometry   -- children: SurfaceNode*  (index 0 = outer, 1.. = cavities)
 #     ├── loads      -- children: InterfaceNode* (BC / RP / forces / contacts)
 #     ├── steps      -- one StepsNode   (step count + per-interface amplitudes)
-#     ├── material   -- one MaterialNode
+#     ├── materials  -- children: MaterialNode* (Part + element assignments)
 #     ├── objective  -- one ObjectiveNode
 #     ├── solver     -- one SolverNode
 #     └── updater    -- one UpdaterNode (geometry / materials optimiser config)
@@ -24,7 +24,7 @@ from typing import Any, Iterable, Iterator, Optional
 # ``Node`` stays the generic base; the concrete subclasses below make the tree
 # explicit: ``kind`` is a fixed class attribute (no ad-hoc strings) and each
 # class centralises its schema-driven construction so every caller builds the
-# same default node.  The on-disk ``*.morph`` layout is unchanged and
+# same default node.  The ``materials`` section is persisted explicitly and
 # :meth:`Node.from_dict` re-hydrates each entry into its typed subclass.
 # ---------------------------------------------------------------------------
 
@@ -35,12 +35,13 @@ KIND_LOADS = "loads"
 KIND_INTERFACE = "interface"
 KIND_STEPS = "steps"
 KIND_MATERIAL = "material"
+KIND_MATERIALS = "materials"
 KIND_OBJECTIVE = "objective"
 KIND_SOLVER = "solver"
 KIND_UPDATER = "updater"
 
 #: canonical order of the top-level sections inside a problem tree.
-SECTION_ORDER = (KIND_GEOMETRY, KIND_LOADS, KIND_STEPS, KIND_MATERIAL,
+SECTION_ORDER = (KIND_GEOMETRY, KIND_LOADS, KIND_STEPS, KIND_MATERIALS,
                  KIND_OBJECTIVE, KIND_SOLVER, KIND_UPDATER)
 
 
@@ -48,7 +49,7 @@ class Node:
     """A node in the problem-definition tree (generic base).
 
     Subclasses pin :attr:`kind` to a fixed value; a bare ``Node`` still
-    accepts any ``kind`` so legacy / fallback uses keep working.
+    accepts any ``kind`` for tree infrastructure and tests.
 
     Parameter storage is *explicit and dict-free*: every node class declares
     its parameters as real, typed attributes directly in ``__init__`` (best
@@ -213,7 +214,7 @@ class GeometryNode(Node):
     """Initial-geometry definition for every optimization scheme.
 
     Canonical parameters are explicit, typed attributes assigned in
-    ``__init__``; their names match the legacy ``params`` / ``*.morph`` keys.
+    ``__init__``; their names match the persisted ``*.morph`` keys.
     SIMP links to one model exported by TorchFEA; shape optimization continues
     to store its ordered boundary surfaces as child nodes.
     """
@@ -221,6 +222,7 @@ class GeometryNode(Node):
     kind = KIND_GEOMETRY
     _FIELDS = ("fea_seed_size", "mesh_order", "reinitialize_per_iter",
                "thickness", "num_layers",
+               "part_name", "instance_name",
                "model_directory", "model_filename",
                "_apply_surface_constraints")
 
@@ -235,6 +237,8 @@ class GeometryNode(Node):
         self.reinitialize_per_iter: Optional[int] = data.get("reinitialize_per_iter")
         self.thickness: Optional[float] = data.get("thickness")
         self.num_layers: Optional[int] = data.get("num_layers")
+        self.part_name: str = str(data.get("part_name") or "final_model").strip()
+        self.instance_name: str = str(data.get("instance_name") or self.part_name)
         self.model_directory: str = str(data.get("model_directory") or "")
         self.model_filename: str = str(data.get("model_filename") or "")
         # Legacy storage for symmetry/equality code.  New definitions store
@@ -440,6 +444,20 @@ class StepsNode(Node):
         self.step_values: list[dict] = [dict(v) for v in (data.get("step_values") or [])]
 
 
+class MaterialsNode(Node):
+    """Container for the ordered material-assignment interfaces."""
+
+    kind = KIND_MATERIALS
+
+    def add_material(self, material: "MaterialNode",
+                     index: Optional[int] = None) -> "MaterialNode":
+        self.add_child(material, index=index)
+        return material
+
+    def materials(self) -> list["MaterialNode"]:
+        return [child for child in self.children if child.kind == KIND_MATERIAL]
+
+
 class MaterialNode(Node):
     """One material (scheme chooses the concrete material type).
 
@@ -449,11 +467,11 @@ class MaterialNode(Node):
     """
 
     kind = KIND_MATERIAL
-    _FIELDS = ("type", "part_name", "mu", "kappa", "density", "elementname", "mumax",
-               "kappamax", "simp_ratio_min", "bounding_box",
+    _FIELDS = ("type", "part_name", "material_model", "E", "nu", "mu", "kappa",
+               "c10", "c01", "c1", "c2", "c3", "Jm", "N", "alpha",
+               "density", "elementname", "mumax", "kappamax", "simp_ratio_min", "bounding_box",
                "simp_field_resolution", "degree", "initial_ratio",
-               "voidpenalfactor", "materialpenalty", "shell_mu",
-               "shell_kappa", "shell_density", "shell_elementname",
+               "voidpenalfactor", "materialpenalty",
                "_map_bsp_designfield")
 
     def __init__(self, kind: Optional[str] = None, name: str = "",
@@ -463,9 +481,22 @@ class MaterialNode(Node):
         data = dict(params or {})
         # ---- explicit typed parameters (union of material schema fields) --
         self.type: str = str(data.get("type") or "")
-        self.part_name: str = str(data.get("part_name") or "")
+        self.part_name: str = str(data.get("part_name") or "").strip()
+        if not self.part_name:
+            raise ValueError("MaterialNode.part_name cannot be empty.")
+        self.material_model: str = str(data.get("material_model") or "NeoHookeanLnJ")
+        self.E: Optional[float] = data.get("E")
+        self.nu: Optional[float] = data.get("nu")
         self.mu: Optional[float] = data.get("mu")
         self.kappa: Optional[float] = data.get("kappa")
+        self.c10: Optional[float] = data.get("c10")
+        self.c01: Optional[float] = data.get("c01")
+        self.c1: Optional[float] = data.get("c1")
+        self.c2: Optional[float] = data.get("c2")
+        self.c3: Optional[float] = data.get("c3")
+        self.Jm: Optional[float] = data.get("Jm")
+        self.N: Optional[float] = data.get("N")
+        self.alpha: Optional[list] = data.get("alpha")
         self.density: Optional[float] = data.get("density")
         self.elementname: Optional[str] = data.get("elementname")
         self.mumax: Optional[float] = data.get("mumax")
@@ -477,15 +508,16 @@ class MaterialNode(Node):
         self.initial_ratio: Optional[float] = data.get("initial_ratio")
         self.voidpenalfactor: Optional[float] = data.get("voidpenalfactor")
         self.materialpenalty: Optional[float] = data.get("materialpenalty")
-        self.shell_mu: Optional[float] = data.get("shell_mu")
-        self.shell_kappa: Optional[float] = data.get("shell_kappa")
-        self.shell_density: Optional[float] = data.get("shell_density")
-        self.shell_elementname: Optional[str] = data.get("shell_elementname")
         self._map_bsp_designfield: str = str(data.get("_map_bsp_designfield") or "")
 
     @property
     def material_type(self) -> str:
         return self.type
+
+    def set_field(self, key: str, value: Any) -> "Node":
+        if key == "part_name" and not str(value or "").strip():
+            raise ValueError("MaterialNode.part_name cannot be empty.")
+        return super().set_field(key, value)
 
     @property
     def map_designfield(self) -> str:
@@ -618,6 +650,7 @@ NODE_TYPES: dict[str, type[Node]] = {
     KIND_LOADS: LoadsNode,
     KIND_INTERFACE: InterfaceNode,
     KIND_STEPS: StepsNode,
+    KIND_MATERIALS: MaterialsNode,
     KIND_MATERIAL: MaterialNode,
     KIND_OBJECTIVE: ObjectiveNode,
     KIND_SOLVER: SolverNode,
@@ -696,7 +729,14 @@ class ProblemDefinition:
         their generated ``final_model`` instance plus any custom names already
         present in the interface tree.
         """
-        names = [] if self.scheme == "simp" else ["final_model"]
+        names: list[str] = []
+        if self.scheme != "simp" and self.geometry is not None:
+            for field in ("instance_name",):
+                value = getattr(self.geometry, field, None)
+                if isinstance(value, str) and value.strip():
+                    names.append(value.strip())
+        if not names and self.scheme != "simp":
+            names.append("final_model")
         summary = self.imported_model_summary()
         if summary is not None:
             names.extend(item.name for item in summary.instances)
@@ -710,6 +750,11 @@ class ProblemDefinition:
     def part_names(self) -> list[str]:
         summary = self.imported_model_summary()
         return [part.name for part in summary.parts] if summary is not None else []
+
+    def material_nodes(self) -> list[MaterialNode]:
+        """All material assignment nodes in their stable tree order."""
+        section = self.section(KIND_MATERIALS)
+        return section.materials() if isinstance(section, MaterialsNode) else []
 
     def imported_model_summary(self):
         """Inspect the linked TorchFEA model, returning ``None`` if unset."""
@@ -760,9 +805,9 @@ class ProblemDefinition:
         part = self._part_summary(part_name=part_name)
         if part is not None:
             names.extend(part.element_types)
-        if self.material is not None:
-            for field in ("elementname", "shell_elementname"):
-                value = getattr(self.material, field, None)
+        for material in self.material_nodes():
+            for field in ("elementname",):
+                value = getattr(material, field, None)
                 if isinstance(value, str) and value.strip():
                     names.append(value.strip())
         for interface in self.interfaces():
@@ -788,8 +833,11 @@ class ProblemDefinition:
         return self.section(KIND_STEPS)
 
     @property
-    def material(self) -> Optional[MaterialNode]:
-        return self.section(KIND_MATERIAL)
+    def materials(self) -> Optional[MaterialsNode]:
+        section = self.section(KIND_MATERIALS)
+        if isinstance(section, MaterialsNode):
+            return section
+        return None
 
     @property
     def objective(self) -> Optional[ObjectiveNode]:
@@ -815,7 +863,7 @@ class ProblemDefinition:
         Existing values are retained in their current order; missing
         ``if_update`` entries default to ``True`` and a stored Distance matrix
         grows with the catalogue default of ``2.5``.  This is safe to call
-        after loading legacy files.
+        after loading a problem definition.
         """
         config = self._geometry_updater_config()
         if config is None:
@@ -891,6 +939,58 @@ class ProblemDefinition:
         """Insert an interface into the load section."""
         self._require_loads().add_interface(interface, index=index)
         return interface
+
+    def add_material(self, material: MaterialNode,
+                     index: Optional[int] = None) -> MaterialNode:
+        """Insert one material assignment into the Materials section."""
+        section = self.materials
+        if section is None:
+            section = MaterialsNode(name="Materials")
+            root = self.root
+            insert_at = next(
+                (i for i, child in enumerate(root.children)
+                 if child.kind in {KIND_OBJECTIVE, KIND_SOLVER, KIND_UPDATER}),
+                len(root.children),
+            )
+            root.add_section(section, index=insert_at)
+        section.add_material(material, index=index)
+        return material
+
+    def clone_material(self, material: MaterialNode) -> MaterialNode:
+        section = self.materials
+        if section is None or material not in section.materials():
+            raise ValueError("Material is not part of this problem.")
+        clone = material.clone()
+        if not isinstance(clone, MaterialNode):
+            raise TypeError("A material clone must remain a MaterialNode")
+        clone.name = f"{material.name}_copy" if material.name else ""
+        names = {item.name for item in self.material_nodes()}
+        base = clone.name or "material"
+        index = 1
+        while clone.name in names:
+            clone.name = f"{base}_{index}"
+            index += 1
+        return self.add_material(clone, section.children.index(material) + 1)
+
+    def remove_material(self, material: MaterialNode) -> None:
+        section = self.materials
+        if section is None or material not in section.materials():
+            raise ValueError("Material is not part of this problem.")
+        if len(section.materials()) <= 1:
+            raise ValueError("A problem must keep at least one material interface")
+        section.remove_child(material)
+
+    def move_material(self, material: MaterialNode, offset: int) -> bool:
+        section = self.materials
+        if section is None or material not in section.materials():
+            return False
+        source = section.children.index(material)
+        target = source + offset
+        if not 0 <= target < len(section.children):
+            return False
+        section.children[source], section.children[target] = (
+            section.children[target], section.children[source])
+        return True
 
     def clone_interface(self, interface: InterfaceNode, name_prefix: str) -> InterfaceNode:
         """Duplicate an interface below itself under a fresh reference name."""
@@ -1088,6 +1188,7 @@ class ProblemDefinition:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProblemDefinition":
+        root = Node.from_dict(data.get("root", {"kind": "problem"}))
         return cls(
             scheme=data.get("scheme", "shapeopt"),
             label=data.get("label", "Untitled"),
@@ -1095,7 +1196,7 @@ class ProblemDefinition:
             device=data.get("device", "cpu"),
             updater_device=data.get("updater_device"),
             restart_per_iteration=data.get("restart_per_iteration", 10),
-            root=Node.from_dict(data.get("root", {"kind": "problem"})),
+            root=root,
         )
 
 

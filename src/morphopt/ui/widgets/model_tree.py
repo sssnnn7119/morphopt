@@ -23,13 +23,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction
 
 from ..model.problem import (
-    Node, ProblemDefinition, SurfaceNode, InterfaceNode,
+    Node, ProblemDefinition, SurfaceNode, InterfaceNode, MaterialNode,
 )
-from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES
+from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES, MATERIAL_TYPES
 from ..i18n import T, pick
 
 #: containers that hold children we show in the tree
-CONTAINER_ORDER = ["geometry", "loads_group", "material", "solver", "updater"]
+CONTAINER_ORDER = ["geometry", "loads_group", "materials", "solver", "updater"]
 
 #: Localized tree labels.  The parenthesized suffix is a generated-code
 #: location, not a translation.
@@ -38,7 +38,7 @@ CONTAINER_TITLES_ZH = {
     "loads_group": "载荷",
     "loads": "载荷定义",
     "steps": "载荷工况",
-    "material": "材料",
+    "materials": "材料",
     "objective": "优化目标",
     "solver": "求解器",
     "updater": "优化问题定义",
@@ -48,7 +48,7 @@ CONTAINER_TITLES_EN = {
     "loads_group": "Loads",
     "loads": "Load definition",
     "steps": "Load cases",
-    "material": "Materials",
+    "materials": "Materials",
     "objective": "Optimization objective",
     "solver": "Solver",
     "updater": "Optimization definition",
@@ -59,7 +59,7 @@ CODE_REFERENCES = {
     "loads_group": "FEAParams",
     "loads": "define_interface",
     "steps": "define_steps",
-    "material": "MaterialParams",
+    "materials": "MaterialsParams",
     "objective": "ObjectiveFunction",
     "solver": "Solver",
     "updater": "Updater",
@@ -197,6 +197,11 @@ class ModelTree(QTreeWidget):
                 for i, srf in enumerate(self._problem.surfaces()):
                     it = self._make_item(self._surface_title(srf, i), srf)
                     item.addChild(it)
+            elif kind == "materials":
+                for material in self._problem.material_nodes():
+                    material_item = self._make_item(
+                        self._material_title(material), material)
+                    item.addChild(material_item)
             elif kind == "updater":
                 self._add_updater_children(item, node)
         self.expandAll()
@@ -223,6 +228,8 @@ class ModelTree(QTreeWidget):
                     item.setText(0, self._surface_title(node, idx))
             elif node.kind == "interface":
                 item.setText(0, self._interface_title(node))
+            elif node.kind == "material":
+                item.setText(0, self._material_title(node))
             elif node.kind in {"loads", "steps"}:
                 item.setText(0, container_title(node.kind))
             elif node.kind == "objective":
@@ -252,6 +259,17 @@ class ModelTree(QTreeWidget):
         spec = INTERFACE_TYPES.get(it, {})
         phrase = _short_phrase(spec, it)
         return f"{iface.name}  [{phrase}]" if iface.name else phrase
+
+    @staticmethod
+    def _material_title(material: Node) -> str:
+        mtype = material.material_type or "?"
+        spec = MATERIAL_TYPES.get(mtype, {})
+        type_label = _full_label(spec, mtype)
+        part_name = str(material.part_name or "<Part?>").strip()
+        elem_name = str(material.elementname or "").strip()
+        elem_name = elem_name or T("全部 elems", "all elems")
+        name = f"{material.name}: " if material.name else ""
+        return f"{name}{type_label}  [part={part_name}, elem={elem_name}]"
 
     @staticmethod
     def _updater_title(node: Node) -> str:
@@ -368,6 +386,32 @@ class ModelTree(QTreeWidget):
             sub.triggered.connect(lambda a: self._add_surface(a.data()))
             menu.addSeparator()
 
+        if kind == "materials":
+            sub = menu.addMenu(T("添加材料接口 ▸", "Add material interface ▸"))
+            from ..schemes.base import get_template
+            available = get_template(scheme).available_material_types()
+            for mtype in available:
+                spec = MATERIAL_TYPES[mtype]
+                act = QAction(_full_label(spec, mtype), sub)
+                act.setData(mtype)
+                sub.addAction(act)
+            sub.triggered.connect(lambda a: self._add_material(a.data()))
+
+        if kind == "material":
+            act_copy = QAction(T("复制", "Copy"), menu)
+            act_copy.triggered.connect(lambda: self._copy_material(node))
+            act_up = QAction(T("上移", "Move up"), menu)
+            act_up.triggered.connect(lambda: self._move_material(node, -1))
+            act_dn = QAction(T("下移", "Move down"), menu)
+            act_dn.triggered.connect(lambda: self._move_material(node, 1))
+            act_del = QAction(T("删除", "Delete"), menu)
+            act_del.triggered.connect(lambda: self._remove_material(node))
+            menu.addAction(act_copy)
+            menu.addAction(act_up)
+            menu.addAction(act_dn)
+            menu.addSeparator()
+            menu.addAction(act_del)
+
         if kind == "surface":
             act_copy = QAction(T("复制", "Copy"), menu)
             act_copy.triggered.connect(lambda: self._copy_surface(node))
@@ -456,6 +500,42 @@ class ModelTree(QTreeWidget):
             spec.get("name_hint", "load_"))
         self._problem.add_interface(iface)
         self.rebuild(select=iface)
+        self.treeChanged.emit()
+
+    def _add_material(self, material_type: str) -> None:
+        if self._problem is None:
+            return
+        from ..schemes.base import get_template
+
+        tpl = get_template(self._problem.scheme)
+        material = tpl.make_material(material_type=material_type)
+        self._problem.add_material(material)
+        self.rebuild(select=material)
+        self.treeChanged.emit()
+
+    def _copy_material(self, material: Node) -> None:
+        if self._problem is None or not isinstance(material, MaterialNode):
+            return
+        copy = self._problem.clone_material(material)
+        self.rebuild(select=copy)
+        self.treeChanged.emit()
+
+    def _move_material(self, material: Node, delta: int) -> None:
+        if self._problem is None or not isinstance(material, MaterialNode):
+            return
+        if not self._problem.move_material(material, delta):
+            return
+        self.rebuild(select=material)
+        self.treeChanged.emit()
+
+    def _remove_material(self, material: Node) -> None:
+        if self._problem is None or not isinstance(material, MaterialNode):
+            return
+        try:
+            self._problem.remove_material(material)
+        except ValueError:
+            return
+        self.rebuild()
         self.treeChanged.emit()
 
     def _copy_interface(self, iface: Node) -> None:

@@ -24,7 +24,9 @@ class SIMPTemplate(SchemeTemplate):
         "params": "morphopt.simp.Params",
         "geometry": "morphopt.simp.FixedGeometryTorchFEA",
         "fea": "morphopt.simp.FEAParams",
-        "material": "morphopt.simp.SIMP_BSPFieldMaterials",
+        "materials": "morphopt.simp.MaterialsParams",
+        "material_interface": "morphopt.simp.SIMP_BSPFieldMaterials",
+        "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
         "objective": "morphopt.simp.ObjectiveFunction",
         "solver": "morphopt.simp.SIMPSolver",
         "updaters": "morphopt.simp.Updaters",
@@ -76,13 +78,14 @@ class SIMPTemplate(SchemeTemplate):
         root.add_section(self.make_steps(1, [{}]))
 
         # material: the SIMP B-spline density design field -------------------
-        root.add_section(self.make_material(
-            part_name="",
+        root.add_section(self.make_materials(self.make_material(
+            name="solid",
+            part_name="final_model",
             mumax=10.0, kappamax=100.0, simp_ratio_min=1e-7,
             density=1.08e-9, initial_ratio=0.5,
             bounding_box=[0.0, 20.0, 0.0, 10.0, 0.0, 5.0],
             simp_field_resolution=0.5, degree=2, voidpenalfactor=1e-2,
-            materialpenalty=8.0, elementname="C3D4"))
+            materialpenalty=8.0, elementname="")))
 
         # objective + solver -------------------------------------------------
         root.add_section(self.make_objective())
@@ -99,8 +102,10 @@ class SIMPTemplate(SchemeTemplate):
                 constraints=(S.updater_constraint("MinValue"),
                              S.updater_constraint("MaxValue"),
                              S.updater_constraint("VolFrac",
-                                                  volfrac_min=0.4, volfrac_max=0.6,
-                                                  penalty=1e6, element_name="C3D4")),
+                                                  volfrac_min=0.4,
+                                                  volfrac_max=0.6,
+                                                  penalty=1e6,
+                                                  elementname="C3D4")),
             ),
         ))
 

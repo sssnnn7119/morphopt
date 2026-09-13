@@ -8,7 +8,7 @@ import torch
 from ..baseobject import BaseObject
 from .feaparams import FEAParams
 from .geometry import BaseGeometry
-from .materials import BaseMaterials
+from .materials import MaterialsParams
 
 
 import pyvista as pv
@@ -20,7 +20,7 @@ class Params(BaseObject):
     """
     Class to handle the parameters of the model.
     """
-    def __init__(self, surfaces: BaseGeometry, feamodel: FEAParams, materials: BaseMaterials) -> None:
+    def __init__(self, surfaces: BaseGeometry, feamodel: FEAParams, materials: MaterialsParams) -> None:
         """
         Initialize the Params class.
         """
@@ -165,16 +165,14 @@ class Params(BaseObject):
         # self.feamodel.load(foldpath=foldpath, iteration=iteration)
         self.materials.load(foldpath=foldpath, iteration=iteration)
 
-    def export_data(self, filepath: str):
+    def export_data(self, filepath: str) -> None:
         """
         Export the data of parameters to file(s).
         
         Args:
             filepath (str): The path to export the data.
         """
-        self.geometry._export_data(filepath=filepath)
-        self.feamodel._export_data(foldpath=filepath)
-        self.materials._export_data(foldpath=filepath)
+        self.geometry._export_data(foldpath=filepath)
     
     def plot(self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None) -> pv.Plotter:
         """

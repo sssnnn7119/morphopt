@@ -65,7 +65,7 @@ class ThisController(morphopt.Controller):
             def __init__(self):
                 super().__init__()
 
-            def define_interface(self):
+            def define_interface(self) -> None:
                 # Common BC / RP / Couple
                 self.add_fea_interface(
                     self.BoundaryConditionInterface(
@@ -97,19 +97,22 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, "pressure_1", [0.06])
 
-        class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
-            def __init__(self):
-                super().__init__(
-                    mu=0.482,
-                    kappa=4.8,
-                    density=1.08e-9,
-                )
+        class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+            def define_interface(self) -> None:
+                self.add_material_interface(
+                    self.HomogeneousMaterial(
+                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                            mu=0.482, kappa=4.8),
+                        density=1.08e-9,
+                        part_name="final_model",
+                    ),
+                    name="body")
 
         def __init__(self):
             super().__init__(
                 surfaces=self.GeometryParams(),
                 feamodel=self.FEAParams(),
-                materials=self.MaterialParams(),
+                materials=self.MaterialsParams(),
             )
 
     class Solver(morphopt.shapeopt.Solver):

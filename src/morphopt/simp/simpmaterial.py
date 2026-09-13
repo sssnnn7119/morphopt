@@ -1,21 +1,62 @@
 import math
-from typing import Optional
+from typing import Any, Mapping, Optional
 import os
 
 import torch
 import numpy as np
 
 import torchfea
-from ..optcore import BaseParams
+from ..optcore.modelparams.materialinterface import (
+    BaseMaterialInterface,
+    MaterialModels,
+)
 import bspmap
 
 import pyvista as pv
+
+
+class SIMPScaledMaterial(torchfea.materials.Materials_Base):
+    """Apply a spatial SIMP scale to any torchfea material model."""
+
+    def __init__(
+            self,
+            base_material: torchfea.materials.Materials_Base,
+            scale: torch.Tensor,
+    ) -> None:
+        super().__init__()
+        self.base_material = base_material
+        self.scale = scale
+        self.type = getattr(base_material, "type", 1)
+
+    def strain_energy_density_C3(self, F: torch.Tensor) -> torch.Tensor:
+        energy = self.base_material.strain_energy_density_C3(F=F)
+        return energy * self.scale
+
+    def material_Constitutive_C3(
+            self,
+            F: torch.Tensor,
+            J: torch.Tensor | None = None,
+            Jneg: torch.Tensor | None = None,
+            invF: torch.Tensor | None = None,
+            I1: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        stress, tangent = self.base_material.material_Constitutive_C3(
+            F=F, J=J, Jneg=Jneg, invF=invF, I1=I1)
+        stress_scale = self.scale[..., None, None]
+        tangent_scale = self.scale[..., None, None, None, None]
+        return stress * stress_scale, tangent * tangent_scale
+
 
 # region for void elements penalization
 class SIMPElementFgrad(torchfea.elements.Element_3D):
 
     _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
-    def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
+    def __init__(
+            self,
+            elems_index: torch.Tensor,
+            elems: torch.Tensor,
+            penalfactor: torch.Tensor | float,
+    ) -> None:
         super().__init__(elems_index, elems)
 
         if isinstance(penalfactor, float):
@@ -28,7 +69,7 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
         self.penalfactor = penalfactor
         """the penalization factor for SIMP material"""
 
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args: Any, **kwargs: Any) -> None:
         super().initialize(*args, **kwargs)
 
         self._dN2WP = torch.einsum('geija,ge->geija', self.shape_function_d2_gaussian, self.gaussian_weight * self.penalfactor)
@@ -50,7 +91,11 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
                     self._EmdUe_2[:, I, :, J, :] += torch.einsum('gea, geb->abe', self._dN2WP[:, :, i, j, :], self.shape_function_d2_gaussian[:, :, k, l, :]) * 2
 
 
-    def potential_Energy(self, RGC: torch.Tensor, rotation_matrix: Optional[torch.Tensor] = None):
+    def potential_Energy(
+            self,
+            RGC: torch.Tensor,
+            rotation_matrix: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         
         U = RGC
 
@@ -70,7 +115,11 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
 
         return Ea + Er
     
-    def _get_EpdUe_EpdUe2(self, U, if_onlyforce = False):
+    def _get_EpdUe_EpdUe2(
+            self,
+            U: torch.Tensor,
+            if_onlyforce: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
@@ -94,7 +143,12 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
     _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
 
-    def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
+    def __init__(
+            self,
+            elems_index: torch.Tensor,
+            elems: torch.Tensor,
+            penalfactor: torch.Tensor | float,
+    ) -> None:
         super().__init__(elems_index, elems)
 
         if isinstance(penalfactor, float):
@@ -121,13 +175,13 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
         self._penalfactor = value.to(torch.float32)
 
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args: Any, **kwargs: Any) -> None:
         super().initialize(*args, **kwargs)
 
         self._initialize_simppenalty()
 
 
-    def _initialize_simppenalty(self):
+    def _initialize_simppenalty(self) -> None:
         """
                 initialize the penalty for SIMP material, which will be used in the energy and force calculations.
         """
@@ -157,7 +211,11 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
                     self._EmdUe_2[:, I, :, J, :] += torch.einsum('gea, geb->abe', self._dN2WP[:, :, i, j, :], self.shape_function_d2_gaussian[:, :, k, l, :]) * -4
 
-    def potential_Energy(self, RGC: torch.Tensor, rotation_matrix: Optional[torch.Tensor] = None):
+    def potential_Energy(
+            self,
+            RGC: torch.Tensor,
+            rotation_matrix: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         
         U = RGC
 
@@ -179,7 +237,11 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
         return Ea + Er
     
-    def _get_EpdUe_EpdUe2(self, U, if_onlyforce = False):
+    def _get_EpdUe_EpdUe2(
+            self,
+            U: torch.Tensor,
+            if_onlyforce: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ue = U[self._elems]
@@ -209,13 +271,18 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
 class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
     _serialized_attributes_exclude = torchfea.elements.Element_3D._serialized_attributes_exclude + ['_EmdUe_2', '_dN2WP']
-    def __init__(self, elems_index, elems, penalfactor: torch.Tensor):
+    def __init__(
+            self,
+            elems_index: torch.Tensor,
+            elems: torch.Tensor,
+            penalfactor: torch.Tensor,
+    ) -> None:
         super().__init__(elems_index, elems)
 
         self._penalfactor = penalfactor
         """the penalization factor for SIMP material"""
 
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args: Any, **kwargs: Any) -> None:
         super().initialize(*args, **kwargs)
 
         if self._penalfactor.dim() == 0 or self._penalfactor.shape == (1,):
@@ -252,7 +319,11 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
         # self._EmdUe_2 = torch.einsum('geija, geklb,geIijJkl->aIbJe', self._dN2W, self.shape_function_d2_gaussian, EmdUgrad2_2)
 
 
-    def potential_Energy(self, RGC: torch.Tensor, rotation_matrix: Optional[torch.Tensor] = None):
+    def potential_Energy(
+            self,
+            RGC: torch.Tensor,
+            rotation_matrix: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         
         U = RGC
 
@@ -275,7 +346,11 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
 
         return Ea + Er
     
-    def _get_EpdUe_EpdUe2(self, U, if_onlyforce = False):
+    def _get_EpdUe_EpdUe2(
+            self,
+            U: torch.Tensor,
+            if_onlyforce: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
@@ -323,7 +398,7 @@ class SIMPElementC3D20(torchfea.elements.C3D20, SIMPElementFskew):
 
 
 
-def RAMP_interpolation(rho: torch.Tensor, p: int):
+def RAMP_interpolation(rho: torch.Tensor, p: int) -> torch.Tensor:
     """
     RAMP interpolation function for SIMP method.
 
@@ -336,7 +411,7 @@ def RAMP_interpolation(rho: torch.Tensor, p: int):
     """
     return rho / (1 + p * (1 - rho))
 
-def p_order_interpolation(rho: torch.Tensor, p: int):
+def p_order_interpolation(rho: torch.Tensor, p: int) -> torch.Tensor:
     """
     p-order interpolation function for SIMP method.
 
@@ -350,7 +425,7 @@ def p_order_interpolation(rho: torch.Tensor, p: int):
     return rho ** p
 
 
-class SIMP_BSPFieldMaterials(BaseParams):
+class SIMP_BSPFieldMaterials(BaseMaterialInterface):
     """
     Class to handle the materials of the morphable model.
     """
@@ -362,12 +437,13 @@ class SIMP_BSPFieldMaterials(BaseParams):
                  bounding_box: list[float],
                  simp_field_resolution: float,
                  degree: int,
-                 density: float,
+                 material_parameters: MaterialModels.MaterialParameters,
+                 part_name: str,
+                 density: float = 0.0,
                  initial_ratio: float = 0.5,
                  voidpenalfactor: float = 1e-2,
                  materialpenalty: int = 8,
-                 elementname: str = "C3D4",
-                 part_name: str = "",
+                 elementname: str = "",
                  ) -> None:
         """
         Initialize the SIMPMaterials class.
@@ -384,7 +460,12 @@ class SIMP_BSPFieldMaterials(BaseParams):
             voidpenalfactor (float): The penalization factor for the SIMP material.
             materialpenalty (int): The penalization power for the SIMP interpolation.
         """
-        super().__init__()
+        super().__init__(
+            part_name=part_name,
+            elementname=elementname,
+            material_parameters=material_parameters,
+            density=density,
+        )
         self._mumax: float = float(mumax)
         """
         The maximum shear modulus for SIMP interpolation. The actual shear modulus will be interpolated between `simp_ratio_min*mumax` and `mumax`.
@@ -403,11 +484,6 @@ class SIMP_BSPFieldMaterials(BaseParams):
         self.simp_field: bspmap.BSP
         """
         The BSP field for SIMP interpolation. This will be used to compute the interpolated material properties.
-        """
-
-        self._density: float = float(density)
-        """
-        The density of the material.
         """
 
         self._bounding_box: list[float] = bounding_box
@@ -449,15 +525,6 @@ class SIMP_BSPFieldMaterials(BaseParams):
         """The penalization power for the SIMP interpolation. This will affect the nonlinearity of the material interpolation in the optimization process.
         """
 
-        self.elementname = elementname
-        """ The name of the element type to which the SIMP material will be applied. """
-
-        self.part_name = str(part_name).strip()
-        """Name of the imported Part carrying the SIMP design field."""
-
-
-
-
         R0 = torch.ones([self._bsp_size[0], self._bsp_size[1], self._bsp_size[2], 1]) * self._initial_ratio
 
         basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
@@ -486,7 +553,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         return self.voidpenalfactor > 0
 
 
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args: Any, **kwargs: Any) -> None:
         super().initialize(*args, **kwargs)
 
         self._cps = torch.from_numpy(self.simp_field.control_points).to(
@@ -494,7 +561,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
             dtype=torch.get_default_dtype(),
         ).reshape(self._bsp_size + [1]).reshape([-1, 1])
 
-    def reinitialize(self, iteration, *args, **kwargs):
+    def reinitialize(self, iteration: int, *args: Any, **kwargs: Any) -> None:
         super().reinitialize(iteration, *args, **kwargs)
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
 
@@ -505,13 +572,20 @@ class SIMP_BSPFieldMaterials(BaseParams):
     def get_parameters(self) -> list[torch.Tensor]:
         return [self._cps.detach().clone().flatten()]
 
+    def get_design_values(self) -> torch.Tensor:
+        """Return live SIMP control points while preserving autograd."""
+        return self._cps.flatten()
+
     def set_parameters(self, xlist: list[torch.Tensor]) -> None:
         self._cps = xlist[0].reshape_as(self._cps).to(self._cps.device)
 
     def get_variables(self) -> torch.Tensor:
         return torch.randn_like(self._cps.flatten()) * 1e-6
 
-    def update_variables(self, x_change: torch.Tensor, max_step_length: torch.Tensor | list[torch.Tensor]) -> None:
+    def update_variables(self, x_change: torch.Tensor,
+                         max_step_length: torch.Tensor | list[torch.Tensor] | None = None) -> None:
+        if max_step_length is None:
+            max_step_length = torch.ones_like(self._cps.flatten())
         if isinstance(max_step_length, list):
             max_step_length = max_step_length[0]
 
@@ -525,26 +599,6 @@ class SIMP_BSPFieldMaterials(BaseParams):
         # Bounded update keeps variable steps stable while preserving autograd graph to x_change.
         dx = 2 / torch.pi * torch.atan(x_change.abs()) * x_change.sign() * max_step_length
         self._cps = base_cps + dx
-
-    @property
-    def density(self) -> float:
-        """
-        Get the density.
-
-        Returns:
-            float: The density.
-        """
-        return self._density
-    
-    @density.setter
-    def density(self, value: float) -> None:
-        """
-        Set the density.
-
-        Args:
-            value (float): The new density.
-        """
-        self._density = float(value)
 
     def _get_indices_weight_for_nodes(self, nodes: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
 
@@ -682,6 +736,58 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
         return penalty_factor
 
+    def _prepare_elements(
+            self,
+            elements: torchfea.elements.Element_3D,
+            penalfactor: torch.Tensor | float,
+    ) -> torchfea.elements.Element_3D:
+        """Wrap one element family with the optional SIMP penalty adapter."""
+        if not self.if_use_simppenalty:
+            return elements
+
+        # The fixed geometry is reused between optimization iterations; once
+        # wrapped, keep that wrapper instead of wrapping it again.
+        if isinstance(elements, SIMPElementFskew):
+            return elements
+        element_class = elements.__class__.__name__
+        adapter = {
+            "C3D4": SIMPElementC3D4,
+            "C3D10": SIMPElementC3D10,
+            "C3D8": SIMPElementC3D8,
+            "C3D20": SIMPElementC3D20,
+        }.get(element_class)
+        if adapter is None:
+            raise ValueError(
+                f"SIMP Fskew penalty is not implemented for element type "
+                f"'{element_class}'. Set voidpenalfactor=0 or use a supported "
+                "solid element type.")
+        return adapter(elems_index=elements._elems_index,
+                       elems=elements._elems, penalfactor=penalfactor)
+
+    def _set_one_element_material(
+            self,
+            elements: torchfea.elements.Element_3D,
+            nodes: torch.Tensor,
+    ) -> None:
+        """Assign the current SIMP field to one element family."""
+        elements._pre_load_gaussian(nodes=nodes)
+        gaussian_points = elements.get_gaussian_points(nodes=nodes)
+        shape_gaussian = gaussian_points.shape
+        points = gaussian_points.reshape([-1, 3])
+        designfield = self._map_bsp_designfield(points).reshape(
+            [shape_gaussian[0], shape_gaussian[1]])
+        ratio_now = self.get_material_ratio(designfield)
+
+        materials = SIMPScaledMaterial(MaterialModels.create_material(
+            material_parameters=self.material_parameters,
+        ), ratio_now)
+        elements.delete_material()
+        elements.set_materials(materials)
+        elements.density = self.density
+        if self.if_use_simppenalty:
+            elements.penalfactor = (
+                self.get_penalty_factor(designfield) * self.voidpenalfactor)
+
     def set_materials(self, fe: torchfea.FEAController) -> None:
         """
         Set the materials of the FEA model.
@@ -690,58 +796,12 @@ class SIMP_BSPFieldMaterials(BaseParams):
             fe (torchfea.FEAController): The FEA controller.
         """
 
-        # Set the SIMP materials for the solid elements
-        if not self.part_name:
-            raise ValueError("Select the imported Part for the SIMP material.")
         part = fe.assembly.get_part(self.part_name)
-        elements = part.elems[self.elementname]
-
-        if self.if_use_simppenalty:
-            # The fixed geometry is reused between optimization iterations;
-            # once an element has been wrapped, keep that wrapper instead of
-            # trying to wrap it again based on its new class name.
-            if isinstance(elements, SIMPElementFskew):
-                elements_new = elements
-            elif elements.__class__.__name__ == "C3D4":
-                elements_new = SIMPElementC3D4(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-            elif elements.__class__.__name__ == "C3D10":
-                elements_new = SIMPElementC3D10(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-            elif elements.__class__.__name__ == "C3D8":
-                elements_new = SIMPElementC3D8(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-            elif elements.__class__.__name__ == "C3D20":
-                elements_new = SIMPElementC3D20(elems_index=elements._elems_index, elems=elements._elems, penalfactor=self.voidpenalfactor)
-            else:
-                raise ValueError(
-                    f"SIMP Fskew penalty is not implemented for element type "
-                    f"'{elements.__class__.__name__}'. Set voidpenalfactor=0 "
-                    "or use a supported solid element type.")
-        else:
-            elements_new = elements
-
-
-        part.elems[self.elementname] = elements_new
-
-        nodes = part.nodes
-        elements_new._pre_load_gaussian(nodes=nodes)
-
-        gaussian_points_locations = elements_new.get_gaussian_points(nodes=nodes)
-
-        shape_gaussian = gaussian_points_locations.shape
-        gaussian_points_locations = gaussian_points_locations.reshape([-1, 3])
-
-        designfield = self._map_bsp_designfield(gaussian_points_locations).reshape([shape_gaussian[0], shape_gaussian[1]])
-        ratio_now = self.get_material_ratio(designfield)
-
-        mu = ratio_now * self._mumax
-        kappa = ratio_now * self._kappamax
-
-        materials = torchfea.materials.NeoHookeanLnJ(mu=mu, kappa=kappa)
-        elements_new.delete_material()
-        elements_new.set_materials(materials)
-        elements_new.density = self.density
-
-        if self.if_use_simppenalty:
-            elements_new.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
+        for element_name, elements in self.target_elements(fe.assembly):
+            elements_new = self._prepare_elements(
+                elements, self.voidpenalfactor)
+            part.elems[element_name] = elements_new
+            self._set_one_element_material(elements_new, part.nodes)
 
 
     def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:
@@ -759,39 +819,40 @@ class SIMP_BSPFieldMaterials(BaseParams):
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
         """
 
-        gaussian_points_locations = self._get_gaussian_points(assembly)
-        
-        shape_gaussian = gaussian_points_locations.shape
-        gaussian_points_locations = gaussian_points_locations.reshape([-1, 3])
-
-
         self._cps = design_sensitivity_vars.reshape_as(self._cps)
         self.simp_field._control_points = self._cps.reshape(self.simp_field._control_points.shape).detach().cpu().numpy()
+        part = assembly.get_part(self.part_name)
+        for _element_name, elems in self.target_elements(assembly):
+            elems._pre_load_gaussian(nodes=part.nodes)
+            gaussian_points = elems.get_gaussian_points(nodes=part.nodes)
+            shape_gaussian = gaussian_points.shape
+            gaussian_points = gaussian_points.reshape([-1, 3])
+            designfield = self._map_bsp_designfield_with_spartial_derivative(
+                gaussian_points).reshape([shape_gaussian[0], shape_gaussian[1]])
+            ratio_now = self.get_material_ratio(designfield)
+            elems.delete_material()
+            elems.set_materials(SIMPScaledMaterial(MaterialModels.create_material(
+                material_parameters=self.material_parameters,
+            ), ratio_now))
 
-        designfield = self._map_bsp_designfield_with_spartial_derivative(gaussian_points_locations).reshape([shape_gaussian[0], shape_gaussian[1]])
-
-        ratio_now = self.get_material_ratio(designfield)
-
-
-        elems: torchfea.elements.Element_3D = assembly.get_part(self.part_name).elems[self.elementname]
-        
-        elems.materials['material-0']._mu = ratio_now * self._mumax
-        elems.materials['material-0']._kappa = ratio_now * self._kappamax
-
-        if self.if_use_simppenalty:
-            elems.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
-            elems._initialize_simppenalty()
+            if self.if_use_simppenalty:
+                elems.penalfactor = (
+                    self.get_penalty_factor(designfield) * self.voidpenalfactor)
+                elems._initialize_simppenalty()
 
 
     def save(self, foldpath: str, iteration: int) -> None:
-        path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
+        tag = self._name
+        tag = f"_{tag}" if tag else ""
+        path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material{tag}_iter_{iteration}.npz"
+        os.makedirs(os.path.dirname(path_now), exist_ok=True)
         np.savez_compressed(
             path_now,
             cps=self._cps.detach().cpu().numpy().astype(np.float16),
             bsp_size=np.array(self._bsp_size, dtype=np.int64),
             bounding_box=np.array(self._bounding_box, dtype=np.float64),
             degree=np.array([self._degree], dtype=np.int64),
-            density=np.array([self._density], dtype=np.float64),
+            density=np.array([self.density], dtype=np.float64),
         )
 
         meshes = self.get_meshes()
@@ -813,7 +874,9 @@ class SIMP_BSPFieldMaterials(BaseParams):
         plt.close()
 
     def load(self, foldpath: str, iteration: int) -> None:
-        path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material_iter_{iteration}.npz"
+        tag = self._name
+        tag = f"_{tag}" if tag else ""
+        path_now = f"{foldpath}{self.pathlog_required()[0]}/simp_material{tag}_iter_{iteration}.npz"
         data = np.load(path_now)
 
         cps_np = data["cps"].astype(np.float64)
@@ -832,7 +895,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
         self._degree = int(degree)
 
         density = data["density"].astype(np.float64)
-        self._density = float(density[0])
+        self.density = float(density[0])
 
         # build self.simp_field according to loaded data
         basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
@@ -845,7 +908,7 @@ class SIMP_BSPFieldMaterials(BaseParams):
                          control_points=self._cps.detach().cpu().numpy().reshape([-1, 1]))
         self.simp_field = bsp
 
-    def get_meshes(self):
+    def get_meshes(self) -> list[pv.DataSet]:
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
         nx, ny, nz = self._bsp_size
 
@@ -880,7 +943,11 @@ class SIMP_BSPFieldMaterials(BaseParams):
 
         return [grid]
 
-    def plot(self, plotter=None, meshes=None):
+    def plot(
+            self,
+            plotter: pv.Plotter | None = None,
+            meshes: pv.DataSet | None = None,
+    ) -> pv.Plotter:
         import pyvista as pv
 
         if plotter is None:
@@ -906,18 +973,3 @@ class SIMP_BSPFieldMaterials(BaseParams):
             )
 
         return plotter
-    
-    def _get_gaussian_points(self, assembly: torchfea.Assembly) -> torch.Tensor:
-        """
-        Get the normalized Gaussian points for the elements in the assembly.
-
-        Args:
-            assembly (torchfea.Assembly): The FEA assembly.
-
-        Returns:
-            torch.Tensor: The normalized Gaussian points.
-        """
-        part = assembly.get_part(self.part_name)
-        gaussian_points_locations = part.elems[self.elementname].get_gaussian_points(part.nodes)
-
-        return gaussian_points_locations

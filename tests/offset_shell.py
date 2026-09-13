@@ -11,7 +11,7 @@ import torchfea
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='Z:/Results/', 
+        super().__init__(path_result_folder='Z:/Results/',
                          opt_label='EXAMPLE')
 
         def objective_function(self):
@@ -28,7 +28,7 @@ class ThisController(morphopt.Controller):
 
             def __init__(self):
 
-                super().__init__(fea_seed_size=2.0, 
+                super().__init__(fea_seed_size=2.0,
                                  mesh_order=2,
                                  reinitialize_per_iter=5,
                                  thickness=0.1,
@@ -39,7 +39,7 @@ class ThisController(morphopt.Controller):
                                                     length=80.,
                                                     seed_size=1.0,
                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
- 
+
                 self.add_surface(
                     self.CPGEO.initialize_Sphere(seed_size=1.0,
                                                 flip=True,
@@ -62,7 +62,7 @@ class ThisController(morphopt.Controller):
 
         class FEAParams(morphopt.codesign.CodesignFEAParams):
 
-            def define_interface(self):
+            def define_interface(self) -> None:
                 # Common BC / RP / Couple
                 self.add_fea_interface(self.BoundaryConditionInterface(instance_name='final_model', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
                 self.add_fea_interface(self.ReferencePointInterface(rp_location=[0., 0., 80.]), name='RP_head')
@@ -76,25 +76,32 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, "pressure_1", [0.06])
                 # self.set_step_params(0, "force_1", [1., 0., -0.])
-                
 
-        class MaterialParams(morphopt.codesign.CodesignMaterials):
-            
-            def __init__(self):
-                super().__init__(mumax=4.82, 
-                                 kappamax=48, 
-                                 density=1.08e-9, 
-                                 simp_ratio_min=0.001, 
-                                 initial_ratio=0.01,
-                                 bounding_box=[-15, 15, -15, 15, 0, 80], 
-                                 simp_field_resolution=1.0, 
-                                 degree=3,
-                                 shell_mu=0.48,
-                                 shell_kappa=4.8,
-                                 shell_density=1.08e-9)
-        
+
+        class MaterialsParams(morphopt.codesign.MaterialsParams):
+            def define_interface(self) -> None:
+                self.add_material_interface(
+                    morphopt.simp.SIMP_BSPFieldMaterials(
+                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                            mu=4.82, kappa=48),
+                        mumax=4.82,
+                        kappamax=48,
+                        density=1.08e-9,
+                        simp_ratio_min=0.001, initial_ratio=0.01,
+                        bounding_box=[-15, 15, -15, 15, 0, 80],
+                        simp_field_resolution=1.0, degree=3,
+                        elementname='C3D4', part_name='final_model'),
+                    name='solid')
+                self.add_material_interface(
+                    self.HomogeneousMaterial(
+                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                            mu=0.48, kappa=4.8),
+                        density=1.08e-9,
+                        part_name='final_model', elementname='C3D6'),
+                    name='shell')
+
         def __init__(self):
-            super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+            super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams())
 
     class Solver(morphopt.Solver):
         """
@@ -140,7 +147,7 @@ class ThisController(morphopt.Controller):
                                                                 [2.5, 2.5]]))
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
-                
+
                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
 
                 self.if_update = [False, True]
@@ -168,7 +175,7 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
 
                 self.if_update = True
- 
+
 
 def _surface_orientation_and_volume(nodes_xyz: np.ndarray, tri: np.ndarray) -> tuple[float, float]:
     """
@@ -238,7 +245,7 @@ def validate_generated_inp() -> None:
 
         if 'C3D6' not in part.elems and 'C3D15' not in part.elems:
             raise RuntimeError("Shell wedge elements were not generated (expected 'C3D6' or 'C3D15').")
-        
+
         element_c3d6.initialize(nodes=part.nodes)
         if element_c3d6.gaussian_weight.min() < 0:
             raise RuntimeError("Negative Gaussian weights found in C3D6 elements, which may lead to inaccurate results.")

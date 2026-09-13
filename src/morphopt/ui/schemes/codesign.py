@@ -17,7 +17,7 @@ class CodesignTemplate(SchemeTemplate):
     scheme = "codesign"
     label = "协同设计优化 (codesign)"
     label_en = "Co-design optimization (codesign)"
-    MATERIAL_TYPE = "CodesignMaterials"
+    MATERIAL_TYPE = "SIMP_BSPFieldMaterials"
     geometry_title = "Geometry (+ offset shell)"
 
     BASES = {
@@ -25,7 +25,9 @@ class CodesignTemplate(SchemeTemplate):
         "params": "morphopt.codesign.Params",
         "geometry": "morphopt.codesign.CodesignGeometry",
         "fea": "morphopt.codesign.CodesignFEAParams",
-        "material": "morphopt.codesign.CodesignMaterials",
+        "materials": "morphopt.codesign.MaterialsParams",
+        "material_interface": "morphopt.simp.SIMP_BSPFieldMaterials",
+        "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
         "objective": "morphopt.codesign.ObjectiveFunction",
         "solver": "morphopt.codesign.Solver",
         "updaters": "morphopt.codesign.Updaters",
@@ -95,14 +97,22 @@ class CodesignTemplate(SchemeTemplate):
         root.add_section(self.make_steps(2, [{}, {"pressure_1": [0.1]}]))
 
         # material: SIMP solid core + homogeneous offset shell ---------------
-        root.add_section(self.make_material(
+        root.add_section(self.make_materials(
+            self.make_material(
+            name="solid",
+            material_type="SIMP_BSPFieldMaterials",
+            part_name="final_model",
             mumax=4.5, kappamax=45.0, simp_ratio_min=1e-4,
             density=1.08e-9, initial_ratio=0.5,
             bounding_box=[-10.0, 10.0, -10.0, 10.0, 0.0, 100.0],
             simp_field_resolution=1.0, degree=3, voidpenalfactor=1e-1,
-            elementname="C3D4",
-            shell_mu=0.48, shell_kappa=4.8, shell_density=1.08e-9,
-            shell_elementname="C3D6"))
+            elementname="C3D4"),
+            self.make_material(
+                name="shell",
+                material_type="HomogeneousMaterial",
+                part_name="final_model",
+                mu=0.48, kappa=4.8, density=1.08e-9,
+                elementname="C3D6")))
 
         # objective + solver -------------------------------------------------
         root.add_section(self.make_objective())
@@ -131,12 +141,14 @@ class CodesignTemplate(SchemeTemplate):
                 max_step_iter=50,
                 if_update=True,
                 objective_functions=(S.updater_objective("Sensitivity"),),
-                constraints=(S.updater_constraint(
+                constraints=(S.updater_constraint("MinValue"),
+                             S.updater_constraint("MaxValue"),
+                             S.updater_constraint(
                                  "VolFrac",
-                                 volfrac_min=0.0, volfrac_max=0.7,
-                                 penalty=1e4, element_name="C3D4"),
-                             S.updater_constraint("MinValue"),
-                             S.updater_constraint("MaxValue")),
+                                 volfrac_min=0.0,
+                                 volfrac_max=0.7,
+                                 penalty=1e4,
+                                 elementname="C3D4")),
             ),
         ))
 

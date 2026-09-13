@@ -16,9 +16,9 @@ MIN_GRAD_ABS = 1e-10
 
 # class ThisController(morphopt.Controller):
 #     def __init__(self):
-#         super().__init__(path_result_folder='Z:/Results/', 
+#         super().__init__(path_result_folder='Z:/Results/',
 #                          opt_label='EXAMPLE')
-        
+
 #     class ObjectiveFunction(morphopt.codesign.ObjectiveFunction):
 #         def __init__(self):
 #             super().__init__()
@@ -43,7 +43,7 @@ MIN_GRAD_ABS = 1e-10
 #             return volume_fraction
 
 #         def objective_function(self):
-            
+
 #             self.set_step(1)
 #             total_energy1 = self.fe.assembly._total_Potential_Energy(GC=self.fe_results[1].GC)
 #             return self.fe_results[0].GC[-2] * total_energy1 * self.fe_results[0].jacobian['pressure_1'][-2, 0]
@@ -56,8 +56,8 @@ MIN_GRAD_ABS = 1e-10
 
 #             def __init__(self):
 
-#                 super().__init__(fea_seed_size=3.0, 
-#                                  fea_mesh_order=1, 
+#                 super().__init__(fea_seed_size=3.0,
+#                                  fea_mesh_order=1,
 #                                  reinitialize_per_iter=5,
 #                                  thickness=1.5,
 #                                  num_layers=2,)
@@ -66,9 +66,9 @@ MIN_GRAD_ABS = 1e-10
 #                     self.BSP.initialize_cylinder(r0=12.,
 #                                                     length=80.,
 #                                                     seed_size=1.0,
-#                                                     
+#
 #                                                     flip=False, maxR=0.1, maxC=1.0, maxFF=0.2, perturbation_L=12.))
- 
+
 #                 self.add_surface(
 #                     self.CPGEO.initialize_Sphere(seed_size=1.0,
 #                                                 flip=True,
@@ -105,26 +105,33 @@ MIN_GRAD_ABS = 1e-10
 #                 self.set_step_num(2)
 #                 self.set_step_params(0, "pressure_1", [0.06])
 #                 self.set_step_params(1, "pressure_1", [0.04])
-                
 
-#         class MaterialParams(morphopt.codesign.CodesignMaterials):
-            
+
+#         class MaterialsParams(morphopt.codesign.MaterialsParams):
+
 #             def __init__(self):
-#                 super().__init__(mumax=4.82, 
-#                                  kappamax=48, 
-#                                  density=1.08e-9, 
-#                                  simp_ratio_min=0.01, 
-#                                  initial_ratio=0.01,
-#                                  bounding_box=[-15, 15, -15, 15, 0, 80], 
-#                                  simp_field_resolution=1.0, 
-#                                  degree=3,
-#                                  shell_mu=0.48,
-#                                  shell_kappa=4.8,
-#                                  shell_density=1.08e-9,
-#                                  voidpenalfactor=0.0)
-        
+#                 super().__init__()
+#
+#             def define_interface(self):
+#                 self.add_material_interface(
+#                     morphopt.simp.SIMP_BSPFieldMaterials(
+#                         material_parameters=self.materialmodels.NeoHookeanLnJParams(
+#                             mu=4.82, kappa=48),
+#                         mumax=4.82,
+#                         kappamax=48,
+#                         density=1.08e-9,
+#                         simp_ratio_min=0.01,
+#                         initial_ratio=0.01,
+#                         bounding_box=[-15, 15, -15, 15, 0, 80],
+#                         simp_field_resolution=1.0,
+#                         degree=3,
+#                         elementname='C3D4',
+#                         part_name='final_model',
+#                         voidpenalfactor=0.0),
+#                     name='solid')
+
 #         def __init__(self):
-#             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams())
+#             super().__init__(surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams())
 
 #     class Solver(morphopt.codesign.Solver):
 #         """
@@ -170,7 +177,7 @@ MIN_GRAD_ABS = 1e-10
 #                                                                 [2.5, 2.0]]))
 #                 self.add_constraints(
 #                     self.objectivefuncs.boundarys.Cylinder(radius=15., height=80., bottom=0.))
-                
+
 #                 self.add_constraints(morphopt.codesign.InwardCurvatureRadius(geometry=params.geometry))
 #                 self.add_constraints(morphopt.codesign.OffsetSurfaceMinThickness(geometry=params.geometry, min_distance=2.0))
 
@@ -264,7 +271,7 @@ class ThisController(morphopt.Controller):
             def __init__(self):
                 super().__init__()
 
-            def define_interface(self):
+            def define_interface(self) -> None:
                 # Common BC / RP / Couple
                 self.add_fea_interface(
                     self.BoundaryConditionInterface(
@@ -296,19 +303,22 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, "pressure_1", [0.06])
 
-        class MaterialParams(morphopt.shapeopt.HomogeneousMaterial):
-            def __init__(self):
-                super().__init__(
-                    mu=0.482,
-                    kappa=4.8,
-                    density=1.08e-9,
-                )
+        class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+            def define_interface(self) -> None:
+                self.add_material_interface(
+                    self.HomogeneousMaterial(
+                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                            mu=0.482, kappa=4.8),
+                        density=1.08e-9,
+                        part_name="final_model",
+                    ),
+                    name="body")
 
         def __init__(self):
             super().__init__(
                 surfaces=self.GeometryParams(),
                 feamodel=self.FEAParams(),
-                materials=self.MaterialParams(),
+                materials=self.MaterialsParams(),
             )
 
     class Solver(morphopt.shapeopt.Solver):

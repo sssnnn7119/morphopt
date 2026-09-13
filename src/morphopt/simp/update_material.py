@@ -1,14 +1,14 @@
 
 from math import log
+from typing import Any
 
 import numpy as np
 
 import torch
 
 from ..optcore.modelparams.params import Params
-from .simpmaterial import SIMP_BSPFieldMaterials
 from tabulate import tabulate
-from ..optcore import BaseUpdater
+from ..optcore import BaseUpdater, MaterialsParams
 
 import logging
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class UpdaterMaterials(BaseUpdater):
         The previous change in material control points.
         """
 
-        self.params_update: SIMP_BSPFieldMaterials = params.materials
+        self.params_update: MaterialsParams = params.materials
         """
         The materials object that contains the design variables.
         """
@@ -77,12 +77,12 @@ class UpdaterMaterials(BaseUpdater):
         A flag indicating whether the material variables need to be updated.
         """
 
-    def pathlog_required(self):
+    def pathlog_required(self) -> list[str]:
         return ['materialupdater']
 
     def add_constraints(self,
                                obj_func: objectivefuncs.basefuncs,
-                               name: str = None) -> None:
+                               name: str | None = None) -> None:
         """
         Add an objective function to the list of objective functions.
 
@@ -101,7 +101,7 @@ class UpdaterMaterials(BaseUpdater):
 
     def add_objective_function(self,
                                obj_func: objectivefuncs.basefuncs,
-                               name: str = None) -> None:
+                               name: str | None = None) -> None:
         """
         Add an objective function to the list of objective functions.
 
@@ -118,7 +118,8 @@ class UpdaterMaterials(BaseUpdater):
         name = name + '_%d' % extra_num
         self.obj_funcs[name] = obj_func
 
-    def reinitialize(self, gradient: torch.Tensor, *args, **kwargs) -> None:
+    def reinitialize(self, gradient: torch.Tensor, *args: Any,
+                     **kwargs: Any) -> None:
         """
         Initialize the parameters of the optimization process.
 
@@ -126,7 +127,9 @@ class UpdaterMaterials(BaseUpdater):
             iter_now (int): The current iteration number.
         """
 
-        cps0 = self.params_update._cps.detach().clone()
+        params0 = [value.detach().clone()
+                   for value in self.params_update.get_parameters()]
+        cps0 = torch.cat([value.flatten() for value in params0])
 
         # initialize objective functions with material variables only
         self._initialize_objectives(gradient=gradient.flatten(), cps0=cps0)
@@ -138,7 +141,7 @@ class UpdaterMaterials(BaseUpdater):
         self._initialize_optimizer()
 
         # initialize the step length
-        num_vars = self.params_update._cps.numel()
+        num_vars = self.params_update.get_design_values().numel()
         if self._max_step_length is None or self._max_step_length.numel() != num_vars:
             if self._max_step_length is None:
                 self._max_step_length = torch.ones(num_vars, device=torch.get_default_device()) * self._max_step_length_max * 0.5
@@ -148,8 +151,8 @@ class UpdaterMaterials(BaseUpdater):
         # save the sensitivity for the next iteration
         self.sensitivity_previous = gradient.flatten()
           
-    def initialize(self):
-        num_vars = self.params_update._cps.numel()
+    def initialize(self) -> None:
+        num_vars = self.params_update.get_design_values().numel()
         if self._max_step_length is None:
             self._max_step_length = torch.ones(num_vars, device=torch.get_default_device()) * self._max_step_length_max * 0.5
         elif self._max_step_length.numel() != num_vars:
@@ -167,7 +170,7 @@ class UpdaterMaterials(BaseUpdater):
         for obj_func in self.obj_funcs.values():
             sensitivity_all.append(obj_func.sensitivity)
         if len(sensitivity_all) == 0:
-            return torch.zeros_like(self.params_update._cps)
+            return torch.zeros_like(self.params_update.get_design_values())
 
         sensitivity = sensitivity_all[0].clone()
         for obj_ind in range(1, len(sensitivity_all)):
@@ -203,7 +206,11 @@ class UpdaterMaterials(BaseUpdater):
         if not self.if_update:
             self._max_step_length *= 0.0
 
-    def closure(self, x: torch.Tensor, return_list=False) -> float:
+    def closure(
+            self,
+            x: torch.Tensor,
+            return_list: bool = False,
+    ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
         """
         The closure function for the optimization process.
 
@@ -213,14 +220,16 @@ class UpdaterMaterials(BaseUpdater):
         Returns:
             float: The objective function value at the current point.
         """
-        # save the current point
-        cps0 = self.params_update._cps.detach().clone()
+        # Save every interface's current design tensor; one aggregate may
+        # contain several independent SIMP fields.
+        params0 = [value.detach().clone()
+                   for value in self.params_update.get_parameters()]
 
         # Set the design variables to the current point
         self.params_update.update_variables(x_change=x, max_step_length=self._max_step_length)
 
         # Calculate the objective function value
-        cps_now = self.params_update._cps
+        cps_now = self.params_update.get_design_values()
         
         constraints_value: list[torch.Tensor] = []
         for constraints in self.constraints_funcs.values():
@@ -231,7 +240,8 @@ class UpdaterMaterials(BaseUpdater):
             obj_value.append(obj_func(cps=cps_now, material_params=self.params_update))
 
         # enroll the design variables
-        self.params_update._cps = cps0
+        # Restore every design interface after evaluating the trial point.
+        self.params_update.set_parameters(params0)
 
         if return_list:
             return obj_value, constraints_value
@@ -293,21 +303,22 @@ class UpdaterMaterials(BaseUpdater):
         """
         Update the variables of the materials.
         """
-        control_points0 = self.params_update.get_control_points_list()[0].detach().clone().cpu().numpy()
+        design_values0 = self.params_update.get_design_values().detach().clone().cpu().numpy()
 
         self.params_update.update_variables(x_change=dx, max_step_length=self._max_step_length)
 
-        control_points_new = self.params_update.get_control_points_list()[0].detach().clone().cpu().numpy()
-        delta_control_points = control_points_new - control_points0
-        self._update_step_length(delta_control_points=delta_control_points)
+        design_values_new = self.params_update.get_design_values().detach().clone().cpu().numpy()
+        delta_design_values = design_values_new - design_values0
+        self._update_step_length(delta_control_points=delta_design_values)
 
-        self._delta_control_points_previous = delta_control_points.copy()
+        self._delta_control_points_previous = delta_design_values.copy()
 
-    def save(self, foldpath, iteration):
+    def save(self, foldpath: str, iteration: int) -> None:
         step_length_numpy = self._max_step_length.detach().cpu().numpy()
         np.savez_compressed(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz", 
                             step_length=step_length_numpy.astype(np.float16))
 
-    def load(self, foldpath, iteration):
+    def load(self, foldpath: str, iteration: int) -> None:
         data = np.load(foldpath + self.pathlog_required()[0] + f"/step_length_{iteration}.npz")
-        self._max_step_length = torch.tensor(data['step_length']).to(self.params_update._cps.device).to(self.params_update._cps.dtype)
+        design = self.params_update.get_design_values()
+        self._max_step_length = torch.tensor(data['step_length']).to(design.device).to(design.dtype)

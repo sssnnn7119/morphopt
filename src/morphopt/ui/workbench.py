@@ -479,15 +479,19 @@ class Workbench(QWidget):
     def _sync_single_imported_part(self, _node: Node) -> None:
         """Select unambiguous imported material targets without name conventions."""
         summary = self.problem.imported_model_summary()
-        material = self.problem.material
-        if summary is None or material is None or len(summary.parts) != 1:
+        materials = self.problem.material_nodes()
+        if summary is None or not materials:
             return
-        part = summary.parts[0]
-        if not material.part_name:
-            material.part_name = part.name
-        if (len(part.element_types) == 1
-                and material.elementname not in part.element_types):
-            material.elementname = part.element_types[0]
+        parts = {part.name: part for part in summary.parts}
+        for material in materials:
+            if not material.part_name or material.part_name not in parts:
+                if len(summary.parts) == 1:
+                    material.part_name = summary.parts[0].name
+            part = parts.get(material.part_name)
+            if (part is not None and len(part.element_types) == 1
+                    and material.elementname not in part.element_types
+                    and material.elementname):
+                material.elementname = part.element_types[0]
 
     @staticmethod
     def _subtitle(node: Node) -> str:

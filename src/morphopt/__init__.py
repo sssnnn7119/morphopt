@@ -2,6 +2,13 @@
 A differentiable structural optimization framework that eliminates manual sensitivity derivation by fusing the adjoint method with automatic differentiation (AD). The sensitivity corresponds to the virtual work of residual force derivatives on the adjoint displacement field, computed via a single backpropagation through the residual graph. MorphOpt provides a unified interface for geometry, load, and material definition, calls torchfea for GPU-accelerated differentiable nonlinear FEA and adjoint-AD sensitivity, and employs a trust-region optimizer with L-BFGS for design updates. Validated on SIMP topology optimization with B-spline density fields and pneumatic soft robot shape optimization with deformation-dependent follower loads.
 """
 
+# Torch and TorchFEA use GNU OpenMP in this environment.  Set MKL's matching
+# threading layer before importing any module that can load NumPy or Torch.
+import os as __os
+import sys as __sys
+
+if __sys.platform.startswith("linux"):
+    __os.environ["MKL_THREADING_LAYER"] = "GNU"
 
 # region: Logging Configuration
 import logging as __logging
@@ -57,7 +64,10 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
 
 # region optcore imports
 from .optcore.controller import Controller
-from .optcore.modelparams import FEAParams, FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry, HomogeneousMaterial, Params
+from .optcore.modelparams import (
+    FEAParams, FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry,
+    MaterialsParams, Params,
+)
 from .optcore.solver import Solver
 from .optcore.modelparams import Params
 from .optcore.updaters import Updaters

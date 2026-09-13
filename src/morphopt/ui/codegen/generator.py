@@ -6,6 +6,8 @@ class), ready for ``morphopt.start_optimization`` / ``restart_optimization``.
 from __future__ import annotations
 
 import ast
+from dataclasses import fields
+from typing import Any
 
 from ..model.problem import (
     Node, ProblemDefinition,
@@ -17,6 +19,7 @@ from ..model.schemas import (
 )
 from ..schemes.base import get_template
 from ...optcore.modelparams.geometry import inspect_model
+from ...optcore.modelparams.materialinterface import MaterialModels
 
 
 # --------------------------------------------------------------------------
@@ -35,6 +38,21 @@ def _literal(value):
         except (ValueError, SyntaxError):
             return repr(value)
     return repr(value)
+
+
+def _material_parameters_expression(
+        model: str,
+    parameters: dict[str, object],
+) -> str:
+    """Render model parameters with their typed parameter constructor."""
+    parameter_class = getattr(MaterialModels, f"{model}Params")
+    parameter_type = parameter_class.__name__
+    values = ", ".join(
+        f"{key}={_literal(value)}" for key, value in parameters.items())
+    return (
+        "self.materialmodels."
+        f"{parameter_type}({values})"
+    )
 
 
 def indent_block(text: str, spaces: int) -> str:
@@ -105,11 +123,12 @@ def generate_source(problem: ProblemDefinition) -> str:
     upd_device = repr(upd_dev)  # -> Updater(..., device=...) (independent)
 
     a("import morphopt")
+    a("from typing import Any")
     a("")
     a("")
     a(f"class ThisController({controller_ref}):")
     a("")
-    a("    def __init__(self):")
+    a("    def __init__(self) -> None:")
     a("        super().__init__(")
     a(f"            path_result_folder={_literal(problem.result_folder)}, opt_label={_literal(problem.label)}")
     a("        )")
@@ -123,15 +142,15 @@ def generate_source(problem: ProblemDefinition) -> str:
 
     a(f"    class ObjectiveFunction({B['objective']}):")
     a("")
-    a("        def __init__(self):")
+    a("        def __init__(self) -> None:")
     a("            super().__init__()")
     if jac:
         a(f"            self.jacobian_needed = {jac!r}")
     a("")
-    a("        def objective_function(self):")
+    a("        def objective_function(self) -> Any:")
     a(indent_block(obj_body, 12))
     a("")
-    a("        def get_metrics(self):")
+    a("        def get_metrics(self) -> Any:")
     a(indent_block(met_body, 12))
     a("")
 
@@ -140,7 +159,7 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
     a(f"        class GeometryParams({B['geometry']}):")
     a("")
-    a("            def __init__(self):")
+    a("            def __init__(self) -> None:")
     _emit_geometry_init(a, problem, template)
     a("")
     if problem.scheme == "simp":
@@ -151,32 +170,29 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
     a(f"        class FEAParams({B['fea']}):")
     a("")
-    a("            def __init__(self):")
+    a("            def __init__(self) -> None:")
     a("                super().__init__()")
     a("")
-    a("            def define_interface(self):")
+    a("            def define_interface(self) -> None:")
     _emit_interfaces(a, problem)
     a("")
-    a("            def define_steps(self):")
+    a("            def define_steps(self) -> None:")
     _emit_steps(a, problem)
     a("")
-    a(f"        class MaterialParams({B['material']}):")
+    a(f"        class MaterialsParams({B['materials']}):")
     a("")
-    a("            def __init__(self):")
     _emit_material_init(a, problem, template)
-    if problem.scheme in ("simp", "codesign"):
-        _emit_map_designfield(a, problem, template)
     a("")
-    a("        def __init__(self):")
+    a("        def __init__(self) -> None:")
     a("            super().__init__(")
-    a("                surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialParams()")
+    a("                surfaces=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams()")
     a("            )")
     a("")
 
     # -------- Solver ------------------------------------------------------
     a(f"    class Solver({B['solver']}):")
     a("")
-    a("        def __init__(self, params):")
+    a("        def __init__(self, params: Any) -> None:")
     solver = problem.solver or SolverNode()
     np_ = int(solver.num_process)
     gpus = list(solver.gpus)
@@ -208,7 +224,7 @@ def generate_source(problem: ProblemDefinition) -> str:
 def _geometry_kwargs(problem: ProblemDefinition) -> str:
     geo = problem.geometry or GeometryNode()
     geo_fields = ("fea_seed_size", "mesh_order", "reinitialize_per_iter",
-                  "thickness", "num_layers")
+                  "thickness", "num_layers", "part_name", "instance_name")
     kw = []
     for key in geo_fields:
         value = geo.get_field(key)
@@ -217,20 +233,26 @@ def _geometry_kwargs(problem: ProblemDefinition) -> str:
     return ", ".join(kw)
 
 
-def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
+def _emit_geometry_init(
+        a: Any,
+        problem: ProblemDefinition,
+        template: Any,
+) -> None:
     surfaces = problem.surfaces()
     if problem.scheme == "simp":
         geo = problem.geometry or GeometryNode()
         if geo.model_directory and geo.model_filename:
             model = inspect_model(geo.model_directory, geo.model_filename)
             _validate_simp_interface_selections(problem, model)
-            material = problem.material
-            if material is not None:
-                parts = {item.name: item for item in model.parts}
+            parts = {item.name: item for item in model.parts}
+            for material in problem.material_nodes():
+                if material.material_type != "SIMP_BSPFieldMaterials":
+                    continue
                 part_name = str(material.part_name or "").strip()
                 if part_name not in parts:
                     raise ValueError("Select an imported Part for the SIMP material.")
-                if material.elementname not in parts[part_name].element_types:
+                if (material.elementname and
+                        material.elementname not in parts[part_name].element_types):
                     raise ValueError(
                         f"Element {material.elementname!r} does not exist on imported "
                         f"Part {part_name!r}.")
@@ -247,7 +269,10 @@ def _emit_geometry_init(a, problem: ProblemDefinition, template) -> None:
         a(f"                self.add_surface({render_surface_call(srf)})")
 
 
-def _validate_simp_interface_selections(problem: ProblemDefinition, model) -> None:
+def _validate_simp_interface_selections(
+        problem: ProblemDefinition,
+        model: Any,
+) -> None:
     """Validate all Assembly-backed names before emitting runnable source."""
     instances = {item.name: item for item in model.instances}
     parts = {item.name: item for item in model.parts}
@@ -349,7 +374,7 @@ def _emit_apply_constraints(a, problem: ProblemDefinition, template) -> None:
     body = str(body).strip()
     if not body or body == "pass":
         return
-    a("            def apply_surface_constraints(self):")
+    a("            def apply_surface_constraints(self) -> None:")
     a(indent_block(body, 16))
     a("")
 
@@ -390,33 +415,93 @@ def _emit_steps(a, problem: ProblemDefinition) -> None:
             a(f"                self.set_step_params({s}, {name!r}, {amps_values!r})")
 
 
-def _emit_material_init(a, problem: ProblemDefinition, template) -> None:
-    mat = problem.material or MaterialNode()
-    mtype = mat.material_type or template.BASES["material"].rsplit(".", 1)[-1]
-    from ..model import schemas as S
-    try:
-        spec = S.MATERIAL_TYPES[mtype]
-        keys = [f["key"] for f in spec["params"]]
-    except KeyError:
-        keys = list(mat.field_names())
-    kw = []
-    for key in keys:
-        value = mat.get_field(key)
-        if value is None:
-            continue
-        kw.append(f"{key}={_literal(value)}")
-    a(f"                super().__init__({', '.join(kw)})" if kw else "                super().__init__()")
-
-
-def _emit_map_designfield(a, problem: ProblemDefinition, template) -> None:
-    mat = problem.material or MaterialNode()
-    body = mat._map_bsp_designfield or template.default_map_bsp_designfield()
-    body = str(body).strip()
-    if not body or "return nodes" in body:
+def _emit_material_init(
+        a: Any,
+        problem: ProblemDefinition,
+        template: Any,
+) -> None:
+    materials = problem.material_nodes()
+    if not materials:
+        a("            def __init__(self) -> None:")
+        a("                super().__init__()")
+        a("")
+        a("            def define_interface(self) -> None:")
+        a("                pass")
         return
+
+    a("            def __init__(self) -> None:")
+    a("                super().__init__()")
     a("")
-    a("            def _map_bsp_designfield(self, nodes):")
-    a(indent_block(body, 16))
+    a("            def define_interface(self) -> None:")
+    for index, mat in enumerate(materials):
+        mtype = mat.material_type or template.MATERIAL_TYPE
+        model = mat.get_field("material_model", "NeoHookeanLnJ")
+        parameter_class = getattr(MaterialModels, f"{model}Params")
+        model_keys = tuple(field.name for field in fields(parameter_class))
+
+        base = template.BASES.get("material_interface")
+        if mtype == "HomogeneousMaterial":
+            base = template.BASES.get(
+                "homogeneous_material_interface",
+                "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
+            )
+        elif mtype == "SIMP_BSPFieldMaterials":
+            base = "morphopt.simp.SIMP_BSPFieldMaterials"
+
+        custom_map = ""
+        if mtype == "SIMP_BSPFieldMaterials":
+            custom_map = str(
+                mat._map_bsp_designfield or
+                template.default_map_bsp_designfield()).strip()
+
+        interface_class = base
+        if custom_map and "return nodes" not in custom_map:
+            class_name = f"MaterialInterface{index}"
+            interface_class = class_name
+            a("")
+            a(f"                class {class_name}({base}):")
+            a("")
+            a("                    def _map_bsp_designfield(self, nodes: Any) -> Any:")
+            a(indent_block(custom_map, 24))
+
+        kw = []
+        if mtype == "SIMP_BSPFieldMaterials":
+            keys = [
+                "part_name", "elementname", "mumax", "kappamax", "density",
+                "simp_ratio_min", "initial_ratio", "voidpenalfactor", "materialpenalty",
+                "bounding_box", "simp_field_resolution", "degree",
+            ]
+            material_parameters = {
+                key: mat.get_field(key)
+                for key in model_keys
+            }
+            if model in ("NeoHookean", "NeoHookeanLnJ"):
+                material_parameters = {
+                    "mu": mat.get_field("mumax"),
+                    "kappa": mat.get_field("kappamax"),
+                }
+            kw.append(
+                "material_parameters="
+                + _material_parameters_expression(model, material_parameters))
+        else:
+            keys = ["part_name", "elementname", "density"]
+            material_parameters = {
+                key: mat.get_field(key) for key in model_keys
+            }
+            kw.append(
+                "material_parameters="
+                + _material_parameters_expression(model, material_parameters))
+        for key in keys:
+            value = mat.get_field(key)
+            if value is not None:
+                kw.append(f"{key}={_literal(value)}")
+
+        a("")
+        name = mat.name or f"material_{index}"
+        a(f"                self.add_material_interface({interface_class}(")
+        for option in kw:
+            a(f"                    {option},")
+        a(f"                ), name={name!r})")
 
 
 def _emit_updater(a, problem: ProblemDefinition, template, device: str) -> None:
@@ -428,7 +513,7 @@ def _emit_updater(a, problem: ProblemDefinition, template, device: str) -> None:
     if not has_geom and not has_mat:
         a(f"    class Updater({template.BASES['updaters']}):")
         a("")
-        a("        def __init__(self, params, *args, **kwargs):")
+        a("        def __init__(self, params: Any, *args: Any, **kwargs: Any) -> None:")
         a("            super().__init__(*args, **kwargs)")
         return
 
@@ -440,7 +525,7 @@ def _emit_updater(a, problem: ProblemDefinition, template, device: str) -> None:
         parts.append(f"materials=self.UpdaterMaterials(params=params)")
     a(f"    class Updater({updater_base}):")
     a("")
-    a("        def __init__(self, params, *args, **kwargs):")
+    a("        def __init__(self, params: Any, *args: Any, **kwargs: Any) -> None:")
     a(f"            super().__init__({', '.join(parts)}, device={device}, *args, **kwargs)")
     a("")
     if has_geom:
@@ -464,6 +549,9 @@ def _render_updater_item(item: dict, category: str):
     params = dict(item.get("params") or {})
     for f in spec.get("params", []):
         params.setdefault(f["key"], f["default"])
+    if item.get("type") == "VolFrac" and not str(
+            params.get("elementname") or "").strip():
+        raise ValueError("VolFrac requires an explicit elems name.")
     fmt = {k: _literal(v) for k, v in params.items()}
     try:
         return gen.format(**fmt)
@@ -475,7 +563,7 @@ def _emit_nested_updater(a, cls_name: str, base: str, cfg) -> None:
     cfg = cfg or {}
     a(f"        class {cls_name}({base}):")
     a("")
-    a("            def __init__(self, params):")
+    a("            def __init__(self, params: Any) -> None:")
     a(f"                super().__init__(params=params, max_step_iter={int(cfg.get('max_step_iter', 50))})")
 
     # NOTE: the model stores the lists under ``objective_functions`` / ``constraints``

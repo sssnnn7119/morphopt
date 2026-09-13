@@ -7,6 +7,7 @@ import torchfea
 import numpy as np
 import torch
 import multiprocessing as mp
+from typing import Any
 
 from ..optcore import BaseParams
 from ..optcore import BaseGeometry
@@ -284,7 +285,8 @@ class MeshGenerator:
         
         return "\n".join(payload_lines)
 
-    def export(self, outfile="output.inp"):
+    def export(self, outfile: str = "output.inp",
+               part_name: str = "final_model") -> None:
         # print(f"\n--- Exporting to {outfile} ---")
         
         # 1. Generate the surface definition payload based on the mesh
@@ -299,7 +301,7 @@ class MeshGenerator:
         with open(outfile, 'r') as f:
             lines = f.readlines()
 
-        lines.insert(2, "*Part, name=final_model\n")
+        lines.insert(2, f"*Part, name={part_name}\n")
             
         # Append surface payload
         if surface_payload:
@@ -319,7 +321,9 @@ class MeshGenerator:
         # print("Done.")
 
     @classmethod
-    def run(cls, seed_size: float, output_file="output.inp", directory: str = None):
+    def run(cls, seed_size: float, output_file: str = "output.inp",
+            directory: str | None = None,
+            part_name: str = "final_model") -> None:
         generator = cls(mesh_size_max=seed_size*1.0,
                         mesh_size_min=seed_size*0.5)
         try:
@@ -327,7 +331,7 @@ class MeshGenerator:
             generator.load_and_process_files()
             generator.construct_volume()
             generator.generate_mesh(3)
-            generator.export(output_file)
+            generator.export(output_file, part_name=part_name)
         except Exception as e:
             print(f"An error occurred: {e}")
         finally:
@@ -342,7 +346,10 @@ class GeometryParams(BaseGeometry):
     from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
     from .geometryinterfaces.basesurfaceinterface import FixedSurface
 
-    def __init__(self, fea_seed_size: float, mesh_order: int = 1, *args, **kwargs) -> None:
+    def __init__(self, fea_seed_size: float, mesh_order: int = 1,
+                 part_name: str = "final_model",
+                 instance_name: str | None = None,
+                 *args: Any, **kwargs: Any) -> None:
         """
         Initialize the Surfaces class.
 
@@ -395,8 +402,13 @@ class GeometryParams(BaseGeometry):
         """
         The maximum allowed change in node positions before the surfaces are regenerated.
         """
+
+        self.part_name = str(part_name or "").strip()
+        if not self.part_name:
+            raise ValueError("part_name cannot be empty for GeometryParams.")
+        self.instance_name = str(instance_name or self.part_name).strip()
         
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args: Any, **kwargs: Any) -> None:
         for i in range(self.num_surface):
             self.surface_list[i].initialize(*args, **kwargs)
 
@@ -639,9 +651,9 @@ class GeometryParams(BaseGeometry):
             part.convert_linear_to_quadratic_elements(list(part.elems.keys()), list(part.elems.keys()))
         assembly = torchfea.Assembly()
 
-        assembly.add_part(part=part, name='final_model')
-        instance = torchfea.Instance(part_name='final_model')
-        assembly.add_instance(instance=instance, name='final_model')
+        assembly.add_part(part=part, name=self.part_name)
+        instance = torchfea.Instance(part_name=self.part_name)
+        assembly.add_instance(instance=instance, name=self.instance_name)
         instance.exterior_surface = 'surface_0_All'
         return assembly
 
@@ -672,10 +684,12 @@ class GeometryParams(BaseGeometry):
             pools_now.apply_async(MeshGenerator.run, kwds={
                 'seed_size': self.fea_seed_size,
                 'output_file': inp_path,
-                'directory': path_output
+                'directory': path_output,
+                'part_name': self.part_name,
             }).get()
         else:
-            MeshGenerator.run(seed_size=self.fea_seed_size, output_file=inp_path, directory=path_output)
+            MeshGenerator.run(seed_size=self.fea_seed_size, output_file=inp_path,
+                              directory=path_output, part_name=self.part_name)
 
         if pools is None:
             pools_now.close()
@@ -686,16 +700,16 @@ class GeometryParams(BaseGeometry):
         inp.read_inp(path=inp_path)
         # inp.read_inp('Z:\\Results\\EXAMPLE_T20260118_100206\\cache\\TopOptRun.inp')
         # get the FEA model
-        nodes = inp.part['final_model'].nodes[:, 1:]
+        nodes = inp.part[self.part_name].nodes[:, 1:]
         part = torchfea.Part(torch.from_numpy(nodes).to(torch.get_default_device()).to(torch.get_default_dtype()))
-        for surface_name, surface in inp.part['final_model'].surfaces.items():
+        for surface_name, surface in inp.part[self.part_name].surfaces.items():
             sf_now = []
             for sf in surface:
                 sf_now.append((sf[0], sf[1]))
             part.add_surface_set(surface_name, sf_now)
 
         # define the set of nodes
-        for set_name, node_indices in inp.part['final_model'].sets_nodes.items():
+        for set_name, node_indices in inp.part[self.part_name].sets_nodes.items():
             part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
 
         index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
@@ -703,9 +717,9 @@ class GeometryParams(BaseGeometry):
         index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
         part.set_nodes['surface_0_Head'] = index_head
 
-        for key in inp.part['final_model'].elems.keys():
-            elems = inp.part['final_model'].elems[key][:, 1:]
-            elems_index = inp.part['final_model'].elems[key][:, 0]
+        for key in inp.part[self.part_name].elems.keys():
+            elems = inp.part[self.part_name].elems[key][:, 1:]
+            elems_index = inp.part[self.part_name].elems[key][:, 0]
             element = torchfea.elements.initialize_element(element_type=key,
                                                         elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
                                                         elems=torch.from_numpy(elems).to(torch.get_default_device()), 
@@ -759,7 +773,7 @@ class GeometryParams(BaseGeometry):
         Modify the assembly for sensitivity analysis.
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
         """
-        part = assembly.get_part('final_model')
+        part = assembly.get_part(self.part_name)
         nodes0 = part.nodes
         nodes_new = nodes0.clone()
 

@@ -115,8 +115,7 @@ class PreviewViewer(QWidget):
                 self._base_meshes.append((srf, mesh, actor))
 
         # material bounding box (SIMP / codesign)
-        mat = self._problem.material
-        if mat is not None:
+        for mat in self._problem.material_nodes():
             bb = mat.bounding_box
             if bb and any(bb) and len(bb) == 6:
                 box = pv.Box(bounds=[bb[0], bb[1], bb[2], bb[3], bb[4], bb[5]])

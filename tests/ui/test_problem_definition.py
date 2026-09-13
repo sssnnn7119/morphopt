@@ -94,7 +94,7 @@ class ProblemDefinitionMutationTests(unittest.TestCase):
             problem = get_template("simp").create_problem("linked-assembly")
             problem.geometry.model_directory = directory
             problem.geometry.model_filename = path.name
-            problem.material.part_name = "body"
+            problem.material_nodes()[0].part_name = "body"
 
             summary = inspect_model(directory, path.name)
             self.assertEqual([part.name for part in summary.parts],
@@ -140,6 +140,9 @@ class ProblemDefinitionMutationTests(unittest.TestCase):
         for scheme in ("shapeopt", "simp", "codesign"):
             with self.subTest(scheme=scheme):
                 original = get_template(scheme).create_problem("round-trip")
+                if scheme in ("shapeopt", "codesign"):
+                    self.assertEqual(original.geometry.part_name, "final_model")
+                    self.assertEqual(original.geometry.instance_name, "final_model")
                 restored = ProblemDefinition.from_dict(original.to_dict())
 
                 self.assertEqual(type(restored.root).__name__, "ProblemNode")
@@ -158,7 +161,7 @@ class ProblemDefinitionMutationTests(unittest.TestCase):
                 self.assertTrue(equality["params"]["code"].strip())
                 self.assertEqual(config["constraints"][0]["type"], "Fairness")
                 source = generate_source(problem)
-                self.assertIn("def apply_surface_constraints(self):", source)
+                self.assertIn("def apply_surface_constraints(self) -> None:", source)
                 # The hard projection is emitted on GeometryParams, not
                 # incorrectly registered as a penalty constraint.
                 self.assertNotIn("SurfaceEquality", source)
@@ -251,6 +254,50 @@ class ProblemDefinitionMutationTests(unittest.TestCase):
         self.assertEqual(codesign.instance_names(), ["final_model"])
         self.assertEqual(codesign.reference_point_names(), ["RP_head"])
         self.assertEqual(codesign.element_names(), ["C3D4", "C3D6"])
+
+    def test_materials_are_named_part_assignments(self) -> None:
+        problem = _codesign_problem()
+        materials = problem.materials
+        self.assertIsNotNone(materials)
+        self.assertEqual([item.name for item in problem.material_nodes()],
+                         ["solid", "shell"])
+        self.assertEqual([item.part_name for item in problem.material_nodes()],
+                         ["final_model", "final_model"])
+        self.assertEqual([item.elementname for item in problem.material_nodes()],
+                         ["C3D4", "C3D6"])
+        self.assertEqual(
+            [item.material_model for item in problem.material_nodes()],
+            ["NeoHookeanLnJ", "NeoHookeanLnJ"],
+        )
+
+        restored = ProblemDefinition.from_dict(problem.to_dict())
+        self.assertEqual(len(restored.material_nodes()), 2)
+        self.assertEqual(restored.material_nodes()[1].elementname, "C3D6")
+        source = generate_source(restored)
+        self.assertNotIn("material_model=", source)
+        self.assertIn("NeoHookeanLnJParams", source)
+
+    def test_material_model_selection_emits_model_specific_parameters(self) -> None:
+        shapeopt = get_template("shapeopt").create_problem("material-model")
+        homogeneous = shapeopt.material_nodes()[0]
+        homogeneous.set_field("material_model", "Gent")
+        source = generate_source(shapeopt)
+        self.assertNotIn("material_model=", source)
+        self.assertIn("GentParams", source)
+        self.assertIn("Jm=100.0", source)
+        self.assertNotIn("c10=", source)
+        compile(source, "<gent-material>", "exec")
+
+        simp = get_template("simp").create_problem("material-model-simp")
+        density_field = simp.material_nodes()[0]
+        density_field.set_field("material_model", "Ogden")
+        source = generate_source(simp)
+        self.assertNotIn("material_model=", source)
+        self.assertIn(
+            "material_parameters=self.materialmodels.OgdenParams(mu=0.482, alpha=[2.0], kappa=4.8)",
+            source,
+        )
+        compile(source, "<ogden-material>", "exec")
 
     def test_all_objective_snippets_generate_valid_python(self):
         """Every selectable snippet can be completed into a generated code slot."""
