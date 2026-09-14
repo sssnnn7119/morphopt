@@ -27,3 +27,20 @@ dependencies = [
 [project.scripts]
 # console entry for the graphical UI (after `pip install morphopt`)
 morphopt-ui = "morphopt.ui:run_app"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test*.py"]
+python_classes = ["Test*", "*Tests"]
+python_functions = ["test_*"]
+addopts = ["-ra"]
+markers = [
+    "unit: fast isolated unit tests",
+    "integration: tests that combine multiple MorphOpt subsystems",
+    "slow: tests that require expensive geometry, FEA, or UI resources",
+]
