@@ -64,6 +64,14 @@ Assembly 聚合和参考点注册，`BoundaryPart` 负责曲面和网格，导�
 | `add_reference_point(reference_point)` | None | - | 使用 `reference_point.name` 注册一个 Assembly 级参考点定义 |
 | `build_assembly(path_result, pools)` | None | - | 从当前定义创建 `Assembly` 并写入 `_torchfea_Assembly`；返回值为 `None` |
 | `get_assembly()` | `torchfea.Assembly` | - | 读取已经创建的 `Assembly`，不重新构建 |
+
+`build_assembly()` 对 TorchFEA 的调用固定为：`torchfea.Assembly()` →
+`assembly.add_part(part, name)` → `assembly.add_instance(instance, name)` →
+`assembly.add_reference_point(rp, name)`。材料与 FEA component 由 `MaterialsParams` 和
+`FEAParams` 通过 `assign_materials()` / `assign_components()` 写入同一个 Assembly（分别调用
+`assembly.add_load()`、`assembly.add_boundary()`、`assembly.add_constraint()`）。全部对象写入
+后由 `Params.build_assembly()` 调用一次 `Assembly.initialize()`，完成所需自由度与约束广义
+坐标的分配；此后才能创建逐工况 `FEAController`。
 | `get_design_owners()` | tuple[`BoundaryPart` 或 `OffsetShellPart`, ...] | - | 按 `part_name` 读取具体可更新 Part |
 | `initialize()` | None | `Initializable` | 初始化并校验所有 `Part`、元素名称集合、`Instance` 和 `ReferencePoint` |
 | `reinitialize(iteration)` | None | `Initializable` | 调用每个 `Part` 的迭代刷新 |
@@ -113,7 +121,7 @@ Part 写入 `_torchfea_Part`。
 |---|---|---|---|
 | `_part_name` | str | 构造函数必填 | `Part` 唯一名称 |
 | `_element_names` | tuple[str, ...] 或 None | None | 当前 `Part` 的输出元素名称；生成型定义显式提供，导入型定义在初始化时解析 |
-| `_exterior_surface` | str | `'extern'` | `Part` 级外表面集合名称；由具体 `Part` 定义 |
+| `_exterior_surface` | str | `'extern'` | 外表面 surface set 名称；`Part` 是唯一持有者，写入时同步到 `_torchfea_Part.exterior_surface` |
 | `_instances` | dict[str, `InstanceDefinition`] | {} | `Instance` 定义集合 |
 
 #### 运行时属性（`__init__()` 声明，`initialize()` 填充）
@@ -129,7 +137,7 @@ Part 写入 `_torchfea_Part`。
 |---|---|---|---|---|
 | `part_name` | str | 只读 | 内部维护 | 返回稳定的 `Part` 名称 |
 | `element_names` | tuple[str, ...] 或 None | 只读 | 内部维护 | 返回构造阶段声明的元素名称；导入型定义初始化后返回解析结果 |
-| `exterior_surface` | str | 只读 | 读写 | setter 校验并更新整体 surface set 名称 |
+| `exterior_surface` | str | 只读 | 读写 | 返回或修改 Part 的外表面集合名称；`InstanceDefinition.exterior_surface` 读写的是同一份值 |
 | `instances` | Mapping[str, `InstanceDefinition`] | 只读 | 内部维护 | 返回 `Instance` 的只读视图 |
 
 构造属性和运行时属性都属于每个 `Part` 实例；运行时属性在构造
@@ -213,13 +221,13 @@ Assembly 试探更新和正式提交方法。导入类型在内部缓存源 Asse
 | `name` | str | 只读 | 内部维护 | 返回实例名称 |
 | `translation` | tuple[float, float, float] | 只读 | 内部维护 | 返回平移向量 |
 | `rotation` | tuple[float, float, float] | 只读 | 内部维护 | 返回旋转向量 |
+| `exterior_surface` | str | 只读 | 读写 | 转发属性：读写直接作用于所属 `Part`，实例自身不保存副本 |
 
 #### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `validate()` | None | - | 校验名称和变换维度 |
-| `build_instance(part)` | None | - | 创建 TorchFEA `Instance` 并写入 `_torchfea_Instance` |
+| `build_instance(part)` | None | - | 校验名称与变换维度，创建 TorchFEA `Instance` 并写入 `_torchfea_Instance` |
 | `get_instance()` | `torchfea.Instance` | - | 读取已经创建的 `Instance`，不重新创建 |
 
 #### 内部辅助函数
@@ -230,6 +238,12 @@ Assembly 试探更新和正式提交方法。导入类型在内部缓存源 Asse
 
 一个 `Part` 可以定义任意多个 `Instance`。所有 `Instance` 共享 `Part` 的网格和设计
 变量。用户未注册 `Instance` 时，系统创建一个与 part_name 同名的零变换 `Instance`。
+
+外表面集合的名称由 `Part` 唯一持有，`Instance` 只能转发：`Instance.exterior_surface` 的 getter
+和 setter 都作用于所属 `Part`，实例不保存独立副本；实例尚未与 `Part` 关联时读写抛出运行时
+错误。因此同一 `Part` 的多个 `Instance` 天然共享同一外表面名称，无需再做一致性校验。
+`Instance.surfaces`、`Instance.elems` 和 `Instance.nodes` 同样代理 `Part`，FEA 载荷、边界条件
+和 Contact 以 `instance_name` 加集合名称解析目标。
 
 ### 5.4 `BoundaryPart`
 
@@ -257,10 +271,11 @@ Assembly 试探更新和正式提交方法。导入类型在内部缓存源 Asse
 | `_preview_meshes` | list[object] | [] | 各曲面的预览网格缓存 |
 | `_surface_node_index` | list[numpy.ndarray] | [] | 曲面节点到 FEA 节点的索引映射 |
 | `_surface_node_parameters` | list[numpy.ndarray] | [] | FEA 节点对应的曲面参数坐标 |
-| `_iter_since_last_regenerate` | int | 0 | 距离上次重网格的迭代数 |
-| `_max_iter_before_regenerate` | int | 15 | 触发重网格的迭代阈值 |
-| `_nodes_last_regenerate` | numpy.ndarray 或 None | None | 上次重网格时的节点位置 |
-| `_max_nodes_change` | float | 1.0 | 触发重网格的节点变化阈值 |
+| 重网格策略 | - | - | V4 每轮迭代重建 Part 与网格，不保留增量重网格判据状态 |
+
+V4 的网格策略固定为"每轮重建"：`reinitialize()` 之后由 `BoundaryPart.build_part()` 重新导出
+曲面、剖分、注册集合并匹配节点；`Controller` 不维护节点变化量或迭代阈值，因此不存在增量
+重网格状态字段。网格规模变化由 `History` 记录的节点数与单元数观测。
 
 `BoundaryPart.initialize()` 按 `_surfaces` 的稳定顺序设置每个曲面的运行时参数方向，
 然后再建立曲面后端和几何缓存。第一个曲面是参数方向基准，`flip=False`；从第二个
@@ -272,6 +287,19 @@ Assembly 试探更新和正式提交方法。导入类型在内部缓存源 Asse
 `[端点节点索引_1, 端点节点索引_2, 中点节点索引]`，用于在一阶节点移动后更新二阶
 中点节点，并保持 `C3D10`、`C3D15`、`C3D20` 等二阶单元的几何一致性。`BoundaryPart`
 读取这份唯一映射执行节点回写。
+
+该映射由 `Part.convert_linear_to_quadratic_elements(element_name_list, new_element_name_list,
+if_update_setnodes=True)` 产生，规则如下：
+
+| 项目 | 行为 |
+|---|---|
+| 覆盖范围 | 只包含**本次调用所选元素族**的边；每次调用都会整体替换 `mid_pt_idxmap` 与 `mid_pt_idxmap_torch` |
+| 支持的转换 | `C3D4 → C3D10`、`C3D6 → C3D15`、`C3D8 → C3D20`、`C3D8R → C3D20` |
+| 节点集合 | `if_update_setnodes=True` 时，两端节点都在同一节点集合中的边，其中点会被自动加入该集合 |
+| 材料保留 | 密度、材料对象和 `material_element_indices` 会复制到新元素 |
+
+因此 `BoundaryPart` 在 `mesh_order == 2` 时必须先把全部线性族建齐，再**一次调用**完成转换，
+使一份映射同时覆盖实体族与楔形族；分多次调用会让映射只保留最后一次的族。
 
 | 曲面在 `_surfaces` 中的索引 | 初始化后的 `flip` | 约定 |
 |---:|---:|---|
@@ -299,8 +327,8 @@ Assembly 试探更新和正式提交方法。导入类型在内部缓存源 Asse
 | `export_model(path, format)` | `pathlib.Path` | - | 接收目标地址，调用各曲面导出接口生成当前 `Part` 的 STP 或 STL 文件；格式必须是所有曲面共同支持的格式 |
 | `build_part(path_result, pools)` | None | `BasePartDefinition` | 从当前曲面定义创建网格和 TorchFEA `Part`，并写入 `_torchfea_Part` |
 | `initialize()` | None | `Initializable` | 按曲面序号设置 `flip`（第 0 个为 `False`，其余为 `True`），再初始化曲面和几何缓存 |
-| `reinitialize(iteration)` | None | `Initializable` | 应用变量并准备重网格 |
-| `get_parameters()` | list[torch.Tensor] | `BasePartDefinition` | 读取几何参数的 detached clone |
+| `reinitialize(iteration)` | None | `Initializable` | 应用已提交变量、清空上一轮网格与映射缓存，准备本轮重建 |
+| `get_parameters()` | list[torch.Tensor] | `Updatable` | 读取几何参数的 detached clone |
 | `set_parameters(parameters)` | None | `BasePartDefinition` | 导入几何参数的 detached clone |
 | `build_design_delta()` | None | `Updatable` | 建立并保存全 0 的几何设计增量 |
 | `get_design_delta()` | torch.Tensor | `Updatable` | 读取已经建立的几何设计增量 |
@@ -334,20 +362,34 @@ BSP、CPGEO、STL 等命名空间访问。等式投影和局部罚函数由绑�
 `_register_surface_sets(part)` 在网格生成后完成节点/面集合登记，并将
 `surface_{i}_all` 组装为该 BSP 的三个局部面的合集。
 
+三个局部面的判定规则固定如下，实现与 UI 选择器都以此为唯一依据：
+
+| 集合 | 判定 |
+|---|---|
+| `surface_{i}_lateral` | 曲面参数域内部的面，即既不属于端部也不属于底部的侧面单元面 |
+| `surface_{i}_head` | 与曲面 `v = 1` 端部控制点所在平面一致的面 |
+| `surface_{i}_bottom` | 与曲面 `v = 0` 端部控制点所在平面一致的面 |
+| `surface_{i}_all` | 上述三个集合的并集 |
+
+端部判定使用几何容差 `1e-5`：节点到端部平面的距离小于该容差即视为端部节点。
+BSP 圆柱与球定义类按参数域起点侧为 `bottom`、终点侧为 `head` 建立端部；`flip` 只改变
+参数方向，不改变集合名与集合内容的对应关系。退化曲面上局部集合可以为空；空集合仍然
+注册，供选择器稳定列举。
+
 每个 `CPGEOSurface` 注册一个 `surface_{i}_all`，其内容是该 CPGEO 曲面的全部
 三角面；CPGEO 面集合统一采用这一全集命名。
 
-在上述集合之外，`BoundaryPart` 还注册一个整体 surface set。该集合的名称由
-`exterior_surface` 定义，默认名称为 `extern`：
+在上述集合之外，`BoundaryPart` 还注册一个整体 surface set，其名称由 `Part` 持有
+（默认 `extern`），内容为所有曲面的 `surface_{i}_all` 合集：
 
 | 名称 | 内容 |
 |---|---|
-| `exterior_surface` 的值 | 所有曲面的 `surface_0_all + surface_1_all + ...` 合集 |
+| `BoundaryPart.exterior_surface` | 所有曲面的 `surface_0_all + surface_1_all + ...` 合集 |
 
-`BoundaryPart.exterior_surface` 是整体外表面 surface set 的定义名称，默认值为
-`extern`。因此，`part.exterior_surface` 对应所有曲面登记的 `surface_{i}_all` 合集，
-该集合覆盖所有曲面的全集面。用户输入其他名称时，整体集合就使用该名称创建，
-并同步写入 `part.exterior_surface`。该字段直接记录整体集合名称，曲面数据由各曲面集合维护。
+该名称在 `_torchfea_Part.surfaces` 中是受保护条目：`add_surface_set()` 拒绝覆盖同名集合，
+`delete_surface_set()` 拒绝删除，因此外表面集合只能通过 `exterior_surface` property 改名。
+若 Part 未注册该名称，TorchFEA 在装配初始化时用各元素族的边界面自动合成该集合
+（`extract_boundary_surface_set()`），因此导入模型不需要手工补齐外表面。
 
 #### 5.4.1 `BaseSurfaceInterface`
 
@@ -566,10 +608,15 @@ BSP、CPGEO、STL 等命名空间访问。等式投影和局部罚函数由绑�
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
 | `_bsp_model` | object 或 None | None | BSP 后端对象 |
-| `_preload_size` | tuple[int, int] 或 None | None | preload UV 网格尺寸 |
 
-BSP 控制点和设计变量数量属于运行时状态；分别通过
-`get_control_points_list()` 和 `get_num_variables()` 获取。
+BSP 控制点属于运行时状态，通过 `get_control_points_list()` 读取；设计变量数量由控制点张量的
+元素个数决定，不单独提供读取方法。
+
+`BSPSurface` 内建轴对称控制点夹持：写回控制点时，控制点矩阵的 z 分量在前 5 行与后 5 行
+保持为零，第 0 行与最后一行整体保持为零。该规则属于 BSP 曲面自身的行为，在试探更新
+（`update_geometry()`）和正式提交两条路径上都生效，用户不需要额外声明等式约束。夹持只在
+z 方向与端部行上生效，`x`、`y` 控制点不受影响；需要完整自由形状时使用 `CPGEOSurface`，
+它没有该规则。
 
 ##### 属性接口（property）
 
@@ -582,7 +629,6 @@ BSP 控制点和设计变量数量属于运行时状态；分别通过
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
 | `get_control_points_list()` | list[torch.Tensor] | - | 读取已经建立的 BSP 控制点 |
-| `get_num_variables()` | int | - | 读取当前 BSP 设计变量数量 |
 | `get_points_weight()` | torch.Tensor | - | 读取已经建立的 BSP 采样点权重 |
 | `compute_normals(uv)` | torch.Tensor | - | 根据 BSP 参数点计算法向量 |
 | `match_coordinates(node_index, nodes)` | numpy.ndarray | - | 建立 FEA 节点到 BSP 参数域的映射 |
@@ -730,6 +776,12 @@ BSP 控制点和设计变量数量属于运行时状态；分别通过
 
 CPGEO 控制点和控制网格拓扑属于运行时缓存；控制点通过
 `get_control_points_list()` 获取，拓扑由 `get_meshes()` 和导出方法消费。
+
+CPGEO 后端允许在 `initialize()` 阶段执行重构以建立与几何网格分辨率匹配的采样：重构会
+改变控制点数量，因此**只允许发生在 `initialize()`**。`reinitialize(iteration)` 阶段控制点
+数量必须与 `initialize()` 结束时一致，否则抛出 `DesignLayoutError`。运行期不允许改变设计
+变量布局，规则见[设计变量注册](10DesignRegistry.md)。`_requires_reconstruction` 只表示后端
+缓存需要刷新，不作为运行期改变变量数量的依据。
 
 ##### 属性接口（property）
 
@@ -988,16 +1040,45 @@ surface.export_surface(path: str | pathlib.Path,
 因此，全部由 BSP 曲面组成的 Part 导出 STP；全部由 CPGEO 或 STL 曲面组成的 Part
 导出 STL；混合曲面只有在目标格式属于各曲面能力交集时才能导出。
 
-`BoundaryPart.export_model(path, format)` 负责最终模型文件：它按
-`BoundaryPart.surfaces` 的稳定顺序调用每个曲面的 `export_surface()`，将曲面文件合并为
-指定格式的 Part 模型，并同步使用 `part_name`、`element_names` 和
-`exterior_surface` 作为模型元数据。`build_part()` 继续负责 TorchFEA 网格和
-集合注册；`export_model()` 负责 CAD/三角网格文件，两条流程共享同一组当前几何状态。
+`BoundaryPart.build_part()` 与 `export_model()` 共享同一组当前几何状态，执行顺序固定为：
+
+```text
+update_geometry()                      # 曲面缓存与试探控制点
+    → export_surface() × surfaces      # 写出 __surface-{i}.stp|.stl
+    → MeshBuilder.set_surface_paths()  # 扫描、排序并校验曲面文件
+    → MeshBuilder.build_volume() / build_mesh() / export_inp()
+    → 读取 INP、注册集合、按曲面索引匹配节点
+```
+
+节点匹配消费的是本轮导出的曲面产物：匹配所需的采样点、控制网格拓扑与参数点由导出步骤的
+同一份缓存提供。`match_coordinates()` 不得在本轮导出未执行时被调用；所需缓存缺失时抛出
+错误，不退化为低精度匹配。
+
+曲面文件名固定为 `__surface-{i}.stp` 或 `__surface-{i}.stl`，`i` 为曲面在
+`BoundaryPart.surfaces` 中的索引。索引 `0` 是外层基面，索引大于等于 `1` 的曲面是空腔：
+体积构建时索引 `0` 生成外表面环，其余索引生成空腔环。
 
 ### 5.5 `INPPart`
 
 `INPPart` 继承 `BasePartDefinition`。一个对象从 INP 源 Assembly 中提取一个指定 Part，
 保留其 Surface、NodeSet、ElementSet 和选定源实例，并以统一 Part 接口参与目标 Assembly 装配。
+
+#### INP 解析契约
+
+| 项目 | 规则 |
+|---|---|
+| 节点数据 | 读取 `*Node` 段，剥离节点 id 列，得到 `(N, 3)` 坐标张量 |
+| 单元数据 | 按 `*Element` 段逐族读取，剥离单元 id 列，得到各族连接表 |
+| 元素族顺序 | 按 `C3D4`、`C3D6`、`C3D8`、`C3D10`、`C3D15`、`C3D20` 排序；未列入的类型按源文件顺序追加 |
+| 元素名称 | `element_names` 省略时使用排序后的源元素类型名称；显式提供时逐项对应且保持唯一 |
+| surface set（读取阶段） | INP `*SURFACE TYPE=ELEMENT` 的 `S{k}` 解析为 `(元素 id, 面索引 k-1)`；面索引是该单元 `surfaceid_map` 的键（`C3D4` 为 `0..3`、`C3D6` 为 `0..4`、`C3D8` 为 `0..5`） |
+| surface set（注册阶段） | 元素 id 转换为零基元素索引后，以 `list[(元素零基索引数组, 面索引)]` 写入 `Part.surfaces[name]` |
+| node set | 以 `Part.set_nodes[name]` 保存，集合导出为节点集合时用 `np.unique` 去重并按升序排列 |
+| 元素集合 | 以 `Part.set_elements[name]` 保存零基元素索引数组 |
+| 元素对象 | 每个元素族建立对应的 TorchFEA 元素对象并注册到 `Part.elems[element_name]` |
+| 数值约定 | 默认 dtype 为 `float64`、默认 device 为 CPU，与几何层其余部分一致 |
+| 源缓存 | 源 Assembly 只读缓存，键为 `(path, mtime_ns, size)`；同一模型被多个定义对象引用时共享缓存 |
+| 外表面补齐 | `exterior_surface` 为 `extern` 且源模型没有该集合时，按单元边界外表面合成该集合 |
 
 #### 构造属性（`__init__()` 记录）
 
@@ -1108,16 +1189,17 @@ Part，并缓存完整源 Assembly 以读取该 Part 的实例、Surface、NodeS
 
 ### 5.7 `OffsetShellPart`
 
-`OffsetShellPart` 继承 `BoundaryPart` 的曲面能力，并负责从选定的源曲面向内生成偏置层，
-同时生成实体元素和壳元素。实体元素通常使用 `C3D4`，壳元素通常使用 `C3D6`，两者在
-`Part.elems` 中使用不同名称。
+`OffsetShellPart` 继承 `BoundaryPart` 的曲面能力，并负责从选定的源曲面向内生成偏置层。
+实体单元族来自本 Part 的体积网格（`C3D4`，`mesh_order == 2` 时为 `C3D10`）；偏置部分是
+在**所有相邻层之间**生成的楔形单元族（`C3D6`，`mesh_order == 2` 时为 `C3D15`）。偏置部分
+不产生实体单元，也不存在"最内层壳单元"；两族在 `Part.elems` 中使用不同名称。
 
 #### 构造属性（`__init__()` 记录）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `_solid_element_name` | str | 构造函数必填 | 实体部分的 `Part.elems` 名称，例如 `C3D4` |
-| `_shell_element_name` | str | 构造函数必填 | 壳部分的 `Part.elems` 名称，例如 `C3D6` |
+| `_solid_element_name` | str | 构造函数必填 | 体积网格的 `Part.elems` 名称，例如 `C3D4`；`mesh_order == 2` 时为 `C3D10` |
+| `_shell_element_name` | str | 构造函数必填 | 楔形单元族的 `Part.elems` 名称，例如 `C3D6`；`mesh_order == 2` 时为 `C3D15` |
 | `_source_surface` | list[bool] | 必填 | 按曲面顺序选择偏置源曲面；索引 `0` 固定为 `False` 并保留原始曲面 |
 | `_thickness` | float | 必填 | 壳层厚度 |
 | `_num_layers` | int | 必填 | 偏置层数 |
@@ -1163,8 +1245,8 @@ Part，并缓存完整源 Assembly 以读取该 Part 的实例、Surface、NodeS
 
 | 函数 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `_build_solid_elements()` | None | - | 建立相邻层之间的实体单元 |
-| `_build_shell_elements()` | None | - | 建立最内层壳单元 |
+| `_build_shell_elements()` | None | - | 在每对相邻层之间建立楔形单元，写入单一楔形元素族 |
+| `_validate_offset_orientation()` | None | - | 校验楔形单元高斯权重非负；出现负值时断言失败 |
 | `_register_offset_sets()` | None | - | 按 `surface_{i}_offset` 写入偏置面集合 |
 | `_update_second_order_nodes()` | None | - | 使用 `Part.mid_pt_idxmap_torch` 更新二阶中间节点 |
 
@@ -1173,6 +1255,21 @@ Part，并缓存完整源 Assembly 以读取该 Part 的实例、Surface、NodeS
 所有偏置方向统一为向内；每个生成曲面注册为 `surface_{i}_offset`。`OffsetShellPart`
 的设计变量仍是源边界曲面的元曲面控制点，偏置节点、单元和偏置曲面由固定算法根据
 这些控制点派生。
+
+#### 5.7.1 偏置生成契约
+
+| 项目 | 规则 |
+|---|---|
+| 基面节点 | 按空腔逐个取该曲面 `surface_{i}_all` 节点集合的升序排列并依次拼接；第 0 层直接复用这些节点 |
+| 法向来源 | 由源曲面接口的 `compute_normals()` 提供，方向由运行时 `flip` 与向内方向共同确定 |
+| 层间位移 | 第 `layer` 层节点 = 基面节点 + `(layer / num_layers) × thickness` × 向内法向；节点为新分配的行，追加在既有节点之后 |
+| 楔形连接 | 每个层间带按源面拓扑生成 6 节点楔形，节点绕向与既有体单元族一致 |
+| 单元编号 | 新单元编号从当前 `Part.elems` 最大编号加一继续，不与体单元族冲突 |
+| 元素族 | 全部楔形单元写入 `shell_element_name` 一个族；偏置部分不产生体单元 |
+| 偏置面集合 | 每个生成曲面按 `surface_{i}_offset` 注册面集合，面索引取楔形顶面（`C3D6` 的 `surfaceid_map[1] = [3, 4, 5]`，二阶 `C3D15` 为 `[3, 4, 5, 9, 10, 11]`），集合以 `(元素索引数组, 面索引)` 列表写入 `Part.surfaces` |
+| 朝向校验 | 建立楔形单元后校验高斯权重最小值非负，出现负值时断言失败，不进入求解 |
+| 二阶单元 | `mesh_order == 2` 时先建立体积网格与全部楔形带，再对实体族与楔形族一次调用 `convert_linear_to_quadratic_elements()`，使 `mid_pt_idxmap_torch` 同时覆盖 `C3D10` 与 `C3D15`；转换会保留材料绑定并自动把中点加入既有节点集合 |
+| 与设计变量关系 | 偏置节点、单元和面集合都是源曲面控制点的派生量，不进入 `DesignBlock` |
 
 ### 5.8 `ReferencePoint`
 
@@ -1224,7 +1321,24 @@ component 通过名称引用它。
 #### 5.9.1 `MeshBuilder`
 
 `MeshBuilder` 集中封装 V3 `MeshGenerator` 的曲面扫描、体构造、Gmsh 剖分、Abaqus surface
-集合生成、INP 导出和资源释放。
+集合生成、INP 导出和资源释放。本类直接沿用 V3 已有实现与行为，只做命名和文件位置对齐，
+不增加新的校验或新状态；V3 能跑通的几何继续照原路径构建。
+
+#### 网格与 INP 写出契约
+
+| 项目 | 规则 |
+|---|---|
+| Gmsh 初始化 | 线程数 `0`（自动）、日志级别 `2`、`Mesh.MeshSizeMax = fea_seed_size`、`Mesh.MeshSizeMin = 0.5 × fea_seed_size` |
+| 曲面导入 | STP 用 OCC 导入并同步，随后删除 3D 体（`recursive=False`）；STL 直接合并到当前模型 |
+| 体积构建 | 索引 `0` 的曲面生成外表面环，索引大于等于 `1` 的曲面生成空腔环；生成 `Volume_All` 物理组 |
+| 面集合 payload | C3D4 面映射固定为 `S1 = (0,1,2)`、`S2 = (0,3,1)`、`S3 = (1,3,2)`、`S4 = (2,3,0)`；`C3D6` 有 5 个面、`C3D8` 有 6 个面 |
+| INP 面号对应 | INP 的 `S{k}` 是 Abaqus 面号（1 基），与该单元 `surfaceid_map` 的键按顺序一一对应（`S1 → 0`、`S2 → 1` …）；torchfea 的面节点顺序按"法向指向空腔"排列，与 Abaqus 绕向相反，面集合内容一致 |
+| ELSET 写法 | 每个面的内部单元集合分块写出，每行最多 16 个编号 |
+| surface set | 以 `*SURFACE TYPE=ELEMENT NAME=surface_{i}_all` 写出，同名节点集合紧随其后写出 |
+| INP 装配 | `*Part, name=<part_name>` 插入到文件第 2 行之后，payload 与 `*End Part` 追加到文件末尾 |
+| 网格阶数 | 线性到二次的转换在体积网格建立之后执行，阶数由 `BoundaryPart.mesh_order` 提供 |
+| 曲面文件校验 | 曲面文件清单必须包含索引 `0`；缺失时报告文件错误，不进入剖分 |
+| 资源释放 | `finalize()` 释放 Gmsh 会话与临时实体；异常路径也必须释放 |
 
 ##### 构造属性（`__init__()` 记录）
 
@@ -1241,7 +1355,6 @@ component 通过名称引用它。
 | `_surface_paths` | tuple[pathlib.Path, ...] | `()` | 已扫描曲面文件 |
 | `_surface_tags` | tuple[int, ...] | `()` | 已导入 Gmsh 曲面 tag |
 | `_volume_tags` | tuple[int, ...] | `()` | 已建立封闭体 tag |
-| `_mesh_data` | object 或 None | None | 已建立节点、单元和物理组数据 |
 | `_session` | object 或 None | None | Gmsh/CAD 会话句柄 |
 
 ##### 属性接口（property）
@@ -1259,7 +1372,6 @@ component 通过名称引用它。
 | `set_surface_paths(paths)` | None | - | 写入已有曲面输入列表并校验扩展名 |
 | `build_volume()` | None | - | 导入曲面、缝合封闭壳并建立体 |
 | `build_mesh(dimension=3)` | None | - | 建立指定维度网格、物理组和 surface payload |
-| `get_mesh_data()` | object | - | 读取已经建立的网格数据 |
 | `export_inp(target_path)` | pathlib.Path | - | 导出 Abaqus INP 并返回实际路径 |
 | `finalize()` | None | - | 释放 CAD/Gmsh 会话和临时实体 |
 
@@ -1270,7 +1382,7 @@ component 通过名称引用它。
 | `_scan_surface_paths()` | None | 稳定排序并校验曲面文件 |
 | `_collect_surface_tags()` | None | 收集导入曲面 tag |
 | `_build_surface_payload()` | None | 生成 Abaqus surface、node set 和 element set 数据 |
-| `_validate_closed_shell()` | None | 校验曲面闭合性和方向一致性 |
+| `_collect_surface_tags()` | None | 收集导入曲面 tag |
 
 `BoundaryPart.build_part()` 使用 `try/finally` 调用 `MeshBuilder.finalize()`；网格阶数为 2 时，
 TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
@@ -1288,6 +1400,16 @@ TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
 文件反序列化在 UI 隔离检查进程或任务进程中执行。相同规范化路径、文件尺寸和修改时间
 组成读取缓存键，多个 `TorchFEAPart` 可以复用同一源 Assembly 与摘要的只读缓存。
 
+模型文件与身份约定：
+
+| 项目 | 约定 |
+|---|---|
+| 文件内容 | `npz`，键为 `data`（`FEAController._serialize()` 的树）与 `model_hash`；`if_save_source_code=True` 时额外保存子类源码 |
+| 装载 | `torchfea.controller.load_model(path)` 反序列化后校验文件内 hash 与重建模型一致 |
+| 身份 | `FEAController.get_model_hash()` 返回 8 位 CRC32 字符串，由 `_serialize()` 的规范化形式计算 |
+| 身份忽略项 | 生成的节点集合（`all`、`surface_all`、`gmsh_nodes_*`、`surface_*_nodes`）、`set_elements['all']`、`extern` 外表面条目、`_RGC_requirements`、空的 `material_element_indices`、空 `cad` 和未指定的 `enabled` |
+| 类重建 | `Serializable._subclasses` 按类名注册表重建对象，因此自定义子类必须在装载进程中可导入 |
+
 #### 5.9.3 `PartSummary`
 
 ##### 构造属性（`__init__()` 记录）
@@ -1296,8 +1418,10 @@ TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
 |---|---|---|---|
 | `_name` | str | - | Part 名称 |
 | `_num_nodes` | int | - | 节点数量 |
+| `_num_elements` | int | - | 全元素族单元数量合计 |
 | `_element_types` | tuple[str, ...] | - | 稳定排序的元素类型 |
-| `_surface_names` | tuple[str, ...] | - | 面集名称 |
+| `_surface_names` | tuple[str, ...] | - | 面集名称（含外表面条目） |
+| `_exterior_surface` | str | - | 外表面集合名称，默认 `extern` |
 | `_node_set_names` | tuple[str, ...] | - | 节点集名称 |
 | `_element_set_names` | tuple[str, ...] | - | 单元集名称 |
 
@@ -1311,7 +1435,7 @@ TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
 
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
-| `name`、`num_nodes`、`element_types` | 对应构造类型 | - | 只读 | 内部维护 | 返回 Part 标识、规模和元素族 |
+| `name`、`num_nodes`、`num_elements`、`element_types` | 对应构造类型 | - | 只读 | 内部维护 | 返回 Part 标识、规模和元素族 |
 | `surface_names`、`node_set_names`、`element_set_names` | tuple[str, ...] | - | 只读 | 内部维护 | 返回可供材料和 FEA 选择的集合名称 |
 
 ##### 外部接口方法
@@ -1374,7 +1498,7 @@ TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
 | `_parts` | tuple[`PartSummary`, ...] | - | Part 摘要 |
 | `_instances` | tuple[`InstanceSummary`, ...] | - | Instance 摘要 |
 | `_reference_points` | Mapping[str, tuple[float, float, float]] | `{}` | Assembly 参考点名称到全局坐标的稳定映射 |
-| `_schema_version` | str | - | TorchFEA 文件 schema 版本 |
+| `_model_hash` | str | - | 库返回的 8 位 CRC32 模型身份码 |
 
 ##### 运行时属性
 
@@ -1390,7 +1514,7 @@ TorchFEA Part 建立 `mid_pt_idxmap_torch` 供后续节点更新。
 | `parts` | tuple[`PartSummary`, ...] | - | 只读 | 内部维护 | 返回 Part 摘要 |
 | `instances` | tuple[`InstanceSummary`, ...] | - | 只读 | 内部维护 | 返回 Instance 摘要 |
 | `reference_points` | Mapping[str, tuple[float, float, float]] | - | 只读 | 内部维护 | 返回参考点名称和全局坐标的只读映射 |
-| `schema_version` | str | - | 只读 | 内部维护 | 返回模型版本 |
+| `model_hash` | str | - | 只读 | 内部维护 | 返回模型身份码 |
 
 ##### 外部接口方法
 

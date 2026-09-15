@@ -43,6 +43,7 @@
 
 12. [校验、迁移、验收与实施顺序（第 18–22 章）](unified_model_architecture/18-22ValidationMigration.md)
 13. [功能基线与类迁移清单（第 23 章）](unified_model_architecture/23FunctionInventory.md)
+14. [破坏性变更、移除清单与冻结契约（第 24 章）](unified_model_architecture/24BreakingChanges.md)
 
 第 1–17 章定义 V4 的最终类、属性、方法和调用关系；第 18–23 章记录实现校验、旧功能
 映射、迁移阶段和验收状态。迁移文档引用设计文档中的接口，规范性接口完整定义在主题
@@ -67,6 +68,7 @@
 | 修改 UI 节点、编辑器、代码生成或任务文件 | [16-17UiCodegen.md](unified_model_architecture/16-17UiCodegen.md) |
 | 修改校验规则、迁移范围、测试验收或实施阶段 | [18-22ValidationMigration.md](unified_model_architecture/18-22ValidationMigration.md) |
 | 维护旧版功能到 V4 的映射 | [23FunctionInventory.md](unified_model_architecture/23FunctionInventory.md) |
+| 查询移除项、行为变更、结果与数值契约 | [24BreakingChanges.md](unified_model_architecture/24BreakingChanges.md) |
 
 ## 全局维护规则
 

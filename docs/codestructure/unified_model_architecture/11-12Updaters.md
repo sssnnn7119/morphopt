@@ -16,7 +16,7 @@ BoundaryPart、OffsetShellPart、Material 和 FEA 多类 updater 如何在同一
 - [11. Updater 类定义](#11-updater-类定义)
 - [11.1 优化算法](#111-优化算法)
 - [11.2 BaseUpdater](#112-baseupdater)
-- [11.3 BaseGeometryUpdater](#113-basegeometryupdater)
+- [11.3 几何 updater 公共规则](#113-几何-updater-公共规则)
 - [11.4 BoundaryPartUpdater](#114-boundarypartupdater)
 - [11.5 OffsetShellPartUpdater](#115-offsetshellpartupdater)
 - [11.6 MaterialUpdater](#116-materialupdater)
@@ -271,64 +271,43 @@ BoundaryPart、OffsetShellPart、Material 和 FEA 多类 updater 如何在同一
 |---|---|---|
 | `_build_local_objective(gradient)` | None | 根据当前局部灵敏度建立或刷新 `_local_objective` |
 | `_validate_change(change)` | None | 校验变化形状、有限性和步长限制 |
-| `_update_step_limits(change)` | None | 根据当前与上一轮变化的方向一致性调整逐变量步长 |
+| `_update_step_limits(change)` | None | 根据当前与上一轮变化的方向一致性调整逐变量步长；饱和映射与步长向量语义按[冻结数值契约](24BreakingChanges.md)执行 |
 
 `BaseUpdater` 只处理一块变量、维护优化器状态并定义统一生命周期。它接收顶层
 `ObjectiveFunction` 分发的局部梯度，在 `reinitialize()` 中建立唯一的
-`LocalSensitivityObjective`；局部目标由该生命周期自动建立。具体 updater 只声明自己的
+`LocalSensitivityObjective`；局部目标由该生命周期自动建立。局部梯度是顶层灵敏度按变量块
+切分后的 detached 张量：updater 的 `closure()` 只在参数空间求值，不建立也不持有任何 FEA
+计算图，见[目标函数](09Objective.md)的计算图生命周期。具体 updater 只声明自己的
 `_constraints`（材料 updater 还维护 `_regularization_terms`），并实现对应项的添加、读取和计算接口。局部线性目标和约束只读取绑定 `owner`
 的数据；变化的正式提交由 `Updaters.update()` 统一完成。
 
 实体到 updater 的关系固定为一对一：`BoundaryPart` 使用 `BoundaryPartUpdater`，
 `OffsetShellPart` 使用 `OffsetShellPartUpdater`，可更新材料接口使用 `MaterialUpdater`，
-可更新 FEA component 使用 `FEAUpdater`。`BaseGeometryUpdater` 承载几何共有能力，
-实体注册使用对应的具体 updater；几何更新的差异留在对应的具体 updater 中，而联合调度
-只依赖 `BaseUpdater` 生命周期。
+可更新 FEA component 使用 `FEAUpdater`。两个几何 updater 都直接继承 `BaseUpdater`；
+几何共有的等式投影与局部罚函数规则在 §11.3 统一说明，具体实现留在各自的具体 updater 中，
+而联合调度只依赖 `BaseUpdater` 生命周期。
 
 ```text
 BaseUpdater[OwnerT]
-├── BaseGeometryUpdater[GeometryOwnerT]
-│   ├── BoundaryPartUpdater[BoundaryPart]
-│   └── OffsetShellPartUpdater[OffsetShellPart]
+├── BoundaryPartUpdater[BoundaryPart]
+├── OffsetShellPartUpdater[OffsetShellPart]
 ├── MaterialUpdater[MaterialOwnerT]
 └── FEAUpdater[FEAComponentT]
 ```
 
-### 11.3 `BaseGeometryUpdater`
+### 11.3 几何 updater 公共规则
 
-`BaseGeometryUpdater` 是几何 updater 的共享基类。它保存固定局部灵敏度目标和几何优化
-生命周期；等式投影和不等式/罚函数约束由 `BoundaryPartUpdater` 或
-`OffsetShellPartUpdater` 各自声明和执行。
+两个几何 updater 直接继承 `BaseUpdater`，不引入中间基类；以下规则由
+`BoundaryPartUpdater` 和 `OffsetShellPartUpdater` 共同遵守：
 
-#### 构造属性（`__init__()` 记录）
-
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| 空 | - | 等式投影由具体几何 updater 自己保存 |
-
-#### 运行时属性（`__init__()` 声明，`initialize()` 填充）
-
-| 属性 | 类型 | 初始值 | 说明 |
-|---|---|---|---|
-| 空 | - | - | 运行时状态沿用 `BaseUpdater`，本类不新增字段 |
-
-#### 属性接口（property）
-
-| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|---|
-| 空 | - | - | - | - | 局部约束 property 由具体几何 updater 定义；局部目标通过 `get_local_objective()` 读取 |
-
-#### 外部接口方法
-
-| 方法 | 返回值 | 来源 | 作用 |
-|---|---|---|---|
-| 空 | - | - | 几何生命周期沿用 `BaseUpdater` |
-
-#### 内部辅助函数
-
-| 函数 | 返回值 | 作用 |
-|---|---|---|
-| 空 | - | 当前类未定义专用内部约束函数 |
+| 规则 | 内容 |
+|---|---|
+| 局部目标 | 在 `reinitialize()` 中按顶层灵敏度建立唯一的 `LocalSensitivityObjective`，不手工注入 |
+| 等式投影 | 每个几何 updater 只保存一个等式投影回调，接收 owner 与试探参数，返回同结构的新 Tensor |
+| 不等式约束 | 局部罚函数回调接收 owner、试探参数和几何上下文，返回标量 `torch.Tensor` |
+| 状态归属 | 约束回调、阈值、权重、启用掩码和初始化缓存由对应 updater 独立保存，并参与 `save()`/`load()` |
+| 求值顺序 | 先建立试探设计值，再执行唯一等式投影，最后按注册顺序计算局部罚函数 |
+| 提交 | 变化由 `Updaters.update()` 统一提交；几何 updater 不直接写回已提交参数 |
 
 几何约束的完整清单和数据契约分别定义在 `BoundaryPartUpdater` 与
 `OffsetShellPartUpdater` 的“局部项”表中。两个 updater 都在试探设计值建立后执行自己的
@@ -348,9 +327,14 @@ owner 范围内完成。
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `_surface_update_mask` | tuple[bool, ...] 或 None | None | 按曲面控制是否参与本次更新 |
+| `_surface_update_mask` | tuple[bool, ...] 或 None | None | 按曲面选择是否作为设计变量；掩码为 `False` 的曲面不进入 `DesignBlock`，其控制点在整个运行期保持固定 |
 | `_equality_constraint` | Callable 或 None | None | 当前 BoundaryPart 的唯一等式投影回调 |
 | `_constraints` | dict[str, Callable] | {} | 当前 BoundaryPart 自己定义的局部约束回调及参数 |
+
+掩码在 `initialize()` 阶段确定后即为固定定义：掩码为 `False` 的曲面不注册 `DesignBlock`，
+因此不占用全局设计向量的任何区间；`get_parameters()` 也只返回参与更新的曲面控制点。
+掩码在该 updater 的整个运行期内不可变，规则见[设计变量注册](10DesignRegistry.md)的变量
+布局冻结。
 
 本类约束回调的统一形态为：局部罚函数回调接收 owner、试探参数和几何上下文并返回标量
 `torch.Tensor`；唯一等式投影回调接收 owner 与试探参数，返回同结构的投影参数。投影保持
@@ -499,7 +483,11 @@ OffsetShellPart 的局部项固定由本 updater 持有：
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| 空 | - | - | 运行时状态沿用 `BaseUpdater`，本类不新增字段 |
+| `_constraint_parameters` | dict[str, dict[str, object]] | `{}` | 各局部约束的运行时参数：阈值、上下限、高斯点、积分权重和 penalty |
+| `_regularization_parameters` | dict[str, dict[str, object]] | `{}` | 各正则项的运行时参数 |
+
+约束与正则项按名称连同参数一起注册；参数表与回调一一对应，参与 `save()` / `load()`，
+`initialize()` 负责重新建立高斯映射与积分权重缓存。
 
 #### 属性接口（property）
 
@@ -534,7 +522,7 @@ v3 中的 `Sensitivity` 承担该局部线性目标。材料 updater 的约束�
 |---|---|---|---|
 | `MinValue` | 材料值罚函数 | 材料控制点、`xmin`、`threshold`、barrier 阶数和缩放参数 | 惩罚控制点低于下限的部分；阈值、barrier 参数和控制点权重由本 updater 保存 |
 | `MaxValue` | 材料值罚函数 | 材料控制点、`xmax`、`threshold`、barrier 阶数和缩放参数 | 惩罚控制点高于上限的部分；阈值、barrier 参数和控制点权重由本 updater 保存 |
-| `VolFrac` | 材料场罚函数 | `SIMPFieldMaterial`、目标 `element_name`、高斯点、积分权重、最小/最大体积分数和 penalty | 将材料控制点映射到高斯点，计算体积分数并惩罚超出区间的情况；高斯映射和积分数据在初始化阶段缓存 |
+| `VolFrac` | 材料场罚函数 | `SIMPFieldMaterial`、目标 `element_name`、高斯点、积分权重、最小/最大体积分数和 penalty | 将材料控制点映射到高斯点，密度取 `sigmoid(design_field)`（不叠加 RAMP，也不叠加 `simp_ratio_min` 偏移），计算体积分数并惩罚超出区间的情况；高斯映射、积分权重和上下限在 `initialize()` 阶段缓存 |
 
 `DensityFieldMinimize` 在 v3 中属于材料 updater 的附加正则目标，作用是抑制设计域外的
 密度场；V4 将其作为 MaterialUpdater 的 `regularization_terms` 保存和计算，和上述约束

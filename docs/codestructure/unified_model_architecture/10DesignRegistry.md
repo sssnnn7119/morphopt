@@ -85,7 +85,6 @@ geometry/material key 的形式为 `geometry/body`、`material/body_solid`；loa
 | `_start` | int 或 None | None | 全局向量起点 |
 | `_stop` | int 或 None | None | 全局向量终点 |
 | `_size` | int 或 None | None | 展平局部设计增量长度 |
-| `_shape` | torch.Size 或 None | None | 局部设计增量原始形状 |
 
 ### 属性接口（property）
 
@@ -100,9 +99,7 @@ geometry/material key 的形式为 `geometry/body`、`material/body_solid`；loa
 |---|---|---|---|
 | `finalize(start, design_delta)` | None | - | 保存全局区间、局部形状和长度 |
 | `get_range()` | tuple[int, int] | - | 读取已冻结起止位置 |
-| `get_size()` | int | - | 读取已冻结长度 |
-| `get_shape()` | torch.Size | - | 读取局部原始形状 |
-| `compute_local_values(full_values)` | torch.Tensor | - | 纯切片并恢复局部形状 |
+| `compute_local_values(full_values)` | torch.Tensor | - | 纯切片并按 owner 设计增量的形状恢复局部张量 |
 
 ### 内部辅助函数
 
@@ -166,6 +163,7 @@ geometry/material key 的形式为 `geometry/body`、`material/body_solid`；loa
 | `_collect_load_owners(params)` | None | 注册 `FEAParams.get_design_owners()` 返回的逐工况参数块 |
 | `_sort_key(key)` | tuple[object, ...] | 生成类别、名称和工况索引排序键 |
 | `_validate_full_values(values)` | None | 校验长度、device、dtype 和有限性 |
+| `_validate_layout()` | None | 校验各 owner 的变量数与冻结的 `DesignBlock` 形状、长度一致；不一致抛出 `DesignLayoutError` |
 | `_snapshot_parameters()` | dict[`DesignKey`, torch.Tensor] | 获取事务回滚所需参数快照 |
 | `_restore_parameters(snapshots)` | None | 在提交失败时恢复全部 owner |
 
@@ -190,6 +188,22 @@ owner 局部增量。这样目标对全局变量求导时只有一条明确计�
 | `OffsetShellPart` | 元曲面控制点增量；偏置几何由固定算法派生 |
 | `SIMPFieldMaterial` | 密度场 BSP 控制点增量 |
 | `LoadValueBlock` | 一个 component 在一个 `case_index` 的参数增量 |
+
+### 10.4.1 变量布局冻结
+
+`finalize()` 之后，变量块集合、顺序、offset、局部形状与长度在整个运行期内**不可变**。
+设计布局属于定义状态，`build_design_delta()`、`update_assembly()` 和
+`apply_design_delta()` 都只按冻结布局切分，不重新计算布局。
+
+| 规则 | 内容 |
+|---|---|
+| 冻结时机 | `DesignRegistry.initialize(params)` 调用 `finalize()` 后立即冻结 |
+| 布局校验 | 每次 `build_design_delta()` 与 `update_assembly()` 入口校验各 owner 的变量数与 `DesignBlock.get_size()` 一致；不一致抛出 `DesignLayoutError` |
+| 形状变化 | 任何 owner 的变量数量变化都视为定义变更，必须重新运行 `initialize()` 并重新 `finalize()`；V4 不支持运行期在线重排 |
+| 几何约束 | 曲面控制点数量、BSP 材料场分辨率与 `degree`、包围盒、工况数量在运行期内固定 |
+| CPGEO 重构 | 后端重构只允许发生在 `initialize()` 阶段，见[几何系统](05Geometry.md) |
+| 跨运行校验 | `save()` 写入 `design_signature`（key、形状、顺序摘要），`load()` 校验不一致时拒绝装载 |
+| 需要改变布局时 | 结束当前运行，修改任务定义后从 iteration 0 重新开始 |
 
 ## 10.5 试探与提交事务
 

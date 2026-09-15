@@ -241,6 +241,7 @@ TorchFEA 对象引用，后续 `update_assembly()` 直接更新这些引用。
 | `get_fea_controllers()` | Mapping[int, `torchfea.FEAController`] | - | 读取已经建立的逐工况 TorchFEA 控制器 |
 | `get_params()` | `Params` | - | 读取已初始化参数对象 |
 | `get_assembly()` | `torchfea.Assembly` | - | 读取当前完整 Assembly |
+| `update_trial_models(design_delta)` | None | - | 按 geometry/material → 工况副本 → load 的顺序把试探增量写入模型，供目标求值、灵敏度分析和梯度检查复用 |
 | `get_history()` | `History` | - | 读取当前 History |
 | `request_stop()` | None | - | 设置本次 step 完成后的停止请求 |
 | `change_device(device)` | None | - | 迁移已建立的 Tensor 状态并更新后续 worker 设备配置 |
@@ -257,7 +258,7 @@ TorchFEA 对象引用，后续 `update_assembly()` 直接更新这些引用。
 | `_create_worker_pool()` | None | 以 spawn 上下文建立 worker 池和设备分组 |
 | `_close_worker_pool()` | None | 正常完成、停止或异常时关闭并回收 worker |
 | `_clear_runtime_cache()` | None | 释放上一轮求解、CAD 和 GPU 临时缓存 |
-| `_update_trial_assemblies(design_delta)` | None | 调度共享状态更新、工况副本建立和逐工况载荷试探更新 |
+| `_update_trial_models(design_delta)` | None | `update_trial_models()` 的内部实现：调度共享状态更新、工况副本建立和逐工况载荷试探更新 |
 | `_export_iteration_results(step_result)` | pathlib.Path | 导出逐工况模型、结果、Jacobian、网格、预览和 iteration manifest，并返回本轮目录 |
 | `_build_history_record(step_result)` | `HistoryRecord` | 汇总 step 结果、网格规模、变形和结果路径 |
 | `_publish_progress(event, payload)` | None | 向队列发送版本化结构化事件 |
@@ -274,7 +275,7 @@ TorchFEA 对象引用，后续 `update_assembly()` 直接更新这些引用。
 4. `Solver.initialize(fea_params.get_num_load_steps())` 完成求解配置与任务分组；
 5. 自动初值策略读取 registry.has_geometry_variables()；
 6. ObjectiveFunction.initialize(fea_params)；
-7. SensitivityAnalyzer.initialize(objective, registry, fea_params, _update_trial_assemblies)；
+7. SensitivityAnalyzer.initialize(objective, registry, solver)；
 8. Updaters.initialize(params, registry)；
 9. History.initialize()；
 10. 创建 worker pool，标记初始化完成。
@@ -288,27 +289,33 @@ TorchFEA 对象引用，后续 `update_assembly()` 直接更新这些引用。
 3. params.build_assembly()
 4. registry.reinitialize(iteration)
 5. registry.build_design_delta()
-6. _update_trial_assemblies(design_delta)
+6. update_trial_models(design_delta)
    6.1 registry.update_assembly(design_delta, categories={"geometry", "material"})
    6.2 fea.build_case_assemblies()
    6.3 registry.update_assembly(design_delta, categories={"load"})
 7. case_assemblies = fea.get_case_assemblies()
 8. build_fea_controllers()
    8.1 为每个 case_assembly 创建 FEAController 并设置 assembly
-   8.2 solver.build_solvers(fea_controllers) 并设置每个 FEAController.solver
 9. solver.reinitialize(iteration)
-10. solver.solve(fea_controllers, objective.jacobian_needed)
-11. results = solver.get_results()
-12. objective.reinitialize(iteration, fea_controllers, results)
-13. objective.build_evaluation()
-14. sensitivity.reinitialize(iteration, results)
-15. sensitivity.build_sensitivities()
-16. sensitivities = sensitivity.get_sensitivities()
-17. updaters.reinitialize(iteration, sensitivities)
-18. updaters.update()
-19. changes = updaters.get_changes()
-20. 返回 StepResult
+10. solver.build_solvers(fea_controllers) 并设置每个 FEAController.solver
+11. solver.solve(fea_controllers, objective.jacobian_needed)
+12. results = solver.get_results()
+13. objective.reinitialize(iteration, fea_controllers, results)
+14. objective.build_evaluation()
+15. sensitivity.reinitialize(iteration, results)
+16. sensitivity.build_sensitivities()
+17. sensitivities = sensitivity.get_sensitivities()
+18. updaters.reinitialize(iteration, sensitivities)
+19. updaters.update()
+20. changes = updaters.get_changes()
+21. 返回 StepResult
 ```
+
+本表是一次外层迭代顺序的唯一权威来源：[Solver](08Solver.md) 的调用示例、
+[设计变量注册](10DesignRegistry.md) 的试探-提交流程和 [总览](01-04Overview.md) 的迭代图
+按同一顺序执行。`solver.reinitialize(iteration)` 位于 `solver.build_solvers()` 之前，
+因为初值策略和 GC 缓存必须在创建逐工况求解器前确定；`build_fea_controllers()` 只创建
+`FEAController` 并设置 assembly，求解器挂接由 `solver.build_solvers()` 完成。
 
 步骤 6.1 先更新所有工况共享的几何与材料状态；步骤 6.2 基于该状态建立互不共享可变
 component 的 Assembly 副本；步骤 6.3 再把每个 `LoadValueBlock` 写入它绑定的工况副本。该顺序同时用于
@@ -587,3 +594,63 @@ restart_optimization(result_path, target_iteration)
 中心差分的每次目标求值都通过 `DesignRegistry` 的试探更新事务执行并恢复基准状态；相同
 抽样与种子产生稳定报告。`load_controller()` 只选择 manifest 标记为完整的 checkpoint，
 并验证任务签名、schema 版本、依赖版本和设计变量签名后恢复运行对象。
+
+## 14.7 checkpoint 与重启状态机
+
+本节定义标准模式（受控续跑）的完整规则。debug 模式不写 checkpoint 的续跑标记，只在
+当前进程内连续运行。
+
+### 14.7.1 checkpoint 内容与完整性
+
+一次 checkpoint 由 `Controller.save(folder_path, iteration)` 写入 `state/iter_<n>/`，
+包含全部 `Persistable` 对象的状态：`Params`（含 `GeometryParams`、`MaterialsParams`、
+`FEAParams` 与已提交的 `LoadStep` 值）、`Solver`（配置、工况分组、可复用 GC）、
+`DesignRegistry`（key、区间、形状与已提交参数）、`Updaters`（优化器记忆与步长）、
+`ObjectiveFunction`（Jacobian 请求与指标）和 `History`。
+
+完整性判定只有一条规则：`state/iter_<n>/manifest.json` 存在、`complete=true`，且
+`manifest.json` 引用的全部文件都已落盘。所有文件先写临时文件再原子重命名，
+`manifest.json` 最后写入，因此 manifest 存在即代表本次 checkpoint 完整。
+
+### 14.7.2 manifest 字段
+
+| 字段 | 含义 |
+|---|---|
+| `schema_version` | checkpoint 结构版本，当前为 `2` |
+| `iteration` | 本次 checkpoint 对应的迭代 |
+| `complete` | 固定为 `true`；不完整状态不写 manifest |
+| `main_file_path` | 任务定义源码路径 |
+| `controller_class` | 任务模块中的 Controller 类路径 |
+| `task_signature` | 任务文件内容摘要与依赖版本摘要 |
+| `design_signature` | 设计变量块 key、形状与顺序摘要 |
+| `result_path` | 本轮制品目录 |
+| `files` | 对象名到状态文件相对路径的映射 |
+
+### 14.7.3 状态机与退出码
+
+| 退出码 | 含义 | `TaskRunner` 的动作 |
+|---|---|---|
+| `0` | 达到终止条件正常完成 | 结束任务，返回结果目录 |
+| `2` | 用户停止（`request_stop()` 或停止事件） | 结束任务，保留已有 checkpoint |
+| `1` | 定义、初始化、求解或保存失败 | 结束任务，保留错误与 traceback |
+| `75` | 已写入完整 checkpoint，请求监督器续跑 | 读取最新完整 checkpoint，在同一结果目录启动下一段子进程 |
+
+`Controller` 每完成一轮 `step()` 时，若 `iteration % checkpoint_interval == 0` 则写入
+checkpoint；当连续完成的迭代数达到 `worker_restart_interval`（且该值大于 `0`）时，
+`Controller` 写入完整 checkpoint、发布 `restart_requested` 事件并返回 `75`。
+`TaskRunner._run_supervisor()` 是唯一解释 `75` 的一方。
+
+### 14.7.4 崩溃与恢复规则
+
+| 情况 | 规则 |
+|---|---|
+| 子进程被 SIGKILL、OOM 或被强制终止 | 视为失败（退出码 `1` 语义）；监督器不自动续跑，任务结束并保留已有完整 checkpoint |
+| 子进程在写 checkpoint 中途退出 | 该次 checkpoint 没有 manifest，视为不存在；恢复时回退到最近一个完整 checkpoint |
+| `checkpoint_interval > 1` | 恢复时按 14.7.1 的完整性规则向前查找最近一个完整 checkpoint |
+| 续跑的起始迭代 | `load()` 恢复后从 `history.get_current_iteration() + 1` 继续；同一迭代不会重复求解 |
+| schema、任务签名或设计变量签名不一致 | `load()` 抛出装载错误并结束任务，不静默续跑 |
+| 续跑次数上限 | `TaskRunner._restart_count` 与 manifest 中的 `iteration` 一起记录；达到 `Controller.maximum_iterations` 时正常结束，不因续跑重置 |
+
+`History.add_record()` 与 checkpoint 写入在同一轮内完成：先写制品，再追加记录，最后写
+checkpoint。因此"记录存在但制品缺失"只在崩溃场景出现，恢复时以 checkpoint 的
+`iteration` 为唯一进度依据。

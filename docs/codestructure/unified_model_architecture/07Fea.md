@@ -103,7 +103,7 @@ FEAParams.build_case_assemblies()
 | `assign_components()` | None | - | 将已经建立的 component 对象写入已绑定 Assembly |
 | `build_case_assemblies()` | None | - | 从已更新的基础 Assembly 为每个工况建立独立副本，创建并绑定工况 component，再写入已提交值 |
 | `get_case_assemblies()` | Mapping[int, `torchfea.Assembly`] | - | 读取已经建立的逐工况 Assembly |
-| `update_fea(step_index)` | None | - | 将指定工况的已提交值写入基础 Assembly，用于预览和单工况诊断 |
+| `update_fea(step_index)` | None | - | 将指定工况的已提交值写入该工况的 Assembly 副本，用于预览和单工况诊断；基础 Assembly 不被修改 |
 | `get_design_owners()` | tuple[`LoadValueBlock`, ...] | - | 读取逐工况、逐组件建立的非空设计变量 owner |
 | `get_num_load_steps()` | int | - | 读取工况数量 |
 | `initialize()` | None | `Initializable` | 初始化注册表和工况定义 |
@@ -121,8 +121,7 @@ FEAParams.build_case_assemblies()
 | `_sort_load_steps()` | None | 按 step index 稳定排序工况 |
 | `_resolve_component_targets(assembly)` | None | 建立 component 到 Assembly 目标的索引 |
 | `_build_load_value_blocks()` | None | 为所有非零值 component 建立逐工况 `LoadValueBlock` |
-| `_copy_case_assembly(step_index)` | torchfea.Assembly | 重建工况 Assembly 容器和易变运行对象，并让几何/材料 Tensor 继续引用当前试探计算图 |
-| `_clone_case_components(step_index, assembly)` | dict[str, BaseFEAComponent] | 建立绑定到工况 Assembly 的独立 component 运行副本 |
+| `_build_case(step_index)` | None | 建立工况 Assembly 副本与独立 component 运行副本，写入已提交值并绑定该工况的 `LoadValueBlock` |
 
 `FEAParams` 的注册顺序为：
 
@@ -143,10 +142,22 @@ get_case_assemblies()
 模型导入由几何层 `INPPart` 或 `TorchFEAPart` 提供；`FEAParams` 从几何层接收已经建立的
 `Assembly`，并依据 Instance、Surface、NodeSet、ElementSet 和几何层 ReferencePoint 名称解析
 component 目标。基础 Assembly 保存当前迭代的共享几何和材料状态；每个工况拥有独立
-Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、Instance 和各注册
+Assembly 与 component 运行对象。`_build_case()` 重建 Assembly、Instance 和各注册
 容器，几何节点与材料参数从当前试探 Tensor 重新挂接，从而保留全局设计增量的 autograd
 链。工况建立顺序固定为“复制 Assembly → 创建并挂接 component
 运行副本 → 写入工况已提交值 → 绑定对应 `LoadValueBlock`”。
+
+#### 工况副本的共享与复制契约
+
+`build_case_assemblies()` 必须遵守以下固定契约，实现和 review 均以此为判据：
+
+| 类别 | 内容 |
+|---|---|
+| 共享，不得复制 | `Part` 拓扑与名称集合（`nodes`、`elems` 的元素族字典键）、几何与材料的设计 Tensor、曲面映射缓存、`ReferencePoint`、材料本构对象 |
+| 复制，必须每个工况独立 | Assembly 的 load / boundary / constraint 注册容器、全部 FEA component 运行对象（含接触的搜索与积分状态）、`LoadStep` 的逐工况值快照、`LoadValueBlock` 绑定的工况 component |
+| 禁止 | 任一工况的更新不得原地修改共享 `Part.elems`、共享几何/材料 Tensor 或基础 Assembly；材料适配器与单元包装只在工况副本上注册 |
+| 建立后校验 | 每个工况副本的几何/材料 Tensor 与基础 Assembly 是同一对象（`is` 判定），且各工况的 component 运行对象两两不同 |
+| 内存 | 副本数量等于工况数量；副本之间不共享可变状态，因此峰值内存随工况数线性增长，`Controller._clear_runtime_cache()` 负责在每轮结束时释放上一轮副本 |
 
 ### 7.2 `BaseFEAComponent`
 
@@ -162,7 +173,7 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 | `_name` | str | `""` | 注册后的稳定 component 名称 |
 | `_default_values` | tuple[float, ...] | 按 `num_values` 创建 | 新建 LoadStep 时使用的默认值；零参数组件使用空元组 |
 | `_target_names` | tuple[str, ...] | `()` | Instance、Surface、Set 或 RP 名称 |
-| `_registry_kind` | Literal["load", "boundary", "constraint"] | 具体类型传给基类 | TorchFEA Assembly 中的挂接集合 |
+| `_default_values` | tuple[float, ...] | 按 `num_values` 创建 | 新建 LoadStep 时使用的默认值；零参数组件使用空元组 |
 
 #### 2. 运行时属性
 
@@ -181,7 +192,6 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 | `default_values` | tuple[float, ...] | - | 只读 | 读写 | 返回新建工况的默认值；setter 执行与 `set_default_values()` 相同的校验 |
 | `num_values` | int | - | 只读 | 子类重写 | 返回当前 component 的值向量长度 |
 | `target_names` | tuple[str, ...] | - | 只读 | 内部维护 | 返回定义阶段记录的目标名称 |
-| `registry_kind` | Literal["load", "boundary", "constraint"] | - | 只读 | 内部维护 | 返回当前对象使用的 Assembly 注册集合 |
 
 #### 4. 外部接口方法
 
@@ -189,7 +199,7 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 |---|---|---|---|
 | `build_fea()` | None | - | 创建具体 TorchFEA 对象并写入子类的 `_torchfea_<ConcreteName>` |
 | `get_fea_object()` | object | - | 读取已经创建的 TorchFEA 对象 |
-| `assign_fea()` | None | - | 按 `registry_kind` 将已建立对象挂接到当前 Assembly |
+| `assign_fea()` | None | - | 按 §7.1 挂接接口列将已建立对象挂接到当前 Assembly |
 | `update_fea(values)` | None | - | 将一个工况值写入已有 TorchFEA 对象 |
 | `initialize()` | None | `Initializable` | 建立 component 的静态定义状态 |
 | `reinitialize(iteration, assembly)` | None | `Initializable` | 解析当前 Assembly 的 Instance、Surface、Set 和 RP |
@@ -210,32 +220,35 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 
 `build_fea()` 只创建运行时对象并写入具体子类的 `_torchfea_<ConcreteName>`；
 `get_fea_object()` 读取已建立对象，`assign_fea()` 完成 Assembly 挂接，
-`update_fea()` 更新当前工况。`FEAParams._clone_case_components()` 复制 component 的构造
+`update_fea()` 更新当前工况。`FEAParams._build_case()` 复制 component 的构造
 定义，并在工况 Assembly 上重新执行 `reinitialize()`、`build_fea()` 和 `assign_fea()`；
 每个工况拥有自己的可变 TorchFEA component。
 逐工况参数由 `LoadStep` 保存；`LoadValueBlock` 把一个
 `(component_name, case_index)` 组合适配为独立 `Updatable` owner。
 
-具体 component 的挂接位置和设计值长度固定如下：
+具体 component 的库对象、构造签名、挂接位置和设计值长度固定如下。`torchfea` 列是唯一的
+后端契约，morphopt 类名与库类名不一致时以本表为准：
 
-| component | `registry_kind` | TorchFEA 挂接接口 | `num_values` |
-|---|---|---|---:|
-| `Pressure` | `load` | `Assembly.add_load()` | 1 |
-| `BodyForce` | `load` | `Assembly.add_load()` | 3 |
-| `ConcentratedForce` | `load` | `Assembly.add_load()` | 3 |
-| `ConcentratedMoment` | `load` | `Assembly.add_load()` | 3 |
-| `BoundaryCondition` | `boundary` | `Assembly.add_boundary()` | 0 |
-| `BoundaryConditionRP` | `boundary` | `Assembly.add_boundary()` | 0 |
-| `Couple` | `constraint` | `Assembly.add_constraint()` | 0 |
-| `SpringToGround` | `load` | `Assembly.add_load()` | 5 |
-| `SpringBetweenRPs` | `load` | `Assembly.add_load()` | 2 |
-| `PenaltyDoF` | `load` | `Assembly.add_load()` | 2 |
-| `Contact` | `load` | `Assembly.add_load()` | 0 |
-| `SelfContact` | `load` | `Assembly.add_load()` | 0 |
+| morphopt 类 | `torchfea` 类 | 库构造签名 | 挂接接口 | `num_values` |
+|---|---|---|---|---:|
+| `Pressure` | `loads.Pressure` | `(instance_name, surface_set, pressure)` | `add_load()` | 1 |
+| `BodyForce` | `loads.BodyForce` | `(instance_name, element_name, force_density=[0.0, 0.0, -9.81e-6])` | `add_load()` | 3 |
+| `ConcentratedForce` | `loads.Concentrate_Force` | `(rp_name, force)` | `add_load()` | 3 |
+| `ConcentratedMoment` | `loads.Moment` | `(rp_name, moment)` | `add_load()` | 3 |
+| `BoundaryCondition` | `boundarys.Boundary_Condition` | `(instance_name, set_nodes_name, indexDoF=[0, 1, 2])` | `add_boundary()` | 0 |
+| `BoundaryConditionRP` | `boundarys.Boundary_Condition_RP` | `(rp_name, indexDoF=[0, 1, 2, 3, 4, 5])` | `add_boundary()` | 0 |
+| `Couple` | `constraints.Couple` | `(instance_name, set_nodes_name, rp_name)` | `add_constraint()` | 0 |
+| `SpringToGround` | `loads.Spring_RP_Point` | `(rp_name, point, k, rest_length=None)` | `add_load()` | 5 |
+| `SpringBetweenRPs` | `loads.Spring_RP_RP` | `(rp_name1, rp_name2, k, rest_length=None)` | `add_load()` | 2 |
+| `PenaltyDoF` | `loads.Penalty_DoF` | `(obj_name, s, target, k, obj_type="auto")` | `add_load()` | 2 |
+| `Contact` | `loads.Contact` | `(instance_name1, instance_name2, surface_name1, surface_name2, penalty_distance_f=1e-5, penalty_factor_f=40.0, penalty_start_g=-0.4, penalty_end_g=-0.85, penalty_threshold_h=1.5, penalty_ratio_h=0.9, mesh_size=1.0)` | `add_load()` | 0 |
+| `SelfContact` | `loads.ContactSelf` | `(instance_name, surface_name, ignore_min_normal=0.5, ignore_max_normal=1.5, initial_detact_ratio=1.5, penalty_distance_f=1e-5, penalty_factor_f=40.0, penalty_start_g=-0.8, penalty_end_g=-0.85, penalty_threshold_h=1.5, penalty_ratio_h=0.9, mesh_size=1.0)` | `add_load()` | 0 |
 
-`assign_fea()` 根据 `registry_kind` 选择唯一注册接口，并以 component 的稳定 `name` 挂接。
-工况 component 副本沿用相同名称和注册位置。零值 component 在每个工况中仍会创建和挂接，
-从而让边界、耦合与接触关系在所有工况中完整存在。
+库构造参数全部由 component 的构造属性透传，默认值采用库默认值；任务不显式给出时不重复声明。
+目标解析在 `reinitialize(iteration, assembly)` 中完成，可用 `Assembly.get_object(name, obj_type)`
+做通用校验。`assign_fea()` 按上表的“挂接接口”列选择唯一注册入口，并以 component 的稳定
+`name` 挂接。工况 component 副本沿用相同名称和注册位置。零值 component 在每个工况中仍会
+创建和挂接，从而让边界、耦合与接触关系在所有工况中完整存在。
 
 ### 7.3 `Pressure`
 
@@ -246,7 +259,7 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `_instance_name` | str | `"final_model"` | 目标 Instance 名称 |
-| `_surface_name` | str | 构造函数传入 | 目标 Surface set 名称 |
+| `_surface_set` | str | 构造函数传入 | 目标 surface set 名称；对应库构造的第二个参数 |
 
 注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
@@ -261,7 +274,7 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
-| `surface_name` | str | - | 只读 | 内部维护 | 返回目标 Surface set |
+| `surface_set` | str | - | 只读 | 内部维护 | 返回目标 surface set |
 | `pressure` | float | - | 只读 | 读写 | 读取或修改 `_default_values[0]` |
 | `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `1` |
 
@@ -817,6 +830,32 @@ Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、
 
 `LoadStep` 表示一个完整工况行。它保存每个注册 component 的值向量，并在初始化阶段
 转换为 Torch Tensor 缓存。值向量长度由 component 的 `num_values` 决定。
+
+#### 值向量布局
+
+| component | `num_values` | 顺序 |
+|---|---:|---|
+| `Pressure` | 1 | `[pressure]` |
+| `BodyForce` | 3 | `[fx, fy, fz]` |
+| `ConcentratedForce` | 3 | `[fx, fy, fz]` |
+| `ConcentratedMoment` | 3 | `[mx, my, mz]` |
+| `SpringToGround` | 5 | `[k, rest_length, px, py, pz]` |
+| `SpringBetweenRPs` | 2 | `[k, rest_length]` |
+| `PenaltyDoF` | 2 | `[k, target]` |
+| `BoundaryCondition`、`BoundaryConditionRP`、`Couple`、`Contact`、`SelfContact` | 0 | 空向量 |
+
+规则：
+
+- 值向量的下标顺序就是 `num_values` 的顺序，也是载荷设计变量块内局部索引的顺序；
+- 库已有的 setter 直接复用：`Concentrate_Force.force`、`Moment.moment`、`Spring_RP_RP.k`/`rest_length`；
+  其余组件的写入点是 `_apply_values()` 内对库对象属性的赋值，不再经过 morphopt 侧的第二份缓存；
+- `BodyForce` 在写入力密度后必须重建积分缓存 `_pdU_values`（用元素的高斯权重与
+  `shape_function_d0_gaussian` 重新计算），否则切线会使用旧值；
+- `BoundaryCondition.index_dof`、`BoundaryConditionRP.index_dof`、`Contact`/`SelfContact` 的
+  罚参数和 `Couple`/`Spring*`/`PenaltyDoF` 的目标名称都是构造参数而不是工况值，构造时按
+  元组或标量复制保存，调用方后续修改自己的容器不影响已构造对象；
+- `BoundaryConditionRP.index_dof` 默认值为全部 6 个自由度（库默认）；
+- 零值 component 在每个工况行中仍然存在（空向量），并参与 `define_steps()` 的完整性校验。
 
 #### 1. 构造属性
 

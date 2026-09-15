@@ -643,10 +643,11 @@ UI 节点记录定义数据，核心运行时对象在生成任务时创建。
 | `_validate_code_slots(problem)` | None | 解析 Python AST 并校验规定的方法返回契约 |
 | `_validate_material_coverage(problem, summary)` | None | 校验每个可变形元素族具有唯一材料分配或显式豁免 |
 
-`.morph` 文件采用 UTF-8、带 `schema_version` 的 JSON 数据。`save_morph(problem, target_path)`
-调用 `ProblemDefinition.to_dict()` 并原子写入；`load_morph(source_path)` 逐版本迁移数据后调用
-`ProblemDefinition.from_dict()`。每次加载完成后立即运行 `ProblemValidator`，并保留未知扩展
-字段供同一插件版本恢复。
+`.morph` 文件采用 UTF-8、带 `schema_version` 的 JSON 数据，当前版本为 `2`。
+`save_definition()` 调用 `ProblemDefinition.to_dict()` 并原子写入；`load_definition()` 校验
+版本后调用 `ProblemDefinition.from_dict()`，版本不一致时拒绝加载，不提供旧版本数据迁移。
+每次加载完成后立即运行 `ProblemValidator`，并保留未知扩展字段供同一插件版本恢复。
+完整 schema 规则见 §17.5。
 
 ### 16.1.5 `NodeEditor`
 
@@ -1704,7 +1705,7 @@ stdout/stderr 同时写入运行目录日志，Console 显示规范化视图。
 | `_history` | `History` 或 None | None | 已加载历史 |
 | `_iteration` | int 或 None | None | 当前观察迭代 |
 | `_case_index` | int 或 None | None | 当前结果工况 |
-| `_pages` | dict[str, QWidget] | `{}` | 总览、变形、目标和文件页面 |
+| `_pages` | dict[str, QWidget] | `{}` | 总览、设计参数、变形、目标和文件页面；设计参数页展示当前迭代与历史迭代的控制点/曲面形态 |
 
 ##### 属性接口（property）
 
@@ -1837,7 +1838,10 @@ stdout/stderr 同时写入运行目录日志，Console 显示规范化视图。
 
 #### 17.1.2 `SchemeTemplate`
 
-`SchemeTemplate` 是 UI 初始问题工厂。V4 内置 `shapeopt` 和 `simp` 两个 scheme；通用
+`SchemeTemplate` 是 UI 初始问题工厂。V4 内置 `shapeopt` 和 `simp` 两个 scheme；codesign
+（偏置壳 + 材料联合优化）不是 scheme，它由 `OffsetShellPart`、`BoundaryPartUpdater` /
+`OffsetShellPartUpdater` 和 `MaterialUpdater` 的对象组合表达，约束项按 `target_kind`
+归入对应 updater 目录，见[破坏性变更](24BreakingChanges.md)。通用
 `OffsetShellPart` 与多个 updater 的组合由普通节点表达。
 
 ##### 构造属性（`__init__()` 记录）
@@ -1884,6 +1888,8 @@ stdout/stderr 同时写入运行目录日志，Console 显示规范化视图。
 用户显式添加。所有面向用户的标签由 i18n key 提供，代码模板内容保持英文。
 
 ### 17.2 生成顺序
+
+本节是任务文件生成顺序的唯一权威来源；其他章节只引用本节，不重复记录顺序。
 
 ~~~text
 imports
@@ -1953,6 +1959,18 @@ Python 任务文件直接表达用户的构造记录、用户自定义类和用�
 运行结果与任务定义分开管理。结果文件服务于日志和 UI 展示，任务文件保存用户定义；
 用户自定义类和方法由任务文件恢复。
 
+运行目录契约：
+
+- `<run_root>` 由 `Controller.result_root` 决定，默认 `.results`；UI 启动的任务固定为
+  工作目录下的 `ui_runs/`，`ProblemDefinition.result_folder` 为相对该根目录的标签；
+- 运行目录名固定为 `<label>_T<timestamp>`；
+- `scripts/main.py` 是任务源码快照，也是 checkpoint manifest 中 `main_file_path` 指向的
+  文件；续跑由 `load_controller()` 读取 manifest 中的任务文件与 Controller 类路径完成，
+  不依赖固定的模块属性名；
+- 运行目录同时写入依赖快照（`morphopt`、`torchfea`、`cpgeo`）到 `scripts/`，使结果目录可以
+  独立复跑；`load_controller()` 优先使用快照，manifest 的 `task_signature` 记录依赖版本
+  用于校验。
+
 ### 17.4 状态保存和历史读取
 
 `Persistable` 是显式的文件 I/O 协议。实现该协议的对象保存自己负责的数据：
@@ -1964,6 +1982,57 @@ Python 任务文件直接表达用户的构造记录、用户自定义类和用�
 | `Solver` | solver 配置和运行元数据 | 指定 iteration 的 solver 状态 |
 | `ObjectiveFunction`、`History` | 目标值、metrics、收敛信息和结果路径 | 历史数据和结果索引 |
 | `BaseUpdater`、`Updaters` | optimizer memory 和 updater 状态 | 指定 iteration 的 updater 状态 |
+
+### 17.5 `.morph` schema 与补全数据来源
+
+`.morph` 是版本化 JSON：`schema_version` 为 `2`，UTF-8 编码，原子写入。
+
+| 项目 | 规则 |
+|---|---|
+| 版本读写 | 只接受 `schema_version == 2` 的输入；版本不一致时拒绝加载并报告，V4 不提供旧版本迁移 |
+| 未知字段 | 读取时保留在节点的扩展字段中，保存时原样写回，保证新增字段不丢失 |
+| 已知字段缺失 | 按节点默认值补齐并记录校验警告，不阻断加载 |
+| 节点标识 | 每个节点写入 `node_id`（UUID）与 `_schema_version`，用于局部编辑校验和差异比较 |
+| 保存入口 | `ProblemDefinition.save_definition()` / `load_definition()` 是唯一入口；模块级 `save_morph()` / `load_morph()` 只作为薄包装 |
+| 保存前校验 | 保存前必须执行 `ProblemValidator.validate()`，存在错误时不写出文件 |
+
+补全上下文的数据来源固定如下。UI 进程不持有运行时对象，因此补全内容只能来自定义树与
+模型摘要，运行时对象的成员形状由下表静态契约提供：
+
+| 补全类别 | 来源 |
+|---|---|
+| 工况数量与工况索引 | `LoadStepsNode.num_steps` |
+| component 名称、`jacobian` 可选名称 | `FEAComponentNode` 列表中的 `num_values > 0` 组件 |
+| 实例名、Part 名、node/element/surface set 名、参考点名 | `InstanceNode`、`PartNode`、`ReferencePointNode` 与 `TorchFEAModelSummary` |
+| 材料名、updater 目标名与局部项 | `MaterialNode`、`UpdaterNode` |
+| 设计场与灵敏度表达式 | `SIMPFieldMaterial` 的控制点绑定、updater 局部项 |
+
+| 表达式 | 可补全成员 |
+|---|---|
+| `fe_results[i]` | `GC`、`converged`、`model_hash`、`jacobian[component_name]`、`work_conditions`、`total_time`、`step_index` |
+| `assembly` | `get_instance(name)`、`get_part(name)`、`set_nodes[name]`、`set_elements[name]` |
+| Tensor | `detach()`、`cpu()`、`numpy()`、`norm()`、`sum()`、`mean()`、`max()`、`min()`、`reshape()`、`clone()` |
+
+运行时对象新增公共成员时，必须同步更新上表与 §16.7 的候选表，并由 §20.7 的生成任务文件
+冒烟测试保证 UI schema 与运行时 API 一致。
+
+#### 17.5.1 运行入口流程
+
+UI 启动任务只有三个入口，交互与校验固定如下：
+
+| 入口 | 输入 | 行为 |
+|---|---|---|
+| 运行当前定义 | 编辑树 + `result_folder` | `ProblemValidator` 通过后生成任务源码到本轮运行目录的 `scripts/main.py`，再以 headless 子进程运行 |
+| 运行已有 Python 文件 | `.py` 路径 | 校验文件可编译且定义了 Controller 类；不修改文件内容，直接运行；`result_folder` 仍作为结果根目录下的标签 |
+| 继续计算 | 运行目录或结果目录 | 由 `load_controller()` 读取最新完整 checkpoint，显示其迭代号，用户选择目标迭代（默认最新完整迭代）后运行 |
+
+规则：
+
+- 三个入口都通过 `TaskLauncher` 启动独立进程，UI 进程不 import 任务模块；
+- 运行期间不允许编辑定义树；停止通过 `TaskLauncher.stop()` 发送终止信号，对应退出码 `2`；
+- 继续计算不以编辑树为准：它以 checkpoint 的任务文件与签名为唯一权威输入，签名不一致时
+  报告错误并终止，不回退到编辑树内容；
+- 每个入口在启动前校验目标运行目录可写，并提示将使用的运行标签。
 
 `Controller.save()` 按固定顺序调用上述对象的 `save()`；`Controller.load()` 只在
 任务文件已经完成 `initialize()` 后调用各对象的 `load()`。用户自定义曲面、约束和

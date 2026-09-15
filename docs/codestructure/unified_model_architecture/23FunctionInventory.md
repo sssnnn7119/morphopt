@@ -3,8 +3,8 @@
 > 文档属性：维护性迁移文档。本清单用于追踪旧版功能、V4 归属和迁移状态，不定义 V4 公共接口；接口以第 1–17 章主题设计文档为准。
 
 本章以 `src/morphopt3` 的现有实现为功能基线，逐类记录 MorphOpt V4 的职责、接口和迁移动作。
-V4 的目标是重组模块边界、统一运行时状态和方法语义；每一项已有用户功能都在本清单中找到
-对应的 V4 归属。
+V4 的目标是重组模块边界、统一运行时状态和方法语义；保留的功能在本清单中找到对应的 V4
+归属，被移除的入口与本清单的行一起记录在[破坏性变更](24BreakingChanges.md)。
 
 核对范围包括 `optcore/modelparams`、`shapeopt/geometryinterfaces`、`shapeopt/geometryparams.py`、
 `shapeopt/objectivefuncs`、`simp`、`codesign`、`taskoptmization.py` 以及 `ui/model`、
@@ -85,9 +85,9 @@ V4 的目标是重组模块边界、统一运行时状态和方法语义；每�
 | `_export_data()` | `export_surfaces(directory)` | 重命名 | 按曲面能力导出 STP 或 STL 文件 |
 
 几何管理器记录 Part、Instance 和参考点注册表；具体 `BoundaryPart` 记录 `_geometry_values`、
-`_points_weight`、`_preview_meshes`、`_surface_node_index`、`_surface_node_parameters`、
-`_iter_since_last_regenerate`、`_nodes_last_regenerate` 等运行时状态。这些状态支撑只读读取、
-重网格判据和可微节点回写。二阶单元的边中点映射使用 TorchFEA `Part` 的
+`_points_weight`、`_preview_meshes`、`_surface_node_index`、`_surface_node_parameters`
+等运行时状态。这些状态支撑只读读取、每轮网格重建和可微节点回写；V4 不保留增量重网格
+判据状态。二阶单元的边中点映射使用 TorchFEA `Part` 的
 `mid_pt_idxmap_torch` 作为唯一来源，`BoundaryPart` 不再维护重复副本。
 
 ### 23.2.2 `ReferencePoint`
@@ -99,8 +99,9 @@ FEA component 通过参考点名称使用它。
 |---|---|---|---|
 | 参考点注册 | `define_reference_points()`、`add_reference_point()` | 新增 | 在 GeometryParams 中按名称注册 Assembly 级参考点 |
 | 参考点建立 | `build_reference_point(assembly)` | 迁移 | 在指定 Assembly 中建立并保存 TorchFEA 参考点 |
-| 参考点读取 | `get_fea_reference_point()` | `get_reference_point()` | 重命名并读取已经建立的 TorchFEA 参考点 |
-| 参考点校验 | `_validate_position()` | 迁移 | 校验名称唯一性和三维坐标 |
+| 参考点读取 | `get_reference_point()` | 重命名 | 读取已经建立的 TorchFEA 参考点 |
+| 参考点校验 | `initialize()` 中的名称唯一性与坐标校验 | 迁移 | 校验名称唯一性和三维坐标 |
+| `ReferencePointInterface(rp_location)`、`modify_fea()` | 无 | 移除 | V3 的 FEA 层参考点接口整体删除，替代方案见[破坏性变更](24BreakingChanges.md) |
 
 ### 23.2.3 `MeshBuilder`
 
@@ -145,7 +146,7 @@ FEA component 通过参考点名称使用它。
 |---|---|---|
 | 曲面注册 | `define_surfaces()`、`add_surface()` | 保存稳定曲面顺序，顺序决定 `flip` |
 | 初始化 | `initialize()` | 设置方向、建立映射缓存、几何值缓存、权重和预览网格 |
-| 迭代刷新 | `reinitialize(iteration)` | 按重网格判据更新曲面、网格和节点参数映射 |
+| 迭代刷新 | `reinitialize(iteration)` | 清空上一轮曲面、网格和节点参数映射缓存，准备本轮重建 |
 | 几何读取 | `get_geometry_values()`、`get_control_points_list()`、`get_points_weight()` | 读取已缓存的集合级几何数据 |
 | 约束执行 | `BoundaryPartUpdater._apply_equality_constraint()`、`OffsetShellPartUpdater._apply_equality_constraint()` | 执行对应 geometry updater 持有的唯一等式/投影约束并写回绑定几何对象 |
 | 网格 | `build_part(path_result, pools)`、`get_part()` | 生成节点、单元、面集、节点集和元素集 |
@@ -155,7 +156,7 @@ FEA component 通过参考点名称使用它。
 | 导出 | `export_model(path, format)` | 按所有曲面的共同格式导出 Part |
 | 可微回写 | `update_assembly(design_delta)` | 将试探控制点映射为当前 Assembly 节点并保留自动微分图 |
 
-曲面集合注册、外表面合并和重网格状态归属 `BoundaryPart` 或 `MeshBuilder`；二阶单元
+曲面集合注册、外表面合并和网格重建归属 `BoundaryPart` 或 `MeshBuilder`；二阶单元
 中间节点映射归属 TorchFEA `Part`，载荷层只读取生成后的集合和模型状态。
 
 ### 23.2.6 导入 Part
@@ -190,14 +191,14 @@ Fairness 计算由每个可更新曲面持有的 evaluator 执行，几何罚函
 
 ### 23.2.8 `OffsetShellPart`
 
-旧来源：`codesign.geometry.CodesignGeometry`。V4 继续支持多层向内偏置节点、实体/壳单元、
+旧来源：`codesign.geometry.CodesignGeometry`。V4 继续支持多层向内偏置节点、层间楔形单元、
 二阶中间节点和偏置面集合；偏置曲面由 `source_surface` 布尔列表选择。
 
 | 旧能力 | V4 方法 | 功能 |
 |---|---|---|
 | 偏置节点计算 | `compute_offset_nodes()` | 根据选定曲面的曲面法向、厚度和层数计算向内偏置节点；曲面索引从 `1` 开始 |
-| 偏置单元 | `build_offset_elements()` | 建立 `C3D6/C3D15` 等实体或壳单元 |
-| 集合注册 | `register_offset_sets()` | 按 `surface_{i}_offset` 注册选定曲面的偏置集合和实体/壳元素集合 |
+| 偏置单元 | `build_offset_elements()` | 在每对相邻层之间建立楔形单元（`C3D6`/`C3D15`），写入单一楔形元素族 |
+| 集合注册 | `register_offset_sets()` | 按 `surface_{i}_offset` 注册选定曲面的偏置面集合 |
 | 初始构建 | `build_part()` | 生成实体、壳和边界 Part |
 | 迭代刷新 | `reinitialize()` | 更新偏置节点、单元和预览缓存 |
 | 设计更新 | `update_assembly()`、`apply_design_delta()` | 使用源边界曲面的元曲面控制点增量，并将变化传播到偏置网格 |
@@ -256,7 +257,9 @@ component 并写入同一个 Assembly；`Params` 统一调度这条处理流水�
 | [`SIMPFieldMaterial`](06Materials.md#66-simpfieldmaterial) | `get_control_points_list()`、`compute_material_ratio()`、`compute_penalty_factor()`、`get_parameters()`、`set_parameters()`、`build_design_delta()`、`get_design_delta()`、`update_assembly()`、`apply_design_delta()` | 保留 BSP 设计场、SIMP 惩罚、材料比例、元素写回、灵敏度和材料场预览 |
 
 SIMP 专用运行时状态包括 `_control_points`、`_bsp_size`、`_element_map`、`_simp_field`、
-`_material_penalty`、`_void_penalty_factor` 和 `_use_simp_penalty`。材料场预览由
+`_material_ratio`、`_penalty_factor` 和 `_design_delta`；`void_penalty_factor` 与
+`material_penalty` 属于构造属性，`use_simp_penalty` 是由 `void_penalty_factor` 派生的只读
+property。材料场预览由
 `build_meshes()` 写入缓存，`get_meshes()` 读取缓存。
 
 `SIMPScaledMaterial` 负责连续材料缩放；`SIMPElementPenalty` 通过 `f_grad`、`f_skew`、
@@ -361,12 +364,12 @@ SIMP 专用运行时状态包括 `_control_points`、`_bsp_size`、`_element_map
 |---|---|---|
 | `objective_function()` | `compute_case_objective(case_index, assembly, result)` | 将单工况目标明确为显式上下文的纯计算扩展点 |
 | `compute_multistep_objective()` | `compute_multistep_objective(case_objectives)` | 纯计算并聚合多工况目标 |
-| `sensitivity_analysis()` | `SensitivityAnalyzer.build_sensitivities()` / `get_sensitivities()` | 使用隐式/伴随方程建立并读取设计变量总灵敏度 |
+| `sensitivity_analysis()` | `SensitivityAnalyzer.initialize(objective, registry, solver)`、`build_sensitivities()` / `get_sensitivities()` | 调用 TorchFEA 多工况伴随函数建立并读取设计变量总灵敏度 |
 | `get_metrics(case_index)` | 同名 | 读取指定结果工况的已计算指标 |
-| `get_fe_results(case_index)` | 同名 | 读取指定结果工况的 FEA 结果 |
+| `fe_results[case_index]` | `fe_results` property | 读取指定结果工况的 FEA 结果 |
 | `get_mesh_case(case_index)` | `build_mesh_case(case_index)` + `get_mesh_case(case_index)` | 建立并读取指定结果工况的网格缓存 |
-| `num_tasks` | `get_num_cases()` | 读取已经完成评估的工况数量 |
-| `__getitem__()` | `get_fe_results(case_index)` / `get_case_objective(case_index)` | 按明确结果类型读取指定工况数据 |
+| `num_tasks` | `len(fe_results)` | 读取已经完成评估的工况数量 |
+| `__getitem__()` | `fe_results[case_index]` / `get_case_objective(case_index)` | 按明确结果类型读取指定工况数据 |
 | `plot()` | `build_mesh_case(case_index)` + `get_mesh_case(case_index)` | 建立结果网格并交由 Viewer 绘制 |
 | `save()` | `save(folder_path, iteration)` + `export_case_result(target_path, case_index)` | 保存目标和指标状态，并导出原生模型、原生结果、Jacobian、变形 STL、预览 PNG 与 manifest |
 
@@ -399,7 +402,6 @@ Fairness 计算由曲面提供的 `BSPFairnessEvaluator` 或 `CPGEOFairnessEvalu
 | 类 | 必须保留的方法 |
 |---|---|
 | `BaseUpdater` | `initialize()`、`reinitialize()`、`compute_terms()`、`closure()`、`update()`、`get_change()`、`get_local_objective()`、`save()`、`load()`；维护 owner、变量块、固定 `LocalSensitivityObjective` 和优化器公共生命周期 |
-| `BaseGeometryUpdater` | `initialize()`、`reinitialize()`、`compute_terms()`、`closure()`、`update()`、`get_change()`；提供几何 updater 公共生命周期 |
 | `BoundaryPartUpdater` | `set_equality_constraint()`、`get_equality_constraint()`、`add_constraint()`、`constraints`、`initialize()`、`reinitialize()`、`compute_terms()`、`closure()`、`update()`、`get_change()`；接收 `BoundaryPart` 局部灵敏度并建立固定线性目标，同时管理 Fairness、Distance、MinRadius、Cylinder 和 VolumeMaximization 约束 |
 | `OffsetShellPartUpdater` | `set_equality_constraint()`、`get_equality_constraint()`、`add_constraint()`、`constraints`、`initialize()`、`reinitialize()`、`compute_terms()`、`closure()`、`update()`、`get_change()`；接收源边界曲面局部灵敏度并建立固定线性目标，同时管理 Fairness、InwardCurvatureRadius 和 OffsetSurfaceMinThickness 约束 |
 | `MaterialUpdater` | `add_constraint()`、`constraints`、`add_regularization()`、`regularization_terms`、`initialize()`、`reinitialize()`、`compute_terms()`、`closure()`、`update()`、`get_change()`；接收材料局部灵敏度并建立固定线性目标，管理 MinValue、MaxValue、VolFrac、DensityFieldMinimize 和 SIMP 步长设置 |
@@ -422,7 +424,7 @@ V3 的 `add_constraints()` 迁移为具体 updater 的 `add_constraint()`，只�
 | 类 | V4 责任和方法 |
 |---|---|
 | `Params` | `initialize()`、`reinitialize()`、`build_assembly()`、`get_assembly()`、`get_geometry()`、`get_materials()`、`get_fea()`、`build_meshes()`、`get_meshes()`、`export_problem_data()`、`save()`、`load()` |
-| `Controller` | `initialize()`（一次性运行时初始化）、`initialize_path()`、`get_assembly()`、`start_optimization()`、`restart_optimization()`、`step()`（单次外层迭代）、`request_stop()`、`save()`、`load()`；内部 `_opt_loop()`、`_clear_runtime_cache()`、`_update_trial_assemblies()`、`_build_history_record()`、`_should_stop()`、设备迁移和 worker 管理 |
+| `Controller` | `initialize()`（一次性运行时初始化）、`initialize_path()`、`get_assembly()`、`start_optimization()`、`restart_optimization()`、`step()`（单次外层迭代）、`request_stop()`、`update_trial_models()`、`save()`、`load()`；内部 `_opt_loop()`、`_clear_runtime_cache()`、`_build_history_record()`、`_should_stop()`、设备迁移和 worker 管理 |
 | `History` | `add_record()`、`get_records()`、`get_series(name)`、`get_result_paths()`、`save()`、`load()`；保留 objective、time、元素数、节点数、变形和 metrics 序列 |
 | `SensitivityAnalyzer` | `initialize()`、`reinitialize()`、`build_sensitivities()`、`get_sensitivities()`；使用逐工况残差、切线刚度和请求 Jacobian 建立总导数 |
 | `TaskRunner` | `start()`、`run_debug()`、`request_stop()`、`wait()`、`get_result_path()`；创建任务进程、设置环境、加载任务脚本、启动/重启 Controller，并通过 `RuntimeEvent` 转发状态 |
@@ -432,8 +434,8 @@ V3 的 `add_constraints()` 迁移为具体 updater 的 `add_constraint()`，只�
 ### 23.6.1 UI 数据模型
 
 `ProblemDefinition`、`GeometryNode`、`PartNode`、`InstanceNode`、`MaterialNode`、`FEANode`、
-`FEAComponentNode`、`LoadStepsNode`、`ObjectiveNode`、`UpdaterNode` 和 `SolverNode` 继续作为
-定义层对象。每个节点保存可序列化字段，通过 `validate()` 校验并通过 `generate_data()` 生成
+`FEAComponentNode`、`LoadStepsNode`、`ObjectiveNode`、`UpdaterNode` 和 `SolverNode` 是 V4 的
+定义层对象（V3 的节点划分方式已移除）。每个节点保存可序列化字段，通过 `validate()` 校验并通过 `generate_data()` 生成
 Codegen 输入；运行时 V4 对象只在生成任务进程和隔离预览进程中创建。
 
 | UI 能力 | 归属 |
@@ -456,8 +458,8 @@ Codegen 输入；运行时 V4 对象只在生成任务进程和隔离预览进�
 | `SchemeTemplate` | `create_problem()`、`create_part()`、`create_fea_component()`、`create_material()`、`create_updater()` | 创建默认问题树和各类编辑节点 |
 | `SnippetDefinition` / `SnippetCatalog` | `render(parameters)`、`add_snippet()`、`get_for_slot()` | 渲染并按代码槽组织 instance、参考点、节点位移、参与力、应变能和变形梯度模板 |
 
-生成顺序保持：Geometry → Materials → FEA components → Load steps → Objective → Solver →
-Updaters → Controller。生成代码使用 V4 的 `build_*`、`get_*`、`update_*` 接口。
+生成顺序以[UI 与 Codegen](16-17UiCodegen.md) §17.2 为唯一权威来源；本清单不重复记录顺序，
+生成代码使用 V4 的 `build_*`、`get_*`、`update_*` 接口。
 
 ### 23.6.3 Launcher 与 Observer
 

@@ -36,10 +36,10 @@ Controller 在 `step()` 成功完成后追加记录，Observer 和重启流程�
 | `_phase_times` | Mapping[str, float] | - | geometry、FEA、objective、sensitivity、update、total 阶段耗时 |
 | `_num_elements` | int | - | 当前 Assembly 单元总数 |
 | `_num_nodes` | int | - | 当前 Assembly 节点总数 |
-| `_maximum_deformation` | float | - | 所有工况节点位移范数最大值 |
-| `_converged_by_case` | tuple[bool, ...] | - | 各工况收敛状态 |
+| `_maximum_deformation` | float | - | 所有工况节点位移范数最大值；由 `Controller._build_history_record()` 在导出本轮结果网格时取各工况变形后节点的位移范数最大值 |
+| `_converged_by_case` | tuple[bool, ...] | - | 各工况收敛状态；取自各工况 `StaticResult` 的收敛标记 |
 | `_result_path` | pathlib.Path | - | 本轮结果目录 |
-| `_updater_summary` | Mapping[str, Mapping[str, float]] | `{}` | 各 updater 步长、约束值和内层迭代摘要 |
+| `_updater_summary` | Mapping[str, Mapping[str, float]] | `{}` | 各 updater 的步长、约束值和内层迭代摘要；取自各 updater 的优化器结果、步长上限向量与约束标量 |
 
 ### 运行时属性
 

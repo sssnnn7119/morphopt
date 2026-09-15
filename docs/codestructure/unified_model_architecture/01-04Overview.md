@@ -197,6 +197,24 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 文本或临时结果并直接返回；`create_*` 仅用于不进入运行时生命周期的一次性定义对象或
 编辑节点工厂。三者都不替代运行时属性的 `build_*`/`update_*` 生命周期。
 
+前缀规则的适用范围是领域对象与管理类：`Part`、曲面、材料、FEA component、updater、
+`Params` 系列、`DesignRegistry`、`Solver`、`ObjectiveFunction`、`Controller`、
+`TaskRunner` 和 `History`。UI 与工具层（`ui/**`、`utils/**`）的 Qt 交互方法使用 Qt 风格
+命名，`remove_*`、`rename_*`、`clone_*`、`validate()` 等方法名不受本表约束；这些类中
+只要涉及领域状态的建立与读取，仍必须使用 `build_*`/`get_*` 语义。
+
+#### 接口收敛规则
+
+接口数量按以下规则保持最小，新增接口前先确认不能由既有接口派生：
+
+| 场景 | 规则 |
+|---|---|
+| 值可由既有 `get_*` 派生 | 不新增 `get_*`；例如设计变量数量由控制点张量元素个数决定，不在曲面或 `Part` 上提供 `get_num_variables()` |
+| 后端（TorchFEA）已有读写接口 | morphopt 不建立第二份缓存，直接读写后端对象；例如 `Concentrate_Force.force`、`Moment.moment`、`Spring_RP_RP.k` |
+| 库对象的内部状态 | 不镜像到构造属性；构造属性只保存用户给出的定义与目标名称 |
+| 仅由本类单点使用的校验 | 合并进该类的建立方法（例如 `InstanceDefinition.build_instance()` 内部校验名称与变换），不单独暴露 `validate()` |
+| 挂接位置、值向量长度等固定映射 | 用一个权威表格表达，不引入枚举字段或平行索引 |
+
 设计变量接口遵循同一规则：`build_design_delta()` 创建并保存新的设计增量，
 `get_design_delta()` 读取已有设计增量；`set_parameters()` 写入已有参数快照，
 `update_assembly(design_delta)` 更新已有 `Assembly`；对象直接使用自身缓存的
@@ -344,7 +362,6 @@ class TaskFEA(FEAParams):
 | 变量 | `DesignRegistry` | 变量注册、切分、Assembly 试探更新和正式提交 |
 | 更新 | `BaseUpdater` | 一块变量的更新策略 |
 | 更新 | `BaseOptimizer` / `LBFGSOptimizer` | updater 局部优化和回退线搜索 |
-| 更新 | `BaseGeometryUpdater` | 几何 updater 的公共生命周期 |
 | 更新 | `BoundaryPartUpdater` | 一个 `BoundaryPart` 的更新策略 |
 | 更新 | `OffsetShellPartUpdater` | 一个 `OffsetShellPart` 的更新策略 |
 | 更新 | `MaterialUpdater` | 一个材料接口的更新策略 |
@@ -514,6 +531,27 @@ geometry/material 试探值写入基础 Assembly；`FEAParams.build_case_assembl
 `Part` 和 `Instance` 并写入内部状态。`INPPart` 与 `TorchFEAPart` 在内部读取源 Assembly，
 通过统一的 `build_part()` 建立输出 Part。建立方法均返回 `None`，Part 通过 `get_part()` 读取。
 
+### 3.3 模块、协议与入口清单
+
+协议集中定义在 `optcore/protocols.py`：`Initializable`、`Updatable`、`Visualizable` 和
+`Persistable`。所有需要运行时管理的对象按§3.1 的继承关系显式继承这些协议。
+
+包级入口固定为以下模块，均属于 V4 公共接口：
+
+| 模块 | 内容 | 说明 |
+|---|---|---|
+| `morphopt/__init__.py` | 导出领域类与运行入口 | 导出 `Controller`、`Params`、`GeometryParams`、`MaterialsParams`、`FEAParams`、`Solver`、`ObjectiveFunction`、`Updaters`、`History`、`TaskRunner`，以及 `configure_logging`、`check_gradients`、`load_controller`、`start_optimization` |
+| `morphopt/logging.py` | `configure_logging(log_path, level, console)` | 唯一的日志配置入口；不再提供按包名绑定的日志开关 |
+| `morphopt/task.py` | `TaskRunner`、`start_optimization()` | 任务进程、退出码与续跑入口，见[运行时](13-14Runtime.md) |
+| `morphopt/optcore/` | 运行时核心 | `controller.py`、`protocols.py`、`designRegistry.py`、`objective.py`、`sensitivity.py`、`solver.py`、`history.py` 与 `modelparams/` |
+| `morphopt/updaters/` | updater 与优化算法 | `base.py`、`optimizers.py`、`geometry.py`、`material.py`、`fea.py`、`terms.py` |
+| `morphopt/utils/` | 工具函数 | `gradientCheck.py`、`historyRead.py` |
+| `morphopt/ui/` | 图形界面 | 只生成与观察任务，不创建运行时对象 |
+
+不存在模块级全局 `controller`：所有对象通过构造函数或 `initialize()` 注入，`Controller`
+持有全部运行时对象并由任务入口创建。V3 被移除的入口清单见
+[破坏性变更与冻结契约](24BreakingChanges.md)。
+
 ## 4. 生命周期和数据流
 
 ### 4.1 各类的构造/初始化契约
@@ -553,14 +591,13 @@ geometry/material 试探值写入基础 Assembly；`FEAParams.build_case_assembl
 | `DesignBlock` | `key`、`owner` 和变量范围记录 | 由 `DesignRegistry` `finalize()` 后确定 `offsets` |
 | `DesignRegistry` | 空的变量块列表和注册规则 | 收集所有 `owner`、计算 `offsets`、冻结变量顺序并建立完整设计增量 |
 | `BaseUpdater` | 优化器、步长和灵敏度缩放配置 | 绑定 owner、接收局部灵敏度、建立 `LocalSensitivityObjective` 和创建优化器状态 |
-| `BaseGeometryUpdater` | 几何更新公共配置 | 提供几何 updater 的公共生命周期 |
 | `BoundaryPartUpdater` | `BoundaryPart` 目标、固定局部灵敏度目标和本 updater 的等式/局部约束回调 | 解析一个 `BoundaryPart` 并准备边界几何优化器 |
 | `OffsetShellPartUpdater` | `OffsetShellPart` 目标、固定局部灵敏度目标和本 updater 的等式/局部约束回调 | 解析一个 `OffsetShellPart` 并准备偏置几何优化器 |
 | `MaterialUpdater` | 材料目标、固定局部灵敏度目标、本 updater 的局部约束回调和材料正则项 | 解析目标材料并准备材料优化器 |
 | `FEAUpdater` | component 名称、工况索引和本 updater 的局部约束回调 | 解析 `LoadValueBlock` 并准备载荷优化器 |
 | `UpdaterEntry` | updater 名称、目标名称和 updater 对象 | 由 `Updaters` 绑定真实 owner |
 | `Updaters` | updater entry 注册表 | 目标解析、变量注册和 updater 调度关系；每个 owner 唯一绑定一个 updater |
-| UI `ProblemDefinition` | 编辑树和节点定义 | 生成可运行的 `Params` 定义或加载定义状态 |
+| UI `ProblemDefinition` | 编辑树和节点定义 | 生成可运行的 `Params` 定义或加载定义状态 |update_trial_models
 | UI 各类 Node | 表单字段、类型标签和代码槽 | 解析字段并生成对应定义对象 |
 | `CodeGenerator` | 模板和代码槽配置 | 载入模板资源并生成任务 Python 源码 |
 
@@ -581,7 +618,7 @@ Controller.initialize()
        4.4 建立完整设计向量
     5. 根据 DesignRegistry.has_geometry_variables() 设置 GC 复用策略
     6. ObjectiveFunction.initialize(FEAParams)
-    7. SensitivityAnalyzer.initialize(ObjectiveFunction, DesignRegistry, FEAParams, trial_updater)
+    7. SensitivityAnalyzer.initialize(ObjectiveFunction, DesignRegistry, Solver)
     8. Updaters.initialize(params, registry)
     9. History.initialize()
     10. 创建 worker pool 并标记 Controller 已初始化
@@ -601,7 +638,7 @@ Controller._opt_loop()
     │   ├─ Params.build_assembly()
     │   ├─ DesignRegistry.reinitialize(iteration)
     │   ├─ DesignRegistry.build_design_delta()
-    │   ├─ Controller._update_trial_assemblies(delta)
+    │   ├─ Controller.update_trial_models(delta)
     │   │   ├─ DesignRegistry.update_assembly(delta, {"geometry", "material"})
     │   │   ├─ FEAParams.build_case_assemblies()
     │   │   └─ DesignRegistry.update_assembly(delta, {"load"})

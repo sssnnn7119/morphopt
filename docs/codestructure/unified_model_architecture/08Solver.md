@@ -69,6 +69,7 @@ Controller 为每个工况创建 `torchfea.FEAController`，将 Params 准备的
 | `get_reuse_previous_solution()` | bool 或 None | - | 读取当前初值策略 |
 | `solve(fea_controllers, jacobian_names=(), initial_gc_by_case=None)` | None | - | 通过逐工况 `FEAController` 求解全部工况，并为指定载荷建立响应 Jacobian 后保存排序结果 |
 | `get_results()` | tuple[`StaticResult`, ...] | - | 读取最近一次求解结果 |
+| `get_sensitivity_solver()` | `torchfea.solver.static.StaticImplicitSolver` | - | 读取绑定基座 Assembly 的静力求解器，供灵敏度分析使用 |
 | `get_task_groups()` | tuple[tuple[int, ...], ...] | - | 读取已建立工况分组 |
 | `get_devices()` | tuple[str, ...] | - | 读取已解析设备 |
 | `initialize(num_steps)` | None | `Initializable` | 校验配置、解析设备并建立工况分组 |
@@ -85,9 +86,28 @@ Controller 为每个工况创建 `torchfea.FEAController`，将 Params 准备的
 | `_create_solver()` | `torchfea.solver.static.StaticImplicitSolver` | 按当前配置创建一个全新的静力求解器 |
 | `_select_initial_gc(case_index, explicit_gc)` | torch.Tensor 或 None | 按显式值、复用缓存和默认值优先级选择初值 |
 | `_solve_task(fea_controllers, task_indices, jacobian_names, initial_gc)` | list[`StaticResult`] | 在一个 worker 中按顺序调用逐工况 `FEAController.solve()` 并建立请求的 Jacobian |
-| `_sort_results(results)` | tuple[`StaticResult`, ...] | 按 `step_index` 排序并检查唯一性 |
+| `_sort_results(results)` | tuple[`StaticResult`, ...] | 按 morphopt 附加的 `step_index` 排序并检查唯一性 |
 | `_validate_results(results, expected_indices)` | None | 校验数量、索引、有限值和收敛状态 |
 | `_update_previous_gc(results)` | None | 保存各工况 GC 的 detached clone |
+
+`Solver` 的固定行为约定：
+
+- **调用顺序**：`initialize(num_steps)` → `reinitialize(iteration)` →
+  `build_solvers(fea_controllers)` → `solve(...)` → `get_results()`。`reinitialize()` 必须在
+  `build_solvers()` 之前执行，因为初值策略和 GC 缓存要在创建逐工况求解器之前确定。
+- **收敛失败**：任一工况在 `_maximum_iterations` 内未满足 `_error_tolerance` 时，
+  `_validate_results()` 抛出求解错误并中止本次 `step()`。`Solver` 不返回部分结果，也不把
+  未收敛结果交给 `SensitivityAnalyzer`，避免用不准确的切线产生错误梯度。
+- **Jacobian 名称**：`solve(..., jacobian_names)` 的名称来自
+  `ObjectiveFunction.jacobian_needed`，两者是同一列表在不同对象的称呼；名称必须引用
+  `FEAParams` 中 `num_values > 0` 的 component，校验在 `ObjectiveFunction.initialize()`
+  阶段完成。
+- **设备归属**：`Solver.device_names` 显式配置时优先；为空元组时使用
+  `Controller.device`（默认 `"cpu"`）。`Controller.change_device()` 只更新
+  `Controller.device` 并转调 `Solver` 重新解析设备，设备解析规则只在 `_resolve_devices()`
+  中实现一次。
+- **冻结默认值**：`_maximum_iterations=10000`、`_error_tolerance=1e-5`、
+  `_num_processes=4` 属于跨章冻结数值，见[破坏性变更与冻结契约](24BreakingChanges.md)。
 
 ## 8.2 工况求解协议
 
@@ -113,10 +133,22 @@ results = solver.get_results()
 `FEAParams.build_case_assemblies()` 保留几何和材料设计 Tensor 的 autograd 连接，为每个
 工况复制可变状态、创建独立 TorchFEA component，并把 `LoadValueBlock` 绑定到所属副本。
 Controller 为每个副本创建独立 `FEAController`；`build_solvers()` 为其挂接独立求解器。
+每个求解器的库调用链固定为：
+
+```text
+static_solver = torchfea.solver.static.StaticImplicitSolver(maximum_iteration, tol_error)
+fea_controller.set_work_conditions(work_conditions)
+static_result = static_solver.solve(GC0=initial_gc, need_jacobian=bool(jacobian_names))
+static_result = static_solver.get_jacobian(static_result, load_names=tuple(jacobian_names))
+```
+
 debug 模式在当前进程顺序求解；标准模式把逐工况控制器按 `_resolved_task_groups` 发送给
-spawn worker。每个返回结果携带 `step_index`、`GC`、能量、
-误差、收敛状态、model hash、work condition 和请求名称对应的 Jacobian。worker 在同一工况
-Assembly 上完成平衡求解和 Jacobian 建立，再将 detached `StaticResult` 返回主进程。
+spawn worker。worker 在同一工况 Assembly 上完成平衡求解和 Jacobian 建立，再把可 pickle 的
+detached `StaticResult` 返回主进程（库的 `__getstate__` 已排除稀疏分解对象）。库结果字段固定
+为 `GC`、`converged`、`model_hash`、`jacobian`、`work_conditions`、`total_time` 和
+`time_items`；库不提供工况序号、能量和残差误差字段，因此 `Solver` 读取结果后附加
+`step_index` 属性，能量按需通过 `StaticImplicitSolver.get_total_energy(GC)` 计算，误差只用
+于收敛判定。
 
 显式 `initial_gc_by_case` 优先级最高；随后使用 `_previous_gc_by_case`；其余工况使用
 TorchFEA 默认初值。同一个任务组从显式或缓存初值开始，后续工况默认使用前一工况的收敛

@@ -60,6 +60,12 @@ updater。用户任务通过重写纯计算钩子定义具体目标和指标。
 | `jacobian_needed` | tuple[str, ...] | - | 只读 | 内部维护 | 返回 Jacobian 组件名称 |
 | `metric_names` | tuple[str, ...] | - | 只读 | 内部维护 | 返回指标名称 |
 | `case_weights` | tuple[float, ...] 或 None | - | 只读 | 内部维护 | 返回工况权重 |
+| `fe_results` | tuple[`StaticResult`, ...] | - | 只读 | 内部维护 | 返回按 `step_index` 排序的当前工况结果元组 |
+
+`fe_results` 是任务代码、UI 动态补全和 Codegen 共同依赖的稳定读取面：
+`fe_results[case_index].GC`、`fe_results[case_index].jacobian[component_name]` 必须始终可用。
+按工况读取结果用 `fe_results[case_index]`，工况数量用 `len(fe_results)`，因此不再提供
+`get_fe_results()` 与 `get_num_cases()`。
 
 ### 外部接口方法
 
@@ -71,10 +77,8 @@ updater。用户任务通过重写纯计算钩子定义具体目标和指标。
 | `build_mesh_case(case_index)` | None | - | 使用指定工况结果建立并缓存可视化网格 |
 | `export_case_result(target_path, case_index)` | pathlib.Path | - | 将指定工况的原生模型、原生结果、Jacobian、变形网格、预览图和 manifest 导出到目标目录 |
 | `get_objective()` | torch.Tensor | - | 读取已经建立的总目标 |
-| `get_num_cases()` | int | - | 读取当前已经绑定的结果工况数量 |
 | `get_case_objective(case_index)` | torch.Tensor | - | 读取已经建立的逐工况目标 |
 | `get_metrics(case_index)` | tuple[float, ...] | - | 读取指定工况已经建立的指标 |
-| `get_fe_results(case_index)` | `StaticResult` | - | 读取指定工况的 FEA 结果 |
 | `get_mesh_case(case_index)` | tuple[object, ...] | - | 读取指定工况已经建立的结果网格 |
 | `compute_case_objective(case_index, assembly, result)` | torch.Tensor | - | 由任务子类纯计算一个工况的标量目标 |
 | `compute_multistep_objective(case_objectives)` | torch.Tensor | - | 按 `case_weights` 纯计算多工况聚合目标 |
@@ -119,8 +123,10 @@ sensitivities = sensitivity.get_sensitivities()
 component。Solver 在对应工况求解时把该组件的 Jacobian 写入
 `StaticResult.jacobian[component_name]`。刚度模板同时选择集中力、集中力矩和参考点；
 初始化校验三者引用同一个 `reference_point`。参考点广义自由度区间使用
-`Assembly._GC_list_indexStart[reference_point._GC_index]` 的起止索引取得，形成该参考点的
-`6 × 6` 位移—转角响应 Jacobian；索引语义是广义自由度 `GC`。
+`Assembly._RGC_list_indexStart[reference_point._RGC_index]` 的起止索引取得，形成该参考点的
+`6 × 6` 位移—转角响应 Jacobian；参考点在装配阶段声明 6 个广义自由度需求。`Assembly` 同时
+维护 `_GC_list_indexStart` 与 `_RGC_list_indexStart`，Jacobian 行索引必须使用约束广义自由度
+`RGC`（对象的 `_RGC_index`），不使用 `GC`。
 
 `build_mesh_case(case_index)` 读取对应控制器的 Assembly，再将结果 `GC` 转为实例节点
 位移、变形后坐标、单元标量和载荷显示数据。Observer 使用 `get_mesh_case()` 读取缓存，
@@ -135,16 +141,17 @@ Observer 按 manifest 装载模型与结果。
 
 ## 9.3 `SensitivityAnalyzer`
 
-`SensitivityAnalyzer` 负责静力问题的隐式总导数。它组合 `ObjectiveFunction`、
-`DesignRegistry`、`FEAParams` 和 Controller 提供的逐工况试探模型更新回调；`Solver` 继续只负责建立
-`StaticImplicitSolver` 和执行求解。标准模式返回的 `StaticResult` 可以保持 detached 状态，
-分析器使用结果中的平衡点、work condition 和 Jacobian 重新建立求导图。
+`SensitivityAnalyzer` 只做四件事：拼接全局设计变量、把设计变量写回基座 Assembly、调用 TorchFEA 的
+多工况伴随函数、按变量块切分并保存结果。伴随方程本身完全由
+`StaticImplicitSolver.get_jacobian_sensitivity_multistep()` 提供，morphopt 不实现第二份伴随推导。
+基座 Assembly 是几何与材料状态的共享载体，逐工况 work condition 由库函数按结果自带的
+`work_conditions` 逐个恢复。
 
 ### 构造属性（`__init__()` 记录）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `_factorization_tolerance` | float | `1e-12` | 切线矩阵和伴随求解的数值校验阈值 |
+| 空 | - | - | 本类没有构造属性 |
 
 ### 运行时属性（`__init__()` 声明，生命周期方法填充）
 
@@ -152,10 +159,10 @@ Observer 按 manifest 装载模型与结果。
 |---|---|---|---|
 | `_objective` | `ObjectiveFunction` 或 None | None | 已绑定顶层目标 |
 | `_registry` | `DesignRegistry` 或 None | None | 已绑定设计变量注册表 |
-| `_fea_params` | `FEAParams` 或 None | None | 提供已经建立的逐工况 Assembly 和载荷绑定 |
-| `_trial_updater` | Callable[[torch.Tensor], None] 或 None | None | 根据全局试探增量更新逐工况 Assembly 的回调 |
+| `_solver` | `StaticImplicitSolver` 或 None | None | 绑定基座 Assembly 的静力求解器，由 `Solver.get_sensitivity_solver()` 提供 |
+| `_design_vars` | torch.Tensor 或 None | None | 本次分析使用的全局设计变量叶子 |
 | `_iteration` | int 或 None | None | 当前分析迭代 |
-| `_fe_results` | tuple[`StaticResult`, ...] | `()` | 当前平衡结果 |
+| `_fe_results` | tuple[`StaticResult`, ...] | `()` | 当前平衡结果的 detached 引用 |
 | `_sensitivities` | dict[`DesignKey`, torch.Tensor] | `{}` | 已建立的 detached 局部总灵敏度 |
 | `_initialized` | bool | False | 绑定状态 |
 
@@ -163,46 +170,68 @@ Observer 按 manifest 装载模型与结果。
 
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
-| `factorization_tolerance` | float | - | 只读 | 内部维护 | 返回数值校验阈值 |
+| 空 | - | - | - | - | 运行时状态通过 `get_sensitivities()` 读取 |
 
 ### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `build_sensitivities()` | None | - | 建立当前多工况目标对全局设计增量的隐式总导数并保存分块结果 |
+| `build_sensitivities()` | None | - | 建立当前多工况目标对全局设计增量的总导数并保存分块结果 |
 | `get_sensitivities()` | Mapping[`DesignKey`, torch.Tensor] | - | 读取已经建立的局部总灵敏度 |
-| `initialize(objective, registry, fea_params, trial_updater)` | None | `Initializable` | 绑定目标、注册表、FEA 工况集合和统一试探模型更新入口 |
+| `initialize(objective, registry, solver)` | None | `Initializable` | 绑定目标、注册表和基座求解器 |
 | `reinitialize(iteration, fe_results)` | None | `Initializable` | 绑定当前平衡结果并清空上一轮灵敏度缓存 |
 
 ### 内部辅助函数
 
 | 函数 | 返回值 | 作用 |
 |---|---|---|
-| `_build_differentiable_results()` | tuple[`StaticResult`, ...] | 为各工况的 `GC` 和请求的 Jacobian 建立梯度叶子副本 |
-| `_factorize_tangent(assembly, result)` | None | 调用 `StaticResult.factorize_stiffness_matrix()` 建立并校验对应工况的切线刚度分解 |
-| `_compute_case_adjoint(assembly, result)` | torch.Tensor | 求解位移目标项和 Jacobian 目标项对应的伴随方程 |
-| `_accumulate_total_gradient(case_assemblies, results)` | torch.Tensor | 累加显式设计导数、残差伴随项和 Jacobian 伴随项 |
-| `_cleanup_factorizations()` | None | 释放全部工况的稀疏分解和临时求导图 |
+| `_build_design_vars()` | torch.Tensor | 按 `DesignBlock` 顺序拼接各 owner 的设计增量并建立 `requires_grad` 叶子 |
+| `_apply_design_vars(assembly, design_vars)` | None | 按 `DesignBlock` 切片写回各 owner 的试探状态，等价于 V3 的 `params.modify_assembly()` |
+| `_split_gradients(gradient)` | Mapping[`DesignKey`, torch.Tensor] | 按 `DesignBlock` 切分梯度并 detach |
 
 `build_sensitivities()` 的固定流程为：
 
 ```text
-1. 读取 registry 已建立的全局零增量，并创建 requires_grad 叶子；
-2. 调用 `trial_updater` 建立 geometry/material 共享试探状态和逐工况 load 试探状态；
-3. 通过 `FEAParams.get_case_assemblies()` 读取这次试探调用刚建立的逐工况 Assembly；
-4. 为每个 `StaticResult` 的 GC 与 `jacobian_needed` 项建立梯度叶子；
-5. 调用 `ObjectiveFunction.compute_objective()` 建立联合多工况目标；
-6. 计算目标对显式设计变量、各工况 GC 和各请求 Jacobian 的偏导；
-7. 在每个工况 Assembly 上分解切线刚度并求解伴随方程；
-8. 按 TorchFEA `get_jacobian_sensitivity_multistep()` 的伴随公式，对残差、切线和载荷参数响应执行向量—Jacobian 积，累加为全局总导数；
-9. 按 `DesignBlock` 切分、detach 并保存 `_sensitivities`；
-10. 释放分解与临时图，并通过 `trial_updater` 恢复当前零试探状态。
+1. design_vars = _build_design_vars()
+2. registry.update_assembly(design_vars, categories={"geometry", "material"})
+3. gradient = solver.get_jacobian_sensitivity_multistep(
+       fe_results=list(fe_results),
+       design_vars=design_vars,
+       load_names=list(objective.jacobian_needed),
+       apply_func=_apply_design_vars,
+       compute_objective_funcs=objective.compute_objective)
+4. sensitivities = _split_gradients(gradient)
+5. 恢复零试探状态并清空 `_design_vars`
 ```
 
-每个工况使用自己的 Assembly、work condition、component 和切线矩阵。跨工况目标由同一次
-`compute_objective()` 调用建立，因此目标可以组合多个工况的位移、反力、能量和载荷
-Jacobian。未参与当前目标计算的变量块得到同形状零梯度。所有返回块与 Registry 的
-device、dtype、形状和稳定顺序一致。
+库函数与 morphopt 的职责边界固定如下，实现时不得重复实现对方的工作：
+
+| 项目 | 归属 |
+|---|---|
+| 设计变量写入 Assembly、逐工况恢复 work condition、因子分解切线、建立 GC/Jacobian 梯度叶子、伴随求解与向量—Jacobian 积 | `StaticImplicitSolver.get_jacobian_sensitivity_multistep()` |
+| 多工况目标建立 | `ObjectiveFunction.compute_objective(case_assemblies, fe_results)`，作为 `compute_objective_funcs` 传入 |
+| 设计变量到模型状态的映射 | `_apply_design_vars()`，与 `DesignRegistry.update_assembly()` 使用同一套切片规则 |
+| 梯度切分、detach、缓存与试探状态恢复 | `SensitivityAnalyzer` |
+
+库函数会**就地替换**每个 `StaticResult` 的 `GC` 与 `jacobian` 为带梯度的副本，因此
+`SensitivityAnalyzer` 在调用前保存 detached 结果引用、调用后恢复，避免梯度状态泄漏到
+下一轮迭代或结果导出。未参与当前目标计算的变量块得到同形状零梯度；所有返回块与
+`DesignRegistry` 的 device、dtype、形状和稳定顺序一致。
+
+#### 9.3.1 计算图生命周期
+
+计算图的建立范围只有一处，规则如下：
+
+| 阶段 | 图状态 |
+|---|---|
+| `build_part()`、`build_case_assemblies()`、`update_trial_models()` | 全部在 detached 状态执行；只建立当前迭代的模型状态，不保留跨迭代计算图 |
+| `SensitivityAnalyzer.build_sensitivities()` | 唯一把计算图延伸到 FEA 的阶段：全局设计叶子 → 基座 Assembly → 逐工况 work condition 与因子分解 → `StaticResult.GC`/`jacobian` 梯度叶子 → 多工况目标 → 伴随求解 |
+| `build_sensitivities()` 返回前 | 恢复库函数替换过的 `GC`/`jacobian` 引用、释放稀疏分解，只保留 detached 的 `DesignKey → Tensor` 局部梯度 |
+| updater `closure()` | 只在参数空间求值：输入为 owner 的局部参数张量，输出为固定线性目标与局部约束；**不建立、不引用任何 FEA 计算图** |
+
+因此任一时刻最多存在一张跨越 FEA 的计算图，其生命周期严格限制在
+`build_sensitivities()` 调用内部；updater 的多次试探求值（L-BFGS 与回退线搜索）不会
+持有求解结果，也不会延长该图的生命周期。
 
 ## 9.4 V3 目标与约束功能归属
 
@@ -210,7 +239,7 @@ V3 中的目标与约束按职责归入以下位置：
 
 | V3 能力 | V4 归属 | 计算内容 |
 |---|---|---|
-| `ShapeDerivative` | `ObjectiveFunction.compute_case_objective()` 模板 | 用户定义的形状目标及其自动微分 |
+| `ShapeDerivative` | 各 updater 的 `LocalSensitivityObjective`（几何 updater 在 `reinitialize()` 中建立） | 顶层灵敏度经 `DesignRegistry` 切分后在 updater 内建立固定线性展开；`ObjectiveFunction.compute_case_objective()` 只保留用户自定义全局物理目标的模板 |
 | `VolumeMaximization` | `ObjectiveFunction` 模板 | 当前实体体积的负值或用户指定符号 |
 | `DensityFieldMinimize` | `MaterialUpdater` 局部项 | SIMP 密度场线性正则项 |
 | `Sensitivity` | `MaterialUpdater` 局部项 | 材料设计灵敏度线性展开 |

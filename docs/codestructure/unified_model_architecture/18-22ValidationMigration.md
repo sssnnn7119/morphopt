@@ -38,9 +38,19 @@
   且由构造函数显式传入；
 - `OffsetShellPart.source_surface` 是与边界曲面数量相同、每项均为 `bool` 的列表，第 `0` 项必须为 `False`，
   第 `1` 项及以后控制对应曲面的向内偏置；偏置集合名称遵循 `surface_{i}_offset`；
+- `OffsetShellPart` 的 `solid_element_name` 指向体积网格产生的元素族（`C3D4`，`mesh_order == 2` 时为
+  `C3D10`），`shell_element_name` 指向楔形单元族（`C3D6`/`C3D15`）；两族名称不同，且都存在于
+  当前 `Part.elems`；
+- 偏置楔形单元在每个相邻层之间生成，第 0 层复用源曲面节点，层间位移按
+  `alpha = layer / num_layers` 分配总厚度；
+- 任一批楔形单元的高斯权重最小值为负时初始化失败（抛出断言错误），用于阻止内外翻转的偏置网格
+  进入求解；
+- `mesh_order == 2` 时先建立体积网格与全部楔形带，再对两族一次调用
+  `convert_linear_to_quadratic_elements()`，使 `mid_pt_idxmap_torch` 同时覆盖 `C3D10` 与
+  `C3D15`；转换保留材料绑定，并自动把中点加入既有节点集合；
 - `instance_name` 长度大于零且在整个 `Assembly` 中唯一；
 - 每个 `Part` 至少有一个 `Instance`；
-- `exterior_surface` 存在于目标 `Part`；
+- `exterior_surface` 名称在目标 `Part` 中存在；同一 `Part` 的多个 `Instance` 声明相同名称；
 - `translation` 和 `rotation` 都包含三个浮点分量；
 - `ReferencePoint.name` 长度大于零且在 `Assembly` 中唯一；
 - `ReferencePoint.position` 包含三个有限浮点分量；
@@ -226,7 +236,8 @@ src/morphopt/
         ├── viewer.py
         ├── console.py
         ├── observer.py
-        └── observationPages.py
+        ├── observationPages.py
+        └── values.py
 
 tests/morphopt/
 ├── testInit.py
@@ -355,20 +366,25 @@ tests/morphopt/
 迁移后使用新的 shapeopt/simp/codesign 聚合方式、材料接口和字段命名；V4 采用新的
 类名和模块路径。
 
-### 19.3 同步迁移文件
+### 19.3 改写与删除文件
 
-- examples/bendingactuator.py；
-- examples/gripper.py；
-- codesign 示例；
-- myjobs/ 中全部任务；
-- tests/ 中几何、材料、灵敏度、运行结果和 UI 测试；
-- UI model、schemas、codegen、`Part`/Material/FEA/Updater editor；
-- docs/module_definition_guide.md；
-- docs/module_reference.md；
-- docs/UI_usage.md；
-- docs/codestructure/ui_code_design.md；
-- docs/theory/morphdesign.md；
-- docs/theory/codesign.md。
+V4 不保留兼容入口，下列内容按新接口整体改写或删除，不提供旧文件读取：
+
+| 内容 | 处理 |
+|---|---|
+| `examples/bendingactuator.py`、`examples/gripper.py` | 改写为 `define_parts()` / `define_materials()` / `define_components()` / `define_updaters()` 注册式任务 |
+| `myjobs/` 中全部任务 | 同上；旧结果目录不复用 |
+| `tests/` 中几何、材料、灵敏度、运行结果与 UI 测试 | 按 §19.1 的测试镜像重建，不保留旧路径 |
+| UI model、schemas、codegen、`Part`/Material/FEA/Updater editor | 按第 16–17 章重写 |
+| `docs/module_definition_guide.md`、`docs/module_reference.md`、`docs/UI_usage.md` | 按 V4 接口重写 |
+| `docs/theory/morphdesign.md`、`docs/theory/codesign.md` | 更新公式与对象命名；codesign 不再作为独立子系统描述 |
+| 仓库根 `scripts/` 目录 | 删除；能力并入 `TaskRunner`、`load_controller()`、`check_gradients()` 和 `History`，见[破坏性变更](24BreakingChanges.md) |
+| 仓库根 `clearpyc.py` | 删除 |
+| `docs/codestructure/ui_code_design.md` | 不属于 V4 文档体系，删除该引用 |
+| `pyproject.toml` | 包目录改为 `src/morphopt`，保留 `morphopt-ui` 入口 |
+
+公共 API 的移除项、行为变更、结果契约与冻结数值契约集中记录在
+[第 24 章](24BreakingChanges.md)。
 
 ## 20. 测试验收标准
 
@@ -387,8 +403,9 @@ tests/morphopt/
 - 每个 BSP 曲面自动生成 `surface_{i}_head`、`surface_{i}_bottom`、
   `surface_{i}_lateral` 和 `surface_{i}_all` 四个 surface set；
 - 每个 CPGEO 曲面生成 `surface_{i}_all` 全部三角面集合；
-- `BoundaryPart.exterior_surface` 默认值为 `extern`，其集合内容为
-  `surface_0_all + surface_1_all + ...`；用户自定义名称后，整体集合使用该名称；
+- 整体外表面 surface set 的名称由 `Instance.exterior_surface` 指定（默认 `extern`），内容为
+  该 `Part` 全部曲面的 `surface_0_all + surface_1_all + ...` 合集；用户自定义名称后，
+  集合使用该名称注册，`Instance` 与 `Part` 名称不一致时校验失败；
 - `BSPSurface.get_meshes()`、`CPGEOSurface.get_meshes()` 和 `STLSurface.get_meshes()` 分别返回
   本类已经建立的预览网格；`build_meshes()` 建立缓存并返回 `None`；
 - `OffsetShellPart` 生成并更新偏置节点、元素和表面；二阶单元节点更新使用 TorchFEA
@@ -427,7 +444,7 @@ tests/morphopt/
 - Controller 为每个工况创建独立 `FEAController`，其 `assembly` 来自 `FEAParams`，其
   `solver` 来自 `Solver.build_solvers()`；
 - CPU/GPU 结果结构一致；
-- 收敛状态与未收敛状态均带正确 `step_index`；
+- 收敛状态取自库结果 `converged`；morphopt 在结果上附加的 `step_index` 与工况索引一致；
 - `ObjectiveFunction` 返回标量目标；
 - `build_evaluation()` 建立逐工况目标、总目标和指标，所有 `get_*()` 只读取缓存；
 - `metrics` 作为展示量，与设计变量梯度计算分离；
@@ -492,7 +509,36 @@ tests/morphopt/
 - 后处理直接读取 `History` 和结果文件，优化器由 Controller 与 Updaters 管理；
 - 用户自定义曲面、约束和目标方法仍由任务 Python 文件提供。
 
+### 20.7 运行时、持久化与新能力
+
+- 结构化事件覆盖全部 7 种类型，载荷字段与[运行时](13-14Runtime.md)定义一致，`schema_version`
+  校验失败的事件被拒绝并记录；
+- 任一工况在迭代上限内未收敛时任务以失败状态结束，不产生部分结果，也不写入灵敏度；
+- 设备解析只有一条规则：`Solver.device_names` 显式配置优先，空元组时使用
+  `Controller.device`；`Controller.change_device()` 后 worker 实际设备与解析结果一致；
+- checkpoint 完整性按"manifest 最后写入"判定：写 checkpoint 中途终止时该次 checkpoint
+  不存在，恢复回退到最近一个完整 checkpoint；
+- `checkpoint_interval > 1` 时恢复从最近完整 checkpoint 的下一 iteration 继续，且不重复
+  求解已完成迭代；
+- 子进程被 SIGKILL 或 OOM 终止时不自动续跑，任务结束并保留已有完整 checkpoint；
+- 退出码 75 触发 `TaskRunner` 在同一结果目录续跑；`0`、`1`、`2` 不触发续跑；
+- `load()` 在 `schema_version`、任务签名或设计变量签名不一致时抛出装载错误，不静默续跑；
+- UI 进程不 import 任何运行时执行模块；预览在隔离进程中完成，失败或超时不影响主界面；
+- 控制台正确增量处理 ANSI 颜色、光标移动、清行和回车覆盖，原始日志写入
+  `log/morphopt.log` 且与显示文本一致；
+- `check_gradients()` 返回结构化报告，相同抽样与种子产生稳定结果，可作为 CI 门禁；
+- `load_controller()` 只接受完整 checkpoint，并在任务签名一致时重建运行时对象；
+- 生成的任务文件冒烟测试：`shapeopt`/`simp` 两个内置 scheme 生成源码后 import、构造
+  `Params` 并调用 `initialize()` 成功，作为 UI schema 与运行时 API 的一致性门禁；
+- [冻结数值契约](24BreakingChanges.md)中的每一项至少有一条默认值断言测试。
+
 ## 21. 实施顺序
+
+### 阶段 0：契约冻结与骨架
+
+确认第 1–17 章接口与[第 24 章](24BreakingChanges.md)的移除清单、冻结数值契约一致；
+建立 `src/morphopt` 与 `tests/morphopt` 的镜像骨架，以及跨章一致性检查脚本（类名、
+方法名、文件名在主题章、§18–23 与 §24 中的引用一致）。
 
 ### 阶段 1：`Part` 和 `Assembly`
 
@@ -521,10 +567,10 @@ tests/morphopt/
 并将几何更新细分为 `BoundaryPartUpdater` 与 `OffsetShellPartUpdater`，接通
 `SensitivityAnalyzer` 的隐式总灵敏度。
 
-### 阶段 5：`Controller`、`Solver` 和 codesign
+### 阶段 5：`Controller`、`Solver` 与联合优化
 
-按本文生命周期接通主循环、运行结果记录和联合优化，用 `OffsetShellPart` 迁移
-codesign。
+按本文生命周期接通主循环、运行结果记录和联合优化，用 `OffsetShellPart`、
+`OffsetShellPartUpdater` 和 `MaterialUpdater` 的对象组合表达偏置壳问题。
 
 ### 阶段 6：UI 和 Codegen
 

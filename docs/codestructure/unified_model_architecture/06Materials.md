@@ -577,7 +577,7 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 |---|---|---|---|
 | `_mumax` | float | 构造函数必填 | 最大剪切材料参数 |
 | `_kappamax` | float | 构造函数必填 | 最大体积材料参数 |
-| `_initial_ratio` | float | 0.5 | 初始材料比例 |
+| `_initial_ratio` | float | 0.0 | 初始设计场控制点取值；材料比例由 `sigmoid()` 得到，因此默认初始材料比例为 0.5 |
 | `_simp_ratio_min` | float | 构造函数必填 | 材料比例下限 |
 | `_bounding_box` | tuple[float, ...] | 构造函数必填 | 三维材料场区域 |
 | `_simp_field_resolution` | float | 构造函数必填 | 材料场采样分辨率 |
@@ -604,7 +604,7 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 |---|---|---|---|---|---|
 | `mumax` | float | - | 只读 | 内部维护 | 返回最大材料参数 |
 | `kappamax` | float | - | 只读 | 内部维护 | 返回最大体积参数 |
-| `initial_ratio` | float | - | 只读 | 内部维护 | 返回初始材料比例 |
+| `initial_ratio` | float | - | 只读 | 内部维护 | 返回初始设计场控制点取值；材料比例为其 `sigmoid` |
 | `simp_ratio_min` | float | - | 只读 | 内部维护 | 返回材料比例下限 |
 | `bounding_box` | tuple[float, ...] | - | 只读 | 内部维护 | 返回材料场区域 |
 | `simp_field_resolution` | float | - | 只读 | 内部维护 | 返回材料场分辨率 |
@@ -645,6 +645,20 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 `compute_material_ratio()` 和 `compute_penalty_factor()` 是显式计算接口；材料比例、
 惩罚因子和预览网格由 `reinitialize()`、`update_assembly()` 或 `build_meshes()` 写入，
 `get_*` 方法只读取已经建立的结果。
+
+#### SIMP 材料场固定规则
+
+| 项目 | 规则 |
+|---|---|
+| 材料比例 | `ratio = sigmoid(design_field)` 经 RAMP 插值后线性映射到 `[simp_ratio_min, 1]` |
+| 设计场控制点 | 控制点保存用户给定的实数；材料比例不是控制点本身，不得直接把比例写入控制点 |
+| 本构来源 | 本构对象由 `material_parameters` 创建；`mumax`、`kappamax` 只作为材料场预览的量纲上限 |
+| 惩罚开关 | `void_penalty_factor <= 0` 时 `use_simp_penalty=False`，元素族保持原生实现，不注册适配器 |
+| 罚项模式 | 默认 `skew`；三种模式共享同一适配器接口 |
+| 预览标量 | `density = material_ratio × mumax`，直方图与阈值显示都基于该标量 |
+| 持久化精度 | 控制点按 `float32` 保存，加载后按 `float64` 重建并刷新材料比例与罚因子 |
+| 元素写回 | 材料适配器只注册到工况副本的元素族；不得写回共享 `Part.elems`，见[FEA 组件](07Fea.md)的工况副本契约 |
+| 映射缓存失效 | `_element_map` 在 `reinitialize(iteration, assembly)` 中随当前 Assembly 重建，不在迭代之间复用 |
 
 ### 6.7 SIMP 本构与单元适配器
 
