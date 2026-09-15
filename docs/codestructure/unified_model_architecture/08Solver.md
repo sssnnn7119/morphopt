@@ -1,153 +1,125 @@
 # MorphOpt V4 Solver
 
-本文件定义独立的 `Solver`。`Solver` 接收 `Params.get_assembly()` 提供的当前
-`torchfea.Assembly`，创建 `StaticImplicitSolver`，执行多工况求解并保存 `StaticResult`。
-求解初值策略直接由 `Solver` 的一个开关控制：当所有几何都没有设计变量时复用上一轮各
-工况的 `GC`，存在几何设计变量时清空旧初值并重新求解。FEA component 的定义和维护属于
-其他参数处理器；Solver 的输入边界是已经准备好的 Assembly。
-
-返回[总入口](../unified_model_architecture_plan.md)。
+本文件定义独立的静力求解器、工况调度和初值复用。返回[总入口](../unified_model_architecture_plan.md)。
 
 ## 文档导航与输入/输出摘要
 
-Solver 处理一条清晰的求解流水线：读取当前 Assembly、建立静力求解器、按工况分组执行
-求解、收集结果。`Controller` 负责将 `Params` 生成的 Assembly 传给 Solver，并调度
-优化迭代和结果消费。
-
-```text
-Controller.initialize()
-    → Solver.initialize(num_steps)
-    → Solver.build_solver()
-    → Solver.set_reuse_previous_solution(not registry.has_geometry_variables())
-
-Controller.step()
-    → Params.reinitialize(iteration)
-    → Params.build_assembly(iteration)
-    → assembly = Params.get_assembly()
-    → Solver.reinitialize(iteration)
-    → Solver.solve(assembly)
-    → Solver.get_results()
-```
+Controller 为每个工况创建 `torchfea.FEAController`，将 Params 准备的 `Assembly` 挂到
+`FEAController.assembly`；`Solver` 创建逐工况 `StaticImplicitSolver`，挂到
+`FEAController.solver`，并负责设备分组、求解、结果排序和上轮 GC 初值。
 
 ### 目录
 
-- [8. Solver 类定义](#8-solver-类定义)
-  - [8.1 `Solver`](#81-solver)
-  - [8.2 Solver 调用约定](#82-solver-调用约定)
+- [8.1 `Solver`](#81-solver)
+- [8.2 工况求解协议](#82-工况求解协议)
 
 ### 输入与输出
 
 | 项目 | 内容 |
 |---|---|
-| 输入 | 当前 `torchfea.Assembly`、静力求解参数、工况数量、worker 配置、设备配置、几何设计变量状态和可选初始广义坐标 |
-| 输出 | `StaticImplicitSolver` 运行对象、按工况排序的 `StaticResult` 和求解状态 |
-| 主要读者 | Solver 实现者、Controller、目标函数、运行时和 UI 实现者 |
-| 关联文档 | [总览与生命周期](01-04Overview.md)、[运行时](13-14Runtime.md)、[目标函数](09Objective.md)、[功能迁移清单](23FunctionInventory.md) |
+| 输入 | `step_index → FEAController`、静力求解参数、Jacobian 名称、worker/设备配置和可选初始 GC |
+| 输出 | 逐工况 `StaticImplicitSolver`、按 `step_index` 排序的 `StaticResult` 和上轮 GC 缓存 |
+| 主要读者 | Solver、Controller、Objective 和任务运行器实现者 |
+| 关联文档 | [FEA 组件](07Fea.md)、[运行时](13-14Runtime.md)、[目标函数](09Objective.md) |
 
-## 8. Solver 类定义
+## 8.1 `Solver`
 
-### 8.1 `Solver`
+`Solver` 实现 `Initializable` 和 `Persistable`。
 
-`Solver` 是静力求解器的定义与执行对象。它保存 `StaticImplicitSolver` 的参数，
-创建 TorchFEA 静力求解器，并使用 `Params.get_assembly()` 提供的 Assembly 执行求解。
-求解结果由 `Solver` 按工况顺序保存并通过 `get_results()` 读取。
-
-#### 1. 构造属性
+### 构造属性（`__init__()` 记录）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `_maximum_iteration` | int | `10000` | `StaticImplicitSolver` 最大迭代次数 |
-| `_tol_error` | float | `1e-5` | `StaticImplicitSolver` 收敛容差 |
-| `_num_process` | int | `4` | worker 数量 |
-| `_gpu_names` | list[str] | `[]` | 用户指定的 GPU 名称 |
-| `_task_index_list` | list[list[int]] 或 None | None | 用户指定的工况分组 |
-| `_reuse_previous_solution` | bool 或 None | None | 求解初值开关；`None` 由 Controller 根据几何设计变量自动决定，`True` 复用上一轮 GC，`False` 每轮重新求解 |
+| `_maximum_iterations` | int | `10000` | 单个静力工况最大迭代次数 |
+| `_error_tolerance` | float | `1e-5` | 收敛误差容差 |
+| `_num_processes` | int | `4` | worker 数量 |
+| `_device_names` | tuple[str, ...] | `()` | 用户指定设备；空元组使用 CPU |
+| `_task_groups` | tuple[tuple[int, ...], ...] 或 None | None | 用户指定的工况分组 |
+| `_reuse_previous_solution` | bool 或 None | None | `True` 复用上轮 GC，`False` 使用默认初值，`None` 由 Controller 判定 |
 
-#### 2. 运行时属性
+### 运行时属性（`__init__()` 声明，生命周期方法填充）
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| `_task_groups` | tuple[tuple[int, ...], ...] | `()` | 初始化后生成的 worker 分组 |
-| `_available_gpus` | tuple[str, ...] | `()` | 解析后的设备列表 |
-| `_torchfea_StaticImplicitSolver` | `torchfea.solver.static.StaticImplicitSolver` 或 None | None | 由 Solver 创建的 TorchFEA 静力求解器 |
-| `_results` | tuple[StaticResult, ...] | `()` | 最近一次按 step 排序的结果 |
-| `_previous_gc` | tuple[torch.Tensor, ...] 或 None | None | 上一轮各工况的 GC detached clone；仅在复用开关开启时作为下一轮初值 |
-| `_initialized` | bool | False | 初始化状态 |
+| `_resolved_task_groups` | tuple[tuple[int, ...], ...] | `()` | 已校验的 worker 工况分组 |
+| `_available_devices` | tuple[str, ...] | `()` | 已解析设备列表 |
+| `_torchfea_StaticImplicitSolver` | dict[int, `torchfea.solver.static.StaticImplicitSolver`] | `{}` | 按工况保存并已挂接到 `FEAController` 的 TorchFEA 求解器 |
+| `_results` | tuple[`StaticResult`, ...] | `()` | 最近一次按工况排序的结果 |
+| `_previous_gc_by_case` | dict[int, torch.Tensor] | `{}` | 上一轮各工况 GC 的 detached clone |
+| `_initialized` | bool | False | 求解器初始化状态 |
 
-#### 3. 属性接口（property）
+### 属性接口（property）
 
 | property | 类型 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|
-| `num_process` | int | 只读 | 内部维护 | 返回 worker 数量 |
-| `gpu_names` | tuple[str, ...] | 只读 | 内部维护 | 返回设备配置 |
-| `reuse_previous_solution` | bool 或 None | 只读 | 内部维护 | 返回当前求解初值开关；`None` 表示等待 Controller 自动判定 |
+| `maximum_iterations` | int | 只读 | 内部维护 | 返回最大迭代次数 |
+| `error_tolerance` | float | 只读 | 内部维护 | 返回误差容差 |
+| `num_processes` | int | 只读 | 内部维护 | 返回 worker 数量 |
+| `device_names` | tuple[str, ...] | 只读 | 内部维护 | 返回设备配置 |
+| `task_groups` | tuple[tuple[int, ...], ...] 或 None | 只读 | 内部维护 | 返回显式工况分组 |
+| `reuse_previous_solution` | bool 或 None | 只读 | 内部维护 | 返回初值策略 |
 
-#### 4. 外部接口方法
+### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `initialize(num_steps)` | None | `Initializable` | 根据工况数量创建任务分组 |
-| `reinitialize(iteration)` | None | `Initializable` | 刷新当前迭代的求解器状态；开关为 `False` 时清空上一轮 GC |
-| `build_solver()` | None | - | 根据 Solver 配置创建并保存 `StaticImplicitSolver` |
-| `get_solver()` | `torchfea.solver.static.StaticImplicitSolver` | - | 读取已经创建的静力求解器 |
-| `set_reuse_previous_solution(enabled)` | None | - | 设置是否复用上一轮各工况的 GC；传入 `None` 恢复自动判定 |
-| `get_reuse_previous_solution()` | bool 或 None | - | 读取当前求解初值开关 |
-| `solve(assembly, U_guess=None)` | None | Solver protocol | 使用当前 Assembly 调用静力求解器并写入 `_results` |
-| `get_results()` | tuple[StaticResult, ...] | Solver protocol | 读取最近一次排序后的结果 |
-| `get_task_index_list()` | tuple[tuple[int, ...], ...] | Solver protocol | 读取 worker 工况分组 |
-| `get_available_gpus()` | tuple[str, ...] | Solver protocol | 读取可用设备列表 |
-| `save(folder_path, iteration)` | None | `Persistable` | 保存求解器状态和任务配置 |
-| `load(folder_path, iteration)` | None | `Persistable` | 加载指定迭代的求解器状态 |
+| `build_solvers(fea_controllers)` | None | - | 为每个工况创建、保存并挂接 TorchFEA 静力求解器 |
+| `get_solver(case_index)` | `torchfea.solver.static.StaticImplicitSolver` | - | 读取指定工况已经建立的求解器 |
+| `set_reuse_previous_solution(enabled)` | None | - | 将初值策略设为 `True`、`False` 或自动值 `None` |
+| `get_reuse_previous_solution()` | bool 或 None | - | 读取当前初值策略 |
+| `solve(fea_controllers, jacobian_names=(), initial_gc_by_case=None)` | None | - | 通过逐工况 `FEAController` 求解全部工况，并为指定载荷建立响应 Jacobian 后保存排序结果 |
+| `get_results()` | tuple[`StaticResult`, ...] | - | 读取最近一次求解结果 |
+| `get_task_groups()` | tuple[tuple[int, ...], ...] | - | 读取已建立工况分组 |
+| `get_devices()` | tuple[str, ...] | - | 读取已解析设备 |
+| `initialize(num_steps)` | None | `Initializable` | 校验配置、解析设备并建立工况分组 |
+| `reinitialize(iteration)` | None | `Initializable` | 清空本轮结果并按初值策略维护 GC 缓存 |
+| `save(folder_path, iteration)` | None | `Persistable` | 保存配置、工况分组和可复用 GC |
+| `load(folder_path, iteration)` | None | `Persistable` | 恢复配置兼容的工况分组和 GC |
 
-#### 5. 内部辅助方法
+### 内部辅助方法
 
 | 方法 | 返回值 | 作用 |
 |---|---|---|
-| `_build_task_groups(num_steps)` | None | 生成工况到 worker 的分组 |
-| `_resolve_devices()` | None | 解析 CPU/GPU 设备配置 |
-| `_build_solver()` | None | 创建 `StaticImplicitSolver` 并写入 `_torchfea_StaticImplicitSolver` |
-| `_build_solver_context(assembly)` | object | 根据当前 Assembly 建立 TorchFEA 求解上下文 |
-| `_select_initial_guess(U_guess)` | tuple[torch.Tensor, ...] 或 None | 按显式参数和复用开关选择本轮各工况初始 GC |
-| `_solve_task(assembly, task_indices, U_guess)` | list[StaticResult] | 在一个 worker 中求解任务组 |
-| `_sort_results(results)` | tuple[StaticResult, ...] | 按 step index 排序结果 |
-| `_validate_results(results)` | None | 检查结果收敛状态和数量 |
-| `_store_previous_gc(results)` | None | 从当前结果保存各工况 GC 的 detached clone |
+| `_build_task_groups(num_steps)` | None | 建立覆盖每个工况一次的稳定分组 |
+| `_resolve_devices()` | None | 解析 CPU/CUDA 设备并校验 worker 映射 |
+| `_create_solver()` | `torchfea.solver.static.StaticImplicitSolver` | 按当前配置创建一个全新的静力求解器 |
+| `_select_initial_gc(case_index, explicit_gc)` | torch.Tensor 或 None | 按显式值、复用缓存和默认值优先级选择初值 |
+| `_solve_task(fea_controllers, task_indices, jacobian_names, initial_gc)` | list[`StaticResult`] | 在一个 worker 中按顺序调用逐工况 `FEAController.solve()` 并建立请求的 Jacobian |
+| `_sort_results(results)` | tuple[`StaticResult`, ...] | 按 `step_index` 排序并检查唯一性 |
+| `_validate_results(results, expected_indices)` | None | 校验数量、索引、有限值和收敛状态 |
+| `_update_previous_gc(results)` | None | 保存各工况 GC 的 detached clone |
 
-`Solver` 的公共输入是 `Assembly` 和可选的初始广义坐标；静力求解器的运行上下文由
-`_build_solver_context(assembly)` 建立。`Solver` 通过 `build_solver()` 创建
-`StaticImplicitSolver`，通过 `solve()` 更新 `_results`，通过 `get_results()` 读取结果。
+## 8.2 工况求解协议
 
-求解初值策略由一个开关统一控制：
-
-1. `U_guess` 显式传入时，优先使用调用者给出的初值；
-2. 开关为 `True` 且存在 `_previous_gc` 时，按 `step_index` 使用上一轮结果的 GC；
-3. 开关为 `False`，或开关为 `True` 但尚无历史结果时，从当前静力求解器默认初值开始；
-4. 当前求解完成后，`_store_previous_gc()` 保存每个工况的 detached GC，供下一轮使用。
-
-Controller 在 `DesignRegistry.finalize()` 后检查是否存在 `geometry` 变量：当开关仍为 `None`
-时，没有几何设计变量就设置 `set_reuse_previous_solution(True)`，存在任意几何设计变量就
-设置为 `False`。用户也可显式传入 `True` 或 `False` 覆盖自动策略，传入 `None` 恢复自动判定；
-几何设计变量变化时不复用历史 GC。
-
-### 8.2 Solver 调用约定
+Controller 先把几何和材料试探状态写入基础 Assembly，再由 `FEAParams` 建立相互隔离的
+工况 Assembly，最后把各载荷设计块写入所属工况，并组合逐工况 `FEAController`：
 
 ```text
-# 一次性运行时初始化
-Controller.initialize()
-solver.initialize(num_steps)
-solver.build_solver()
-solver.set_reuse_previous_solution(not registry.has_geometry_variables())
+base_assembly = params.get_assembly()
+registry.update_assembly(design_delta, categories={"geometry", "material"})
+fea.build_case_assemblies()
+registry.update_assembly(design_delta, categories={"load"})
+case_assemblies = fea.get_case_assemblies()
 
-# 每个外层 iteration
-Controller.step()
-params.reinitialize(iteration)
-params.build_assembly(iteration)
-assembly = params.get_assembly()
+controller.build_fea_controllers(case_assemblies)
+fea_controllers = controller.get_fea_controllers()
+
 solver.reinitialize(iteration)
-solver.solve(assembly)
+solver.build_solvers(fea_controllers)
+solver.solve(fea_controllers, jacobian_names=objective.jacobian_needed)
 results = solver.get_results()
 ```
 
-`Params` 负责生成当前迭代的 Assembly；`Solver` 接收该 Assembly，建立静力求解器并
-根据几何设计变量状态选择初始 GC，返回当前工况结果。Controller 负责在优化主循环中安排
-上述调用、结果消费和下一次迭代。
+`FEAParams.build_case_assemblies()` 保留几何和材料设计 Tensor 的 autograd 连接，为每个
+工况复制可变状态、创建独立 TorchFEA component，并把 `LoadValueBlock` 绑定到所属副本。
+Controller 为每个副本创建独立 `FEAController`；`build_solvers()` 为其挂接独立求解器。
+debug 模式在当前进程顺序求解；标准模式把逐工况控制器按 `_resolved_task_groups` 发送给
+spawn worker。每个返回结果携带 `step_index`、`GC`、能量、
+误差、收敛状态、model hash、work condition 和请求名称对应的 Jacobian。worker 在同一工况
+Assembly 上完成平衡求解和 Jacobian 建立，再将 detached `StaticResult` 返回主进程。
+
+显式 `initial_gc_by_case` 优先级最高；随后使用 `_previous_gc_by_case`；其余工况使用
+TorchFEA 默认初值。同一个任务组从显式或缓存初值开始，后续工况默认使用前一工况的收敛
+`GC`；各工况自由度数量不一致时改用该工况自己的初值策略。Controller 在 Registry 初始化后
+设置自动策略：几何变量块为空时复用上轮 GC，存在几何变量块时使用默认初值。求解完成后
+按工况更新 GC 缓存。

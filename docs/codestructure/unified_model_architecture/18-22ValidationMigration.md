@@ -16,14 +16,14 @@
 - [20. 测试验收标准](#20-测试验收标准)
 - [21. 实施顺序](#21-实施顺序)
 - [22. 最终接口关系](#22-最终接口关系)
-- [待确认](#待确认)
+- [22.1 已确定的外部边界](#221-已确定的外部边界)
 
 ### 输入与输出
 
 | 项目 | 内容 |
 |---|---|
 | 输入 | 第 1–17 章主题接口、V3 功能基线、模块路径、测试目标和迁移约束 |
-| 输出 | 校验清单、目标目录、迁移映射、验收标准、实施阶段和待确认事项 |
+| 输出 | 校验清单、目标目录、迁移映射、验收标准、实施阶段和已确定边界 |
 | 主要读者 | V4 实施者、测试编写者、迁移 review 者和项目维护者 |
 | 关联文档 | [架构总览](01-04Overview.md)、[功能基线](23FunctionInventory.md)、[总入口](../unified_model_architecture_plan.md) |
 
@@ -59,7 +59,8 @@
   `part_name` 和 `element_name`，且两者长度大于零；
 - 材料刷新接收当前 `Assembly` 并解析目标 `Part`；
 - `element_name` 精确存在于当前 `Assembly` 目标 `Part` 的 `elems`；
-- 一个 `Part` 的每个元素族恰好由一个材料对象覆盖；
+- 一个 `Part` 的每个可变形元素族恰好由一个材料对象覆盖；刚体和显式标记为
+  `requires_material=False` 的辅助元素族由 Part 元数据声明豁免；
 - 材料范围彼此独立；
 - 均匀材料参数对象必填；
 - SIMP 参数、控制点和元素映射维度一致；
@@ -90,6 +91,8 @@
 - 每个 load step 包含全部 FEA component；
 - 值向量长度等于 `num_values`；
 - Jacobian 名称引用已注册 FEA component；
+- 参数化 component 的每个工况建立一个唯一 `LoadValueBlock` 和带 `case_index` 的 `DesignKey`；
+- 每个工况建立独立 Assembly 和 component 运行副本，任一工况更新保持其他工况值与运行对象不变；
 - `task_groups` 完整覆盖 step，索引保持唯一并处于有效范围；
 - `define_components()` / `define_steps()` 只建立定义阶段注册表；
   `add_component()` 和 `set_step_*()` 分别注册 component 与工况值；
@@ -102,7 +105,8 @@
 - 内置 updater 的目标类型与 `target_kind` 匹配；
 - `boundary_part` 只接受 `BoundaryPartUpdater`，`offset_shell_part` 只接受
   `OffsetShellPartUpdater`；
-- 同一个 `(target_kind, target_name)` 只能注册一个 updater；
+- 同一个 `(target_kind, target_name, case_index)` 只能注册一个 updater；geometry/material
+  目标的 `case_index` 为 None；
 - `BoundaryPartUpdater` 与 `BoundaryPart` 类型匹配，`OffsetShellPartUpdater` 与
   `OffsetShellPart` 类型匹配；
 - 两个不同 `BoundaryPart` 可以分别注册两个独立的 `BoundaryPartUpdater`，变量块、局部
@@ -119,34 +123,221 @@
 ### 19.1 目标目录
 
 ~~~text
-src/morphopt/optcore/
-    ├── controller.py
-    ├── protocols.py
-    ├── designregistry.py
-    ├── objfunc.py
-    ├── solver.py
-    ├── updaters.py
-└── modelparams/
-    ├── params.py
-    ├── geometry.py
-    ├── materials.py
-    ├── feaparams.py
-    ├── partinterface/
-    │   ├── basepartinterface.py
-    │   ├── boundarypart.py
-    │   ├── inppart.py
-    │   ├── torchfeapart.py
-    │   ├── offsetshellpart.py
-    │   └── instancedefinition.py
-    ├── materialinterface/
-    │   ├── basematerialinterface.py
-    │   ├── homogeneousmaterial.py
-    │   ├── simpfieldmaterial.py
-    │   └── materialmodels.py
-    └── feacomponent/
-        ├── basefeacomponent.py
-        └── concrete components...
+src/morphopt/
+├── __init__.py
+├── logging.py
+├── task.py
+├── optcore/
+│   ├── __init__.py
+│   ├── controller.py
+│   ├── protocols.py
+│   ├── designRegistry.py
+│   ├── objective.py
+│   ├── sensitivity.py
+│   ├── solver.py
+│   ├── history.py
+│   └── modelparams/
+│       ├── __init__.py
+│       ├── params.py
+│       ├── geometry.py
+│       ├── materials.py
+│       ├── fea.py
+│       ├── parts/
+│       │   ├── __init__.py
+│       │   ├── base.py
+│       │   ├── boundary.py
+│       │   ├── inp.py
+│       │   ├── torchfea.py
+│       │   ├── offset.py
+│       │   ├── instance.py
+│       │   └── mesh.py
+│       ├── surfaces/
+│       │   ├── __init__.py
+│       │   ├── base.py
+│       │   ├── preload.py
+│       │   ├── bsp.py
+│       │   ├── cpgeo.py
+│       │   ├── stl.py
+│       │   └── fairness.py
+│       ├── material/
+│       │   ├── __init__.py
+│       │   ├── base.py
+│       │   ├── parameters.py
+│       │   ├── homogeneous.py
+│       │   ├── simp.py
+│       │   ├── elements.py
+│       │   └── interpolation.py
+│       └── components/
+│           ├── __init__.py
+│           ├── base.py
+│           ├── loads.py
+│           ├── boundaries.py
+│           ├── interactions.py
+│           ├── springs.py
+│           └── steps.py
+├── updaters/
+│   ├── __init__.py
+│   ├── base.py
+│   ├── optimizers.py
+│   ├── geometry.py
+│   ├── material.py
+│   ├── fea.py
+│   └── terms.py
+├── utils/
+│   ├── __init__.py
+│   ├── gradientCheck.py
+│   └── historyRead.py
+└── ui/
+    ├── __init__.py
+    ├── __main__.py
+    ├── app.py
+    ├── mainwindow.py
+    ├── workbench.py
+    ├── launcher.py
+    ├── i18n.py
+    ├── model/
+    │   ├── __init__.py
+    │   ├── problem.py
+    │   ├── nodes.py
+    │   ├── schemas.py
+    │   └── loaders.py
+    ├── schemes/
+    │   ├── __init__.py
+    │   ├── base.py
+    │   ├── shapeopt.py
+    │   └── simp.py
+    ├── codegen/
+    │   ├── __init__.py
+    │   ├── generator.py
+    │   └── snippets.py
+    └── widgets/
+        ├── __init__.py
+        ├── tree.py
+        ├── editor.py
+        ├── paramForm.py
+        ├── codeEditor.py
+        ├── completion.py
+        ├── snippetDialog.py
+        ├── modelEditor.py
+        ├── stepMatrix.py
+        ├── objectiveEditor.py
+        ├── solverEditor.py
+        ├── updaterEditor.py
+        ├── viewer.py
+        ├── console.py
+        ├── observer.py
+        └── observationPages.py
+
+tests/morphopt/
+├── testInit.py
+├── testLogging.py
+├── testTask.py
+├── optcore/
+│   ├── testInit.py
+│   ├── testController.py
+│   ├── testProtocols.py
+│   ├── testDesignRegistry.py
+│   ├── testObjective.py
+│   ├── testSensitivity.py
+│   ├── testSolver.py
+│   ├── testHistory.py
+│   └── modelparams/
+│       ├── testInit.py
+│       ├── testParams.py
+│       ├── testGeometry.py
+│       ├── testMaterials.py
+│       ├── testFea.py
+│       ├── parts/
+│       │   ├── testInit.py
+│       │   ├── testBase.py
+│       │   ├── testBoundary.py
+│       │   ├── testInp.py
+│       │   ├── testTorchfea.py
+│       │   ├── testOffset.py
+│       │   ├── testInstance.py
+│       │   └── testMesh.py
+│       ├── surfaces/
+│       │   ├── testInit.py
+│       │   ├── testBase.py
+│       │   ├── testPreload.py
+│       │   ├── testBsp.py
+│       │   ├── testCpgeo.py
+│       │   ├── testStl.py
+│       │   └── testFairness.py
+│       ├── material/
+│       │   ├── testInit.py
+│       │   ├── testBase.py
+│       │   ├── testParameters.py
+│       │   ├── testHomogeneous.py
+│       │   ├── testSimp.py
+│       │   ├── testElements.py
+│       │   └── testInterpolation.py
+│       └── components/
+│           ├── testInit.py
+│           ├── testBase.py
+│           ├── testLoads.py
+│           ├── testBoundaries.py
+│           ├── testInteractions.py
+│           ├── testSprings.py
+│           └── testSteps.py
+├── updaters/
+│   ├── testInit.py
+│   ├── testBase.py
+│   ├── testOptimizers.py
+│   ├── testGeometry.py
+│   ├── testMaterial.py
+│   ├── testFea.py
+│   └── testTerms.py
+├── utils/
+│   ├── testInit.py
+│   ├── testGradientCheck.py
+│   └── testHistoryRead.py
+└── ui/
+    ├── testInit.py
+    ├── testMain.py
+    ├── testApp.py
+    ├── testMainwindow.py
+    ├── testWorkbench.py
+    ├── testLauncher.py
+    ├── testI18n.py
+    ├── model/
+    │   ├── testInit.py
+    │   ├── testProblem.py
+    │   ├── testNodes.py
+    │   ├── testSchemas.py
+    │   └── testLoaders.py
+    ├── schemes/
+    │   ├── testInit.py
+    │   ├── testBase.py
+    │   ├── testShapeopt.py
+    │   └── testSimp.py
+    ├── codegen/
+    │   ├── testInit.py
+    │   ├── testGenerator.py
+    │   └── testSnippets.py
+    └── widgets/
+        ├── testInit.py
+        ├── testTree.py
+        ├── testEditor.py
+        ├── testParamForm.py
+        ├── testCodeEditor.py
+        ├── testCompletion.py
+        ├── testSnippetDialog.py
+        ├── testModelEditor.py
+        ├── testStepMatrix.py
+        ├── testObjectiveEditor.py
+        ├── testSolverEditor.py
+        ├── testUpdaterEditor.py
+        ├── testViewer.py
+        ├── testConsole.py
+        ├── testObserver.py
+        └── testObservationPages.py
 ~~~
+
+每个 `src/morphopt/**/*.py` 都有路径对应的 `tests/morphopt/**/test<Name>.py`；上表完整展示
+初始 V4 文件级映射。新增源文件时，同一提交在镜像目录增加对应测试文件。跨模块集成测试
+放在 `tests/integration/`，测试数据放在 `tests/data/`；这两个目录补充文件级单元测试，
+共同构成验收测试集。
 
 ### 19.2 旧能力迁移
 
@@ -187,8 +378,11 @@ src/morphopt/optcore/
 - 一个 `Part` 生成多个不同变换的 `Instance`；
 - 多个 `Part` 进入同一个 `Assembly`；
 - 多个 `Instance` 共享同一 `Part` 的设计变量；
-- `INPPart` 直接建立并缓存指定源 `Part` 对应的不可变 `Assembly`；
-- `TorchFEAPart` 直接建立并缓存模型中的多个 `Part` 和 `Instance` 组成的不可变 `Assembly`；
+- `INPPart` 缓存 INP 源 Assembly，并通过统一 Part 接口提取一个指定源 Part 及选定实例；
+- `TorchFEAPart` 缓存 TorchFEA 源 Assembly，并通过统一 Part 接口提取一个指定源 Part 及选定实例；
+- 同一模型的多个 Part 通过多个 `TorchFEAPart` 定义进入同一目标 Assembly，源模型读取缓存可共享；
+- 源模型参考点摘要包含名称和三维全局坐标；选中的参考点转换为独立 Geometry
+  `ReferencePoint` 定义，同名同坐标项复用，同名异坐标项校验失败；
 - 导入 `Part` 的 `element_names` 与统一排序后的源元素族逐项对应；省略自定义名称时使用排序后的源元素类型名称；
 - 每个 BSP 曲面自动生成 `surface_{i}_head`、`surface_{i}_bottom`、
   `surface_{i}_lateral` 和 `surface_{i}_all` 四个 surface set；
@@ -213,6 +407,10 @@ src/morphopt/optcore/
 - 每个材料对象只覆盖其声明的一个 `element_name` 元素族；
 - 材料覆盖重叠或缺失时初始化失败；
 - SIMP 控制点、材料场、材料比例和元素写回一致；
+- `SIMPFieldMaterial.save()` 保存可恢复的控制点/BSP 状态和 density 直方图，加载后重新建立的
+  材料比例、罚因子和预览标量与保存前一致；
+- RAMP 与幂次插值保持 autograd；三种二阶位移罚项和 C3D4/C3D8/C3D10/C3D20
+  适配器的能量、力、切线通过有限差分与 V3 基准验证；
 - SIMP 专属方法只出现在 [`SIMPFieldMaterial`](06Materials.md#66-simpfieldmaterial)；
 - 材料对象保留 `part_name`、`element_name`，并在
   `reinitialize(iteration, assembly)` 中解析目标元素；
@@ -226,24 +424,40 @@ src/morphopt/optcore/
 - 每个 FEA component 的 `build_fea()` 一次性创建并保存对应的
   `_torchfea_<ConcreteName>`，`update_fea()` 更新工况值；
 - 多工况结果按 `step_index` 返回；
+- Controller 为每个工况创建独立 `FEAController`，其 `assembly` 来自 `FEAParams`，其
+  `solver` 来自 `Solver.build_solvers()`；
 - CPU/GPU 结果结构一致；
 - 收敛状态与未收敛状态均带正确 `step_index`；
 - `ObjectiveFunction` 返回标量目标；
+- `build_evaluation()` 建立逐工况目标、总目标和指标，所有 `get_*()` 只读取缓存；
 - `metrics` 作为展示量，与设计变量梯度计算分离；
 - Jacobian 引用错误时初始化失败。
+- `SensitivityAnalyzer` 在顺序与 spawn 求解结果上建立一致的隐式总灵敏度；
+- 几何、材料和逐工况 load 变量的伴随梯度分别通过中心差分校验；
+- 跨工况目标的总梯度包含各工况位移项、显式设计项和 Jacobian 响应项；
+- 同一 component 在不同工况的 `LoadValueBlock` 梯度只写入各自 `DesignKey`；
+- 刚度模板使用参考点 `_GC_list_indexStart` 的 6 个广义自由度，并拒绝 force、moment、
+  reference point 目标不一致的组合；
+- Solver 的顺序/debug 与 spawn 多进程路径返回相同工况顺序和结果 schema；
+- 同一任务组的后一工况复用前一工况收敛 `GC`，自由度维度变化时使用该工况自身初值；
+- 几何变量为空时复用上轮 GC，存在几何变量时采用默认初值，显式设置覆盖自动策略。
 
 ### 20.4 `DesignRegistry` 和 Updater
 
 - geometry、material 和联合变量 `offsets` 正确；
 - 注册调用顺序变化时，完整变量顺序仍按 geometry → material → load 固定；
 - 每个类别内部按目标名称字典序排列，同类别内的名称顺序保持稳定；
-- `get_values()` 和 `split()` 使用同一排序结果；
-- trial design delta 通过 `update_trial_values()` 和不带 `Assembly` 参数的
+- `get_design_delta()` 和 `compute_block_values()` 使用同一排序结果；
+- trial design delta 通过 `DesignRegistry.update_assembly()` 和不带 `Assembly` 参数的
   `update_assembly(design_delta)` 回写到正确的 `Part`、材料接口或 FEA component；
 - updater 梯度按变量块独立传递；
 - 每个可更新 owner 绑定一个 updater，每个变量块只属于该 updater；
 - 全部 updater 成功后统一提交变化；
 - 未绑定 updater 的 `owner` 保持固定并参与 FEA。
+- L-BFGS 二循环、Armijo 回退、closure 求值上限、正曲率历史筛选和各终止原因均有单元测试；
+- 几何与材料逐变量步长按相邻变化方向增长/衰减，并保持上下界；
+- 任一 owner 提交失败时，所有 owner 参数和当前 Assembly 恢复至提交前快照；
+- Boundary 和 Offset updater 的等式投影返回同形 Tensor，且镜面对称模板保留 autograd。
 
 ### 20.5 UI 和运行结果
 
@@ -253,17 +467,28 @@ src/morphopt/optcore/
 - UI 材料节点同时记录 `part_name` 和 `element_name`，生成代码时传入材料对象构造函数；
 - UI 支持为不同目标添加任意数量的 updater；同类 updater 可以同时存在，但一个目标实体只保留一个；
 - Python 源码能够重建类型、属性、名称、代码槽和初始 Tensor 状态；源码生成使用
-  `generate_python()` / `generate_source()` 直接返回文本，不把文本生成误作为运行时对象建立；
+  `generate_source()` 直接返回文本；
 - 构造阶段仅记录定义；INP 读取、`Assembly`、UI 和 worker pool 在初始化/运行阶段建立；
 - `initialize()` 后所有源数据、运行时缓存、FEA 对象和 updater 绑定完整可用；
 - 每次运行从任务文件建立一致的初始设计变量、材料场和 updater 状态；
 - 生成脚本可以独立 headless 运行。
+- 主窗口只包含一个工作台入口，定义、运行输出和结果观察在工作台模式内切换；
+- 动态补全覆盖全部 `fe_results[case_index]`、Tensor 方法、实例、参考点和集合名称；
+- 代码片段在当前/最近光标插入，参数弹窗生成节点位移、参与力、完整高斯点张量、末端六向
+  平移/转动、参考点刚度和镜面对称投影代码；
+- 控制台增量处理 ANSI 颜色、光标移动、清行和回车覆盖，原始日志与可读显示同时保留；
+- TorchFEA 模型摘要以树/表展示，选择集合时三维视图高亮，预览与变形图共享 Viewer 风格；
+- i18n 覆盖所有用户可见标签、帮助、校验和状态文本，生成 Python 标识符保持英文。
 
 ### 20.6 状态恢复和后处理
 
 - `Persistable.save()` 为每个 iteration 写入对应对象负责的状态和结果；
+- 每个工况导出 `model.npz`、`result.npz`、`jacobian.npz`、`deformation.stl`、
+  `preview.png` 和 `manifest.json`，模型哈希与结果哈希一致；
 - 任务文件初始化完成后，`Persistable.load()` 能恢复设计变量、optimizer memory 和历史指标；
 - `Controller.restart_optimization()` 按任务文件、`initialize()`、状态加载的顺序继续优化；
+- 标准任务达到 `worker_restart_interval` 后写入完整 checkpoint 并以受控状态退出，
+  `TaskRunner` 回收子进程并从同一结果目录续跑；求解失败以失败状态结束；
 - 后处理直接读取 `History` 和结果文件，优化器由 Controller 与 Updaters 管理；
 - 用户自定义曲面、约束和目标方法仍由任务 Python 文件提供。
 
@@ -286,15 +511,15 @@ src/morphopt/optcore/
 ### 阶段 3：FEA 和 `Params`
 
 按[FEA 组件](07Fea.md)顺序统一 `BaseFEAComponent`、具体 FEA component、
-`FEAParams`、`LoadStep`、`FEAParams.build_components()` 和 FEA 名称校验；按[几何系统](05Geometry.md)
-顺序实现 `ReferencePoint` 注册与 Assembly 构建，使用 `FEAParams.assign_components(assembly)`
+`FEAParams`、`LoadStep`、`LoadValueBlock`、`FEAParams.build_components()` 和 FEA 名称校验；按[几何系统](05Geometry.md)
+顺序实现 `ReferencePoint` 注册与 Assembly 构建，使用 `FEAParams.assign_components()`
 完成 FEA component 写入，再由 `Controller` 将 Assembly 交给 Solver。
 
 ### 阶段 4：`DesignRegistry` 和 Updater
 
 实现变量注册、切分和试探回写，将几何、材料和 FEA updater 统一为单 owner 绑定，
 并将几何更新细分为 `BoundaryPartUpdater` 与 `OffsetShellPartUpdater`，接通
-`ObjectiveFunction` 灵敏度。
+`SensitivityAnalyzer` 的隐式总灵敏度。
 
 ### 阶段 5：`Controller`、`Solver` 和 codesign
 
@@ -350,11 +575,14 @@ MaterialUpdater body_density
 几何、材料、载荷和更新策略通过名称组合成一个 FEA/优化问题。shapeopt、simp
 和 codesign 的差别只在于注册的对象组合。
 
-## 待确认
+## 22.1 已确定的外部边界
 
-当前只保留两个外部行为待确认：
-
-1. `TorchFEAPart` 第一版读取 TorchFEA 模型文件，模型目录通过任务定义传入；
-2. 材料覆盖强制要求每个 `Part` 的每个 `elems` 都恰好由一个材料对象覆盖。
-
-其余类属性、方法、调用顺序、名称规则和模块边界作为实现约束。
+1. `TorchFEAPart` 接收输出 `part_name`、模型目录、文件名、一个源 Part 名称和可选实例列表，
+   缓存源 Assembly，并把该源 Part 及其实例提取到统一几何装配流程。
+2. 每个可变形元素族由一个材料对象覆盖；刚体或辅助元素族通过
+   `requires_material=False` 元数据进入显式豁免清单。
+3. TorchFEA 模型导入保留 Part、Instance、Surface、NodeSet、ElementSet 和 ElementType，
+   并清理载荷、边界、接触、求解器和历史结果；这些分析定义由 MorphOpt FEA 层重新建立。
+4. STP 导入和 CAD 建模由 torchfea-ui 完成。MorphOpt UI 启动 torchfea-ui 时监控用户选择的
+   导出目录，刷新模型文件清单，并将导出模型建立为 `TorchFEAPart` 链接。
+5. `morphopt3` 只作为功能基线读取；V4 实现、测试和打包路径统一使用 `src/morphopt`。

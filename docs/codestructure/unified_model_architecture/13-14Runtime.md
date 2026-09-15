@@ -1,235 +1,589 @@
 # MorphOpt V4 Params、Controller 与主循环
 
-本文件定义 `Params`、`Controller` 和优化主循环。运行记录由独立的
+本文件定义问题参数流水线、单步结果和优化主循环。运行记录由独立的
 [`History`](15History.md) 文档定义。返回[总入口](../unified_model_architecture_plan.md)。
 
 ## 文档导航与输入/输出摘要
 
-本文定义问题级运行时对象和优化主循环：`Params` 持有 `GeometryParams`、`MaterialsParams`
-与 `FEAParams`，聚合三大参数处理器的定义并生成当前 `Assembly`。`Assembly` 是 `Params`
-保存的运行时模型，不是与三大 Params 并列的管理器；`FEAParams` 创建的 component 直接写入
-该 Assembly。`Controller` 将加工完成的 Assembly 交给 Solver，管理一次性初始化、单步迭代、
-循环调度、状态保存和重启。
+`Params` 依次用 Geometry、Materials 和 FEA 三个处理器加工一个 Assembly；`Controller`
+创建运行对象并调度迭代。一次性初始化负责对象关系和资源，`step()` 负责当前迭代的
+Assembly、求解、目标、灵敏度和更新，`_opt_loop()` 负责重复、记录、保存和停止。
 
 ### 目录
 
-- [13. Params](#13-params)
-- [14. Controller](#14-controller)
-  - [14.1 运行入口顺序](#141-运行入口顺序)
-- [`step()` 调用顺序](#step-调用顺序)
+- [13.1 `Params`](#131-params)
+- [13.2 Params Assembly 流水线](#132-params-assembly-流水线)
+- [14.1 `StepResult`](#141-stepresult)
+- [14.2 `Controller`](#142-controller)
+- [14.3 运行入口与生命周期](#143-运行入口与生命周期)
+- [14.4 `RuntimeEvent`](#144-runtimeevent)
+- [14.5 `TaskRunner`](#145-taskrunner)
+- [14.6 日志、历史加载与梯度检查工具](#146-日志历史加载与梯度检查工具)
 
 ### 输入与输出
 
 | 项目 | 内容 |
 |---|---|
-| 输入 | Geometry、Materials、FEA、Solver、ObjectiveFunction、DesignRegistry 和 Updaters 定义 |
-| 输出 | 当前 Assembly、StaticResult、优化迭代状态、目标/梯度/更新结果和结果路径 |
-| 主要读者 | Controller、Params、Solver、Updater、任务定义和运行结果监控实现者 |
-| 关联文档 | [总览与生命周期](01-04Overview.md)、[FEA 组件](07Fea.md)、[Solver](08Solver.md)、[目标函数](09Objective.md)、[Updater](11-12Updaters.md)、[History](15History.md) |
+| 输入 | Geometry、Materials、FEA、Solver、Objective、DesignRegistry、Updaters 和运行配置 |
+| 输出 | 当前 Assembly、逐工况结果、目标、灵敏度、设计更新、History 和任务状态 |
+| 主要读者 | Controller、Params、Solver、Updater、任务入口和运行监控实现者 |
+| 关联文档 | [总览](01-04Overview.md)、[Solver](08Solver.md)、[目标函数](09Objective.md)、[Updater](11-12Updaters.md)、[History](15History.md) |
 
 ### 对象层级
 
-| 层级 | 对象 | 关系与职责 |
-|---|---|---|
-| 问题级容器 | `Params` | 持有并调度三个子参数处理器，保存当前 Assembly |
-| 子参数处理器 | `GeometryParams` | 生成几何 Part、Instance、ReferencePoint 和 Assembly 基础结构 |
-| 子参数处理器 | `MaterialsParams` | 根据材料定义向当前 Assembly 写入材料对象 |
-| 子参数处理器 | `FEAParams` | 创建 FEA component 和 load step，并将 component 写入当前 Assembly |
-| 运行时模型 | `torchfea.Assembly` | 由 `Params.build_assembly()` 建立，承载几何、材料和 FEA component |
-| 求解器 | `Solver` | 接收 `Params.get_assembly()`，创建静力求解上下文并返回结果 |
+```text
+Controller
+├── Params
+│   ├── GeometryParams ──build──> Assembly
+│   ├── MaterialsParams ─assign─> Assembly
+│   └── FEAParams ───────assign─> Assembly / LoadStep
+├── FEAController[step] <─────── Assembly[step] + StaticImplicitSolver[step]
+├── Solver ─────────────────────> StaticImplicitSolver[step] / StaticResult[step]
+├── ObjectiveFunction ──────────> objective / metrics / result meshes
+├── SensitivityAnalyzer ────────> implicit total gradients
+├── DesignRegistry ─────────────> ordered design blocks
+├── Updaters ───────────────────> committed parameter updates
+└── History ────────────────────> HistoryRecord[iteration]
+```
 
-## 13. `Params`
+## 13.1 `Params`
+
+`Params` 实现 `Initializable`、`Visualizable` 和 `Persistable`。构造参数是三个处理器工厂；
+领域定义分别写在 `GeometryParams.define_parts()`、`MaterialsParams.define_materials()`、
+`FEAParams.define_components()` 和 `FEAParams.define_steps()` 中。
 
 ### 构造属性（`__init__()` 记录）
 
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| `_geometry` | `GeometryParams` | 几何定义 |
-| `_materials` | `MaterialsParams` | 材料定义 |
-| `_feamodel` | `FEAParams` | FEA 定义 |
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_geometry_factory` | Callable[[], `GeometryParams`] | - | 几何处理器工厂 |
+| `_materials_factory` | Callable[[], `MaterialsParams`] | - | 材料处理器工厂 |
+| `_fea_factory` | Callable[[], `FEAParams`] | - | FEA 处理器工厂 |
 
-### 运行时属性（`__init__()` 声明，`initialize()` 填充）
+### 运行时属性（`__init__()` 声明，生命周期方法填充）
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| `_initialized` | bool | False | 初始化状态 |
-| `_torchfea_Assembly` | `torchfea.Assembly` 或 None | None | 最近一次生成的 `Assembly` |
+| `_geometry` | `GeometryParams` 或 None | None | 已初始化几何处理器 |
+| `_materials` | `MaterialsParams` 或 None | None | 已初始化材料处理器 |
+| `_fea` | `FEAParams` 或 None | None | 已初始化 FEA 处理器 |
+| `_iteration` | int 或 None | None | 当前待构建迭代 |
+| `_torchfea_Assembly` | `torchfea.Assembly` 或 None | None | 最近建立的完整 Assembly |
+| `_initialized` | bool | False | 处理器初始化状态 |
 
 ### 属性接口（property）
 
 | property | 类型 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|
-| `geometry` | `GeometryParams` | 只读 | 内部维护 | 返回几何定义 |
-| `materials` | `MaterialsParams` | 只读 | 内部维护 | 返回材料定义 |
-| `feamodel` | `FEAParams` | 只读 | 内部维护 | 返回 FEA 定义 |
+| `geometry_factory` | Callable[[], `GeometryParams`] | 只读 | 内部维护 | 返回几何工厂 |
+| `materials_factory` | Callable[[], `MaterialsParams`] | 只读 | 内部维护 | 返回材料工厂 |
+| `fea_factory` | Callable[[], `FEAParams`] | 只读 | 内部维护 | 返回 FEA 工厂 |
 
 ### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `build_assembly(iteration)` | None | - | 汇总三个子 Params 已建立的对象，保存包含材料和 FEA component 的当前 `Assembly` |
-| `get_assembly()` | `torchfea.Assembly` | - | 读取已经创建的 `Assembly` |
-| `export_data(filepath)` | None | - | 将用户可读数据写入指定地址 |
-| `initialize()` | None | `Initializable` | 初始化三个子系统 |
-| `reinitialize(iteration)` | None | `Initializable` | 刷新当前 iteration |
-| `build_meshes()` | None | `Visualizable` | 建立并保存几何、材料和 FEA 预览 |
-| `get_meshes()` | list[object] | `Visualizable` | 读取已经创建的几何和材料预览 |
-| `save(foldpath, iteration)` | None | `Persistable` | 保存三个子系统的当前状态 |
-| `load(foldpath, iteration)` | None | `Persistable` | 加载指定 iteration 的三个子系统状态 |
+| `build_assembly()` | None | - | 按 Geometry → Materials → FEA 建立并保存当前完整 Assembly |
+| `get_geometry()` | `GeometryParams` | - | 读取已经初始化的几何处理器 |
+| `get_materials()` | `MaterialsParams` | - | 读取已经初始化的材料处理器 |
+| `get_fea()` | `FEAParams` | - | 读取已经初始化的 FEA 处理器 |
+| `get_assembly()` | `torchfea.Assembly` | - | 读取已经建立的完整 Assembly |
+| `export_problem_data(target_path)` | pathlib.Path | - | 将当前用户可读模型数据导出到目标地址并返回实际路径 |
+| `initialize()` | None | `Initializable` | 创建三个处理器，执行定义扩展点并完成静态校验 |
+| `reinitialize(iteration)` | None | `Initializable` | 保存当前迭代、刷新几何状态并清空上一轮 Assembly 引用 |
+| `build_meshes()` | None | `Visualizable` | 聚合建立几何、材料和 FEA 预览缓存 |
+| `get_meshes()` | tuple[object, ...] | `Visualizable` | 读取已经建立的聚合预览 |
+| `save(folder_path, iteration)` | None | `Persistable` | 调度三个处理器保存状态和 Assembly 元数据 |
+| `load(folder_path, iteration)` | None | `Persistable` | 恢复三个处理器状态并在下次构建时重建 Assembly |
 
 ### 内部辅助函数
 
 | 函数 | 返回值 | 作用 |
 |---|---|---|
-| 空 | - | 当前类未定义专用内部辅助函数 |
+| `_create_processors()` | None | 调用三个工厂并校验处理器类型 |
+| `_validate_assembly(assembly)` | None | 校验名称、目标、材料覆盖和 component 挂接完整性 |
 
-`build_assembly()` 的固定顺序：
+## 13.2 Params Assembly 流水线
 
-~~~text
-assembly = geometry.get_assembly()
+```text
+params.reinitialize(iteration)
+params.build_assembly()
+    → geometry.build_assembly()
+    → assembly = geometry.get_assembly()
+    → materials.reinitialize(iteration, assembly)
+    → materials.build_materials()
     → materials.assign_materials()
-    → feamodel.build_components()
-    → feamodel.assign_components(assembly)
-    → Params 保存 `_torchfea_Assembly`
-~~~
+    → fea.reinitialize(iteration, assembly)
+    → fea.build_components()
+    → fea.assign_components()
+    → validate assembly
+    → save params._torchfea_Assembly
+```
 
-三大 Params 由 `Params` 统一持有和调度。`Params.reinitialize(iteration)` 刷新
-`GeometryParams`、`MaterialsParams` 和 `FEAParams` 的当前迭代状态，并先由
-`GeometryParams.build_assembly()` 建立几何 Assembly；`build_assembly()`
-只负责按顺序取得几何 Assembly、写入材料、建立 FEA component 并将 component 写入同一个
-Assembly。`Params` 完成 Assembly 后，Controller 将 `Params.get_assembly()` 交给 Solver。
+三个处理器彼此独立，以同一个 Assembly 形成单向加工流水线。Geometry 建立拓扑、Part、
+Instance、集合和 ReferencePoint；Materials 解析 Part/element 目标并写入材料；FEA 解析
+Instance/Surface/NodeSet/ElementSet/ReferencePoint 并写入 component。各创建者缓存自己创建的
+TorchFEA 对象引用，后续 `update_assembly()` 直接更新这些引用。
 
-## 14. `Controller`
+## 14.1 `StepResult`
+
+`StepResult` 是冻结 `dataclass`，把 V3 `step()` 的位置元组改为具名结果。
 
 ### 构造属性（`__init__()` 记录）
 
-| 属性 | 类型 | 说明 |
-|---|---|---|
-| `_params` | `Params` | 模型参数 |
-| `_path_result` | str | 当前结果目录 |
-| `_optdevice` | str | 优化设备 |
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_iteration` | int | - | 本次迭代索引 |
+| `_objective` | torch.Tensor | - | 本轮已经评估的 detached 总目标 |
+| `_metrics_by_case` | tuple[tuple[float, ...], ...] | - | 逐工况展示指标 |
+| `_fe_results` | tuple[`StaticResult`, ...] | - | 按工况排序的求解结果 |
+| `_sensitivities` | Mapping[`DesignKey`, torch.Tensor] | - | 按设计变量块切分的灵敏度 |
+| `_changes` | Mapping[`DesignKey`, torch.Tensor] | - | updater 已提交的设计增量 |
+| `_phase_times` | Mapping[str, float] | - | 各阶段耗时 |
 
-### 运行时属性（`__init__()` 声明，`initialize()` 填充）
+### 运行时属性
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| `_solver` | `Solver` 或 None | None | 初始化后创建的 FEA 求解器 |
-| `_objfun` | `ObjectiveFunction` 或 None | None | 初始化后绑定的目标和灵敏度对象 |
-| `_registry` | `DesignRegistry` 或 None | None | 初始化后完成的变量注册表 |
-| `_updater` | `Updaters` 或 None | None | 初始化后完成的更新策略集合 |
-| `_history` | `History` 或 None | None | 当前运行的历史记录对象 |
-| `_pools` | object 或 None | None | 初始化后创建的 worker pool |
-| `_iteration` | int | 0 | 当前待执行的外层迭代编号 |
-| `_max_iterations` | int | - | 外层迭代上限 |
-| `_stop_requested` | bool | False | 外部停止请求状态 |
-| `_initialized` | bool | False | 初始化状态 |
+| 空 | - | - | 冻结结果仅保存构造状态 |
 
 ### 属性接口（property）
 
 | property | 类型 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|
-| `params` | `Params` | 只读 | 内部维护 | 返回模型参数 |
-| `path_result` | str | 只读 | 内部维护 | 返回当前结果目录 |
-| `optdevice` | str | 只读 | 内部维护 | 返回优化设备 |
+| `iteration` | int | 只读 | 内部维护 | 返回迭代索引 |
+| `objective` | torch.Tensor | 只读 | 内部维护 | 返回目标 Tensor |
+| `metrics_by_case` | tuple[tuple[float, ...], ...] | 只读 | 内部维护 | 返回逐工况指标 |
+| `fe_results` | tuple[`StaticResult`, ...] | 只读 | 内部维护 | 返回 FEA 结果 |
+| `sensitivities` | Mapping[`DesignKey`, torch.Tensor] | 只读 | 内部维护 | 返回灵敏度只读视图 |
+| `changes` | Mapping[`DesignKey`, torch.Tensor] | 只读 | 内部维护 | 返回变化只读视图 |
+| `phase_times` | Mapping[str, float] | 只读 | 内部维护 | 返回耗时只读视图 |
 
 ### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `start_optimization(main_filepath)` | None | - | 从 iteration 0 开始 |
-| `restart_optimization(path_result, target_iteration)` | None | - | 从指定 iteration 继续优化 |
-| `initialize_path(main_filepath)` | None | - | 创建当前运行的结果、日志、缓存、脚本和 worker 输出目录 |
-| `get_assembly()` | `torchfea.Assembly` | - | 委托 `Params.get_assembly()` 读取当前 Assembly |
-| `initialize()` | None | `Initializable` | 创建和初始化全部对象 |
-| `step()` | tuple[`torch.Tensor`, float, float, float, float, float] | - | 执行一个完整的外层优化迭代并返回目标值与阶段计时 |
-| `request_stop()` | None | - | 设置单次循环结束后的停止请求 |
-| `save(foldpath, iteration)` | None | `Persistable` | 调度 Params、DesignRegistry、Updaters 和 History 保存状态 |
-| `load(foldpath, iteration)` | None | `Persistable` | 在任务初始化后加载指定 iteration 的状态和历史 |
-
-`Controller.initialize()` 建立一次性运行时关系：完成静态定义、运行时对象、设计变量注册、
-求解器、History 和 worker pool 的连接；当前 iteration 的 Assembly、求解结果、目标、灵敏度
-和 History 记录由后续 `step()` 与 `_opt_loop()` 接续处理。固定顺序为：
-
-~~~text
-1. 绑定当前 Controller 到运行时上下文；
-2. Params.initialize()
-   2.1 GeometryParams.initialize()
-   2.2 MaterialsParams.initialize()
-   2.3 FEAParams.initialize()
-3. Solver.initialize(num_steps)
-4. Solver.build_solver()
-5. DesignRegistry.initialize(params)
-   5.1 收集 geometry、material 和 FEA design block；
-   5.2 finalize 并冻结变量顺序；
-   5.3 各 owner.build_design_delta()；
-   5.4 建立完整设计向量；
-6. 若 Solver 的初值开关为自动，则根据 DesignRegistry.has_geometry_variables() 设置 GC 复用策略；
-7. Updaters.initialize(params, registry)
-8. ObjectiveFunction.initialize()
-9. History.initialize()
-10. 创建 solver worker pool；
-11. 标记 Controller 已初始化。
-~~~
-
-`initialize()` 完成后，三个 Params、Solver、DesignRegistry、Updaters、ObjectiveFunction、
-History 和 worker pool 均已连接；当前 iteration 仍保持为待执行状态，`step()` 按该 iteration
-建立 Assembly 并产出求解结果，随后由 `_opt_loop()` 接续记录和调度。
-
-### 14.1 运行入口顺序
-
-两个运行入口都复用同一套初始化和循环协议；重启入口只在进入循环前增加状态恢复：
-
-~~~text
-start_optimization(main_filepath)
-    → initialize()
-    → initialize_path(main_filepath)
-    → _opt_loop()
-
-restart_optimization(path_result, target_iteration)
-    → 设置当前结果目录
-    → initialize()
-    → History.load(path_result/log, target_iteration)
-    → Params.load(path_result/log, target_iteration)
-    → Solver.load(path_result/log, target_iteration)
-    → Updaters.load(path_result/log, target_iteration)
-    → _opt_loop()
-~~~
-
-`initialize()` 执行一次；`initialize_path()` 负责结果目录、日志、缓存、脚本和 worker
-输出目录；`_opt_loop()` 反复调用 `step()`，并在单步完成后记录、保存、发送进度和判断
-停止条件。重启入口恢复已初始化对象的持久化状态，下一次 `step()` 按恢复后的 iteration
-建立当前 Assembly。
+| 空 | - | - | 结果通过 property 读取 |
 
 ### 内部辅助函数
 
 | 函数 | 返回值 | 作用 |
 |---|---|---|
-| `_opt_loop()` | None | 循环执行 `step()`、记录 History、保存状态、发送进度并处理停止条件 |
-| `_clear_cache()` | None | 清理 FEA 和 worker 缓存 |
-| `_record_step(result)` | None | 将单步目标、指标、计时和模型统计写入 History |
-| `_should_stop()` | bool | 根据最大迭代次数、收敛状态、停止请求和重启间隔判断循环状态 |
+| 空 | - | 冻结结果不定义内部辅助函数 |
 
-### `initialize()`、`step()` 与 `_opt_loop()` 的边界
+## 14.2 `Controller`
 
-| 方法 | 调用频率 | 建立/更新内容 | 循环控制、保存和历史 |
+### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `initialize()` | 每个进程一次 | 静态定义、运行时对象、设计变量注册、求解器和 worker pool | 交给 `_opt_loop()` 调度 |
-| `step()` | 每个外层 iteration 一次 | 当前 Params、Assembly、FEA 求解、目标、灵敏度和 updater 变化 | 返回单步结果 |
-| `_opt_loop()` | 每次运行一次 | 调度多个 `step()` | 记录 History、保存、发送 UI 进度、重启或停止 |
+| `_params_factory` | Callable[[], `Params`] | - | 问题参数工厂 |
+| `_solver_factory` | Callable[[], `Solver`] | - | 求解器工厂 |
+| `_objective_factory` | Callable[[], `ObjectiveFunction`] | - | 顶层目标工厂 |
+| `_sensitivity_factory` | Callable[[], `SensitivityAnalyzer`] | `SensitivityAnalyzer` | 隐式灵敏度分析器工厂 |
+| `_updaters_factory` | Callable[[], `Updaters`] | - | updater 集合工厂 |
+| `_result_root` | pathlib.Path | `Path(".results")` | 运行结果根目录 |
+| `_optimization_name` | str | `"untitled"` | 任务名称 |
+| `_device` | str | `"cpu"` | 优化计算设备 |
+| `_maximum_iterations` | int | `100` | 外层迭代上限 |
+| `_checkpoint_interval` | int | `1` | checkpoint 间隔 |
+| `_worker_restart_interval` | int | `20` | 标准模式子进程完成多少轮后请求监督器续跑；小于等于 0 表示运行到终止条件 |
+| `_debug` | bool | False | 调试运行模式 |
+| `_data_queue` | object 或 None | None | 向 UI/父进程发送结构化进度的队列 |
+| `_stop_event` | object 或 None | None | 任务运行器提供的跨进程停止事件 |
 
-### `step()` 调用顺序
+### 运行时属性（`__init__()` 声明，生命周期方法填充）
 
-~~~text
-1. 清理上一轮 FEA 临时对象；
-2. `Params.reinitialize(iteration)` 刷新 Geometry、Materials 和 FEA 的当前状态；
-3. `Params.build_assembly(iteration)` 按 Geometry → Materials → FEA 顺序写入当前 Assembly；
-4. `Solver.reinitialize(iteration)` 准备当前求解上下文；
-5. `ObjectiveFunction.reinitialize(iteration)` 绑定当前结果上下文；
-6. `Solver.solve(Params.get_assembly())` 求解全部 load steps；
-7. `ObjectiveFunction.compute_multistep_objective(...)` 计算当前结果目标和指标；
-8. `ObjectiveFunction.compute_sensitivity(registry)` 完成一次全局灵敏度分析并按 DesignKey 切分；
-9. `Updaters.reinitialize(iteration, local_gradients)` 将局部梯度送入对应 updater；
-10. `Updaters.update()` 计算各 updater 的试探变化并统一提交 owner；
-11. 返回当前目标值、阶段时间和 `Updaters.get_changes()` 所需的更新结果；
-12. `_opt_loop()` 接收返回值并负责 History、保存和停止判断。
-~~~
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| `_params` | `Params` 或 None | None | 已初始化问题参数 |
+| `_solver` | `Solver` 或 None | None | 已初始化求解器 |
+| `_objective` | `ObjectiveFunction` 或 None | None | 已初始化顶层目标 |
+| `_sensitivity` | `SensitivityAnalyzer` 或 None | None | 已绑定目标、Registry 和试探模型入口的灵敏度分析器 |
+| `_registry` | `DesignRegistry` 或 None | None | 已冻结设计变量注册表 |
+| `_updaters` | `Updaters` 或 None | None | 已绑定 updater 集合 |
+| `_history` | `History` 或 None | None | 当前运行历史 |
+| `_result_path` | pathlib.Path 或 None | None | 本次运行目录 |
+| `_worker_pool` | object 或 None | None | 求解 worker 池 |
+| `_torchfea_FEAController` | dict[int, `torchfea.FEAController`] | `{}` | 按工况保存由当前 Assembly 和 Solver 组合成的 TorchFEA 控制器 |
+| `_stop_requested` | bool | False | 循环停止请求 |
+| `_restart_requested` | bool | False | 当前子进程到达资源回收轮次的续跑请求 |
+| `_initialized` | bool | False | 一次性初始化状态 |
+
+### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `params_factory` | Callable[[], `Params`] | 只读 | 内部维护 | 返回参数工厂 |
+| `solver_factory` | Callable[[], `Solver`] | 只读 | 内部维护 | 返回求解器工厂 |
+| `objective_factory` | Callable[[], `ObjectiveFunction`] | 只读 | 内部维护 | 返回目标工厂 |
+| `sensitivity_factory` | Callable[[], `SensitivityAnalyzer`] | 只读 | 内部维护 | 返回灵敏度分析器工厂 |
+| `updaters_factory` | Callable[[], `Updaters`] | 只读 | 内部维护 | 返回 updater 工厂 |
+| `result_root` | pathlib.Path | 只读 | 内部维护 | 返回结果根目录 |
+| `optimization_name` | str | 只读 | 内部维护 | 返回任务名称 |
+| `device` | str | 只读 | 内部维护 | 返回优化设备 |
+| `maximum_iterations` | int | 只读 | 内部维护 | 返回外层迭代上限 |
+| `checkpoint_interval` | int | 只读 | 内部维护 | 返回 checkpoint 间隔 |
+| `worker_restart_interval` | int | 只读 | 内部维护 | 返回标准模式子进程资源回收间隔 |
+| `debug` | bool | 只读 | 内部维护 | 返回调试模式 |
+| `data_queue` | object 或 None | 只读 | 内部维护 | 返回进度队列 |
+| `stop_event` | object 或 None | 只读 | 内部维护 | 返回跨进程停止事件 |
+
+### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `start_optimization(main_file_path)` | None | - | 创建新运行目录、初始化对象并从 iteration 0 进入循环 |
+| `restart_optimization(result_path, target_iteration)` | None | - | 初始化对象、恢复 checkpoint 并从下一 iteration 进入循环 |
+| `initialize_path(main_file_path)` | None | - | 建立结果、日志、缓存、脚本和 worker 输出目录并复制任务源码 |
+| `step(iteration)` | `StepResult` | - | 完成一个外层迭代的模型、求解、目标、灵敏度和 updater 提交 |
+| `build_fea_controllers()` | None | - | 用逐工况 Assembly 创建 `FEAController`，再由 Solver 创建并挂接逐工况静力求解器 |
+| `get_fea_controllers()` | Mapping[int, `torchfea.FEAController`] | - | 读取已经建立的逐工况 TorchFEA 控制器 |
+| `get_params()` | `Params` | - | 读取已初始化参数对象 |
+| `get_assembly()` | `torchfea.Assembly` | - | 读取当前完整 Assembly |
+| `get_history()` | `History` | - | 读取当前 History |
+| `request_stop()` | None | - | 设置本次 step 完成后的停止请求 |
+| `change_device(device)` | None | - | 迁移已建立的 Tensor 状态并更新后续 worker 设备配置 |
+| `initialize()` | None | `Initializable` | 创建并连接 Params、Solver、Objective、SensitivityAnalyzer、Registry、Updaters、History 和 worker pool |
+| `save(folder_path, iteration)` | None | `Persistable` | 原子保存所有可持久化对象和 checkpoint manifest |
+| `load(folder_path, iteration)` | None | `Persistable` | 按 manifest 恢复对象状态并校验 schema 与任务签名 |
+
+### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| `_opt_loop(start_iteration)` | None | 调度 step、History、checkpoint、消息和停止判断 |
+| `_create_runtime_objects()` | None | 调用工厂建立各运行对象 |
+| `_create_worker_pool()` | None | 以 spawn 上下文建立 worker 池和设备分组 |
+| `_close_worker_pool()` | None | 正常完成、停止或异常时关闭并回收 worker |
+| `_clear_runtime_cache()` | None | 释放上一轮求解、CAD 和 GPU 临时缓存 |
+| `_update_trial_assemblies(design_delta)` | None | 调度共享状态更新、工况副本建立和逐工况载荷试探更新 |
+| `_export_iteration_results(step_result)` | pathlib.Path | 导出逐工况模型、结果、Jacobian、网格、预览和 iteration manifest，并返回本轮目录 |
+| `_build_history_record(step_result)` | `HistoryRecord` | 汇总 step 结果、网格规模、变形和结果路径 |
+| `_publish_progress(event, payload)` | None | 向队列发送版本化结构化事件 |
+| `_should_stop(iteration, step_result)` | bool | 判断迭代上限、收敛条件、本地停止标志和跨进程停止事件 |
+
+## 14.3 运行入口与生命周期
+
+`initialize()` 每次运行执行一次：
+
+```text
+1. 创建 Params、Solver、ObjectiveFunction、SensitivityAnalyzer、DesignRegistry、Updaters 和 History；
+2. Params.initialize() 完成三个处理器的定义与静态校验；
+3. DesignRegistry.initialize(params) 收集 owner、冻结排序并建立设计增量；
+4. `Solver.initialize(fea_params.get_num_load_steps())` 完成求解配置与任务分组；
+5. 自动初值策略读取 registry.has_geometry_variables()；
+6. ObjectiveFunction.initialize(fea_params)；
+7. SensitivityAnalyzer.initialize(objective, registry, fea_params, _update_trial_assemblies)；
+8. Updaters.initialize(params, registry)；
+9. History.initialize()；
+10. 创建 worker pool，标记初始化完成。
+```
+
+`step(iteration)` 每个外层迭代执行一次：
+
+```text
+1. _clear_runtime_cache()
+2. params.reinitialize(iteration)
+3. params.build_assembly()
+4. registry.reinitialize(iteration)
+5. registry.build_design_delta()
+6. _update_trial_assemblies(design_delta)
+   6.1 registry.update_assembly(design_delta, categories={"geometry", "material"})
+   6.2 fea.build_case_assemblies()
+   6.3 registry.update_assembly(design_delta, categories={"load"})
+7. case_assemblies = fea.get_case_assemblies()
+8. build_fea_controllers()
+   8.1 为每个 case_assembly 创建 FEAController 并设置 assembly
+   8.2 solver.build_solvers(fea_controllers) 并设置每个 FEAController.solver
+9. solver.reinitialize(iteration)
+10. solver.solve(fea_controllers, objective.jacobian_needed)
+11. results = solver.get_results()
+12. objective.reinitialize(iteration, fea_controllers, results)
+13. objective.build_evaluation()
+14. sensitivity.reinitialize(iteration, results)
+15. sensitivity.build_sensitivities()
+16. sensitivities = sensitivity.get_sensitivities()
+17. updaters.reinitialize(iteration, sensitivities)
+18. updaters.update()
+19. changes = updaters.get_changes()
+20. 返回 StepResult
+```
+
+步骤 6.1 先更新所有工况共享的几何与材料状态；步骤 6.2 基于该状态建立互不共享可变
+component 的 Assembly 副本；步骤 6.3 再把每个 `LoadValueBlock` 写入它绑定的工况副本。该顺序同时用于
+完整目标重算、梯度检查和诊断求解。
+
+`_opt_loop()` 对每个成功的 `StepResult` 先导出本轮制品，再建立并追加 `HistoryRecord`，按
+`checkpoint_interval` 保存 checkpoint，发布进度事件并判断停止条件。标准模式累计完成
+`worker_restart_interval` 轮后保存完整 checkpoint，发布 `restart_requested` 事件并正常退出
+当前子进程；`TaskRunner` 回收进程资源并从同一结果目录的最新完整 checkpoint 启动下一段。
+入口顺序为：
+
+```text
+start_optimization(main_file_path)
+    → initialize_path(main_file_path)
+    → initialize()
+    → _opt_loop(start_iteration=0)
+
+restart_optimization(result_path, target_iteration)
+    → 绑定已有结果目录
+    → initialize()
+    → load(result_path, target_iteration)
+    → _opt_loop(start_iteration=history.get_current_iteration() + 1)
+```
+
+运行入口用 `try/finally` 包围主循环，统一执行 `_close_worker_pool()`、日志 flush 和设备缓存
+释放。debug 模式在当前进程执行任务；标准模式使用 spawn 子进程并通过结构化队列报告
+`started`、`iteration_finished`、`restart_requested`、`warning`、`failed`、`stopped` 和
+`finished` 事件。
+
+## 14.4 `RuntimeEvent`
+
+`RuntimeEvent` 是冻结 `dataclass`，是 Controller、任务子进程和 UI 之间的版本化消息。
+
+### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_schema_version` | int | `1` | 事件结构版本 |
+| `_event_type` | Literal["started", "iteration_finished", "restart_requested", "warning", "failed", "stopped", "finished"] | - | 稳定事件类型 |
+| `_timestamp` | float | - | Unix 时间戳 |
+| `_run_id` | str | - | 当前运行唯一标识 |
+| `_payload` | Mapping[str, object] | `{}` | 与事件类型匹配的可序列化载荷 |
+
+### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 冻结消息仅保存构造状态 |
+
+### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `schema_version` | int | 只读 | 内部维护 | 返回事件结构版本 |
+| `event_type` | str | 只读 | 内部维护 | 返回事件类型 |
+| `timestamp` | float | 只读 | 内部维护 | 返回时间戳 |
+| `run_id` | str | 只读 | 内部维护 | 返回运行标识 |
+| `payload` | Mapping[str, object] | 只读 | 内部维护 | 返回载荷只读视图 |
+
+### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `to_dict()` | dict[str, object] | - | 生成可跨进程传输的事件数据 |
+| `from_dict(data)` | `RuntimeEvent` | - | 校验版本和字段后创建事件对象 |
+
+### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 消息转换由外部接口完整表达 |
+
+每种事件的载荷字段保持稳定：`started` 携带结果目录；`iteration_finished` 携带迭代、目标、
+指标和阶段耗时；`restart_requested` 携带最新完整 checkpoint 与结果目录；`warning` 携带代码与消息；`failed` 携带异常类型、消息和 traceback；
+`stopped` 携带最后完成迭代；`finished` 携带最终迭代和结果目录。
+
+## 14.5 `TaskRunner`
+
+`TaskRunner` 统一承接 V3 `TaskOptimization`、`start_optimization()` 和
+`debug_optimization()` 的任务装载、进程隔离、异常传播和退出码语义。UI 的
+`TaskLauncher` 负责启动 Python 任务；生成任务内部由 `TaskRunner` 建立并运行 Controller。
+
+### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_controller_factory` | Callable[[], `Controller`] | - | 当前任务的 Controller 工厂 |
+| `_main_file_path` | pathlib.Path | - | 任务定义源码路径 |
+| `_restart_path` | pathlib.Path 或 None | None | 继续计算使用的结果目录 |
+| `_target_iteration` | int 或 None | None | 继续计算加载的 checkpoint |
+| `_event_queue` | object 或 None | None | 可选结构化事件队列 |
+| `_worker_restart_interval` | int | `20` | 单个子进程连续执行的最大迭代数 |
+
+### 运行时属性（`__init__()` 声明，任务运行时填充）
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| `_process` | multiprocessing.Process 或 None | None | 标准模式任务子进程 |
+| `_exit_code` | int 或 None | None | 最近任务退出码 |
+| `_result_path` | pathlib.Path 或 None | None | Controller 建立的结果目录 |
+| `_stop_event` | multiprocessing.Event 或 None | None | 标准模式的跨进程停止信号 |
+| `_restart_count` | int | `0` | 当前任务已完成的受控子进程续跑次数 |
+
+### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `controller_factory` | Callable[[], `Controller`] | 只读 | 内部维护 | 返回 Controller 工厂 |
+| `main_file_path` | pathlib.Path | 只读 | 内部维护 | 返回任务文件路径 |
+| `restart_path` | pathlib.Path 或 None | 只读 | 内部维护 | 返回继续计算目录 |
+| `target_iteration` | int 或 None | 只读 | 内部维护 | 返回目标 checkpoint |
+| `worker_restart_interval` | int | 只读 | 内部维护 | 返回子进程资源回收间隔 |
+
+### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `start()` | None | - | 使用 spawn 上下文启动监督循环并保存当前任务进程引用 |
+| `run_debug()` | int | - | 在当前进程执行同一任务入口并返回退出码 |
+| `request_stop()` | None | - | 向运行中的 Controller 发送停止请求 |
+| `wait(timeout=None)` | int | - | 等待任务完成、回收进程并返回退出码 |
+| `get_result_path()` | pathlib.Path | - | 读取任务已经建立的结果目录 |
+
+### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| `_run_task()` | int | 创建 Controller，选择新建/重启入口并把终态转换为退出码 |
+| `_run_supervisor()` | int | 循环启动任务子进程；收到受控续跑状态后读取最新完整 checkpoint 并启动下一段 |
+| `_publish_failure(error)` | None | 发送结构化失败事件并写入 traceback 日志 |
+| `_configure_child_environment()` | None | 设置线程数、日志、设备可见性和工作目录 |
+
+退出码约定为：`0` 正常完成，`2` 用户停止，`1` 定义、初始化、求解或保存失败，`75` 表示
+完整 checkpoint 已写入且监督器应在同一结果目录续跑。监督器只对 `75` 执行自动续跑；
+失败状态保留错误并结束任务。debug 模式在当前进程连续运行并保留原始 traceback。
+
+## 14.6 日志、历史加载与梯度检查工具
+
+运行工具采用无状态函数，接口如下：
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| `configure_logging(log_path, level="INFO", console=True)` | None | 配置 UTF-8 文件 handler、可选终端 handler、统一时间/级别格式和重复 handler 去重 |
+| `load_controller(result_path, iteration=None)` | `Controller` | 读取 checkpoint manifest 中的任务文件与类路径，初始化对象并加载指定或最新完整迭代 |
+| `check_gradients(controller, options)` | `GradientCheckReport` | 对抽样设计变量比较 autograd 梯度与中心差分并返回结构化报告 |
+
+### 14.6.1 `GradientCheckOptions`
+
+`GradientCheckOptions` 是冻结 `dataclass`。
+
+#### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_sample_count` | int | `16` | 抽样变量数量 |
+| `_absolute_step` | float | `1e-6` | 中心差分绝对步长 |
+| `_relative_step` | float | `1e-4` | 按参数尺度追加的相对步长 |
+| `_absolute_tolerance` | float | `1e-5` | 绝对误差容差 |
+| `_relative_tolerance` | float | `1e-3` | 相对误差容差 |
+| `_seed` | int | `0` | 稳定抽样随机种子 |
+| `_design_keys` | tuple[`DesignKey`, ...] 或 None | None | 可选变量块过滤器 |
+| `_keep_artifacts` | bool | False | 是否保留每次试探求值的诊断文件 |
+
+#### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 冻结配置仅保存构造状态 |
+
+#### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `sample_count`、`seed` | int | 只读 | 内部维护 | 返回抽样规模和种子 |
+| `absolute_step`、`relative_step` | float | 只读 | 内部维护 | 返回差分步长配置 |
+| `absolute_tolerance`、`relative_tolerance` | float | 只读 | 内部维护 | 返回误差容差 |
+| `design_keys` | tuple[`DesignKey`, ...] 或 None | 只读 | 内部维护 | 返回变量块过滤器 |
+| `keep_artifacts` | bool | 只读 | 内部维护 | 返回诊断文件策略 |
+
+#### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 配置通过 property 读取 |
+
+#### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 冻结配置不定义辅助函数 |
+
+### 14.6.2 `GradientCheckEntry`
+
+`GradientCheckEntry` 是冻结 `dataclass`，记录一个抽样变量的校验结果。
+
+#### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_design_key` | `DesignKey` | - | 变量块标识 |
+| `_local_index` | int | - | 变量块内展平索引 |
+| `_analytic_gradient` | float | - | autograd 梯度 |
+| `_numerical_gradient` | float | - | 中心差分梯度 |
+| `_absolute_error` | float | - | 绝对误差 |
+| `_relative_error` | float | - | 对称相对误差 |
+| `_passed` | bool | - | 是否满足绝对或相对容差 |
+
+#### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 冻结记录仅保存构造状态 |
+
+#### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `design_key` | `DesignKey` | 只读 | 内部维护 | 返回变量块标识 |
+| `local_index` | int | 只读 | 内部维护 | 返回块内索引 |
+| `analytic_gradient`、`numerical_gradient` | float | 只读 | 内部维护 | 返回两种梯度 |
+| `absolute_error`、`relative_error` | float | 只读 | 内部维护 | 返回两种误差 |
+| `passed` | bool | 只读 | 内部维护 | 返回校验状态 |
+
+#### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 记录通过 property 读取 |
+
+#### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 冻结记录不定义辅助函数 |
+
+### 14.6.3 `GradientCheckReport`
+
+`GradientCheckReport` 是冻结 `dataclass`。
+
+#### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_entries` | tuple[`GradientCheckEntry`, ...] | - | 按 DesignKey 和局部索引排序的校验记录 |
+| `_passed` | bool | - | 全部记录的汇总状态 |
+| `_maximum_absolute_error` | float | - | 最大绝对误差 |
+| `_maximum_relative_error` | float | - | 最大相对误差 |
+
+#### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 冻结报告仅保存构造状态 |
+
+#### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `entries` | tuple[`GradientCheckEntry`, ...] | 只读 | 内部维护 | 返回逐变量记录 |
+| `passed` | bool | 只读 | 内部维护 | 返回汇总状态 |
+| `maximum_absolute_error` | float | 只读 | 内部维护 | 返回最大绝对误差 |
+| `maximum_relative_error` | float | 只读 | 内部维护 | 返回最大相对误差 |
+
+#### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 报告通过 property 读取 |
+
+#### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 冻结报告不定义辅助函数 |
+
+中心差分的每次目标求值都通过 `DesignRegistry` 的试探更新事务执行并恢复基准状态；相同
+抽样与种子产生稳定报告。`load_controller()` 只选择 manifest 标记为完整的 checkpoint，
+并验证任务签名、schema 版本、依赖版本和设计变量签名后恢复运行对象。

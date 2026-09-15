@@ -1,9 +1,9 @@
 # MorphOpt V4 编码规范
 
-> 状态：初版规范，作为后续实现和 review 的共同基线。
+> 状态：V4 实现与 review 的正式规范。
 >
 > 本文规定代码命名、模块边界、对象生命周期、Tensor 使用、UI 分层、测试和文档格式。
-> 未覆盖的细节按现有架构文档和项目约定补充。
+> 架构细节以 V4 主题文档为准；本文件统一约束代码、测试和文档写法。
 
 ## 文档导航与输入/输出摘要
 
@@ -18,7 +18,7 @@ Tensor/FEA 数据处理、UI 分层、错误日志、持久化、pytest 测试�
 - [6–9. Tensor、UI、日志、持久化和生成文件](#6-tensor-autograd-和-fea-数据)
 - [10. 测试规范](#10-测试规范)
 - [11–12. 文档与 Review](#11-文档与-review-规范)
-- [待补充](#待补充)
+- [13. 工具链和质量门禁](#13-工具链和质量门禁)
 
 ### 输入与输出
 
@@ -91,7 +91,7 @@ _torchfea_<ConcreteName>
 | `torchfea.loads.Pressure` | `_torchfea_Pressure` |
 | `torchfea.solver.static.StaticImplicitSolver` | `_torchfea_StaticImplicitSolver` |
 
-创建者在 `build_*()` 中写入该字段，读取者通过对应的 `get_*()` 获取；字段不提供 property。
+创建者在 `build_*()` 中写入该字段，读取者通过对应的 `get_*()` 获取。
 同一对象的业务名称仍通过 `name`、`part_name` 或 `component_name` 保存，业务名称不拼接到
 TorchFEA 后端字段名中。
 
@@ -109,7 +109,7 @@ TorchFEA 后端字段名中。
 | `update_` | 更新已经建立的运行时属性；对象使用自身缓存的 TorchFEA 引用和 Assembly | 无 | 有 | `update_assembly()`、`update_material_field()` |
 | `assign_` | 将已经建立的对象或配置挂接到已有目标 | 无 | 有 | `assign_material()`、`assign_materials()` |
 | `apply_` | 将待提交的变化正式写回已有定义或 owner | 无 | 有 | `apply_design_delta()`、updater 的 `_apply_equality_constraint()` |
-| `compute_` | 重新计算一个结果 | 有 | 无 | `compute_jacobian()`、`compute_objective()` |
+| `compute_` | 重新计算一个结果 | 有 | 无 | `compute_jacobian()`、`compute_case_objective()` |
 | `generate_` | 根据已有定义生成代码、文本或临时结果 | 有 | 无 | `generate_source()`、`generate_summary()` |
 | `create_` | 创建一次性的定义对象或编辑节点工厂结果 | 有 | 无 | `create_part(data)`、`create_updater(data)` |
 | `export_*` | 将已有定义或运行时结果写出为外部文件，方法名明确写出导出对象 | 有 | 无 | `export_surface(target_path)`、`export_model(file_path)` |
@@ -164,9 +164,9 @@ ui
 - 类型别名集中放在所属领域模块，名称采用大驼峰。
 - `dataclass` 用于稳定的数据记录；拥有生命周期、缓存或后端对象的领域类使用普通类。
 - property 只负责构造属性的稳定读取和受控写入；setter 执行类型、范围、名称和关联索引校验。
-- 运行时缓存、后端句柄、初始化标志和求解状态不提供 property 接口；通过明确的
+- 运行时缓存、后端句柄、初始化标志和求解状态通过明确的
   `build_*`、`get_*`、`export_*`、生命周期或持久化方法访问。
-- `get_*` 只读取已建立的结果，读取过程不包含构建、求解、网格生成或缓存刷新。
+- `get_*` 读取已经建立且保持原状态的缓存结果。
 - `build_*` 建立运行时属性并写入内部状态，方法返回 `None`；外部读取统一调用对应的
   `get_*`。`update_*` 修改已建立的运行时属性并写回内部状态。
 - `set_*` 修改已有构造属性或定义状态；`add_*` 向已有 `list`/`dict` 注册一个单项。
@@ -208,12 +208,11 @@ ui
 4. 外部接口方法（先本类独有方法，再按协议来源排序）；
 5. 内部辅助函数。
 
-某一区块没有内容时仍保留对应表格，并在表格中标注“空”。继承基类状态的子类在运行时
-属性表中明确写出继承范围，继承而不新增的 `property`、外部接口方法和内部辅助函数
-分别保留空表。
+某一区块内容为空时仍保留对应表格，并在表格中标注“空”。继承基类状态的子类在运行时
+属性表中明确写出继承范围，直接继承的 `property`、外部接口方法和内部辅助函数分别保留空表。
 
-子类表格只列本类新增成员和本类重写的成员；未重写的继承属性、外部接口方法和内部
-辅助函数不重复列出，空表保留并说明继承范围。表格中的“来源”列用于保留已列出的
+子类表格列本类新增成员和本类重写的成员；继承属性、外部接口方法和内部辅助函数以空表
+说明继承范围。表格中的“来源”列用于保留已列出的
 重写接口来源：本类新增成员填写 `-`，重写的父类接口填写定义该接口的最上层父类名称，
 协议直接定义的重写接口填写协议名称。
 
@@ -221,11 +220,12 @@ ui
 
 - `__init__()` 记录构造参数、注册关系和代码槽，建立 `None` 或空容器形式的运行时字段。
 - `initialize()` 读取源数据、解析名称、构造后端对象、建立映射和分配运行时资源。
-- `build_assembly()` 创建当前定义对应的新 `Assembly` 并写入内部状态；
-  `Solver.build_solver()` 创建 `StaticImplicitSolver`，`Solver.solve(assembly)` 处理当前 Assembly。
+- `build_assembly()` 创建当前定义对应的新 `Assembly` 并写入内部状态；Controller 创建逐工况
+  `FEAController`，`Solver.build_solvers()` 创建并挂接 `StaticImplicitSolver`，
+  `Solver.solve(fea_controllers)` 处理逐工况求解。
 - `reinitialize(iteration)` 刷新当前迭代缓存。
-- `update_assembly()` 对已有模型执行试探更新并保留计算图；方法只接收设计增量或当前值，
-  不重复接收 `Assembly`，对象使用自身缓存的 TorchFEA 后端引用。
+- `update_assembly()` 对已有模型执行试探更新并保留计算图；方法接收设计增量或当前值，
+  对象使用自身缓存的 TorchFEA 后端引用。
 - `apply_design_delta()` 将优化结果正式写回 owner。
 - `save()` 和 `load()` 只处理对象自身负责的持久化状态。
 
@@ -355,7 +355,7 @@ python -m pytest -m "not slow"
 | Materials | `tests/morphopt/optcore/modelparams/testMaterials.py` | 参数类、材料分配、SIMP |
 | FEA / Solver | `tests/morphopt/optcore/modelparams/testFeaparams.py`、`tests/morphopt/optcore/testSolver.py` | 组件、工况、求解结果 |
 | Objective | `tests/morphopt/optcore/testObjfunc.py` | 目标、指标、Jacobian、History |
-| DesignRegistry | `tests/morphopt/optcore/testDesignregistry.py` | offsets、梯度和试探回写 |
+| DesignRegistry | `tests/morphopt/optcore/testDesignRegistry.py` | offsets、梯度和试探回写 |
 | Updaters | `tests/morphopt/optcore/testUpdaters.py` | owner 绑定和联合更新 |
 | UI / Codegen | `tests/morphopt/ui/testProblemDefinition.py` | Node、编辑器、源码生成 |
 
@@ -393,7 +393,23 @@ python -m pytest -m "not slow"
 - [ ] 异常包含上下文，日志字段统一，资源释放路径完整。
 - [ ] 新增接口已有对应测试、文档和迁移记录。
 
-## 待补充
+## 13. 工具链和质量门禁
 
-以下内容留给后续项目约定：格式化工具和配置、静态检查工具、提交信息格式、分支策略、
-性能基准和发布流程。
+V4 使用一套可重复执行的质量门禁：
+
+| 工具 | 用途 | 最低通过条件 |
+|---|---|---|
+| `ruff format` | Python 格式化 | `ruff format --check src tests` 通过 |
+| `ruff check` | 导入、风格和常见错误检查 | `ruff check src tests` 通过 |
+| `mypy` | 公共接口和领域数据静态类型检查 | `mypy src/morphopt` 通过；外部无类型库集中配置边界豁免 |
+| `pytest` | 单元、集成和慢速测试 | `pytest -m "not slow"` 通过；发布前执行完整测试集 |
+| `coverage` | 测试覆盖统计 | 核心领域模块分支覆盖率不低于 90%，新增代码保持或提高覆盖率 |
+| `build` | wheel 与 sdist 构建 | 两种分发包均可构建并在干净环境导入 |
+
+`pyproject.toml` 集中保存工具配置。持续集成按“格式检查 → 静态检查 → 单元测试 →
+集成测试 → 构建验证”的顺序执行。CAD、GPU 和 Qt 测试使用显式 marker；具备对应运行环境
+的发布任务执行这些测试。
+
+提交信息使用祈使语气描述一个完整变更；接口变更在提交正文列出迁移范围。发布版本遵循
+语义化版本，V4 的公开接口在同一大版本内保持稳定。性能基准覆盖 Assembly 构建、单步求解、
+灵敏度计算和 updater 闭包；基准结果记录模型规模、设备和 dtype。

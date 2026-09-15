@@ -1,81 +1,145 @@
 # MorphOpt V4 History 运行记录
 
-本文件定义独立的 `History` 运行记录对象。`History` 记录优化迭代产生的目标值、指标、
-收敛信息、耗时和结果路径，由 `Controller` 持有并调度。返回[总入口](../unified_model_architecture_plan.md)。
+本文件定义独立的迭代记录、序列读取和断点持久化。返回[总入口](../unified_model_architecture_plan.md)。
 
 ## 文档导航与输入/输出摘要
 
-本文说明历史记录的字段、读取接口、持久化接口和与 Controller 的协作关系。
+`HistoryRecord` 保存一次完整迭代的不可变摘要；`History` 是这些记录的唯一事实来源。
+Controller 在 `step()` 成功完成后追加记录，Observer 和重启流程读取相同的数据。
 
 ### 目录
 
-- [15. History](#15-history)
-- [15.1 与 Controller 的协作](#151-与-controller-的协作)
+- [15.1 `HistoryRecord`](#151-historyrecord)
+- [15.2 `History`](#152-history)
+- [15.3 与 Controller 和 Observer 的协作](#153-与-controller-和-observer-的协作)
 
 ### 输入与输出
 
 | 项目 | 内容 |
 |---|---|
-| 输入 | iteration、目标值、metrics、收敛信息、耗时和结果路径 |
-| 输出 | 历史记录、指标序列、结果目录索引和持久化文件 |
+| 输入 | 目标、逐工况指标、阶段耗时、网格规模、最大变形、收敛状态、结果路径和 updater 摘要 |
+| 输出 | 有序迭代记录、命名序列、重启索引和版本化历史文件 |
 | 主要读者 | Controller、ObjectiveFunction、Observer、结果导出和测试实现者 |
-| 关联文档 | [Params、Controller 与主循环](13-14Runtime.md)、[目标函数](09Objective.md)、[UI 与 Codegen](16-17UiCodegen.md) |
+| 关联文档 | [运行时](13-14Runtime.md)、[目标函数](09Objective.md)、[UI 与 Codegen](16-17UiCodegen.md) |
 
-## 15. `History`
+## 15.1 `HistoryRecord`
 
-`History` 与 `Params`、`Controller`、`ObjectiveFunction` 保持并列关系。它只负责保存和
-读取运行记录，记录内容按照 iteration 顺序组织。
+`HistoryRecord` 是冻结 `dataclass`，记录一次已提交迭代。
 
 ### 构造属性（`__init__()` 记录）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `_result_root` | str 或 None | None | 结果文件的根目录配置 |
-| `_metric_names` | tuple[str, ...] | () | 需要记录的指标名称 |
+| `_iteration` | int | - | 从 0 开始的迭代索引 |
+| `_objective` | float | - | detached 标量目标 |
+| `_metrics_by_case` | tuple[tuple[float, ...], ...] | - | 按工况和指标名称排列的展示指标 |
+| `_phase_times` | Mapping[str, float] | - | geometry、FEA、objective、sensitivity、update、total 阶段耗时 |
+| `_num_elements` | int | - | 当前 Assembly 单元总数 |
+| `_num_nodes` | int | - | 当前 Assembly 节点总数 |
+| `_maximum_deformation` | float | - | 所有工况节点位移范数最大值 |
+| `_converged_by_case` | tuple[bool, ...] | - | 各工况收敛状态 |
+| `_result_path` | pathlib.Path | - | 本轮结果目录 |
+| `_updater_summary` | Mapping[str, Mapping[str, float]] | `{}` | 各 updater 步长、约束值和内层迭代摘要 |
 
-### 运行时属性（`__init__()` 声明，`initialize()` 填充）
+### 运行时属性
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| `_records` | list[dict[str, object]] | [] | 按 iteration 保存的历史记录 |
-| `_result_paths` | dict[int, str] | {} | iteration 到结果目录的映射 |
-| `_initialized` | bool | False | 初始化状态 |
+| 空 | - | - | 冻结记录仅保存构造状态 |
 
 ### 属性接口（property）
 
 | property | 类型 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|
-| `result_root` | str 或 None | 只读 | 内部维护 | 返回结果根目录 |
+| `iteration` | int | 只读 | 内部维护 | 返回迭代索引 |
+| `objective` | float | 只读 | 内部维护 | 返回目标值 |
+| `metrics_by_case` | tuple[tuple[float, ...], ...] | 只读 | 内部维护 | 返回逐工况指标 |
+| `phase_times` | Mapping[str, float] | 只读 | 内部维护 | 返回不可变耗时映射 |
+| `num_elements` | int | 只读 | 内部维护 | 返回单元数量 |
+| `num_nodes` | int | 只读 | 内部维护 | 返回节点数量 |
+| `maximum_deformation` | float | 只读 | 内部维护 | 返回最大变形 |
+| `converged_by_case` | tuple[bool, ...] | 只读 | 内部维护 | 返回工况收敛状态 |
+| `result_path` | pathlib.Path | 只读 | 内部维护 | 返回结果目录 |
+| `updater_summary` | Mapping[str, Mapping[str, float]] | 只读 | 内部维护 | 返回 updater 摘要的只读视图 |
+
+### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 记录通过 property 读取 |
+
+### 内部辅助函数
+
+| 函数 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 冻结记录不定义内部辅助函数 |
+
+## 15.2 `History`
+
+`History` 实现 `Initializable` 和 `Persistable`，并维护连续、唯一的迭代序列。
+
+### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_result_root` | pathlib.Path | - | 任务结果根目录 |
+| `_metric_names` | tuple[str, ...] | `()` | 指标名称及稳定顺序 |
+
+### 运行时属性（`__init__()` 声明，生命周期方法填充）
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| `_records` | list[`HistoryRecord`] | `[]` | 按 iteration 连续保存的记录 |
+| `_record_by_iteration` | dict[int, `HistoryRecord`] | `{}` | 由 `_records` 同步维护的查找索引 |
+| `_initialized` | bool | False | 目录和 schema 初始化状态 |
+
+### 属性接口（property）
+
+| property | 类型 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|
+| `result_root` | pathlib.Path | 只读 | 内部维护 | 返回结果根目录 |
 | `metric_names` | tuple[str, ...] | 只读 | 内部维护 | 返回指标名称 |
 
 ### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `add_record(iteration, metrics)` | None | - | 向历史记录列表添加一次 iteration 记录 |
-| `get_metrics()` | list[dict[str, object]] | - | 读取全部历史指标 |
-| `get_records()` | tuple[Mapping[str, object], ...] | - | 读取历史记录 |
-| `get_result_paths()` | Mapping[int, str] | - | 读取 iteration 到结果目录的映射 |
-| `save(foldpath, iteration)` | None | `Persistable` | 写入当前历史记录和结果索引 |
-| `load(foldpath, iteration)` | None | `Persistable` | 读取指定 iteration 的历史记录 |
+| `add_record(record)` | None | - | 校验迭代连续性后追加一条记录并更新索引 |
+| `get_records()` | tuple[`HistoryRecord`, ...] | - | 读取全部记录 |
+| `get_record(iteration)` | `HistoryRecord` | - | 按迭代索引读取一条记录 |
+| `get_current_iteration()` | int | - | 读取最近完成的迭代；空历史返回 `-1` |
+| `get_series(name, case_index=None)` | tuple[float, ...] | - | 读取 objective、time、规模、变形或命名 metric 序列 |
+| `get_result_paths()` | Mapping[int, pathlib.Path] | - | 读取由记录派生的 iteration 到结果目录映射 |
+| `initialize()` | None | `Initializable` | 建立结果目录并校验指标 schema |
+| `save(folder_path, iteration)` | None | `Persistable` | 原子写入版本化历史文件和当前 checkpoint 索引 |
+| `load(folder_path, iteration)` | None | `Persistable` | 读取截至指定 iteration 的记录并重建查找索引 |
 
 ### 内部辅助函数
 
 | 函数 | 返回值 | 作用 |
 |---|---|---|
-| 空 | - | 当前类未定义专用内部辅助函数 |
+| `_validate_record(record)` | None | 校验索引连续性、指标形状、有限值和结果路径 |
+| `_serialize_record(record)` | dict[str, object] | 转换为版本化持久化数据 |
+| `_deserialize_record(data)` | `HistoryRecord` | 校验 schema 并恢复冻结记录 |
+| `_write_atomic(path, data)` | None | 经同目录临时文件和替换完成原子写入 |
 
-## 15.1 与 `Controller` 的协作
+`get_series()` 支持以下稳定名称：`objective`、`total_time`、`num_elements`、`num_nodes`、
+`maximum_deformation`，以及 `metric_names` 中的名称。metric 序列必须提供 `case_index`；
+其余序列省略该参数。`_record_by_iteration` 是 `_records` 的派生索引，每次加载和追加都由
+同一个内部入口同步维护。
 
-单次外层迭代由 `Controller.step()` 完成目标计算、灵敏度计算和 updater 更新后，调用
-`History.add_record(iteration, metrics)` 写入本次记录。`Controller._opt_loop()` 负责调度
-连续的 `step()`，并在每次返回后调用保存和停止判断；`Controller.save()` 和
-`Controller.load()` 统一调度 `History` 的持久化接口。
+## 15.3 与 `Controller` 和 Observer 的协作
 
-~~~text
+```text
 Controller._opt_loop()
-    → Controller.step()
-    → ObjectiveFunction / Updaters 产生当前结果
-    → History.add_record(iteration, metrics)
-    → History.save(foldpath, iteration)
-~~~
+    → step_result = Controller.step()
+    → record = Controller._build_history_record(step_result)
+    → History.add_record(record)
+    → Controller.save(iteration)
+    → History.save(folder_path, iteration)
+```
+
+重启流程先加载 `History`，以 `get_current_iteration() + 1` 作为下一次迭代。Controller 在
+一次 `step()` 完整成功后提交记录；异常记录写入运行日志和任务状态文件。Observer 使用
+`get_records()` 绘制总览曲线，使用 `get_series()` 绘制单个指标，并通过
+`HistoryRecord.result_path` 定位每轮保存的模型与结果。

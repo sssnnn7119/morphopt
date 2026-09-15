@@ -17,8 +17,14 @@ FEAParams.define_steps() → FEAParams.initialize()
 Assembly 绑定阶段：
 FEAParams.reinitialize(iteration, assembly)
     → FEAParams.build_components()
-    → FEAParams.assign_components(assembly)
-    → FEAParams.update_fea(step_index)
+    → FEAParams.assign_components()
+
+逐工况求解阶段：
+FEAParams.build_case_assemblies()
+    → 为每个 LoadStep 建立独立 Assembly 和 component 运行副本
+    → 将 LoadValueBlock 绑定到所属工况副本
+    → LoadValueBlock.update_assembly(design_delta)
+    → FEAParams.get_case_assemblies()
 ```
 
 ### 目录
@@ -39,6 +45,7 @@ FEAParams.reinitialize(iteration, assembly)
   - [7.13 `Contact`](#713-contact)
   - [7.14 `SelfContact`](#714-selfcontact)
   - [7.15 `LoadStep`](#715-loadstep)
+  - [7.16 `LoadValueBlock`](#716-loadvalueblock)
 
 ### 输入与输出
 
@@ -56,9 +63,9 @@ FEAParams.reinitialize(iteration, assembly)
 `FEAParams` 是 FEA 定义集合的统一管理者和唯一入口。它维护 component 注册表和 load step
 顺序，接收当前 Assembly 后解析 component 目标并建立各 component 的 TorchFEA 对象。
 参考点由几何层定义并写入 Assembly，后续 FEA component 只解析其名称。组件运行对象由
-`FEAParams.assign_components(assembly)` 写入当前 Assembly，供后续处理器读取。
+`FEAParams.assign_components()` 写入当前 Assembly，供后续处理器读取。
 
-#### 定义属性（注册表由 `__init__()` 创建，`define_components()` / `define_steps()` 填充）
+#### 构造属性（注册表由 `__init__()` 创建，`define_components()` / `define_steps()` 填充）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -71,32 +78,36 @@ FEAParams.reinitialize(iteration, assembly)
 |---|---|---|---|
 | `_torchfea_Assembly` | torchfea.Assembly 或 None | None | 当前迭代绑定的 Assembly |
 | `_component_targets` | dict[str, object] | `{}` | component 到 Assembly 目标的索引 |
+| `_case_assemblies` | dict[int, torchfea.Assembly] | `{}` | 按工况隔离、保留设计计算图的求解 Assembly |
+| `_case_components` | dict[int, dict[str, BaseFEAComponent]] | `{}` | 各工况独立绑定的 component 运行副本 |
+| `_load_value_blocks` | dict[tuple[int, str], LoadValueBlock] | `{}` | 工况索引和 component 名称到载荷设计变量 owner 的索引 |
 | `_initialized` | bool | False | 初始化状态 |
 
 #### 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `fea_components` | Mapping[str, BaseFEAComponent] | 只读 | 内部维护 | component 注册表只读视图 |
-| `load_steps` | tuple[LoadStep, ...] | 只读 | 内部维护 | 工况定义只读视图 |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `fea_components` | Mapping[str, BaseFEAComponent] | - | 只读 | 内部维护 | component 注册表只读视图 |
+| `load_steps` | tuple[LoadStep, ...] | - | 只读 | 内部维护 | 工况定义只读视图 |
 
 #### 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `define_components()` | None | 定义扩展点 | 通过 `add_component()` 注册全部 component |
-| `define_steps()` | None | 定义扩展点 | 通过 `set_num_steps()` 和 `set_step_values()` 创建工况 |
-| `add_component(component, name)` | None | 注册接口 | 将 component 写入唯一名称注册表 |
-| `set_num_steps(num_steps)` | None | 定义接口 | 创建指定数量的 LoadStep |
-| `set_step_values(step_index, component_name, values)` | None | 定义接口 | 修改指定工况的 component 值 |
-| `assign_components(assembly)` | None | - | 将已经建立的 component 对象写入当前 Assembly |
+| `define_components()` | None | - | 通过 `add_component()` 注册全部 component |
+| `define_steps()` | None | - | 通过 `set_num_steps()` 和 `set_step_values()` 创建工况 |
+| `add_component(component, name)` | None | - | 将 component 写入唯一名称注册表 |
+| `set_num_steps(num_steps)` | None | - | 创建指定数量的 `LoadStep` |
+| `set_step_values(step_index, component_name, values)` | None | - | 修改指定工况的 component 值 |
+| `build_components()` | None | - | 使用已绑定的 Assembly 创建并保存基础 component 的 TorchFEA 对象 |
+| `assign_components()` | None | - | 将已经建立的 component 对象写入已绑定 Assembly |
+| `build_case_assemblies()` | None | - | 从已更新的基础 Assembly 为每个工况建立独立副本，创建并绑定工况 component，再写入已提交值 |
+| `get_case_assemblies()` | Mapping[int, `torchfea.Assembly`] | - | 读取已经建立的逐工况 Assembly |
+| `update_fea(step_index)` | None | - | 将指定工况的已提交值写入基础 Assembly，用于预览和单工况诊断 |
+| `get_design_owners()` | tuple[`LoadValueBlock`, ...] | - | 读取逐工况、逐组件建立的非空设计变量 owner |
+| `get_num_load_steps()` | int | - | 读取工况数量 |
 | `initialize()` | None | `Initializable` | 初始化注册表和工况定义 |
 | `reinitialize(iteration, assembly)` | None | `Initializable` | 解析当前 Assembly 并刷新所有 component |
-| `build_components()` | None | FEA protocol | 使用已绑定的 Assembly 创建并保存全部 component 的 TorchFEA 对象 |
-| `update_fea(step_index)` | None | FEA protocol | 将指定工况的值写入已有 FEA 对象 |
-| `get_num_load_steps()` | int | 读取接口 | 读取工况数量 |
-| `get_parameters()` | list[torch.Tensor] | `Updatable` | 读取所有工况参数 |
-| `set_parameters(parameters)` | None | `Updatable` | 写入所有工况参数 |
 | `build_meshes()` | None | `Visualizable` | 建立全部 component 预览 |
 | `get_meshes()` | list[object] | `Visualizable` | 读取全部 component 预览 |
 | `save(folder_path, iteration)` | None | `Persistable` | 保存 FEA 定义和运行状态 |
@@ -109,30 +120,38 @@ FEAParams.reinitialize(iteration, assembly)
 | `_sort_components()` | None | 按注册名称稳定排序 component |
 | `_sort_load_steps()` | None | 按 step index 稳定排序工况 |
 | `_resolve_component_targets(assembly)` | None | 建立 component 到 Assembly 目标的索引 |
-| `_build_components()` | None | 创建各 component 的 TorchFEA 对象并写入其 `_torchfea_<ConcreteName>` |
+| `_build_load_value_blocks()` | None | 为所有非零值 component 建立逐工况 `LoadValueBlock` |
+| `_copy_case_assembly(step_index)` | torchfea.Assembly | 重建工况 Assembly 容器和易变运行对象，并让几何/材料 Tensor 继续引用当前试探计算图 |
+| `_clone_case_components(step_index, assembly)` | dict[str, BaseFEAComponent] | 建立绑定到工况 Assembly 的独立 component 运行副本 |
 
 `FEAParams` 的注册顺序为：
 
 ```text
-define_components()
-    → add_component(component, name)
-define_steps()
-    → set_num_steps(num_steps)
-    → set_step_values(step_index, component_name, values)
 initialize()
+    → define_components()
+        → add_component(component, name)
+    → define_steps()
+        → set_num_steps(num_steps)
+        → set_step_values(step_index, component_name, values)
 reinitialize(iteration, assembly)
 build_components()
-update_fea(step_index)
+assign_components()
+build_case_assemblies()
+get_case_assemblies()
 ```
 
 模型导入由几何层 `INPPart` 或 `TorchFEAPart` 提供；`FEAParams` 从几何层接收已经建立的
 `Assembly`，并依据 Instance、Surface、NodeSet、ElementSet 和几何层 ReferencePoint 名称解析
-component 目标。
+component 目标。基础 Assembly 保存当前迭代的共享几何和材料状态；每个工况拥有独立
+Assembly 与 component 运行对象。`_copy_case_assembly()` 重建 Assembly、Instance 和各注册
+容器，几何节点与材料参数从当前试探 Tensor 重新挂接，从而保留全局设计增量的 autograd
+链。工况建立顺序固定为“复制 Assembly → 创建并挂接 component
+运行副本 → 写入工况已提交值 → 绑定对应 `LoadValueBlock`”。
 
 ### 7.2 `BaseFEAComponent`
 
 `BaseFEAComponent` 是所有载荷、边界、接触和耦合 component 的协议基类，显式继承
-`Visualizable`、`Initializable`、`Updatable` 和 `Persistable`。定义阶段保存名称、目标名称和初始值；
+`Visualizable`、`Initializable` 和 `Persistable`。定义阶段保存名称、目标名称和默认值；
 运行时阶段在 `_torchfea_Assembly` 中缓存当前 `Assembly`，解析目标并创建 TorchFEA 对象。具体 component 由
 `FEAParams.add_component()` 注册。
 
@@ -141,8 +160,9 @@ component 目标。
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `_name` | str | `""` | 注册后的稳定 component 名称 |
-| `_values` | list[float] | 按 `num_values` 创建 | 当前工况值向量；约束类的长度为零 |
+| `_default_values` | tuple[float, ...] | 按 `num_values` 创建 | 新建 LoadStep 时使用的默认值；零参数组件使用空元组 |
 | `_target_names` | tuple[str, ...] | `()` | Instance、Surface、Set 或 RP 名称 |
+| `_registry_kind` | Literal["load", "boundary", "constraint"] | 具体类型传给基类 | TorchFEA Assembly 中的挂接集合 |
 
 #### 2. 运行时属性
 
@@ -155,25 +175,24 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `name` | str | 只读 | 内部维护 | 返回注册名称 |
-| `values` | tuple[float, ...] | 只读 | 内部维护 | 返回当前值向量的只读副本 |
-| `num_values` | int | 只读 | 子类实现 | 返回当前 component 的值向量长度 |
-| `target_names` | tuple[str, ...] | 只读 | 内部维护 | 返回定义阶段记录的目标名称 |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `name` | str | - | 只读 | 内部维护 | 返回注册名称 |
+| `default_values` | tuple[float, ...] | - | 只读 | 读写 | 返回新建工况的默认值；setter 执行与 `set_default_values()` 相同的校验 |
+| `num_values` | int | - | 只读 | 子类重写 | 返回当前 component 的值向量长度 |
+| `target_names` | tuple[str, ...] | - | 只读 | 内部维护 | 返回定义阶段记录的目标名称 |
+| `registry_kind` | Literal["load", "boundary", "constraint"] | - | 只读 | 内部维护 | 返回当前对象使用的 Assembly 注册集合 |
 
 #### 4. 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
+| `build_fea()` | None | - | 创建具体 TorchFEA 对象并写入子类的 `_torchfea_<ConcreteName>` |
+| `get_fea_object()` | object | - | 读取已经创建的 TorchFEA 对象 |
+| `assign_fea()` | None | - | 按 `registry_kind` 将已建立对象挂接到当前 Assembly |
+| `update_fea(values)` | None | - | 将一个工况值写入已有 TorchFEA 对象 |
 | `initialize()` | None | `Initializable` | 建立 component 的静态定义状态 |
 | `reinitialize(iteration, assembly)` | None | `Initializable` | 解析当前 Assembly 的 Instance、Surface、Set 和 RP |
-| `build_fea()` | None | FEA protocol | 创建具体 TorchFEA 对象并写入子类的 `_torchfea_<ConcreteName>` |
-| `get_fea_object()` | object | FEA protocol | 读取已经创建的 TorchFEA 对象 |
-| `update_fea(values)` | None | FEA protocol | 更新已有对象的当前工况值 |
-| `get_parameters()` | torch.Tensor | `Updatable` | 读取当前值的 detached 副本 |
-| `set_parameters(parameters)` | None | `Updatable` | 写入已有值向量 |
-| `update_assembly(design_delta)` | None | `Updatable` | 使用自身的 TorchFEA component 和 Assembly 引用更新试探载荷或约束值 |
 | `build_meshes()` | None | `Visualizable` | 建立并保存 component 预览缓存 |
 | `get_meshes()` | list[object] | `Visualizable` | 读取已经建立的预览缓存 |
 | `save(folder_path, iteration)` | None | `Persistable` | 保存 component 定义和运行状态 |
@@ -185,11 +204,38 @@ component 目标。
 |---|---|---|
 | `_resolve_target(assembly)` | object | 根据目标名称解析 Assembly 对象 |
 | `_validate_values(values)` | None | 校验值向量长度和数值类型 |
+| `_create_fea_object()` | object | 由具体类型创建 TorchFEA 对象 |
+| `_apply_values(values)` | None | 由具体类型把已校验值写入缓存的 TorchFEA 对象 |
+| `_build_preview_meshes()` | list[object] | 由具体类型建立预览几何，供 `build_meshes()` 写入缓存 |
 
 `build_fea()` 只创建运行时对象并写入具体子类的 `_torchfea_<ConcreteName>`；
-`get_fea_object()` 读取已建立对象；
-`update_fea()` 更新当前工况。需要设计变量的 component 通过 `get_parameters()`、
-`set_parameters()` 和 `update_fea()` 接入设计变量流程。
+`get_fea_object()` 读取已建立对象，`assign_fea()` 完成 Assembly 挂接，
+`update_fea()` 更新当前工况。`FEAParams._clone_case_components()` 复制 component 的构造
+定义，并在工况 Assembly 上重新执行 `reinitialize()`、`build_fea()` 和 `assign_fea()`；
+每个工况拥有自己的可变 TorchFEA component。
+逐工况参数由 `LoadStep` 保存；`LoadValueBlock` 把一个
+`(component_name, case_index)` 组合适配为独立 `Updatable` owner。
+
+具体 component 的挂接位置和设计值长度固定如下：
+
+| component | `registry_kind` | TorchFEA 挂接接口 | `num_values` |
+|---|---|---|---:|
+| `Pressure` | `load` | `Assembly.add_load()` | 1 |
+| `BodyForce` | `load` | `Assembly.add_load()` | 3 |
+| `ConcentratedForce` | `load` | `Assembly.add_load()` | 3 |
+| `ConcentratedMoment` | `load` | `Assembly.add_load()` | 3 |
+| `BoundaryCondition` | `boundary` | `Assembly.add_boundary()` | 0 |
+| `BoundaryConditionRP` | `boundary` | `Assembly.add_boundary()` | 0 |
+| `Couple` | `constraint` | `Assembly.add_constraint()` | 0 |
+| `SpringToGround` | `load` | `Assembly.add_load()` | 5 |
+| `SpringBetweenRPs` | `load` | `Assembly.add_load()` | 2 |
+| `PenaltyDoF` | `load` | `Assembly.add_load()` | 2 |
+| `Contact` | `load` | `Assembly.add_load()` | 0 |
+| `SelfContact` | `load` | `Assembly.add_load()` | 0 |
+
+`assign_fea()` 根据 `registry_kind` 选择唯一注册接口，并以 component 的稳定 `name` 挂接。
+工况 component 副本沿用相同名称和注册位置。零值 component 在每个工况中仍会创建和挂接，
+从而让边界、耦合与接触关系在所有工况中完整存在。
 
 ### 7.3 `Pressure`
 
@@ -202,7 +248,7 @@ component 目标。
 | `_instance_name` | str | `"final_model"` | 目标 Instance 名称 |
 | `_surface_name` | str | 构造函数传入 | 目标 Surface set 名称 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -212,29 +258,31 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `instance_name` | str | 只读 | 构造阶段 | 返回目标 Instance |
-| `surface_name` | str | 只读 | 构造阶段 | 返回目标 Surface set |
-| `pressure` | float | 读写 | 读写 | 读取或修改压力标量 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `1` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
+| `surface_name` | str | - | 只读 | 内部维护 | 返回目标 Surface set |
+| `pressure` | float | - | 只读 | 读写 | 读取或修改 `_default_values[0]` |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `1` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，具体压力目标由 `_resolve_surface()` 和 `_build_pressure()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_surface(assembly)` | object | 解析目标 Surface set |
-| `_build_pressure(assembly)` | object | 创建 TorchFEA Pressure |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标 Surface set |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA Pressure |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新压力标量 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立曲面法向压力箭头 |
 
 ### 7.4 `BodyForce`
 
@@ -247,7 +295,7 @@ component 目标。
 | `_instance_name` | str | `"final_model"` | 目标 Instance 名称 |
 | `_element_name` | str | 构造函数传入 | 目标元素名称 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -257,29 +305,31 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `instance_name` | str | 只读 | 构造阶段 | 返回目标 Instance |
-| `element_name` | str | 只读 | 构造阶段 | 返回元素名称 |
-| `force_density` | list[float] | 读写 | 读写 | 三方向体力密度 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `3` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
+| `element_name` | str | - | 只读 | 内部维护 | 返回元素名称 |
+| `force_density` | tuple[float, float, float] | - | 只读 | 读写 | 读取或修改 `_default_values` 的三方向体力密度 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `3` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，具体体力目标由 `_resolve_elements()` 和 `_update_cached_values()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_elements(assembly)` | object | 解析目标元素集合 |
-| `_update_cached_values()` | None | 更新 TorchFEA 体力缓存 |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标元素集合 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA BodyForce |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新力密度及 TorchFEA 积分缓存 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 在元素集合中心建立体力箭头 |
 
 ### 7.5 `ConcentratedForce`
 
@@ -291,7 +341,7 @@ component 目标。
 |---|---|---|---|
 | `_reference_point_name` | str | 构造函数传入 | 目标参考点名称 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -301,29 +351,30 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name` | str | 只读 | 构造阶段 | 返回参考点名称 |
-| `force` | list[float] | 读写 | 读写 | 三方向集中力 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `3` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name` | str | - | 只读 | 内部维护 | 返回参考点名称 |
+| `force` | tuple[float, float, float] | - | 只读 | 读写 | 读取或修改 `_default_values` 的三方向集中力 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `3` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，具体集中力对象由 `_resolve_reference_point()` 和
-`_build_force_arrow()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_reference_point(assembly)` | object | 解析目标参考点 |
-| `_build_force_arrow()` | object | 创建集中力可视化对象 |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标参考点 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA ConcentratedForce |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新三方向集中力 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立参考点处的力箭头 |
 
 ### 7.6 `ConcentratedMoment`
 
@@ -335,7 +386,7 @@ component 目标。
 |---|---|---|---|
 | `_reference_point_name` | str | 构造函数传入 | 目标参考点名称 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -345,29 +396,30 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name` | str | 只读 | 构造阶段 | 返回参考点名称 |
-| `moment` | list[float] | 读写 | 读写 | 三方向集中力矩 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `3` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name` | str | - | 只读 | 内部维护 | 返回参考点名称 |
+| `moment` | tuple[float, float, float] | - | 只读 | 读写 | 读取或修改 `_default_values` 的三方向集中力矩 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `3` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，具体集中力矩对象由 `_resolve_reference_point()` 和
-`_build_moment_arrow()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_reference_point(assembly)` | object | 解析目标参考点 |
-| `_build_moment_arrow()` | object | 创建集中力矩可视化对象 |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标参考点 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA ConcentratedMoment |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新三方向集中力矩 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立参考点处的力矩圆弧与方向箭头 |
 
 ### 7.7 `BoundaryCondition`
 
@@ -391,29 +443,31 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `instance_name` | str | 只读 | 构造阶段 | 返回目标 Instance |
-| `node_set_name` | str | 只读 | 构造阶段 | 返回 Node set 名称 |
-| `index_dof` | tuple[int, ...] | 只读 | 构造阶段 | 返回约束自由度 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `0` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
+| `node_set_name` | str | - | 只读 | 内部维护 | 返回 Node set 名称 |
+| `index_dof` | tuple[int, ...] | - | 只读 | 内部维护 | 返回约束自由度 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `0` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和 DOF 校验由 `_resolve_node_set()` 和 `_validate_dof()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_node_set(assembly)` | object | 解析目标 Node set |
-| `_validate_dof()` | None | 校验自由度索引 |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标 Node set 并校验自由度 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA BoundaryCondition |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 校验零长度值向量并保持边界状态 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立受约束节点和自由度方向标记 |
 
 ### 7.8 `BoundaryConditionRP`
 
@@ -436,28 +490,30 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name` | str | 只读 | 构造阶段 | 返回参考点名称 |
-| `index_dof` | tuple[int, ...] | 只读 | 构造阶段 | 返回约束自由度 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `0` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name` | str | - | 只读 | 内部维护 | 返回参考点名称 |
+| `index_dof` | tuple[int, ...] | - | 只读 | 内部维护 | 返回约束自由度 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `0` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和 DOF 校验由 `_resolve_reference_point()` 和 `_validate_dof()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_reference_point(assembly)` | object | 解析目标参考点 |
-| `_validate_dof()` | None | 校验自由度索引 |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标参考点并校验自由度 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA BoundaryConditionRP |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 校验零长度值向量并保持边界状态 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立参考点和受约束自由度标记 |
 
 ### 7.9 `Couple`
 
@@ -481,29 +537,31 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name` | str | 只读 | 构造阶段 | 返回参考点名称 |
-| `instance_name` | str | 只读 | 构造阶段 | 返回目标 Instance |
-| `node_set_name` | str | 只读 | 构造阶段 | 返回 Node set 名称 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `0` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name` | str | - | 只读 | 内部维护 | 返回参考点名称 |
+| `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
+| `node_set_name` | str | - | 只读 | 内部维护 | 返回 Node set 名称 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `0` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和耦合对象建立由 `_resolve_targets()` 和 `_build_couple()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_targets(assembly)` | tuple[object, object] | 解析 RP 和 Node set |
-| `_build_couple(assembly)` | object | 创建 TorchFEA Couple |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | tuple[object, object] | `BaseFEAComponent` | 解析 RP 和 Node set |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA Couple |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 校验零长度值向量并保持耦合状态 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立 RP 到耦合节点集合的连线 |
 
 ### 7.10 `SpringToGround`
 
@@ -516,7 +574,7 @@ component 目标。
 |---|---|---|---|
 | `_reference_point_name` | str | 构造函数传入 | 目标参考点 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -526,31 +584,32 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name` | str | 只读 | 构造阶段 | 返回参考点名称 |
-| `k` | float | 读写 | 读写 | 弹簧刚度 |
-| `rest_length` | float | 读写 | 读写 | 弹簧原长 |
-| `point` | list[float] | 读写 | 读写 | 固定空间点坐标 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `5` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name` | str | - | 只读 | 内部维护 | 返回参考点名称 |
+| `k` | float | - | 只读 | 读写 | 读取或修改 `_default_values[0]` 的弹簧刚度 |
+| `rest_length` | float | - | 只读 | 读写 | 读取或修改 `_default_values[1]` 的弹簧原长 |
+| `point` | tuple[float, float, float] | - | 只读 | 读写 | 读取或修改 `_default_values[2:5]` 的固定点坐标 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `5` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和弹簧对象建立由 `_resolve_reference_point()` 和
-`_build_spring()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_reference_point(assembly)` | object | 解析参考点 |
-| `_build_spring(assembly)` | object | 创建 TorchFEA Spring_RP_Point |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析参考点 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA SpringToGround |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新刚度、原长和固定点 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立参考点到固定点的弹簧线 |
 
 ### 7.11 `SpringBetweenRPs`
 
@@ -563,7 +622,7 @@ component 目标。
 | `_reference_point_name_1` | str | 构造函数传入 | 第一个参考点 |
 | `_reference_point_name_2` | str | 构造函数传入 | 第二个参考点 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -573,31 +632,32 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `reference_point_name_1` | str | 只读 | 构造阶段 | 返回第一个参考点名称 |
-| `reference_point_name_2` | str | 只读 | 构造阶段 | 返回第二个参考点名称 |
-| `k` | float | 读写 | 读写 | 弹簧刚度 |
-| `rest_length` | float | 读写 | 读写 | 弹簧原长 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `2` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `reference_point_name_1` | str | - | 只读 | 内部维护 | 返回第一个参考点名称 |
+| `reference_point_name_2` | str | - | 只读 | 内部维护 | 返回第二个参考点名称 |
+| `k` | float | - | 只读 | 读写 | 读取或修改 `_default_values[0]` 的弹簧刚度 |
+| `rest_length` | float | - | 只读 | 读写 | 读取或修改 `_default_values[1]` 的弹簧原长 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `2` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和弹簧对象建立由 `_resolve_reference_points()` 和
-`_build_spring()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_reference_points(assembly)` | tuple[object, object] | 解析两个参考点 |
-| `_build_spring(assembly)` | object | 创建 TorchFEA Spring_RP_RP |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | tuple[object, object] | `BaseFEAComponent` | 解析两个参考点 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA SpringBetweenRPs |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新刚度和原长 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立两个参考点之间的弹簧线 |
 
 ### 7.12 `PenaltyDoF`
 
@@ -611,7 +671,7 @@ component 目标。
 | `_dof_index` | int | 构造函数传入 | 目标自由度索引 |
 | `_object_type` | str | `"auto"` | 对象类型解析模式 |
 
-注册名称和工况值向量沿用 `BaseFEAComponent` 的 `_name` 和 `_values`。
+注册名称和默认值沿用 `BaseFEAComponent` 的 `_name` 和 `_default_values`。
 
 #### 2. 运行时属性
 
@@ -621,31 +681,33 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `object_name` | str | 只读 | 构造阶段 | 返回目标对象名称 |
-| `dof_index` | int | 只读 | 构造阶段 | 返回目标自由度 |
-| `object_type` | str | 只读 | 构造阶段 | 返回对象类型 |
-| `k` | float | 读写 | 读写 | 惩罚系数 |
-| `target` | float | 读写 | 读写 | 目标值 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `2` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `object_name` | str | - | 只读 | 内部维护 | 返回目标对象名称 |
+| `dof_index` | int | - | 只读 | 内部维护 | 返回目标自由度 |
+| `object_type` | str | - | 只读 | 内部维护 | 返回对象类型 |
+| `k` | float | - | 只读 | 读写 | 读取或修改 `_default_values[0]` 的惩罚系数 |
+| `target` | float | - | 只读 | 读写 | 读取或修改 `_default_values[1]` 的目标值 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `2` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和惩罚对象建立由 `_resolve_object()` 和 `_build_penalty()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建、值写入和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_object(assembly)` | object | 根据对象名称和类型解析目标 |
-| `_build_penalty(assembly)` | object | 创建 TorchFEA Penalty_DoF |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 根据对象名称和类型解析目标自由度 |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA PenaltyDoF |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 更新惩罚系数和目标值 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立目标对象与自由度方向标记 |
 
 ### 7.13 `Contact`
 
@@ -673,30 +735,35 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `instance_name_1` / `instance_name_2` | str | 只读 | 构造阶段 | 两个 Instance 名称 |
-| `surface_name_1` / `surface_name_2` | str | 只读 | 构造阶段 | 两个 Surface 名称 |
-| `penalty_threshold_h` | float | 只读 | 构造阶段 | 接触阈值 |
-| `penalty_start_f` / `penalty_end_f` | float 或 None | 只读 | 构造阶段 | 惩罚起止参数 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `0` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `instance_name_1` | str | - | 只读 | 内部维护 | 返回第一个 Instance 名称 |
+| `surface_name_1` | str | - | 只读 | 内部维护 | 返回第一个 Surface 名称 |
+| `instance_name_2` | str | - | 只读 | 内部维护 | 返回第二个 Instance 名称 |
+| `surface_name_2` | str | - | 只读 | 内部维护 | 返回第二个 Surface 名称 |
+| `penalty_threshold_h` | float | - | 只读 | 内部维护 | 返回接触阈值 |
+| `penalty_start_f` | float 或 None | - | 只读 | 内部维护 | 返回惩罚起始系数 |
+| `penalty_end_f` | float 或 None | - | 只读 | 内部维护 | 返回惩罚终止系数 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `0` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和接触对象建立由 `_resolve_surfaces()` 和 `_build_contact()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_surfaces(assembly)` | tuple[object, object] | 解析两个 Surface |
-| `_build_contact(assembly)` | object | 创建 TorchFEA Contact |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | tuple[object, object] | `BaseFEAComponent` | 解析两个 Surface |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA Contact |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 校验零长度值向量并保持接触参数 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立两侧接触面的分组预览 |
 
 ### 7.14 `SelfContact`
 
@@ -720,30 +787,31 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `instance_name` | str | 只读 | 构造阶段 | 返回目标 Instance |
-| `surface_name` | str | 只读 | 构造阶段 | 返回目标 Surface |
-| `penalty_threshold_h` | float 或 None | 只读 | 构造阶段 | 接触阈值 |
-| `num_values` | int | 只读 | 内部维护 | 本类重写 `BaseFEAComponent.num_values`，固定为 `0` |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `instance_name` | str | - | 只读 | 内部维护 | 返回目标 Instance |
+| `surface_name` | str | - | 只读 | 内部维护 | 返回目标 Surface |
+| `penalty_threshold_h` | float 或 None | - | 只读 | 内部维护 | 返回接触阈值 |
+| `num_values` | int | `BaseFEAComponent` | 只读 | 内部维护 | 固定为 `0` |
 
 #### 4. 外部接口方法
 
 本类不重写 `initialize()`、`reinitialize()`、`build_fea()`、`get_fea_object()`、
 `update_fea()`、`build_meshes()`、`get_meshes()`、`save()` 或 `load()`；这些接口均继承
-`BaseFEAComponent`，目标解析和自接触对象建立由 `_resolve_surface()` 和
-`_build_self_contact()` 提供。
+`BaseFEAComponent`，具体目标解析、后端创建和预览由下列重写钩子提供。
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| 空 | - | `BaseFEAComponent` | 本类没有额外的外部接口方法 |
+| 空 | - | - | 本类没有新增或重写的外部接口方法 |
 
 #### 5. 内部辅助方法
 
-| 方法 | 返回值 | 作用 |
-|---|---|---|
-| `_resolve_surface(assembly)` | object | 解析目标 Surface |
-| `_build_self_contact(assembly)` | object | 创建 TorchFEA ContactSelf |
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `_resolve_target(assembly)` | object | `BaseFEAComponent` | 解析目标 Surface |
+| `_create_fea_object()` | object | `BaseFEAComponent` | 创建 TorchFEA SelfContact |
+| `_apply_values(values)` | None | `BaseFEAComponent` | 校验零长度值向量并保持接触参数 |
+| `_build_preview_meshes()` | list[object] | `BaseFEAComponent` | 建立自接触曲面的高亮预览 |
 
 ### 7.15 `LoadStep`
 
@@ -766,19 +834,19 @@ component 目标。
 
 #### 3. 属性接口（property）
 
-| property | 类型 | 读权限 | 写权限 | 说明 |
-|---|---|---|---|---|
-| `step_index` | int | 只读 | 内部维护 | 返回工况序号 |
-| `component_values` | Mapping[str, tuple[float, ...]] | 只读 | 内部维护 | 返回定义阶段值向量 |
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `step_index` | int | - | 只读 | 内部维护 | 返回工况序号 |
+| `component_values` | Mapping[str, tuple[float, ...]] | - | 只读 | 内部维护 | 返回定义阶段值向量 |
 
 #### 4. 外部接口方法
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
+| `set_component_values(name, values)` | None | - | 修改当前工况的已有值向量 |
+| `get_resolved_values()` | Mapping[str, torch.Tensor] | - | 读取已校验的 Tensor 值向量 |
 | `initialize(components)` | None | `Initializable` | 按注册表补齐并校验 component 值 |
-| `reinitialize(iteration, assembly)` | None | `Initializable` | 刷新当前工况运行缓存 |
-| `set_component_values(name, values)` | None | 定义接口 | 修改当前工况的已有值向量 |
-| `get_resolved_values()` | Mapping[str, torch.Tensor] | 运行时读取 | 读取已校验的 Tensor 值向量 |
+| `reinitialize(iteration)` | None | `Initializable` | 按当前定义刷新已解析值缓存 |
 | `save(folder_path, iteration)` | None | `Persistable` | 保存工况数据 |
 | `load(folder_path, iteration)` | None | `Persistable` | 加载工况数据 |
 
@@ -788,3 +856,61 @@ component 目标。
 |---|---|---|
 | `_validate_component_values(components)` | None | 校验名称集合和向量长度 |
 | `_build_resolved_values()` | None | 创建 Tensor 值缓存 |
+
+### 7.16 `LoadValueBlock`
+
+`LoadValueBlock` 将一个 `LoadStep` 中一个参数化 component 的值适配为 `Updatable` owner。
+`FEAParams.initialize()` 按 `(component_name, case_index)` 建立这些对象，零参数 component
+不建立变量块。
+
+#### 1. 构造属性
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_component_name` | str | - | FEA component 稳定名称 |
+| `_case_index` | int | - | 所属工况索引 |
+| `_component` | `BaseFEAComponent` | - | 负责更新 TorchFEA 对象的 component |
+| `_load_step` | `LoadStep` | - | 已提交参数的唯一事实来源 |
+
+#### 2. 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| `_design_delta` | torch.Tensor 或 None | None | 当前迭代零基准设计增量 |
+| `_case_component` | `BaseFEAComponent` 或 None | None | 绑定到所属工况 Assembly 的独立 component 运行副本 |
+| `_torchfea_Assembly` | torchfea.Assembly 或 None | None | 所属工况的独立 Assembly |
+
+#### 3. 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `component_name` | str | - | 只读 | 内部维护 | 返回 component 名称 |
+| `case_index` | int | - | 只读 | 内部维护 | 返回工况索引 |
+| `component` | `BaseFEAComponent` | - | 只读 | 内部维护 | 返回 component 定义对象 |
+| `load_step` | `LoadStep` | - | 只读 | 内部维护 | 返回工况定义 |
+
+#### 4. 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `update_case_binding(assembly, component)` | None | - | 绑定所属工况 Assembly 和已经挂接的独立 component 运行副本 |
+| `get_parameters()` | torch.Tensor | `Updatable` | 读取 LoadStep 中已提交值的 detached clone |
+| `set_parameters(parameters)` | None | `Updatable` | 写入 LoadStep 中已有 component 值 |
+| `build_design_delta()` | None | `Updatable` | 建立同形全零、`requires_grad=True` 的增量 |
+| `get_design_delta()` | torch.Tensor | `Updatable` | 读取已经建立的设计增量 |
+| `update_assembly(design_delta)` | None | `Updatable` | 将已提交值与试探增量之和写入当前工况独立 component |
+| `apply_design_delta(design_delta)` | None | `Updatable` | 将增量提交到 LoadStep 的 component 值 |
+
+#### 5. 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| `_validate_design_delta(design_delta)` | None | 校验形状、device、dtype 和有限性 |
+| `_get_trial_values(design_delta)` | torch.Tensor | 建立保留计算图的工况试探值 |
+
+同一 component 可在多个工况中拥有不同参数；每个 `LoadValueBlock` 因此对应一个独立的
+`DesignKey(category="load", target_name=component_name, case_index=case_index)`。
+`FEAParams.build_case_assemblies()` 先为每个工况建立 Assembly 与 component 运行副本，再调用
+`update_case_binding()`。随后 Registry 只把该 block 的局部设计增量写入所属工况对象。
+`LoadStep` 始终保存已提交值，试探值只存在于工况运行副本中，因此 line search、梯度检查和
+多个工况的灵敏度计算可以同时保留各自的 autograd 图。

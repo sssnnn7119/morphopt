@@ -48,11 +48,13 @@ Params.build_assembly()
     → FEAParams 创建并写入 component
     → torchfea.Assembly
         ↓
-    Solver.solve(Params.get_assembly())
+    Controller 建立逐工况 FEAController
+        ↓
+    Solver 挂接 StaticImplicitSolver 并求解
         ↓
     StaticResult[step]
         ↓
-    ObjectiveFunction + DesignRegistry
+    ObjectiveFunction + SensitivityAnalyzer + DesignRegistry
         ↓
     Updaters
         registered updater entries
@@ -61,15 +63,14 @@ Params.build_assembly()
 `Params` 是问题级参数容器，包含 `GeometryParams`、`MaterialsParams` 和 `FEAParams`。
 三大 Params 分别维护几何、材料和 FEA 定义，并由 `Params` 按固定顺序协调运行。
 `Params.build_assembly()` 建立当前 `torchfea.Assembly`：几何参数生成模型，材料参数写入材料，
-FEAParams 创建 component 并写入同一个 Assembly。`Controller` 将 Params 生成的 Assembly
-交给 Solver；Solver 专注于 `StaticImplicitSolver` 的定义与求解。
+FEAParams 创建 component 并写入同一个 Assembly。`Controller` 用逐工况 Assembly 创建
+`torchfea.FEAController`；Solver 为每个控制器创建并挂接 `StaticImplicitSolver`，随后执行求解。
 
-`Assembly` 不是与 `Params`、`GeometryParams`、`MaterialsParams` 或 `FEAParams` 并列的参数
-管理器，而是 `Params.build_assembly()` 生成并由 `Params._torchfea_Assembly` 保存的运行时模型。
-`FEAParams` 也不是独立的 Assembly 容器：它只维护 FEA component 和 load step 的定义，
-在当前 Assembly 建立后创建 component，并通过 `assign_components(assembly)` 将 component
-写入该 Assembly。最终对象关系固定为：`Params` 包含三大 Params，三大 Params 共同加工一个
-Assembly，Solver 接收加工完成的 Assembly。
+`Assembly` 是 `Params.build_assembly()` 生成并由 `Params._torchfea_Assembly` 保存的运行时
+模型。`FEAParams` 维护 FEA component 和 load step 定义，在当前 Assembly 建立后创建 component，
+并通过 `assign_components()` 将 component 写入该 Assembly。最终对象关系固定为：`Params`
+包含三大 Params，三大 Params 共同加工一个 Assembly，Controller 组合逐工况
+`FEAController`，Solver 为控制器提供静力求解器并执行求解。
 
 用户可以自由组合：
 
@@ -78,8 +79,8 @@ Assembly，Solver 接收加工完成的 Assembly。
 - `HomogeneousMaterial`、`SIMPFieldMaterial` 以及未来的材料场接口；
 - 多个几何 `Part` 和多个材料对象；
 - 固定 FEA、纯几何优化、纯材料优化和几何/材料联合优化；
-- 未来的载荷设计变量和 `FEAUpdater`。
-- 任务定义对象的构造函数只记录构造状态，运行时对象统一在 `initialize()` 阶段建立；
+- 载荷设计变量和 `FEAUpdater`；
+- 任务定义对象的构造函数只记录构造状态，运行时对象统一在 `initialize()` 阶段建立。
 
 shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统一使用通用架构。
 
@@ -128,7 +129,7 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 | 属性栏 | 存储形式 | 用途 | 对外访问规则 |
 |---|---|---|---|
 | 构造属性 | 私有实例属性，例如 `_part_name`、`_element_name`、`_element_names` | 保存用户在 `__init__()` 中给出的定义、注册关系和构造参数 | 通过同名 `property` 读取 |
-| 运行时状态 | 私有实例属性，例如 `_torchfea_Assembly`、`_mesh`、`_optimizer` | 保存 `initialize()`、`build_part()`、`build_assembly()` 和求解过程中产生的缓存 | 不提供 property；通过明确的 `build_*`、`get_*`、`export_*`、生命周期或持久化方法访问 |
+| 运行时状态 | 私有实例属性，例如 `_torchfea_Assembly`、`_mesh`、`_optimizer` | 保存 `initialize()`、`build_part()`、`build_assembly()` 和求解过程中产生的缓存 | 通过明确的 `build_*`、`get_*`、`export_*`、生命周期或持久化方法访问 |
 | 属性接口（property） | `@property` 及必要的 setter | 提供稳定的对外观察和受控修改入口 | 每一项明确标注读权限和写权限 |
 
 构造属性和运行时状态栏中的名称使用实际私有字段名，并以 `_` 开头。属性接口栏
@@ -145,7 +146,7 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 |---|---|
 | 只读 | property 提供读取，状态由对象内部维护 |
 | 读写 | 可以读取和赋值；setter 负责校验并维护相关索引 |
-| 内部维护 | 构造属性由对象生命周期或专用公开方法维护；运行时状态不提供 property |
+| 内部维护 | 构造属性由对象生命周期或专用公开方法维护；运行时状态通过显式方法访问 |
 
 方法表也分为两类：
 
@@ -160,8 +161,8 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 同一协议内保持协议定义的方法顺序。方法的可见性由名称确定。
 
 每个类的完整接口说明固定按“构造属性、运行时属性、属性接口、外部接口方法、内部辅助
-函数”的顺序组织。某一区块没有内容时保留对应表格并标注“空”；子类继承基类状态但
-没有新增字段或方法时，在对应表格中明确标注继承范围或“空”。
+函数”的顺序组织。某一区块内容为空时保留对应表格并标注“空”；子类直接继承基类状态时，
+在对应表格中明确标注继承范围或“空”。
 
 子类表格只列本类新增或重写的成员；未重写的继承属性、外部接口方法和内部辅助函数不
 重复列出，空表保留并说明继承范围。已列出的重写接口保留“来源”列：本类新增接口使用
@@ -181,7 +182,7 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 | `update_` | 更新已经建立的运行时属性 | 无 | 有 | `update_assembly()`、`update_material_field()` |
 | `assign_` | 将已经建立的对象挂接到已有目标 | 无 | 有 | `assign_material()`、`assign_materials()` |
 | `apply_` | 将待提交的变化正式写回已有定义或 owner | 无 | 有 | `apply_design_delta()`、updater 的 `_apply_equality_constraint()` |
-| `compute_` | 重新计算一个结果 | 有 | 无 | `compute_jacobian()`、`compute_objective()` |
+| `compute_` | 重新计算一个结果 | 有 | 无 | `compute_jacobian()`、`compute_case_objective()` |
 | `generate_` | 根据已有定义生成代码、文本或临时结果 | 有 | 无 | `generate_source()`、`generate_summary()` |
 | `create_` | 创建一次性的定义对象或编辑节点工厂结果 | 有 | 无 | `create_part(data)`、`create_updater(data)` |
 | `export_*` | 将已有定义或运行时结果写入外部文件，方法名明确写出导出对象 | 有 | 无 | `export_surface(target_path)`、`export_model(file_path)` |
@@ -198,7 +199,7 @@ shapeopt、simp 和 codesign 作为 UI 模板和示例组合，底层模型统�
 
 设计变量接口遵循同一规则：`build_design_delta()` 创建并保存新的设计增量，
 `get_design_delta()` 读取已有设计增量；`set_parameters()` 写入已有参数快照，
-`update_assembly(design_delta)` 更新已有 `Assembly`；调用者不再传入 `Assembly`，对象直接使用自身缓存的
+`update_assembly(design_delta)` 更新已有 `Assembly`；对象直接使用自身缓存的
 TorchFEA 引用。`apply_design_delta()` 正式提交更新。
 
 ### 2.4 事实来源
@@ -222,7 +223,7 @@ TorchFEA 引用。`apply_design_delta()` 正式提交更新。
 和 UI widget 的运行时环境建立前完成。
 
 运行时对象和派生缓存只在 `initialize()`、`build_part()`、`build_assembly()` 或
-`build_solver()` 中
+`build_solvers()` 中
 建立。运行时字段使用实例属性维护；例如 `_torchfea_Assembly`、
 `_torchfea_Part`、`_control_points`、元素映射、
 FEA 缓存和 worker pool 均属于运行时对象。
@@ -243,15 +244,16 @@ FEA 缓存和 worker pool 均属于运行时对象。
 | `__init__()` | 只写入构造状态、创建空的 dict/list、记录用户定义顺序和代码槽 | 轻量定义对象 |
 | `initialize()` | 读取源文件、解析跨对象名称、建立反向引用、创建缓存、分配运行时 Tensor、构造 TorchFEA 对象、完成完整校验 | 完整构造后的运行时对象 |
 | `build_part()` / `build_assembly()` | 根据当前设计变量生成本迭代 `Part`、`Assembly` 和材料状态并写入内部状态 | 方法返回 `None`；结果通过对应的 `get_*` 读取 |
-| `build_solver()` | 由 `Solver` 根据求解配置创建 `StaticImplicitSolver` | 方法返回 `None`；结果通过 `get_solver()` 读取 |
+| `build_solvers(fea_controllers)` | 由 `Solver` 根据求解配置为每个 `FEAController` 创建并挂接 `StaticImplicitSolver` | 方法返回 `None`；结果通过 `get_solver(case_index)` 读取 |
 | `reinitialize()` | 清理或刷新当前迭代缓存，准备下一次求解 | 下一迭代的运行时状态 |
 
 `Params` 持有的三大 Params 采用注册式定义入口。`GeometryParams.__init__()`、`MaterialsParams.__init__()`
-和 `FEAParams.__init__()` 创建空注册表并调用对应的 `define_*()` 扩展点；用户在
+和 `FEAParams.__init__()` 只创建空注册表；对象第一次执行 `initialize()` 时调用对应的
+`define_*()` 扩展点。用户在
 `define_parts()`、`define_reference_points()`、`define_materials()`、`define_components()` 和
 `define_steps()` 中通过 `add_part()`、`add_reference_point()`、`add_material()`、
 `add_component()` 和 `set_step_*()` 注册对象与配置。
-Params 构造函数保存注册表、用户定义顺序和运行配置。
+各 `define_*()` 方法中创建领域定义对象并注册，注册顺序成为用户定义顺序。
 
 单个 `Part`、材料接口和 FEA component 的参数在各自的 `define_*()` 注册方法调用中提供。
 运行时对象和后端模型统一延迟到生命周期阶段建立。以下工作统一延迟到
@@ -319,26 +321,29 @@ class TaskFEA(FEAParams):
 | 几何 | `InstanceDefinition` | 一个 `Instance` 的名称和变换 |
 | 几何 | `ReferencePoint` | Assembly 级参考点定义和 TorchFEA 参考点缓存 |
 | 几何 | `BoundaryPart` | 由边界曲面生成的 `Part` |
-| 几何 | `INPPart` | 从 INP 导入并缓存不可变 `Assembly` 的几何定义 |
-| 几何 | `TorchFEAPart` | 从 TorchFEA 模型导入并缓存不可变 `Assembly` 的几何定义 |
+| 几何 | `INPPart` | 从 INP 源 Assembly 提取一个 Part 的几何定义 |
+| 几何 | `TorchFEAPart` | 从 TorchFEA 源 Assembly 提取一个 Part 的几何定义 |
 | 几何 | `OffsetShellPart` | 由边界 `Part` 生成偏置壳的 `Part` |
 | 几何 | `BaseSurfaceInterface` / 具体曲面类 | 一个可注册到 `Part` 的曲面定义 |
 | 材料 | `MaterialsParams` | Assembly 材料解析、分配集合和覆盖校验 |
-| 材料 | `BaseMaterialInterface` | 材料名称、目标 `Part`、元素类型和材料接口 |
 | 材料 | `MaterialModels` | 本构参数类命名空间 |
+| 材料 | `MaterialParameters` | 一个 TorchFEA 本构的类型化参数记录 |
 | 材料 | `BaseMaterialInterface` | 材料接口公共生命周期 |
 | 材料 | `HomogeneousMaterial` | 固定均匀材料接口 |
 | 材料 | `SIMPFieldMaterial` | SIMP/BSP 材料场接口 |
 | FEA | `FEAParams` | Assembly 目标解析、FEA component 和 load step |
 | FEA | `LoadStep` | 工况值和 step 顺序 |
+| FEA | `LoadValueBlock` | 一个 component 在一个工况中的可更新参数块 |
 | FEA | `BaseFEAComponent` | 载荷/边界/接触公共生命周期 |
-| 求解 | `Solver` | 多工况、多进程 FEA 求解 |
-| 目标 | `ObjectiveFunction` | 顶层目标、指标、Jacobian 和全局灵敏度 |
+| 求解 | `Solver` | 逐工况静力求解器创建、挂接与多进程 FEA 求解 |
+| 目标 | `ObjectiveFunction` | 顶层目标、指标、Jacobian 请求和结果网格 |
+| 灵敏度 | `SensitivityAnalyzer` | 多工况静力平衡的隐式/伴随总导数 |
 | 历史 | `History` | 迭代目标、指标和时间记录 |
 | 变量 | `DesignKey` | 一个变量块的稳定名称 |
 | 变量 | `DesignBlock` | 变量块的范围和拥有者 |
 | 变量 | `DesignRegistry` | 变量注册、切分、Assembly 试探更新和正式提交 |
 | 更新 | `BaseUpdater` | 一块变量的更新策略 |
+| 更新 | `BaseOptimizer` / `LBFGSOptimizer` | updater 局部优化和回退线搜索 |
 | 更新 | `BaseGeometryUpdater` | 几何 updater 的公共生命周期 |
 | 更新 | `BoundaryPartUpdater` | 一个 `BoundaryPart` 的更新策略 |
 | 更新 | `OffsetShellPartUpdater` | 一个 `OffsetShellPart` 的更新策略 |
@@ -368,8 +373,8 @@ class TaskFEA(FEAParams):
 |---|---|---|
 | `Visualizable` | `build_meshes()`、`get_meshes()` | `BasePartDefinition`、`BaseMaterialInterface`、`BaseFEAComponent` 和各具体曲面 |
 | `Initializable` | `initialize()`、`reinitialize(iteration, **context)` | 所有需要建立或刷新运行时状态的定义基类和管理类 |
-| `Persistable` | `save(foldpath, iteration)`、`load(foldpath, iteration)` | 需要保存迭代状态或读取历史数据的对象 |
-| `Updatable` | `get_parameters()`、`set_parameters()`、`build_design_delta()`、`get_design_delta()`、`update_assembly()`、`apply_design_delta()` | 有设计变量的几何集合、材料集合、具体材料或 FEA component |
+| `Persistable` | `save(folder_path, iteration)`、`load(folder_path, iteration)` | 需要保存迭代状态或读取历史数据的对象 |
+| `Updatable` | `get_parameters()`、`set_parameters()`、`build_design_delta()`、`get_design_delta()`、`update_assembly()`、`apply_design_delta()` | 有设计变量的具体 Part、材料场和 `LoadValueBlock` |
 
 三个领域基类采用显式继承：
 
@@ -377,23 +382,21 @@ class TaskFEA(FEAParams):
 |---|---|---|
 | `BasePartDefinition` | `Visualizable`、`Initializable`、`Persistable` | 记录生成型 Part 定义、生成 TorchFEA Part、提供几何预览 |
 | `BaseMaterialInterface` | `Visualizable`、`Initializable`、`Persistable` | 记录材料定义、写入元素材料、提供材料预览 |
-| `BaseFEAComponent` | `Visualizable`、`Initializable`、`Updatable`、`Persistable` | 记录载荷定义、创建 FEA 对象、提供载荷预览并支持自身对象更新 |
+| `BaseFEAComponent` | `Visualizable`、`Initializable`、`Persistable` | 记录载荷定义、创建 FEA 对象并提供载荷预览 |
 
-`INPPart` 与 `TorchFEAPart` 采用固定导入模型生命周期：它们复用几何定义的名称、元素族和
-可视化约定，在 `build_assembly()` 中直接建立并缓存不可变 `Assembly`，后续由
-`get_assembly()` 提供读取。`BoundaryPart` 和 `OffsetShellPart` 继续使用
-`build_part()`/`get_part()` 建立和读取生成型 `Part`。
+`INPPart` 与 `TorchFEAPart` 采用固定导入模型生命周期：它们缓存只读源 Assembly，从中提取
+一个指定 Part 及其选定实例，并通过 `build_part()` / `get_part()` 参加统一装配。
+`BoundaryPart` 和 `OffsetShellPart` 使用相同接口建立和读取生成型 Part。多个导入 Part 由
+多个定义对象表示，可以共享同一源模型路径和读取缓存。
 
-三个参数集合和总参数对象也显式继承 `Visualizable`、`Initializable`、`Persistable`，负责记录定义
-状态并聚合下属对象的预览结果。`GeometryParams` 和 `MaterialsParams` 另外继承
-`Updatable`，分别提供几何和材料设计增量的集合级委托接口；`Params` 和 `FEAParams` 采用固定参数
-集合协议：
+三个参数集合和总参数对象显式继承 `Visualizable`、`Initializable`、`Persistable`，负责记录定义
+状态、聚合预览并向 Registry 提供具体设计 owner：
 
 | 类 | 继承的协议 |
 |---|---|
 | `Params` | `Visualizable`、`Initializable`、`Persistable` |
-| `GeometryParams` | `Visualizable`、`Initializable`、`Persistable`、`Updatable` |
-| `MaterialsParams` | `Visualizable`、`Initializable`、`Persistable`、`Updatable` |
+| `GeometryParams` | `Visualizable`、`Initializable`、`Persistable` |
+| `MaterialsParams` | `Visualizable`、`Initializable`、`Persistable` |
 | `FEAParams` | `Visualizable`、`Initializable`、`Persistable` |
 
 其他具有完整运行时建立阶段的管理类也显式继承 `Initializable`：
@@ -403,10 +406,11 @@ class TaskFEA(FEAParams):
 | `Controller` | `Initializable`、`Persistable` |
 | `Solver` | `Initializable`、`Persistable` |
 | `ObjectiveFunction` | `Initializable`、`Persistable` |
+| `SensitivityAnalyzer` | `Initializable` |
 | `DesignRegistry` | `Initializable`、`Persistable` |
 | `BaseUpdater` | `Initializable`、`Persistable` |
 | `Updaters` | `Initializable`、`Persistable` |
-| `History` | `Persistable` |
+| `History` | `Initializable`、`Persistable` |
 
 #### 可更新对象
 
@@ -416,20 +420,19 @@ class TaskFEA(FEAParams):
 
 | 类 | 是否继承 `Updatable` | 状态 |
 |---|---|---|
-| `GeometryParams` | 是 | 几何集合级增量委托 |
-| `MaterialsParams` | 是 | 材料集合级增量委托 |
+| `GeometryParams` | 否 | 通过 `get_design_owners()` 提供具体 Part |
+| `MaterialsParams` | 否 | 通过 `get_design_owners()` 提供具体材料场 |
 | `BoundaryPart` | 是 | 几何变量可更新 |
 | `OffsetShellPart` | 是 | 偏置几何可更新 |
 | `SIMPFieldMaterial` | 是 | 材料场可更新 |
-| 可设计的具体 FEA component | 是 | 载荷或边界参数可更新 |
+| `LoadValueBlock` | 是 | 一个 component 的一个工况参数可更新 |
 | `INPPart` | 否 | 固定导入几何 |
 | `TorchFEAPart` | 否 | 固定导入几何 |
 | `HomogeneousMaterial` | 否 | 固定均匀材料 |
-| 固定载荷组件 | 否 | 固定载荷、边界或接触 |
+| `BaseFEAComponent` | 否 | component 的工况参数由 `LoadStep` 和 `LoadValueBlock` 管理 |
 
-`GeometryParams` 的 `Updatable` 实现是集合级委托接口：可以把整个几何集合视为一个
-设计块，也可以由 `DesignRegistry` 直接注册各个可更新 `Part`；集合方法按 `part_name`
-分发调用，保持子对象的单次注册。
+`GeometryParams.get_design_owners()`、`MaterialsParams.get_design_owners()` 和
+`FEAParams.get_design_owners()` 为 Registry 提供具体 owner；Registry 按 owner 建立独立变量块。
 
 `Updatable` 定义两组方法：
 
@@ -441,9 +444,6 @@ class TaskFEA(FEAParams):
 | `get_design_delta()` | - | 读取已经由 `build_design_delta()` 建立的设计增量 Tensor；不重新分配或重计算 |
 | `update_assembly(design_delta)` | - | 使用对象自身缓存的 TorchFEA 引用，将设计增量映射到已有 `Assembly`，保留计算图并用于试探计算 |
 | `apply_design_delta(design_delta)` | - | 将优化器输出的设计增量映射并正式写回 owner 状态 |
-
-`GeometryParams` 和 `MaterialsParams` 在集合级接口上增加目标名称参数，用于定位具体 owner；
-其余参数和返回值遵循 `Updatable` 的协议语义，实际设计变量仍由对应的几何或材料接口持有。
 
 固定定义对象保持稳定状态并参与模型构建与求解；具有设计变量的对象实现 `Updatable`
 并注册到 `DesignRegistry`。对象的可更新能力由类型接口表达，运行时缓存由初始化和
@@ -480,19 +480,24 @@ MaterialsParams
 FEAParams
     → reinitialize(iteration, assembly)
     → BaseFEAComponent.build_fea()
-    → assign_components(assembly)
-    → FEAParams.update_fea(step_index)
+    → assign_components()
+    → build_case_assemblies()
+    → DesignRegistry.update_assembly(delta, {"load"})
+    → get_case_assemblies()
 
 Solver
-    → build_solver()
-    → solve(Params.get_assembly())
+    → build_solvers(fea_controllers)
+    → solve(fea_controllers)
     → get_results()
 ~~~
 
 `MaterialsParams` 和 `FEAParams` 的 `reinitialize()` 接收当前 `Assembly` 并建立目标缓存；
 完成绑定后，材料接口和 FEA component 通过自身的 TorchFEA 对象引用进行构建、分配和更新。
-`FEAParams.assign_components(assembly)` 将 FEA component 写入当前 Assembly，`Controller`
-再将准备完成的 Assembly 传给 Solver，Solver 在 Assembly 上建立静力求解上下文。
+`FEAParams.assign_components()` 将基础 FEA component 写入已绑定 Assembly。Controller 先将
+geometry/material 试探值写入基础 Assembly；`FEAParams.build_case_assemblies()` 再为每个
+工况建立独立 Assembly 和 component 运行副本并绑定 `LoadValueBlock`；Registry 最后将 load
+试探值写入各自工况副本。Controller 用这些 Assembly 创建逐工况 `FEAController`，Solver
+创建并挂接对应静力求解器。
 每个处理器可以单独测试：提供一个符合 TorchFEA 结构的 `Assembly` 完成绑定，再验证各自
 对象的运行时结果。
 
@@ -506,9 +511,8 @@ Solver
 再用 `get_design_delta()` 读取已有变量，随后使用 `update_assembly()` 执行已有模型的
 可微试探更新，最后调用 `apply_design_delta()` 正式提交。生成型 `Part` 通过
 `build_part()` 创建 TorchFEA `Part`，`GeometryParams.build_assembly()` 负责装配
-`Part` 和 `Instance` 并写入内部状态。`INPPart` 与 `TorchFEAPart` 直接通过各自的
-`build_assembly()` 建立并缓存不可变 `Assembly`。这些建立方法均返回 `None`，生成型
-`Part` 通过 `get_part()` 读取，导入模型通过 `get_assembly()` 读取。
+`Part` 和 `Instance` 并写入内部状态。`INPPart` 与 `TorchFEAPart` 在内部读取源 Assembly，
+通过统一的 `build_part()` 建立输出 Part。建立方法均返回 `None`，Part 通过 `get_part()` 读取。
 
 ## 4. 生命周期和数据流
 
@@ -520,39 +524,40 @@ Solver
 | 类 | `__init__()` 只记录 | `initialize()` 建立 |
 |---|---|---|
 | `Controller` | 参数对象、求解器配置、路径和运行选项 | `Params`、`Solver`、`ObjectiveFunction`、`Updaters` 的完整运行时关系 |
-| `Params` | Geometry、Materials、FEA 的定义对象 | 三个子系统的引用和当前 `Assembly` |
+| `Params` | Geometry、Materials、FEA 的处理器工厂 | 三个子系统的引用；当前 `Assembly` 由 `build_assembly()` 建立 |
 | `GeometryParams` | `parts`、`reference_points` 注册表和用户定义顺序 | 所有 `Part`、`Instance`、ReferencePoint、源数据缓存、元素名称校验和名称索引 |
 | `BasePartDefinition` | `part_name`、必填元素名称集合、`exterior_surface`、`Instance` 定义和源参数 | `Part` 拓扑、节点、元素、曲面和运行时缓存 |
 | `InstanceDefinition` | 名称、平移、旋转 | 变换矩阵和 `Assembly` `Instance` 注册信息 |
-| `ReferencePoint` | 名称和三维坐标 | 当前 Assembly 中的 TorchFEA 参考点 |
+| `ReferencePoint` | 名称和三维坐标 | 名称与坐标校验；TorchFEA 参考点由 `build_reference_point()` 建立 |
 | `BoundaryPart` | 曲面定义、必填 `element_name`、边界参数、网格参数和代码槽 | 曲面对象、几何网格和几何映射缓存 |
 | `BaseSurfaceInterface` / 具体曲面类 | 曲面参数、控制点和代码槽 | 曲面对象、采样点和几何数据缓存 |
-| `INPPart` | INP 路径、源 `Part` 名称、可选 `element_names` 和导入选项 | INP 解析结果和不可变 `Assembly` 缓存 |
-| `TorchFEAPart` | TorchFEA 模型目录、文件名、源 `Part` 名称、可选 `element_names` 和导入选项 | 模型摘要、多个 `Part`/`Instance` 和不可变 `Assembly` 缓存 |
+| `INPPart` | 输出 `part_name`、INP 路径、源 Part、可选 `element_names` 和实例选择 | INP 源 Assembly、一个输出 Part 和实例定义 |
+| `TorchFEAPart` | 输出 `part_name`、模型目录、文件名、源 Part、可选 `element_names` 和实例选择 | 模型摘要、源 Assembly、一个输出 Part 和实例定义 |
 | `OffsetShellPart` | 源 `Part` 名称、必填 `solid_element_name`、`shell_element_name`、`source_surface`、偏置厚度、层数和操作记录 | 源边界、向内偏置节点/元素和 `surface_{i}_offset` 曲面 |
 | `MaterialsParams` | 材料对象注册表和按 `Part` 的索引 | 从 `Assembly` 解析 `Part`/element 目标、覆盖校验和材料接口绑定 |
 | `MaterialParameters` | 本构参数字段 | 由 `MaterialsParams` 校验，并在材料创建阶段生成 TorchFEA 本构 |
 | `BaseMaterialInterface` | `part_name`、`element_name`、`density` 和公共配置 | 目标元素缓存及接口运行时状态 |
 | `HomogeneousMaterial` | 均匀本构参数对象 | 创建并写入均匀 TorchFEA 材料 |
 | `SIMPFieldMaterial` | BSP 参数、初始设计场和材料场配置 | 控制点 Tensor、材料场映射和元素写回缓存 |
-| `FEAParams` | FEA component 和 load step 定义 | `Assembly` 目标解析、组件引用和工况索引 |
+| `FEAParams` | FEA component 和 load step 定义 | `Assembly` 目标解析、基础组件引用、逐工况 Assembly 与组件副本 |
 | `LoadStep` | 工况值和 step 顺序 | step 索引和组件值向量 |
 | `BaseFEAComponent` | 目标名称、初始值和公共选项 | 目标集合缓存和 TorchFEA 组件上下文 |
 | 具体 FEA component | 自身参数、目标 `Instance`/Surface/Set 名称 | 具体 TorchFEA 载荷、边界或接触对象 |
-| `Solver` | 进程、设备、任务组和求解选项 | task groups、设备上下文和 worker 资源 |
-| `ObjectiveFunction` | 目标代码、指标代码和 Jacobian 名称 | FEA 引用、指标引用、全局目标和灵敏度上下文 |
+| `Solver` | 进程、设备、任务组和求解选项 | task groups、设备上下文和逐工况 TorchFEA 求解器 |
+| `ObjectiveFunction` | 指标名称、工况权重和 Jacobian 名称 | 静态引用校验；每轮逐工况 `FEAController` 和结果上下文由 `reinitialize()` 绑定 |
+| `SensitivityAnalyzer` | 数值容差 | 绑定 Objective、Registry、FEA 工况集合和试探模型更新入口，建立多工况总灵敏度 |
 | `LocalSensitivityObjective` | updater 局部线性目标协议 | 各 updater 根据顶层目标分发的局部灵敏度建立的运行时目标 |
 | updater 内部约束回调 | 对应 updater 的局部约束参数 | 对应 updater 的不等式/罚函数和等式投影计算上下文 |
-| `History` | 历史记录配置和已记录数值 | 当前运行的历史缓存 |
+| `History` | 结果根目录和指标名称 | 结果目录、schema 和当前历史缓存 |
 | `DesignKey` | 类别和目标稳定名称 | 直接作为稳定标识使用 |
 | `DesignBlock` | `key`、`owner` 和变量范围记录 | 由 `DesignRegistry` `finalize()` 后确定 `offsets` |
 | `DesignRegistry` | 空的变量块列表和注册规则 | 收集所有 `owner`、计算 `offsets`、冻结变量顺序并建立完整设计增量 |
-| `BaseUpdater` | owner、变量块和优化器配置 | 绑定 owner、接收局部灵敏度、建立 `LocalSensitivityObjective` 和创建优化器状态 |
+| `BaseUpdater` | 优化器、步长和灵敏度缩放配置 | 绑定 owner、接收局部灵敏度、建立 `LocalSensitivityObjective` 和创建优化器状态 |
 | `BaseGeometryUpdater` | 几何更新公共配置 | 提供几何 updater 的公共生命周期 |
 | `BoundaryPartUpdater` | `BoundaryPart` 目标、固定局部灵敏度目标和本 updater 的等式/局部约束回调 | 解析一个 `BoundaryPart` 并准备边界几何优化器 |
 | `OffsetShellPartUpdater` | `OffsetShellPart` 目标、固定局部灵敏度目标和本 updater 的等式/局部约束回调 | 解析一个 `OffsetShellPart` 并准备偏置几何优化器 |
 | `MaterialUpdater` | 材料目标、固定局部灵敏度目标、本 updater 的局部约束回调和材料正则项 | 解析目标材料并准备材料优化器 |
-| `FEAUpdater` | FEA component 目标、固定局部灵敏度目标和本 updater 的局部约束回调（内置集合为空） | 解析目标组件并准备载荷优化器 |
+| `FEAUpdater` | component 名称、工况索引和本 updater 的局部约束回调 | 解析 `LoadValueBlock` 并准备载荷优化器 |
 | `UpdaterEntry` | updater 名称、目标名称和 updater 对象 | 由 `Updaters` 绑定真实 owner |
 | `Updaters` | updater entry 注册表 | 目标解析、变量注册和 updater 调度关系；每个 owner 唯一绑定一个 updater |
 | UI `ProblemDefinition` | 编辑树和节点定义 | 生成可运行的 `Params` 定义或加载定义状态 |
@@ -569,15 +574,15 @@ Controller.initialize()
        2.2 MaterialsParams.initialize()
        2.3 FEAParams.initialize()
     3. Solver.initialize(num_steps)
-    4. Solver.build_solver()
-    5. DesignRegistry.initialize(params)
-       5.1 收集 geometry、material 和 FEA 设计变量
-       5.2 finalize 并冻结变量顺序
-       5.3 owner.build_design_delta()
-       5.4 建立完整设计向量
-    6. 根据 DesignRegistry.has_geometry_variables() 设置 GC 复用策略
-    7. Updaters.initialize(params, registry)
-    8. ObjectiveFunction.initialize()
+    4. DesignRegistry.initialize(params)
+       4.1 收集 geometry、material 和 FEA 设计变量
+       4.2 finalize 并冻结变量顺序
+       4.3 owner.build_design_delta()
+       4.4 建立完整设计向量
+    5. 根据 DesignRegistry.has_geometry_variables() 设置 GC 复用策略
+    6. ObjectiveFunction.initialize(FEAParams)
+    7. SensitivityAnalyzer.initialize(ObjectiveFunction, DesignRegistry, FEAParams, trial_updater)
+    8. Updaters.initialize(params, registry)
     9. History.initialize()
     10. 创建 worker pool 并标记 Controller 已初始化
 ~~~
@@ -590,17 +595,28 @@ Controller.initialize()
 
 ~~~text
 Controller._opt_loop()
-    ├─ Controller._clear_cache()
-    ├─ Controller.step()
+    ├─ Controller._clear_runtime_cache()
+    ├─ Controller.step(iteration)
     │   ├─ Params.reinitialize(iteration)
-    │   ├─ Params.build_assembly(iteration)
+    │   ├─ Params.build_assembly()
+    │   ├─ DesignRegistry.reinitialize(iteration)
+    │   ├─ DesignRegistry.build_design_delta()
+    │   ├─ Controller._update_trial_assemblies(delta)
+    │   │   ├─ DesignRegistry.update_assembly(delta, {"geometry", "material"})
+    │   │   ├─ FEAParams.build_case_assemblies()
+    │   │   └─ DesignRegistry.update_assembly(delta, {"load"})
+    │   ├─ case_assemblies = FEAParams.get_case_assemblies()
+    │   ├─ Controller.build_fea_controllers()
     │   ├─ Solver.reinitialize(iteration)
-    │   ├─ Solver.solve(Params.get_assembly())
-    │   ├─ ObjectiveFunction.compute_multistep_objective(...)
-    │   ├─ ObjectiveFunction.compute_sensitivity(registry)
+    │   ├─ Solver.build_solvers(fea_controllers)
+    │   ├─ Solver.solve(fea_controllers, jacobian_names)
+    │   ├─ ObjectiveFunction.reinitialize(iteration, fea_controllers, results)
+    │   ├─ ObjectiveFunction.build_evaluation()
+    │   ├─ SensitivityAnalyzer.build_sensitivities()
     │   ├─ Updaters.reinitialize(iteration, local_gradients)
     │   └─ Updaters.update()
-    ├─ History.add_record(...)
+    ├─ ObjectiveFunction.export_case_result(...) × num_cases
+    ├─ History.add_record(HistoryRecord)
     ├─ Controller.save(...)
     └─ 检查停止、收敛和重启条件
 ~~~
@@ -612,9 +628,9 @@ Controller._opt_loop()
 | 方法 | 返回值 | 来源 | 行为 |
 |---|---|---|---|
 | `build_assembly(path_result, pools)` | `None` | - | 按当前 `Part` 状态构建本轮 `Assembly`，写入内部的当前 `Assembly` |
-| `get_assembly()` | `torchfea.Assembly` | - | 读取最近一次 `build_assembly()` 生成的 `Assembly`；不触发构建或刷新 |
+| `get_assembly()` | `torchfea.Assembly` | - | 读取最近一次 `build_assembly()` 生成并保持原状态的 `Assembly` |
 
-`build_assembly()` 更新 `GeometryParams` 内部的当前 `Assembly`，不返回新对象。
+`build_assembly()` 更新 `GeometryParams` 内部的当前 `Assembly`，返回值为 `None`。
 `get_assembly()` 在当前迭代尚未生成 `Assembly` 时抛出 `RuntimeError`。
 
 ### 4.5 用户代码与任务定义

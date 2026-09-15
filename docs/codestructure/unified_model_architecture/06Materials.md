@@ -40,6 +40,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 - [6.4 `BaseMaterialInterface`](#64-basematerialinterface)
 - [6.5 `HomogeneousMaterial`](#65-homogeneousmaterial)
 - [6.6 `SIMPFieldMaterial`](#66-simpfieldmaterial)
+- [6.7 SIMP 本构与单元适配器](#67-simp-本构与单元适配器)
+- [6.8 插值函数](#68-插值函数)
 
 ## 6. 材料类定义
 
@@ -49,7 +51,7 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 `name`、`part_name` 和 `element_name` 的材料接口，并通过 `add_material(interface, name)` 注册；注册表维护材料名称和
 `Part` 名称索引。
 
-#### 定义属性（注册表由 `__init__()` 创建，`define_materials()` / `add_material(interface, name)` 填充）
+#### 构造属性（注册表由 `__init__()` 创建，`define_materials()` / `add_material(interface, name)` 填充）
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
@@ -62,7 +64,6 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `_torchfea_Assembly` | `torchfea.Assembly` 或 None | None | 当前 iteration 由 `reinitialize()` 绑定的 Assembly |
 | `_part_elements` | dict[str, tuple[str, ...]] | `{}` | 按当前 `Assembly` 解析的元素名称缓存 |
 | `_materials_by_part` | dict[str, tuple[str, ...]] | `{}` | 由注册表派生的 `Part` 到材料名称索引 |
-| `_design_deltas` | dict[str, torch.Tensor] | `{}` | 各材料已建立的设计增量 |
 | `_initialized` | bool | False | 生命周期状态 |
 
 运行时状态通过生命周期方法和显式 `build_*`、`get_*`、`update_*` 方法访问。
@@ -81,25 +82,16 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `define_materials()` | None | - | 用户创建并注册材料的扩展点 |
 | `add_material(interface, name)` | None | - | 校验并注册一个携带 `part_name`、`element_name` 的材料对象，并写入注册名称 |
 | `names_for_part(part_name)` | tuple[str, ...] | - | 读取指定 `Part` 已注册的材料名称 |
-| `initialize()` | None | `Initializable` | 建立材料接口的静态运行结构 |
-| `reinitialize(iteration, assembly)` | None | `Initializable` | 解析当前 iteration 的目标 `Part`、元素族和材料映射 |
 | `build_materials()` | None | - | 为全部材料建立运行时本构对象和材料映射 |
 | `assign_materials()` | None | - | 使用已缓存的 TorchFEA 引用将材料对象写入 `Assembly` |
-| `get_parameters(name)` | list[torch.Tensor] | `Updatable` | 读取指定材料参数的 detached clone |
-| `set_parameters(name, parameters)` | None | `Updatable` | 修改指定材料的已有参数 |
-| `build_design_delta(name)` | None | `Updatable` | 为指定材料建立并保存设计增量 |
-| `get_design_delta(name)` | torch.Tensor | `Updatable` | 读取已经建立的设计增量，不重新计算 |
-| `update_assembly(name, design_delta)` | None | `Updatable` | 使用指定材料自身的 TorchFEA 引用更新试探状态 |
-| `apply_design_delta(name, design_delta)` | None | `Updatable` | 提交指定材料的设计增量并更新材料定义 |
-| `get_design_values()` | torch.Tensor | `Updatable` | 读取全部材料的带计算图设计值 |
-| `get_variables()` | torch.Tensor | `Updatable` | 读取全部材料的优化变量 |
-| `obtain_design_sensitivity_vars(assembly)` | torch.Tensor | `Updatable` | 读取材料灵敏度分析所需变量 |
-| `modify_assembly(design_sensitivity_vars)` | None | `Updatable` | 使用已缓存的 TorchFEA 引用根据灵敏度变量更新已有 `Assembly` |
+| `get_design_owners()` | tuple[`SIMPFieldMaterial`, ...] | - | 读取注册表中实现 `Updatable` 的材料 owner |
+| `initialize()` | None | `Initializable` | 建立材料接口的静态运行结构 |
+| `reinitialize(iteration, assembly)` | None | `Initializable` | 解析当前 iteration 的目标 `Part`、元素族和材料映射 |
 | `build_meshes()` | None | `Visualizable` | 为全部材料建立预览网格缓存 |
 | `get_meshes()` | list[object] | `Visualizable` | 读取已经建立的材料预览网格 |
 | `plot(plotter, meshes)` | object | `Visualizable` | 使用已有预览网格绘制材料场 |
-| `save(foldpath, iteration)` | None | `Persistable` | 保存材料定义、设计变量和结果 |
-| `load(foldpath, iteration)` | None | `Persistable` | 加载材料定义、设计变量和结果 |
+| `save(folder_path, iteration)` | None | `Persistable` | 保存材料定义、设计变量和结果 |
+| `load(folder_path, iteration)` | None | `Persistable` | 加载材料定义、设计变量和结果 |
 
 #### 内部辅助方法
 
@@ -121,13 +113,13 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| 空 | - | - | 类型命名空间不保存实例构造状态 |
+| 空 | - | - | 类型命名空间以类级名称提供参数类型 |
 
 #### 运行时属性（`__init__()` 声明，`initialize()` 填充）
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| 空 | - | - | 类型命名空间不保存运行时对象 |
+| 空 | - | - | 运行时本构由材料接口持有 |
 
 #### 属性接口（property）
 
@@ -154,14 +146,15 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 #### 构造属性（`__init__()` 记录）
 
-每个具体参数类声明本构模型所需字段。字段使用类型化构造参数记录，参数对象使用
-只读属性向材料接口提供稳定定义。
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 具体本构参数由子类记录 |
 
 #### 运行时属性（`__init__()` 声明，`initialize()` 填充）
 
 | 属性 | 类型 | 初始值 | 说明 |
 |---|---|---|---|
-| 空 | - | - | 参数对象不保存运行时本构对象 |
+| 空 | - | - | 运行时本构由 `BaseMaterialInterface` 持有 |
 
 #### 属性接口（property）
 
@@ -188,8 +181,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `E` | float | 构造函数必填 | 杨氏模量 |
-| `nu` | float | 构造函数必填 | 泊松比 |
+| `_youngs_modulus` | float | 构造函数必填 | 杨氏模量；创建后端时映射为 `E` |
+| `_poisson_ratio` | float | 构造函数必填 | 泊松比；创建后端时映射为 `nu` |
 
 ##### 运行时属性
 
@@ -202,6 +195,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.LinearElastic`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA 线弹性本构类 |
+| `youngs_modulus` | float | - | 只读 | 内部维护 | 返回杨氏模量 |
+| `poisson_ratio` | float | - | 只读 | 内部维护 | 返回泊松比 |
 
 ##### 外部接口方法
 
@@ -221,8 +216,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `mu` | float | 构造函数必填 | 剪切参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_shear_modulus` | float | 构造函数必填 | 剪切模量；创建后端时映射为 `mu` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；创建后端时映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -235,6 +230,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.NeoHookean`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Neo-Hookean 本构类 |
+| `shear_modulus` | float | - | 只读 | 内部维护 | 返回剪切模量 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -254,8 +251,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `mu` | float | 构造函数必填 | 剪切参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_shear_modulus` | float | 构造函数必填 | 剪切模量；创建后端时映射为 `mu` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；创建后端时映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -268,6 +265,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.NeoHookeanLnJ`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA `ln J` Neo-Hookean 本构类 |
+| `shear_modulus` | float | - | 只读 | 内部维护 | 返回剪切模量 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -287,9 +286,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `c10` | float | 构造函数必填 | Mooney-Rivlin 参数 |
-| `c01` | float | 构造函数必填 | Mooney-Rivlin 参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_coefficient_10` | float | 构造函数必填 | Mooney-Rivlin 系数；映射为 `c10` |
+| `_coefficient_01` | float | 构造函数必填 | Mooney-Rivlin 系数；映射为 `c01` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -302,6 +301,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.MooneyRivlin`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Mooney-Rivlin 本构类 |
+| `coefficient_10` | float | - | 只读 | 内部维护 | 返回 `c10` 对应系数 |
+| `coefficient_01` | float | - | 只读 | 内部维护 | 返回 `c01` 对应系数 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -321,10 +323,10 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `c1` | float | 构造函数必填 | Yeoh 参数 |
-| `c2` | float | 构造函数必填 | Yeoh 参数 |
-| `c3` | float | 构造函数必填 | Yeoh 参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_coefficient_1` | float | 构造函数必填 | Yeoh 一阶系数；映射为 `c1` |
+| `_coefficient_2` | float | 构造函数必填 | Yeoh 二阶系数；映射为 `c2` |
+| `_coefficient_3` | float | 构造函数必填 | Yeoh 三阶系数；映射为 `c3` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -337,6 +339,10 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.Yeoh`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Yeoh 本构类 |
+| `coefficient_1` | float | - | 只读 | 内部维护 | 返回一阶系数 |
+| `coefficient_2` | float | - | 只读 | 内部维护 | 返回二阶系数 |
+| `coefficient_3` | float | - | 只读 | 内部维护 | 返回三阶系数 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -356,9 +362,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `mu` | float | 构造函数必填 | 剪切参数 |
-| `Jm` | float | 构造函数必填 | 极限链伸长参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_shear_modulus` | float | 构造函数必填 | 剪切模量；映射为 `mu` |
+| `_limiting_chain_parameter` | float | 构造函数必填 | 极限链伸长参数；映射为 `Jm` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -371,6 +377,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.Gent`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Gent 本构类 |
+| `shear_modulus` | float | - | 只读 | 内部维护 | 返回剪切模量 |
+| `limiting_chain_parameter` | float | - | 只读 | 内部维护 | 返回极限链伸长参数 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -390,9 +399,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `mu` | float | 构造函数必填 | 剪切参数 |
-| `N` | float | 构造函数必填 | 链段数量参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_shear_modulus` | float | 构造函数必填 | 剪切模量；映射为 `mu` |
+| `_chain_segments` | float | 构造函数必填 | 链段数量参数；映射为 `N` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -405,6 +414,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.ArrudaBoyce`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Arruda-Boyce 本构类 |
+| `shear_modulus` | float | - | 只读 | 内部维护 | 返回剪切模量 |
+| `chain_segments` | float | - | 只读 | 内部维护 | 返回链段数量 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -424,9 +436,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `mu` | float 或 list[float] | 构造函数必填 | 剪切参数 |
-| `alpha` | float 或 list[float] | 构造函数必填 | Ogden 指数参数 |
-| `kappa` | float | 构造函数必填 | 体积参数 |
+| `_shear_moduli` | float 或 tuple[float, ...] | 构造函数必填 | 剪切参数；映射为 `mu` |
+| `_exponents` | float 或 tuple[float, ...] | 构造函数必填 | Ogden 指数；映射为 `alpha` |
+| `_bulk_modulus` | float | 构造函数必填 | 体积模量；映射为 `kappa` |
 
 ##### 运行时属性
 
@@ -439,6 +451,9 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
 |---|---|---|---|---|---|
 | `material_class` | type[`torchfea.materials.Ogden`] | `MaterialParameters` | 只读 | 内部维护 | 对应 TorchFEA Ogden 本构类 |
+| `shear_moduli` | float 或 tuple[float, ...] | - | 只读 | 内部维护 | 返回剪切参数 |
+| `exponents` | float 或 tuple[float, ...] | - | 只读 | 内部维护 | 返回 Ogden 指数 |
+| `bulk_modulus` | float | - | 只读 | 内部维护 | 返回体积模量 |
 
 ##### 外部接口方法
 
@@ -456,7 +471,7 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 `BaseMaterialInterface` 是材料接口基类，统一保存材料名称、目标 `Part`、目标元素族、
 密度、本构参数和运行时材料对象。它显式继承 `Visualizable`、`Initializable`、
-`Updatable` 和 `Persistable` 协议。
+`Persistable` 协议。可更新设计变量由 `SIMPFieldMaterial` 单独实现 `Updatable`。
 运行时本构对象统一写入 `_torchfea_<MaterialClass>`，其中 `<MaterialClass>` 是
 实际 TorchFEA 本构类的 PascalCase 类名（例如 `LinearElastic`）；材料接口在
 `reinitialize(iteration, assembly)` 中缓存 Assembly 到 `_torchfea_Assembly`，并缓存目标元素；后续 `assign_material()` 与
@@ -479,7 +494,6 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `_torchfea_Assembly` | `torchfea.Assembly` 或 None | None | `reinitialize()` 绑定的当前 Assembly |
 | `_target_elements` | tuple[object, ...] | `()` | 当前 `Assembly` 中解析的目标元素 |
 | `_torchfea_<MaterialClass>` | object 或 None | None | 已创建的具体 TorchFEA 材料对象；字段名中的 `<MaterialClass>` 取后端类名 |
-| `_design_delta` | torch.Tensor 或 None | None | 当前材料设计增量 |
 | `_meshes` | tuple[object, ...] | `()` | 已建立的材料预览网格 |
 | `_initialized` | bool | False | 生命周期状态 |
 
@@ -497,23 +511,16 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 | 方法 | 返回值 | 来源 | 作用 |
 |---|---|---|---|
-| `initialize()` | None | `Initializable` | 建立材料接口的静态运行结构 |
-| `reinitialize(iteration, assembly)` | None | `Initializable` | 更新当前迭代的目标元素和映射 |
 | `build_material()` | None | - | 创建运行时材料对象并写入 `_torchfea_<MaterialClass>` |
 | `get_material()` | object | - | 读取已经创建的运行时材料对象 |
 | `assign_material()` | None | - | 使用已缓存的目标元素和 Assembly 引用写入已创建材料 |
-| `get_design_values()` | torch.Tensor | `Updatable` | 读取带计算图的当前设计值 |
-| `get_parameters()` | list[torch.Tensor] | `Updatable` | 读取设计参数的 detached clone |
-| `set_parameters(parameters)` | None | `Updatable` | 修改已有设计参数 |
-| `build_design_delta()` | None | `Updatable` | 建立并保存设计增量 |
-| `get_design_delta()` | torch.Tensor | `Updatable` | 读取已建立的设计增量 |
-| `update_assembly(design_delta)` | None | `Updatable` | 使用自身的 TorchFEA 材料和 Assembly 引用更新试探材料状态 |
-| `apply_design_delta(design_delta)` | None | `Updatable` | 提交材料设计增量 |
+| `initialize()` | None | `Initializable` | 建立材料接口的静态运行结构 |
+| `reinitialize(iteration, assembly)` | None | `Initializable` | 更新当前迭代的目标元素和映射 |
 | `build_meshes()` | None | `Visualizable` | 建立材料预览网格并写入 `_meshes` |
 | `get_meshes()` | list[object] | `Visualizable` | 读取已经建立的预览网格 |
 | `plot(plotter, meshes)` | object | `Visualizable` | 使用已有网格绘制材料状态 |
-| `save(foldpath, iteration)` | None | `Persistable` | 保存材料状态 |
-| `load(foldpath, iteration)` | None | `Persistable` | 加载材料状态 |
+| `save(folder_path, iteration)` | None | `Persistable` | 保存材料状态 |
+| `load(folder_path, iteration)` | None | `Persistable` | 加载材料状态 |
 
 #### 内部辅助方法
 
@@ -562,7 +569,7 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 
 `SIMPFieldMaterial` 使用三维 BSP 材料场，根据设计场计算材料比例，并将材料比例和
 可选惩罚因子写入目标元素。它继承 `BaseMaterialInterface` 的材料注册、生命周期、
-设计变量、预览和持久化接口。
+预览和持久化接口，并新增 `Updatable` 设计变量协议。
 
 #### 构造属性（`__init__()` 记录）
 
@@ -588,6 +595,8 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `_element_map` | object 或 None | None | 材料场到元素积分点的映射缓存 |
 | `_material_ratio` | torch.Tensor 或 None | None | 当前材料比例缓存 |
 | `_penalty_factor` | torch.Tensor 或 None | None | 当前惩罚因子缓存 |
+| `_design_delta` | torch.Tensor 或 None | None | 当前迭代材料场设计增量 |
+| `_density_meshes` | tuple[object, ...] | `()` | 已建立且带 `density` 点/单元标量的材料场预览网格 |
 
 #### 属性接口（property）
 
@@ -611,6 +620,10 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `get_control_points_list()` | list[torch.Tensor] | - | 读取已经建立的材料场控制点 |
 | `compute_material_ratio(design_field)` | torch.Tensor | - | 根据设计场计算材料比例 |
 | `compute_penalty_factor(design_field)` | torch.Tensor | - | 根据设计场计算惩罚因子 |
+| `build_meshes()` | None | `Visualizable` | 在目标元素积分点和预览采样点计算密度，建立带 `density` 标量的预览网格 |
+| `get_meshes()` | list[object] | `Visualizable` | 读取已经建立的材料场预览网格 |
+| `save(folder_path, iteration)` | None | `Persistable` | 保存控制点、BSP 尺寸、包围盒、阶数、密度配置和当前 density 直方图 |
+| `load(folder_path, iteration)` | None | `Persistable` | 恢复材料场定义与控制点，并重建 BSP 后端和元素映射缓存 |
 | `get_parameters()` | list[torch.Tensor] | `Updatable` | 读取材料场控制点的 detached clone |
 | `set_parameters(parameters)` | None | `Updatable` | 修改材料场控制点 |
 | `build_design_delta()` | None | `Updatable` | 建立并保存材料场设计增量 |
@@ -627,7 +640,229 @@ V4 的变化集中在对象职责、注册入口和迭代生命周期；这些�
 | `_map_design_field_with_spatial_derivative(nodes)` | torch.Tensor | 计算带空间导数的材料场映射 |
 | `_prepare_elements(elements)` | object | 根据惩罚配置准备元素适配器 |
 | `_set_element_material(elements, nodes)` | None | 将当前材料场写入一个元素族 |
+| `_compute_density_histogram()` | tuple[numpy.ndarray, numpy.ndarray] | 从已建立预览网格的 `density` 标量计算稳定分箱和计数 |
 
 `compute_material_ratio()` 和 `compute_penalty_factor()` 是显式计算接口；材料比例、
 惩罚因子和预览网格由 `reinitialize()`、`update_assembly()` 或 `build_meshes()` 写入，
 `get_*` 方法只读取已经建立的结果。
+
+### 6.7 SIMP 本构与单元适配器
+
+SIMP 运行时适配层保留 V3 的材料缩放、二阶位移场正则和四种实体单元支持。材料层根据
+`element_name` 对应的 TorchFEA 元素类型选择适配器，适配器保持原节点、积分点、材料和
+装配索引。
+
+#### 6.7.1 `SIMPScaledMaterial`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_base_material` | `torchfea.materials.MaterialsBase` | - | 被缩放的本构对象 |
+| `_scale` | torch.Tensor | - | 逐元素、逐积分点刚度比例 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 计算直接使用构造状态 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `base_material` | `torchfea.materials.MaterialsBase` | - | 只读 | 内部维护 | 返回基础本构 |
+| `scale` | torch.Tensor | - | 只读 | 内部维护 | 返回缩放 Tensor |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `compute_strain_energy_density(deformation_gradient)` | torch.Tensor | - | 缩放基础本构应变能密度 |
+| `compute_constitutive_response(deformation_gradient, state=None)` | tuple[torch.Tensor, torch.Tensor] | - | 缩放应力与切线刚度 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| `_broadcast_scale(value, tensor_order)` | torch.Tensor | 将比例扩展到应力或切线阶数 |
+
+#### 6.7.2 `SIMPElementPenalty`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `_penalty_mode` | Literal["gradient", "skew", "deviatoric_hessian"] | `"skew"` | 二阶位移正则形式 |
+| `_penalty_factor` | torch.Tensor 或 float | - | 逐元素、逐积分点罚因子 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| `_weighted_second_derivatives` | torch.Tensor 或 None | None | 形函数二阶导数、积分权重和罚因子的乘积 |
+| `_penalty_tangent` | torch.Tensor 或 None | None | 与位移无关的罚项切线缓存 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| `penalty_mode` | str | - | 只读 | 内部维护 | 返回正则形式 |
+| `penalty_factor` | torch.Tensor | - | 只读 | 读写 | 返回或更新罚因子并刷新缓存 |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| `compute_penalty_energy(displacement)` | torch.Tensor | - | 计算选定模式的二阶位移罚能 |
+| `compute_penalty_force_tangent(displacement, force_only=False)` | torch.Tensor 或 tuple[torch.Tensor, torch.Tensor] | - | 计算罚项内力和切线 |
+| `initialize()` | None | `Initializable` | 建立加权二阶导数和罚项切线缓存 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| `_compute_second_displacement_gradient(displacement)` | torch.Tensor | 在高斯点计算位移二阶梯度 |
+| `_build_penalty_tangent()` | None | 按 `penalty_mode` 建立切线缓存 |
+
+#### 6.7.3 `SIMPElementC3D4`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 构造属性 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 TorchFEA `C3D4` 与 `SIMPElementPenalty` 运行时状态 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| 空 | - | - | - | - | 本类不新增 property |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 接口处理四节点四面体 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 本类不新增辅助方法 |
+
+#### 6.7.4 `SIMPElementC3D8`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 构造属性 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 TorchFEA `C3D8` 与 `SIMPElementPenalty` 运行时状态 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| 空 | - | - | - | - | 本类不新增 property |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 接口处理八节点六面体 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 本类不新增辅助方法 |
+
+#### 6.7.5 `SIMPElementC3D10`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 构造属性 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 TorchFEA `C3D10` 与 `SIMPElementPenalty` 运行时状态 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| 空 | - | - | - | - | 本类不新增 property |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 接口处理十节点四面体 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 本类不新增辅助方法 |
+
+#### 6.7.6 `SIMPElementC3D20`
+
+##### 构造属性（`__init__()` 记录）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 构造属性 |
+
+##### 运行时属性
+
+| 属性 | 类型 | 初始值 | 说明 |
+|---|---|---|---|
+| 空 | - | - | 使用 TorchFEA `C3D20` 与 `SIMPElementPenalty` 运行时状态 |
+
+##### 属性接口（property）
+
+| property | 类型 | 来源 | 读权限 | 写权限 | 说明 |
+|---|---|---|---|---|---|
+| 空 | - | - | - | - | 本类不新增 property |
+
+##### 外部接口方法
+
+| 方法 | 返回值 | 来源 | 作用 |
+|---|---|---|---|
+| 空 | - | - | 使用 `SIMPElementPenalty` 接口处理二十节点六面体 |
+
+##### 内部辅助方法
+
+| 方法 | 返回值 | 作用 |
+|---|---|---|
+| 空 | - | 本类不新增辅助方法 |
+
+`SIMPElementPenalty` 的三个模式分别覆盖 V3 `SIMPElementFgrad`、`SIMPElementFskew` 和
+`SIMPElementHuHu_LuLu` 的能量、力和切线算法；四个具体元素适配器覆盖 V3 的 C3D4、C3D8、
+C3D10 和 C3D20。其他元素族在注册阶段报告支持列表和目标名称。
+
+### 6.8 插值函数
+
+| 函数 | 返回值 | 状态更新 | 作用 |
+|---|---|---|---|
+| `compute_ramp_interpolation(density, penalty)` | torch.Tensor | 无 | 计算 `density / (1 + penalty * (1 - density))` |
+| `compute_power_interpolation(density, order)` | torch.Tensor | 无 | 计算 `density ** order` |
+
+两种函数保持纯 Tensor 运算、广播、device、dtype 和 autograd；输入密度范围由
+`SIMPFieldMaterial` 和 `MaterialUpdater` 校验。
