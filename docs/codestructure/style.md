@@ -27,7 +27,7 @@ Tensor/FEA 数据处理、UI 分层、错误日志、持久化、pytest 测试�
 | 输入 | Python 模块、领域对象、Tensor/FEA 数据、UI/Codegen 文件和测试代码 |
 | 输出 | 统一命名、模块边界、生命周期、测试目录、pytest 约定和 review 清单 |
 | 主要读者 | V4 实现者、测试编写者、UI/Codegen 开发者和 review 者 |
-| 关联文档 | [架构总入口](unified_model_architecture_plan.md)、[总览与生命周期](unified_model_architecture/01-04Overview.md) |
+| 关联文档 | [架构总入口](design.md)、[总览与生命周期](design/01_04_overview.md) |
 
 ## 1. 基本原则
 
@@ -38,6 +38,7 @@ Tensor/FEA 数据处理、UI 分层、错误日志、持久化、pytest 测试�
 - 公共接口先设计，再实现；属性、方法和协议保持命名稳定。
 - 代码、变量、类名和日志字段使用英文；面向用户的 UI 文本通过 i18n 提供中英文。
 - 复杂算法保留简短注释，注释说明原因、输入、输出和不变量。
+- 构造函数中的每个实例属性赋值后紧跟一个独立的三引号字符串，字符串第一行直接说明属性职责；该格式供 VS Code/Pylance 识别属性说明。运行时属性也遵循同一格式。
 
 ## 2. 命名规则
 
@@ -45,11 +46,13 @@ Tensor/FEA 数据处理、UI 分层、错误日志、持久化、pytest 测试�
 
 | 对象 | 规则 | 示例 |
 |---|---|---|
-| Python 文件 | 简短小驼峰，优先单个英文单词 | `geometry.py`、`solver.py`、`codegen.py` |
-| 多词文件 | 使用小驼峰，保持名称短小 | `designRegistry.py`、`torchfeaPart.py` |
+| Python 文件 | 使用 `snake_case` 下划线命名，优先单个英文单词 | `geometry.py`、`solver.py`、`codegen.py` |
+| 多词文件 | 使用 `snake_case`，保持名称短小 | `design_registry.py`、`torchfea_part.py` |
 | 包目录 | 小写单词，优先单个词语 | `geometry/`、`materials/`、`widgets/` |
-| 测试文件 | 使用 `test` 前缀，主题部分采用小驼峰 | `testGeometry.py`、`testDesignRegistry.py` |
-| 文档文件 | 小驼峰，优先单个词语 | `style.md`、`geometry.md` |
+| 测试文件 | 使用 `test_` 前缀，主题部分采用 `snake_case` | `test_geometry.py`、`test_design_registry.py` |
+| 文档文件 | 使用小写 `snake_case`，优先单个词语 | `style.md`、`geometry.md` |
+
+Python 文件、测试文件和文档文件均不得使用小驼峰、大驼峰或连字符；目录名称保持小写。
 
 文件名表达模块职责；版本、临时状态和完成状态通过目录、字段或版本记录表达。
 
@@ -89,13 +92,30 @@ _torchfea_<ConcreteName>
 | `torchfea.ReferencePoint` | `_torchfea_ReferencePoint` |
 | 具体 TorchFEA 材料类（如 `LinearElastic`） | `_torchfea_LinearElastic` |
 | `torchfea.loads.Pressure` | `_torchfea_Pressure` |
-| `torchfea.solver.static.StaticImplicitSolver` | `_torchfea_StaticImplicitSolver` |
+| `torchfea.solver.StaticImplicitSolver` | `_torchfea_StaticImplicitSolver` |
 
 创建者在 `build_*()` 中写入该字段，读取者通过对应的 `get_*()` 获取。
 同一对象的业务名称仍通过 `name`、`part_name` 或 `component_name` 保存，业务名称不拼接到
 TorchFEA 后端字段名中。
 
-### 2.4 名称语义
+### 2.4 TorchFEA 依赖引用
+
+MorphOpt 统一使用模块导入：
+
+```python
+import torchfea
+
+assembly: torchfea.Assembly
+solver: torchfea.solver.StaticImplicitSolver
+```
+
+优先使用 `torchfea` 在 `__init__.py` 暴露的名称（例如 `torchfea.Assembly`、
+`torchfea.FEAController`、`torchfea.ReferencePoint`、`torchfea.WorkCondition`）。
+后端只在顶层公开模块内继续取用已公开的类型，例如 `torchfea.loads.Pressure`、
+`torchfea.elements.BaseElement`、`torchfea.materials.Materials_Base`；不引用
+`torchfea.model.*`、`torchfea.solver.static.*` 等实现目录，也不创建 MorphOpt 侧别名。
+
+### 2.5 名称语义
 
 方法前缀按“读取已有结果、修改已有定义、建立运行时状态、更新运行时状态、文件 I/O”划分，
 同一方法只承担一种前缀语义。方法表用“有/无”标记返回值和类属性更新：
@@ -158,10 +178,10 @@ ui
 - 所有公开函数、公开方法和重要内部函数都写参数及返回值类型。
 - `None` 作为明确的可选状态，使用 `T | None` 表达。
 - 只读集合使用 `tuple`、`Mapping`、`Sequence` 或不可变视图；可变集合的所有权写在类文档中。
-- 函数参数优先使用抽象类型，例如 `Mapping[str, object]`、`Sequence[float]` 和 `Path`。
+- 函数参数使用能够表达真实边界的具体类型，例如 `Mapping[str, JsonValue]`、`Sequence[float]` 和 `Path`；TorchFEA 对象直接写 `torchfea.Assembly`、`torchfea.Part` 等实际类。
 - 默认参数使用 `None` 或不可变值；空列表、字典和集合在函数体内创建。
-- `Any` 只用于外部库缺少类型信息的边界，并在注释中写明来源。
-- 类型别名集中放在所属领域模块，名称采用大驼峰。
+- `Any` 只用于外部库确实缺少类型信息的边界，并在注释中写明来源；不使用集中式 `types.py` 代替真实类型。
+- 类型别名只在所属领域模块内部定义，优先直接使用原始类名，名称采用大驼峰。
 - `dataclass` 用于稳定的数据记录；拥有生命周期、缓存或后端对象的领域类使用普通类。
 - property 只负责构造属性的稳定读取和受控写入；setter 执行类型、范围、名称和关联索引校验。
 - 运行时缓存、后端句柄、初始化标志和求解状态通过明确的
@@ -174,6 +194,9 @@ ui
   `initialize()` 或 `build_*` 完成。
 - 注册表使用只读 `Mapping` property 作为唯一事实来源；单项对象统一使用
   `registry[name]` 访问，不为同一映射重复定义 `get_<item>()`。
+- 已满足协议的对象直接调用其公开方法，不使用基于 `getattr()` 的通用动态调用包装器。
+  这样接口缺失会立即抛出错误，调用关系和类型检查保持可见。后端能力确实可选时，在
+  对应边界方法中使用明确的 `hasattr()`/能力分支，并记录缺失能力的处理方式。
 
 ## 5. 类设计和生命周期
 
@@ -184,6 +207,9 @@ ui
 - 协议表达能力，注册表表达所有权，Controller 表达流程调度。
 - 一个类的构造状态集中在属性接口中，运行时缓存和后端对象使用私有实例字段及显式方法。
 - 继承用于“is-a”关系；可组合的策略、适配器和 evaluator 使用组合。
+- 基类在 `__init__()` 中声明全部共享构造属性和运行时属性。每个子类的
+  `__init__()` 第一条可执行语句必须是 `super().__init__(...)`，随后只声明本类新增字段；
+  子类通过这一顺序获得完整的基类状态和统一的生命周期入口。
 
 ### 5.2 方法顺序
 
@@ -220,9 +246,9 @@ ui
 
 - `__init__()` 记录构造参数、注册关系和代码槽，建立 `None` 或空容器形式的运行时字段。
 - `initialize()` 读取源数据、解析名称、构造后端对象、建立映射和分配运行时资源。
-- `build_assembly()` 创建当前定义对应的新 `Assembly` 并写入内部状态；Controller 创建逐工况
-  `FEAController`，`Solver.build_solvers()` 创建并挂接 `StaticImplicitSolver`，
-  `Solver.solve(fea_controllers)` 处理逐工况求解。
+- `build_assembly()` 创建当前定义对应的新 `Assembly` 并写入内部状态；Controller 创建承载全部
+  `LoadStep` 的共享 `FEAController`，`Solver.build_solvers()` 创建并挂接一个多工况
+  `StaticImplicitSolver`，`Solver.solve(fea_controller)` 完成多工况求解。
 - `reinitialize(iteration)` 刷新当前迭代缓存。
 - `update_assembly()` 对已有模型执行试探更新并保留计算图；方法接收设计增量或当前值，
   对象使用自身缓存的 TorchFEA 后端引用。
@@ -383,7 +409,7 @@ python -m pytest -m "not slow"
 
 ## 12. Review 清单
 
-- [ ] 文件名简短、小驼峰，并优先使用单个词语。
+- [ ] 文件名使用简短 `snake_case`，并优先使用单个词语。
 - [ ] 变量、函数和方法使用 `snake_case`。
 - [ ] 类型、协议和异常使用大驼峰。
 - [ ] 公开接口具有完整类型标注和明确返回值。
