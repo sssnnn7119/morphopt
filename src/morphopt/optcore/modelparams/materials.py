@@ -9,6 +9,7 @@ import torch
 import torchfea
 
 from .baseparam import BaseParams
+
 __all__ = [
     "MaterialsParams",
 ]
@@ -22,18 +23,16 @@ class MaterialsParams(BaseParams):
 
     def __init__(self) -> None:
         super().__init__()
-        self.materialinterfaces: dict[
-            str, MaterialsParams.BaseMaterialInterface] = {}
+        self.materialinterfaces: dict[str, MaterialsParams.BaseMaterialInterface] = {}
         self.define_interface()
 
     def define_interface(self) -> None:
         """Define the material interfaces for a user model."""
-        pass
 
     def add_material_interface(
-            self,
-            interface: MaterialsParams.BaseMaterialInterface,
-            name: str | None = None,
+        self,
+        interface: MaterialsParams.BaseMaterialInterface,
+        name: str | None = None,
     ) -> str:
         """Add one named material interface and return its final name."""
         if not isinstance(interface, self.BaseMaterialInterface):
@@ -59,8 +58,11 @@ class MaterialsParams(BaseParams):
         return list(self.materialinterfaces.values())
 
     def design_interfaces(self) -> list[MaterialsParams.BaseMaterialInterface]:
-        return [interface for interface in self.interfaces()
-                if interface.get_variables().numel()]
+        return [
+            interface
+            for interface in self.interfaces()
+            if interface.get_variables().numel()
+        ]
 
     def set_materials(self, fe: torchfea.FEAController) -> None:
         for interface in self.interfaces():
@@ -84,29 +86,31 @@ class MaterialsParams(BaseParams):
         index = 0
         for interface in self.interfaces():
             count = len(interface.get_parameters())
-            interface.set_parameters(values[index:index + count])
+            interface.set_parameters(values[index : index + count])
             index += count
         if index != len(values):
             raise ValueError("Material parameter list does not match interfaces.")
 
     def get_design_values(self) -> torch.Tensor:
-        values = [interface.get_design_values()
-                  for interface in self.design_interfaces()]
+        values = [
+            interface.get_design_values() for interface in self.design_interfaces()
+        ]
         values = [value.flatten() for value in values if value.numel()]
         return torch.cat(values) if values else torch.zeros(0)
 
     def get_variables(self) -> torch.Tensor:
-        values = [interface.get_variables().flatten()
-                  for interface in self.design_interfaces()]
+        values = [
+            interface.get_variables().flatten()
+            for interface in self.design_interfaces()
+        ]
         return torch.cat(values) if values else torch.zeros(0)
 
     def update_variables(
-            self,
-            x_change: torch.Tensor,
-            max_step_length: torch.Tensor | None = None,
+        self,
+        x_change: torch.Tensor,
+        max_step_length: torch.Tensor | None = None,
     ) -> None:
-        sizes = [interface.get_variables().numel()
-                 for interface in self.interfaces()]
+        sizes = [interface.get_variables().numel() for interface in self.interfaces()]
         x_change = x_change.flatten()
         if x_change.numel() != sum(sizes):
             raise ValueError("Material update size does not match interfaces.")
@@ -114,34 +118,39 @@ class MaterialsParams(BaseParams):
         for interface, size in zip(self.interfaces(), sizes):
             if not size:
                 continue
-            step = None if max_step_length is None else \
-                max_step_length[offset:offset + size]
+            step = (
+                None
+                if max_step_length is None
+                else max_step_length[offset : offset + size]
+            )
             interface.update_variables(
-                x_change[offset:offset + size],
+                x_change[offset : offset + size],
                 max_step_length=step,
             )
             offset += size
 
     def obtain_design_sensitivity_vars(
-            self,
-            assembly: torchfea.Assembly,
+        self,
+        assembly: torchfea.Assembly,
     ) -> torch.Tensor:
-        values = [interface.obtain_design_sensitivity_vars(assembly).flatten()
-                  for interface in self.interfaces()]
+        values = [
+            interface.obtain_design_sensitivity_vars(assembly).flatten()
+            for interface in self.interfaces()
+        ]
         values = [value for value in values if value.numel()]
         return torch.cat(values) if values else torch.zeros(0)
 
     def modify_assembly(
-            self,
-            design_sensitivity_vars: torch.Tensor,
-            assembly: torchfea.Assembly,
+        self,
+        design_sensitivity_vars: torch.Tensor,
+        assembly: torchfea.Assembly,
     ) -> None:
         values = design_sensitivity_vars.flatten()
         offset = 0
         for interface in self.interfaces():
             size = interface.obtain_design_sensitivity_vars(assembly).numel()
             if size:
-                interface.modify_assembly(values[offset:offset + size], assembly)
+                interface.modify_assembly(values[offset : offset + size], assembly)
                 offset += size
         if offset != values.numel():
             raise ValueError("Material sensitivity size does not match interfaces.")
@@ -164,9 +173,9 @@ class MaterialsParams(BaseParams):
         return meshes
 
     def plot(
-            self,
-            plotter: pv.Plotter | None = None,
-            meshes: list[pv.DataSet] | pv.DataSet | None = None,
+        self,
+        plotter: pv.Plotter | None = None,
+        meshes: list[pv.DataSet] | pv.DataSet | None = None,
     ) -> pv.Plotter:
         if plotter is None:
             plotter = pv.Plotter()

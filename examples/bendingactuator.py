@@ -102,11 +102,13 @@ class ThisController(morphopt.Controller):
                 self.add_material_interface(
                     self.HomogeneousMaterial(
                         material_parameters=self.materialmodels.NeoHookeanLnJParams(
-                            mu=0.482, kappa=4.8),
+                            mu=0.482, kappa=4.8
+                        ),
                         density=1.08e-9,
                         part_name="final_model",
                     ),
-                    name="body")
+                    name="body",
+                )
 
         def __init__(self):
             super().__init__(
@@ -152,9 +154,7 @@ class ThisController(morphopt.Controller):
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
                 self.add_constraints(
-                    self.objectivefuncs.Fairness(
-                        surfaces=params.geometry
-                    )
+                    self.objectivefuncs.Fairness(surfaces=params.geometry)
                 )
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])

@@ -1,25 +1,32 @@
-
-import torchfea
-import numpy as np
 import torch
+import torchfea
+from torchfea import FEAController
 
 from .baseparam import BaseParams
 from .feainterface.basefeainterface import BaseFEAInterface
 
-from torchfea import FEA_INP, FEAController
 
 class FEAParams(BaseParams):
     """
     Class to handle the loads in the model.
     """
-    from .feainterface import PressureInterface
-    from .feainterface import ContactInterface, ContactSelfInterface
-    from .feainterface import ConcentratedForceInterface, ConcentratedMomentInterface
-    from .feainterface import SpringToGroundInterface, SpringBetweenRPsInterface, PenaltyDoFInterface
-    from .feainterface import BoundaryConditionInterface, BoundaryConditionRPInterface
-    from .feainterface import CoupleInterface
-    from .feainterface import ReferencePointInterface
-    from .feainterface import BodyforceInterface
+
+    from .feainterface import (
+        BodyforceInterface,
+        BoundaryConditionInterface,
+        BoundaryConditionRPInterface,
+        ConcentratedForceInterface,
+        ConcentratedMomentInterface,
+        ContactInterface,
+        ContactSelfInterface,
+        CoupleInterface,
+        PenaltyDoFInterface,
+        PressureInterface,
+        ReferencePointInterface,
+        SpringBetweenRPsInterface,
+        SpringToGroundInterface,
+    )
+
     def __init__(self):
         """
         Initialize the Loads class.
@@ -28,7 +35,6 @@ class FEAParams(BaseParams):
             fea_mesh_order (int): The FE mesh order used by the analysis.
         """
         super().__init__()
-
 
         self.feainterfaces: dict[str, BaseFEAInterface] = {}
         """loadinterfaces (dict): A dictionary to hold the load interfaces."""
@@ -45,8 +51,16 @@ class FEAParams(BaseParams):
     def define_steps(self):
         pass
 
-    
-    def add_instance_from_inp(self, fe: torchfea.FEAController, inp_path: str, part_name: str, instance_name: str, translation: list[float] = None, part_name_new: str = None, instance_name_new: str = None) -> None:
+    def add_instance_from_inp(
+        self,
+        fe: torchfea.FEAController,
+        inp_path: str,
+        part_name: str,
+        instance_name: str,
+        translation: list[float] = None,
+        part_name_new: str = None,
+        instance_name_new: str = None,
+    ) -> None:
         """
         Add a part and instance into the current FE assembly by reading an external INP file.
 
@@ -74,7 +88,9 @@ class FEAParams(BaseParams):
         trans = translation if translation is not None else [0.0, 0.0, 0.0]
         inst._translation = torch.tensor(trans)
 
-    def add_fea_interface(self, fea_interface: BaseFEAInterface, name: str = None) -> str:
+    def add_fea_interface(
+        self, fea_interface: BaseFEAInterface, name: str = None
+    ) -> str:
         """
         Add a load interface to the load interfaces dictionary.
 
@@ -89,14 +105,14 @@ class FEAParams(BaseParams):
         if name is None:
             name0 = fea_interface.__class__.__name__
             ind = 0
-            while '%s_%d'%(name0,ind) in self.feainterfaces:
+            while "%s_%d" % (name0, ind) in self.feainterfaces:
                 ind += 1
-            name = '%s_%d'%(name0,ind)
+            name = "%s_%d" % (name0, ind)
 
         self.feainterfaces[name] = fea_interface
         fea_interface._name = name
         return name
-    
+
     def set_step_num(self, num_steps: int) -> None:
         """
         Set the number of load steps.
@@ -111,7 +127,9 @@ class FEAParams(BaseParams):
                 load_step[name] = load_interface._values.copy()
             self.fea_steps_params.append(load_step)
 
-    def set_step_params(self, step_index: int, load_name: str, values: list[float]) -> None:
+    def set_step_params(
+        self, step_index: int, load_name: str, values: list[float]
+    ) -> None:
         """
         Set the load parameters for a specific load step.
 
@@ -125,11 +143,13 @@ class FEAParams(BaseParams):
         if load_name not in self.feainterfaces:
             raise KeyError(f"Load interface with name '{load_name}' does not exist.")
         self.fea_steps_params[step_index][load_name] = values
-    
+
     def reinitialize(self, iteration, *args, **kwargs):
         # Sort the load interfaces and load steps parameters by their keys
         sorted_fea_interfaces = dict(sorted(self.feainterfaces.items()))
-        sorted_fea_steps_params = [dict(sorted(step.items())) for step in self.fea_steps_params]
+        sorted_fea_steps_params = [
+            dict(sorted(step.items())) for step in self.fea_steps_params
+        ]
 
         # Update the dictionaries with the sorted versions
         self.feainterfaces = sorted_fea_interfaces
@@ -156,7 +176,6 @@ class FEAParams(BaseParams):
 
         # get the FEA model
 
-
         fe = torchfea.FEAController()
         fe.assembly = assembly
         fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-7)
@@ -164,10 +183,9 @@ class FEAParams(BaseParams):
         # Add fea features
         for name, interface in self.feainterfaces.items():
             interface.modify_fea(fe, name)
-        
+
         return fe
-    
-    
+
     def process_fea(self, fe: FEAController, step_index: int) -> None:
         """
         Process the FEA controller to update load-related information.
@@ -193,7 +211,7 @@ class FEAParams(BaseParams):
             for params_now in load_step.values():
                 params.append(torch.tensor(params_now))
         return params
-    
+
     def set_parameters(self, xlist: list[torch.Tensor]) -> None:
         """
         Set the parameters.
@@ -203,7 +221,7 @@ class FEAParams(BaseParams):
         """
         ind_now = 0
         for load_step in self.fea_steps_params:
-            for key in load_step.keys():
+            for key in load_step:
                 change_slice = xlist[ind_now]
                 load_step[key] = change_slice.detach().cpu().tolist()
                 ind_now += 1
@@ -216,9 +234,11 @@ class FEAParams(BaseParams):
             torch.Tensor: The pressure variables.
         """
         xlist = self.get_parameters()
-        x_flatten = torch.cat([torch.randn_like(xlist[i].flatten())*1e-6 for i in range(len(xlist))])
+        x_flatten = torch.cat(
+            [torch.randn_like(xlist[i].flatten()) * 1e-6 for i in range(len(xlist))]
+        )
         return x_flatten
-    
+
     def update_variables(self, x_change: torch.Tensor) -> None:
         """
         Update the pressure variables.
@@ -232,7 +252,7 @@ class FEAParams(BaseParams):
         for load_step in self.fea_steps_params:
             for key in load_step.keys():
                 num_vars = len(load_step[key])
-                change_slice = x_change[ind_now:ind_now + num_vars]
+                change_slice = x_change[ind_now : ind_now + num_vars]
                 current_params = torch.tensor(load_step[key])
                 updated_params = current_params + change_slice
                 load_step[key] = updated_params.detach().cpu().tolist()

@@ -1,26 +1,24 @@
-
 import math
 import tempfile
 
+import pyvista as pv
+import torch
 from torchfea import Assembly
 
-import torch
 from ..baseobject import BaseObject
 from .feaparams import FEAParams
 from .geometry import BaseGeometry
 from .materials import MaterialsParams
 
 
-import pyvista as pv
-
-
-
-
 class Params(BaseObject):
     """
     Class to handle the parameters of the model.
     """
-    def __init__(self, surfaces: BaseGeometry, feamodel: FEAParams, materials: MaterialsParams) -> None:
+
+    def __init__(
+        self, surfaces: BaseGeometry, feamodel: FEAParams, materials: MaterialsParams
+    ) -> None:
         """
         Initialize the Params class.
         """
@@ -40,7 +38,7 @@ class Params(BaseObject):
     def pathlog_required(self) -> list[str]:
         """
         Allocate the path for saving data.
-        
+
         Args:
             foldpath (str): The path to allocate.
         """
@@ -48,7 +46,7 @@ class Params(BaseObject):
         paths += self.geometry.pathlog_required()
         paths += self.feamodel.pathlog_required()
         paths += self.materials.pathlog_required()
-        return paths + ['params']
+        return paths + ["params"]
 
     def reinitialize(self, iteration: int) -> None:
         """
@@ -65,8 +63,8 @@ class Params(BaseObject):
         self.geometry.initialize()
         self.feamodel.initialize()
         self.materials.initialize()
-        
-    def create_feamodel(self, path_result: str=None, pools=None):
+
+    def create_feamodel(self, path_result: str = None, pools=None):
         """
         Create the finite element model for sensitivity analysis.
 
@@ -78,7 +76,7 @@ class Params(BaseObject):
         """
 
         if path_result is None:
-            with tempfile.TemporaryDirectory(prefix='morphopt_') as tempdir:
+            with tempfile.TemporaryDirectory(prefix="morphopt_") as tempdir:
                 assembly = self.geometry.generate(path_result=tempdir, pools=pools)
         else:
             assembly = self.geometry.generate(path_result=path_result, pools=pools)
@@ -86,16 +84,16 @@ class Params(BaseObject):
         fe = self.feamodel.create_fea(assembly=assembly)
         self.materials.set_materials(fe)
         fe.initialize()
-        
+
         return fe
-    
+
     def obtain_design_sensitivity_vars(self, assembly: Assembly):
         """
         Obtain the design sensitivity variables for the optimization problem.
 
         Args:
             assembly (Assembly): The assembly to obtain design sensitivity variables for.
-            
+
         Returns:
             dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
         """
@@ -104,15 +102,16 @@ class Params(BaseObject):
 
         # Obtain design sensitivity variables from each parameter class
         design_sensitivity_vars = {
-            'geometry': self.geometry.obtain_design_sensitivity_vars(assembly),
-            'feamodel': self.feamodel.obtain_design_sensitivity_vars(assembly),
-            'materials': self.materials.obtain_design_sensitivity_vars(assembly)
+            "geometry": self.geometry.obtain_design_sensitivity_vars(assembly),
+            "feamodel": self.feamodel.obtain_design_sensitivity_vars(assembly),
+            "materials": self.materials.obtain_design_sensitivity_vars(assembly),
         }
-
 
         return design_sensitivity_vars
 
-    def modify_assembly(self, design_sensitivity_vars: dict[str, torch.Tensor], assembly: Assembly) -> None:
+    def modify_assembly(
+        self, design_sensitivity_vars: dict[str, torch.Tensor], assembly: Assembly
+    ) -> None:
         """
         Modify the assembly for sensitivity analysis.
 
@@ -120,14 +119,14 @@ class Params(BaseObject):
             design_sensitivity_vars (dict[str, torch.Tensor]): The design sensitivity variables.
             assembly (Assembly): The assembly to modify.
         """
-        self.geometry.modify_assembly(design_sensitivity_vars['geometry'], assembly)
-        self.feamodel.modify_assembly(design_sensitivity_vars['feamodel'], assembly)
-        self.materials.modify_assembly(design_sensitivity_vars['materials'], assembly)
+        self.geometry.modify_assembly(design_sensitivity_vars["geometry"], assembly)
+        self.feamodel.modify_assembly(design_sensitivity_vars["feamodel"], assembly)
+        self.materials.modify_assembly(design_sensitivity_vars["materials"], assembly)
 
     def save(self, foldpath: str, iteration: int) -> None:
         """
         Save the parameters to a file.
-        
+
         Args:
             foldpath (str): The path to save the parameters.
         """
@@ -135,29 +134,33 @@ class Params(BaseObject):
         self.feamodel.save(foldpath=foldpath, iteration=iteration)
         self.materials.save(foldpath=foldpath, iteration=iteration)
 
-    
         import pyvista as pv
+
         plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
-        plotter.set_background('white')
+        plotter.set_background("white")
 
         self.plot(plotter=plotter)
 
         plotter.enable_parallel_projection()
         azimuth = 210
         elevation = 20
-        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(elevation))))
-        
-        plotter.screenshot(foldpath + self.pathlog_required()[-1] + '/%d.jpg'%iteration)
+        plotter.view_vector(
+            (
+                math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                math.sin(math.radians(elevation)),
+            )
+        )
+
+        plotter.screenshot(
+            foldpath + self.pathlog_required()[-1] + "/%d.jpg" % iteration
+        )
         plotter.close()
-
-
 
     def load(self, foldpath: str, iteration: int) -> None:
         """
         Load the parameters from a file.
-        
+
         Args:
             foldpath (str): The path to load the parameters from.
         """
@@ -168,13 +171,15 @@ class Params(BaseObject):
     def export_data(self, filepath: str) -> None:
         """
         Export the data of parameters to file(s).
-        
+
         Args:
             filepath (str): The path to export the data.
         """
         self.geometry._export_data(foldpath=filepath)
-    
-    def plot(self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None) -> pv.Plotter:
+
+    def plot(
+        self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None
+    ) -> pv.Plotter:
         """
         Plot the geometry and other relevant information using PyVista.
 
@@ -187,13 +192,17 @@ class Params(BaseObject):
 
         if plotter is None:
             plotter = pv.Plotter()
-    
+
         self.geometry.plot(plotter=plotter, meshes=meshes)
         self.materials.plot(plotter=plotter, meshes=meshes)
         self.feamodel.plot(plotter=plotter, meshes=meshes)
 
         return plotter
-    
+
     def get_meshes(self):
         """Get the meshes associated with the geometry."""
-        return self.geometry.get_meshes() + self.feamodel.get_meshes() + self.materials.get_meshes()
+        return (
+            self.geometry.get_meshes()
+            + self.feamodel.get_meshes()
+            + self.materials.get_meshes()
+        )

@@ -1,46 +1,44 @@
-
-
-import math
-import os
-import gmsh
-import torchfea
-import numpy as np
-import torch
 import multiprocessing as mp
+import os
 from typing import Any
 
-from ..optcore import BaseParams
+import gmsh
+import numpy as np
+import torch
+import torchfea
+
 from ..optcore import BaseGeometry
+
 
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
         # print("Initializing GMSH...")
         gmsh.initialize()
-        gmsh.option.setNumber("General.NumThreads", 0) # Use all available cores
+        gmsh.option.setNumber("General.NumThreads", 0)  # Use all available cores
         gmsh.option.setNumber("General.Verbosity", 2)  # Errors only
         self.files_map = {}
         self.surface_tags_by_index = {}
         self.sorted_indices = []
-        
+
         # Set mesh size options if provided
         if mesh_size_min is not None:
             # print(f"Setting Mesh.MeshSizeMin to {mesh_size_min}")
             gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_size_min)
-            
+
         if mesh_size_max is not None:
             # print(f"Setting Mesh.MeshSizeMax to {mesh_size_max}")
             gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_size_max)
-            
 
     def scan_directory(self, directory=None):
         if directory is None:
             directory = os.getcwd()
-            
+
         # print(f"Scanning directory {directory} for files...")
         # Pattern: __surface-{number}.(stp|stl)
         import re
-        pattern = re.compile(r'^__surface-(\d+)\.(stp|stl)$', re.IGNORECASE)
-        
+
+        pattern = re.compile(r"^__surface-(\d+)\.(stp|stl)$", re.IGNORECASE)
+
         self.files_map = {}
         for filename in os.listdir(directory):
             match = pattern.match(filename)
@@ -48,10 +46,12 @@ class MeshGenerator:
                 idx = int(match.group(1))
                 self.files_map[idx] = os.path.join(directory, filename)
                 # print(f"  Found: {filename} (Index: {idx})")
-        
+
         if 0 not in self.files_map:
-            raise FileNotFoundError("Base surface file (Index 0) not found. Need '__surface-0.stp' or '__surface-0.stl'.")
-            
+            raise FileNotFoundError(
+                "Base surface file (Index 0) not found. Need '__surface-0.stp' or '__surface-0.stl'."
+            )
+
         self.sorted_indices = sorted(self.files_map.keys())
         # print(f"Processing indices: {self.sorted_indices}")
 
@@ -64,40 +64,40 @@ class MeshGenerator:
         for idx in self.sorted_indices:
             filename = self.files_map[idx]
             # print(f"\n--- Processing Index {idx}: {filename} ---")
-            
+
             # Snapshot current surfaces to identify new ones
             pre_surfaces = self._get_all_surface_tags()
-            
+
             ext = os.path.splitext(filename)[1].lower()
-            
-            if ext in ['.stp', '.step']:
+
+            if ext in [".stp", ".step"]:
                 # print("  Type: STP (CAD)")
                 try:
                     # Import OCC
                     gmsh.model.occ.importShapes(filename)
                     gmsh.model.occ.synchronize()
-                    
+
                     # Remove volumes, keep surfaces
                     vols = gmsh.model.getEntities(3)
                     if vols:
                         # print(f"  Found {len(vols)} volume(s) in STP. Removing volume entities, keeping surfaces...")
                         gmsh.model.occ.remove(vols, recursive=False)
                         gmsh.model.occ.synchronize()
-                    
+
                 except Exception as e:
                     raise RuntimeError(f"Error loading STP file {filename}: {e}")
 
-            elif ext in ['.stl']:
+            elif ext in [".stl"]:
                 # print("  Type: STL (Discrete)")
                 try:
                     gmsh.merge(filename)
                 except Exception as e:
                     raise RuntimeError(f"Error loading STL file {filename}: {e}")
-            
+
             # Identify newly added surfaces
             post_surfaces = self._get_all_surface_tags()
             new_surfaces = list(post_surfaces - pre_surfaces)
-            
+
             if not new_surfaces:
                 # print(f"  Warning: No surfaces found in {filename}.")
                 pass
@@ -107,12 +107,12 @@ class MeshGenerator:
 
     def construct_volume(self):
         # print("\n--- Constructing Volume ---")
-        
+
         if 0 not in self.surface_tags_by_index or not self.surface_tags_by_index[0]:
             raise RuntimeError("Error: No surfaces available for base (Index 0).")
 
         loops = []
-        
+
         # Process Base (0) first
         try:
             base_loop = gmsh.model.geo.addSurfaceLoop(self.surface_tags_by_index[0])
@@ -123,7 +123,8 @@ class MeshGenerator:
 
         # Process Cavities (>0)
         for idx in self.sorted_indices:
-            if idx == 0: continue
+            if idx == 0:
+                continue
             tags = self.surface_tags_by_index.get(idx)
             if tags:
                 try:
@@ -131,17 +132,19 @@ class MeshGenerator:
                     loops.append(cavity_loop)
                     # print(f"  Added cavity loop (from Index {idx}).")
                 except Exception as e:
-                    raise RuntimeError(f"Error creating cavity loop for index {idx}: {e}")
+                    raise RuntimeError(
+                        f"Error creating cavity loop for index {idx}: {e}"
+                    )
 
         # Create Volume
         try:
             vol_tag = gmsh.model.geo.addVolume(loops)
             # print(f"  Created Volume Tag: {vol_tag}")
             gmsh.model.geo.synchronize()
-            
+
             # Create Physical Volume
             gmsh.model.addPhysicalGroup(3, [vol_tag], name="Volume_All")
-            
+
         except Exception as e:
             raise RuntimeError(f"Error creating volume: {e}")
 
@@ -176,12 +179,12 @@ class MeshGenerator:
         # S2: 1, 4, 2
         # S3: 2, 4, 3
         # S4: 3, 4, 1
-        
+
         # GMSH Tet4 Node Order: 0, 1, 2, 3
         # GMSH flattened check:
         # We need to ensure we use the correct nodes.
         # Assuming compact packing.
-        
+
         face_map = {}
 
         # Use NumPy for vectorized operations
@@ -194,7 +197,7 @@ class MeshGenerator:
             ([0, 1, 2], "S1"),
             ([0, 3, 1], "S2"),
             ([1, 3, 2], "S3"),
-            ([2, 3, 0], "S4")
+            ([2, 3, 0], "S4"),
         ]
 
         for col_idx, face_name in face_defs:
@@ -205,17 +208,14 @@ class MeshGenerator:
                 face_map[key] = (tag, face_name)
 
         payload_lines = []
-        
+
         # For each surface index, find which faces belong to it
         for idx, surf_tags in self.surface_tags_by_index.items():
-            
             # Collect sets of elements for each face type
-            sets_data = {
-                "S1": [], "S2": [], "S3": [], "S4": []
-            }
-            
+            sets_data = {"S1": [], "S2": [], "S3": [], "S4": []}
+
             found_count = 0
-            
+
             # Set to collect unique node tags for this surface index
             surface_nodes = set()
 
@@ -223,52 +223,55 @@ class MeshGenerator:
             for s_tag in surf_tags:
                 # Get 2D elements (Triangles = Type 2) on this surface
                 try:
-                    tri_tags, tri_node_tags = gmsh.model.mesh.getElementsByType(2, tag=s_tag)
+                    tri_tags, tri_node_tags = gmsh.model.mesh.getElementsByType(
+                        2, tag=s_tag
+                    )
                 except:
                     continue
-                    
+
                 n_tris = len(tri_tags)
-                if n_tris == 0: continue
-                
+                if n_tris == 0:
+                    continue
+
                 for t in range(n_tris):
                     base = t * 3
                     tn0 = tri_node_tags[base]
-                    tn1 = tri_node_tags[base+1]
-                    tn2 = tri_node_tags[base+2]
+                    tn1 = tri_node_tags[base + 1]
+                    tn2 = tri_node_tags[base + 2]
 
                     # Add nodes to the set for NSET generation
                     surface_nodes.add(tn0)
                     surface_nodes.add(tn1)
                     surface_nodes.add(tn2)
-                    
+
                     key = frozenset((tn0, tn1, tn2))
-                    
+
                     if key in face_map:
                         etag, face_id = face_map[key]
                         sets_data[face_id].append(etag)
                         found_count += 1
-            
+
             if found_count > 0:
                 # print(f"    Mapped {found_count} faces for surface_{idx}_All")
                 surf_name = f"surface_{idx}_All"
-                
+
                 # Create ELSETs for each face type
                 active_faces = []
                 for face_id, el_list in sets_data.items():
                     if el_list:
                         set_name = f"_{surf_name}_{face_id}"
                         active_faces.append(f"{set_name}, {face_id}")
-                        
+
                         payload_lines.append(f"*ELSET, ELSET={set_name}, INTERNAL")
                         # Write IDs, 16 per line max usually, plain csv is fine
                         # Join with commas
                         # Chunking for niceness
                         chunk_size = 16
                         for k in range(0, len(el_list), chunk_size):
-                            chunk = el_list[k:k+chunk_size]
+                            chunk = el_list[k : k + chunk_size]
                             line = ", ".join(str(e) for e in chunk)
                             payload_lines.append(line)
-                
+
                 # Create SURFACE definition
                 payload_lines.append(f"*SURFACE, TYPE=ELEMENT, NAME={surf_name}")
                 payload_lines.extend(active_faces)
@@ -279,30 +282,31 @@ class MeshGenerator:
                     sorted_nodes = sorted(list(surface_nodes))
                     chunk_size = 16
                     for k in range(0, len(sorted_nodes), chunk_size):
-                        chunk = sorted_nodes[k:k+chunk_size]
+                        chunk = sorted_nodes[k : k + chunk_size]
                         line = ", ".join(str(e) for e in chunk)
                         payload_lines.append(line)
-        
+
         return "\n".join(payload_lines)
 
-    def export(self, outfile: str = "output.inp",
-               part_name: str = "final_model") -> None:
+    def export(
+        self, outfile: str = "output.inp", part_name: str = "final_model"
+    ) -> None:
         # print(f"\n--- Exporting to {outfile} ---")
-        
+
         # 1. Generate the surface definition payload based on the mesh
         surface_payload = self._generate_abaqus_surface_payload()
-        
+
         # 2. Write the standard GMSH output (Volume only)
         # Note: We do NOT have Physical Surfaces defined, so they won't be exported as elements.
         gmsh.write(outfile)
-        
+
         # 3. Post-process to insert *Part and append surfaces
         # print("  Post-processing INP file...")
-        with open(outfile, 'r') as f:
+        with open(outfile, "r") as f:
             lines = f.readlines()
 
         lines.insert(2, f"*Part, name={part_name}\n")
-            
+
         # Append surface payload
         if surface_payload:
             lines.append("\n")
@@ -311,21 +315,24 @@ class MeshGenerator:
 
         # end part
         lines.append("*End Part\n")
-            
+
         # Write back
-        with open(outfile, 'w') as f:
+        with open(outfile, "w") as f:
             f.writelines(lines)
-            
+
     def finalize(self):
         gmsh.finalize()
         # print("Done.")
 
     @classmethod
-    def run(cls, seed_size: float, output_file: str = "output.inp",
-            directory: str | None = None,
-            part_name: str = "final_model") -> None:
-        generator = cls(mesh_size_max=seed_size*1.0,
-                        mesh_size_min=seed_size*0.5)
+    def run(
+        cls,
+        seed_size: float,
+        output_file: str = "output.inp",
+        directory: str | None = None,
+        part_name: str = "final_model",
+    ) -> None:
+        generator = cls(mesh_size_max=seed_size * 1.0, mesh_size_min=seed_size * 0.5)
         try:
             generator.scan_directory(directory=directory)
             generator.load_and_process_files()
@@ -337,19 +344,29 @@ class MeshGenerator:
         finally:
             generator.finalize()
 
+
 class GeometryParams(BaseGeometry):
     """
     Class to handle the surfaces of the morphable model.
     """
+
+    from .geometryinterfaces.basesurfaceinterface import (
+        BaseInterface,
+        CpBasedInterface,
+        FixedSurface,
+    )
     from .geometryinterfaces.bspsurfaceinterface import BspInterface as BSP
     from .geometryinterfaces.cpgeosurfaceinterface import CPGEOInterface as CPGEO
-    from .geometryinterfaces.basesurfaceinterface import BaseInterface, CpBasedInterface
-    from .geometryinterfaces.basesurfaceinterface import FixedSurface
 
-    def __init__(self, fea_seed_size: float, mesh_order: int = 1,
-                 part_name: str = "final_model",
-                 instance_name: str | None = None,
-                 *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        fea_seed_size: float,
+        mesh_order: int = 1,
+        part_name: str = "final_model",
+        instance_name: str | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         """
         Initialize the Surfaces class.
 
@@ -407,7 +424,7 @@ class GeometryParams(BaseGeometry):
         if not self.part_name:
             raise ValueError("part_name cannot be empty for GeometryParams.")
         self.instance_name = str(instance_name or self.part_name).strip()
-        
+
     def initialize(self, *args: Any, **kwargs: Any) -> None:
         for i in range(self.num_surface):
             self.surface_list[i].initialize(*args, **kwargs)
@@ -429,7 +446,6 @@ class GeometryParams(BaseGeometry):
             #     result.append(
             #         pools.apply_async(
             #         surface_now.reinitialize, kwds={}))
-                
 
             # # get the result
             # for i in range(self.num_surface):
@@ -448,7 +464,7 @@ class GeometryParams(BaseGeometry):
             The surface object to be added.
         """
         self.surface_list.append(surface_new)
-        
+
     @property
     def num_surface(self) -> int:
         """
@@ -458,7 +474,7 @@ class GeometryParams(BaseGeometry):
             length (int) :The number of surfaces.
         """
         return len(self.surface_list)
-    
+
     @property
     def num_variables_list(self) -> list[int]:
         """
@@ -471,7 +487,7 @@ class GeometryParams(BaseGeometry):
         return num_vars
 
     def pathlog_required(self):
-        return ['geometry']
+        return ["geometry"]
 
     def get_geometry_values(self) -> list[torch.Tensor]:
         """
@@ -483,13 +499,15 @@ class GeometryParams(BaseGeometry):
                 - rdu (list[torch.Tensor]): The partial derivatives of the surfaces.
                 - rdu2 (list[torch.Tensor]): The second partial derivatives of the surfaces.
         """
-        
-        rlist = [self.surface_list[i].get_geometry_values() for i in range(self.num_surface)]
+
+        rlist = [
+            self.surface_list[i].get_geometry_values() for i in range(self.num_surface)
+        ]
         r = [rlist[i][0] for i in range(self.num_surface)]
         rdu = [rlist[i][1] for i in range(self.num_surface)]
         rdu2 = [rlist[i][2] for i in range(self.num_surface)]
         return r, rdu, rdu2
-    
+
     def get_control_points_list(self) -> list[torch.Tensor]:
         """
         Get the control points of the surfaces.
@@ -497,11 +515,20 @@ class GeometryParams(BaseGeometry):
         Returns:
             list[torch.Tensor]: The control points of the surfaces.
         """
-        
-        ctrl_pts = [self.surface_list[i].control_points.detach().clone() for i in range(self.num_surface)]
+
+        ctrl_pts = [
+            self.surface_list[i].control_points.detach().clone()
+            for i in range(self.num_surface)
+        ]
         return ctrl_pts
 
-    def get_penalty_fairness(self, weight: list[torch.Tensor], r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor]) -> torch.Tensor:
+    def get_penalty_fairness(
+        self,
+        weight: list[torch.Tensor],
+        r: list[torch.Tensor],
+        rdu: list[torch.Tensor],
+        rdu2: list[torch.Tensor],
+    ) -> torch.Tensor:
         """
         Get the penalty fairness of the surfaces.
 
@@ -514,13 +541,17 @@ class GeometryParams(BaseGeometry):
         Returns:
             torch.Tensor: The penalty fairness of the surfaces.
         """
-        
+
         penalty = []
         for i in range(self.num_surface):
-            penalty.append(self.surface_list[i].get_penalty_fairness(weight[i], r[i], rdu[i], rdu2[i]))
-        
+            penalty.append(
+                self.surface_list[i].get_penalty_fairness(
+                    weight[i], r[i], rdu[i], rdu2[i]
+                )
+            )
+
         return penalty
-    
+
     def get_points_weight(self) -> list[torch.Tensor]:
         """
         Get the weights for the points in the optimization process.
@@ -528,10 +559,12 @@ class GeometryParams(BaseGeometry):
         Returns:
             list[torch.Tensor]: The weights for the points in the optimization process.
         """
-        
-        weight = [self.surface_list[i].get_points_weight() for i in range(self.num_surface)]
+
+        weight = [
+            self.surface_list[i].get_points_weight() for i in range(self.num_surface)
+        ]
         return weight
-    
+
     def get_parameters(self) -> torch.Tensor:
         """
         Get the current variables of the surfaces.
@@ -539,12 +572,14 @@ class GeometryParams(BaseGeometry):
         Returns:
             list[torch.Tensor]: The current variables of the surfaces.
         """
-        
+
         xlist = []
         for i in range(self.num_surface):
-            xlist.append(self.surface_list[i].get_surface_parameters().flatten().detach().clone())
+            xlist.append(
+                self.surface_list[i].get_surface_parameters().flatten().detach().clone()
+            )
         return xlist
-    
+
     def set_parameters(self, xlist: list[torch.Tensor]) -> None:
         """
         Set the current variables of the surfaces.
@@ -554,7 +589,7 @@ class GeometryParams(BaseGeometry):
         """
         for i in range(self.num_surface):
             self.surface_list[i].set_surface_parameters(xlist[i].detach().clone())
-            
+
     def get_variables(self) -> torch.Tensor:
         """
         Get the current variables of the surfaces.
@@ -563,17 +598,21 @@ class GeometryParams(BaseGeometry):
             torch.Tensor: The current variables of the surfaces.
         """
         xlist = self.get_parameters()
-        x_flatten = torch.cat([torch.randn_like(xlist[i].flatten())*1e-6 for i in range(len(xlist))])
+        x_flatten = torch.cat(
+            [torch.randn_like(xlist[i].flatten()) * 1e-6 for i in range(len(xlist))]
+        )
         return x_flatten
-    
-    def update_variables(self, x_change: torch.Tensor, max_step_length: list[torch.Tensor]) -> None:
+
+    def update_variables(
+        self, x_change: torch.Tensor, max_step_length: list[torch.Tensor]
+    ) -> None:
         """
         Update the surfaces with the new variables.
 
         Parameters:
             xlist_change (torch.Tensor): The change of variables for the surfaces.
         """
-        
+
         x_change_list: list[torch.Tensor] = []
         start = 0
         for i in range(self.num_surface):
@@ -582,11 +621,17 @@ class GeometryParams(BaseGeometry):
             start = end
 
         for i in range(self.num_surface):
-
             r = x_change_list[i].norm(dim=1, keepdim=True)
-            
-            dx = 2/torch.pi * torch.atan(r) * x_change_list[i] / (r + 1e-15) * max_step_length[i].unsqueeze(1)
-            
+
+            dx = (
+                2
+                / torch.pi
+                * torch.atan(r)
+                * x_change_list[i]
+                / (r + 1e-15)
+                * max_step_length[i].unsqueeze(1)
+            )
+
             self.surface_list[i].update_variables(dx)
 
         self.apply_surface_constraints()
@@ -595,38 +640,51 @@ class GeometryParams(BaseGeometry):
         """
         Apply the constraints (e.g. the surface constraint) of the surfaces.
         """
-        pass
 
     def save(self, foldpath, iteration) -> None:
         for i in range(self.num_surface):
-            self.surface_list[i].save(foldpath + self.pathlog_required()[0] + '/Surface-%d_iter-%d' %
-                              (i, iteration))
+            self.surface_list[i].save(
+                foldpath
+                + self.pathlog_required()[0]
+                + "/Surface-%d_iter-%d" % (i, iteration)
+            )
 
-        
     def load(self, foldpath, iteration):
         for i in range(self.num_surface):
-            self.surface_list[i].load(foldpath + self.pathlog_required()[0] + '/Surface-%d_iter-%d' %
-                              (i, iteration))
+            self.surface_list[i].load(
+                foldpath
+                + self.pathlog_required()[0]
+                + "/Surface-%d_iter-%d" % (i, iteration)
+            )
             # self.surface_list[i].initialize()
-            
-    def plot(self, plotter=None, opacity:list[float] = None, meshes=None):
+
+    def plot(self, plotter=None, opacity: list[float] = None, meshes=None):
         if plotter is None:
             import pyvista as pv
+
             plotter = pv.Plotter()
 
         if opacity is None:
             opacity = [0.6 if i == 0 else 1.0 for i in range(self.num_surface)]
-            
+
         if meshes is None:
             meshes = self.get_meshes()
 
         for sf in range(self.num_surface):
             opacity_now = opacity[sf] if sf < len(opacity) else 1.0
             mesh = meshes[sf] if sf < len(meshes) else None
-            plotter.add_mesh(mesh, opacity=opacity_now,  color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
-                           diffuse=0.8, specular=0.2, ambient=0.3, specular_power=10,
-                           smooth_shading=True, show_edges=False)
-            
+            plotter.add_mesh(
+                mesh,
+                opacity=opacity_now,
+                color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
+                diffuse=0.8,
+                specular=0.2,
+                ambient=0.3,
+                specular_power=10,
+                smooth_shading=True,
+                show_edges=False,
+            )
+
     def get_meshes(self):
         """
         Get all meshes for the surfaces.
@@ -639,8 +697,8 @@ class GeometryParams(BaseGeometry):
             mesh = self.surface_list[sf].get_mesh()
             mesh_list.append(mesh)
         return mesh_list
-    
-    def generate(self, path_result: str, pools = None):
+
+    def generate(self, path_result: str, pools=None):
         """
         This function generates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
@@ -648,16 +706,18 @@ class GeometryParams(BaseGeometry):
 
         part = self._regenerate(path_result, pools)
         if self._mesh_order == 2:
-            part.convert_linear_to_quadratic_elements(list(part.elems.keys()), list(part.elems.keys()))
+            part.convert_linear_to_quadratic_elements(
+                list(part.elems.keys()), list(part.elems.keys())
+            )
         assembly = torchfea.Assembly()
 
         assembly.add_part(part=part, name=self.part_name)
         instance = torchfea.Instance(part_name=self.part_name)
         assembly.add_instance(instance=instance, name=self.instance_name)
-        instance.exterior_surface = 'surface_0_All'
+        instance.exterior_surface = "surface_0_All"
         return assembly
 
-    def _regenerate(self, path_result: str, pools = None):
+    def _regenerate(self, path_result: str, pools=None):
         """
         This function regenerates the geometric model of the soft robot.
         It calls the Rhino application to generate the model and then calls Abaqus for finite element analysis (FEA).
@@ -672,7 +732,7 @@ class GeometryParams(BaseGeometry):
         self._export_data(foldpath=path_output)
 
         # call Abaqus for FEA
-        inp_path = path_output + '/TopOptRun.inp'
+        inp_path = path_output + "/TopOptRun.inp"
         # self._call_Abaqus(path_output, material_para, self.fea_seed_size, self.fea_mesh_order)
         if pools is None:
             pools_now = mp.Pool(1)
@@ -680,16 +740,24 @@ class GeometryParams(BaseGeometry):
             pools_now = pools
 
         import sys
-        if sys.platform.startswith('win'):
-            pools_now.apply_async(MeshGenerator.run, kwds={
-                'seed_size': self.fea_seed_size,
-                'output_file': inp_path,
-                'directory': path_output,
-                'part_name': self.part_name,
-            }).get()
+
+        if sys.platform.startswith("win"):
+            pools_now.apply_async(
+                MeshGenerator.run,
+                kwds={
+                    "seed_size": self.fea_seed_size,
+                    "output_file": inp_path,
+                    "directory": path_output,
+                    "part_name": self.part_name,
+                },
+            ).get()
         else:
-            MeshGenerator.run(seed_size=self.fea_seed_size, output_file=inp_path,
-                              directory=path_output, part_name=self.part_name)
+            MeshGenerator.run(
+                seed_size=self.fea_seed_size,
+                output_file=inp_path,
+                directory=path_output,
+                part_name=self.part_name,
+            )
 
         if pools is None:
             pools_now.close()
@@ -701,7 +769,11 @@ class GeometryParams(BaseGeometry):
         # inp.read_inp('Z:\\Results\\EXAMPLE_T20260118_100206\\cache\\TopOptRun.inp')
         # get the FEA model
         nodes = inp.part[self.part_name].nodes[:, 1:]
-        part = torchfea.Part(torch.from_numpy(nodes).to(torch.get_default_device()).to(torch.get_default_dtype()))
+        part = torchfea.Part(
+            torch.from_numpy(nodes)
+            .to(torch.get_default_device())
+            .to(torch.get_default_dtype())
+        )
         for surface_name, surface in inp.part[self.part_name].surfaces.items():
             sf_now = []
             for sf in surface:
@@ -712,22 +784,28 @@ class GeometryParams(BaseGeometry):
         for set_name, node_indices in inp.part[self.part_name].sets_nodes.items():
             part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
 
-        index_bottom = np.where(np.abs(nodes[:, 2]-0) < 1e-3)[0]
-        part.set_nodes['surface_0_Bottom'] = index_bottom
-        index_head = np.where(np.abs(nodes[:, 2]-np.max(nodes[:, 2])) < 1e-3)[0]
-        part.set_nodes['surface_0_Head'] = index_head
+        index_bottom = np.where(np.abs(nodes[:, 2] - 0) < 1e-3)[0]
+        part.set_nodes["surface_0_Bottom"] = index_bottom
+        index_head = np.where(np.abs(nodes[:, 2] - np.max(nodes[:, 2])) < 1e-3)[0]
+        part.set_nodes["surface_0_Head"] = index_head
 
         for key in inp.part[self.part_name].elems.keys():
             elems = inp.part[self.part_name].elems[key][:, 1:]
             elems_index = inp.part[self.part_name].elems[key][:, 0]
-            element = torchfea.elements.initialize_element(element_type=key,
-                                                        elems_index=torch.from_numpy(elems_index).to(torch.get_default_device()),     
-                                                        elems=torch.from_numpy(elems).to(torch.get_default_device()), 
-                                                        part=part)
+            element = torchfea.elements.initialize_element(
+                element_type=key,
+                elems_index=torch.from_numpy(elems_index).to(
+                    torch.get_default_device()
+                ),
+                elems=torch.from_numpy(elems).to(torch.get_default_device()),
+                part=part,
+            )
             part.add_element(element, name=key)
 
-        surf_node_idx_list_order0 = [np.sort(part.set_nodes[f'surface_{i}_All']) for i in range(self.num_surface)]
-        
+        surf_node_idx_list_order0 = [
+            np.sort(part.set_nodes[f"surface_{i}_All"]) for i in range(self.num_surface)
+        ]
+
         # match the nodes of the surfaces with the nodes of the FEA model, and update the nodes of the FEA model with the nodes of the surfaces
         for sf_idx in range(self.num_surface):
             surf_node_idx = surf_node_idx_list_order0[sf_idx]
@@ -744,14 +822,17 @@ class GeometryParams(BaseGeometry):
         """
         This function export the data of each surfaces
         """
-        
+
         # export each surface with Rhino
         for i in range(self.num_surface):
-            surf_name0 = '__surface-%d' % i
-            self.surface_list[i].output_data(path_output=foldpath, name_output=surf_name0, flip=(i!=0))
+            surf_name0 = "__surface-%d" % i
+            self.surface_list[i].output_data(
+                path_output=foldpath, name_output=surf_name0, flip=(i != 0)
+            )
 
-
-    def obtain_design_sensitivity_vars(self, assembly: torchfea.Assembly) -> torch.Tensor:
+    def obtain_design_sensitivity_vars(
+        self, assembly: torchfea.Assembly
+    ) -> torch.Tensor:
         """
         Get the design sensitivity variables for the optimization process.
 
@@ -759,16 +840,17 @@ class GeometryParams(BaseGeometry):
             torch.Tensor: The design sensitivity variables.
         """
 
-
         cps_list = []
         for sfidx in range(self.num_surface):
             cps_list.append(self.surface_list[sfidx]._cps.flatten())
-        
+
         cps = torch.cat(cps_list, dim=0).detach()
 
         return cps
 
-    def modify_assembly(self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly) -> None:
+    def modify_assembly(
+        self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly
+    ) -> None:
         """
         Modify the assembly for sensitivity analysis.
         geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
@@ -779,16 +861,22 @@ class GeometryParams(BaseGeometry):
 
         varidx = 0
         for sf_idx in range(self.num_surface):
-            
-            self.surface_list[sf_idx]._cps = design_sensitivity_vars[varidx:varidx+self.surface_list[sf_idx].num_variables].reshape_as(self.surface_list[sf_idx]._cps)
+            self.surface_list[sf_idx]._cps = design_sensitivity_vars[
+                varidx : varidx + self.surface_list[sf_idx].num_variables
+            ].reshape_as(self.surface_list[sf_idx]._cps)
             varidx += self.surface_list[sf_idx].num_variables
 
             surf_node_idx = self.surface_list[sf_idx].surf_node_idx
-            node_update = self.surface_list[sf_idx].map(torch.from_numpy(self.surface_list[sf_idx].surf_node_uv))
+            node_update = self.surface_list[sf_idx].map(
+                torch.from_numpy(self.surface_list[sf_idx].surf_node_uv)
+            )
             nodes_new[surf_node_idx] = node_update
 
         if self._mesh_order == 2:
             nodes_new = nodes_new.clone()
-            nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (nodes_new[part.mid_pt_idxmap_torch[:, 0]] + nodes_new[part.mid_pt_idxmap_torch[:, 1]]) / 2
+            nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (
+                nodes_new[part.mid_pt_idxmap_torch[:, 0]]
+                + nodes_new[part.mid_pt_idxmap_torch[:, 1]]
+            ) / 2
 
         part.nodes = nodes_new
