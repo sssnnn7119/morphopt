@@ -18,11 +18,15 @@ class SurfacesFigurePlotter:
         
         params: morphopt.Params = MAIN_SCRIPT_FOR_RESTART.ThisController.Params()
 
+        # the model is registered by initialize(), and everything below reads it
+        params.initialize()
+
         self.params = params
         self.restart_path = restart_path
 
-        self.colors = [(40.0 / 255, 120.0 / 255, 181.0 / 255)] * self.params.geometry.num_surface
-        self.opacity = [1.0] * self.params.geometry.num_surface
+        n_surfaces = len(morphopt.shapeopt.surface_interfaces(self.params.geometry))
+        self.colors = [(40.0 / 255, 120.0 / 255, 181.0 / 255)] * n_surfaces
+        self.opacity = [1.0] * n_surfaces
         self.opacity[0] = 0.6
         self.boundary: tuple[float, float, float, float, float, float] = None
 
@@ -56,7 +60,8 @@ class SurfacesFigurePlotter:
         if plotter is None:
             plotter = pv.Plotter()
 
-        for sf in range(self.params.geometry.num_surface):
+        for sf, surface in enumerate(
+                morphopt.shapeopt.surface_interfaces(self.params.geometry)):
             if sf == 0:
                 alpha = 0.6
             else:
@@ -70,13 +75,18 @@ class SurfacesFigurePlotter:
             elif colors is not None and isinstance(colors, tuple):
                 color_to_use = colors
             
-            mesh = self.params.geometry.surface_list[sf].get_mesh()
+            mesh = surface.get_mesh()
             plotter.add_mesh(mesh, opacity=alpha, color=color_to_use,
                            diffuse=0.8, specular=0.1, ambient=0.4, specular_power=5,
                            smooth_shading=True, show_edges=False)
-        
+
         if boundary is not None:
-            pass
+            plotter.add_mesh(
+                pv.Box(bounds=boundary),
+                style="wireframe",
+                color="gray",
+                opacity=0.5,
+            )
 
         return plotter
 
@@ -167,7 +177,7 @@ class SurfacesFigurePlotter:
         plotter.open_gif(output_gif)
 
         # self.load_parameters(iteration=0)
-        mesh = self.params.geometry.surface_list[surface_index].get_mesh()
+        mesh = morphopt.shapeopt.surface_interfaces(self.params.geometry)[surface_index].get_mesh()
         plotter.add_mesh(mesh, opacity=opacity, color=colors,
                         diffuse=0.8, specular=0.1, ambient=0.4, specular_power=5,
                         smooth_shading=True, show_edges=False)
@@ -178,14 +188,18 @@ class SurfacesFigurePlotter:
             self.load_parameters(iteration=iteration)
             plotter.clear()
             
-            mesh = self.params.geometry.surface_list[surface_index].get_mesh()
+            mesh = morphopt.shapeopt.surface_interfaces(self.params.geometry)[surface_index].get_mesh()
             plotter.add_mesh(mesh, opacity=opacity, color=colors,
                            diffuse=0.8, specular=0.1, ambient=0.4, specular_power=5,
                            smooth_shading=True, show_edges=False)
-            
-            if boundary is not None:
-                pass
 
+            if boundary is not None:
+                plotter.add_mesh(
+                    pv.Box(bounds=boundary),
+                    style="wireframe",
+                    color="gray",
+                    opacity=0.5,
+                )
             
             plotter.write_frame()
             
@@ -214,8 +228,8 @@ class SurfacesFigurePlotter:
             output_jpg_foldpath (str): The folder path to save individual jpg frames. If None, frames are not saved.
         """
 
-        if not os.path.exists(output_jpg_foldpath):
-            os.makedirs(output_jpg_foldpath)
+        if output_jpg_foldpath is not None:
+            os.makedirs(output_jpg_foldpath, exist_ok=True)
 
         if colors is None:
             colors = self.colors

@@ -1,5 +1,4 @@
 import torch
-from typing import Any
 
 from ..simpmaterial import SIMP_BSPFieldMaterials
 from ...optcore import MaterialsParams
@@ -36,8 +35,8 @@ class VolFrac(BaseConstraints):
     def initialize(
             self,
             material_params: MaterialsParams,
-            *args: Any,
-            **kwargs: Any,
+            *args: object,
+            **kwargs: object,
     ) -> None:
         # The aggregate may contain a SIMP field for the solid and one or
         # more homogeneous interfaces (for example the codesign shell).
@@ -69,8 +68,8 @@ class VolFrac(BaseConstraints):
     def __call__(
             self,
             material_params: MaterialsParams,
-            *args: Any,
-            **kwargs: Any,
+            *args: object,
+            **kwargs: object,
     ) -> torch.Tensor:
         
         

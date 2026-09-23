@@ -1,8 +1,8 @@
-from torchfea import FEAController
 import torch
-from .basefeainterface import BaseFEAInterface
-
+from torchfea import FEAController
 from torchfea.model.loads.body_force import BodyForce
+
+from .basefeainterface import BaseFEAInterface
 
 
 class BodyforceInterface(BaseFEAInterface):
@@ -15,7 +15,7 @@ class BodyforceInterface(BaseFEAInterface):
     - [2] fz
     """
 
-    def __init__(self, element_name: str, instance_name: str = 'final_model'):
+    def __init__(self, element_name: str, instance_name: str = "final_model"):
         """
         Initialize the BodyforceInterface class.
         """
@@ -32,7 +32,7 @@ class BodyforceInterface(BaseFEAInterface):
             list[float]: The force density values [fx, fy, fz].
         """
         return self._values
-    
+
     @force_density.setter
     def force_density(self, value: list[float]) -> None:
         """
@@ -54,18 +54,28 @@ class BodyforceInterface(BaseFEAInterface):
             int: The number of variables (3 for fx, fy, fz).
         """
         return 3
-    
+
     def modify_fea(self, fe: FEAController, name: str) -> None:
-        body_force = BodyForce(instance_name=self.instance_name, element_name=self.element_name, force_density=self.force_density)
+        body_force = BodyForce(
+            instance_name=self.instance_name,
+            element_name=self.element_name,
+            force_density=self.force_density,
+        )
         fe.assembly.add_load(body_force, name)
-    
+
     def apply_fea_value(self, fe: FEAController, name: str) -> None:
         body_force: BodyForce = fe.assembly.get_load(name)
         device = body_force.force_density.device
-        body_force.force_density = torch.tensor(self.force_density, dtype=torch.float64, device=device)
-        
-        # Update cached values if initialized
-        if hasattr(body_force, '_element'):
-            body_force._pdU_values = torch.einsum('i, ge, gea->eai', body_force.force_density, body_force._element.gaussian_weight, body_force._element.shape_function_d0_gaussian).flatten()
+        body_force.force_density = torch.tensor(
+            self.force_density, dtype=torch.float64, device=device
+        )
 
-	
+        # Update the cached values once the load has been initialized (the
+        # assembly sets ``_assembly`` before the element data exists)
+        if body_force._assembly is not None:
+            body_force._pdU_values = torch.einsum(
+                "i, ge, gea->eai",
+                body_force.force_density,
+                body_force._element.gaussian_weight,
+                body_force._element.shape_function_d0_gaussian,
+            ).flatten()

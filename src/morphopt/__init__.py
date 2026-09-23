@@ -13,6 +13,7 @@ if __sys.platform.startswith("linux"):
 # region: Logging Configuration
 import logging as __logging
 
+
 def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging.DEBUG):
     """
     Enable logging for the FEA package.
@@ -25,7 +26,7 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
         the path to a log file where logs will be written. If None, logs will only be printed to the console.
     file_log_level : int
         the logging level for the log file. Default is logging.INFO.
-    
+
     Examples
     --------
     >>> import torchfea
@@ -33,59 +34,67 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
     """
     logger = __logging.getLogger(__name__)
     logger.setLevel(min(level, file_log_level))
-    
+
     # clear existing handlers to avoid duplicate logs
     logger.handlers.clear()
-    
+
     # logging to console
     console = __logging.StreamHandler()
     console.setLevel(level)
-    console.setFormatter(__logging.Formatter(
-        '%(asctime)s | %(levelname)-7s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
+    console.setFormatter(
+        __logging.Formatter(
+            "%(asctime)s | %(levelname)-7s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
+    )
     logger.addHandler(console)
-    
+
     # logging to file if log_file is provided
     if log_file:
-        file_handler = __logging.FileHandler(log_file, encoding='utf-8')
+        file_handler = __logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(file_log_level)
-        file_handler.setFormatter(__logging.Formatter(
-            '%(asctime)s | %(levelname)-7s | %(name)s | %(message)s'
-        ))
+        file_handler.setFormatter(
+            __logging.Formatter(
+                "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+            )
+        )
         logger.addHandler(file_handler)
 
     return logger
+
+
 # endregion
 
 
-
-
-
-# region optcore imports
+# region modules (loaded after the core classes they subclass)
+from . import codesign, shapeopt, simp
+from .opt_runner import debug_optimization, start_optimization
 from .optcore.controller import Controller
+from .optcore.history import History
 from .optcore.modelparams import (
-    FEAParams, FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry,
-    MaterialsParams, Params,
+    BasePartInterface,
+    FEAParams,
+    GeometryParams,
+    INPPartInterface,
+    MaterialsParams,
+    Params,
+    TorchFEAPartInterface,
+    load_model_assembly,
+    resolve_model_path,
+)
+from .optcore.objfunc import ObjectiveFunction
+from .optcore.protocal import (
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalUpdatable,
+    ProtocalVisualizable,
 )
 from .optcore.solver import Solver
-from .optcore.modelparams import Params
 from .optcore.updaters import Updaters
-from .optcore.objfunc import ObjectiveFunction
-from .optcore.history import History
-from .optcore.baseobject import BaseObject
+
 # endregion
-
-from .opt_runner import start_optimization, debug_optimization
-
-# region modules
-from . import shapeopt
-from . import codesign
-from . import simp
-# endregion
-
 # region scripts
 from .utils import check_gradients, get_controller
+
 # endregion
 
 controller: Controller = None

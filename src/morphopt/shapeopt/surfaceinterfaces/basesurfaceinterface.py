@@ -7,12 +7,19 @@ from typing import Optional
 import pyvista as pv
 
 import morphopt
+from ...optcore.protocal import (
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalVisualizable,
+)
 
 
-class BaseInterface():
-    """
-    Class to handle the surface of the morphable model.
-    """
+class BaseSurfaceInterface(
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalVisualizable,
+):
+    """Base surface with lifecycle, persistence, and visualization protocols."""
     
     def __init__(self, *args, **kwargs) -> None:
         """
@@ -24,6 +31,8 @@ class BaseInterface():
                 - 0: bspline surface
                 - 1: closed surface
         """
+
+        super().__init__()
 
         self.surf_node_idx: np.ndarray
         """the node index of the surface at the fea mesh."""
@@ -59,23 +68,19 @@ class BaseInterface():
         """
         return torch.zeros((uv.shape[0], 3), dtype=uv.dtype, device=uv.device)
 
-    def initialize(self) -> None:
-        """
-        Initialize the surface.
-        """
-        pass
-    
-    def reinitialize(self) -> 'BaseInterface':
-        """
-        ReInitialize the surface.
-        """
-        return self
+    def synchronize(self) -> None:
+        """Synchronize external geometry state before meshing.
 
+        Parameterised surfaces override this when their backing model needs to
+        be copied back to a CAD object.  Fixed surfaces have no external state
+        to update, so the default is intentionally a no-op.
+        """
+    
     def output_data(self, path_output, name_output, seed_size=-1, flip=False, ):
         """
         Output the surface data to a file.
         """
-        raise NotImplementedError("The output_data method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        raise NotImplementedError("The output_data method is not implemented in the BaseSurfaceInterface class. Please implement it in the derived class.")
 
     def get_surface_parameters(self) -> torch.Tensor:
         """
@@ -95,15 +100,6 @@ class BaseInterface():
         """
         pass
 
-    def update_variables(self, x_change: torch.Tensor) -> None:
-        """
-        Update the surface with the new design variables.
-
-        Parameters:
-            x_change (torch.Tensor): The change of design variables to be applied.
-        """
-        pass
-
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get the geometry values of the surface.
@@ -116,15 +112,28 @@ class BaseInterface():
         """
         return (torch.zeros((0, 3), dtype=torch.float32), torch.zeros((0, 3), dtype=torch.float32), torch.zeros((0, 3), dtype=torch.float32))
     
-    def get_penalty_fairness(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor) -> torch.Tensor:
+    def get_penalty_fairness(
+        self,
+        weight: torch.Tensor,
+        r: torch.Tensor,
+        rdu: torch.Tensor,
+        rdu2: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Get the penalty fairness of the surface.
 
+        Args:
+            weight (torch.Tensor): The integration weights of the surface,
+                indexed by the barrier mask of the actual implementation.
+            r (torch.Tensor): The point coordinates of the surface.
+            rdu (torch.Tensor): The partial derivatives of the surface.
+            rdu2 (torch.Tensor): The second partial derivatives of the surface.
+
         Returns:
-            torch.Tensor: The penalty fairness of the surface.
+            torch.Tensor: The penalty fairness of the surface, zero by default.
         """
-        return 0.0
-    
+        return torch.zeros((), dtype=torch.float32)
+
     def get_points_weight(self) -> torch.Tensor:
         """
         Get the points weight of the surface.
@@ -172,24 +181,6 @@ class BaseInterface():
         """
         return 0
 
-    def save(self, filename: str) -> None:
-        """
-        Save the surface data to a file.
-
-        Parameters:
-            filename (str): The name of the file to save the surface data.
-        """
-        pass
-    
-    def load(self, filename: str) -> None:
-        """
-        Load the surface data from a file.
-
-        Parameters:
-            filename (str): The name of the file to load the surface data from.
-        """
-        pass
-
     def get_mesh(self) -> pv.PolyData:
         """
         Get the mesh for the surface.
@@ -197,16 +188,27 @@ class BaseInterface():
         Returns:
             object: The mesh object.
         """
-        raise NotImplementedError("The get_mesh method is not implemented in the BaseInterface class. Please implement it in the derived class.")
+        raise NotImplementedError("The get_mesh method is not implemented in the BaseSurfaceInterface class. Please implement it in the derived class.")
     
-    def plot(self):
+    def get_meshes(self) -> list[pv.DataSet]:
+        """Return the surface mesh for the visualization protocol."""
+        return [self.get_mesh()]
+
+    def plot(
+        self,
+        plotter: pv.Plotter | None = None,
+        meshes: list[pv.DataSet] | None = None,
+    ) -> pv.Plotter:
         """
         Plot the surface mesh.
         """
-        mesh = self.get_mesh()
-        plotter = pv.Plotter()
-        plotter.add_mesh(mesh, color='lightblue', show_edges=True)
-        plotter.show()
+        if plotter is None:
+            plotter = pv.Plotter()
+        if meshes is None:
+            meshes = self.get_meshes()
+        for mesh in meshes:
+            plotter.add_mesh(mesh, color="lightblue", show_edges=True)
+        return plotter
 
     class MeshSurfaceConverter:
         """A class to convert a mesh surface (defined by vertices and faces) into a STEP file format."""
@@ -270,12 +272,6 @@ class BaseInterface():
         def _generate_stp_footer(self):
             """生成STP文件尾部"""
             return "ENDSEC;\nEND-ISO-10303-21;"
-        
-        def _get_next_entity_id(self):
-            """获取下一个实体ID"""
-            current_id = self.entity_counter
-            self.entity_counter += 1
-            return current_id
         
         def _find_unique_vertices(self):
             """去重顶点，合并重复的顶点"""
@@ -624,7 +620,7 @@ class BaseInterface():
         """
         return np.zeros([surf_node_idx.shape[0], 3], dtype=np.float32)
 
-class CpBasedInterface(BaseInterface):
+class CpBasedSurfaceInterface(BaseSurfaceInterface):
     """
     Class to handle the surface of the morphable model.
     """
@@ -671,7 +667,7 @@ class CpBasedInterface(BaseInterface):
         def num_points(self) -> int:
             return int(self.uv.shape[0])
 
-        def to_device(self, device: torch.device) -> 'BaseInterface.CpBasedInterface.PreLoadData':
+        def to_device(self, device: torch.device) -> 'BaseSurfaceInterface.CpBasedSurfaceInterface.PreLoadData':
             self.uv = self.uv.to(device)
             self.cp_weights = self.cp_weights.to(device)
             self.cp_weights_du = self.cp_weights_du.to(device)
@@ -727,7 +723,7 @@ class CpBasedInterface(BaseInterface):
 
         self._cps: torch.Tensor
         """Control points tensor."""
-        self._preload_data: CpBasedInterface.PreLoadData | None = None
+        self._preload_data: CpBasedSurfaceInterface.PreLoadData | None = None
         """Single container for all preloaded surface evaluation data."""
 
     def synchronize(self) -> None:
@@ -744,7 +740,7 @@ class CpBasedInterface(BaseInterface):
             result[:, i].scatter_add_(0, indices[0], weights * self._cps[indices[1], i])
         return result
 
-    def apply_preload_data(self, preload: 'CpBasedInterface.PreLoadData') -> None:
+    def apply_preload_data(self, preload: 'CpBasedSurfaceInterface.PreLoadData') -> None:
         """Apply a standardized preload container to the interface."""
         self._preload_data = preload
 
@@ -752,7 +748,7 @@ class CpBasedInterface(BaseInterface):
         """Preload data for surface evaluation. This method should be called before any geometry evaluation."""
         self._preload_data = self.get_preloaddata(*args, **kwargs)
 
-    def get_preloaddata(self, pre_points: torch.Tensor | None = None, faces: torch.Tensor | None = None) -> 'CpBasedInterface.PreLoadData':
+    def get_preloaddata(self, pre_points: torch.Tensor | None = None, faces: torch.Tensor | None = None) -> 'CpBasedSurfaceInterface.PreLoadData':
         """
         Create and return preload data for the surface.
 
@@ -761,22 +757,22 @@ class CpBasedInterface(BaseInterface):
             faces (torch.Tensor | None): Optional face connectivity information used for point-weight calculations.
 
         Returns:
-            CpBasedInterface.PreLoadData: The computed preload data. The returned object must include explicit face connectivity.
+            CpBasedSurfaceInterface.PreLoadData: The computed preload data. The returned object must include explicit face connectivity.
         """
-        raise NotImplementedError("The preload method is not implemented in the CpBasedInterface class. Please implement it in the derived class.")
+        raise NotImplementedError("The preload method is not implemented in the CpBasedSurfaceInterface class. Please implement it in the derived class.")
 
     @property
-    def preload_data(self) -> 'CpBasedInterface.PreLoadData':
+    def preload_data(self) -> 'CpBasedSurfaceInterface.PreLoadData':
         if self._preload_data is None:
             raise RuntimeError('Preload data has not been initialized.')
         return self._preload_data
 
-    def get_r(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
+    def get_r(self, preload_data: Optional['CpBasedSurfaceInterface.PreLoadData'] = None):
         """
         Get the point coordinates of the surface.
 
         Args:
-            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
+            preload_data (Optional[CpBasedSurfaceInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The point coordinates of the surface.
@@ -784,12 +780,12 @@ class CpBasedInterface(BaseInterface):
         preload = preload_data if preload_data is not None else self.preload_data
         return self._map(preload.cp_weights, preload.indices, num_pts=preload.num_points)
     
-    def get_rdu(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
+    def get_rdu(self, preload_data: Optional['CpBasedSurfaceInterface.PreLoadData'] = None):
         """
         Get the first partial derivatives of the surface.
 
         Args:
-            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
+            preload_data (Optional[CpBasedSurfaceInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The first partial derivatives of the surface.
@@ -803,12 +799,12 @@ class CpBasedInterface(BaseInterface):
             rdu = -rdu
         return torch.stack([rdu, rdv], dim=2)
     
-    def get_rdu2(self, preload_data: Optional['CpBasedInterface.PreLoadData'] = None):
+    def get_rdu2(self, preload_data: Optional['CpBasedSurfaceInterface.PreLoadData'] = None):
         """
         Get the second partial derivatives of the surface.
 
         Args:
-            preload_data (Optional[CpBasedInterface.PreLoadData]): Optional external preload data.
+            preload_data (Optional[CpBasedSurfaceInterface.PreLoadData]): Optional external preload data.
 
         Returns:
             torch.Tensor: The second partial derivatives of the surface.
@@ -888,7 +884,7 @@ class CpBasedInterface(BaseInterface):
         """
         return self._cps.numel()
 
-class FixedSurface(BaseInterface):
+class FixedSurface(BaseSurfaceInterface):
     """
     Class to handle fixed surfaces that do not change during optimization.
     """
@@ -967,3 +963,11 @@ class FixedSurface(BaseInterface):
         result.get()
 
         return name_output + '.stl'
+
+    def get_mesh(self) -> pv.PolyData:
+        """Return the fixed STL geometry as a PyVista surface mesh."""
+        faces = np.asarray(self._faces, dtype=np.int64)
+        faces_with_count = np.column_stack(
+            [np.full(faces.shape[0], 3, dtype=np.int64), faces]
+        )
+        return pv.PolyData(np.asarray(self._vertices), faces_with_count)

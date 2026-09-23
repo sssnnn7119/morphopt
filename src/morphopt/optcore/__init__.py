@@ -1,8 +1,21 @@
 from .modelparams import (
-    Params, BaseGeometry, FEAParams,
-    MaterialsParams, BaseParams,
-    FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry,
+    BaseParams,
+    BasePartInterface,
+    FEAParams,
+    GeometryParams,
+    INPPartInterface,
+    MaterialsParams,
+    Params,
+    TorchFEAPartInterface,
+    load_model_assembly,
+    resolve_model_path,
 )
-from .updaters import BaseUpdater, Updaters
-from .solver import Solver
+from .protocal import (
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalUpdatable,
+    ProtocalVisualizable,
+)
 from .objfunc import ObjectiveFunction
+from .solver import Solver
+from .updaters import BaseUpdater, Updaters

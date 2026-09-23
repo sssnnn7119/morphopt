@@ -19,20 +19,41 @@ class BaseMaterialInterface(BaseParams):
     from .materialmodels import MaterialModels as materialmodels
 
     def __init__(
-            self,
-            part_name: str,
-            material_parameters: MaterialModels.MaterialParameters,
-            elementname: str = "",
-            density: float = 0.0,
+        self,
+        part_name: str,
+        material_parameters: MaterialModels.MaterialParameters,
+        elementname: str = "",
+        density: float = 0.0,
     ) -> None:
         super().__init__()
         self.part_name = str(part_name or "").strip()
         if not self.part_name:
             raise ValueError("part_name cannot be empty.")
         self.elementname = str(elementname or "").strip()
-        self.material_parameters: MaterialModels.MaterialParameters = material_parameters
+        self.material_parameters: MaterialModels.MaterialParameters = (
+            material_parameters
+        )
         self._density: float = float(density)
         self._name: str = ""
+        """Registration name inside the owning MaterialsParams collection."""
+
+    @property
+    def name(self) -> str:
+        """Name of this interface inside its material collection.
+
+        The collection assigns the name when the interface is registered, so it
+        is unavailable on an interface that was never added.
+        """
+        if not self._name:
+            raise ValueError(
+                f"{type(self).__name__} has no name yet; register it with "
+                "MaterialsParams.add_interface(interface, name=...)."
+            )
+        return self._name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self._name = str(value)
 
     @property
     def density(self) -> float:
@@ -45,8 +66,8 @@ class BaseMaterialInterface(BaseParams):
         self._density = float(value)
 
     def target_elements(
-            self,
-            assembly: torchfea.Assembly,
+        self,
+        assembly: torchfea.Assembly,
     ) -> list[tuple[str, torchfea.elements.Element_3D]]:
         """Return the selected element families from the target Part."""
         part = assembly.get_part(self.part_name)
@@ -54,7 +75,8 @@ class BaseMaterialInterface(BaseParams):
             if self.elementname not in part.elems:
                 raise KeyError(
                     f"Element {self.elementname!r} does not exist on Part "
-                    f"{self.part_name!r}.")
+                    f"{self.part_name!r}."
+                )
             return [(self.elementname, part.elems[self.elementname])]
         if not part.elems:
             raise ValueError(f"Part {self.part_name!r} contains no elements.")

@@ -7,9 +7,11 @@ import multiprocessing as mp
 
 from .modelparams import Params, FEAParams
 
-from .baseobject import BaseObject
+from .protocal import ProtocalInitializable, ProtocalSavable
 import morphopt
-class Solver(BaseObject):
+
+
+class Solver(ProtocalInitializable, ProtocalSavable):
     """
     This class is responsible for solving the FEA and get the displacement of the soft robot.
     """

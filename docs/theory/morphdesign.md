@@ -60,17 +60,23 @@ B 样条的核心优势在于**局部支撑性**：调整一个控制点只会�
 
 #### 代码对应
 
-在 `src/morphopt/optcore/modelparams/geometry/geometryinterfaces/` 中，`BSP` 类实现了 B 样条曲面的初始化与操作，例如：
+在 `src/morphopt/shapeopt/surfaceinterfaces/` 中，`BspSurfaceInterface`（别名 `BSP`）实现了 B 样条曲面的初始化与操作；曲面属于某个边界 Part：
 
 ```python
-self.add_surface(
-    self.BSP.initialize_cylinder(
-        r0=8., length=80., seed_size=1.0,
-        symmetric=[1, [1]],
-        flip=False, maxR=0.1, maxC=1.0,
-        maxFF=0.2, perturbation_L=12.
-    )
-)
+class GeometryParams(morphopt.shapeopt.GeometryParams):
+    class BoundaryPart(morphopt.shapeopt.BoundaryPartInterface):
+        def define_surfaces(self):
+            self.add_surface_interface(
+                self.BSP.initialize_cylinder(
+                    r0=8., length=80., seed_size=1.0,
+                    symmetric=[1, [1]],
+                    flip=False, maxR=0.1, maxC=1.0,
+                    maxFF=0.2, perturbation_L=12.
+                )
+            )
+
+    def define_interface(self):
+        self.add_interface(self.BoundaryPart(fea_seed_size=1.0), name='body')
 ```
 
 ### 2.2 球面映射闭曲面（内嵌气腔）
@@ -147,12 +153,12 @@ $$
 ```python
 class MaterialsParams(morphopt.shapeopt.MaterialsParams):
     def define_interface(self):
-        self.add_material_interface(
+        self.add_interface(
             self.HomogeneousMaterial(
                 material_parameters=self.materialmodels.NeoHookeanLnJParams(
                     mu=0.482, kappa=4.8),
                 density=1.08e-9,
-                part_name="final_model", elementname=""),
+                part_name="body", elementname=""),
             name="body")
 ```
 
@@ -486,7 +492,7 @@ $$
    - 组装并求解伴随方程组 (5.5)、(5.15)、(5.16)
    - 沿计算图反向传播计算全部偏导数
    - 按 (5.18) 组合为总灵敏度 $\mathrm{d}\mathcal{J}/\mathrm{d}\Phi_m$
-4. **梯度拆分**：总梯度按几何-材料边界拆分，分别送入 `UpdaterGeometries` 和 `UpdaterMaterials` 子优化器。
+4. **梯度拆分**：总梯度先按几何-材料拆分，几何部分再**按 Part 切片**，分别送入各自的 `UpdaterBoundaryPart`（每个绑定一个边界 Part）和 `UpdaterSIMPMaterial` 子优化器。
 
 **代码对应**：`src/morphopt/optcore/objfunc.py` 中的 `ObjectiveFunction.sensitivity_analysis()` 方法。
 
@@ -759,7 +765,10 @@ while 未收敛:
 ```
 Controller                    → 优化主循环控制 (optcore/controller.py)
 ├── Params                    → 参数管理 (optcore/modelparams/params.py)
-│   ├── GeometryParams        → 几何参数 (BSP/球面映射)
+│   ├── GeometryParams        → 一组 Part 接口（每个 Part = 一个 PartInterface）
+│   │   ├── BoundaryPartInterface (BSP/球面映射曲面，可优化)
+│   │   ├── INPPartInterface / TorchFEAPartInterface (固定几何)
+│   │   └── 每个 Part 的 Instance 按 <part>-1, <part>-2, … 自动命名
 │   ├── FEAParams             → FEA 参数（加载步、BC、RP）
 │   └── Materials             → 材料参数（μ, κ, ρ）
 ├── Solver                   → FEA 并行求解 (optcore/solver.py)
@@ -773,12 +782,20 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 │   │       ├── 自动伴随求解 (复用 K 矩阵分解)
 │   │       └── autograd 回传梯度至控制点
 │   └── Jacobian                  → 结果中的雅可比信息 (fe_result.jacobian)
-└── Updaters                  → 设计变量更新 (optcore/updaters/updaters.py)
-    ├── UpdaterGeometries     → 几何更新 + 约束 (updaters/geometry/update_geometry.py)
+└── Updaters                  → 子优化器字典 (optcore/updaters.py)
+    │                          define_updater() 里用 add_geometry_updater() /
+    │                          add_geometry_updater() / add_material_updater() 分类声明，
+    │                          默认名 <类名>_<序号>
+    ├── UpdaterBoundaryPart[i]  → 每个边界 Part 一个 (shapeopt/update_boundarypart.py)
+    │   ├── part_name         → 绑定的边界 Part（initialize 时解析；梯度按 Part 切片，
+    │   │                       状态存 log/geometryupdater/<part_name>/）
     │   ├── ShapeDerivative   → 形状导数目标 (objectivefuncs/shapederivative.py)
     │   ├── Distance          → 最小距离约束 (objectivefuncs/distancesurface.py)
     │   ├── Fairness          → 曲面光顺约束 (objectivefuncs/surfacefairness.py)
     │   └── Cylinder/MinRadius → 边界约束 (objectivefuncs/boundarys.py)
+    ├── UpdaterSIMPMaterial[i]   → 每个可设计材料接口一个 (simp/update_simpmaterial.py)
+    │   └── interface_name    → 绑定的材料接口（梯度按接口切片，
+    │                           状态存 log/materialupdater/<interface_name>/）
     └── LBFGS                 → 子优化求解器 (updaters/optimizer.py)
 ```
 

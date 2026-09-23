@@ -96,7 +96,7 @@ def _last_iteration(path_result: str) -> int:
         from ..optcore.history import History
         h = History()
         h.load(foldpath=os.path.join(path_result, "log"))
-        return int(getattr(h, "iteration", 0) or 0)
+        return int(h.iteration or 0)
     except Exception:
         return 0
 
@@ -198,7 +198,7 @@ class ObserverPanel(QWidget):
         self._metrics_page.update_from_history(history, iteration)
         self._discover_cases(folder)
 
-        max_iter = max(1, int(getattr(history, "iteration", iteration) or iteration))
+        max_iter = max(1, int(history.iteration or iteration))
         self.slider.blockSignals(True)
         self.slider.setMaximum(max_iter)
         if self.chk_follow.isChecked():

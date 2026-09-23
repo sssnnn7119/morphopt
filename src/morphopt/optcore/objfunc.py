@@ -3,11 +3,11 @@ import torchfea
 import torch
 import morphopt
 from . import Params
-from .baseobject import BaseObject
+from .protocal import ProtocalInitializable, ProtocalSavable
 
 import pyvista as pv
 
-class ObjectiveFunction(BaseObject):
+class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
     """
     This class is responsible for computing the objective function value and the design sensitivity variables.
     """
@@ -130,13 +130,13 @@ class ObjectiveFunction(BaseObject):
         Raises:
             KeyError: If the key is not found.
         """
-        if hasattr(self, key):
+        try:
             return getattr(self, key)
-        else:
-            raise KeyError(f"'{key}' not found in FE_result")
+        except AttributeError:
+            raise KeyError(f"'{key}' not found in FE_result") from None
 
     def get_mesh_case(self, case: int):
-
+        """Return the meshes carrying the result of one load case."""
         # Create pyvista mesh
         mesh = list(self.fe.assembly.get_meshes(GC=self.fe_results[case].GC).values())
 

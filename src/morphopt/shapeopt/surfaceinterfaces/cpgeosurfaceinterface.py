@@ -1,18 +1,12 @@
-
-import os
-import sys
-import cpgeo.utils
+import cpgeo
 import numpy as np
-from numpy.random import normal
 import torch
-import gmsh
 
 import morphopt
 
-from .basesurfaceinterface import CpBasedInterface
-import cpgeo
+from .basesurfaceinterface import CpBasedSurfaceInterface
 
-class CPGEOInterface(CpBasedInterface):
+class CPGEOSurfaceInterface(CpBasedSurfaceInterface):
     """
     Class to handle the CPGEO surface interface.
     
@@ -92,19 +86,6 @@ class CPGEOInterface(CpBasedInterface):
 
     def initialize(self):
         """Initialize the CPGEO model and preload knot points for evaluation."""
-        # # Initialize CPGEO knots and thresholds
-        # self.model.initialize()
-        
-        # self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
-
-        # # Load control points into torch tensor
-        # self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-        
-        # # Get knot points from the CPGEO model
-        # # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
-        # self._num_knots = self.model._knots.shape[0]
-
-        # Initialize CPGEO knots and thresholds
         self.model.initialize()
 
         self._is_first_initialize = True
@@ -141,7 +122,9 @@ class CPGEOInterface(CpBasedInterface):
         else:
             return False
 
-    def reinitialize(self):
+    def reinitialize(
+        self, iteration: int, *args: object, **kwargs: object
+    ) -> None:
         """Reinitialize the CPGEO model if the volume change is significant."""
 
         if_reconstruct = self._reconstruction_check()
@@ -149,8 +132,6 @@ class CPGEOInterface(CpBasedInterface):
         if if_reconstruct or self._is_first_initialize:
             self._reinitialize()
             self._is_first_initialize = False
-
-        return self
     
     def _reinitialize(self):
         """Internal method to reinitialize the CPGEO model without checking."""
@@ -274,8 +255,6 @@ class CPGEOInterface(CpBasedInterface):
         self._output_rsphere = r_sphere
         self._output_cpfaces = cpfaces
 
-        # r = self.model.map3(self.model._knots)
-        # cpfaces = cpgeo.capi.optimize_mesh_by_edge_flipping(vertices=r, faces=self.model._cp_faces)
         result = pools.apply_async(self.output_stl_file, args=(
             r,
             cpfaces,
@@ -384,7 +363,7 @@ class CPGEOInterface(CpBasedInterface):
             perturbation_L (float, optional): The perturbation length for initial shape. Default is -1. If < 0, no perturbation is applied.
 
         Returns:
-            CPGEOInterface: The initialized CPGEO surface object.
+            CPGEOSurfaceInterface: The initialized CPGEO surface object.
         """
         import trimesh
         
@@ -469,7 +448,7 @@ class CPGEOInterface(CpBasedInterface):
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
             MaxC (float, optional): The maximum curvature constraint. Default is 1.0
         Returns:
-            CPGEOInterface: The initialized CPGEO surface object.
+            CPGEOSurfaceInterface: The initialized CPGEO surface object.
             
         """
         import cpgeo.capi
@@ -627,8 +606,6 @@ class CPGEOInterface(CpBasedInterface):
                             break
 
                 uv = uv_new.copy()
-
-                # print(f'Batch {start}-{end}, Iter {it}, Mean Residual {np.sqrt(f_best).mean():.3e}, Accept Rate {accept.mean():.2%}')
 
             uv_out[start:end] = uv
         self.surf_node_uv = uv_out

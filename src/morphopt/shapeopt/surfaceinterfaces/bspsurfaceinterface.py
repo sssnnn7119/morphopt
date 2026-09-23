@@ -6,14 +6,12 @@ import gmsh
 
 import morphopt
 
-from .basesurfaceinterface import CpBasedInterface
 import bspmap
 
 
+from .basesurfaceinterface import CpBasedSurfaceInterface
 
-
-
-class BspInterface(CpBasedInterface):
+class BspSurfaceInterface(CpBasedSurfaceInterface):
     """
     Class to handle the B-spline surface interface.
     """
@@ -66,15 +64,11 @@ class BspInterface(CpBasedInterface):
             dist = np.linalg.norm(p_start - p_end)
             
             if dist < 1e-6:
-                # print("Detecting closed input poles (Start == End). Removing last pole for periodic construction.")
                 poles_to_use = self.P0[:, :-1]
             else:
                 poles_to_use = self.P0
                 
             num_poles_u = poles_to_use.shape[1]
-            # print(f"Effective Unique Poles U: {num_poles_u}")
-
-
             # ----------------------------------------------------
             # 1. Prepare Control Points (Periodic Extension)
             # ----------------------------------------------------
@@ -132,14 +126,10 @@ class BspInterface(CpBasedInterface):
             # ----------------------------------------------------
             # 3. Create Base Surface
             # ----------------------------------------------------
-            try:
-                raw_surface = gmsh.model.occ.addBSplineSurface(
-                    side_point_tags, num_extended_poles_u, -1, du, dv, 
-                    [], knots_u, knots_v, mults_u, mults_v
-                )
-            except Exception as e:
-                # print(f"BSpline fail: {e}")
-                raise e
+            raw_surface = gmsh.model.occ.addBSplineSurface(
+                side_point_tags, num_extended_poles_u, -1, du, dv,
+                [], knots_u, knots_v, mults_u, mults_v
+            )
                 
             # ----------------------------------------------------
             # 4. Trim Surface (One Period)
@@ -194,11 +184,11 @@ class BspInterface(CpBasedInterface):
                     try:
                         f = gmsh.model.occ.addPlaneSurface([w])
                         cap_faces.append(f)
-                    except:
+                    except Exception:
                         try:
                             f = gmsh.model.occ.addSurfaceFilling(w)
                             cap_faces.append(f)
-                        except:
+                        except Exception:
                             pass
 
 
@@ -207,15 +197,11 @@ class BspInterface(CpBasedInterface):
             # ----------------------------------------------------
             surface_tags = [side_surface] + cap_faces
             
-            # print("Sewing and Healing...")
-            
             # 尝试直接通过 SurfaceLoop 创建
             try:
                 shell_tag = gmsh.model.occ.addSurfaceLoop(surface_tags)
                 self.volume_tag = gmsh.model.occ.addVolume([shell_tag])
-                # print(f"Created solid via SurfaceLoop: {self.volume_tag}")
-            except Exception as e:
-                # print(f"Direct SurfaceLoop failed: {e}")
+            except Exception:
                 # 使用 healShapes，重点是 sewFaces=True
                 try:
                     healed = gmsh.model.occ.healShapes([(2, t) for t in surface_tags], 
@@ -229,11 +215,9 @@ class BspInterface(CpBasedInterface):
                     for dim, tag in healed:
                         if dim == 3:
                             self.volume_tag = tag
-                            # print(f"Healed Solid Created: {tag}")
                             break
-                except Exception as he:
+                except Exception:
                     pass
-                    # print(f"Heal error: {he}")
 
             gmsh.model.occ.synchronize()
             
@@ -248,8 +232,6 @@ class BspInterface(CpBasedInterface):
                 # 3. CLEARS the Gmsh model.
                 # 4. Import the BRep back.
                 # 5. This guarantees fresh indexing and zero "history".
-                
-                # print("Starting Nuclear Cleanup (BRep Isolation)...")
                 
                 # Remove everything else first (Standard cleanup) to minimize BRep size
                 gmsh.model.occ.synchronize()
@@ -269,7 +251,6 @@ class BspInterface(CpBasedInterface):
                 gmsh.clear() 
                 
                 # Re-import
-                # print("Reloading clean BRep...")
                 gmsh.model.occ.importShapes(temp_brep)
                 gmsh.model.occ.synchronize()
                 
@@ -281,13 +262,10 @@ class BspInterface(CpBasedInterface):
                 vols = gmsh.model.getEntities(3)
                 if len(vols) == 1:
                     self.volume_tag = vols[0][1]
-                    # print(f"BRep Isolation Successful. New Volume Tag: {self.volume_tag}")
                     
                     # ----------------------------------------------------
                     # Heal AGAIN after re-import to merge tolerances
                     # ----------------------------------------------------
-                    # print("Running Post-Import Heal and Topology Simplification...")
-                    
                     # 1. Remove Duplicates (Geometry Level)
                     gmsh.model.occ.removeAllDuplicates()
                     gmsh.model.occ.synchronize()
@@ -299,30 +277,14 @@ class BspInterface(CpBasedInterface):
                                                             fixDegenerated=True,
                                                             fixSmallEdges=True,
                                                             fixSmallFaces=True,
-                                                            # fixOrientation=True, # Error: Not supported in Python API wrapper?
                                                             sewFaces=True,
                                                             makeSolids=True)
                         if healed and healed[0][0] == 3:
                             self.volume_tag = healed[0][1]
-                            # print(f"Post-Import Heal Successful. Tag: {self.volume_tag}")
-                    except Exception as e:
+                    except Exception:
                         pass
-                        # print(f"Post-Import Heal warning: {e}")
                     
                     gmsh.model.occ.synchronize()
-
-                    # Check Mass
-                    mass = gmsh.model.occ.getMass(3, self.volume_tag)
-                    # print(f"Volume Mass: {mass}")
-                    
-                    # Check Topology
-                    # Note: getBoundary with recursive=True returns (Dim, Tag) tuples.
-                    boundaries = gmsh.model.getBoundary([(3, self.volume_tag)], recursive=True)
-                    edge_tags = [e[1] for e in boundaries if e[0] == 1]
-                    # print(f"Topology Check: Solid has {len(edge_tags)} edges.")
-                    if len(edge_tags) > 3:
-                        pass
-                        # print("Warning: More than 3 edges (Top, Bottom, Seam). Topology might be split.")
 
                     # ----------------------------------------------------
                     # FINAL CLEANUP: Purge residue from Healing
@@ -347,25 +309,11 @@ class BspInterface(CpBasedInterface):
                             to_delete.append((dim, tag))
                     
                     if to_delete:
-                        # print(f"Post-Heal Cleanup: Removing {len(to_delete)} orphan entities.")
                         gmsh.model.occ.remove(to_delete, recursive=False)
                         gmsh.model.occ.synchronize()
                     
-                    # [REMOVED] Physical Group
-                    # We do NOT add PhysicalGroup. 
-                    # Experience shows Abaqus treats PhysicalGroups as Sets/Surfaces rather than the native Part.
-                    # ptag = gmsh.model.addPhysicalGroup(3, [self.volume_tag])
-                    # gmsh.model.setPhysicalName(3, ptag, "BSplineSolid")
-                    
                 else:
-                    # print(f"Error: Reloaded BRep contains {len(vols)} volumes!")
                     self.volume_tag = vols[0][1] if vols else None
-
-                # Final Sanity Check LOG
-                # print("--- Post-Isolation Entity Check ---")
-                # for dim in range(4):
-                #     ents = gmsh.model.getEntities(dim)
-                #     print(f"Dim {dim}: {len(ents)} entities -> {[e[1] for e in ents]}")
                     
                 return self.volume_tag
 
@@ -537,7 +485,7 @@ class BspInterface(CpBasedInterface):
 
     @staticmethod
     def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
-        generator = BspInterface.BSplineSolidGenerator(P0=control_points, degree_u=degree_u, degree_v=degree_v)
+        generator = BspSurfaceInterface.BSplineSolidGenerator(P0=control_points, degree_u=degree_u, degree_v=degree_v)
         generator.build()
         output_file = path_output + '/' + name_output + '.stp'
         generator.export_step(output_file)
@@ -569,7 +517,7 @@ class BspInterface(CpBasedInterface):
         x_change[0] = 0
         x_change[-1] = 0
         
-        super().update_variables(x_change)
+        CpBasedSurfaceInterface.update_variables(self, x_change)
 
     def _geofair_data(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor):
         """
@@ -892,7 +840,6 @@ class BspInterface(CpBasedInterface):
 
                 uv = uv_new.copy()
 
-                # print(f'Batch {start}-{end}, Iter {it}, Mean Residual {np.sqrt(f_best).mean():.3e}, Accept Rate {accept.mean():.2%}')
 
             uv_out[start:end] = uv
         self.surf_node_uv = uv_out

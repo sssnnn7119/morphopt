@@ -5,26 +5,30 @@ import pyvista as pv
 import torch
 from torchfea import Assembly
 
-from ..baseobject import BaseObject
+from ..protocal import (
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalVisualizable,
+)
 from .feaparams import FEAParams
-from .geometry import BaseGeometry
+from .geometry import GeometryParams
 from .materials import MaterialsParams
 
 
-class Params(BaseObject):
+class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
     """
     Class to handle the parameters of the model.
     """
 
     def __init__(
-        self, surfaces: BaseGeometry, feamodel: FEAParams, materials: MaterialsParams
+        self, geometry: GeometryParams, feamodel: FEAParams, materials: MaterialsParams
     ) -> None:
         """
         Initialize the Params class.
         """
-        self.geometry = surfaces
+        self.geometry = geometry
         """
-        Surfaces: An instance of the Surfaces class from the ModelParams module.
+        GeometryParams: The geometry collection (Parts + Instances).
         """
         self.feamodel = feamodel
         """
@@ -64,7 +68,7 @@ class Params(BaseObject):
         self.feamodel.initialize()
         self.materials.initialize()
 
-    def create_feamodel(self, path_result: str = None, pools=None):
+    def create_feamodel(self, path_result: str | None = None, pools=None):
         """
         Create the finite element model for sensitivity analysis.
 
@@ -175,10 +179,10 @@ class Params(BaseObject):
         Args:
             filepath (str): The path to export the data.
         """
-        self.geometry._export_data(foldpath=filepath)
+        self.geometry.export_data(foldpath=filepath)
 
     def plot(
-        self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None
+        self, plotter: pv.Plotter | None = None, meshes: list[pv.DataSet] | None = None
     ) -> pv.Plotter:
         """
         Plot the geometry and other relevant information using PyVista.

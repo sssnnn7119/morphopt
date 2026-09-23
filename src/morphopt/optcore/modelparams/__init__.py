@@ -1,5 +1,14 @@
-from .geometry import FixedGeometryINP, FixedGeometryTorchFEA, FixedGeometry, BaseGeometry
+"""Model parameters: geometry, FEA (loads/constraints) and materials."""
+
+from .baseparam import BaseParams
 from .feaparams import FEAParams
+from .geometry import GeometryParams
 from .materials import MaterialsParams
 from .params import Params
-from .baseparam import BaseParams
+from .partinterface import (
+    BasePartInterface,
+    INPPartInterface,
+    TorchFEAPartInterface,
+    load_model_assembly,
+    resolve_model_path,
+)

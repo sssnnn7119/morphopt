@@ -95,7 +95,7 @@ problem (ProblemNode)
 ```
 
 同理，`ObjectiveNode` 在任务树中挂在 `优化问题定义 (Updater)` 下，和
-`几何优化器 (UpdaterGeometries)`、`材料优化器 (UpdaterMaterials)` 并列。
+`几何优化器 (UpdaterBoundaryPart)`、`材料优化器 (UpdaterSIMPMaterial)` 并列。
 唯一的等式约束、罚函数约束和子优化目标函数挂在对应的几何/材料优化器下面；优化器节点
 本身只编辑最大迭代次数与曲面更新开关，子节点分别显示自己的内容。实际数据仍由
 `ProblemDefinition.objective` 和 `ProblemDefinition.updater` 持有。
@@ -105,23 +105,40 @@ problem (ProblemNode)
 ```
 优化问题定义 (Updater)
 ├── 优化目标 (ObjectiveFunction)
-├── 几何优化器 (UpdaterGeometries)
-│   ├── 子优化目标函数 (UpdaterGeometries)
-│   ├── 几何等式约束（单个代码框）(UpdaterGeometries)
-│   └── 几何罚函数约束 (UpdaterGeometries)
-└── 材料优化器 (UpdaterMaterials)       # 仅 codesign 等启用材料更新的方案
-    ├── 子优化目标函数 (UpdaterMaterials)
-    └── 材料罚函数约束 (UpdaterMaterials)
+├── 几何优化器 (UpdaterBoundaryPart) · Part body
+│   ├── 子优化目标函数 (UpdaterBoundaryPart) · Part body
+│   ├── 几何等式约束（单个代码框）(UpdaterBoundaryPart) · Part body
+│   └── 几何罚函数约束 (UpdaterBoundaryPart) · Part body
+├── 几何优化器 (UpdaterBoundaryPart) · Part leg      # 每个边界 Part 一个，并列
+└── 材料优化器 (UpdaterSIMPMaterial)                  # 仅 codesign 等启用材料更新的方案
+    ├── 子优化目标函数 (UpdaterSIMPMaterial)
+    └── 材料罚函数约束 (UpdaterSIMPMaterial)
 ```
 
+几何区是三层（与代码一致）：
+
+```
+几何 (GeometryNode)
+├── body: 边界曲面 Part (PartInterfaceNode)   [part=body, 实体=body]
+│   ├── 0: 初始构型：B样条圆柱面 (SurfaceNode)
+│   └── 1: 初始构型：B样条圆柱面 (SurfaceNode)
+└── frame: INP Part (PartInterfaceNode)      [part=frame, 实体=frame]
+```
+
+只有 `BoundaryPartInterface` / `CodesignBoundaryPartInterface` 类型的 Part 节点
+可以有 `SurfaceNode` 子节点（`has_surfaces`）；INP / TorchFEA Part 没有曲面。
+默认 Instance 与 Part 同名；多个 Instance 和位姿由生成代码中 Part 的
+`define_instance()` / `add_instance()` 声明。
+
 任务树节点标题中的括号只保留生成代码的最后一级类名或方法名，例如
-`GeometryParams`、`FEAParams`、`UpdaterGeometries`；括号不是英文翻译。临时的
+`GeometryParams`、`FEAParams`、`UpdaterBoundaryPart`；括号不是英文翻译。临时的
 视觉分组节点不得写回 `ProblemNode` 或 `.morph` 文件。
 
 | 类型化类          | kind 常量        | 关键访问器 / 工厂                                        |
 |-------------------|------------------|----------------------------------------------------------|
 | `ProblemNode`     | `KIND_PROBLEM`   | `add_section()`, `section(kind)`, `sections()`           |
-| `GeometryNode`    | `KIND_GEOMETRY`  | `add_surface()`, `surfaces()`, `surface_count()`, `index_of_surface()` |
+| `GeometryNode`    | `KIND_GEOMETRY`  | `add_interface()`, `interfaces()`, `interface_count()`   |
+| `PartInterfaceNode` | `KIND_PART_INTERFACE` | `PartInterfaceNode.create(type, name, **overrides)`；`.interface_type`、`.part_name`、`.resolved_instance_names()`、`surfaces()`、`has_surfaces` |
 | `SurfaceNode`     | `KIND_SURFACE`   | `SurfaceNode.create(type, index, **overrides)`; `.surface_type`, `.is_inner` |
 | `LoadsNode`       | `KIND_LOADS`     | `add_interface()`, `interfaces()`                        |
 | `InterfaceNode`   | `KIND_INTERFACE` | `InterfaceNode.create(type, name, **overrides)`; `.interface_type` |
@@ -130,7 +147,7 @@ problem (ProblemNode)
 | `MaterialNode`    | `KIND_MATERIAL`  | `MaterialNode.create(type, **overrides)`; `.material_type` |
 | `ObjectiveNode`   | `KIND_OBJECTIVE` | `.objective_body`, `.metrics_body`, `.jacobian_needed`   |
 | `SolverNode`      | `KIND_SOLVER`    | —                                                        |
-| `UpdaterNode`     | `KIND_UPDATER`   | `.geometry_config()`, `.materials_config()`              |
+| `UpdaterNode`     | `KIND_UPDATER`   | `.geometry_configs()`, `.geometry_config(i)`, `.add_geometry_config()`, `.materials_config()` |
 
 规则：
 
@@ -154,14 +171,20 @@ problem (ProblemNode)
 4. 类型化 `create()` 从 `schemas` 目录填充默认参数并对未知字段名**抛错**，
    拼写错误在构建时立刻暴露，不会静默进入生成代码。
 5. `to_dict()`/`Node.from_dict()` 保留 kind，加载时按 kind 还原成对应类型化节点
-   （round-trip lossless）。SIMP 不保留 INP 或内嵌 CAD 编辑入口，也不得假定
-   `final_model`、`fix`、`loadedge` 等 Part/Instance/集合名称。
-6. `SurfaceNode` 不存 index：表面在 `GeometryNode.children` 中的**位置即索引**
-   （0 = outer，flip 由 index>0 推导）。所有结构编辑必须走 `ProblemDefinition`：
-   `add_surface()` / `clone_surface()` / `remove_surface()` / `move_surface()`，以及
+   （round-trip lossless）。SIMP 不保留 INP 或内嵌 CAD 编辑入口。不得假定
+   Part/Instance 名称（如 `final_model`）或集合名称（如 `fix`、`loadedge`）：
+   Part 名取接口注册名，Instance 名未填时按 `<part>-1…` 自动生成。
+6. `SurfaceNode` 不存“全局 index”：表面在所属 `PartInterfaceNode.children` 中的
+   **位置即该 Part 内的索引**（每个 Part 从 0 开始，0 = outer，flip 由 index>0 推导）；
+   全局曲面顺序 = Part 顺序 + 各 Part 内顺序，由
+   `ProblemDefinition.surfaces()` / `_geometry_config_slices()` 统一给出。所有结构编辑必须走
+   `ProblemDefinition`：`add_part_interface()` / `clone_part_interface()` /
+   `remove_part_interface()` / `move_part_interface()`、`add_surface()` /
+   `clone_surface()` / `remove_surface()` / `move_surface()`，以及
    `add_interface()` / `clone_interface()` / `remove_interface()` /
-   `rename_interface()` / `move_interface()`。这些方法是维护 `flip`、updater 的
-   `if_update` / `Distance.min_distance`、步矩阵及 `jacobian_needed` 引用的唯一位置。`jacobian_needed`
+   `rename_interface()` / `move_interface()`。这些方法是维护 `flip`、每个几何优化器的
+   `if_update` / `Distance.min_distance`（按所属 Part 切片）、步矩阵及
+   `jacobian_needed` 引用的唯一位置。`jacobian_needed`
    只能引用 `ProblemDefinition.amplitude_interfaces()` 返回的接口：即 schema 中 `num_values > 0`、会成为
    载荷工况矩阵列的参数载荷。目标编辑器应使用多选下拉展示该列表，不能要求用户手写名称。
    加载旧文件后调用 `align_surface_dependent_state()` 修复尺寸不一致的 updater 状态。
@@ -183,10 +206,10 @@ CAD、STEP 导入、BREP 预览、剖分、Part、Instance 及集合定义统一
 ```
 TorchFEAModelEditor（选择并监视导出目录）
     → 启动 torchfea-ui；捕获用户保存的 *.npz
-    → GeometryNode.model_directory / model_filename
+    → PartInterfaceNode（TorchFEAPartInterface）的 model_directory / model_filename
     → codegen 生成明确的模型链接
-    → FixedGeometryTorchFEA
-    → 仅克隆 TorchFEA Assembly 的 Parts + Instances
+    → TorchFEAPartInterface（torchfea.load_model）
+    → 克隆 TorchFEA Assembly 的 Parts + Instances
     → MorphOpt FEAParams 添加优化所需载荷、边界、约束与参考点
 ```
 
@@ -229,27 +252,32 @@ TorchFEAModelEditor（选择并监视导出目录）
   ```python
   def build_root(self) -> Node:
       root = ProblemNode()
-      geometry = self.make_geometry(fea_seed_size=1.0)
-      geometry.add_surface(self.make_surface("bsp_cylinder", 0,
-                                             r0=8.0, length=80.0, ...))
+      geometry = self.make_geometry()
+      body = self.make_part_interface("BoundaryPartInterface", name="body",
+                                      fea_seed_size=1.0, mesh_order=1)
+      body.add_surface(self.make_surface("bsp_cylinder", 0,
+                                        r0=8.0, length=80.0, ...))
+      geometry.add_interface(body)
       root.add_section(geometry)
       loads = self.make_loads()
       loads.add_interface(self.make_interface("BoundaryCondition", "bc_fix",
-                                              instance_name="final_model", ...))
+                                              instance_name="body-1", ...))
       root.add_section(loads)
       root.add_section(self.make_steps(1, [{"pressure_1": [0.06]}]))
       root.add_section(self.make_materials(
-          self.make_material(name="body", part_name="final_model",
+          self.make_material(name="body", part_name="body",
                              elementname="", mu=0.482, kappa=4.8,
                              density=1.08e-9)))
       root.add_section(self.make_objective())
       root.add_section(self.make_solver(num_process=4))
       root.add_section(self.make_updater(
-          geometry=S.geometry_updater_config(...),
+          geometry=[S.geometry_updater_config(part_name="body")],
           materials=None,
       ))
       return root
   ```
+
+  树上的曲面挂在 Part 节点上；生成时归入该 Part 的局部子类 `define_surfaces()`。
 
 - 新增一种方案 = 新增一个模板类并注册进 `base._build_registry()`；在类上声明
   `label` / `label_en` / `MATERIAL_TYPE`，并仅在需要新字段时补 `GEOMETRY_SCHEMES`。
@@ -321,11 +349,15 @@ constraints=(
 ),
 ```
 
-分区配置再用 `S.geometry_updater_config(...)` / `S.materials_updater_config(...)` 封装。
-几何配置包含并列的 `equality_constraints` 与 `constraints`：前者最多保存一个等式/投影约束，
-后者是可包含多个小项的罚函数约束；材料配置目前只有 `constraints` 罚函数约束。`MirrorSymmetry`
+分区配置再用 `S.geometry_updater_config(part_name=..., ...)` / `S.materials_updater_config(...)` 封装。
+每个几何配置带一个 `part_name`（目标边界 Part；只有一个边界 Part 时可留空），并且是
+**并列可多个**的：`make_updater(geometry=[S.geometry_updater_config(part_name='body'),
+S.geometry_updater_config(part_name='leg')])`。几何配置包含并列的 `equality_constraints` 与 `constraints`：前者最多保存一个等式/投影约束，
+后者是可包含多个小项的罚函数约束（曲面索引按该 Part 的切片解析）；材料配置目前只有
+`constraints` 罚函数约束。`MirrorSymmetry`
 是内置的镜面对称模板，`SurfaceEquality` 保留为自定义/旧文件迁移入口。等式项代码存放在
-`params["code"]`，生成器把它输出为 `GeometryParams.apply_surface_constraints()`，
+`params["code"]`，生成器把它输出为对应 Part 类的 `apply_surface_constraints()`（
+`class BoundaryPart0(BoundaryPartInterface)` 这类嵌套类），
 不会作为 `add_constraints()` 的罚函数重复注册。
 
 新增一种目标、罚函数约束或等式约束：**只改 `schemas.py` 的对应目录项**
@@ -353,8 +385,32 @@ label/gen/params），编辑器与代码生成自动跟随，不要在模板/生
 - `generate_source(problem)` 只**读取**类型化树（`problem.geometry/surfaces()/...`），
   从不修改模型；分区缺失时回退到对应的空类型节点。
 - updater 的目标/约束通过目录 `gen` 模板渲染，参数值来自树上存的 `params`。
+- 几何代码生成契约：
+  - `_resolve_geometry_targets()` 先校验每个几何配置的目标 Part（必须是边界 Part、
+    不能重复、留空时只能是唯一的边界 Part），不合法直接报错并列出可选项；
+  - 每个**边界** Part 生成一个局部子类 `BoundaryPart<i>(BoundaryPartInterface)`，
+    其中 `define_surfaces()` 声明该 Part 的曲面（单一来源），等式约束代码则成为
+    同一类的 `apply_surface_constraints()`；无曲面的 INP / TorchFEA Part 不生成类；
+  - `define_interface()` 只构造并注册（`self.add_interface(part_i, name=...)`），
+    不再重复写 `add_surface_interface`；
+  - 表面级状态（`if_update`、`Distance.min_distance`）按该 Part 的切片生成，
+    等式约束体按配置绑定的 Part 分发（`_surface_constraints_bodies()`）。
+- 子优化器代码生成契约（字典式 `Updaters`）：
+  - `_resolve_material_targets()` 校验每个材料配置的目标接口（必须是可设计材料即
+    SIMP 密度场、不能重复、留空时只能是唯一可设计接口）；
+  - `Updater` 生成一个 `define_updater()`，里面每个对象按分类调用对应的
+    `self.add_geometry_updater(self.UpdaterBoundaryPart(), name='<part>')` /
+    `self.add_material_updater(self.UpdaterSIMPMaterial(), name='<interface>')`；
+    哪一类没有配置就不生成对应的注册行（空钩子即无操作）；注册行里的 `name` 同时就是该对象
+    要更新的 interface（也是字典键，便于阅读），因此生成的内层类只写目标函数与约束、不写目标对象；
+    `Updater.__init__` 只 `super().__init__(params=params, device=...)`；
+  - 每个几何配置 → `UpdaterBoundaryPart<i>()`，每个材料配置 →
+    `UpdaterSIMPMaterial<i>()`（内层类不写目标，构造只给 `max_step_iter` 等超参）；哪个对象
+    优化哪个接口由注册行的 `name='<part/材料接口>'` 决定，生成的内层类只写
+    `define_objective()`（目标函数与约束）；
+  - 目标解析发生在运行期的 `initialize()`，代码生成只负责写名字。
 - **回归保障**：任何“把树上内容改成代码”的改动都必须保持三个默认模板生成的
-  `.py` **逐字节不变**（三个 golden 基线）。验证方式：
+  `.py` **逐字节不变**（三个 golden 基线；多 Part 重构已重录一次基线，之后只增不改）。验证方式：
 
   ```python
   from morphopt.ui.schemes.base import get_template
@@ -368,8 +424,12 @@ label/gen/params），编辑器与代码生成自动跟随，不要在模板/生
 
 ## 6. 视图层约定（widgets / workbench）
 
-- `editor.fields_for_node(node)` 按 `node.kind` 分派渲染哪种字段/代码槽；字段列表来自
+- `editor.fields_for_node(node)` 按 `node.kind` 分派渲染哪种字段/代码槽（`KIND_PART_INTERFACE`
+  即 `"part_interface"`）；字段列表来自
   `schemas` 目录，视图层不持有第二份字段定义。
+- 几何优化器编辑区顶部提供**目标 Part** 下拉框（候选 = `problem.boundary_part_nodes()`），
+  改选即改写配置的 `part_name`；“表面更新与否”与 Distance 矩阵都按该 Part 的曲面显示。
+  模型树的“添加几何优化器”只分配尚未被占用的边界 Part，没有可选项时弹窗提示。
 - `ModelTree` 是结构编辑的 Qt 入口，但不直接修改 `children`、`flip`、updater dict
   或跨节点引用；它只调用 `ProblemDefinition` 的聚合操作（见第 2 节）。其他入口
   （批处理、导入器、未来的命令面板）也必须复用这些操作。

@@ -32,12 +32,27 @@ python -m morphopt.ui
 - **右：预览** —— 初始几何与各工况载荷。
 
 编辑要点：
-- **几何**：这里定义优化的**初始构型**；几何节点下右键添加/删除表面；约定 **表面 0 = 外表面，≥1 = 内腔**。优化问题定义下的“几何等式约束”提供 `MirrorSymmetry` 镜面对称模板和自定义 `SurfaceEquality`；“几何罚函数约束”单独管理 Fairness、Distance 等罚函数项。等式代码最终生成到 `GeometryParams.apply_surface_constraints`；材料场的 `_map_bsp_designfield` 仍在材料节点中编辑。
+- **几何（多 Part 多实例）**：这里定义优化的**初始构型**；`几何` 下是一个个 **Part 接口**，每个 Part 接口下再列它自己的表面（只有边界 Part 才有表面）。右键 `几何` 可添加：边界曲面 Part（`BoundaryPartInterface`，可优化）、INP Part（`INPPartInterface`）、torchfea 模型 Part（`TorchFEAPartInterface`）。
+  - **Part 名**默认就是接口注册名（在节点上编辑），不再固定为 `final_model`。
+  - **Instance 名**可在节点上填写（逗号分隔）；不填时按 Abaqus 习惯自动生成 `<part>-1, <part>-2, …`，模型树会直接把实际实例名显示出来（`[part=body, 实体=body-1]`）。一个 Part 可以有多个实例，载荷/材料按实例名引用。
+  - 约定 **表面 0 = 外表面，≥1 = 内腔**；表面编号在每个 Part 内从 0 开始，全局顺序 = Part 顺序 + 各自表面顺序。
+  - 优化问题定义下的“几何等式约束”提供 `MirrorSymmetry` 镜面对称模板和自定义 `SurfaceEquality`；“几何罚函数约束”单独管理 Fairness、Distance 等罚函数项。导出脚本会为每个边界 Part 生成一个局部类，曲面写在该类的 `define_surfaces()`，等式代码写在同一类的 `apply_surface_constraints()`；材料场的 `_map_bsp_designfield` 仍在材料节点中编辑。
 - **载荷**：左树的 `载荷` 下分为 `载荷定义` 和 `载荷工况`；在 `载荷定义` 下右键添加/删除/排序，点选后按类型编辑参数与名称；**改名会自动级联**到工况矩阵与 `jacobian_needed`。
 - **目标函数**：`objective_function(self)` / `get_metrics(self)` 函数体（可手写代码，导出后编辑再粘回更稳妥）。
 - **刚度/Jacobian 模板**：不会自动添加集中力或集中力矩；用户需先在 `载荷定义` 中添加它们，并让两者与模板选择的参考点一致。
 - **求解器**：进程数、GPU、`task_index_list`（把某些载荷工况分到同一进程顺序求解）。
-- **优化问题定义**：点击大类只显示概览；几何/材料优化器节点编辑最大迭代次数和更新开关；每个几何优化器只有一个等式约束代码框，罚函数约束仍可包含多个小项；子优化目标节点只显示各自内容。
+- **优化问题定义**：点击大类只显示概览；几何/材料优化器节点编辑最大迭代次数和更新开关；每个几何优化器只有一个等式约束代码框，罚函数约束仍可包含多个小项；子优化目标节点只显示各自内容。所有子优化器行为一致：各自指向一个更新对象（Part 或材料接口），互不干扰。
+- **多个几何优化器（每个边界 Part 一个）**：在 `优化问题定义 → 几何优化器` 上右键“添加几何优化器”，会自动分配到尚未占用边界 Part；编辑器顶部用**目标 Part** 下拉框可改绑的 Part。模型树会显示 `几何优化器 · Part body` / `· Part leg` 两个并列节点，各自有自己的子优化目标、等式约束、罚函数约束，以及各自的曲面更新开关（只覆盖本 Part 的曲面）。
+  - 每个 Part 的设计变量在梯度中按 Part 切片，状态分开保存到 `log/geometryupdater/<part_name>/`，互不干扰。
+  - 目标 Part 必须是边界 Part（INP / torchfea Part 没有曲面）；未选或重复选会在生成代码时直接报错并列出可选项。
+- **多个材料优化器（每个可设计材料接口一个）**：在 `优化问题定义` 上右键“添加材料优化器”，会自动分配到尚未占用、且带设计变量（SIMP 密度场）的材料接口；编辑器顶部用**目标材料接口** 下拉框可改绑。模型树显示 `材料优化器 · 材料 solid` / `· 材料 shell_mat`，各自有自己的子优化目标和罚函数约束。
+  - 每个材料接口的设计变量在材料梯度中按接口切片，状态分开保存到 `log/materialupdater/<interface_name>/`。
+  - 目标必须是有设计变量的材料接口（`HomogeneousMaterial` 无变量）；未选或重复选会在生成代码时直接报错并列出可选项。
+  - 导出的脚本用一个 `define_updater()` 声明全部子优化器，按分类调用
+    `add_geometry_updater(self.UpdaterBoundaryPart(), name='body')` /
+    `add_material_updater(self.UpdaterSIMPMaterial(), name='solid')`；
+    名字省略时按 `<类名>_<序号>` 自动命名；这个 `name` 同时也是该对象拥有的 interface
+    （Part 名 / 材料接口名），updater 类本身不写目标，所以同一个类可以注册多次、分别优化不同 Part。
 
 页脚：
 - **`▶ 进入优化器`** —— 把当前定义交给观察页；在观察页点击 0 选择任务来源（当前定义 / 已有 .py / 已有结果续跑）后开始。
@@ -64,6 +79,7 @@ python -m morphopt.ui
 ```
 <run_root>/<label>_T<yyyymmdd_HHMMSS>/
 ├── log/                    # history_record.csv、deformation/task_<k>_iter_<n>.stl、geometry/*.npz…
+│   └── geometryupdater/    # 每个几何优化器一个子目录：<part_name>/step_length_<iter>.npz
 ├── fea/                    # 网格/装配缓存
 ├── cache/
 └── scripts/

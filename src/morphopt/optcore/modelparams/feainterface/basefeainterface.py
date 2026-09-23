@@ -1,10 +1,20 @@
 
 
 import numpy as np
-import torch
 from torchfea import FEAController
 
-class BaseFEAInterface:
+from ...protocal import (
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalVisualizable,
+)
+
+
+class BaseFEAInterface(
+    ProtocalInitializable,
+    ProtocalSavable,
+    ProtocalVisualizable,
+):
     """
     Base class for fea interfaces.
     This class is not meant to be instantiated directly.
@@ -17,12 +27,23 @@ class BaseFEAInterface:
         """
         Initialize the base interface and optional parameters.
         """
+        super().__init__()
 
         self._values: list[float] = np.zeros(self.num_values).tolist()
         """List of fea parameter values."""
 
         self._name: str = ""
         """Name of the interface."""
+
+    @property
+    def name(self) -> str:
+        """Name assigned when this interface is registered."""
+        if not self._name:
+            raise ValueError(
+                f"{type(self).__name__} has no name yet; register it with "
+                "FEAParams.add_interface(...)."
+            )
+        return self._name
 
     @property
     def num_values(self) -> int:

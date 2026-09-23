@@ -1,9 +1,10 @@
 import csv
 import numpy as np
 import torch
-from .baseobject import BaseObject
+from .protocal import ProtocalInitializable, ProtocalSavable
 
-class History(BaseObject):
+
+class History(ProtocalInitializable, ProtocalSavable):
     """
     A class to record the information of the optimization process.
     """
