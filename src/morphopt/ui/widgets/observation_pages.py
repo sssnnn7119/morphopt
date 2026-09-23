@@ -14,9 +14,18 @@ import numpy as np
 import pyvista as pv
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from pyvistaqt import QtInteractor
 
+from ...optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
 from ..i18n import T
 
 
@@ -77,9 +86,9 @@ class MetricsPage(QWidget):
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(len(objectives))
 
-        times = getattr(history, "history_time", None)
-        elements = getattr(history, "history_num_elements", None)
-        nodes = getattr(history, "history_num_nodes", None)
+        times = history.history_time
+        elements = history.history_num_elements
+        nodes = history.history_num_nodes
         for row_index, objective in enumerate(objectives):
             values = self._row_values(
                 row_index, objective, metrics, metric_count, times, elements,
@@ -121,7 +130,7 @@ class MetricsPage(QWidget):
             if metrics is None or row_index >= len(metrics):
                 values.append(None)
                 continue
-            metric_row = metrics[row_index] if metrics.ndim > 1 else metrics[row_index]
+            metric_row = metrics[row_index]
             metric_value = (metric_row[metric_index] if np.ndim(metric_row)
                             else metric_row)
             values.append(f"{metric_value:.6f}")
@@ -172,42 +181,167 @@ class MetricsPage(QWidget):
         self.canvas.draw()
 
 
-class GeometryPage(QWidget):
-    """Geometry at one selected result iteration."""
+class UpdatableStructurePage(QWidget):
+    """Render one updateable interface at a selected result iteration."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
+        controls = QHBoxLayout()
+        self.interface_label = QLabel(T("显示接口", "Display interface"))
+        controls.addWidget(self.interface_label)
+        self.interface_selector = QComboBox()
+        self.interface_selector.currentIndexChanged.connect(
+            self._interface_changed
+        )
+        controls.addWidget(self.interface_selector, 1)
+        layout.addLayout(controls)
+
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
-        self._last_rendered: tuple[str, int] | None = None
+        self._parameters = None
+        self._result_folder: str | None = None
+        self._iteration = 0
+        self._last_rendered: tuple[str, int, int | None] | None = None
 
     def build(self, parameters, result_folder: str, iteration: int) -> None:
-        """Load and render geometry unless this exact iteration is already shown."""
-        marker = (result_folder, iteration)
+        """Load and render the selected updateable interface."""
+        self._parameters = parameters
+        self._result_folder = result_folder
+        self._iteration = iteration
+        self._sync_interface_selector()
+        self._render_selected()
+
+    def _interface_changed(self, _index: int) -> None:
+        self._last_rendered = None
+        self._render_selected()
+
+    def _display_interfaces(self) -> list[tuple[str, object]]:
+        """Return visualizable design interfaces in collection order."""
+        if self._parameters is None:
+            return []
+        interfaces: list[tuple[str, object]] = []
+        for category, collection in (
+            ("Part", self._parameters.geometry),
+            ("FEA", self._parameters.feamodel),
+            ("Material", self._parameters.materials),
+        ):
+            for interface in collection.interfaces.values():
+                if (
+                    isinstance(interface, ProtocalUpdatable)
+                    and isinstance(interface, ProtocalVisualizable)
+                ):
+                    interfaces.append((category, interface))
+        return interfaces
+
+    @staticmethod
+    def _interface_label(category: str, interface) -> str:
+        """Return an unambiguous label for one updateable interface."""
+        label = f"{category}: {interface.name}"
+        part_name = getattr(interface, "part_name", None)
+        if part_name and part_name != interface.name:
+            label = f"{label} ({part_name})"
+        return label
+
+    def _sync_interface_selector(self) -> None:
+        interfaces = self._display_interfaces()
+        current = self.interface_selector.currentData()
+        self.interface_selector.blockSignals(True)
+        try:
+            self.interface_selector.clear()
+            for category, interface in interfaces:
+                self.interface_selector.addItem(
+                    self._interface_label(category, interface), interface
+                )
+            if not interfaces:
+                self.interface_selector.addItem(
+                    T("没有可更新接口", "No updateable interfaces"), None
+                )
+                self.interface_selector.setEnabled(False)
+            else:
+                self.interface_selector.setEnabled(True)
+                index = self.interface_selector.findData(current)
+                self.interface_selector.setCurrentIndex(index if index >= 0 else 0)
+        finally:
+            self.interface_selector.blockSignals(False)
+
+    def _render_selected(self) -> None:
+        if self._parameters is None or self._result_folder is None:
+            return
+        selected = self.interface_selector.currentData()
+        marker = (
+            self._result_folder,
+            self._iteration,
+            id(selected) if selected is not None else None,
+        )
         if marker == self._last_rendered:
             return
 
         def build_scene(plotter) -> None:
             plotter.enable_lightkit()
-            parameters.load(foldpath=f"{result_folder}/log/", iteration=iteration)
-            parameters.plot(plotter=plotter)
+            self._parameters.load(
+                foldpath=f"{self._result_folder}/log/", iteration=self._iteration
+            )
+            if selected is not None:
+                selected.plot(plotter=plotter)
             plotter.show_axes()
 
         try:
             self.viewport.rebuild(build_scene)
             self._last_rendered = marker
         except Exception as exc:  # pragma: no cover - best-effort rendering
-            print(f"Geometry preview failed at iteration {iteration}: {exc}")
+            print(
+                f"Updatable structure preview failed at iteration "
+                f"{self._iteration}: {exc}"
+            )
 
     def clear_view(self) -> None:
         """Empty the viewport and forget the previous render marker."""
+        self._parameters = None
+        self._result_folder = None
         self._last_rendered = None
+        self.interface_selector.blockSignals(True)
+        try:
+            self.interface_selector.clear()
+            self.interface_selector.addItem(
+                T("没有可更新接口", "No updatable interfaces"), None
+            )
+            self.interface_selector.setEnabled(False)
+        finally:
+            self.interface_selector.blockSignals(False)
         try:
             self.viewport.rebuild(lambda _plotter: None)
         except Exception as exc:  # pragma: no cover - best-effort rendering
-            print(f"Geometry preview clear failed: {exc}")
+            print(f"Updatable structure preview clear failed: {exc}")
+
+    def apply_language(self) -> None:
+        """Refresh the interface selector without rebuilding the scene."""
+        self.interface_label.setText(T("显示接口", "Display interface"))
+        current = self.interface_selector.currentData()
+        self.interface_selector.blockSignals(True)
+        try:
+            interfaces = self._display_interfaces()
+            self.interface_selector.clear()
+            for category, interface in interfaces:
+                self.interface_selector.addItem(
+                    self._interface_label(category, interface), interface
+                )
+            if not interfaces:
+                self.interface_selector.addItem(
+                T("没有可更新接口", "No updatable interfaces"), None
+                )
+                self.interface_selector.setEnabled(False)
+                return
+            self.interface_selector.setEnabled(True)
+            index = self.interface_selector.findData(current)
+            if index >= 0:
+                self.interface_selector.setCurrentIndex(index)
+            else:
+                self.interface_selector.setCurrentIndex(0)
+        finally:
+            self.interface_selector.blockSignals(False)
 
 
 class DeformationCasePage(QWidget):

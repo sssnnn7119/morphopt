@@ -1,10 +1,10 @@
 """Top-level window: definition part + observer part, in ONE window.
 
-No initial "pick a scheme" step: the app opens directly in the *definition*
+No initial "pick a template" step: the app opens directly in the *definition*
 part with a default problem.  The definition page owns all problem-level
-actions (更换优化问题 / 打开 .morph / 导出 .morph / 导出运行 .py — it emits
+actions (选择模板 / 打开 .morph / 导出 .morph / 导出运行 .py — it emits
 request signals that MainWindow fulfils); the observer page owns the run/view
-controls.  ``*.morph`` carries its own ``scheme`` so reopening a file always
+controls.  ``*.morph`` carries its own template id so reopening a file always
 shows the right problem type.  A language switch (中文 / English) sits in the
 status bar and re-applies the current language to both parts.
 """
@@ -19,16 +19,13 @@ from PySide6.QtWidgets import (
 
 from .model.problem import ProblemDefinition
 from .model.loaders import load_morph, save_morph, MORPH_SUFFIX
-from .schemes.base import get_template, scheme_label
+from .schemes.base import available_templates, get_template, scheme_label
 from .i18n import LanguageSelector, T
 from .workbench import Workbench
 from .observe_panel import ObserverControls
 from . import launcher
 
-#: problem types offered by the "更换优化问题" dialog (definition order)
-# Co-design is kept in the backend for opening legacy definitions, but is not
-# offered as a new UI problem type until its workflow is implemented.
-PROBLEM_TYPES = ["shapeopt", "simp"]
+DEFAULT_TEMPLATE = "shapeopt"
 
 
 class MainWindow(QMainWindow):
@@ -44,7 +41,7 @@ class MainWindow(QMainWindow):
         self.resize(1500, 880)
 
         # open directly into the definition part (no initial scheme pick)
-        self.open_scheme("shapeopt")
+        self.open_scheme(DEFAULT_TEMPLATE)
 
     # ------------------------------------------------------------------ api
     def current_problem(self) -> ProblemDefinition | None:
@@ -73,19 +70,18 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle(T("MorphOpt UI — 优化定义", "MorphOpt UI — Definition"))
 
-    # ---------------------------------------------------------- problem type
+    # ------------------------------------------------------------- templates
     def change_problem(self) -> None:
-        """更换优化问题: pick a type; replace the current definition."""
-        entries = [T(scheme_label(s), scheme_label(s, english=True))
-                   for s in PROBLEM_TYPES]
+        """Choose a file-backed definition template and replace the tree."""
+        templates = list(available_templates())
+        entries = [T(template.label, template.label_en) for template in templates]
         text, ok = QInputDialog.getItem(
-            self, T("更换优化问题", "Change optimization problem"),
-            T("请选择优化问题类型：", "Select the optimization problem type:"),
+            self, T("选择模板", "Select template"),
+            T("请选择一个问题模板：", "Choose a problem template:"),
             entries, 0, False)
         if not ok or not text:
             return
-        scheme = PROBLEM_TYPES[entries.index(text)]
-        self.open_scheme(scheme)
+        self.open_scheme(templates[entries.index(text)].scheme)
 
     def open_scheme(self, scheme: str) -> None:
         """Create a fresh default problem of ``scheme`` and show it."""

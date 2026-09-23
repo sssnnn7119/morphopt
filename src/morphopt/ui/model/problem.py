@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator, Optional
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Node kinds of the problem-definition task tree (the explicit taxonomy).
@@ -13,7 +15,8 @@ from typing import Any, Iterable, Iterator, Optional
 # presentation node is transient and is not serialized::
 #
 #     problem
-#     ├── geometry   -- children: SurfaceNode*  (index 0 = outer, 1.. = cavities)
+#     ├── geometry   -- children: PartInterfaceNode* (each owns InstanceNode*
+#     │                  and optional SurfaceNode*; 0 = outer, 1.. = cavities)
 #     ├── loads      -- children: InterfaceNode* (BC / RP / forces / contacts)
 #     ├── steps      -- one StepsNode   (step count + per-interface amplitudes)
 #     ├── materials  -- children: MaterialNode* (Part + element assignments)
@@ -30,6 +33,8 @@ from typing import Any, Iterable, Iterator, Optional
 
 KIND_PROBLEM = "problem"
 KIND_GEOMETRY = "geometry"
+KIND_PART_INTERFACE = "part_interface"
+KIND_INSTANCE = "instance"
 KIND_SURFACE = "surface"
 KIND_LOADS = "loads"
 KIND_INTERFACE = "interface"
@@ -40,9 +45,29 @@ KIND_OBJECTIVE = "objective"
 KIND_SOLVER = "solver"
 KIND_UPDATER = "updater"
 
+# A file-backed template may point at an asset shipped next to that template.
+# The marker stays portable in ``*.morph`` files; UI previews and generated
+# headless jobs resolve it to the installed package directory.
+TEMPLATE_MODEL_DIRECTORY = "$MORPHOPT_TEMPLATE_DIR"
+
+
+def resolve_model_directory(directory: str | None) -> str:
+    """Resolve a template asset marker or return the user path unchanged."""
+    value = str(directory or "")
+    if value == TEMPLATE_MODEL_DIRECTORY:
+        return str(Path(__file__).resolve().parents[1] / "templates")
+    return value
+
 #: canonical order of the top-level sections inside a problem tree.
-SECTION_ORDER = (KIND_GEOMETRY, KIND_LOADS, KIND_STEPS, KIND_MATERIALS,
-                 KIND_OBJECTIVE, KIND_SOLVER, KIND_UPDATER)
+SECTION_ORDER = (
+    KIND_GEOMETRY,
+    KIND_LOADS,
+    KIND_STEPS,
+    KIND_MATERIALS,
+    KIND_OBJECTIVE,
+    KIND_SOLVER,
+    KIND_UPDATER,
+)
 
 
 class Node:
@@ -73,14 +98,18 @@ class Node:
         Ordered child nodes (e.g. surfaces inside ``geometry``).
     """
 
-    kind: Optional[str] = None
+    kind: str | None = None
 
     #: names of the parameters this node exposes as real typed attributes.
     _FIELDS: tuple[str, ...] = ()
 
-    def __init__(self, kind: Optional[str] = None, name: str = "",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         self.kind = kind or type(self).kind or ""
         self.name = name
         self.children: list[Node] = list(children or [])
@@ -99,21 +128,21 @@ class Node:
     def has_field(self, key: str) -> bool:
         return key in type(self)._FIELDS
 
-    def get_field(self, key: str, default: Any = None) -> Any:
+    def get_field(self, key: str, default: object = None) -> Any:
         """Read one parameter; ``default`` is returned when it is unset."""
         if key not in type(self)._FIELDS:
             raise KeyError(f"{type(self).__name__} has no field {key!r}")
         value = getattr(self, key, None)
         return default if value is None else value
 
-    def set_field(self, key: str, value: Any) -> "Node":
+    def set_field(self, key: str, value: object) -> Node:
         """Write one parameter onto its attribute (chainable)."""
         if key not in type(self)._FIELDS:
             raise KeyError(f"{type(self).__name__} has no field {key!r}")
         setattr(self, key, value)
         return self
 
-    def field_items(self) -> Iterator[tuple[str, Any]]:
+    def field_items(self) -> Iterator[tuple[str, object]]:
         """Yield ``(key, value)`` for every set parameter.
 
         Unset parameters (attribute ``None``) are omitted so the on-disk
@@ -125,28 +154,28 @@ class Node:
                 yield key, value
 
     # ------------------------------------------------------------------ tree
-    def add_child(self, node: "Node", index: Optional[int] = None) -> "Node":
+    def add_child(self, node: Node, index: int | None = None) -> Node:
         if index is None:
             self.children.append(node)
         else:
             self.children.insert(index, node)
         return node
 
-    def remove_child(self, node: "Node") -> None:
+    def remove_child(self, node: Node) -> None:
         self.children.remove(node)
 
-    def child(self, kind: str) -> Optional["Node"]:
+    def child(self, kind: str) -> Node | None:
         return next((c for c in self.children if c.kind == kind), None)
 
-    def children_of(self, kind: str) -> list["Node"]:
+    def children_of(self, kind: str) -> list[Node]:
         return [c for c in self.children if c.kind == kind]
 
-    def iter_nodes(self) -> Iterator["Node"]:
+    def iter_nodes(self) -> Iterator[Node]:
         yield self
         for child in self.children:
             yield from child.iter_nodes()
 
-    def find(self, predicate) -> Optional["Node"]:
+    def find(self, predicate) -> Node | None:
         """Depth-first search for the first node satisfying ``predicate``."""
         for node in self.iter_nodes():
             if predicate(node):
@@ -163,7 +192,7 @@ class Node:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Node":
+    def from_dict(cls, data: dict) -> Node:
         """Rebuild a node (and its whole subtree) from a ``*.morph`` dict.
 
         The concrete subclass is selected from the stored ``kind`` so typed
@@ -179,30 +208,33 @@ class Node:
         )
 
     # ---------------------------------------------------------------- misc
-    def clone(self) -> "Node":
+    def clone(self) -> Node:
         return Node.from_dict(self.to_dict())
 
     def __repr__(self) -> str:
         fields = ", ".join(type(self)._FIELDS) or "—"
-        return (f"<{type(self).__name__} kind={self.kind!r} name={self.name!r} "
-                f"fields={{{fields}}} children={len(self.children)}>")
+        return (
+            f"<{type(self).__name__} kind={self.kind!r} name={self.name!r} "
+            f"fields={{{fields}}} children={len(self.children)}>"
+        )
 
 
 # ---------------------------------------------------------------------------
 # concrete typed nodes
 # ---------------------------------------------------------------------------
 
+
 class ProblemNode(Node):
     """Root of one problem-definition tree; holds the ordered sections."""
 
     kind = KIND_PROBLEM
 
-    def add_section(self, node: Node, index: Optional[int] = None) -> Node:
+    def add_section(self, node: Node, index: int | None = None) -> Node:
         """Attach a top-level section node and return it (chainable)."""
         self.add_child(node, index)
         return node
 
-    def section(self, kind: str) -> Optional[Node]:
+    def section(self, kind: str) -> Node | None:
         """Return the direct child section of the given kind, if present."""
         return self.child(kind)
 
@@ -211,65 +243,228 @@ class ProblemNode(Node):
 
 
 class GeometryNode(Node):
-    """Initial-geometry definition for every optimization scheme.
+    """Initial-geometry section: an ordered set of geometry interfaces.
 
-    Canonical parameters are explicit, typed attributes assigned in
-    ``__init__``; their names match the persisted ``*.morph`` keys.
-    SIMP links to one model exported by TorchFEA; shape optimization continues
-    to store its ordered boundary surfaces as child nodes.
+    Every :class:`PartInterfaceNode` owns one Part plus its Instances;
+    parameterised interfaces additionally own their boundary surfaces as
+    children (index 0 = outer boundary, 1.. = cavities).  The default
+    Instance is ``<part>-1``; extra Instances are declared in the Part's
+    ``define_instance`` method.
+
+    Geometry-specific parameters belong to the child Part interfaces.  This
+    node only owns and orders those interfaces.
     """
 
     kind = KIND_GEOMETRY
-    _FIELDS = ("fea_seed_size", "mesh_order", "reinitialize_per_iter",
-               "thickness", "num_layers",
-               "part_name", "instance_name",
-               "model_directory", "model_filename",
-               "_apply_surface_constraints")
+    _FIELDS = ()
 
-    def __init__(self, kind: Optional[str] = None, name: str = "Geometry",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "Geometry",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
+        super().__init__(kind=kind, name=name, children=children)
+
+    # ----------------------------------------------------------- interfaces
+    def add_interface(
+        self, interface: PartInterfaceNode, index: int | None = None
+    ) -> PartInterfaceNode:
+        """Attach a geometry interface and return it (chainable)."""
+        self.add_child(interface, index)
+        return interface
+
+    def interfaces(self) -> list[PartInterfaceNode]:
+        return [c for c in self.children if c.kind == KIND_PART_INTERFACE]
+
+    def interface_count(self) -> int:
+        return len(self.interfaces())
+
+    def owner(self, surface: SurfaceNode) -> PartInterfaceNode | None:
+        """Interface holding ``surface`` (``None`` when it is detached)."""
+        return next(
+            (
+                interface
+                for interface in self.interfaces()
+                if surface in interface.children
+            ),
+            None,
+        )
+
+    # ------------------------------------------------------------- surfaces
+    def surfaces(self) -> list[SurfaceNode]:
+        """All boundary surfaces of every interface, in the canonical order."""
+        return [
+            child for interface in self.interfaces() for child in interface.surfaces()
+        ]
+
+    def surface_count(self) -> int:
+        return len(self.surfaces())
+
+
+class PartInterfaceNode(Node):
+    """One geometry interface: a Part and (optional) boundary surfaces.
+
+    Instance declarations belong to the generated Part class's
+    ``define_instance()`` method.
+    """
+
+    kind = KIND_PART_INTERFACE
+    _FIELDS = (
+        "type",
+        "part_name",
+        "fea_seed_size",
+        "mesh_order",
+        "shell_thickness",
+        "num_layers",
+        "exterior_surface",
+        "mesh_file",
+        "inp_part_name",
+        "model_directory",
+        "model_filename",
+        "model_part_name",
+    )
+
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
-        # ---- explicit typed parameters ----------------------------------
-        self.fea_seed_size: Optional[float] = data.get("fea_seed_size")
-        self.mesh_order: Optional[int] = data.get("mesh_order")
-        self.reinitialize_per_iter: Optional[int] = data.get("reinitialize_per_iter")
-        self.thickness: Optional[float] = data.get("thickness")
-        self.num_layers: Optional[int] = data.get("num_layers")
-        self.part_name: str = str(data.get("part_name") or "final_model").strip()
-        self.instance_name: str = str(data.get("instance_name") or self.part_name)
-        self.model_directory: str = str(data.get("model_directory") or "")
-        self.model_filename: str = str(data.get("model_filename") or "")
-        # Legacy storage for symmetry/equality code.  New definitions store
-        # this body in the updater's equality-constraint item (MirrorSymmetry
-        # by default).
-        self._apply_surface_constraints: str = str(
-            data.get("_apply_surface_constraints") or "")
+        self.type: str = str(data.get("type") or "")
+        self.part_name: str = str(data.get("part_name") or "").strip()
+        self.fea_seed_size: float | None = data.get("fea_seed_size")
+        self.mesh_order: int | None = data.get("mesh_order")
+        self.shell_thickness: float | None = data.get("shell_thickness")
+        self.num_layers: int | None = data.get("num_layers")
+        self.exterior_surface: str | None = data.get("exterior_surface")
+        self.mesh_file: str | None = data.get("mesh_file")
+        self.inp_part_name: str | None = data.get("inp_part_name")
+        self.model_directory: str | None = data.get("model_directory")
+        self.model_filename: str | None = data.get("model_filename")
+        self.model_part_name: str | None = data.get("model_part_name")
+
+        # A Part always has at least its identity Instance.  Keeping this in
+        # the model tree makes placement a real persisted UI value instead of
+        # an implicit code-generator convention.
+        if not self.instances():
+            part_name = self.resolved_part_name() or "part"
+            self.add_instance(
+                InstanceNode(name=f"{part_name}-1")
+            )
+
+    # ----------------------------------------------------------- properties
+    @property
+    def interface_type(self) -> str:
+        """Backend part-interface class name, e.g. ``"INPPartInterface"``."""
+        return self.type
 
     @property
-    def apply_surface_constraints(self) -> str:
-        """Legacy geometry BC slot kept for loading old definitions."""
-        return self._apply_surface_constraints
+    def spec(self) -> dict:
+        from .schemas import PART_INTERFACE_TYPES
 
-    @apply_surface_constraints.setter
-    def apply_surface_constraints(self, code: str) -> None:
-        self._apply_surface_constraints = str(code or "")
+        return PART_INTERFACE_TYPES.get(self.type, {})
 
-    def add_surface(self, surface: "SurfaceNode",
-                    index: Optional[int] = None) -> "SurfaceNode":
-        """Attach a surface and return it (chainable)."""
+    @property
+    def has_surfaces(self) -> bool:
+        """Whether this interface type is described by boundary surfaces."""
+        return bool(self.spec.get("surfaces", False))
+
+    def resolved_part_name(self) -> str:
+        """Part name used by generated code (falls back to the node name)."""
+        return (self.part_name or self.name or "").strip()
+
+    def resolved_instance_names(self) -> list[str]:
+        """Return this Part's Instance names in registration order."""
+        return [instance.name for instance in self.instances()]
+
+    def instances(self) -> list[InstanceNode]:
+        """Return the Instance children in their registration order."""
+        return [child for child in self.children if child.kind == KIND_INSTANCE]
+
+    def add_instance(
+        self, instance: InstanceNode, index: int | None = None
+    ) -> InstanceNode:
+        """Attach one Instance declaration to this Part."""
+        if not instance.name.strip():
+            raise ValueError("Instance name cannot be empty")
+        if any(existing.name == instance.name for existing in self.instances()):
+            raise ValueError(f"Instance {instance.name!r} already exists")
+        self.add_child(instance, index=index)
+        return instance
+
+    # ------------------------------------------------------------- surfaces
+    def add_surface(
+        self, surface: SurfaceNode, index: int | None = None
+    ) -> SurfaceNode:
         self.add_child(surface, index)
         return surface
 
-    def surfaces(self) -> list["SurfaceNode"]:
+    def surfaces(self) -> list[SurfaceNode]:
         return [c for c in self.children if c.kind == KIND_SURFACE]
 
     def surface_count(self) -> int:
         return len(self.surfaces())
 
-    def index_of_surface(self, surface: "SurfaceNode") -> int:
-        return self.children.index(surface)
+    @classmethod
+    def create(
+        cls, interface_type: str, name: str = "", **overrides
+    ) -> PartInterfaceNode:
+        """Build a geometry interface from schema defaults + overrides."""
+        from .schemas import clone_defaults, part_interface_spec
+
+        spec = part_interface_spec(interface_type)
+        allowed = {f["key"] for f in spec["params"]}
+        unknown = set(overrides) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unknown geometry-interface field(s) {sorted(unknown)} for "
+                f"{interface_type!r}; allowed: {sorted(allowed)}"
+            )
+        params = {"type": interface_type}
+        params.update(clone_defaults(spec["params"]))
+        params.update(overrides)
+        return cls(name=name, params=params)
+
+
+class InstanceNode(Node):
+    """One placement of a Part in the TorchFEA Assembly.
+
+    ``translation`` and ``rotation`` are the three translational and three
+    rotational exponential-coordinate components passed to TorchFEA as one
+    ``[tx, ty, tz, rx, ry, rz]`` pose.
+    """
+
+    kind = KIND_INSTANCE
+    _FIELDS = ("translation", "rotation")
+
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
+        super().__init__(kind=kind, name=name, children=children)
+        data = dict(params or {})
+        self.translation = self._vector3(data.get("translation"), "translation")
+        self.rotation = self._vector3(data.get("rotation"), "rotation")
+
+    @staticmethod
+    def _vector3(value: object, label: str) -> list[float]:
+        values = [0.0, 0.0, 0.0] if value is None else [float(item) for item in value]
+        if len(values) != 3:
+            raise ValueError(f"Instance {label} must have exactly 3 components")
+        return values
+
+    @property
+    def pose(self) -> list[float]:
+        """Return TorchFEA's six-component translation/rotation pose."""
+        return [*self.translation, *self.rotation]
 
 
 class SurfaceNode(Node):
@@ -282,31 +477,49 @@ class SurfaceNode(Node):
     """
 
     kind = KIND_SURFACE
-    _FIELDS = ("type", "flip", "r0", "length", "seed_size", "num_U_ratio",
-               "num_V_ratio", "degree", "init_location", "maxR", "maxC",
-               "MaxC", "maxFF", "perturbation_L", "path_stl")
+    _FIELDS = (
+        "type",
+        "flip",
+        "r0",
+        "length",
+        "seed_size",
+        "num_U_ratio",
+        "num_V_ratio",
+        "degree",
+        "init_location",
+        "maxR",
+        "maxC",
+        "MaxC",
+        "maxFF",
+        "perturbation_L",
+        "path_stl",
+    )
 
-    def __init__(self, kind: Optional[str] = None, name: str = "",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters (union of surface schema fields) --
         self.type: str = str(data.get("type") or "")
         self.flip: bool = bool(data.get("flip", False))
-        self.r0: Optional[float] = data.get("r0")
-        self.length: Optional[float] = data.get("length")
-        self.seed_size: Optional[float] = data.get("seed_size")
-        self.num_U_ratio: Optional[int] = data.get("num_U_ratio")
-        self.num_V_ratio: Optional[int] = data.get("num_V_ratio")
-        self.degree: Optional[int] = data.get("degree")
-        self.init_location: Optional[list] = data.get("init_location")
-        self.maxR: Optional[float] = data.get("maxR")
-        self.maxC: Optional[float] = data.get("maxC")
-        self.MaxC: Optional[float] = data.get("MaxC")
-        self.maxFF: Optional[float] = data.get("maxFF")
-        self.perturbation_L: Optional[float] = data.get("perturbation_L")
-        self.path_stl: Optional[str] = data.get("path_stl")
+        self.r0: float | None = data.get("r0")
+        self.length: float | None = data.get("length")
+        self.seed_size: float | None = data.get("seed_size")
+        self.num_U_ratio: int | None = data.get("num_U_ratio")
+        self.num_V_ratio: int | None = data.get("num_V_ratio")
+        self.degree: int | None = data.get("degree")
+        self.init_location: list | None = data.get("init_location")
+        self.maxR: float | None = data.get("maxR")
+        self.maxC: float | None = data.get("maxC")
+        self.MaxC: float | None = data.get("MaxC")
+        self.maxFF: float | None = data.get("maxFF")
+        self.perturbation_L: float | None = data.get("perturbation_L")
+        self.path_stl: str | None = data.get("path_stl")
 
     @property
     def surface_type(self) -> str:
@@ -319,21 +532,24 @@ class SurfaceNode(Node):
         return self.flip
 
     @classmethod
-    def create(cls, surface_type: str, index: int = 0, name: str = "",
-               **overrides) -> "SurfaceNode":
+    def create(
+        cls, surface_type: str, index: int = 0, name: str = "", **overrides
+    ) -> SurfaceNode:
         """Build a surface from its schema defaults, then apply overrides.
 
         The inner-cavity ``flip`` flag is derived from ``index`` (0 = outer).
         Unknown field names raise immediately, so typos never slip through.
         """
-        from .schemas import surface_spec, clone_defaults
+        from .schemas import clone_defaults, surface_spec
+
         spec = surface_spec(surface_type)
         allowed = {f["key"] for f in spec["params"]}
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
                 f"Unknown surface field(s) {sorted(unknown)} for "
-                f"{surface_type!r}; allowed: {sorted(allowed)}")
+                f"{surface_type!r}; allowed: {sorted(allowed)}"
+            )
         params = {"type": surface_type, "flip": index > 0}
         params.update(clone_defaults(spec["params"]))
         params.update(overrides)
@@ -346,13 +562,14 @@ class LoadsNode(Node):
 
     kind = KIND_LOADS
 
-    def add_interface(self, interface: "InterfaceNode",
-                      index: Optional[int] = None) -> "InterfaceNode":
+    def add_interface(
+        self, interface: InterfaceNode, index: int | None = None
+    ) -> InterfaceNode:
         """Attach an interface and return it (chainable)."""
         self.add_child(interface, index)
         return interface
 
-    def interfaces(self) -> list["InterfaceNode"]:
+    def interfaces(self) -> list[InterfaceNode]:
         return [c for c in self.children if c.kind == KIND_INTERFACE]
 
 
@@ -366,56 +583,78 @@ class InterfaceNode(Node):
     """
 
     kind = KIND_INTERFACE
-    _FIELDS = ("type", "instance_name", "surface_name", "set_nodes_name",
-               "index_dof", "rp_name", "rp_location", "obj_name", "s",
-               "obj_type", "rp_name1", "rp_name2", "instance_name1",
-               "surface_name1", "instance_name2", "surface_name2",
-               "penalty_threshold_h", "element_name")
+    _FIELDS = (
+        "type",
+        "instance_name",
+        "surface_name",
+        "set_nodes_name",
+        "index_dof",
+        "rp_name",
+        "rp_location",
+        "obj_name",
+        "s",
+        "obj_type",
+        "rp_name1",
+        "rp_name2",
+        "instance_name1",
+        "surface_name1",
+        "instance_name2",
+        "surface_name2",
+        "penalty_threshold_h",
+        "element_name",
+    )
 
-    def __init__(self, kind: Optional[str] = None, name: str = "",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters (union of interface schema fields) -
         self.type: str = str(data.get("type") or "")
-        self.instance_name: Optional[str] = data.get("instance_name")
-        self.surface_name: Optional[str] = data.get("surface_name")
-        self.set_nodes_name: Optional[str] = data.get("set_nodes_name")
-        self.index_dof: Optional[list] = data.get("index_dof")
-        self.rp_name: Optional[str] = data.get("rp_name")
-        self.rp_location: Optional[list] = data.get("rp_location")
-        self.obj_name: Optional[str] = data.get("obj_name")
-        self.s: Optional[int] = data.get("s")
-        self.obj_type: Optional[str] = data.get("obj_type")
-        self.rp_name1: Optional[str] = data.get("rp_name1")
-        self.rp_name2: Optional[str] = data.get("rp_name2")
-        self.instance_name1: Optional[str] = data.get("instance_name1")
-        self.surface_name1: Optional[str] = data.get("surface_name1")
-        self.instance_name2: Optional[str] = data.get("instance_name2")
-        self.surface_name2: Optional[str] = data.get("surface_name2")
-        self.penalty_threshold_h: Optional[float] = data.get("penalty_threshold_h")
-        self.element_name: Optional[str] = data.get("element_name")
+        self.instance_name: str | None = data.get("instance_name")
+        self.surface_name: str | None = data.get("surface_name")
+        self.set_nodes_name: str | None = data.get("set_nodes_name")
+        self.index_dof: list | None = data.get("index_dof")
+        self.rp_name: str | None = data.get("rp_name")
+        self.rp_location: list | None = data.get("rp_location")
+        self.obj_name: str | None = data.get("obj_name")
+        self.s: int | None = data.get("s")
+        self.obj_type: str | None = data.get("obj_type")
+        self.rp_name1: str | None = data.get("rp_name1")
+        self.rp_name2: str | None = data.get("rp_name2")
+        self.instance_name1: str | None = data.get("instance_name1")
+        self.surface_name1: str | None = data.get("surface_name1")
+        self.instance_name2: str | None = data.get("instance_name2")
+        self.surface_name2: str | None = data.get("surface_name2")
+        self.penalty_threshold_h: float | None = data.get("penalty_threshold_h")
+        self.element_name: str | None = data.get("element_name")
 
     @property
     def interface_type(self) -> str:
         return self.type
 
     @classmethod
-    def create(cls, interface_type: str, name: Optional[str] = None,
-               **overrides) -> "InterfaceNode":
+    def create(
+        cls, interface_type: str, name: str | None = None, **overrides
+    ) -> InterfaceNode:
         """Build an interface from its schema defaults, then apply overrides.
 
         Unknown field names raise immediately so typos never slip through.
         """
-        from .schemas import interface_spec, clone_defaults
+        from .schemas import clone_defaults, interface_spec
+
         spec = interface_spec(interface_type)
         allowed = {f["key"] for f in spec["params"]}
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
                 f"Unknown interface field(s) {sorted(unknown)} for "
-                f"{interface_type!r}; allowed: {sorted(allowed)}")
+                f"{interface_type!r}; allowed: {sorted(allowed)}"
+            )
         params = {"type": interface_type}
         params.update(clone_defaults(spec["params"]))
         params.update(overrides)
@@ -434,14 +673,20 @@ class StepsNode(Node):
     kind = KIND_STEPS
     _FIELDS = ("num_steps", "step_values")
 
-    def __init__(self, kind: Optional[str] = None, name: str = "Load steps",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "Load steps",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
         self.num_steps: int = int(data["num_steps"]) if "num_steps" in data else 1
-        self.step_values: list[dict] = [dict(v) for v in (data.get("step_values") or [])]
+        self.step_values: list[dict] = [
+            dict(v) for v in (data.get("step_values") or [])
+        ]
 
 
 class MaterialsNode(Node):
@@ -449,12 +694,13 @@ class MaterialsNode(Node):
 
     kind = KIND_MATERIALS
 
-    def add_material(self, material: "MaterialNode",
-                     index: Optional[int] = None) -> "MaterialNode":
+    def add_material(
+        self, material: MaterialNode, index: int | None = None
+    ) -> MaterialNode:
         self.add_child(material, index=index)
         return material
 
-    def materials(self) -> list["MaterialNode"]:
+    def materials(self) -> list[MaterialNode]:
         return [child for child in self.children if child.kind == KIND_MATERIAL]
 
 
@@ -467,16 +713,43 @@ class MaterialNode(Node):
     """
 
     kind = KIND_MATERIAL
-    _FIELDS = ("type", "part_name", "material_model", "E", "nu", "mu", "kappa",
-               "c10", "c01", "c1", "c2", "c3", "Jm", "N", "alpha",
-               "density", "elementname", "mumax", "kappamax", "simp_ratio_min", "bounding_box",
-               "simp_field_resolution", "degree", "initial_ratio",
-               "voidpenalfactor", "materialpenalty",
-               "_map_bsp_designfield")
+    _FIELDS = (
+        "type",
+        "part_name",
+        "material_model",
+        "E",
+        "nu",
+        "mu",
+        "kappa",
+        "c10",
+        "c01",
+        "c1",
+        "c2",
+        "c3",
+        "Jm",
+        "N",
+        "alpha",
+        "density",
+        "elementname",
+        "mumax",
+        "kappamax",
+        "simp_ratio_min",
+        "bounding_box",
+        "simp_field_resolution",
+        "degree",
+        "initial_ratio",
+        "voidpenalfactor",
+        "materialpenalty",
+        "_map_bsp_designfield",
+    )
 
-    def __init__(self, kind: Optional[str] = None, name: str = "",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters (union of material schema fields) --
@@ -485,36 +758,36 @@ class MaterialNode(Node):
         if not self.part_name:
             raise ValueError("MaterialNode.part_name cannot be empty.")
         self.material_model: str = str(data.get("material_model") or "NeoHookeanLnJ")
-        self.E: Optional[float] = data.get("E")
-        self.nu: Optional[float] = data.get("nu")
-        self.mu: Optional[float] = data.get("mu")
-        self.kappa: Optional[float] = data.get("kappa")
-        self.c10: Optional[float] = data.get("c10")
-        self.c01: Optional[float] = data.get("c01")
-        self.c1: Optional[float] = data.get("c1")
-        self.c2: Optional[float] = data.get("c2")
-        self.c3: Optional[float] = data.get("c3")
-        self.Jm: Optional[float] = data.get("Jm")
-        self.N: Optional[float] = data.get("N")
-        self.alpha: Optional[list] = data.get("alpha")
-        self.density: Optional[float] = data.get("density")
-        self.elementname: Optional[str] = data.get("elementname")
-        self.mumax: Optional[float] = data.get("mumax")
-        self.kappamax: Optional[float] = data.get("kappamax")
-        self.simp_ratio_min: Optional[float] = data.get("simp_ratio_min")
-        self.bounding_box: Optional[list] = data.get("bounding_box")
-        self.simp_field_resolution: Optional[float] = data.get("simp_field_resolution")
-        self.degree: Optional[int] = data.get("degree")
-        self.initial_ratio: Optional[float] = data.get("initial_ratio")
-        self.voidpenalfactor: Optional[float] = data.get("voidpenalfactor")
-        self.materialpenalty: Optional[float] = data.get("materialpenalty")
+        self.E: float | None = data.get("E")
+        self.nu: float | None = data.get("nu")
+        self.mu: float | None = data.get("mu")
+        self.kappa: float | None = data.get("kappa")
+        self.c10: float | None = data.get("c10")
+        self.c01: float | None = data.get("c01")
+        self.c1: float | None = data.get("c1")
+        self.c2: float | None = data.get("c2")
+        self.c3: float | None = data.get("c3")
+        self.Jm: float | None = data.get("Jm")
+        self.N: float | None = data.get("N")
+        self.alpha: list | None = data.get("alpha")
+        self.density: float | None = data.get("density")
+        self.elementname: str | None = data.get("elementname")
+        self.mumax: float | None = data.get("mumax")
+        self.kappamax: float | None = data.get("kappamax")
+        self.simp_ratio_min: float | None = data.get("simp_ratio_min")
+        self.bounding_box: list | None = data.get("bounding_box")
+        self.simp_field_resolution: float | None = data.get("simp_field_resolution")
+        self.degree: int | None = data.get("degree")
+        self.initial_ratio: float | None = data.get("initial_ratio")
+        self.voidpenalfactor: float | None = data.get("voidpenalfactor")
+        self.materialpenalty: float | None = data.get("materialpenalty")
         self._map_bsp_designfield: str = str(data.get("_map_bsp_designfield") or "")
 
     @property
     def material_type(self) -> str:
         return self.type
 
-    def set_field(self, key: str, value: Any) -> "Node":
+    def set_field(self, key: str, value: object) -> Node:
         if key == "part_name" and not str(value or "").strip():
             raise ValueError("MaterialNode.part_name cannot be empty.")
         return super().set_field(key, value)
@@ -529,16 +802,17 @@ class MaterialNode(Node):
         self._map_bsp_designfield = str(code or "")
 
     @classmethod
-    def create(cls, material_type: str, name: str = "",
-               **overrides) -> "MaterialNode":
-        from .schemas import material_spec, clone_defaults
+    def create(cls, material_type: str, name: str = "", **overrides) -> MaterialNode:
+        from .schemas import clone_defaults, material_spec
+
         spec = material_spec(material_type)
         allowed = {f["key"] for f in spec["params"]}
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
                 f"Unknown material field(s) {sorted(unknown)} for "
-                f"{material_type!r}; allowed: {sorted(allowed)}")
+                f"{material_type!r}; allowed: {sorted(allowed)}"
+            )
         params = {"type": material_type}
         params.update(clone_defaults(spec["params"]))
         params.update(overrides)
@@ -556,16 +830,19 @@ class ObjectiveNode(Node):
     kind = KIND_OBJECTIVE
     _FIELDS = ("jacobian_needed", "_objective_function", "_get_metrics")
 
-    def __init__(self, kind: Optional[str] = None,
-                 name: str = "Objective Function",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "Objective Function",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
         self.jacobian_needed: list[str] = list(data.get("jacobian_needed") or [])
-        self._objective_function: Optional[str] = data.get("_objective_function")
-        self._get_metrics: Optional[str] = data.get("_get_metrics")
+        self._objective_function: str | None = data.get("_objective_function")
+        self._get_metrics: str | None = data.get("_get_metrics")
 
     @property
     def objective_body(self) -> str:
@@ -594,9 +871,13 @@ class SolverNode(Node):
     kind = KIND_SOLVER
     _FIELDS = ("num_process", "gpus", "task_index_list")
 
-    def __init__(self, kind: Optional[str] = None, name: str = "Solver",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "Solver",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
@@ -608,44 +889,50 @@ class SolverNode(Node):
 class UpdaterNode(Node):
     """Optimisation sub-updater configuration (geometry / materials section).
 
-    Each section is a config dict (or ``None`` when that sub-optimiser is not
-    active); geometry configs keep one ``equality_constraints`` item and a
-    separate ``constraints`` list, while materials currently keep penalty
-    ``constraints``.  It is stored as the explicit ``geometry`` /
-    ``materials`` attributes declared in ``__init__``.
+    Each section is a list of config dicts, one for every updated target.
+    Geometry configs keep one ``equality_constraints`` item and a separate
+    ``constraints`` list, while materials currently keep penalty
+    ``constraints``.
     """
 
     kind = KIND_UPDATER
     _FIELDS = ("geometry", "materials")
 
-    def __init__(self, kind: Optional[str] = None, name: str = "Updater",
-                 params: Optional[dict] = None,
-                 children: Optional[list["Node"]] = None) -> None:
+    def __init__(
+        self,
+        kind: str | None = None,
+        name: str = "Updater",
+        params: dict | None = None,
+        children: list[Node] | None = None,
+    ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
-        # ---- explicit typed parameters ----------------------------------
-        self.geometry: Optional[dict] = data.get("geometry")
-        self.materials: Optional[dict] = data.get("materials")
+        self.geometry: list[dict] = list(data.get("geometry") or [])
+        self.materials: list[dict] = list(data.get("materials") or [])
 
-    def geometry_config(self) -> Optional[dict]:
-        """Config dict of the geometry sub-updater (None when inactive)."""
-        return self.geometry if isinstance(self.geometry, dict) else None
+    def add_geometry_config(self, config: dict | None = None) -> dict:
+        """Append one geometry sub-updater config and return it."""
+        from .schemas import geometry_updater_config
 
-    def set_geometry_config(self, config: Optional[dict]) -> None:
-        self.geometry = config
+        config = config if config is not None else geometry_updater_config()
+        self.geometry.append(config)
+        return config
 
-    def materials_config(self) -> Optional[dict]:
-        """Config dict of the material sub-updater (None when inactive)."""
-        return self.materials if isinstance(self.materials, dict) else None
+    def add_materials_config(self, config: dict | None = None) -> dict:
+        """Append one material sub-updater config and return it."""
+        from .schemas import materials_updater_config
 
-    def set_materials_config(self, config: Optional[dict]) -> None:
-        self.materials = config
+        config = config if config is not None else materials_updater_config()
+        self.materials.append(config)
+        return config
 
 
 #: kind -> concrete node class used by :meth:`Node.from_dict`.
 NODE_TYPES: dict[str, type[Node]] = {
     KIND_PROBLEM: ProblemNode,
     KIND_GEOMETRY: GeometryNode,
+    KIND_PART_INTERFACE: PartInterfaceNode,
+    KIND_INSTANCE: InstanceNode,
     KIND_SURFACE: SurfaceNode,
     KIND_LOADS: LoadsNode,
     KIND_INTERFACE: InterfaceNode,
@@ -665,20 +952,19 @@ class ProblemDefinition:
     ``ThisController`` needs plus the whole editable parameter tree.
     """
 
-    SCHEMES = ("simp", "shapeopt", "codesign")
-
     def __init__(
         self,
         scheme: str = "shapeopt",
         label: str = "Untitled",
         result_folder: str = ".results/",
         device: str = "cpu",
-        updater_device: Optional[str] = None,
+        updater_device: str | None = None,
         restart_per_iteration: int = 10,
-        root: Optional[Node] = None,
+        root: Node | None = None,
     ) -> None:
-        if scheme not in self.SCHEMES:
-            raise ValueError(f"Unknown scheme {scheme!r}; expected one of {self.SCHEMES}")
+        scheme = str(scheme or "").strip()
+        if not scheme:
+            raise ValueError("Problem template id cannot be empty")
         self.scheme = scheme
         self.label = label
         self.result_folder = result_folder
@@ -689,7 +975,7 @@ class ProblemDefinition:
         self.root = root if root is not None else ProblemNode(name=label)
 
     # ------------------------------------------------------------ accessors
-    def node(self, kind: str) -> Optional[Node]:
+    def node(self, kind: str) -> Node | None:
         """First node anywhere in the tree with the given kind."""
         return self.root.find(lambda n: n.kind == kind)
 
@@ -700,6 +986,176 @@ class ProblemDefinition:
         """All geometry surfaces in their canonical tree order."""
         geometry = self.geometry
         return geometry.surfaces() if geometry is not None else []
+
+    def part_interfaces(self) -> list[PartInterfaceNode]:
+        """All geometry interfaces (Parts) in their canonical tree order."""
+        geometry = self.geometry
+        return geometry.interfaces() if geometry is not None else []
+
+    def boundary_part_nodes(self) -> list[PartInterfaceNode]:
+        """Geometry interfaces that own boundary surfaces."""
+        return [
+            interface for interface in self.part_interfaces() if interface.has_surfaces
+        ]
+
+    def material_nodes(self) -> list[MaterialNode]:
+        """Material assignments in their canonical tree order."""
+        section = self.materials
+        return section.materials() if section is not None else []
+
+    def design_material_names(self) -> list[str]:
+        """Material interfaces that carry design variables (SIMP density fields).
+
+        A material optimizer owns one of these; a homogeneous material has no
+        variables, so it cannot be a target.
+        """
+        from .schemas import MATERIAL_TYPES
+
+        return [
+            material.name
+            for material in self.material_nodes()
+            if MATERIAL_TYPES.get(material.material_type, {}).get("design")
+        ]
+
+    def owner_of_surface(self, surface: SurfaceNode) -> PartInterfaceNode | None:
+        """Geometry interface holding ``surface``."""
+        geometry = self.geometry
+        return geometry.owner(surface) if geometry is not None else None
+
+    def owner_of_instance(self, instance: InstanceNode) -> PartInterfaceNode | None:
+        """Geometry interface holding ``instance``."""
+        return next(
+            (
+                interface
+                for interface in self.part_interfaces()
+                if instance in interface.instances()
+            ),
+            None,
+        )
+
+    def imported_model_part_node(self) -> PartInterfaceNode | None:
+        """First geometry interface that links an exported TorchFEA model."""
+        return next(
+            (
+                interface
+                for interface in self.part_interfaces()
+                if interface.interface_type == "TorchFEAPartInterface"
+            ),
+            None,
+        )
+
+    def sync_imported_part_interfaces(self) -> bool:
+        """Align the TorchFEA geometry interfaces with the linked archive.
+
+        One interface per Part keeps a multi-Part export a multi-Part model:
+        Parts and their stored Instance names are registered under their own
+        names, and interfaces whose Part disappeared from the archive are
+        dropped.  Returns whether the tree changed.
+        """
+        summary = self.imported_model_summary()
+        geometry = self.geometry
+        if summary is None or geometry is None:
+            return False
+
+        linked = [
+            interface
+            for interface in self.part_interfaces()
+            if interface.interface_type == "TorchFEAPartInterface"
+        ]
+        if not linked:
+            return False
+
+        directory = linked[0].model_directory
+        filename = linked[0].model_filename or ""
+        managed = [
+            interface for interface in linked if interface.model_directory == directory
+        ]
+        archive_parts = {part.name: part for part in summary.parts}
+        changed = False
+
+        for interface in managed:
+            if interface.model_part_name:
+                continue
+            if len(archive_parts) == 1:
+                interface.model_part_name = next(iter(archive_parts))
+                changed = True
+
+        covered = {
+            interface.model_part_name
+            for interface in managed
+            if interface.model_part_name
+        }
+        for part in summary.parts:
+            if part.name in covered:
+                continue
+            geometry.add_interface(
+                PartInterfaceNode.create(
+                    "TorchFEAPartInterface",
+                    name=part.name,
+                    model_directory=directory,
+                    model_filename=filename,
+                    model_part_name=part.name,
+                    exterior_surface=linked[0].exterior_surface or "",
+                )
+            )
+            covered.add(part.name)
+            changed = True
+
+        for interface in list(managed):
+            name = interface.model_part_name
+            if not name or name in archive_parts:
+                continue
+            if len(geometry.interfaces()) <= 1:
+                continue
+            geometry.remove_child(interface)
+            changed = True
+
+        for part in summary.parts:
+            owner = next(
+                (
+                    interface
+                    for interface in self.part_interfaces()
+                    if interface.model_part_name == part.name
+                ),
+                None,
+            )
+            if owner is None:
+                continue
+            if owner.resolved_part_name() != part.name:
+                owner.part_name = part.name
+                changed = True
+
+            # Import the archive's actual placements once, replacing the
+            # model's synthetic identity Instance.  Subsequent edits are
+            # respected: a user-edited Instance is no longer mistaken for a
+            # fresh imported default.
+            archive_instances = [
+                item for item in summary.instances if item.part_name == part.name
+            ]
+            current_instances = owner.instances()
+            is_synthetic = (
+                len(current_instances) == 1
+                and current_instances[0].name
+                in {
+                    owner.resolved_part_name(),
+                    f"{owner.resolved_part_name()}-1",
+                }
+                and current_instances[0].pose == [0.0] * 6
+            )
+            if archive_instances and is_synthetic:
+                owner.remove_child(current_instances[0])
+                for item in archive_instances:
+                    owner.add_instance(
+                        InstanceNode(
+                            name=item.name,
+                            params={
+                                "translation": list(item.translation),
+                                "rotation": list(item.rotation),
+                            },
+                        )
+                    )
+                changed = True
+        return changed
 
     def interfaces(self) -> list[InterfaceNode]:
         """All FEA interfaces in their canonical tree order."""
@@ -716,27 +1172,26 @@ class ProblemDefinition:
         from .schemas import INTERFACE_TYPES
 
         return [
-            interface for interface in self.interfaces()
-            if (interface.name
-                and INTERFACE_TYPES.get(interface.interface_type, {})
-                .get("num_values", 0))
+            interface
+            for interface in self.interfaces()
+            if (
+                interface.name
+                and INTERFACE_TYPES.get(interface.interface_type, {}).get(
+                    "num_values", 0
+                )
+            )
         ]
 
     def instance_names(self) -> list[str]:
         """Known FEA instance names, in first-use order.
 
-        SIMP reads these from the linked TorchFEA Assembly.  Other schemes use
-        their generated ``final_model`` instance plus any custom names already
-        present in the interface tree.
+        Geometry interfaces contribute their persisted Instance children;
+        imported TorchFEA models contribute any archive names not yet linked
+        to a UI Part interface.
         """
         names: list[str] = []
-        if self.scheme != "simp" and self.geometry is not None:
-            for field in ("instance_name",):
-                value = getattr(self.geometry, field, None)
-                if isinstance(value, str) and value.strip():
-                    names.append(value.strip())
-        if not names and self.scheme != "simp":
-            names.append("final_model")
+        for interface in self.part_interfaces():
+            names.extend(interface.resolved_instance_names())
         summary = self.imported_model_summary()
         if summary is not None:
             names.extend(item.name for item in summary.instances)
@@ -747,9 +1202,29 @@ class ProblemDefinition:
                     names.append(value.strip())
         return list(dict.fromkeys(names))
 
+    def part_interface_for_instance(
+        self, instance_name: str
+    ) -> PartInterfaceNode | None:
+        """Return the geometry Part interface that owns an Instance name."""
+        name = str(instance_name or "").strip()
+        if not name:
+            return None
+        return next(
+            (
+                interface
+                for interface in self.part_interfaces()
+                if name in interface.resolved_instance_names()
+            ),
+            None,
+        )
+
     def part_names(self) -> list[str]:
+        """Known Part names: geometry interfaces first, then imported Parts."""
+        names = [interface.resolved_part_name() for interface in self.part_interfaces()]
         summary = self.imported_model_summary()
-        return [part.name for part in summary.parts] if summary is not None else []
+        if summary is not None:
+            names.extend(part.name for part in summary.parts)
+        return list(dict.fromkeys(name for name in names if name))
 
     def material_nodes(self) -> list[MaterialNode]:
         """All material assignment nodes in their stable tree order."""
@@ -758,14 +1233,16 @@ class ProblemDefinition:
 
     def imported_model_summary(self):
         """Inspect the linked TorchFEA model, returning ``None`` if unset."""
-        geometry = self.geometry
-        if (self.scheme != "simp" or geometry is None
-                or not geometry.model_directory or not geometry.model_filename):
+        geometry = self.imported_model_part_node()
+        if geometry is None or not geometry.model_directory:
             return None
         try:
-            from ...optcore.modelparams.geometry import inspect_model
+            from .modelinfo import inspect_model
+
             return inspect_model(
-                geometry.model_directory, geometry.model_filename)
+                resolve_model_directory(geometry.model_directory),
+                geometry.model_filename or "",
+            )
         except Exception:
             return None
 
@@ -777,7 +1254,8 @@ class ProblemDefinition:
             return summary.part_for_instance(instance_name)
         if part_name:
             return next(
-                (item for item in summary.parts if item.name == part_name), None)
+                (item for item in summary.parts if item.name == part_name), None
+            )
         return summary.parts[0] if len(summary.parts) == 1 else None
 
     def node_set_names(self, instance_name: str = "") -> list[str]:
@@ -795,7 +1273,8 @@ class ProblemDefinition:
     def reference_point_names(self) -> list[str]:
         """Names of reference points declared by the load-interface tree."""
         return [
-            interface.name for interface in self.interfaces()
+            interface.name
+            for interface in self.interfaces()
             if interface.interface_type == "ReferencePoint" and interface.name
         ]
 
@@ -811,44 +1290,50 @@ class ProblemDefinition:
                 if isinstance(value, str) and value.strip():
                     names.append(value.strip())
         for interface in self.interfaces():
-            if isinstance(interface.element_name, str) and interface.element_name.strip():
+            if (
+                isinstance(interface.element_name, str)
+                and interface.element_name.strip()
+            ):
                 names.append(interface.element_name.strip())
         return list(dict.fromkeys(names))
 
     # typed top-level section accessors (return None when the scheme lacks it)
-    def section(self, kind: str) -> Optional[Node]:
-        return self.root.section(kind) if isinstance(self.root, ProblemNode) \
+    def section(self, kind: str) -> Node | None:
+        return (
+            self.root.section(kind)
+            if isinstance(self.root, ProblemNode)
             else self.root.child(kind)
+        )
 
     @property
-    def geometry(self) -> Optional[GeometryNode]:
+    def geometry(self) -> GeometryNode | None:
         return self.section(KIND_GEOMETRY)
 
     @property
-    def loads(self) -> Optional[LoadsNode]:
+    def loads(self) -> LoadsNode | None:
         return self.section(KIND_LOADS)
 
     @property
-    def steps(self) -> Optional[StepsNode]:
+    def steps(self) -> StepsNode | None:
         return self.section(KIND_STEPS)
 
     @property
-    def materials(self) -> Optional[MaterialsNode]:
+    def materials(self) -> MaterialsNode | None:
         section = self.section(KIND_MATERIALS)
         if isinstance(section, MaterialsNode):
             return section
         return None
 
     @property
-    def objective(self) -> Optional[ObjectiveNode]:
+    def objective(self) -> ObjectiveNode | None:
         return self.section(KIND_OBJECTIVE)
 
     @property
-    def solver(self) -> Optional[SolverNode]:
+    def solver(self) -> SolverNode | None:
         return self.section(KIND_SOLVER)
 
     @property
-    def updater(self) -> Optional[UpdaterNode]:
+    def updater(self) -> UpdaterNode | None:
         return self.section(KIND_UPDATER)
 
     # ------------------------------------------------------ tree mutations
@@ -865,64 +1350,105 @@ class ProblemDefinition:
         grows with the catalogue default of ``2.5``.  This is safe to call
         after loading a problem definition.
         """
-        config = self._geometry_updater_config()
-        if config is None:
+        updater = self.updater
+        if updater is None:
             return
+        for config in updater.geometry:
+            node = self.config_part_node(config)
+            if node is None:
+                # a config without a resolvable Part covers every surface
+                count = len(self.surfaces())
+            else:
+                count = len(node.surfaces())
+            states = self._bool_list(config.get("if_update"))
+            config["if_update"] = (states[:count] + [True] * count)[:count]
 
-        count = len(self.surfaces())
-        states = self._bool_list(config.get("if_update"))
-        config["if_update"] = (states[:count] + [True] * count)[:count]
+            for parameters in self._distance_constraint_parameters(config):
+                matrix = self._square_matrix(parameters.get("min_distance"))
+                if matrix is None:
+                    continue
+                parameters["min_distance"] = self._resize_matrix(matrix, count)
 
-        for parameters in self._distance_constraint_parameters(config):
-            matrix = self._square_matrix(parameters.get("min_distance"))
-            if matrix is None:
-                continue
-            parameters["min_distance"] = self._resize_matrix(matrix, count)
+    def add_surface(
+        self,
+        surface: SurfaceNode,
+        index: int | None = None,
+        interface: PartInterfaceNode | None = None,
+    ) -> SurfaceNode:
+        """Insert ``surface`` and synchronise all surface-indexed state.
 
-    def add_surface(self, surface: SurfaceNode,
-                    index: Optional[int] = None) -> SurfaceNode:
-        """Insert ``surface`` and synchronise all surface-indexed state."""
+        ``interface`` selects the owning geometry interface; by default the
+        last surface-carrying interface is used.
+        """
         geometry = self._require_geometry()
-        surfaces = geometry.surfaces()
+        owner = interface or self.default_surface_part_node()
+        if owner is None:
+            raise ValueError(
+                "This problem has no geometry interface that holds surfaces"
+            )
+        if owner not in geometry.interfaces():
+            raise ValueError("The target geometry interface is not in the tree")
+
+        surfaces = owner.surfaces()
         target_index = len(surfaces) if index is None else index
         if not 0 <= target_index <= len(surfaces):
             raise IndexError(f"Surface insertion index out of range: {target_index}")
 
-        geometry.add_surface(surface, index=target_index)
-        self._insert_surface_state(target_index)
+        owner.add_surface(surface, index=target_index)
+        self._insert_surface_state(owner, target_index)
+        self.align_surface_dependent_state()
         self._refresh_surface_flags()
         return surface
+
+    def default_surface_part_node(self) -> PartInterfaceNode | None:
+        """Last geometry interface able to hold boundary surfaces."""
+        candidates = self.boundary_part_nodes()
+        return candidates[-1] if candidates else None
 
     def clone_surface(self, surface: SurfaceNode) -> SurfaceNode:
         """Duplicate ``surface`` directly below itself and return the copy."""
         geometry = self._require_geometry()
-        position = geometry.index_of_surface(surface)
+        owner = geometry.owner(surface)
+        if owner is None:
+            raise ValueError("The surface is not part of this problem")
+        position = owner.surfaces().index(surface)
         clone = surface.clone()
         if not isinstance(clone, SurfaceNode):  # defensive for custom nodes
             raise TypeError("A surface clone must remain a SurfaceNode")
-        return self.add_surface(clone, position + 1)
+        return self.add_surface(clone, position + 1, interface=owner)
 
     def remove_surface(self, surface: SurfaceNode) -> None:
         """Remove one surface while preserving the remaining updater mapping."""
         geometry = self._require_geometry()
-        surfaces = geometry.surfaces()
-        if len(surfaces) <= 1:
+        owner = geometry.owner(surface)
+        if owner is None:
+            raise ValueError("The surface is not part of this problem")
+        if len(geometry.surfaces()) <= 1:
             raise ValueError("A problem must keep at least one surface")
-        position = geometry.index_of_surface(surface)
-        geometry.remove_child(surface)
-        self._remove_surface_state(position)
+        position = owner.surfaces().index(surface)
+        self._remove_surface_state(owner, position)
+        owner.remove_child(surface)
+        self.align_surface_dependent_state()
         self._refresh_surface_flags()
 
     def move_surface(self, surface: SurfaceNode, offset: int) -> bool:
-        """Move a surface by ``offset`` positions and return whether it moved."""
+        """Move a surface by ``offset`` positions inside its own interface."""
         geometry = self._require_geometry()
-        source = geometry.index_of_surface(surface)
-        target = source + offset
-        if not 0 <= target < geometry.surface_count():
+        owner = geometry.owner(surface)
+        if owner is None:
             return False
-        geometry.children[source], geometry.children[target] = (
-            geometry.children[target], geometry.children[source])
-        self._swap_surface_state(source, target)
+        surfaces = owner.surfaces()
+        source = surfaces.index(surface)
+        target = source + offset
+        if not 0 <= target < len(surfaces):
+            return False
+        left = owner.children.index(surface)
+        right = owner.children.index(surfaces[target])
+        owner.children[left], owner.children[right] = (
+            owner.children[right],
+            owner.children[left],
+        )
+        self._swap_surface_state(owner, source, target)
         self._refresh_surface_flags()
         return True
 
@@ -934,22 +1460,176 @@ class ProblemDefinition:
             index += 1
         return f"{prefix}{index}"
 
-    def add_interface(self, interface: InterfaceNode,
-                      index: Optional[int] = None) -> InterfaceNode:
+    def suggest_part_interface_name(self, prefix: str = "part") -> str:
+        """First unused geometry-interface (Part) name."""
+        names = {interface.name for interface in self.part_interfaces()}
+        index = 1
+        while f"{prefix}{index}" in names:
+            index += 1
+        return f"{prefix}{index}"
+
+    def suggest_instance_name(
+        self, interface: PartInterfaceNode, prefix: str | None = None
+    ) -> str:
+        """Return the first unused Instance name in the Assembly."""
+        base = (prefix or interface.resolved_part_name() or "instance").strip()
+        names = {
+            instance.name
+            for part in self.part_interfaces()
+            for instance in part.instances()
+        }
+        index = 1
+        candidate = f"{base}-{index}"
+        while candidate in names:
+            index += 1
+            candidate = f"{base}-{index}"
+        return candidate
+
+    def add_instance(
+        self, interface: PartInterfaceNode, instance: InstanceNode
+    ) -> InstanceNode:
+        """Add one uniquely named Instance to a geometry Part."""
+        if interface not in self.part_interfaces():
+            raise ValueError("The target Part interface is not in the tree")
+        name = instance.name.strip()
+        if not name:
+            raise ValueError("Instance name cannot be empty")
+        if any(
+            declared.name == name
+            for part in self.part_interfaces()
+            for declared in part.instances()
+        ):
+            raise ValueError(f"Instance {name!r} already exists in the Assembly")
+        instance.name = name
+        return interface.add_instance(instance)
+
+    def remove_instance(self, instance: InstanceNode) -> None:
+        """Remove one Instance, keeping a Part's first identity Instance."""
+        owner = self.owner_of_instance(instance)
+        if owner is None:
+            raise ValueError("The Instance is not part of this problem")
+        if len(owner.instances()) <= 1:
+            raise ValueError("A Part must keep at least one Instance")
+        owner.remove_child(instance)
+
+    def rename_instance(self, instance: InstanceNode, new_name: str) -> bool:
+        """Rename an Instance when the name is unique within its Part."""
+        owner = self.owner_of_instance(instance)
+        if owner is None:
+            return False
+        new_name = new_name.strip()
+        if not new_name or new_name == instance.name:
+            return False
+        if any(
+            declared is not instance and declared.name == new_name
+            for part in self.part_interfaces()
+            for declared in part.instances()
+        ):
+            return False
+        instance.name = new_name
+        return True
+
+    def add_part_interface(
+        self, interface: PartInterfaceNode, index: int | None = None
+    ) -> PartInterfaceNode:
+        """Insert one geometry interface (Part + Instances) into the tree."""
+        geometry = self._require_geometry()
+        unnamed = not interface.name
+        if not interface.name:
+            interface.name = self.suggest_part_interface_name()
+            instances = interface.instances()
+            if (
+                not interface.part_name
+                and len(instances) == 1
+                and instances[0].name in {"part-1", "part"}
+            ):
+                instances[0].name = f"{interface.name}-1"
+        if any(item.name == interface.name for item in geometry.interfaces()):
+            raise ValueError(f"Geometry interface {interface.name!r} already exists")
+
+        used_instances = {
+            instance.name
+            for item in geometry.interfaces()
+            for instance in item.instances()
+        }
+        for instance_index, instance in enumerate(interface.instances(), start=1):
+            if instance.name not in used_instances:
+                used_instances.add(instance.name)
+                continue
+            if not unnamed:
+                raise ValueError(f"Instance {instance.name!r} already exists")
+            base = interface.resolved_part_name() or interface.name or "part"
+            candidate = f"{base}-{instance_index}"
+            suffix = instance_index
+            while candidate in used_instances:
+                suffix += 1
+                candidate = f"{base}-{suffix}"
+            instance.name = candidate
+            used_instances.add(candidate)
+        geometry.add_interface(interface, index=index)
+        self.align_surface_dependent_state()
+        return interface
+
+    def clone_part_interface(self, interface: PartInterfaceNode) -> PartInterfaceNode:
+        """Duplicate a geometry interface (and its surfaces) below itself."""
+        geometry = self._require_geometry()
+        if interface not in geometry.children:
+            raise ValueError("The geometry interface is not part of this problem")
+        position = geometry.children.index(interface)
+        clone = interface.clone()
+        if not isinstance(clone, PartInterfaceNode):
+            raise TypeError("A geometry clone must remain a PartInterfaceNode")
+        clone.name = ""
+        return self.add_part_interface(clone, index=position + 1)
+
+    def remove_part_interface(self, interface: PartInterfaceNode) -> None:
+        """Remove a geometry interface together with its surfaces."""
+        geometry = self._require_geometry()
+        if interface not in geometry.children:
+            raise ValueError("The geometry interface is not part of this problem")
+        if len(geometry.interfaces()) <= 1:
+            raise ValueError("A problem must keep at least one geometry interface")
+        surfaces = interface.surfaces()
+        for _ in surfaces:
+            self._remove_surface_state(interface, 0)
+        geometry.remove_child(interface)
+        self.align_surface_dependent_state()
+        self._refresh_surface_flags()
+
+    def move_part_interface(self, interface: PartInterfaceNode, offset: int) -> bool:
+        """Move a geometry interface by ``offset`` positions."""
+        geometry = self._require_geometry()
+        source = geometry.children.index(interface)
+        target = source + offset
+        if not 0 <= target < len(geometry.children):
+            return False
+        geometry.children[source], geometry.children[target] = (
+            geometry.children[target],
+            geometry.children[source],
+        )
+        return True
+
+    def add_interface(
+        self, interface: InterfaceNode, index: int | None = None
+    ) -> InterfaceNode:
         """Insert an interface into the load section."""
         self._require_loads().add_interface(interface, index=index)
         return interface
 
-    def add_material(self, material: MaterialNode,
-                     index: Optional[int] = None) -> MaterialNode:
+    def add_material(
+        self, material: MaterialNode, index: int | None = None
+    ) -> MaterialNode:
         """Insert one material assignment into the Materials section."""
         section = self.materials
         if section is None:
             section = MaterialsNode(name="Materials")
             root = self.root
             insert_at = next(
-                (i for i, child in enumerate(root.children)
-                 if child.kind in {KIND_OBJECTIVE, KIND_SOLVER, KIND_UPDATER}),
+                (
+                    i
+                    for i, child in enumerate(root.children)
+                    if child.kind in {KIND_OBJECTIVE, KIND_SOLVER, KIND_UPDATER}
+                ),
                 len(root.children),
             )
             root.add_section(section, index=insert_at)
@@ -989,10 +1669,14 @@ class ProblemDefinition:
         if not 0 <= target < len(section.children):
             return False
         section.children[source], section.children[target] = (
-            section.children[target], section.children[source])
+            section.children[target],
+            section.children[source],
+        )
         return True
 
-    def clone_interface(self, interface: InterfaceNode, name_prefix: str) -> InterfaceNode:
+    def clone_interface(
+        self, interface: InterfaceNode, name_prefix: str
+    ) -> InterfaceNode:
         """Duplicate an interface below itself under a fresh reference name."""
         loads = self._require_loads()
         clone = interface.clone()
@@ -1009,7 +1693,9 @@ class ProblemDefinition:
         if not 0 <= target < len(loads.children):
             return False
         loads.children[source], loads.children[target] = (
-            loads.children[target], loads.children[source])
+            loads.children[target],
+            loads.children[source],
+        )
         return True
 
     def remove_interface(self, interface: InterfaceNode) -> None:
@@ -1020,7 +1706,8 @@ class ProblemDefinition:
                 values.pop(interface.name, None)
         if self.objective is not None:
             self.objective.jacobian_needed = [
-                name for name in self.objective.jacobian_needed
+                name
+                for name in self.objective.jacobian_needed
                 if name != interface.name
             ]
 
@@ -1034,8 +1721,10 @@ class ProblemDefinition:
         old_name = interface.name
         if not new_name or new_name == old_name:
             return False
-        if any(item is not interface and item.name == new_name
-               for item in self.interfaces()):
+        if any(
+            item is not interface and item.name == new_name
+            for item in self.interfaces()
+        ):
             return False
 
         interface.name = new_name
@@ -1050,6 +1739,30 @@ class ProblemDefinition:
             ]
         return True
 
+    def rename_part_interface(
+        self, interface: PartInterfaceNode, new_name: str
+    ) -> bool:
+        """Rename a geometry interface and retarget its geometry updater."""
+        if interface not in self.part_interfaces():
+            return False
+        new_name = new_name.strip()
+        old_name = interface.name
+        if not new_name or new_name == old_name:
+            return False
+        if any(
+            item is not interface and item.name == new_name
+            for item in self.part_interfaces()
+        ):
+            return False
+
+        interface.name = new_name
+        updater = self.updater
+        if updater is not None:
+            for config in updater.geometry:
+                if str(config.get("part_name") or "").strip() == old_name:
+                    config["part_name"] = new_name
+        return True
+
     # ---------------------------------------------------- mutation helpers
     def _require_geometry(self) -> GeometryNode:
         if self.geometry is None:
@@ -1061,12 +1774,8 @@ class ProblemDefinition:
             raise ValueError("This problem has no loads section")
         return self.loads
 
-    def _geometry_updater_config(self) -> Optional[dict]:
-        updater = self.updater
-        return updater.geometry_config() if updater is not None else None
-
     @staticmethod
-    def _bool_list(value: Any) -> list[bool]:
+    def _bool_list(value: object) -> list[bool]:
         if value is None:
             return []
         if isinstance(value, bool):
@@ -1076,7 +1785,7 @@ class ProblemDefinition:
         return [bool(item) for item in value]
 
     @staticmethod
-    def _square_matrix(value: Any) -> Optional[list[list[float]]]:
+    def _square_matrix(value: object) -> list[list[float]] | None:
         if not isinstance(value, (list, tuple)) or not value:
             return None
         rows: list[list[float]] = []
@@ -1089,33 +1798,69 @@ class ProblemDefinition:
                 return None
         size = max(len(rows), max((len(row) for row in rows), default=0))
         return [
-            [rows[row_index][column_index]
-             if row_index < len(rows) and column_index < len(rows[row_index])
-             else 2.5
-             for column_index in range(size)]
+            [
+                rows[row_index][column_index]
+                if row_index < len(rows) and column_index < len(rows[row_index])
+                else 2.5
+                for column_index in range(size)
+            ]
             for row_index in range(size)
         ]
 
     @staticmethod
     def _resize_matrix(matrix: list[list[float]], size: int) -> list[list[float]]:
         return [
-            [matrix[row_index][column_index]
-             if row_index < len(matrix) and column_index < len(matrix[row_index])
-             else 2.5
-             for column_index in range(size)]
+            [
+                matrix[row_index][column_index]
+                if row_index < len(matrix) and column_index < len(matrix[row_index])
+                else 2.5
+                for column_index in range(size)
+            ]
             for row_index in range(size)
         ]
 
     @staticmethod
     def _distance_constraint_parameters(config: dict) -> Iterator[dict]:
         for constraint in config.get("constraints", []) or []:
-            if (isinstance(constraint, dict)
-                    and constraint.get("type") == "Distance"
-                    and isinstance(constraint.get("params"), dict)):
+            if (
+                isinstance(constraint, dict)
+                and constraint.get("type") == "Distance"
+                and isinstance(constraint.get("params"), dict)
+            ):
                 yield constraint["params"]
 
-    def _insert_surface_state(self, index: int) -> None:
-        config = self._geometry_updater_config()
+    def part_interface_node(self, name: str) -> PartInterfaceNode | None:
+        """Boundary part-interface node by name (``None`` when unknown)."""
+        if not name:
+            return None
+        return next(
+            (node for node in self.part_interfaces() if node.name == name), None
+        )
+
+    def config_part_node(self, config: dict) -> PartInterfaceNode | None:
+        """Boundary part node a geometry sub-optimizer config targets.
+
+        An empty ``part_name`` means "the only boundary part of the model"; with
+        several boundary parts the config must name one explicitly.
+        """
+        name = str((config or {}).get("part_name") or "").strip()
+        if name:
+            return self.part_interface_node(name)
+        boundary = self.boundary_part_nodes()
+        return boundary[0] if len(boundary) == 1 else None
+
+    def _geometry_config_for_part(self, part: PartInterfaceNode) -> dict | None:
+        """Return the geometry updater config targeting ``part``."""
+        updater = self.updater
+        if updater is None:
+            return None
+        for config in updater.geometry:
+            if self.config_part_node(config) is part:
+                return config
+        return None
+
+    def _insert_surface_state(self, part: PartInterfaceNode, index: int) -> None:
+        config = self._geometry_config_for_part(part)
         if config is None:
             return
         states = self._bool_list(config.get("if_update"))
@@ -1131,10 +1876,9 @@ class ProblemDefinition:
                 if row_index != index:
                     row.insert(index, 2.5)
             parameters["min_distance"] = matrix
-        self.align_surface_dependent_state()
 
-    def _remove_surface_state(self, index: int) -> None:
-        config = self._geometry_updater_config()
+    def _remove_surface_state(self, part: PartInterfaceNode, index: int) -> None:
+        config = self._geometry_config_for_part(part)
         if config is None:
             return
         states = self._bool_list(config.get("if_update"))
@@ -1150,10 +1894,11 @@ class ProblemDefinition:
                 if index < len(row):
                     del row[index]
             parameters["min_distance"] = matrix
-        self.align_surface_dependent_state()
 
-    def _swap_surface_state(self, first: int, second: int) -> None:
-        config = self._geometry_updater_config()
+    def _swap_surface_state(
+        self, part: PartInterfaceNode, first: int, second: int
+    ) -> None:
+        config = self._geometry_config_for_part(part)
         if config is None:
             return
         states = self._bool_list(config.get("if_update"))
@@ -1170,8 +1915,9 @@ class ProblemDefinition:
             parameters["min_distance"] = matrix
 
     def _refresh_surface_flags(self) -> None:
-        for index, surface in enumerate(self.surfaces()):
-            surface.flip = index > 0
+        for part in self.boundary_part_nodes():
+            for index, surface in enumerate(part.surfaces()):
+                surface.flip = index > 0
 
     # ----------------------------------------------------------- persistence
     def to_dict(self) -> dict:
@@ -1187,9 +1933,9 @@ class ProblemDefinition:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ProblemDefinition":
+    def from_dict(cls, data: dict) -> ProblemDefinition:
         root = Node.from_dict(data.get("root", {"kind": "problem"}))
-        return cls(
+        problem = cls(
             scheme=data.get("scheme", "shapeopt"),
             label=data.get("label", "Untitled"),
             result_folder=data.get("result_folder", ".results/"),
@@ -1198,9 +1944,10 @@ class ProblemDefinition:
             restart_per_iteration=data.get("restart_per_iteration", 10),
             root=root,
         )
+        return problem
 
 
-def find_node(root: Node, kind: str, name: Optional[str] = None) -> Optional[Node]:
+def find_node(root: Node, kind: str, name: str | None = None) -> Node | None:
     """Find a node by kind (and optionally name)."""
     return root.find(lambda n: n.kind == kind and (name is None or n.name == name))
 

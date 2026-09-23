@@ -38,19 +38,16 @@ class VolFrac(BaseConstraints):
             *args: object,
             **kwargs: object,
     ) -> None:
-        # The aggregate may contain a SIMP field for the solid and one or
-        # more homogeneous interfaces (for example the codesign shell).
-        candidates = material_params.design_interfaces()
-        self._material_interface = next(
-            (interface for interface in candidates
-             if not interface.elementname
-             or interface.elementname == self.elementname),
-            None)
-        if self._material_interface is None:
+        # A material updater owns one concrete material interface, so its
+        # objective functions receive that interface directly rather than the
+        # whole MaterialsParams collection.
+        material = material_params
+        if material.elementname and material.elementname != self.elementname:
             raise ValueError(
-                f"No design material interface targets element "
-                f"{self.elementname!r}.")
-        material = self._material_interface
+                f"Material interface targets element {material.elementname!r}, "
+                f"not {self.elementname!r}."
+            )
+        self._material_interface = material
         part = morphopt.controller.objfun.fe.assembly.get_part(material.part_name)
         if self.elementname not in part.elems:
             raise KeyError(

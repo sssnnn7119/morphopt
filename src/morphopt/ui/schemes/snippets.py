@@ -8,8 +8,8 @@ insertion.  The Objective editor resolves each parameter against the current
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class SnippetParameter:
     label: str
     label_en: str
     source: str
-    default: Any
+    default: object
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class CodeSnippet:
     parameters: tuple[SnippetParameter, ...]
     source: str
 
-    def render(self, values: Mapping[str, Any] | None = None) -> str:
+    def render(self, values: Mapping[str, object] | None = None) -> str:
         """Fill named source placeholders with UI-selected parameter values."""
         defaults = {parameter.key: parameter.default for parameter in self.parameters}
         return self.source.format(**(defaults | dict(values or {})))

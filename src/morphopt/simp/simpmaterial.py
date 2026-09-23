@@ -1112,7 +1112,9 @@ class SIMP_BSPFieldMaterials(BaseMaterialInterface, ProtocalUpdatable):
             size=self._bsp_size,
             control_points=self._cps.detach().cpu().numpy().reshape([-1, 1]),
         )
-        self.simp_field = bsp
+        # ``simp_field`` is a read-only view that lazily exposes the backing
+        # BSP object.  Restore that backing object directly during restart.
+        self._field_bsp = bsp
 
     def get_meshes(self) -> list[pv.DataSet]:
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box

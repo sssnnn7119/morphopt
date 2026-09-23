@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "scheme": "shapeopt",
+  "label": "形状优化",
+  "label_en": "Shape optimization",
+  "result_folder": ".results/",
+  "device": "cpu",
+  "updater_device": null,
+  "restart_per_iteration": 10,
+  "root": {
+    "kind": "problem",
+    "name": "shapeopt_untitled",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part_interface",
+            "name": "body",
+            "params": {
+              "type": "BoundaryPartInterface",
+              "fea_seed_size": 1.0,
+              "mesh_order": 1,
+              "exterior_surface": "surface_0_All"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "body-1",
+                "params": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0]},
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": false,
+                  "r0": 8.0,
+                  "length": 80.0,
+                  "seed_size": 0.8,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [0.0, 0.0, 0.0],
+                  "maxR": 0.2,
+                  "maxC": 1.5,
+                  "maxFF": 0.2,
+                  "perturbation_L": 10.0
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "r0": 4.0,
+                  "length": 74.0,
+                  "seed_size": 0.8,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [0.0, 0.0, 3.0],
+                  "maxR": 0.2,
+                  "maxC": 1.5,
+                  "maxFF": 0.2,
+                  "perturbation_L": 10.0
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "Loads",
+        "params": {},
+        "children": [
+          {
+            "kind": "interface",
+            "name": "bc_fix",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "body-1",
+              "set_nodes_name": "surface_0_Bottom",
+              "index_dof": [0, 1, 2]
+            },
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "RP_head",
+            "params": {"type": "ReferencePoint", "rp_location": [0.0, 0.0, 80.0]},
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "couple_head",
+            "params": {
+              "type": "Couple",
+              "instance_name": "body-1",
+              "set_nodes_name": "surface_0_Head",
+              "rp_name": "RP_head"
+            },
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "pressure_1",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "body-1",
+              "surface_name": "surface_1_All"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {"num_steps": 1, "step_values": [{"pressure_1": [0.06]}]},
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "Materials",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "body_material",
+            "params": {
+              "type": "HomogeneousMaterial",
+              "part_name": "body",
+              "material_model": "NeoHookeanLnJ",
+              "mu": 0.482,
+              "kappa": 4.8,
+              "density": 1.08e-09,
+              "elementname": ""
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "jacobian_needed": [],
+          "_objective_function": "return self.fe_results[0].GC[-2]\n",
+          "_get_metrics": "return [self.fe_results[0].GC[-2]]\n"
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {"num_process": 1, "gpus": [], "task_index_list": []},
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [
+            {
+              "part_name": "body",
+              "max_step_iter": 50,
+              "if_update": [true, true],
+              "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
+              "constraints": [
+                {"type": "Fairness", "params": {}},
+                {"type": "Distance", "params": {"min_distance": [[2.5, 2.5], [2.5, 2.5]]}},
+                {"type": "Cylinder", "params": {"radius": 10.0, "height": 80.0, "bottom": 0.0}}
+              ],
+              "equality_constraints": []
+            }
+          ],
+          "materials": []
+        },
+        "children": []
+      }
+    ]
+  },
+  "template": {
+    "id": "shapeopt",
+    "label": "形状优化",
+    "label_en": "Shape optimization",
+    "schema_scheme": "shapeopt",
+    "material_type": "HomogeneousMaterial",
+    "material_types": ["HomogeneousMaterial"],
+    "geometry_types": ["BoundaryPartInterface", "TorchFEAPartInterface", "INPPartInterface"],
+    "geometry_title": "Geometry",
+    "body_name": "body",
+    "bases": {
+      "controller": "morphopt.Controller",
+      "params": "morphopt.optcore.modelparams.Params",
+      "geometry": "morphopt.optcore.modelparams.GeometryParams",
+      "boundary_part": "morphopt.shapeopt.BoundaryPartInterface",
+      "fea": "morphopt.optcore.modelparams.FEAParams",
+      "materials": "morphopt.optcore.modelparams.MaterialsParams",
+      "material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
+      "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
+      "objective": "morphopt.optcore.ObjectiveFunction",
+      "solver": "morphopt.optcore.Solver",
+      "updaters": "morphopt.optcore.Updaters",
+      "updater_geom": "morphopt.shapeopt.UpdaterBoundaryPart",
+      "updater_mat": "morphopt.simp.UpdaterSIMPMaterial"
+    },
+    "default_objective_slot": "return self.fe_results[0].GC[-2]\n",
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
+  }
+}

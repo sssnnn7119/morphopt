@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import torch
 import torchfea
 
 from .basepartinterface import BasePartInterface
@@ -63,7 +64,12 @@ def load_model_assembly(
 ) -> torchfea.Assembly:
     """Load an exported model and return its Assembly."""
     path = resolve_model_path(model_directory, model_filename)
-    assembly = torchfea.load_model(str(path)).assembly
+    model = torchfea.load_model(str(path))
+    # Serialized TorchFEA models are usually stored on CPU.  Normalize the
+    # imported model before combining it with Parts built under MorphOpt's
+    # current default device.
+    model.change_device(torch.device(torch.get_default_device()))
+    assembly = model.assembly
     if assembly is None or not assembly._parts:
         raise ValueError(f"The TorchFEA model contains no Parts: {path}")
     return assembly

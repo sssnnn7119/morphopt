@@ -17,16 +17,30 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QTreeWidget, QTreeWidgetItem, QMenu,
-)
 from PySide6.QtGui import QAction
-
-from ..model.problem import (
-    Node, ProblemDefinition, SurfaceNode, InterfaceNode, MaterialNode,
+from PySide6.QtWidgets import (
+    QMenu,
+    QMessageBox,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
-from ..model.schemas import SURFACE_TYPES, INTERFACE_TYPES, MATERIAL_TYPES
+
 from ..i18n import T, pick
+from ..model.problem import (
+    InstanceNode,
+    InterfaceNode,
+    MaterialNode,
+    Node,
+    PartInterfaceNode,
+    ProblemDefinition,
+    SurfaceNode,
+)
+from ..model.schemas import (
+    INTERFACE_TYPES,
+    MATERIAL_TYPES,
+    PART_INTERFACE_TYPES,
+    SURFACE_TYPES,
+)
 
 #: containers that hold children we show in the tree
 CONTAINER_ORDER = ["geometry", "loads_group", "materials", "solver", "updater"]
@@ -78,10 +92,12 @@ class UpdaterTreeNode(Node):
 
     Updater configuration remains owned by :class:`UpdaterNode`; these nodes
     are navigation handles only and are intentionally not inserted into the
-    persisted problem tree.
+    persisted problem tree.  Both sections carry ``config_index``: the model may
+    run several sub-optimizers side by side, one per target (a boundary part
+    interface for geometry, a material interface for materials).
     """
 
-    def __init__(self, updater: Node, group: str) -> None:
+    def __init__(self, updater: Node, group: str, config_index: int = 0) -> None:
         label = {
             "geometry": T("几何优化器", "Geometry optimizer"),
             "materials": T("材料优化器", "Material optimizer"),
@@ -94,16 +110,24 @@ class UpdaterTreeNode(Node):
         super().__init__(kind=f"updater_{group}", name=label)
         self.updater_parent = updater
         self.group = group
+        self.config_index = int(config_index)
         self.code_reference = (
-            "UpdaterGeometries"
-            if group.startswith("geometry") else
-            "UpdaterMaterials"
+            "UpdaterBoundaryPart" if group.startswith("geometry") else "UpdaterSIMPMaterial"
         )
 
     @property
     def section_group(self) -> str:
         """Canonical updater section owning this navigation entry."""
         return "geometry" if self.group.startswith("geometry") else "materials"
+
+    def config(self) -> dict | None:
+        """Config dict this entry points at."""
+        configs = (
+            self.updater_parent.geometry
+            if self.section_group == "geometry"
+            else self.updater_parent.materials
+        )
+        return configs[self.config_index] if self.config_index < len(configs) else None
 
 
 def container_title(kind: str) -> str:
@@ -128,28 +152,54 @@ def surface_title_text(srf: Node, index: int) -> str:
     """Tree/editor label for one geometry surface: ``"0: 圆柱面"``.
 
     Surfaces are *not* given descriptive names; they are identified by their
-    0-based index inside the Geometry node (0 = outer boundary, >= 1 = inner
-    cavity).  The index comes from the current position, so moving a surface
-    up/down renumbers it automatically.
+    0-based index inside their Part interface (0 = outer boundary, >= 1 =
+    inner cavity).  The index comes from the current position, so moving a
+    surface up/down renumbers it automatically.
     """
     st = srf.surface_type or "?"
     spec = SURFACE_TYPES.get(st, {})
     return f"{index}: {_short_phrase(spec, st)}"
 
 
+def part_interface_title_text(interface: Node) -> str:
+    """Tree label for one geometry interface: ``"body  [Part: body, 实体: body-1]"``.
+
+    Shows the interface (Part) name and its instances, which are the names
+    every load / material / contact interface refers to.
+    """
+    itype = interface.interface_type or "?"
+    spec = PART_INTERFACE_TYPES.get(itype, {})
+    phrase = _short_phrase(spec, itype)
+    instances = interface.resolved_instance_names()
+    instance_text = ", ".join(instances) if instances else "?"
+    name = f"{interface.name}: " if interface.name else ""
+    return (
+        f"{name}{phrase}  [part={interface.resolved_part_name()}, 实体={instance_text}]"
+    )
+
+
+def instance_title_text(instance: InstanceNode) -> str:
+    """Tree label for one Part Instance and its six-component pose."""
+    pose = ", ".join(f"{value:g}" for value in instance.pose)
+    return f"{instance.name}: [{pose}]"
+
+
 def surface_index(problem: ProblemDefinition | None, srf: Node) -> int | None:
-    """Return the 0-based position of ``srf`` inside the Geometry node."""
+    """Return the 0-based position of ``srf`` inside its Part interface."""
     if problem is None:
         return None
-    for i, s in enumerate(problem.surfaces()):
+    owner = problem.owner_of_surface(srf)
+    if owner is None:
+        return None
+    for i, s in enumerate(owner.surfaces()):
         if s is srf:
             return i
     return None
 
 
 class ModelTree(QTreeWidget):
-    nodeSelected = Signal(object)   # Node
-    treeChanged = Signal()          # structure edited
+    nodeSelected = Signal(object)  # Node
+    treeChanged = Signal()  # structure edited
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -184,7 +234,8 @@ class ModelTree(QTreeWidget):
             if kind == "loads_group":
                 group_node = LoadsTreeNode()
                 group_item = self._make_item(
-                    container_title("loads_group"), group_node, bold=True)
+                    container_title("loads_group"), group_node, bold=True
+                )
                 self.addTopLevelItem(group_item)
                 self._add_loads_children(group_item)
                 continue
@@ -194,13 +245,24 @@ class ModelTree(QTreeWidget):
             item = self._make_item(container_title(kind), node, bold=True)
             self.addTopLevelItem(item)
             if kind == "geometry":
-                for i, srf in enumerate(self._problem.surfaces()):
-                    it = self._make_item(self._surface_title(srf, i), srf)
-                    item.addChild(it)
+                for interface in self._problem.part_interfaces():
+                    interface_item = self._make_item(
+                        part_interface_title_text(interface), interface
+                    )
+                    item.addChild(interface_item)
+                    for instance in interface.instances():
+                        instance_item = self._make_item(
+                            instance_title_text(instance), instance
+                        )
+                        interface_item.addChild(instance_item)
+                    for i, srf in enumerate(interface.surfaces()):
+                        srf_item = self._make_item(self._surface_title(srf, i), srf)
+                        interface_item.addChild(srf_item)
             elif kind == "materials":
                 for material in self._problem.material_nodes():
                     material_item = self._make_item(
-                        self._material_title(material), material)
+                        self._material_title(material), material
+                    )
                     item.addChild(material_item)
             elif kind == "updater":
                 self._add_updater_children(item, node)
@@ -209,8 +271,11 @@ class ModelTree(QTreeWidget):
             it = self._node_item.get(select)
             if it is None and select_key is not None:
                 it = next(
-                    (candidate_item for candidate_item, candidate_node in self._node_item.items()
-                     if self._node_key(candidate_node) == select_key),
+                    (
+                        candidate_item
+                        for candidate_item, candidate_node in self._node_item.items()
+                        if self._node_key(candidate_node) == select_key
+                    ),
                     None,
                 )
             if it is not None:
@@ -222,6 +287,10 @@ class ModelTree(QTreeWidget):
         for item, node in list(self._item_node.items()):
             if node.kind in CONTAINER_ORDER:
                 item.setText(0, container_title(node.kind))
+            elif node.kind == "part_interface":
+                item.setText(0, part_interface_title_text(node))
+            elif node.kind == "instance":
+                item.setText(0, instance_title_text(node))
             elif node.kind == "surface":
                 idx = surface_index(self._problem, node)
                 if idx is not None:
@@ -271,8 +340,8 @@ class ModelTree(QTreeWidget):
         name = f"{material.name}: " if material.name else ""
         return f"{name}{type_label}  [part={part_name}, elem={elem_name}]"
 
-    @staticmethod
-    def _updater_title(node: Node) -> str:
+    @classmethod
+    def _updater_title(cls, node: Node) -> str:
         """Return the localized title for a transient updater tree entry."""
         if node.kind.startswith("updater_"):
             labels = {
@@ -289,7 +358,20 @@ class ModelTree(QTreeWidget):
             label = T(
                 *labels[node.group],
             )
-            return f"{label} ({node.code_reference})"
+            part = ""
+            if node.section_group == "geometry":
+                config = node.config() or {}
+                name = str(config.get("part_name") or "").strip()
+                if name:
+                    part = T(f" · Part {name}", f" · Part {name}")
+            elif node.section_group == "materials":
+                config = node.config() or {}
+                name = str(config.get("interface_name") or "").strip()
+                if name:
+                    part = T(f" · 材料 {name}", f" · material {name}")
+                elif len(node.updater_parent.materials) > 1:
+                    part = f" · {node.config_index}"
+            return f"{label} ({node.code_reference}){part}"
         return container_title("updater")
 
     @staticmethod
@@ -297,61 +379,69 @@ class ModelTree(QTreeWidget):
         """Stable identity for transient updater entries across rebuilds."""
         if node is None:
             return None
-        if hasattr(node, "updater_parent"):
+        if isinstance(node, UpdaterTreeNode):
             return (
                 "updater",
                 id(node.updater_parent),
-                getattr(node, "group", None),
+                node.group,
+                node.config_index,
             )
         return ("node", id(node))
 
-    def _add_updater_children(self, parent_item: QTreeWidgetItem,
-                              updater: Node) -> None:
+    def _add_updater_children(
+        self, parent_item: QTreeWidgetItem, updater: Node
+    ) -> None:
         """Render objective plus nested geometry/material updater groups."""
         if self._problem is not None and self._problem.objective is not None:
             objective = self._problem.objective
             objective_item = self._make_item(
-                container_title("objective"), objective, bold=True)
+                container_title("objective"), objective, bold=True
+            )
             parent_item.addChild(objective_item)
 
-        if updater.geometry_config() is not None:
-            geometry_node = UpdaterTreeNode(updater, "geometry")
+        for index, _config in enumerate(updater.geometry):
+            geometry_node = UpdaterTreeNode(updater, "geometry", index)
             geometry_item = self._make_item(
-                self._updater_title(geometry_node), geometry_node, bold=True)
+                self._updater_title(geometry_node), geometry_node, bold=True
+            )
             parent_item.addChild(geometry_item)
-            for group in ("geometry_objectives", "geometry_equality", "geometry_penalty"):
-                child_node = UpdaterTreeNode(updater, group)
+            for group in (
+                "geometry_objectives",
+                "geometry_equality",
+                "geometry_penalty",
+            ):
+                child_node = UpdaterTreeNode(updater, group, index)
                 child_item = self._make_item(
-                    self._updater_title(child_node), child_node)
+                    self._updater_title(child_node), child_node
+                )
                 geometry_item.addChild(child_item)
 
-        if updater.materials_config() is not None:
-            materials_node = UpdaterTreeNode(updater, "materials")
+        for index, _config in enumerate(updater.materials):
+            materials_node = UpdaterTreeNode(updater, "materials", index)
             materials_item = self._make_item(
-                self._updater_title(materials_node), materials_node, bold=True)
+                self._updater_title(materials_node), materials_node, bold=True
+            )
             parent_item.addChild(materials_item)
             for group in ("materials_objectives", "materials_penalty"):
-                child_node = UpdaterTreeNode(updater, group)
+                child_node = UpdaterTreeNode(updater, group, index)
                 child_item = self._make_item(
-                    self._updater_title(child_node), child_node)
+                    self._updater_title(child_node), child_node
+                )
                 materials_item.addChild(child_item)
 
     def _add_loads_children(self, parent_item: QTreeWidgetItem) -> None:
         """Render load definitions and load cases under the shared parent."""
         loads = self._problem.loads if self._problem is not None else None
         if loads is not None:
-            loads_item = self._make_item(
-                container_title("loads"), loads, bold=True)
+            loads_item = self._make_item(container_title("loads"), loads, bold=True)
             parent_item.addChild(loads_item)
             for iface in self._problem.interfaces():
-                interface_item = self._make_item(
-                    self._interface_title(iface), iface)
+                interface_item = self._make_item(self._interface_title(iface), iface)
                 loads_item.addChild(interface_item)
 
         steps = self._problem.steps if self._problem is not None else None
         if steps is not None:
-            steps_item = self._make_item(
-                container_title("steps"), steps, bold=True)
+            steps_item = self._make_item(container_title("steps"), steps, bold=True)
             parent_item.addChild(steps_item)
 
     # -------------------------------------------------------------- events
@@ -377,18 +467,56 @@ class ModelTree(QTreeWidget):
         kind = node.kind
         scheme = self._problem.scheme if self._problem else "shapeopt"
 
-        if kind == "geometry" and scheme != "simp":
-            sub = menu.addMenu(T("添加曲面 ▸", "Add surface ▸"))
-            for stype, spec in SURFACE_TYPES.items():
-                act = QAction(_full_label(spec, stype), sub)
-                act.setData(stype)
+        if kind == "geometry":
+            sub = menu.addMenu(T("添加几何接口 ▸", "Add geometry interface ▸"))
+            from ..schemes.base import get_template
+
+            for itype in get_template(scheme).available_geometry_types():
+                spec = PART_INTERFACE_TYPES.get(itype, {})
+                act = QAction(_full_label(spec, itype), sub)
+                act.setData(itype)
                 sub.addAction(act)
-            sub.triggered.connect(lambda a: self._add_surface(a.data()))
+            sub.triggered.connect(lambda a: self._add_part_interface(a.data()))
+
+        if kind == "part_interface":
+            act_instance = QAction(T("添加实体 Instance", "Add Instance"), menu)
+            act_instance.triggered.connect(lambda _=False, owner=node: self._add_instance(owner))
+            menu.addAction(act_instance)
             menu.addSeparator()
+            if node.has_surfaces:
+                sub = menu.addMenu(T("添加曲面 ▸", "Add surface ▸"))
+                for stype, spec in SURFACE_TYPES.items():
+                    act = QAction(_full_label(spec, stype), sub)
+                    act.setData(stype)
+                    sub.addAction(act)
+                sub.triggered.connect(
+                    lambda a, owner=node: self._add_surface(a.data(), owner)
+                )
+                menu.addSeparator()
+
+            act_copy = QAction(T("复制", "Copy"), menu)
+            act_copy.triggered.connect(lambda: self._copy_part_interface(node))
+            act_up = QAction(T("上移", "Move up"), menu)
+            act_up.triggered.connect(lambda: self._move_part_interface(node, -1))
+            act_dn = QAction(T("下移", "Move down"), menu)
+            act_dn.triggered.connect(lambda: self._move_part_interface(node, 1))
+            act_del = QAction(T("删除几何接口", "Delete geometry interface"), menu)
+            act_del.triggered.connect(lambda: self._remove_part_interface(node))
+            menu.addAction(act_copy)
+            menu.addAction(act_up)
+            menu.addAction(act_dn)
+            menu.addSeparator()
+            menu.addAction(act_del)
+
+        if kind == "instance":
+            act_del = QAction(T("删除实体 Instance", "Delete Instance"), menu)
+            act_del.triggered.connect(lambda _=False: self._remove_instance(node))
+            menu.addAction(act_del)
 
         if kind == "materials":
             sub = menu.addMenu(T("添加材料接口 ▸", "Add material interface ▸"))
             from ..schemes.base import get_template
+
             available = get_template(scheme).available_material_types()
             for mtype in available:
                 spec = MATERIAL_TYPES[mtype]
@@ -427,6 +555,30 @@ class ModelTree(QTreeWidget):
             menu.addSeparator()
             menu.addAction(act_del)
 
+        if kind == "updater":
+            act = QAction(T("添加几何优化器", "Add geometry optimizer"), menu)
+            act.triggered.connect(self._add_geometry_updater)
+            menu.addAction(act)
+
+        if kind == "updater":
+            act = QAction(T("添加材料优化器", "Add material optimizer"), menu)
+            act.triggered.connect(self._add_materials_updater)
+            menu.addAction(act)
+
+        if kind == "updater_geometry":
+            act_del = QAction(
+                T("删除该几何优化器", "Delete this geometry optimizer"), menu
+            )
+            act_del.triggered.connect(lambda: self._remove_geometry_updater(node))
+            menu.addAction(act_del)
+
+        if kind == "updater_materials":
+            act_del = QAction(
+                T("删除该材料优化器", "Delete this material optimizer"), menu
+            )
+            act_del.triggered.connect(lambda: self._remove_materials_updater(node))
+            menu.addAction(act_del)
+
         if kind == "loads":
             sub = menu.addMenu(T("添加载荷 ▸", "Add load ▸"))
             for itype, spec in INTERFACE_TYPES.items():
@@ -451,15 +603,158 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
     # --------------------------------------------------------------- edits
-    def _add_surface(self, stype: str) -> None:
+    def _add_geometry_updater(self) -> None:
+        if self._problem is None or self._problem.updater is None:
+            return
+        from ..model.schemas import geometry_updater_config
+
+        boundary = [node.name for node in self._problem.boundary_part_nodes()]
+        if not boundary:
+            QMessageBox.information(
+                self,
+                "Geometry optimizer",
+                "This model has no boundary part interface (INP / TorchFEA parts "
+                "have no design surfaces), so there is nothing to shape-optimize.",
+            )
+            return
+        taken = {
+            str(config.get("part_name") or "")
+            for config in self._problem.updater.geometry
+        }
+        free = next((name for name in boundary if name not in taken), "")
+        if not free:
+            QMessageBox.information(
+                self,
+                "Geometry optimizer",
+                "Every boundary part already has its own geometry optimizer.",
+            )
+            return
+        self._problem.updater.add_geometry_config(
+            geometry_updater_config(part_name=free)
+        )
+        self.rebuild(select=self._problem.updater)
+        self.treeChanged.emit()
+
+    def _remove_geometry_updater(self, node: Node) -> None:
+        if self._problem is None or self._problem.updater is None:
+            return
+        index = node.config_index if isinstance(node, UpdaterTreeNode) else 0
+        if 0 <= index < len(self._problem.updater.geometry):
+            del self._problem.updater.geometry[index]
+        self.rebuild(select=self._problem.updater)
+        self.treeChanged.emit()
+
+    def _add_materials_updater(self) -> None:
+        """Add one material optimizer, bound to a free design material interface."""
+        if self._problem is None or self._problem.updater is None:
+            return
+        from ..model.schemas import materials_updater_config
+
+        design = self._problem.design_material_names()
+        if not design:
+            QMessageBox.information(
+                self,
+                "Material optimizer",
+                "This model has no design-carrying material interface (SIMP "
+                "density field), so there is nothing to update.",
+            )
+            return
+        taken = {
+            str(config.get("interface_name") or "")
+            for config in self._problem.updater.materials
+        }
+        free = next((name for name in design if name not in taken), "")
+        if not free:
+            QMessageBox.information(
+                self,
+                "Material optimizer",
+                "Every design material already has its own material optimizer.",
+            )
+            return
+        self._problem.updater.add_materials_config(
+            materials_updater_config(interface_name=free)
+        )
+        self.rebuild(select=self._problem.updater)
+        self.treeChanged.emit()
+
+    def _remove_materials_updater(self, node: Node) -> None:
+        if self._problem is None or self._problem.updater is None:
+            return
+        index = node.config_index if isinstance(node, UpdaterTreeNode) else 0
+        if 0 <= index < len(self._problem.updater.materials):
+            del self._problem.updater.materials[index]
+        self.rebuild(select=self._problem.updater)
+        self.treeChanged.emit()
+
+    def _add_part_interface(self, itype: str) -> None:
         if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
-        index = len(self._problem.surfaces())
+        name = self._problem.suggest_part_interface_name()
+        interface = tpl.make_part_interface(itype, name=name)
+        self._problem.add_part_interface(interface)
+        self.rebuild(select=interface)
+        self.treeChanged.emit()
+
+    def _copy_part_interface(self, interface: Node) -> None:
+        if self._problem is None or not isinstance(interface, PartInterfaceNode):
+            return
+        copy = self._problem.clone_part_interface(interface)
+        self.rebuild(select=copy)
+        self.treeChanged.emit()
+
+    def _remove_part_interface(self, interface: Node) -> None:
+        if self._problem is None or not isinstance(interface, PartInterfaceNode):
+            return
+        try:
+            self._problem.remove_part_interface(interface)
+        except ValueError:
+            return  # keep at least one geometry interface
+        self.rebuild()
+        self.treeChanged.emit()
+
+    def _move_part_interface(self, interface: Node, delta: int) -> None:
+        if self._problem is None or not isinstance(interface, PartInterfaceNode):
+            return
+        if not self._problem.move_part_interface(interface, delta):
+            return
+        self.rebuild(select=interface)
+        self.treeChanged.emit()
+
+    def _add_instance(self, interface: Node) -> None:
+        if self._problem is None or not isinstance(interface, PartInterfaceNode):
+            return
+        name = self._problem.suggest_instance_name(interface)
+        instance = InstanceNode(name=name)
+        self._problem.add_instance(interface, instance)
+        self.rebuild(select=instance)
+        self.treeChanged.emit()
+
+    def _remove_instance(self, instance: Node) -> None:
+        if self._problem is None or not isinstance(instance, InstanceNode):
+            return
+        try:
+            self._problem.remove_instance(instance)
+        except ValueError:
+            return
+        self.rebuild()
+        self.treeChanged.emit()
+
+    def _add_surface(self, stype: str, owner: Node | None = None) -> None:
+        if self._problem is None:
+            return
+        from ..schemes.base import get_template
+
+        if owner is None:
+            owner = self._problem.default_surface_part_node()
+        if owner is None:
+            return
+        tpl = get_template(self._problem.scheme)
+        index = len(owner.surfaces())
         srf = tpl.make_surface(stype, index)
-        self._problem.add_surface(srf)
+        self._problem.add_surface(srf, interface=owner)
         self.rebuild(select=srf)
         self.treeChanged.emit()
 
@@ -497,7 +792,8 @@ class ModelTree(QTreeWidget):
         iface = tpl.make_interface(itype)
         spec = INTERFACE_TYPES.get(itype, {})
         iface.name = self._problem.suggest_interface_name(
-            spec.get("name_hint", "load_"))
+            spec.get("name_hint", "load_")
+        )
         self._problem.add_interface(iface)
         self.rebuild(select=iface)
         self.treeChanged.emit()

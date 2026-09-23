@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QProcess, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QFileDialog,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -23,9 +23,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...optcore.modelparams.geometry import inspect_model
 from ..i18n import T
-from ..model.problem import GeometryNode
+from ..model.modelinfo import inspect_model
+from ..model.problem import PartInterfaceNode, resolve_model_directory
 
 
 class TorchFEAModelEditor(QWidget):
@@ -35,26 +35,32 @@ class TorchFEAModelEditor(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._node: GeometryNode | None = None
+        self._node: PartInterfaceNode | None = None
         self._known_mtimes: dict[str, int] = {}
         self._updating = False
 
         outer = QVBoxLayout(self)
-        title = QLabel(T(
-            "SIMP 初始几何 · TorchFEA Assembly",
-            "SIMP initial geometry · TorchFEA Assembly"))
+        title = QLabel(
+            T(
+                "SIMP 初始几何 · TorchFEA Assembly",
+                "SIMP initial geometry · TorchFEA Assembly",
+            )
+        )
         title.setStyleSheet("font-size:14px; font-weight:600;")
         outer.addWidget(title)
 
-        note = QLabel(T(
-            "CAD 建模、STEP 导入、剖分、部件（Part）、实例（Instance）和集合均在 "
-            "torchfea-ui 中完成。\n"
-            "这里只读取装配体（Assembly）的部件、实例、面集、节点集和单元集；载荷、边界条件、"
-            "约束、参考点和求解器不会从 TorchFEA 模型导入。",
-            "Create CAD, import STEP, mesh, and define Parts, Instances, and sets in "
-            "torchfea-ui.\nOnly Assembly Parts/Instances and their surface/node/element "
-            "sets are read here; loads, boundaries, constraints, reference points, and "
-            "the solver are not imported."))
+        note = QLabel(
+            T(
+                "CAD 建模、STEP 导入、剖分、部件（Part）、实例（Instance）和集合均在 "
+                "torchfea-ui 中完成。\n"
+                "这里只读取装配体（Assembly）的部件、实例、面集、节点集和单元集；载荷、边界条件、"
+                "约束、参考点和求解器不会从 TorchFEA 模型导入。",
+                "Create CAD, import STEP, mesh, and define Parts, Instances, and sets in "
+                "torchfea-ui.\nOnly Assembly Parts/Instances and their surface/node/element "
+                "sets are read here; loads, boundaries, constraints, reference points, and "
+                "the solver are not imported.",
+            )
+        )
         note.setWordWrap(True)
         note.setStyleSheet("color:#9aa4b2;")
         outer.addWidget(note)
@@ -79,27 +85,29 @@ class TorchFEAModelEditor(QWidget):
         model_row.addWidget(refresh)
         outer.addLayout(model_row)
 
-        launch = QPushButton(T(
-            "打开 torchfea-ui 并监视此目录",
-            "Open torchfea-ui and watch this directory"))
+        launch = QPushButton(
+            T(
+                "打开 torchfea-ui 并监视此目录",
+                "Open torchfea-ui and watch this directory",
+            )
+        )
         launch.clicked.connect(self._launch_torchfea_ui)
         outer.addWidget(launch)
 
         self.summary = QTreeWidget()
         self.summary.setColumnCount(2)
-        self.summary.setHeaderLabels([
-            T("项目 / Item", "Item"), T("详情 / Details", "Details")
-        ])
+        self.summary.setHeaderLabels(
+            [T("项目 / Item", "Item"), T("详情 / Details", "Details")]
+        )
         self.summary.setRootIsDecorated(True)
         self.summary.setAlternatingRowColors(True)
         self.summary.setIndentation(18)
-        self.summary.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection)
+        self.summary.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.summary.header().setStretchLastSection(False)
         self.summary.header().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Interactive)
-        self.summary.header().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch)
+            0, QHeaderView.ResizeMode.Interactive
+        )
+        self.summary.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.summary.setColumnWidth(0, 240)
         self.summary.setStyleSheet(
             "QTreeWidget { background:#151a21; border:1px solid #30363d; "
@@ -107,10 +115,12 @@ class TorchFEAModelEditor(QWidget):
             "QTreeWidget::item { padding:3px 2px; }"
             "QTreeWidget::item:selected { background:#1f6aa5; }"
             "QHeaderView::section { background:#202938; color:#dbe4ee; "
-            "padding:4px; border:0; }")
+            "padding:4px; border:0; }"
+        )
         outer.addWidget(self.summary)
-        self._show_empty_summary(T(
-            "尚未导入 TorchFEA 模型。", "No TorchFEA model imported."))
+        self._show_empty_summary(
+            T("尚未导入 TorchFEA 模型。", "No TorchFEA model imported.")
+        )
         outer.addStretch(1)
 
         self._watcher = QFileSystemWatcher(self)
@@ -119,14 +129,16 @@ class TorchFEAModelEditor(QWidget):
         self._scan_timer.setSingleShot(True)
         self._scan_timer.setInterval(500)
         self._scan_timer.timeout.connect(
-            lambda: self._scan_directory(auto_import_new=True))
+            lambda: self._scan_directory(auto_import_new=True)
+        )
 
-    def edit_node(self, node: GeometryNode) -> None:
+    def edit_node(self, node: PartInterfaceNode) -> None:
         self._node = node
         self._updating = True
         try:
-            self.directory.setText(node.model_directory)
-            self._watch_directory(node.model_directory)
+            directory = resolve_model_directory(node.model_directory)
+            self.directory.setText(directory)
+            self._watch_directory(directory)
             self._scan_directory(auto_import_new=False)
             if node.model_filename:
                 self.models.setCurrentText(node.model_filename)
@@ -134,15 +146,16 @@ class TorchFEAModelEditor(QWidget):
         finally:
             self._updating = False
 
-    def validate_link(self, node: GeometryNode) -> bool:
+    def validate_link(self, node: PartInterfaceNode) -> bool:
         """Validate a persisted SIMP link without requiring page selection."""
         self._node = node
         if not node.model_directory or not node.model_filename:
             return False
 
-        self.directory.setText(node.model_directory)
+        directory = resolve_model_directory(node.model_directory)
+        self.directory.setText(directory)
         try:
-            inspect_model(node.model_directory, node.model_filename)
+            inspect_model(directory, node.model_filename)
         except Exception:
             self._clear_invalid_model(
                 T(
@@ -150,7 +163,7 @@ class TorchFEAModelEditor(QWidget):
                     "The imported TorchFEA model is missing or unreadable; "
                     "the model selection was cleared.",
                 ),
-                clear_directory=not Path(node.model_directory).is_dir(),
+                clear_directory=not Path(directory).is_dir(),
             )
             return False
         return True
@@ -158,8 +171,8 @@ class TorchFEAModelEditor(QWidget):
     def _choose_directory(self) -> bool:
         start = self.directory.text() or str(Path.cwd())
         directory = QFileDialog.getExistingDirectory(
-            self, T("选择 TorchFEA 模型目录", "Select TorchFEA model directory"),
-            start)
+            self, T("选择 TorchFEA 模型目录", "Select TorchFEA model directory"), start
+        )
         if not directory:
             return False
         if self._node is None:
@@ -174,6 +187,7 @@ class TorchFEAModelEditor(QWidget):
         return True
 
     def _watch_directory(self, directory: str) -> None:
+        directory = resolve_model_directory(directory)
         watched = self._watcher.directories()
         if watched:
             self._watcher.removePaths(watched)
@@ -188,7 +202,8 @@ class TorchFEAModelEditor(QWidget):
             return {}
         return {
             item.name: item.stat().st_mtime_ns
-            for item in path.glob("*.npz") if item.is_file()
+            for item in path.glob("*.npz")
+            if item.is_file()
         }
 
     def _directory_changed(self, _directory: str) -> None:
@@ -198,12 +213,12 @@ class TorchFEAModelEditor(QWidget):
         if self._node is None:
             return
         current = self._node.model_filename
-        directory_exists = Path(self._node.model_directory).is_dir()
-        mtimes = self._model_mtimes(self._node.model_directory)
+        directory = resolve_model_directory(self._node.model_directory)
+        directory_exists = Path(directory).is_dir()
+        mtimes = self._model_mtimes(directory)
         names = sorted(mtimes, key=lambda name: mtimes[name], reverse=True)
         new_or_changed = [
-            name for name in names
-            if mtimes[name] > self._known_mtimes.get(name, -1)
+            name for name in names if mtimes[name] > self._known_mtimes.get(name, -1)
         ]
         self._known_mtimes = mtimes
 
@@ -211,7 +226,9 @@ class TorchFEAModelEditor(QWidget):
         try:
             self.models.clear()
             self.models.addItems(names)
-            target = new_or_changed[0] if auto_import_new and new_or_changed else current
+            target = (
+                new_or_changed[0] if auto_import_new and new_or_changed else current
+            )
             if not target and names:
                 target = names[0]
             if target in names:
@@ -223,7 +240,9 @@ class TorchFEAModelEditor(QWidget):
         # first entry automatically, which could silently replace a deleted
         # model with an unrelated .npz file.
         if target in names:
-            self._apply_model(target, announce=auto_import_new and target in new_or_changed)
+            self._apply_model(
+                target, announce=auto_import_new and target in new_or_changed
+            )
         elif current:
             self._clear_invalid_model(
                 T(
@@ -239,9 +258,12 @@ class TorchFEAModelEditor(QWidget):
                 self.models.setCurrentIndex(-1)
             finally:
                 self.models.blockSignals(False)
-            self._show_empty_summary(T(
-                "该目录中没有 .npz 模型。请在 torchfea-ui 中保存模型。",
-                "No .npz model exists in this directory. Save one from torchfea-ui."))
+            self._show_empty_summary(
+                T(
+                    "该目录中没有 .npz 模型。请在 torchfea-ui 中保存模型。",
+                    "No .npz model exists in this directory. Save one from torchfea-ui.",
+                )
+            )
 
     def _select_model(self, filename: str) -> None:
         if not self._updating and filename:
@@ -256,7 +278,7 @@ class TorchFEAModelEditor(QWidget):
                     "TorchFEA 模型无效，已清空模型选择。",
                     "The TorchFEA model is invalid; the model selection was cleared.",
                 ),
-                clear_directory=not Path(self._node.model_directory).is_dir(),
+                clear_directory=not Path(directory).is_dir(),
                 warn=False,
             )
             return
@@ -266,13 +288,17 @@ class TorchFEAModelEditor(QWidget):
             self.changed.emit(self._node)
         if announce:
             QMessageBox.information(
-                self, T("已捕获模型", "Model captured"),
-                T(f"已自动导入 TorchFEA 模型：{filename}",
-                  f"Automatically imported TorchFEA model: {filename}"))
+                self,
+                T("已捕获模型", "Model captured"),
+                T(
+                    f"已自动导入 TorchFEA 模型：{filename}",
+                    f"Automatically imported TorchFEA model: {filename}",
+                ),
+            )
 
-    def _clear_invalid_model(self, message: str, *,
-                             clear_directory: bool = False,
-                             warn: bool = True) -> None:
+    def _clear_invalid_model(
+        self, message: str, *, clear_directory: bool = False, warn: bool = True
+    ) -> None:
         """Clear a stale/invalid TorchFEA link and optionally warn the user."""
         if self._node is None:
             return
@@ -305,13 +331,17 @@ class TorchFEAModelEditor(QWidget):
         if self._node is None:
             return False
         try:
-            model = inspect_model(self._node.model_directory, filename)
+            model = inspect_model(
+                resolve_model_directory(self._node.model_directory), filename
+            )
         except Exception as exc:
-            self._show_empty_summary(T(
-                f"无法读取模型：{exc}", f"Cannot read model: {exc}"))
+            self._show_empty_summary(
+                T(f"无法读取模型：{exc}", f"Cannot read model: {exc}")
+            )
             if show_error:
                 QMessageBox.warning(
-                    self, T("模型导入失败", "Model import failed"), str(exc))
+                    self, T("模型导入失败", "Model import failed"), str(exc)
+                )
             return False
 
         self._populate_summary(model)
@@ -332,52 +362,64 @@ class TorchFEAModelEditor(QWidget):
         to remain collapsed until the user needs them.
         """
         self.summary.clear()
-        root = QTreeWidgetItem([
-            T("TorchFEA 模型", "TorchFEA model"),
-            T("已导入", "Imported"),
-        ])
+        root = QTreeWidgetItem(
+            [
+                T("TorchFEA 模型", "TorchFEA model"),
+                T("已导入", "Imported"),
+            ]
+        )
         self.summary.addTopLevelItem(root)
 
         path_item = QTreeWidgetItem([T("路径", "Path"), model.path])
         path_item.setToolTip(1, model.path)
         root.addChild(path_item)
 
-        assembly = QTreeWidgetItem([
-            T("装配体（Assembly）", "Assembly"),
-            T(f"{len(model.instances)} 个实例，{len(model.parts)} 个部件",
-              f"{len(model.instances)} instances, {len(model.parts)} parts"),
-        ])
+        assembly = QTreeWidgetItem(
+            [
+                T("装配体（Assembly）", "Assembly"),
+                T(
+                    f"{len(model.instances)} 个实例，{len(model.parts)} 个部件",
+                    f"{len(model.instances)} instances, {len(model.parts)} parts",
+                ),
+            ]
+        )
         root.addChild(assembly)
 
-        instances = QTreeWidgetItem([
-            T("实例", "Instances"), str(len(model.instances)),
-        ])
+        instances = QTreeWidgetItem(
+            [
+                T("实例", "Instances"),
+                str(len(model.instances)),
+            ]
+        )
         assembly.addChild(instances)
         for instance in model.instances:
-            instances.addChild(QTreeWidgetItem([
-                instance.name,
-                T(f"部件：{instance.part_name}", f"Part: {instance.part_name}"),
-            ]))
+            instances.addChild(
+                QTreeWidgetItem(
+                    [
+                        instance.name,
+                        T(f"部件：{instance.part_name}", f"Part: {instance.part_name}"),
+                    ]
+                )
+            )
 
-        parts = QTreeWidgetItem([
-            T("部件", "Parts"), str(len(model.parts)),
-        ])
+        parts = QTreeWidgetItem(
+            [
+                T("部件", "Parts"),
+                str(len(model.parts)),
+            ]
+        )
         assembly.addChild(parts)
         for part in model.parts:
             part_item = QTreeWidgetItem([part.name, ""])
             parts.addChild(part_item)
+            self._add_set_group(part_item, T("面集", "Surface sets"), part.surface_sets)
+            self._add_set_group(part_item, T("节点集", "Node sets"), part.node_sets)
             self._add_set_group(
-                part_item, T("面集", "Surface sets"),
-                part.surface_sets)
+                part_item, T("单元集", "Element sets"), part.element_sets
+            )
             self._add_set_group(
-                part_item, T("节点集", "Node sets"),
-                part.node_sets)
-            self._add_set_group(
-                part_item, T("单元集", "Element sets"),
-                part.element_sets)
-            self._add_set_group(
-                part_item, T("单元类型", "Element types"),
-                part.element_types)
+                part_item, T("单元类型", "Element types"), part.element_types
+            )
 
         root.setExpanded(True)
         assembly.setExpanded(True)
@@ -398,8 +440,11 @@ class TorchFEAModelEditor(QWidget):
         if not self._node.model_directory and not self._choose_directory():
             return
 
+        model_directory = resolve_model_directory(self._node.model_directory)
+
         QMessageBox.information(
-            self, T("TorchFEA 建模范围", "TorchFEA modeling scope"),
+            self,
+            T("TorchFEA 建模范围", "TorchFEA modeling scope"),
             T(
                 "在 torchfea-ui 中只需定义装配体（Assembly）这一层：完成部件（Part）、"
                 "实例（Instance）、"
@@ -409,20 +454,25 @@ class TorchFEAModelEditor(QWidget):
                 "Instances, mesh them, and define surface/node/element sets. Then use "
                 "Save Model to write the .npz into the watched directory. MorphOpt "
                 "will capture it automatically; do not define optimization loads or "
-                "the solver there."))
+                "the solver there.",
+            ),
+        )
 
         executable = shutil.which("torchfea-ui")
         if executable:
-            result = QProcess.startDetached(
-                executable, [], self._node.model_directory)
+            result = QProcess.startDetached(executable, [], model_directory)
         else:
             result = QProcess.startDetached(
-                sys.executable, ["-m", "torchfea.ui"],
-                self._node.model_directory)
+                sys.executable, ["-m", "torchfea.ui"], model_directory
+            )
         started = result[0] if isinstance(result, tuple) else bool(result)
         if not started:
             QMessageBox.warning(
-                self, T("启动失败", "Launch failed"),
-                T("无法启动 torchfea-ui，请确认它安装在当前 Python 环境中。",
-                  "Could not launch torchfea-ui; ensure it is installed in the "
-                  "current Python environment."))
+                self,
+                T("启动失败", "Launch failed"),
+                T(
+                    "无法启动 torchfea-ui，请确认它安装在当前 Python 环境中。",
+                    "Could not launch torchfea-ui; ensure it is installed in the "
+                    "current Python environment.",
+                ),
+            )

@@ -12,23 +12,42 @@ sync with the node's typed fields.  Hand-written Python code slots such as
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QLineEdit, QComboBox, QCheckBox,
-    QSpinBox, QPushButton, QHBoxLayout, QLabel, QFileDialog, QScrollArea,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
+from ..i18n import T, pick
 from ..model.problem import Node
 from ..model.schemas import (
-    SURFACE_TYPES, INTERFACE_TYPES, MATERIAL_TYPES, SOLVER_FIELDS,
+    INTERFACE_TYPES,
     MATERIAL_MODEL_PARAMETERS,
-    GEOMETRY_SCHEMES,
+    MATERIAL_TYPES,
+    PART_INTERFACE_TYPES,
+    SOLVER_FIELDS,
+    SURFACE_TYPES,
+    fld,
 )
 from .codeeditor import CodeEditor
-from .values import combo_value, display_choice, parse_vec_text, DOF_LABELS
-from ..i18n import T, pick
+from .values import (
+    DOF_LABELS,
+    combo_value,
+    display_choice,
+    parse_vec_text,
+)
 
 
 def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
@@ -51,6 +70,7 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
         mt = node.get_field("type", "")
         if problem is not None:
             from ..schemes.base import get_template
+
             if mt not in get_template(problem.scheme).available_material_types():
                 return [], {}, {}
         spec = MATERIAL_TYPES.get(mt, {})
@@ -76,15 +96,44 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
         if mt == "SIMP_BSPFieldMaterials":
             code_slots["_map_bsp_designfield"] = "map_bsp_designfield(nodes)"
         choices = {}
-        if problem is not None and mt in ("SIMP_BSPFieldMaterials", "HomogeneousMaterial"):
+        if problem is not None and mt in (
+            "SIMP_BSPFieldMaterials",
+            "HomogeneousMaterial",
+        ):
             part_names = problem.part_names()
-            if not part_names and problem.geometry is not None:
-                part_names = [problem.geometry.part_name]
             choices["part_name"] = part_names
             choices["elementname"] = problem.element_names(node.part_name)
         return fields, code_slots, choices
     if kind == "geometry":
-        return list(GEOMETRY_SCHEMES.get(scheme, [])), {}, {}
+        # the Geometry section is a container: its Parts are separate nodes
+        return [], {}, {}
+    if kind == "part_interface":
+        itype = node.get_field("type", "")
+        spec = PART_INTERFACE_TYPES.get(itype, {})
+        choices: dict[str, list[str]] = {}
+        if problem is not None:
+            summary = problem.imported_model_summary()
+            choices["model_part_name"] = (
+                [item.name for item in summary.parts] if summary is not None else []
+            )
+        return list(spec.get("params", [])), {}, choices
+    if kind == "instance":
+        return [
+            fld(
+                "translation",
+                "Translation",
+                "vec3",
+                [0.0, 0.0, 0.0],
+                "Translation [tx, ty, tz] of this Instance.",
+            ),
+            fld(
+                "rotation",
+                "Rotation exponential coordinates",
+                "vec3",
+                [0.0, 0.0, 0.0],
+                "Rotation exponential coordinates [rx, ry, rz].",
+            ),
+        ], {}, {}
     if kind == "solver":
         return list(SOLVER_FIELDS), {}, {}
     if kind == "objective":
@@ -96,38 +145,60 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
 
 def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
     """Fill combo lists from the current problem tree."""
-    is_imported_simp = problem.scheme == "simp" and problem.geometry is not None
-    if not is_imported_simp:
-        surfaces = [s for s in problem.surfaces()]
-        n = len(surfaces)
-        surface_sets = [f"surface_{i}_All" for i in range(n)]
-        if problem.scheme == "codesign":
-            for i in range(1, n):
-                surface_sets.append(f"surface_{i}_offset")
-        surface_sets += ["surface_0_Bottom", "surface_0_Head"]
+    summary = problem.imported_model_summary()
+    is_imported = summary is not None
 
-    rp_names = [nd.name for nd in problem.interfaces()
-                if nd.get_field("type") == "ReferencePoint"]
+    def local_surface_sets(instance_name: str) -> list[str]:
+        part = problem.part_interface_for_instance(instance_name)
+        surfaces = part.surfaces() if part is not None else problem.surfaces()
+        names = [f"surface_{i}_All" for i in range(len(surfaces))]
+        if problem.scheme == "codesign":
+            names.extend(
+                f"surface_{i}_offset" for i in range(1, len(surfaces))
+            )
+        names.extend(["surface_0_Bottom", "surface_0_Head"])
+        return names
+
+    rp_names = [
+        nd.name
+        for nd in problem.interfaces()
+        if nd.get_field("type") == "ReferencePoint"
+    ]
     choices: dict[str, list[str]] = {}
     spec = INTERFACE_TYPES.get(itype, {})
     for f in spec.get("params", []):
         key = f["key"]
         if key in ("instance_name", "instance_name1", "instance_name2"):
             choices[key] = problem.instance_names()
-        elif key == "set_nodes_name" and is_imported_simp:
+        elif key == "set_nodes_name" and is_imported:
             choices[key] = problem.node_set_names(iface.instance_name or "")
-        elif key == "surface_name" and is_imported_simp:
+        elif key == "surface_name" and is_imported:
             choices[key] = problem.surface_set_names(iface.instance_name or "")
-        elif key == "surface_name1" and is_imported_simp:
+        elif key == "surface_name1" and is_imported:
             choices[key] = problem.surface_set_names(iface.instance_name1 or "")
-        elif key == "surface_name2" and is_imported_simp:
+        elif key == "surface_name2" and is_imported:
             choices[key] = problem.surface_set_names(iface.instance_name2 or "")
-        elif key in ("surface_name", "set_nodes_name", "surface_name1", "surface_name2"):
-            choices[key] = surface_sets
-        elif key == "element_name" and is_imported_simp:
-            summary = problem.imported_model_summary()
-            part = summary.part_for_instance(iface.instance_name or "") \
-                if summary is not None else None
+        elif key in (
+            "surface_name",
+            "set_nodes_name",
+            "surface_name1",
+            "surface_name2",
+        ):
+            instance_key = {
+                "surface_name": "instance_name",
+                "set_nodes_name": "instance_name",
+                "surface_name1": "instance_name1",
+                "surface_name2": "instance_name2",
+            }[key]
+            choices[key] = local_surface_sets(
+                str(getattr(iface, instance_key, "") or "")
+            )
+        elif key == "element_name" and is_imported:
+            part = (
+                summary.part_for_instance(iface.instance_name or "")
+                if summary is not None
+                else None
+            )
             choices[key] = list(part.element_types) if part is not None else []
         elif key in ("rp_name", "rp_name1", "rp_name2"):
             choices[key] = rp_names
@@ -137,7 +208,7 @@ def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
 class PropertyEditor(QWidget):
     """Renders the field list of one node into editable widgets."""
 
-    changed = Signal(object)   # Node that changed
+    changed = Signal(object)  # Node that changed
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -164,16 +235,25 @@ class PropertyEditor(QWidget):
         self._dof_groups: dict[str, list[QCheckBox]] = {}
 
     # ------------------------------------------------------------- content
-    def edit_node(self, node: Node, fields=None, code_slots=None,
-                  extra_choices=None, subtitle: str = "",
-                  title: str | None = None, completion_problem=None) -> None:
+    def edit_node(
+        self,
+        node: Node,
+        fields=None,
+        code_slots=None,
+        extra_choices=None,
+        subtitle: str = "",
+        title: str | None = None,
+        completion_problem=None,
+    ) -> None:
         # Re-selecting the SAME node object (e.g. auto-refresh after a field /
         # code-slot edit) must not tear down and rebuild the form: that would
         # drop focus and clear the undo history of the editor being typed in.
         self._completion_problem = completion_problem
         if node is self._node and self._form.rowCount():
             # Keep the form; only refresh the header (a surface may have moved).
-            self._title.setText(title if title is not None else (node.name or node.kind))
+            self._title.setText(
+                title if title is not None else (node.name or node.kind)
+            )
             return
         if fields is None:
             fields, code_slots, extra_choices = fields_for_node(node)
@@ -189,14 +269,36 @@ class PropertyEditor(QWidget):
             self._form.removeRow(0)
 
         self._title.setText(title if title is not None else (node.name or node.kind))
-        if node.kind == "interface":
+        if node.kind in {"interface", "part_interface", "instance"}:
             name_edit = QLineEdit(node.name or "")
-            name_edit.setToolTip(T(
-                "载荷名称（在载荷步矩阵 / jacobian_needed 中引用）。改名会自动级联更新。",
-                "Load name (referenced by the step matrix / jacobian_needed). "
-                "Renaming cascades automatically."))
-            name_edit.editingFinished.connect(lambda e=name_edit: self._rename_node(e.text()))
-            self._form.addRow(T("名称", "Name"), name_edit)
+            name_edit.setToolTip(
+                T(
+                    "载荷名称（在载荷步矩阵 / jacobian_needed 中引用）。改名会自动级联更新。"
+                    if node.kind == "interface"
+                    else "几何接口在 GeometryParams 中的注册名称；改名会同步几何优化器。"
+                    if node.kind == "part_interface"
+                    else "该 Part 实例在装配体中的唯一名称。",
+                    "Load name (referenced by the step matrix / jacobian_needed). "
+                    "Renaming cascades automatically."
+                    if node.kind == "interface"
+                    else "Registration name in GeometryParams; geometry updaters are retargeted."
+                    if node.kind == "part_interface"
+                    else "Unique Assembly name of this Part Instance.",
+                )
+            )
+            name_edit.editingFinished.connect(
+                lambda e=name_edit: self._rename_node(e.text())
+            )
+            self._form.addRow(
+                (
+                    T("载荷名称", "Load name")
+                    if node.kind == "interface"
+                    else T("几何接口名称", "Geometry interface name")
+                    if node.kind == "part_interface"
+                    else T("实体名称", "Instance name")
+                ),
+                name_edit,
+            )
         if subtitle:
             lbl = QLabel(subtitle)
             lbl.setWordWrap(True)
@@ -214,7 +316,29 @@ class PropertyEditor(QWidget):
         text = text.strip()
         if not text or text == self._node.name:
             return
-        self._node.name = text
+        if self._node.kind == "interface":
+            problem = self._completion_problem
+            if problem is not None:
+                if not problem.rename_interface(self._node, text):
+                    return
+            else:
+                self._node.name = text
+        elif self._node.kind == "instance":
+            problem = self._completion_problem
+            if problem is not None:
+                if not problem.rename_instance(self._node, text):
+                    return
+            else:
+                self._node.name = text
+        elif self._node.kind == "part_interface":
+            problem = self._completion_problem
+            if problem is not None:
+                if not problem.rename_part_interface(self._node, text):
+                    return
+            else:
+                self._node.name = text
+        else:
+            return
         self._title.setText(text)
         self.changed.emit(self._node)
 
@@ -235,8 +359,10 @@ class PropertyEditor(QWidget):
             w = QSpinBox()
             lo = f.get("min")
             hi = f.get("max")
-            w.setRange(int(lo) if lo is not None else -10**6,
-                       int(hi) if hi is not None else 10**6)
+            w.setRange(
+                int(lo) if lo is not None else -(10**6),
+                int(hi) if hi is not None else 10**6,
+            )
             w.setValue(int(cur) if cur is not None else 0)
             w.valueChanged.connect(lambda v, k=key: self._set(k, int(v)))
         elif typ == "combo":
@@ -251,7 +377,8 @@ class PropertyEditor(QWidget):
             else:
                 w.setEditText(str(cur) if cur is not None else "")
             w.currentTextChanged.connect(
-                lambda _text, k=key, combo=w: self._set(k, combo_value(combo)))
+                lambda _text, k=key, combo=w: self._set(k, combo_value(combo))
+            )
         elif typ == "file":
             w = QWidget()
             lay = QHBoxLayout(w)
@@ -262,8 +389,21 @@ class PropertyEditor(QWidget):
             btn.clicked.connect(lambda: self._browse(edit))
             lay.addWidget(edit, 1)
             lay.addWidget(btn)
-            edit.editingFinished.connect(
-                lambda k=key: self._set(k, edit.text()))
+            edit.editingFinished.connect(lambda k=key: self._set(k, edit.text()))
+            self._controls[key] = edit
+            self._form.addRow(label, w)
+            return
+        elif typ == "dir":
+            w = QWidget()
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(0, 0, 0, 0)
+            edit = QLineEdit(str(cur or ""))
+            btn = QPushButton("…")
+            btn.setFixedWidth(28)
+            btn.clicked.connect(lambda: self._browse_dir(edit))
+            lay.addWidget(edit, 1)
+            lay.addWidget(btn)
+            edit.editingFinished.connect(lambda k=key: self._set(k, edit.text()))
             self._controls[key] = edit
             self._form.addRow(label, w)
             return
@@ -289,7 +429,8 @@ class PropertyEditor(QWidget):
             w.setText(_vec_to_text(cur))
             keep_int = bool(f.get("ints", False))
             w.editingFinished.connect(
-                lambda k=key: self._set(k, parse_vec_text(w.text(), ints=keep_int)))
+                lambda k=key: self._set(k, parse_vec_text(w.text(), ints=keep_int))
+            )
         elif typ == "code" or typ == "text":
             w = QPlainTextEdit()
             w.setPlainText(str(cur or ""))
@@ -303,7 +444,9 @@ class PropertyEditor(QWidget):
             if typ == "float":
                 w.setValidator(QDoubleValidator())
             w.setText(str(cur) if cur is not None else "")
-            w.editingFinished.connect(lambda k=key: self._set(k, _parse_text_value(w.text(), typ)))
+            w.editingFinished.connect(
+                lambda k=key: self._set(k, _parse_text_value(w.text(), typ))
+            )
 
         self._controls[key] = w
         self._form.addRow(label, w)
@@ -341,8 +484,23 @@ class PropertyEditor(QWidget):
     def _browse(self, edit: QLineEdit) -> None:
         start = edit.text() or "."
         path, _ = QFileDialog.getOpenFileName(
-            self, T("选择文件", "Select file"), start,
-            "Mesh / geometry (*.inp *.stl *.step *.stp)")
+            self,
+            T("选择文件", "Select file"),
+            start,
+            "Mesh / geometry (*.inp *.stl *.step *.stp)",
+        )
+        if path:
+            edit.setText(path)
+            if self._node is not None and edit in self._controls.values():
+                key = next((k for k, w in self._controls.items() if w is edit), None)
+                if key:
+                    self._set(key, path)
+
+    def _browse_dir(self, edit: QLineEdit) -> None:
+        start = edit.text() or "."
+        path = QFileDialog.getExistingDirectory(
+            self, T("选择目录", "Select directory"), start
+        )
         if path:
             edit.setText(path)
             if self._node is not None and edit in self._controls.values():

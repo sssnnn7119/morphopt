@@ -1,31 +1,45 @@
 """Structured Updater editor: pick objective functions / constraints.
 
-Each sub-optimizer (UpdaterGeometries / UpdaterMaterials) exposes:
+Each sub-optimizer (UpdaterBoundaryPart / UpdaterSIMPMaterial) exposes:
 * max_step_iter, if_update
 * a list of objective functions
 * one equality-constraint code item and a list of penalty constraints
 and every item can have parameters edited in an inline form.  Equality code
-is emitted as ``GeometryParams.apply_surface_constraints``; penalty terms are
-turned back into ``add_objective_function`` / ``add_constraints`` calls.
+is emitted on the boundary Part interface; penalty terms are turned back into
+``add_objective_function`` / ``add_constraints`` calls.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea, QGroupBox, QFormLayout, QSpinBox,
-    QCheckBox, QPushButton, QHBoxLayout, QLabel, QComboBox,
-    QToolButton, QMenu, QFrame, QWidgetAction, QTableWidget,
-    QTableWidgetItem, QHeaderView,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
 )
 
-from ..model.problem import Node, ProblemDefinition
-from ..model import schemas as S
-from .model_tree import surface_title_text
-from .param_form import ParamForm
-from .codeeditor import CodeEditor
-from .solver_editor import detect_devices
 from ..i18n import T, pick
+from ..model import schemas as S
+from ..model.problem import Node, ProblemDefinition
+from .codeeditor import CodeEditor
+from .model_tree import UpdaterTreeNode, surface_title_text
+from .param_form import ParamForm
+from .solver_editor import detect_devices
 
 
 def _category_label(category: str) -> str:
@@ -54,18 +68,24 @@ class UpdaterEditor(QWidget):
         for dev in detect_devices():
             if dev != "cpu":
                 self._device.addItem(dev)
-        self._device.setToolTip(T(
-            "Updater 专用计算设备（cpu / cuda:0…），与运行设备（start_optimization）独立；留空默认跟随运行设备。",
-            "Device for the Updater only (cpu / cuda:0…); independent from the "
-            "run device (start_optimization). Empty = follow the run device."))
+        self._device.setToolTip(
+            T(
+                "Updater 专用计算设备（cpu / cuda:0…），与运行设备（start_optimization）独立；留空默认跟随运行设备。",
+                "Device for the Updater only (cpu / cuda:0…); independent from the "
+                "run device (start_optimization). Empty = follow the run device.",
+            )
+        )
         self._device.currentTextChanged.connect(self._save_device)
         devrow.addWidget(self._device, 1)
         outer.addLayout(devrow)
 
-        hint = QLabel(T(
-            "为每个子优化器选择目标函数、等式约束和罚函数约束。",
-            "Choose objective, equality, and penalty constraints per "
-            "sub-optimizer."))
+        hint = QLabel(
+            T(
+                "为每个子优化器选择目标函数、等式约束和罚函数约束。",
+                "Choose objective, equality, and penalty constraints per "
+                "sub-optimizer.",
+            )
+        )
         hint.setStyleSheet("color:#7f8c8d;")
         outer.addWidget(hint)
         self._focus_label = QLabel("")
@@ -83,17 +103,21 @@ class UpdaterEditor(QWidget):
         self._loading = False
 
     # ------------------------------------------------------------------ api
-    def edit_node(self, node: Node, problem, focus: Node | None = None) -> None:
+    def edit_node(
+        self, node: Node, problem, focus: UpdaterTreeNode | None = None
+    ) -> None:
         self._node = node
         self._problem = problem
         self._scheme = problem.scheme if problem is not None else "shapeopt"
-        focus_group = getattr(focus, "section_group", None)
-        focus_category = getattr(focus, "group", None)
+        focus_group = focus.section_group if focus is not None else None
+        focus_category = focus.group if focus is not None else None
         self._focus_label.setText(self._focus_text(focus))
         # show the current updater device without re-triggering a save
         self._loading = True
         try:
-            dev = problem.updater_device or (problem.device if problem is not None else "cpu")
+            dev = problem.updater_device or (
+                problem.device if problem is not None else "cpu"
+            )
             if self._device.findText(dev) < 0:
                 self._device.addItem(dev)
             self._device.setCurrentText(dev if dev else "cpu")
@@ -110,29 +134,59 @@ class UpdaterEditor(QWidget):
         # nodes for its objective/equality/penalty sections.  Render only the
         # selected section; this keeps equality code separate from penalty
         # items while the optimizer node owns the iteration controls.
-        geom = node.geometry_config() if focus_group in {None, "geometry"} else None
-        mats = node.materials_config() if focus_group in {None, "materials"} else None
-        if geom is not None:
-            self._layout.addWidget(self._section_box(
-                T("几何优化器 (UpdaterGeometries)",
-                  "Geometry optimizer (UpdaterGeometries)"),
-                geom, "geometry", focus_category))
-        if mats is not None:
-            self._layout.addWidget(self._section_box(
-                T("材料优化器 (UpdaterMaterials)",
-                  "Material optimizer (UpdaterMaterials)"),
-                mats, "materials", focus_category))
-        if geom is None and mats is None:
-            self._layout.addWidget(QLabel(T(
-                "(该方案没有可编辑的子优化器)",
-                "(this scheme has no editable sub-optimizer)")))
+        configs = node.geometry if focus_group in {None, "geometry"} else []
+        if focus is not None and focus_group == "geometry":
+            # a focused entry edits exactly one geometry sub-optimizer
+            index = min(focus.config_index, max(len(configs) - 1, 0))
+            configs = configs[index : index + 1]
+        for index, cfg in enumerate(configs):
+            part = str(cfg.get("part_name") or "").strip()
+            title = T(
+                "几何优化器 (UpdaterBoundaryPart)",
+                "Geometry optimizer (UpdaterBoundaryPart)",
+            )
+            if len(node.geometry) > 1:
+                title = f"{title} · {part or index}"
+            self._layout.addWidget(
+                self._section_box(title, cfg, "geometry", focus_category)
+            )
+        geom = configs[0] if configs else None
+        material_configs = (
+            node.materials if focus_group in {None, "materials"} else []
+        )
+        if focus is not None and focus_group == "materials":
+            # a focused entry edits exactly one material sub-optimizer
+            index = min(
+                focus.config_index, max(len(material_configs) - 1, 0)
+            )
+            material_configs = material_configs[index : index + 1]
+        for index, cfg in enumerate(material_configs):
+            interface = str(cfg.get("interface_name") or "").strip()
+            title = T(
+                "材料优化器 (UpdaterSIMPMaterial)",
+                "Material optimizer (UpdaterSIMPMaterial)",
+            )
+            if len(node.materials) > 1:
+                title = f"{title} · {interface or index}"
+            self._layout.addWidget(
+                self._section_box(title, cfg, "materials", focus_category)
+            )
+        if geom is None and not material_configs:
+            self._layout.addWidget(
+                QLabel(
+                    T(
+                        "(该方案没有可编辑的子优化器)",
+                        "(this scheme has no editable sub-optimizer)",
+                    )
+                )
+            )
 
     @staticmethod
-    def _focus_text(focus: Node | None) -> str:
+    def _focus_text(focus: UpdaterTreeNode | None) -> str:
         """Describe the model-tree entry that opened this editor."""
         if focus is None:
             return ""
-        group = getattr(focus, "group", "")
+        group = focus.group
         group_label = T(
             {
                 "geometry": "几何优化器",
@@ -169,44 +223,113 @@ class UpdaterEditor(QWidget):
             self.changed.emit(self._node)
 
     # ------------------------------------------------------------- builders
-    def _section_box(self, title: str, cfg: dict, group: str,
-                     focus_category: str | None = None) -> QWidget:
+    def _section_box(
+        self, title: str, cfg: dict, group: str, focus_category: str | None = None
+    ) -> QWidget:
         g = QGroupBox(title)
         form = QFormLayout(g)
 
         show_controls = focus_category in {None, group}
         show_objectives = focus_category in {None, f"{group}_objectives"}
         show_equality = group == "geometry" and focus_category in {
-            None, "geometry_equality"}
+            None,
+            "geometry_equality",
+        }
         show_penalties = focus_category in {None, f"{group}_penalty"}
 
         if show_controls:
+            if group == "geometry":
+                form.addRow(
+                    T("目标 Part", "target Part"), self._part_target_control(cfg)
+                )
+            elif group == "materials":
+                form.addRow(
+                    T("目标材料接口", "target material interface"),
+                    self._material_target_control(cfg),
+                )
+
             spin = QSpinBox()
             spin.setRange(1, 100000)
             spin.setValue(int(cfg.get("max_step_iter", 50)))
-            spin.valueChanged.connect(
-                lambda v: self._set(cfg, "max_step_iter", int(v)))
+            spin.valueChanged.connect(lambda v: self._set(cfg, "max_step_iter", int(v)))
             form.addRow(T("最大迭代次数", "max_step_iter"), spin)
 
             cur = cfg.get("if_update")
-            form.addRow(T("曲面更新与否", "if_update"),
-                        self._if_update_control(cfg, cur, group))
+            form.addRow(
+                T("曲面更新与否", "if_update"), self._if_update_control(cfg, cur, group)
+            )
 
         if show_objectives:
             form.addRow(_objective_readonly(cfg, group, self._scheme))
 
-        n_surfaces = len(self._problem.surfaces()) if self._problem is not None else 0
+        n_surfaces = self._surface_count(cfg, group)
         if show_equality:
-            _migrate_surface_equality(cfg, self._problem)
-            form.addRow(_equality_item_list(
-                cfg, self._on_change, self._problem,
-                self._on_code_change))
+            form.addRow(
+                _equality_item_list(
+                    cfg, self._on_change, self._problem, self._on_code_change
+                )
+            )
         if show_penalties:
-            form.addRow(_item_list(cfg, group, "constraints", self._scheme,
-                                   self._on_change, n_surfaces))
+            form.addRow(
+                _item_list(
+                    cfg, group, "constraints", self._scheme, self._on_change, n_surfaces
+                )
+            )
         return g
 
     # -------------------------------------------------------- if_update ui
+    def _part_target_control(self, cfg: dict) -> QWidget:
+        """Combo box selecting the boundary Part this sub-optimizer updates.
+
+        Every boundary part has its own geometry optimizer; changing this entry
+        re-binds the generated ``UpdaterBoundaryPart(interface_name=...)``.
+        """
+        combo = QComboBox()
+        combo.addItem(T("(唯一的边界 Part)", "(the only boundary part)"), "")
+        if self._problem is not None:
+            for node in self._problem.boundary_part_nodes():
+                combo.addItem(node.name, node.name)
+        index = combo.findData(str(cfg.get("part_name") or "").strip())
+        combo.setCurrentIndex(max(index, 0))
+        combo.currentIndexChanged.connect(
+            lambda _i: self._set(cfg, "part_name", combo.currentData() or "")
+        )
+        return combo
+
+    def _material_target_control(self, cfg: dict) -> QWidget:
+        """Combo box selecting the material interface this sub-optimizer updates.
+
+        Only design-carrying interfaces (SIMP density fields) can be updated;
+        changing this entry re-binds the generated
+        ``UpdaterSIMPMaterial(interface_name=...)``.
+        """
+        combo = QComboBox()
+        combo.addItem(T("(唯一的可设计材料)", "(the only design material)"), "")
+        if self._problem is not None:
+            for name in self._problem.design_material_names():
+                combo.addItem(name, name)
+        index = combo.findData(str(cfg.get("interface_name") or "").strip())
+        combo.setCurrentIndex(max(index, 0))
+        combo.currentIndexChanged.connect(
+            lambda _i: self._set(cfg, "interface_name", combo.currentData() or "")
+        )
+        return combo
+
+    def _surface_count(self, cfg: dict, group: str) -> int:
+        """Number of surfaces whose update flags this config controls.
+
+        A geometry sub-optimizer only owns the surfaces of its own Part, so the
+        checkbox list and the distance matrix are scoped to that Part.
+        """
+        if self._problem is None:
+            return 0
+        if group != "geometry":
+            return len(self._problem.surfaces())
+        node = self._problem.part_interface_node(str(cfg.get("part_name") or ""))
+        if node is None:
+            return len(self._problem.surfaces())
+        return len(node.surfaces())
+
     def _if_update_control(self, cfg: dict, cur, group: str) -> QWidget:
         """Checkbox widget for ``if_update``.
 
@@ -215,14 +338,22 @@ class UpdaterEditor(QWidget):
         * other sub-optimizers (materials…): a single bool checkbox.
         """
         if group == "geometry":
-            surfaces = self._problem.surfaces() if self._problem is not None else []
+            surfaces = []
+            if self._problem is not None:
+                node = self._problem.part_interface_node(
+                    str(cfg.get("part_name") or "")
+                )
+                surfaces = node.surfaces() if node is not None else self._problem.surfaces()
             if surfaces:
                 return _IfUpdateDropDown(cfg, cur, surfaces, self._on_change)
         chk = QCheckBox()
         chk.setChecked(True if cur is None else bool(cur))
-        chk.setToolTip(T(
-            "勾选 = 该曲面参与更新。",
-            "Checked = this surface participates in the update."))
+        chk.setToolTip(
+            T(
+                "勾选 = 该曲面参与更新。",
+                "Checked = this surface participates in the update.",
+            )
+        )
         chk.toggled.connect(lambda v: self._set(cfg, "if_update", bool(v)))
         return chk
 
@@ -318,9 +449,12 @@ class _IfUpdateDropDown(QToolButton):
         names = [c.text() for c in self._checks if c.isChecked()]
         self.setText(f"{len(names)}/{len(self._checks)}")
         self.setMinimumWidth(80)
-        self.setToolTip(T(
-            f"勾选参与更新的曲面：{', '.join(names) or '无'}",
-            f"Surfaces to update: {', '.join(names) or 'none'}"))
+        self.setToolTip(
+            T(
+                f"勾选参与更新的曲面：{', '.join(names) or '无'}",
+                f"Surfaces to update: {', '.join(names) or 'none'}",
+            )
+        )
 
 
 class _DistanceMatrixDropDown(QToolButton):
@@ -344,9 +478,12 @@ class _DistanceMatrixDropDown(QToolButton):
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setMinimumWidth(110)
-        self.setToolTip(T(
-            "编辑各表面之间的最小距离矩阵 min_distance[i][j]",
-            "Edit the inter-surface minimum-distance matrix min_distance[i][j]"))
+        self.setToolTip(
+            T(
+                "编辑各表面之间的最小距离矩阵 min_distance[i][j]",
+                "Edit the inter-surface minimum-distance matrix min_distance[i][j]",
+            )
+        )
         self._update_text()
 
         menu = QMenu(self)
@@ -357,8 +494,12 @@ class _DistanceMatrixDropDown(QToolButton):
         col.setContentsMargins(8, 8, 8, 8)
         col.setSpacing(6)
 
-        cap = QLabel(T("表面间最小距离  min_distance[i][j]",
-                       "Inter-surface minimum distance  min_distance[i][j]"))
+        cap = QLabel(
+            T(
+                "表面间最小距离  min_distance[i][j]",
+                "Inter-surface minimum distance  min_distance[i][j]",
+            )
+        )
         cap.setStyleSheet("color:#9aa4b2;")
         col.addWidget(cap)
 
@@ -366,7 +507,9 @@ class _DistanceMatrixDropDown(QToolButton):
         self._table.setHorizontalHeaderLabels([str(j) for j in range(self._n)])
         self._table.setVerticalHeaderLabels([str(i) for i in range(self._n)])
         self._table.setMaximumHeight(min(440, 40 + 30 * self._n))
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self._table.verticalHeader().setDefaultSectionSize(26)
         col.addWidget(self._table)
@@ -461,8 +604,12 @@ def _distance_params_form(item: dict, n_surfaces: int, on_change) -> QWidget:
     params = item.setdefault("params", {})
     dd = _DistanceMatrixDropDown(params, n_surfaces, on_change)
     form.addRow(
-        T("最小距离矩阵 min_distance [[i][j]]",
-          "Minimum-distance matrix min_distance [[i][j]]"), dd)
+        T(
+            "最小距离矩阵 min_distance [[i][j]]",
+            "Minimum-distance matrix min_distance [[i][j]]",
+        ),
+        dd,
+    )
     return w
 
 
@@ -482,23 +629,23 @@ def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     for it in items:
         itype = it.get("type", "?")
         spec = specs.get(itype) or {}
-        display_label = pick(spec.get('label', ''), spec.get('label_en'))
-        line = QLabel(T(
-            f"• 类型 {itype} — {display_label}",
-            f"• Type {itype} — {display_label}"))
+        display_label = pick(spec.get("label", ""), spec.get("label_en"))
+        line = QLabel(
+            T(f"• 类型 {itype} — {display_label}", f"• Type {itype} — {display_label}")
+        )
         line.setStyleSheet("color:#c8d0da;")
         lay.addWidget(line)
     return w
 
 
-def _equality_item_list(cfg: dict, on_change,
-                        problem: ProblemDefinition | None,
-                        on_code_change) -> QWidget:
+def _equality_item_list(
+    cfg: dict, on_change, problem: ProblemDefinition | None, on_code_change
+) -> QWidget:
     """Render the single geometry equality-constraint code editor.
 
-    The persisted representation remains a one-item list so old definitions
-    and the code generator keep their stable schema.  The UI deliberately
-    exposes no add/delete controls: one geometry equality hook is enough.
+    The representation is a one-item list because one geometry equality hook
+    is enough for each geometry optimizer.  The UI deliberately exposes no
+    add/delete controls.
     """
     w = QWidget()
     lay = QVBoxLayout(w)
@@ -511,37 +658,28 @@ def _equality_item_list(cfg: dict, on_change,
     if not items:
         items.append(S.equality_constraint("MirrorSymmetry"))
 
-    # Imported files may contain more than one equality item from the
-    # previous list-based editor.  Keep the first item's identity and append
-    # the remaining bodies in order so no user code is silently discarded.
     primary = items[0]
-    extra_bodies = [
-        str((item.get("params") or {}).get("code", "")).strip()
-        for item in items[1:]
-        if isinstance(item, dict)
-    ]
-    if extra_bodies:
-        params = primary.setdefault("params", {})
-        current = str(params.get("code", "")).strip()
-        params["code"] = "\n\n".join(
-            part for part in [current, *extra_bodies] if part)
-    del items[1:]
 
     itype = primary.get("type", "MirrorSymmetry")
     spec = S.EQUALITY_CONSTRAINTS.get(itype) or S.EQUALITY_CONSTRAINTS["MirrorSymmetry"]
     grp = QGroupBox(pick(spec["label"], spec.get("label_en")))
     col = QVBoxLayout(grp)
-    col.addWidget(QLabel(T(
-        f"类型：{itype}（每个几何优化器仅允许一个等式约束）",
-        f"Type: {itype} (one equality constraint per geometry optimizer)")))
-    col.addWidget(_surface_equality_editor(
-        primary, problem, on_code_change))
+    col.addWidget(
+        QLabel(
+            T(
+                f"类型：{itype}（每个几何优化器仅允许一个等式约束）",
+                f"Type: {itype} (one equality constraint per geometry optimizer)",
+            )
+        )
+    )
+    col.addWidget(_surface_equality_editor(primary, problem, on_code_change))
     lay.addWidget(grp)
     return w
 
 
-def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change,
-               n_surfaces: int = 0) -> QWidget:
+def _item_list(
+    cfg: dict, group: str, category: str, scheme: str, on_change, n_surfaces: int = 0
+) -> QWidget:
     """A compact list manager for one category of the section."""
     w = QWidget()
     lay = QVBoxLayout(w)
@@ -588,22 +726,30 @@ def _item_list(cfg: dict, group: str, category: str, scheme: str, on_change,
     addbar.addWidget(combo, 1)
     btn_add = QPushButton("＋")
     btn_add.setFixedWidth(34)
-    btn_add.clicked.connect(lambda: _add(items, combo, scheme, group, category, on_change))
+    btn_add.clicked.connect(
+        lambda: _add(items, combo, scheme, group, category, on_change)
+    )
     addbar.addWidget(btn_add)
     lay.addLayout(addbar)
     return w
 
 
-def _surface_equality_editor(item: dict, problem: ProblemDefinition | None,
-                             on_change) -> QWidget:
+def _surface_equality_editor(
+    item: dict, problem: ProblemDefinition | None, on_change
+) -> QWidget:
     """Edit the hard surface projection stored as a geometry constraint item."""
     host = QWidget()
     layout = QVBoxLayout(host)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(QLabel(T(
-        "每次几何变量更新后执行；用于投影/修正曲面控制点。",
-        "Runs after each geometry update to project or correct surface "
-        "control points.")))
+    layout.addWidget(
+        QLabel(
+            T(
+                "每次几何变量更新后执行；用于投影/修正曲面控制点。",
+                "Runs after each geometry update to project or correct surface "
+                "control points.",
+            )
+        )
+    )
     params = item.setdefault("params", {})
     editor = CodeEditor(
         T("等式约束函数体", "Equality-constraint function body"),
@@ -612,7 +758,8 @@ def _surface_equality_editor(item: dict, problem: ProblemDefinition | None,
     )
     editor.set_body(str(params.get("code") or ""))
     editor.edit.textChanged.connect(
-        lambda: _set_surface_equality_code(params, editor, on_change))
+        lambda: _set_surface_equality_code(params, editor, on_change)
+    )
     layout.addWidget(editor)
     return host
 
@@ -622,42 +769,14 @@ def _set_surface_equality_code(params: dict, editor: CodeEditor, on_change) -> N
     on_change()
 
 
-def _migrate_surface_equality(cfg: dict,
-                              problem: ProblemDefinition | None) -> None:
-    """Move old equality entries/code into the dedicated equality list."""
-    equality_items = cfg.setdefault("equality_constraints", [])
-    constraints = cfg.setdefault("constraints", [])
-    moved_from_penalties = False
-    for item in list(constraints):
-        if (isinstance(item, dict)
-                and item.get("type") in {"MirrorSymmetry", "SurfaceEquality"}):
-            if item not in equality_items:
-                equality_items.append(item)
-            constraints.remove(item)
-            moved_from_penalties = True
-    if equality_items:
-        if (moved_from_penalties and problem is not None
-                and problem.geometry is not None):
-            problem.geometry.set_field("_apply_surface_constraints", "")
-        return
-    if problem is None or problem.geometry is None:
-        return
-    legacy_code = str(problem.geometry.get_field(
-        "_apply_surface_constraints", "") or "").strip()
-    if not legacy_code:
-        return
-    equality_items.insert(0, {
-        "type": "SurfaceEquality",
-        "params": {"code": legacy_code},
-    })
-    problem.geometry.set_field("_apply_surface_constraints", "")
-
-
 def _specs_for(scheme: str, group: str, category: str):
+    from ..schemes.base import get_template
+
+    schema_scheme = get_template(scheme).schema_scheme or scheme
     out = []
     cat = S.UPDATER_CATALOG.get(category, {})
     for name, spec in cat.items():
-        if spec["group"] == group and scheme in spec["schemes"]:
+        if spec["group"] == group and schema_scheme in spec["schemes"]:
             s = dict(spec)
             s["_type"] = name
             out.append(s)
@@ -670,7 +789,9 @@ def _find_spec(itype: str, category: str):
     return dict(spec) if spec else None
 
 
-def _add(items: list, combo: QComboBox, scheme: str, group: str, category: str, on_change) -> None:
+def _add(
+    items: list, combo: QComboBox, scheme: str, group: str, category: str, on_change
+) -> None:
     data = combo.currentData()
     if data is None:
         return

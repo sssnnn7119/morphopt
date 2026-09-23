@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QMessageBox,
     QVBoxLayout,
@@ -109,9 +107,9 @@ class TemplateInsertDialog(QDialog):
         QMessageBox.warning(self, T("参数不一致", "Inconsistent parameters"), message)
         return False
 
-    def parameter_values(self) -> dict[str, Any]:
+    def parameter_values(self) -> dict[str, object]:
         """Return the values currently selected (or typed) by the user."""
-        values: dict[str, Any] = {}
+        values: dict[str, object] = {}
         for key, combo in self._fields.items():
             # Editable model-name combos may retain the previous item's data
             # role after the user types a new name; always trust their text.
@@ -131,16 +129,19 @@ class TemplateInsertDialog(QDialog):
             combo.addItem(label, value)
 
         default = parameter.default
-        index = combo.findData(default)
-        if index >= 0:
-            combo.setCurrentIndex(index)
+        if combo.count():
+            # Model-dependent defaults such as ``final_model`` or
+            # ``RP_head`` are only examples and often do not exist in the
+            # current problem.  The first available model option is the
+            # reliable default for every objective template parameter.
+            combo.setCurrentIndex(0)
         elif is_customizable:
             combo.setEditText(str(default))
-        elif combo.count() == 0:
+        else:
             combo.addItem(str(default), default)
         return combo
 
-    def _options(self, source: str) -> list[tuple[str, Any]]:
+    def _options(self, source: str) -> list[tuple[str, object]]:
         if source == "load_steps":
             count = self._problem.steps.num_steps if self._problem.steps else 1
             return [(T(f"工况 {index}", f"Load step {index}"), index)

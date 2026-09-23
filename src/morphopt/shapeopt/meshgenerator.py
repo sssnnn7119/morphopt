@@ -300,7 +300,10 @@ class MeshGenerator:
             generator.construct_volume()
             generator.generate_mesh(3)
             generator.export(output_file, part_name=part_name)
-        except Exception as e:
-            print(f"An error occurred: {e}")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Volume mesh generation failed for Part {part_name!r} "
+                f"in {directory!r}: {exc}"
+            ) from exc
         finally:
             generator.finalize()

@@ -59,12 +59,12 @@ _TENSOR_MEMBERS = (
 
 _SURFACE_CONSTRAINT_ITEMS = (
     CompletionItem("self", "self"),
-    CompletionItem("self.surface_list", "self.surface_list"),
+    CompletionItem("self.surfaces()", "self.surfaces()"),
     CompletionItem("ThisController", "ThisController"),
     CompletionItem("ThisController.Params.GeometryParams",
                    "ThisController.Params.GeometryParams"),
-    CompletionItem("surface = self.surface_list[0]",
-                   "surface = self.surface_list[0]"),
+    CompletionItem("surface = self.surfaces()[0]",
+                   "surface = self.surfaces()[0]"),
     CompletionItem("control_points = surface._cps.reshape(...)",
                    "control_points = surface._cps.reshape(\n"
                    "    surface.model.size[0], surface.model.size[1], 3)"),
@@ -160,13 +160,17 @@ def _result_indices(problem: "ProblemDefinition | None") -> range:
 def _surface_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
     if problem is None:
         return []
-    return [
-        CompletionItem(
-            f"self.surface_list[{index}] ({surface.surface_type})",
-            f"self.surface_list[{index}]",
-        )
-        for index, surface in enumerate(problem.surfaces())
-    ]
+    items: list[CompletionItem] = []
+    for part in problem.boundary_part_nodes():
+        for index, surface in enumerate(part.surfaces()):
+            expression = f"self.surface_interfaces()[{index}]"
+            items.append(
+                CompletionItem(
+                    f"{expression} ({part.name}: {surface.surface_type})",
+                    expression,
+                )
+            )
+    return items
 
 
 def _unique_items(items: list[CompletionItem]) -> list[CompletionItem]:

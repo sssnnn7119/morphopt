@@ -195,27 +195,39 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
 
         pool_owned = pools is None
         try:
-            if sys.platform.startswith("win") and not pool_owned:
-                pools_now.apply_async(
-                    MeshGenerator.run,
-                    kwds={
-                        "seed_size": self.fea_seed_size,
-                        "output_file": inp_path,
-                        "directory": path_output,
-                        "part_name": self.part_name,
-                    },
-                ).get()
-            else:
-                MeshGenerator.run(
-                    seed_size=self.fea_seed_size,
-                    output_file=inp_path,
-                    directory=path_output,
-                    part_name=self.part_name,
-                )
+            try:
+                if sys.platform.startswith("win") and not pool_owned:
+                    pools_now.apply_async(
+                        MeshGenerator.run,
+                        kwds={
+                            "seed_size": self.fea_seed_size,
+                            "output_file": inp_path,
+                            "directory": path_output,
+                            "part_name": self.part_name,
+                        },
+                    ).get()
+                else:
+                    MeshGenerator.run(
+                        seed_size=self.fea_seed_size,
+                        output_file=inp_path,
+                        directory=path_output,
+                        part_name=self.part_name,
+                    )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to mesh boundary Part {self.name!r} "
+                    f"({self.part_name!r})."
+                ) from exc
         finally:
             if pool_owned:
                 pools_now.close()
                 pools_now.join()
+
+        if not os.path.isfile(inp_path):
+            raise RuntimeError(
+                f"Mesh generator did not create the expected Abaqus file: "
+                f"{inp_path}"
+            )
 
         # read the inp file and create the Part
         inp = torchfea.FEA_INP()
@@ -443,7 +455,10 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
             if not surface.num_variables:
                 continue
             path = os.path.join(dirpath, "Surface-%d_iter-%d" % (index, iteration))
-            if os.path.isfile(path):
+            # Surface implementations append their own storage suffix when
+            # saving (BSP/CPGEO currently write ``.npz``).  The public load
+            # method receives the same stem that was passed to ``save``.
+            if os.path.isfile(path) or os.path.isfile(path + ".npz"):
                 surface.load(path)
 
     def get_meshes(self) -> list[pv.PolyData]:

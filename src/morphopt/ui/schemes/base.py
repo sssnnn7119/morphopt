@@ -1,15 +1,26 @@
-"""Base scheme template and registry."""
+"""File-backed optimization templates and their registry."""
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+from pathlib import Path
 
-from ..model.problem import (
-    ProblemDefinition, Node,
-    GeometryNode, SurfaceNode, InterfaceNode, LoadsNode, StepsNode,
-    MaterialsNode, MaterialNode, ObjectiveNode, SolverNode, UpdaterNode,
-)
 from ..model import schemas as S
+from ..model.problem import (
+    GeometryNode,
+    InterfaceNode,
+    LoadsNode,
+    MaterialNode,
+    MaterialsNode,
+    Node,
+    ObjectiveNode,
+    PartInterfaceNode,
+    ProblemDefinition,
+    SolverNode,
+    StepsNode,
+    SurfaceNode,
+    UpdaterNode,
+)
 from .snippets import CodeSnippet, shared_fea_snippets
 
 
@@ -24,6 +35,9 @@ class SchemeTemplate:
     """
 
     scheme: str = ""
+    #: Schema catalogue used by a template.  File templates may use a custom
+    #: id while reusing the shapeopt/simp field catalogue.
+    schema_scheme: str = ""
     label: str = ""
     label_en: str = ""
     #: material implementation chosen by this scheme's default tree.
@@ -32,6 +46,8 @@ class SchemeTemplate:
     BASES: dict = {}
     #: display title of the Geometry section (used by the model tree)
     geometry_title: str = "Geometry"
+    #: registration (Part) name of the scheme's default geometry
+    BODY_NAME: str = "body"
 
     # ------------------------------------------------------------------ ui
     def create_problem(self, label: str) -> ProblemDefinition:
@@ -47,35 +63,41 @@ class SchemeTemplate:
     # ------------------------------------------------------- node factories
     # Low-level factories delegate to the typed node classes, so schema
     # defaults + validation live in exactly one place (model/problem.py).
-    def make_surface(self, surface_type: str, index: int = 0,
-                     **overrides) -> SurfaceNode:
+    def make_surface(
+        self, surface_type: str, index: int = 0, **overrides
+    ) -> SurfaceNode:
         """Build a fresh surface; name stays empty, index 0 = outer."""
         return SurfaceNode.create(surface_type, index=index, **overrides)
 
-    def make_interface(self, interface_type: str, name: Optional[str] = None,
-                       **overrides) -> InterfaceNode:
+    def make_interface(
+        self, interface_type: str, name: str | None = None, **overrides
+    ) -> InterfaceNode:
         """Build a fresh load interface from schema defaults."""
         return InterfaceNode.create(interface_type, name=name, **overrides)
 
-    def make_material(self, material_type: str | None = None,
-                      **overrides) -> MaterialNode:
+    def make_material(
+        self, material_type: str | None = None, **overrides
+    ) -> MaterialNode:
         """Build a fresh material of this scheme's concrete type."""
         selected_type = material_type or self.material_type
         if selected_type not in self.available_material_types():
             raise ValueError(
                 f"Material type {selected_type!r} is not available for "
-                f"scheme {self.scheme!r}.")
+                f"scheme {self.scheme!r}."
+            )
         mat = MaterialNode.create(selected_type, **overrides)
-        if self.scheme in ("simp", "codesign"):
+        if selected_type == "SIMP_BSPFieldMaterials":
             mat.set_field("_map_bsp_designfield", self.default_map_bsp_designfield())
         return mat
 
     def available_material_types(self) -> tuple[str, ...]:
         """Return material interfaces supported by this optimization scheme."""
+        scheme = self.schema_scheme or self.scheme
         return tuple(
             material_type
             for material_type, spec in S.MATERIAL_TYPES.items()
-            if self.scheme in spec.get("schemes", ()))
+            if scheme in spec.get("schemes", ())
+        )
 
     def make_materials(self, *materials: MaterialNode) -> MaterialsNode:
         """Build the material-interface collection for the problem tree."""
@@ -89,20 +111,63 @@ class SchemeTemplate:
         """Concrete material class used by this scheme."""
         if not self.MATERIAL_TYPE:
             raise NotImplementedError(
-                f"{type(self).__name__} must declare MATERIAL_TYPE")
+                f"{type(self).__name__} must declare MATERIAL_TYPE"
+            )
         return self.MATERIAL_TYPE
 
     # ------------------------------------------------------ section builders
     # Each ``make_*`` constructs ONE explicit top-level section of the task
     # tree.  Scheme templates only *assemble* these (never hand-roll dicts),
     # so all schemes share identical structure and default population.
-    def make_geometry(self, **overrides) -> GeometryNode:
-        """Geometry section: scheme defaults + ``overrides`` + BC code slot."""
-        from ..model.schemas import GEOMETRY_SCHEMES, clone_defaults
-        defaults = clone_defaults(list(GEOMETRY_SCHEMES.get(self.scheme, [])))
-        defaults.update(overrides)
-        geo = GeometryNode(name=self.geometry_title, params=defaults)
-        return geo
+    def make_geometry(self, name: str | None = None) -> GeometryNode:
+        """Geometry section: an empty container for geometry interfaces."""
+        return GeometryNode(name=name or self.geometry_title)
+
+    def make_part_interface(
+        self, interface_type: str | None = None, name: str | None = None, **overrides
+    ) -> PartInterfaceNode:
+        """Build one part interface (Part + Instances) of this scheme."""
+        selected = interface_type or self.default_part_interface_type()
+        if selected not in self.available_geometry_types():
+            raise ValueError(
+                f"Geometry interface type {selected!r} is not available for "
+                f"scheme {self.scheme!r}."
+            )
+        return PartInterfaceNode.create(selected, name=name or "", **overrides)
+
+    def available_geometry_types(self) -> tuple[str, ...]:
+        """Geometry interfaces supported by this optimization scheme."""
+        scheme = self.schema_scheme or self.scheme
+        return tuple(S.GEOMETRY_SCHEMES.get(scheme, ()))
+
+    def default_part_interface_type(self) -> str:
+        """Part-interface type used by this scheme's default geometry."""
+        types = self.available_geometry_types()
+        if not types:
+            raise NotImplementedError(
+                f"{type(self).__name__} declares no geometry interfaces"
+            )
+        return types[0]
+
+    def make_geometry_with_body(self, **overrides):
+        """Default geometry section holding one empty boundary part."""
+        geometry = self.make_geometry()
+        geometry.add_interface(
+            self.make_part_interface(
+                self.default_part_interface_type(), name=self.body_name, **overrides
+            )
+        )
+        return geometry
+
+    @property
+    def body_name(self) -> str:
+        """Registration (Part) name of the scheme's default geometry."""
+        return self.BODY_NAME
+
+    @property
+    def body_instance_name(self) -> str:
+        """Instance name generated for the default geometry's Part."""
+        return f"{self.body_name}-1"
 
     def make_loads(self) -> LoadsNode:
         """Loads section (empty container; add interfaces afterwards)."""
@@ -110,37 +175,58 @@ class SchemeTemplate:
 
     def make_steps(self, num_steps: int, step_values: list) -> StepsNode:
         """Steps section: total count + per-interface amplitudes per step."""
-        return StepsNode(name="Load steps", params={
-            "num_steps": int(num_steps),
-            "step_values": list(step_values),
-        })
+        return StepsNode(
+            name="Load steps",
+            params={
+                "num_steps": int(num_steps),
+                "step_values": list(step_values),
+            },
+        )
 
-    def make_objective(self, objective: Optional[str] = None,
-                       metrics: Optional[str] = None,
-                       jacobian_needed: Optional[list] = None) -> ObjectiveNode:
+    def make_objective(
+        self,
+        objective: str | None = None,
+        metrics: str | None = None,
+        jacobian_needed: list | None = None,
+    ) -> ObjectiveNode:
         """Objective section: code slots + requested load Jacobian names."""
-        return ObjectiveNode(name="Objective Function", params={
-            "jacobian_needed": (list(jacobian_needed)
-                                if jacobian_needed is not None
-                                else self.default_jacobian_needed()),
-            "_objective_function": objective or self.default_objective_slot(),
-            "_get_metrics": metrics or self.default_metrics_slot(),
-        })
+        return ObjectiveNode(
+            name="Objective Function",
+            params={
+                "jacobian_needed": (
+                    list(jacobian_needed)
+                    if jacobian_needed is not None
+                    else self.default_jacobian_needed()
+                ),
+                "_objective_function": objective or self.default_objective_slot(),
+                "_get_metrics": metrics or self.default_metrics_slot(),
+            },
+        )
 
-    def make_solver(self, num_process: int = 1, gpus=None,
-                    task_index_list=None) -> SolverNode:
+    def make_solver(
+        self, num_process: int = 1, gpus=None, task_index_list=None
+    ) -> SolverNode:
         """Solver section: FEA process count, gpus and task partitioning."""
-        return SolverNode(name="Solver", params={
-            "num_process": int(num_process),
-            "gpus": list(gpus or []),
-            "task_index_list": list(task_index_list or []),
-        })
+        return SolverNode(
+            name="Solver",
+            params={
+                "num_process": int(num_process),
+                "gpus": list(gpus or []),
+                "task_index_list": list(task_index_list or []),
+            },
+        )
 
-    def make_updater(self, geometry: Optional[dict] = None,
-                     materials: Optional[dict] = None) -> UpdaterNode:
+    def make_updater(
+        self, geometry: dict | None = None, materials: dict | None = None
+    ) -> UpdaterNode:
         """Updater section; ``geometry``/``materials`` are sub-updater configs."""
-        return UpdaterNode(name="Updater",
-                           params={"geometry": geometry, "materials": materials})
+        return UpdaterNode(
+            name="Updater",
+            params={
+                "geometry": [geometry] if geometry is not None else [],
+                "materials": [materials] if materials is not None else [],
+            },
+        )
 
     # ----------------------------------------------------- objective slots
     def default_objective_slot(self) -> str:
@@ -160,13 +246,6 @@ class SchemeTemplate:
     def default_jacobian_needed(self) -> list:
         return []
 
-    # -------------------------------------------------------- updater slots
-    def default_updater_geometry_code(self) -> str:
-        return ""
-
-    def default_updater_material_code(self) -> str:
-        return ""
-
     # ---------------------------------------------------------- code slots
     def default_apply_surface_constraints(self) -> str:
         return "pass\n"
@@ -175,19 +254,112 @@ class SchemeTemplate:
         return "return None\n"
 
 
-#: registry name -> template instance (built lazily to avoid import cycles)
+class MorphTemplate(SchemeTemplate):
+    """Optimization template loaded from one ``ui/templates/*.morph`` file.
+
+    The file is an ordinary problem definition plus a small top-level
+    ``template`` mapping.  This keeps the starter tree editable in the same
+    format as user projects while making new templates discoverable without
+    adding Python registration code.
+    """
+
+    def __init__(self, path: Path, data: dict) -> None:
+        meta = dict(data.get("template") or {})
+        self.path = path
+        self.scheme = str(data.get("scheme") or meta.get("id") or path.stem)
+        self.schema_scheme = str(meta.get("schema_scheme") or self.scheme)
+        self.label = str(meta.get("label") or self.scheme)
+        self.label_en = str(meta.get("label_en") or self.label)
+        self.MATERIAL_TYPE = str(meta.get("material_type") or "")
+        self.BASES = dict(meta.get("bases") or {})
+        self.geometry_title = str(meta.get("geometry_title") or "Geometry")
+        self.BODY_NAME = str(meta.get("body_name") or "body")
+        self._material_types = tuple(meta.get("material_types") or ())
+        self._geometry_types = tuple(meta.get("geometry_types") or ())
+        self._blank_interface_fields = tuple(
+            meta.get("blank_interface_fields")
+            or (
+                "instance_name",
+                "instance_name1",
+                "instance_name2",
+                "surface_name",
+                "surface_name1",
+                "surface_name2",
+                "set_nodes_name",
+            )
+        )
+        self._objective_slot = meta.get("default_objective_slot")
+        self._metrics_slot = meta.get("default_metrics_slot")
+        self._map_slot = meta.get("default_map_bsp_designfield")
+        self._problem = ProblemDefinition.from_dict(data)
+
+    def create_problem(self, label: str) -> ProblemDefinition:
+        """Clone the file tree so each newly selected template is isolated."""
+        problem = ProblemDefinition.from_dict(self._problem.to_dict())
+        problem.scheme = self.scheme
+        problem.label = label
+        problem.root.name = label
+        return problem
+
+    def build_root(self) -> Node:
+        return Node.from_dict(self._problem.root.to_dict())
+
+    def make_interface(
+        self, interface_type: str, name: str | None = None, **overrides
+    ) -> InterfaceNode:
+        spec = S.INTERFACE_TYPES.get(interface_type, {})
+        for field in spec.get("params", []):
+            if field["key"] in self._blank_interface_fields:
+                overrides.setdefault(field["key"], "")
+        return super().make_interface(interface_type, name=name, **overrides)
+
+    def available_material_types(self) -> tuple[str, ...]:
+        return self._material_types or super().available_material_types()
+
+    def available_geometry_types(self) -> tuple[str, ...]:
+        return self._geometry_types or super().available_geometry_types()
+
+    def default_objective_slot(self) -> str:
+        return self._objective_slot or super().default_objective_slot()
+
+    def default_metrics_slot(self) -> str:
+        return self._metrics_slot or super().default_metrics_slot()
+
+    def default_map_bsp_designfield(self) -> str:
+        return self._map_slot or super().default_map_bsp_designfield()
+
+
+#: Registry name -> template instance.  It is built lazily so importing the
+#: data model never scans the package filesystem unnecessarily.
 SCHEME_REGISTRY: dict[str, SchemeTemplate] = {}
+TEMPLATE_DIRECTORY = Path(__file__).resolve().parents[1] / "templates"
+HIDDEN_TEMPLATE_IDS = {"codesign"}
 
 
 def _build_registry() -> None:
     if SCHEME_REGISTRY:
         return
-    from . import shapeopt as _so
-    from . import simp as _sp
-    from . import codesign as _cd
+    if not TEMPLATE_DIRECTORY.is_dir():
+        raise FileNotFoundError(
+            f"MorphOpt template directory does not exist: {TEMPLATE_DIRECTORY}"
+        )
+    for path in sorted(TEMPLATE_DIRECTORY.glob("*.morph")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid MorphOpt template file: {path}") from exc
+        template = MorphTemplate(path, data)
+        if template.scheme in HIDDEN_TEMPLATE_IDS:
+            continue
+        if template.scheme in SCHEME_REGISTRY:
+            raise ValueError(f"Duplicate MorphOpt template id: {template.scheme!r}")
+        SCHEME_REGISTRY[template.scheme] = template
 
-    for t in (_so.ShapeoptTemplate(), _sp.SIMPTemplate(), _cd.CodesignTemplate()):
-        SCHEME_REGISTRY[t.scheme] = t
+
+def available_templates() -> tuple[SchemeTemplate, ...]:
+    """Return the visible file-backed templates in filename order."""
+    _build_registry()
+    return tuple(SCHEME_REGISTRY.values())
 
 
 def get_template(scheme: str) -> SchemeTemplate:

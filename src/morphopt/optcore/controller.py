@@ -544,3 +544,16 @@ class Controller:
                     setattr(obj, k, v.to(device))
                 else:
                     self._change_device_recursive(v, device, visited)
+
+            # TorchFEA keeps reference-space shape data on element classes
+            # rather than on each element instance.  Those tensors must move
+            # with the runtime object graph as well; otherwise a temporary
+            # updater device leaves ``shape_function`` or
+            # ``gaussian_coordinates`` behind on the old device.
+            for k, v in vars(type(obj)).items():
+                if k.startswith("__") or k in attributes:
+                    continue
+                if isinstance(v, torch.Tensor):
+                    setattr(type(obj), k, v.to(device))
+                elif isinstance(v, (dict, list, tuple)):
+                    self._change_device_recursive(v, device, visited)

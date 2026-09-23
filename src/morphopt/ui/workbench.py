@@ -1,7 +1,7 @@
 """Definition workbench (v2).
 
 Layout:
-  header      scheme + label
+  header      template + label
   center      two tabs only:
                 1. 编辑   -> a QStackedWidget routed by the selected tree node
                               (property / solver / loads / steps / updater /
@@ -19,28 +19,44 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTabWidget, QLabel,
-    QPlainTextEdit, QPushButton, QFileDialog, QStackedWidget, QLineEdit,
-    QComboBox, QMessageBox,
-)
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
+from .codegen.generator import generate_source
+from .i18n import T
 from .model.problem import Node, ProblemDefinition
 from .model.schemas import MATERIAL_TYPES
 from .schemes.base import scheme_label
-from .widgets.model_tree import (
-    ModelTree, surface_title_text, surface_index, container_title, _full_label,
-)
 from .widgets.editor import PropertyEditor, fields_for_node
+from .widgets.model_tree import (
+    ModelTree,
+    _full_label,
+    container_title,
+    instance_title_text,
+    part_interface_title_text,
+    surface_index,
+    surface_title_text,
+)
+from .widgets.objective_editor import ObjectiveEditor
 from .widgets.solver_editor import SolverEditor, detect_devices
 from .widgets.stepmatrix import StepMatrix
-from .widgets.updater_editor import UpdaterEditor
-from .widgets.objective_editor import ObjectiveEditor
 from .widgets.torchfea_model_editor import TorchFEAModelEditor
+from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
-from .codegen.generator import generate_source
-from .i18n import T
 
 
 class Workbench(QWidget):
@@ -73,20 +89,36 @@ class Workbench(QWidget):
         actbar = QHBoxLayout()
         self._act_buttons: dict[str, QPushButton] = {}
         actions = [
-            ("change", T("更换优化问题", "Change Problem"),
-             T("更换优化问题类型（形状 / 拓扑）",
-               "Change the optimization problem type (shape / topology)"),
-             self.changeProblemRequested.emit),
-            ("open", T("打开 .morph", "Open .morph"),
-             T("打开已有的 .morph 定义", "Open an existing .morph definition"),
-             self.openMorphRequested.emit),
-            ("export", T("导出 .morph", "Export .morph"),
-             T("把当前定义保存为 .morph", "Save the current definition as .morph"),
-             self.exportMorphRequested.emit),
-            ("runpy", T("导出运行 .py", "Export Run .py"),
-             T("由当前定义生成可运行的无界面 .py",
-               "Generate a headless runnable .py from the current definition"),
-             self.exportRunPyRequested.emit),
+            (
+                "change",
+                T("选择模板", "Select Template"),
+                T(
+                    "选择一个 .morph 优化模板",
+                    "Choose a .morph optimization template",
+                ),
+                self.changeProblemRequested.emit,
+            ),
+            (
+                "open",
+                T("打开 .morph", "Open .morph"),
+                T("打开已有的 .morph 定义", "Open an existing .morph definition"),
+                self.openMorphRequested.emit,
+            ),
+            (
+                "export",
+                T("导出 .morph", "Export .morph"),
+                T("把当前定义保存为 .morph", "Save the current definition as .morph"),
+                self.exportMorphRequested.emit,
+            ),
+            (
+                "runpy",
+                T("导出运行 .py", "Export Run .py"),
+                T(
+                    "由当前定义生成可运行的无界面 .py",
+                    "Generate a headless runnable .py from the current definition",
+                ),
+                self.exportRunPyRequested.emit,
+            ),
         ]
         for key, text, tooltip, slot in actions:
             b = QPushButton(text)
@@ -104,9 +136,12 @@ class Workbench(QWidget):
         head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
         self._name_edit.setFixedWidth(180)
-        self._name_edit.setToolTip(T(
-            "优化问题名称（导出/运行的 opt_label）",
-            "Problem name (opt_label used when exporting / running)"))
+        self._name_edit.setToolTip(
+            T(
+                "优化问题名称（导出/运行的 opt_label）",
+                "Problem name (opt_label used when exporting / running)",
+            )
+        )
         self._name_edit.editingFinished.connect(self._apply_name)
         head.addWidget(self._name_edit)
         head.addSpacing(10)
@@ -114,9 +149,12 @@ class Workbench(QWidget):
         head.addWidget(self._lbl_path)
         self._path_edit = QLineEdit()
         self._path_edit.setMinimumWidth(120)
-        self._path_edit.setToolTip(T(
-            "结果输出目录（Controller.path_result_folder）",
-            "Result output directory (Controller.path_result_folder)"))
+        self._path_edit.setToolTip(
+            T(
+                "结果输出目录（Controller.path_result_folder）",
+                "Result output directory (Controller.path_result_folder)",
+            )
+        )
         self._path_edit.editingFinished.connect(self._apply_path)
         head.addWidget(self._path_edit, 1)
         btn_dir = QPushButton("…")
@@ -134,10 +172,13 @@ class Workbench(QWidget):
         for dev in detect_devices():
             if dev != "cpu":
                 self._device.addItem(dev)
-        self._device.setToolTip(T(
-            "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
-            "Global compute device (cpu / cuda:0…); used by start_optimization "
-            "and the Updater."))
+        self._device.setToolTip(
+            T(
+                "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
+                "Global compute device (cpu / cuda:0…); used by start_optimization "
+                "and the Updater.",
+            )
+        )
         self._device.currentTextChanged.connect(self._save_device)
         head.addWidget(self._device)
         self._device_block = False
@@ -186,11 +227,15 @@ class Workbench(QWidget):
         self._msg.setStyleSheet("color:#9aa4b2;")
         foot.addWidget(self._msg, 1)
         self._b_import = QPushButton(T("▶ 进入优化器", "▶ Send to Observer"))
-        self._b_import.setToolTip(T(
-            "将当前定义提交至优化器，以开始或继续优化",
-            "Hand the current definition to the observer page to start or continue"))
+        self._b_import.setToolTip(
+            T(
+                "将当前定义提交至优化器，以开始或继续优化",
+                "Hand the current definition to the observer page to start or continue",
+            )
+        )
         self._b_import.setStyleSheet(
-            "background-color:#00695c; font-weight:600; padding:6px 18px;")
+            "background-color:#00695c; font-weight:600; padding:6px 18px;"
+        )
         self._b_import.clicked.connect(self._submit_to_observer)
         foot.addWidget(self._b_import)
         outer.addLayout(foot)
@@ -217,18 +262,20 @@ class Workbench(QWidget):
         self.objective_editor = ObjectiveEditor()
         self.torchfea_model_editor = TorchFEAModelEditor()
         self.optimizer_overview = self._make_optimizer_overview()
-        for w in (self.prop_editor, self.solver_editor, self.step_matrix,
-                  self.updater_editor, self.objective_editor,
-                  self.torchfea_model_editor, self.optimizer_overview):
-            stack.addWidget(w)
-            changed = getattr(w, "changed", None)
-            if changed is not None:
-                changed.connect(self._schedule_rebuild)
-            code_changed = getattr(w, "codeChanged", None)
-            if code_changed is not None:
-                code_changed.connect(self.refresh_code)
-        self.torchfea_model_editor.changed.connect(
-            self._sync_single_imported_part)
+        for editor in (
+            self.prop_editor,
+            self.solver_editor,
+            self.step_matrix,
+            self.updater_editor,
+            self.objective_editor,
+            self.torchfea_model_editor,
+        ):
+            stack.addWidget(editor)
+            editor.changed.connect(self._schedule_rebuild)
+        # read-only overview: no ``changed`` signal to wire
+        stack.addWidget(self.optimizer_overview)
+        self.updater_editor.codeChanged.connect(self.refresh_code)
+        self.torchfea_model_editor.changed.connect(self._sync_single_imported_part)
 
         # loads hint: loads are added/edited in the left tree per type
         self._loads_hint = self._make_loads_hint()
@@ -241,18 +288,21 @@ class Workbench(QWidget):
     @staticmethod
     def _make_optimizer_overview() -> QLabel:
         """Concise landing page for the model-tree optimization definition."""
-        overview = QLabel(T(
-            "优化问题定义\n\n"
-            "这里集中管理优化目标、几何优化器和材料优化器。\n"
-            "各优化器下分别管理子优化目标、等式约束和罚函数约束。\n"
-            "请在左侧展开并选择具体项目后编辑详细参数。",
-            "Optimization definition\n\n"
-            "This section contains the optimization objective, geometry "
-            "optimizer, and material optimizer.\n"
-            "Each optimizer contains its sub-objectives, equality constraints, "
-            "and penalty constraints.\n"
-            "Expand the section on the left and select a concrete item to edit "
-            "its details."))
+        overview = QLabel(
+            T(
+                "优化问题定义\n\n"
+                "这里集中管理优化目标、几何优化器和材料优化器。\n"
+                "各优化器下分别管理子优化目标、等式约束和罚函数约束。\n"
+                "请在左侧展开并选择具体项目后编辑详细参数。",
+                "Optimization definition\n\n"
+                "This section contains the optimization objective, geometry "
+                "optimizer, and material optimizer.\n"
+                "Each optimizer contains its sub-objectives, equality constraints, "
+                "and penalty constraints.\n"
+                "Expand the section on the left and select a concrete item to edit "
+                "its details.",
+            )
+        )
         overview.setWordWrap(True)
         overview.setAlignment(Qt.AlignmentFlag.AlignTop)
         overview.setContentsMargins(16, 16, 16, 16)
@@ -260,15 +310,18 @@ class Workbench(QWidget):
 
     @staticmethod
     def _make_loads_hint() -> QLabel:
-        hint = QLabel(T(
-            "载荷：左树的“载荷”节点下分为“载荷定义”和“载荷工况”。\n"
-            "• 右键“载荷定义” → 添加载荷类型\n"
-            "• 右键单个载荷：删除 / 上移 / 下移\n"
-            "• 点选单个载荷，按该类型专属字段编辑参数与名称",
-            "Loads are grouped into Load definition and Load cases.\n"
-            "• Right-click Load definition → add a load type\n"
-            "• Right-click a load: delete / move up / move down\n"
-            "• Select a load to edit its type-specific fields and its name"))
+        hint = QLabel(
+            T(
+                "载荷：左树的“载荷”节点下分为“载荷定义”和“载荷工况”。\n"
+                "• 右键“载荷定义” → 添加载荷类型\n"
+                "• 右键单个载荷：删除 / 上移 / 下移\n"
+                "• 点选单个载荷，按该类型专属字段编辑参数与名称",
+                "Loads are grouped into Load definition and Load cases.\n"
+                "• Right-click Load definition → add a load type\n"
+                "• Right-click a load: delete / move up / move down\n"
+                "• Select a load to edit its type-specific fields and its name",
+            )
+        )
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignmentFlag.AlignTop)
         hint.setContentsMargins(12, 12, 12, 12)
@@ -288,20 +341,26 @@ class Workbench(QWidget):
         finally:
             self._device_block = False
         self._update_caption()
+        imported = self.problem.imported_model_part_node()
+        if imported is not None:
+            # Sync generated Part interfaces before rebuilding the tree so the
+            # editor and viewer see the same model structure.
+            self.problem.sync_imported_part_interfaces()
+            imported = self.problem.imported_model_part_node()
         self.tree.set_problem(self.problem)
         self.objective_editor.set_problem(self.problem)
         self._select_editor(self._last_selected)
-        if self.problem.scheme == "simp" and self.problem.geometry is not None:
+        if imported is not None:
             # Validate persisted TorchFEA links even when the geometry editor
             # is not the currently selected page.
-            self.torchfea_model_editor.validate_link(self.problem.geometry)
+            self.torchfea_model_editor.validate_link(imported)
         self.refresh_code()
         self.viewer.set_problem(self.problem)
 
     def _update_caption(self) -> None:
         self.title.setText(
-            f"[{scheme_label(self.problem.scheme)}]  "
-            f"{self.problem.label}")
+            f"[{scheme_label(self.problem.scheme)}]  {self.problem.label}"
+        )
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
@@ -313,17 +372,28 @@ class Workbench(QWidget):
         centre editors are all refreshed; the preview viewport keeps its state.
         """
         act_text = {
-            "change": (T("更换优化问题", "Change Problem"),
-                       T("更换优化问题类型（形状 / 拓扑）",
-                         "Change the optimization problem type (shape / topology)")),
-            "open": (T("打开 .morph", "Open .morph"),
-                     T("打开已有的 .morph 定义", "Open an existing .morph definition")),
-            "export": (T("导出 .morph", "Export .morph"),
-                       T("把当前定义保存为 .morph",
-                         "Save the current definition as .morph")),
-            "runpy": (T("导出运行 .py", "Export Run .py"),
-                      T("由当前定义生成可运行的无界面 .py",
-                        "Generate a headless runnable .py from the current definition")),
+            "change": (
+                T("选择模板", "Select Template"),
+                T(
+                    "选择一个 .morph 优化模板",
+                    "Choose a .morph optimization template",
+                ),
+            ),
+            "open": (
+                T("打开 .morph", "Open .morph"),
+                T("打开已有的 .morph 定义", "Open an existing .morph definition"),
+            ),
+            "export": (
+                T("导出 .morph", "Export .morph"),
+                T("把当前定义保存为 .morph", "Save the current definition as .morph"),
+            ),
+            "runpy": (
+                T("导出运行 .py", "Export Run .py"),
+                T(
+                    "由当前定义生成可运行的无界面 .py",
+                    "Generate a headless runnable .py from the current definition",
+                ),
+            ),
         }
         for key, (text, tip) in act_text.items():
             b = self._act_buttons.get(key)
@@ -333,23 +403,35 @@ class Workbench(QWidget):
         self._lbl_name.setText(T("优化名称", "Optimization name"))
         self._lbl_path.setText(T("输出路径", "Output folder"))
         self._lbl_device.setText(T("设备", "Device"))
-        self._name_edit.setToolTip(T(
-            "优化问题名称（导出/运行的 opt_label）",
-            "Problem name (opt_label used when exporting / running)"))
-        self._path_edit.setToolTip(T(
-            "结果输出目录（Controller.path_result_folder）",
-            "Result output directory (Controller.path_result_folder)"))
-        self._device.setToolTip(T(
-            "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
-            "Global compute device (cpu / cuda:0…); used by start_optimization "
-            "and the Updater."))
+        self._name_edit.setToolTip(
+            T(
+                "优化问题名称（导出/运行的 opt_label）",
+                "Problem name (opt_label used when exporting / running)",
+            )
+        )
+        self._path_edit.setToolTip(
+            T(
+                "结果输出目录（Controller.path_result_folder）",
+                "Result output directory (Controller.path_result_folder)",
+            )
+        )
+        self._device.setToolTip(
+            T(
+                "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
+                "Global compute device (cpu / cuda:0…); used by start_optimization "
+                "and the Updater.",
+            )
+        )
         self._update_caption()
         self._center.setTabText(0, T("编辑", "Edit"))
         self._center.setTabText(1, T("代码 (只读)", "Code (read-only)"))
         self._b_import.setText(T("▶ 进入优化器", "▶ Send to Observer"))
-        self._b_import.setToolTip(T(
-            "将当前定义提交至优化器，以开始或继续优化",
-            "Hand the current definition to the observer page to start or continue"))
+        self._b_import.setToolTip(
+            T(
+                "将当前定义提交至优化器，以开始或继续优化",
+                "Hand the current definition to the observer page to start or continue",
+            )
+        )
 
         # Refresh the model-tree titles and the centre editors in the new
         # language.  Only the cheap form editors are re-created (data lives on
@@ -381,7 +463,7 @@ class Workbench(QWidget):
 
     def _save_device(self, text: str) -> None:
         """Persist the global compute device on the definition."""
-        if getattr(self, "_device_block", False):
+        if self._device_block:
             return
         text = (text or "").strip()
         if not text:
@@ -394,7 +476,8 @@ class Workbench(QWidget):
     def _browse_path(self) -> None:
         start = self._path_edit.text() or os.getcwd()
         folder = QFileDialog.getExistingDirectory(
-            self, T("选择输出路径", "Select output folder"), start)
+            self, T("选择输出路径", "Select output folder"), start
+        )
         if folder:
             self._path_edit.setText(folder)
             self.problem.result_folder = folder
@@ -430,13 +513,14 @@ class Workbench(QWidget):
         elif kind.startswith("updater_"):
             # These transient leaf nodes point at the canonical updater
             # configuration and open the selected sub-optimizer in full.
-            self.updater_editor.edit_node(
-                node.updater_parent, self.problem, focus=node)
+            self.updater_editor.edit_node(node.updater_parent, self.problem, focus=node)
             self._stack.setCurrentWidget(self.updater_editor)
         elif kind == "objective":
             self.objective_editor.set_problem(self.problem)
             self._stack.setCurrentWidget(self.objective_editor)
-        elif kind == "geometry" and self.problem.scheme == "simp":
+        elif (
+            kind == "part_interface" and node.interface_type == "TorchFEAPartInterface"
+        ):
             self.torchfea_model_editor.edit_node(node)
             self._stack.setCurrentWidget(self.torchfea_model_editor)
         else:
@@ -453,10 +537,19 @@ class Workbench(QWidget):
                 title = _full_label(spec, mt)
             elif node.kind == "geometry":
                 title = container_title("geometry")
-            self.prop_editor.edit_node(node, fields=fields, code_slots=code_slots,
-                                       extra_choices=extra, subtitle=subtitle,
-                                       title=title,
-                                       completion_problem=self.problem)
+            elif node.kind == "part_interface":
+                title = part_interface_title_text(node)
+            elif node.kind == "instance":
+                title = instance_title_text(node)
+            self.prop_editor.edit_node(
+                node,
+                fields=fields,
+                code_slots=code_slots,
+                extra_choices=extra,
+                subtitle=subtitle,
+                title=title,
+                completion_problem=self.problem,
+            )
             self._stack.setCurrentWidget(self.prop_editor)
 
     def _maybe_cascade_rename(self, node: Node) -> None:
@@ -488,24 +581,44 @@ class Workbench(QWidget):
                 if len(summary.parts) == 1:
                     material.part_name = summary.parts[0].name
             part = parts.get(material.part_name)
-            if (part is not None and len(part.element_types) == 1
-                    and material.elementname not in part.element_types
-                    and material.elementname):
+            if (
+                part is not None
+                and len(part.element_types) == 1
+                and material.elementname not in part.element_types
+                and material.elementname
+            ):
                 material.elementname = part.element_types[0]
 
     @staticmethod
     def _subtitle(node: Node) -> str:
         if node.kind == "surface":
             return T(
-                "表面 0 = 外表面；表面 ≥1 = 内腔(flip)。修改后自动更新预览。",
-                "Surface 0 = outer; surfaces ≥1 = cavities (flip). "
-                "The preview updates automatically.")
+                "每个 Part 的表面 0 = 外表面；表面 ≥1 = 内腔(flip)。修改后自动更新预览。",
+                "Surface 0 = outer within each Part; surfaces ≥1 = cavities (flip). "
+                "The preview updates automatically.",
+            )
         if node.kind == "geometry":
             return T(
-                "这里定义优化的初始构型（几何模型与初始尺寸）；下层表面列表可在左树右键增删排序。",
-                "Define the optimization's initial configuration here (geometry "
-                "model and initial dimensions); manage surfaces below via the "
-                "tree.")
+                "这里定义优化的初始构型：每个几何接口负责一个 Part 及其实例"
+                "（可右键添加/删除）。未命名的实例自动为 <part>-1, <part>-2, ...",
+                "Define the optimization's initial configuration here: every "
+                "geometry interface owns one Part and its instances (right-click "
+                "to add/remove). Unnamed instances become <part>-1, <part>-2, ...",
+            )
+        if node.kind == "part_interface":
+            return T(
+                "这里可以修改几何接口注册名；它负责一个 Part 及其实例。"
+                "part_name 留空时使用接口名，下面的曲面仅对边界曲面接口有效。",
+                "Edit the geometry-interface registration name here. It owns one "
+                "Part and its instances; part_name falls back to the interface "
+                "name. Surfaces below apply only to boundary-surface interfaces.",
+            )
+        if node.kind == "instance":
+            return T(
+                "平移和旋转均使用 TorchFEA 的指数坐标；旋转字段为 [rx, ry, rz]。",
+                "Translation and rotation use TorchFEA exponential coordinates; "
+                "rotation is [rx, ry, rz].",
+            )
         return ""
 
     # ------------------------------------------------------ change refresh
@@ -513,6 +626,7 @@ class Workbench(QWidget):
         self._rebuild_timer.start()
 
     def _on_any_change(self) -> None:
+        self.problem.sync_imported_part_interfaces()
         try:
             self.refresh_code()
         except Exception:
@@ -531,21 +645,28 @@ class Workbench(QWidget):
 
     # --------------------------------------------------------- footer slots
     def _submit_to_observer(self) -> None:
-        if self.problem.scheme == "simp":
-            summary = self.problem.imported_model_summary()
-            if summary is None:
-                QMessageBox.warning(
-                    self, T("缺少 TorchFEA 模型", "TorchFEA model required"),
-                    T("请先在初始几何节点选择模型目录并导入有效的 .npz 模型。",
-                      "Select a model directory and import a valid .npz model "
-                      "from the initial-geometry node first."))
-                return
+        if (
+            self.problem.imported_model_part_node() is not None
+            and self.problem.imported_model_summary() is None
+        ):
+            QMessageBox.warning(
+                self,
+                T("缺少 TorchFEA 模型", "TorchFEA model required"),
+                T(
+                    "请先在初始几何节点选择模型目录并导入有效的 .npz 模型。",
+                    "Select a model directory and import a valid .npz model "
+                    "from the initial-geometry node first.",
+                ),
+            )
+            return
         try:
             generate_source(self.problem)
         except Exception as exc:
             QMessageBox.warning(
-                self, T("优化定义不完整", "Incomplete optimization definition"),
-                str(exc))
+                self,
+                T("优化定义不完整", "Incomplete optimization definition"),
+                str(exc),
+            )
             return
         self.importToObserver.emit(self.problem)
 

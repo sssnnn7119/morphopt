@@ -725,29 +725,34 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
 
     def update(self, gradients: dict[str, torch.Tensor]) -> None:
         """Update every sub-updater from its own slice of the gradient."""
+        controller = morphopt.controller
         default_device = torch.get_default_device()
+        bounds = {
+            kind: self._gradient_bounds(kind)
+            for kind in {updater.update_kind for updater in self.updaters.values()}
+        }
 
-        if self._device is not None:
-            torch.set_default_device(self._device)
-            morphopt.controller._change_device_recursive(self, self._device)
-            morphopt.controller._change_device_recursive(gradients, self._device)
+        for name, updater in self.updaters.items():
+            start, stop = self._slice_of(updater, bounds[updater.update_kind])
+            on_updater_device = self._device is not None
+            try:
+                if on_updater_device:
+                    torch.set_default_device(self._device)
+                    # Each updater gets an isolated device scope.  Move every
+                    # tensor reachable from the runtime graph, including the
+                    # live FEA Assembly and this updater's gradient block.
+                    controller._change_device_recursive(controller, self._device)
+                    controller._change_device_recursive(gradients, self._device)
 
-        try:
-            bounds = {
-                kind: self._gradient_bounds(kind)
-                for kind in {updater.update_kind for updater in self.updaters.values()}
-            }
-            for updater in self.updaters.values():
-                start, stop = self._slice_of(updater, bounds[updater.update_kind])
                 updater.reinitialize(
                     gradient=gradients[updater.update_kind][start:stop]
                 )
-            for name, updater in self.updaters.items():
                 self._var_updaters[name] = updater.update()
-        finally:
-            if self._device is not None:
-                torch.set_default_device(default_device)
-                morphopt.controller._change_device_recursive(self, default_device)
+            finally:
+                if on_updater_device:
+                    controller._change_device_recursive(controller, default_device)
+                    controller._change_device_recursive(gradients, default_device)
+                    torch.set_default_device(default_device)
 
     def update_variables(self) -> None:
         """Write the updated design variables back to their targets."""

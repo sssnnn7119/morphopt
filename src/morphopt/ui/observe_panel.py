@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 from . import launcher
 from .i18n import T
 from .widgets.observation_pages import (
-    DeformationCasePage, GeometryPage, MetricsPage,
+    DeformationCasePage, MetricsPage, UpdatableStructurePage,
 )
 
 
@@ -147,15 +147,15 @@ class ObserverPanel(QWidget):
         self.options = QListWidget()
         self.options.setFixedWidth(160)
         self.options.addItem(T("优化指标", "Metrics"))
-        self.options.addItem(T("几何展示", "Geometry"))
+        self.options.addItem(T("可更新结构展示", "Updatable structures"))
         self.options.currentRowChanged.connect(self._on_option)
         split.addWidget(self.options)
 
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
-        self._geometry_page = GeometryPage()
+        self._updatable_structure_page = UpdatableStructurePage()
         self.stack.addWidget(self._metrics_page)
-        self.stack.addWidget(self._geometry_page)
+        self.stack.addWidget(self._updatable_structure_page)
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
@@ -208,7 +208,7 @@ class ObserverPanel(QWidget):
 
         row = self.options.currentRow()
         if row == 1:
-            self._refresh_geometry()
+            self._refresh_updatable_structure()
         elif row >= 2 and row - 2 in self._case_pages:
             self._refresh_case(row - 2)
 
@@ -238,36 +238,38 @@ class ObserverPanel(QWidget):
         self.slider.blockSignals(False)
         self.iter_label.setText("0 / 1")
         self._metrics_page.clear()
-        self._geometry_page.clear_view()
+        self._updatable_structure_page.clear_view()
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the panel's static texts."""
         self.chk_follow.setText(T("自动跟踪最新", "Follow latest"))
         self.options.item(0).setText(T("优化指标", "Metrics"))
-        self.options.item(1).setText(T("几何展示", "Geometry"))
+        self.options.item(1).setText(T("可更新结构展示", "Updatable structures"))
         self._metrics_page.apply_language()
+        self._updatable_structure_page.apply_language()
         for row, case in enumerate(list(self._case_pages.keys())):
             if self.options.count() > row + 2:
                 self.options.item(row + 2).setText(f"{T('工况', 'Case')} {case}")
         row = self.options.currentRow()
         if row == 1:
-            self._refresh_geometry()
+            self._refresh_updatable_structure()
 
     # -------------------------------------------------------------- options
     def _on_option(self, row: int) -> None:
         if row < 0 or row >= self.stack.count():
             return
         if row == 1:
-            self._refresh_geometry()
+            self._refresh_updatable_structure()
         elif row >= 2 and row - 2 in self._case_pages:
             self._refresh_case(row - 2)
         self.stack.setCurrentIndex(row)
 
-    def _refresh_geometry(self) -> None:
+    def _refresh_updatable_structure(self) -> None:
         if self.path_result and self._params is not None:
-            self._geometry_page.build(self._params, self.path_result,
-                                      self.slider.value())
+            self._updatable_structure_page.build(
+                self._params, self.path_result, self.slider.value()
+            )
 
     def _refresh_case(self, case: int) -> None:
         page = self._case_pages.get(case)
@@ -286,7 +288,7 @@ class ObserverPanel(QWidget):
         if self.slider.maximum() > 0:
             row = self.options.currentRow()
             if row == 1:
-                self._refresh_geometry()
+                self._refresh_updatable_structure()
             elif row >= 2:
                 self._refresh_case(row - 2)
 

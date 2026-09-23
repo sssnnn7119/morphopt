@@ -164,7 +164,7 @@ class ObjectiveEditor(QWidget):
             self.tpl_combo.clear()
             for snippet in get_template(problem.scheme).objective_code_snippets():
                 self.tpl_combo.addItem(T(snippet.name_zh, snippet.name_en), snippet)
-            self.tpl_combo.setCurrentIndex(-1)
+            self.tpl_combo.setCurrentIndex(0 if self.tpl_combo.count() else -1)
             if self._obj is not None:
                 self.jacobian_loads.set_loads(
                     [interface.name for interface in problem.amplitude_interfaces()],

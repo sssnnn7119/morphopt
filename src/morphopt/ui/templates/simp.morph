@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "scheme": "simp",
+  "label": "simp_template",
+  "result_folder": ".results/",
+  "device": "cpu",
+  "updater_device": null,
+  "restart_per_iteration": 10,
+  "root": {
+    "kind": "problem",
+    "name": "simp_untitled",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Initial geometry (TorchFEA Assembly)",
+        "params": {},
+        "children": [
+          {
+            "kind": "part_interface",
+            "name": "beam",
+            "params": {
+              "type": "TorchFEAPartInterface",
+              "part_name": "",
+              "exterior_surface": "",
+              "model_directory": "$MORPHOPT_TEMPLATE_DIR",
+              "model_filename": "cantilever_beam.npz",
+              "model_part_name": ""
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "beam-1",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "Loads",
+        "params": {},
+        "children": [
+          {
+            "kind": "interface",
+            "name": "bc_fixed",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "beam-1",
+              "set_nodes_name": "fixed",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "rp_tip",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                40.0,
+                4.0,
+                4.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "couple_tip",
+            "params": {
+              "type": "Couple",
+              "instance_name": "beam-1",
+              "set_nodes_name": "tip",
+              "rp_name": "rp_tip"
+            },
+            "children": []
+          },
+          {
+            "kind": "interface",
+            "name": "force_tip",
+            "params": {
+              "type": "ConcentratedForce",
+              "rp_name": "rp_tip"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "num_steps": 1,
+          "step_values": [
+            {
+              "force_tip": [
+                0.0,
+                0.0,
+                -1.0
+              ]
+            }
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "Materials",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "solid",
+            "params": {
+              "type": "SIMP_BSPFieldMaterials",
+              "part_name": "beam",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.482,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09,
+              "elementname": "",
+              "mumax": 10.0,
+              "kappamax": 100.0,
+              "simp_ratio_min": 1e-07,
+              "bounding_box": [
+                0.0,
+                40.0,
+                0.0,
+                8.0,
+                0.0,
+                8.0
+              ],
+              "simp_field_resolution": 0.5,
+              "degree": 2,
+              "initial_ratio": 0.5,
+              "voidpenalfactor": 0.01,
+              "materialpenalty": 8.0,
+              "_map_bsp_designfield": "return nodes\n"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "jacobian_needed": [],
+          "_objective_function": "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\nreturn sum(instance.potential_energy(RGC=RGC)\n           for instance in self.fe.assembly._instances.values())\n",
+          "_get_metrics": "return [self.fe_results[0].GC[-2]]\n"
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 1,
+          "gpus": [],
+          "task_index_list": []
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [],
+          "materials": [
+            {
+              "interface_name": "solid",
+              "max_step_iter": 50,
+              "if_update": true,
+              "objective_functions": [
+                {
+                  "type": "Sensitivity",
+                  "params": {
+                    "normalize_gradient": false
+                  }
+                },
+                {
+                  "type": "DensityFieldMinimize",
+                  "params": {
+                    "scale": 1e-07
+                  }
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "MinValue",
+                  "params": {
+                    "xmin": -15.0,
+                    "threshold": 0.0,
+                    "p": 2
+                  }
+                },
+                {
+                  "type": "MaxValue",
+                  "params": {
+                    "xmax": 15.0,
+                    "threshold": 0.0,
+                    "p": 2
+                  }
+                },
+                {
+                  "type": "VolFrac",
+                  "params": {
+                    "volfrac_min": 0.4,
+                    "volfrac_max": 0.6,
+                    "penalty": 1000000.0,
+                    "elementname": "C3D4"
+                  }
+                }
+              ],
+              "code": ""
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
+  },
+  "template": {
+    "id": "simp",
+    "label": "SIMP 刚度优化（悬臂梁）",
+    "label_en": "SIMP stiffness optimization (cantilever beam)",
+    "schema_scheme": "simp",
+    "material_type": "SIMP_BSPFieldMaterials",
+    "material_types": [
+      "SIMP_BSPFieldMaterials"
+    ],
+    "geometry_types": [
+      "TorchFEAPartInterface",
+      "INPPartInterface"
+    ],
+    "geometry_title": "Initial cantilever beam (fixed mesh)",
+    "body_name": "beam",
+    "bases": {
+      "controller": "morphopt.Controller",
+      "params": "morphopt.simp.Params",
+      "geometry": "morphopt.simp.GeometryParams",
+      "fea": "morphopt.simp.FEAParams",
+      "materials": "morphopt.simp.MaterialsParams",
+      "material_interface": "morphopt.simp.SIMP_BSPFieldMaterials",
+      "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
+      "objective": "morphopt.simp.ObjectiveFunction",
+      "solver": "morphopt.simp.SIMPSolver",
+      "updaters": "morphopt.simp.Updaters",
+      "updater_mat": "morphopt.simp.UpdaterSIMPMaterial"
+    },
+    "default_objective_slot": "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\nreturn sum(instance.potential_energy(RGC=RGC)\n           for instance in self.fe.assembly._instances.values())\n",
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n",
+    "default_map_bsp_designfield": "return nodes\n"
+  }
+}

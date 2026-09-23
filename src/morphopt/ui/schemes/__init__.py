@@ -1,18 +1,16 @@
-"""Per-scheme templates for the MorphOpt definition workbench.
+"""File-backed templates for the MorphOpt definition workbench."""
 
-Each scheme module knows:
-* which classes the generated ``ThisController`` must subclass,
-* how to build a sensible *default* problem tree (mirroring the canonical
-  example job scripts in ``examples/`` / ``myjobs/``),
-* which code slots (objective, constraints, ...) get sensible default text.
-
-The actual source rendering lives in :mod:`morphopt.ui.codegen`.
-"""
-
-from .base import SchemeTemplate, get_template, scheme_label, SCHEME_REGISTRY
+from .base import (
+    MorphTemplate,
+    SchemeTemplate,
+    SCHEME_REGISTRY,
+    available_templates,
+    get_template,
+    scheme_label,
+)
 from .snippets import CodeSnippet, SnippetParameter
 
 __all__ = [
-    "CodeSnippet", "SnippetParameter", "SchemeTemplate", "get_template",
-    "scheme_label", "SCHEME_REGISTRY",
+    "CodeSnippet", "SnippetParameter", "SchemeTemplate", "MorphTemplate",
+    "get_template", "available_templates", "scheme_label", "SCHEME_REGISTRY",
 ]

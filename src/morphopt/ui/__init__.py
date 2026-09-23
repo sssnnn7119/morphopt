@@ -18,7 +18,8 @@ ui/observe_panel.py  in-window observer + run/continue/stop controls
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source
 ui/widgets/          modeltree / editor / stepmatrix / codeeditor / viewer
-ui/schemes/          per-scheme templates + generators
+ui/templates/        file-backed optimization templates (*.morph)
+ui/schemes/          template loader + reusable code snippets
 ui/launcher.py       headless job launch / continue / result helpers
 
 The maintainability contract lives in
