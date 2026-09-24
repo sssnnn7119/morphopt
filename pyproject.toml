@@ -1,7 +1,7 @@
 [project]
 name = "morphopt"
 version = "4.0.0"
-description = "A morphing optimization framework using PyTorch and Abaqus."
+description = "A morphing optimization framework using PyTorch and torchfea."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -27,6 +27,17 @@ dependencies = [
 [project.scripts]
 # console entry for the graphical UI (after `pip install morphopt`)
 morphopt-ui = "morphopt.ui:run_app"
+
+[project.optional-dependencies]
+# Install with: python -m pip install -e ".[test]"
+test = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
 
 [tool.setuptools.package-data]
 "morphopt.ui" = ["templates/*.morph", "templates/*.npz"]

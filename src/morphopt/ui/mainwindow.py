@@ -18,12 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from .model.problem import ProblemDefinition
-from .model.loaders import load_morph, save_morph, MORPH_SUFFIX
-from .schemes.base import available_templates, get_template, scheme_label
+from .application import ProblemLibrary
+from .model.loaders import MORPH_SUFFIX
+from .schemes.base import scheme_label
 from .i18n import LanguageSelector, T
 from .workbench import Workbench
 from .observe_panel import ObserverControls
-from . import launcher
 
 DEFAULT_TEMPLATE = "shapeopt"
 
@@ -31,7 +31,6 @@ DEFAULT_TEMPLATE = "shapeopt"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self._problem: ProblemDefinition | None = None
         self._workbench: Workbench | None = None
         self._observer: ObserverControls | None = None
 
@@ -45,7 +44,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ api
     def current_problem(self) -> ProblemDefinition | None:
-        return self._problem
+        return self._workbench.problem if self._workbench is not None else None
 
     # ------------------------------------------------------------ language
     def _add_language_switch(self) -> None:
@@ -73,7 +72,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- templates
     def change_problem(self) -> None:
         """Choose a file-backed definition template and replace the tree."""
-        templates = list(available_templates())
+        templates = list(ProblemLibrary.templates())
         entries = [T(template.label, template.label_en) for template in templates]
         text, ok = QInputDialog.getItem(
             self, T("选择模板", "Select template"),
@@ -85,8 +84,7 @@ class MainWindow(QMainWindow):
 
     def open_scheme(self, scheme: str) -> None:
         """Create a fresh default problem of ``scheme`` and show it."""
-        tpl = get_template(scheme)
-        problem = tpl.create_problem(f"{scheme}_untitled")
+        problem = ProblemLibrary.create(scheme)
         self.set_problem(problem)
         self.statusBar().showMessage(
             T(f"已创建 {scheme_label(scheme)} 问题",
@@ -100,7 +98,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            problem = load_morph(path)
+            problem = ProblemLibrary.load(path)
         except Exception as exc:
             QMessageBox.warning(self, T("打开失败", "Open failed"), str(exc))
             return
@@ -110,30 +108,31 @@ class MainWindow(QMainWindow):
               f"Opened: {problem.label} [{scheme_label(problem.scheme, english=True)}]"), 4000)
 
     def export_morph(self) -> None:
-        if self._problem is None:
+        problem = self.current_problem()
+        if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, T("导出 .morph", "Export .morph"), os.getcwd(),
-            f"{self._problem.label}{MORPH_SUFFIX}", "MorphOpt problem (*.morph)")
+            f"{problem.label}{MORPH_SUFFIX}", "MorphOpt problem (*.morph)")
         if path:
-            out = save_morph(self._problem, path)
+            out = ProblemLibrary.save(problem, path)
             self.statusBar().showMessage(T("已导出：", "Exported: ") + out, 3000)
 
     def export_run_py(self) -> None:
         """Generate the runnable job .py from the serialized .morph model."""
-        if self._problem is None:
+        problem = self.current_problem()
+        if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, T("导出运行用 .py", "Export runnable .py"),
-            self._problem.label + ".py", "Python (*.py)")
+            problem.label + ".py", "Python (*.py)")
         if path:
-            launcher.export_to_py(self._problem, path)
+            ProblemLibrary.export_python(problem, path)
             self.statusBar().showMessage(
                 T("已导出运行脚本：", "Exported runnable script: ") + path, 3000)
 
     # ------------------------------------------------------------- problem
     def set_problem(self, problem: ProblemDefinition) -> None:
-        self._problem = problem
         if self._workbench is None:
             self._build_workbench(problem)
             self.stack.addWidget(self._workbench)
@@ -155,10 +154,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------ definition <-> observer
     def goto_observer(self, problem: ProblemDefinition | None = None) -> None:
         """Jump from the definition part to the in-window observer part."""
-        if problem is not None:
-            self._problem = problem
+        problem = problem or self.current_problem()
+        if problem is None:
+            return
         self._ensure_observer()
-        self._observer.set_definition(self._problem)
+        self._observer.set_definition(problem)
         self.stack.setCurrentWidget(self._observer)
         self._set_titles()
         self.statusBar().showMessage(

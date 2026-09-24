@@ -81,6 +81,7 @@ from .optcore.modelparams import (
     load_model_assembly,
     resolve_model_path,
 )
+from .optcore.modelparams.materialinterface import HomogeneousMaterial
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.protocal import (
     ProtocalInitializable,
@@ -90,6 +91,8 @@ from .optcore.protocal import (
 )
 from .optcore.solver import Solver
 from .optcore.updaters import Updaters
+from .shapeopt import BoundaryPartInterface, UpdaterBoundaryPart
+from .simp import SIMP_BSPFieldMaterials, UpdaterSIMPMaterial
 
 # endregion
 # region scripts

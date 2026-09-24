@@ -5,7 +5,7 @@ class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder=".results/", opt_label="BendingActuator")
 
-    class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
 
@@ -15,10 +15,10 @@ class ThisController(morphopt.Controller):
         def get_metrics(self):
             return [self.fe_results[0].GC[-2]]
 
-    class Params(morphopt.shapeopt.Params):
-        class GeometryParams(morphopt.shapeopt.GeometryParams):
+    class Params(morphopt.Params):
+        class GeometryParams(morphopt.GeometryParams):
 
-            class BoundaryPart(morphopt.shapeopt.BoundaryPartInterface):
+            class BoundaryPart(morphopt.BoundaryPartInterface):
 
                 def define_surfaces(self) -> None:
                     """
@@ -74,7 +74,7 @@ class ThisController(morphopt.Controller):
                     name='body',
                 )
 
-        class FEAParams(morphopt.shapeopt.FEAParams):
+        class FEAParams(morphopt.FEAParams):
             def __init__(self):
                 super().__init__()
 
@@ -110,7 +110,7 @@ class ThisController(morphopt.Controller):
                 self.set_step_num(1)
                 self.set_step_params(0, "pressure_1", [0.06])
 
-        class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+        class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self) -> None:
                 self.add_interface(
                     self.HomogeneousMaterial(
@@ -130,17 +130,17 @@ class ThisController(morphopt.Controller):
                 materials=self.MaterialsParams(),
             )
 
-    class Solver(morphopt.shapeopt.Solver):
+    class Solver(morphopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
         """
 
-        def __init__(self, params: morphopt.shapeopt.Params):
+        def __init__(self, params: morphopt.Params):
 
             super().__init__(params=params, available_gpus=["cpu"], num_process=1)
 
-    class Updater(morphopt.shapeopt.Updaters):
+    class Updater(morphopt.Updaters):
         """
         Updater class for morphopt.
         This class is responsible for updating the design variables based on the results of the optimization process.
@@ -150,7 +150,7 @@ class ThisController(morphopt.Controller):
             self.add_geometry_updater(self.UpdaterBoundaryPart(), name='body')
 
 
-        class UpdaterBoundaryPart(morphopt.shapeopt.UpdaterBoundaryPart):
+        class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
             """
             Updater class for morphopt.
             This class is responsible for updating the design variables based on the results of the optimization process.

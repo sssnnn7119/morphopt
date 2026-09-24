@@ -340,8 +340,7 @@ class ModelTree(QTreeWidget):
         name = f"{material.name}: " if material.name else ""
         return f"{name}{type_label}  [part={part_name}, elem={elem_name}]"
 
-    @classmethod
-    def _updater_title(cls, node: Node) -> str:
+    def _updater_title(self, node: Node) -> str:
         """Return the localized title for a transient updater tree entry."""
         if node.kind.startswith("updater_"):
             labels = {
@@ -361,14 +360,24 @@ class ModelTree(QTreeWidget):
             part = ""
             if node.section_group == "geometry":
                 config = node.config() or {}
-                name = str(config.get("part_name") or "").strip()
-                if name:
-                    part = T(f" · Part {name}", f" · Part {name}")
+                target = (
+                    self._problem.config_part_node(config)
+                    if self._problem is not None
+                    else None
+                )
+                if target is not None:
+                    part = T(f" · Part {target.name}", f" · Part {target.name}")
             elif node.section_group == "materials":
                 config = node.config() or {}
-                name = str(config.get("interface_name") or "").strip()
-                if name:
-                    part = T(f" · 材料 {name}", f" · material {name}")
+                target = (
+                    self._problem.config_material_node(config)
+                    if self._problem is not None
+                    else None
+                )
+                if target is not None:
+                    part = T(
+                        f" · 材料 {target.name}", f" · material {target.name}"
+                    )
                 elif len(node.updater_parent.materials) > 1:
                     part = f" · {node.config_index}"
             return f"{label} ({node.code_reference}){part}"
@@ -606,9 +615,7 @@ class ModelTree(QTreeWidget):
     def _add_geometry_updater(self) -> None:
         if self._problem is None or self._problem.updater is None:
             return
-        from ..model.schemas import geometry_updater_config
-
-        boundary = [node.name for node in self._problem.boundary_part_nodes()]
+        boundary = self._problem.boundary_part_nodes()
         if not boundary:
             QMessageBox.information(
                 self,
@@ -618,20 +625,19 @@ class ModelTree(QTreeWidget):
             )
             return
         taken = {
-            str(config.get("part_name") or "")
+            target
             for config in self._problem.updater.geometry
+            if (target := self._problem.config_part_node(config)) is not None
         }
-        free = next((name for name in boundary if name not in taken), "")
-        if not free:
+        free = next((part for part in boundary if part not in taken), None)
+        if free is None:
             QMessageBox.information(
                 self,
                 "Geometry optimizer",
                 "Every boundary part already has its own geometry optimizer.",
             )
             return
-        self._problem.updater.add_geometry_config(
-            geometry_updater_config(part_name=free)
-        )
+        self._problem.add_geometry_updater(free)
         self.rebuild(select=self._problem.updater)
         self.treeChanged.emit()
 
@@ -648,9 +654,11 @@ class ModelTree(QTreeWidget):
         """Add one material optimizer, bound to a free design material interface."""
         if self._problem is None or self._problem.updater is None:
             return
-        from ..model.schemas import materials_updater_config
-
-        design = self._problem.design_material_names()
+        design = [
+            material
+            for material in self._problem.material_nodes()
+            if material.name in self._problem.design_material_names()
+        ]
         if not design:
             QMessageBox.information(
                 self,
@@ -660,20 +668,19 @@ class ModelTree(QTreeWidget):
             )
             return
         taken = {
-            str(config.get("interface_name") or "")
+            target
             for config in self._problem.updater.materials
+            if (target := self._problem.config_material_node(config)) is not None
         }
-        free = next((name for name in design if name not in taken), "")
-        if not free:
+        free = next((material for material in design if material not in taken), None)
+        if free is None:
             QMessageBox.information(
                 self,
                 "Material optimizer",
                 "Every design material already has its own material optimizer.",
             )
             return
-        self._problem.updater.add_materials_config(
-            materials_updater_config(interface_name=free)
-        )
+        self._problem.add_material_updater(free)
         self.rebuild(select=self._problem.updater)
         self.treeChanged.emit()
 

@@ -36,7 +36,7 @@ python -m morphopt.ui
   - **Part 名**默认就是接口注册名（在节点上编辑），不再固定为 `final_model`。
   - **Instance 名**可在节点上填写（逗号分隔）；不填时按 Abaqus 习惯自动生成 `<part>-1, <part>-2, …`，模型树会直接把实际实例名显示出来（`[part=body, 实体=body-1]`）。一个 Part 可以有多个实例，载荷/材料按实例名引用。
   - 约定 **表面 0 = 外表面，≥1 = 内腔**；表面编号在每个 Part 内从 0 开始，全局顺序 = Part 顺序 + 各自表面顺序。
-  - 优化问题定义下的“几何等式约束”提供 `MirrorSymmetry` 镜面对称模板和自定义 `SurfaceEquality`；“几何罚函数约束”单独管理 Fairness、Distance 等罚函数项。导出脚本会为每个边界 Part 生成一个局部类，曲面写在该类的 `define_surfaces()`，等式代码写在同一类的 `apply_surface_constraints()`；材料场的 `_map_bsp_designfield` 仍在材料节点中编辑。
+  - 优化问题定义下的“几何等式约束”提供 `MirrorSymmetry` 镜面对称模板和自定义 `SurfaceEquality`；“几何罚函数约束”单独管理 Fairness、Distance 等罚函数项。导出脚本会为每个边界 Part 生成一个局部类，曲面写在该类的 `define_surfaces()`，等式代码写在同一类的 `apply_surface_constraints()`。
 - **载荷**：左树的 `载荷` 下分为 `载荷定义` 和 `载荷工况`；在 `载荷定义` 下右键添加/删除/排序，点选后按类型编辑参数与名称；**改名会自动级联**到工况矩阵与 `jacobian_needed`。
 - **目标函数**：`objective_function(self)` / `get_metrics(self)` 函数体（可手写代码，导出后编辑再粘回更稳妥）。
 - **刚度/Jacobian 模板**：不会自动添加集中力或集中力矩；用户需先在 `载荷定义` 中添加它们，并让两者与模板选择的参考点一致。

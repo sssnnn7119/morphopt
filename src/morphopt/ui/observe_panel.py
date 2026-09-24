@@ -18,26 +18,31 @@ group but keeps the current visualization for browsing.
 
 from __future__ import annotations
 
-import glob
-import importlib.util
 import os
 import re
-import sys
 import threading
-import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
     QListWidget, QStackedWidget, QSplitter, QMessageBox, QFileDialog,
-    QDialog, QRadioButton, QSpinBox, QCheckBox, QPlainTextEdit,
+    QDialog, QCheckBox, QPlainTextEdit,
 )
 
-from . import launcher
+from .application import (
+    OptimizationRunSession,
+    ProblemLibrary,
+    ResultSession,
+    RunMode,
+    RunSource,
+    RunSourceKind,
+    last_completed_iteration,
+)
 from .i18n import T
 from .widgets.observation_pages import (
     DeformationCasePage, MetricsPage, UpdatableStructurePage,
 )
+from .widgets.run_dialogs import ContinueDialog, SourceDialog
 
 
 # ---------------------------------------------------------------------------
@@ -67,40 +72,6 @@ def _is_progress_header(line: str) -> bool:
     words = line.strip().lower().split()
     return len(words) >= 3 and words[0] == "iter" and "total" in words
 
-def controller_class_from_folder(path_result: str):
-    """Import ``ThisController`` from a result folder's frozen MAIN_SCRIPT."""
-    main = os.path.join(path_result, "scripts", "MAIN_SCRIPT_FOR_RESTART.py")
-    if not os.path.exists(main):
-        return None
-    import torch
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device("cpu")
-    key = os.path.basename(os.path.normpath(path_result))
-    name = "morphopt_run_" + re.sub(r"[^A-Za-z0-9_]", "_", key)
-    mod = sys.modules.get(name)
-    if mod is None:
-        spec = importlib.util.spec_from_file_location(name, main)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[name] = mod
-        try:
-            spec.loader.exec_module(mod)
-        except Exception as exc:  # pragma: no cover - best effort
-            sys.modules.pop(name, None)
-            print(f"controller import failed for {path_result}: {exc}")
-            return None
-    return getattr(mod, "ThisController", None)
-
-
-def _last_iteration(path_result: str) -> int:
-    try:
-        from ..optcore.history import History
-        h = History()
-        h.load(foldpath=os.path.join(path_result, "log"))
-        return int(h.iteration or 0)
-    except Exception:
-        return 0
-
-
 # ---------------------------------------------------------------------------
 # observer content (slider + left options + stacked pages)
 # ---------------------------------------------------------------------------
@@ -110,11 +81,9 @@ class ObserverPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._results = ResultSession()
         self.path_result: str | None = None
         self.iteration = 0
-        self._controller = None
-        self._params = None
-        self._history = None
         self._case_pages: dict[int, DeformationCasePage] = {}
 
         outer = QVBoxLayout(self)
@@ -166,35 +135,19 @@ class ObserverPanel(QWidget):
     # ------------------------------------------------------------------ api
     def ensure_loaded(self, folder: str) -> bool:
         """Bind the controller/params for a folder once (no rendering yet)."""
-        if self.path_result == folder and self._controller is not None:
-            return True
-        self.path_result = folder
-        self._controller = controller_class_from_folder(folder)
-        self._params = None
-        if self._controller is not None:
-            try:
-                self._params = self._controller.Params()
-                self._params.initialize()
-            except Exception as exc:
-                print(f"params init failed: {exc}")
-                self._params = None
-        return self._controller is not None
+        loaded = self._results.bind(folder)
+        self.path_result = self._results.folder
+        return loaded
 
     def show_iteration(self, folder: str, iteration: int) -> None:
         """Render one finished iteration (history + current option page)."""
-        if folder != self.path_result:
-            self.ensure_loaded(folder)
-        self.path_result = folder
         self.iteration = iteration
-
-        from ..optcore.history import History
-        history = History()
         try:
-            history.load(foldpath=os.path.join(folder, "log"), iteration=iteration)
+            history = self._results.load_iteration(folder, iteration)
         except Exception as exc:
             print(f"history load failed: {exc}")
             return
-        self._history = history
+        self.path_result = self._results.folder
         self._metrics_page.update_from_history(history, iteration)
         self._discover_cases(folder)
 
@@ -220,9 +173,7 @@ class ObserverPanel(QWidget):
         """
         self.path_result = None
         self.iteration = 0
-        self._history = None
-        self._params = None
-        self._controller = None
+        self._results.reset()
         # remove dynamic load-case pages and their option rows
         for row in reversed(range(2, self.stack.count())):
             w = self.stack.widget(row)
@@ -266,9 +217,9 @@ class ObserverPanel(QWidget):
         self.stack.setCurrentIndex(row)
 
     def _refresh_updatable_structure(self) -> None:
-        if self.path_result and self._params is not None:
+        if self.path_result and self._results.params is not None:
             self._updatable_structure_page.build(
-                self._params, self.path_result, self.slider.value()
+                self._results.params, self.path_result, self.slider.value()
             )
 
     def _refresh_case(self, case: int) -> None:
@@ -293,15 +244,7 @@ class ObserverPanel(QWidget):
                 self._refresh_case(row - 2)
 
     def _discover_cases(self, folder: str) -> None:
-        found = set()
-        for fpath in glob.glob(os.path.join(folder, "log", "deformation", "task_*_iter_*.stl")):
-            base = os.path.basename(fpath)
-            parts = base.split("_")
-            if len(parts) >= 4 and parts[0] == "task":
-                try:
-                    found.add(int(parts[1]))
-                except ValueError:
-                    pass
+        found = set(self._results.deformation_cases())
         existing = set(self._case_pages)
         for case in sorted(found - existing):
             self._case_pages[case] = DeformationCasePage(case)
@@ -313,111 +256,6 @@ class ObserverPanel(QWidget):
 # observer page: buttons 0/1/2 + polling + job control
 # ---------------------------------------------------------------------------
 
-class _ContinueDialog(QDialog):
-    """Ask whether to continue from the last step or from a chosen step."""
-
-    def __init__(self, max_step: int, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(T("继续优化", "Continue Optimization"))
-        self.setMinimumWidth(380)
-        lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(T(
-            f"当前结果已完成至第 {max_step} 步。请选择续跑起始位置：",
-            f"The result has reached step {max_step}. Choose where to resume:")))
-        self.rb_last = QRadioButton(T("从结果最后一步续跑", "Resume from the last step"))
-        self.rb_last.setChecked(True)
-        self.rb_step = QRadioButton(T("从指定步骤续跑：", "Resume from a chosen step:"))
-        self.spin = QSpinBox()
-        self.spin.setRange(1, max(1, max_step))
-        self.spin.setValue(max(1, max_step))
-        self.spin.setEnabled(False)
-        row = QHBoxLayout()
-        row.addWidget(self.rb_step)
-        row.addWidget(self.spin)
-        self.rb_last.toggled.connect(lambda on: self.spin.setEnabled(not on))
-        lay.addWidget(self.rb_last)
-        lay.addLayout(row)
-        btns = QHBoxLayout()
-        ok = QPushButton(T("继续", "Continue"))
-        ok.clicked.connect(self.accept)
-        cancel = QPushButton(T("取消", "Cancel"))
-        cancel.clicked.connect(self.reject)
-        btns.addStretch(1)
-        btns.addWidget(cancel)
-        btns.addWidget(ok)
-        lay.addLayout(btns)
-
-    def target(self):
-        if self.rb_step.isChecked():
-            return self.spin.value()
-        return None
-
-
-class _SourceDialog(QDialog):
-    """Button 0: choose where the next run comes from.
-
-    * ``definition`` — fresh run of the problem from the definition page,
-    * ``py``         — fresh run of an existing runnable definition script,
-    * ``continue``   — resume an existing result folder.
-    """
-
-    def __init__(self, has_definition: bool, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(T("选择任务来源", "Choose task source"))
-        self.setMinimumWidth(480)
-        self._chosen = None
-        lay = QVBoxLayout(self)
-        cap = QLabel(T("选择本次优化/运行的任务来源：",
-                       "Choose the task source for this run:"))
-        cap.setStyleSheet("color:#9aa4b2;")
-        lay.addWidget(cap)
-
-        options = [
-            ("definition",
-             T("从当前定义优化（全新）", "Optimize current definition (fresh)"),
-             T("使用定义页给出的定义，导出 .py 后从头运行。",
-               "Use the definition from the definition page; export .py and "
-               "run from scratch.")),
-            ("py",
-             T("从定义脚本 (.py) 优化", "Optimize from a definition script (.py)"),
-             T("选择已有可运行的 .py，按脚本自身设置从头运行。",
-               "Pick an existing runnable .py; run from scratch with its own "
-               "settings.")),
-            ("continue",
-             T("从已有结果继续优化", "Continue an existing result"),
-             T("选择已有结果目录，从最后一步或指定步续跑。",
-               "Pick an existing result folder; continue from the last or a "
-               "chosen step.")),
-        ]
-        for key, title, desc in options:
-            if key == "definition" and not has_definition:
-                continue
-            btn = QPushButton(title)
-            btn.setToolTip(desc)
-            btn.setStyleSheet("text-align:left; padding:8px 12px;")
-            btn.clicked.connect(lambda _=False, k=key: self._accept(k))
-            lay.addWidget(btn)
-
-        if not has_definition:
-            note = QLabel(T(
-                "提示：尚未收到定义页定义，“从当前定义优化”不可用。",
-                "Note: no definition received, so the current-definition "
-                "option is unavailable."))
-            note.setStyleSheet("color:#7f8c8d;")
-            lay.addWidget(note)
-
-        cancel = QPushButton(T("取消", "Cancel"))
-        cancel.clicked.connect(self.reject)
-        lay.addWidget(cancel)
-
-    def _accept(self, key: str) -> None:
-        self._chosen = key
-        self.accept()
-
-    def chosen(self) -> str | None:
-        return self._chosen
-
-
 class ObserverControls(QWidget):
     """Definition/observer bridge: 0·选择任务来源, 1·开始/继续, 2·停止."""
 
@@ -427,15 +265,10 @@ class ObserverControls(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._problem = None
-        self._folder: str | None = None
-        self._proc = None
-        self._run_mode: str | None = None        # None | 'fresh' | 'continue'
-        self._fresh_label = ""
-        self._fresh_root = ""
-        self._launch_t0 = 0.0
+        self._run = OptimizationRunSession()
         self._last_shown = 0
         self._saved_def = set()  # result folders whose definition (.morph) was written
-        self._source = None                      # chosen run source (dict or None)
+        self._source: RunSource | None = None
         self._save_morph_def = True              # write companion .morph for definition runs
         self._output_run_id = 0
         self._progress_headers: set[str] = set()
@@ -524,16 +357,16 @@ class ObserverControls(QWidget):
     # ------------------------------------------------------------------ api
     def is_running(self) -> bool:
         """Whether an optimization task is currently running."""
-        return self._proc is not None
+        return self._run.active
 
     def set_definition(self, problem) -> None:
         """Called when the definition page hands over a finished problem."""
         self._problem = problem
-        self._folder = None
         self._source = None
         self._save_morph_def = True
         self._saved_def = set()
         self._stop_job()
+        self._run.clear_result()
         self.panel.reset()
         self.status.setText(T(
             f"定义已就绪：{problem.label}。点击 0 选择任务来源后开始。",
@@ -547,7 +380,7 @@ class ObserverControls(QWidget):
         If an optimization is still running, ask for confirmation first —
         going back terminates the worker process (no silent interruption).
         """
-        if self._proc is not None:
+        if self._run.active:
             ret = QMessageBox.warning(
                 self, T("返回定义页", "Back to Definition"),
                 T(
@@ -566,17 +399,17 @@ class ObserverControls(QWidget):
 
     def _choose_source(self) -> None:
         """Button 0: pick where the next optimization run comes from."""
-        if self._proc is not None:
+        if self._run.active:
             return
-        dlg = _SourceDialog(has_definition=self._problem is not None, parent=self)
+        dlg = SourceDialog(has_definition=self._problem is not None, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         kind = dlg.chosen()
-        if kind == "definition":
+        if kind is RunSourceKind.DEFINITION:
             self._set_definition_source()
-        elif kind == "py":
+        elif kind is RunSourceKind.PYTHON:
             self._pick_py_source()
-        elif kind == "continue":
+        elif kind is RunSourceKind.CONTINUE:
             self._pick_continue_source()
         self._update_buttons()
 
@@ -588,15 +421,14 @@ class ObserverControls(QWidget):
                 "请先在定义页配置问题，并点击“进入优化器”。",
                 "Build a problem on the definition page and enter the observer."))
             return
-        self._folder = None
+        self._run.clear_result()
         self._last_shown = 0
         self.panel.reset()
         self._save_morph_def = True
-        self._source = {
-            "kind": "definition",
-            "zh": f"全新优化 · 定义 {problem.label}",
-            "en": f"Fresh run · definition {problem.label}",
-        }
+        self._source = RunSource(
+            kind=RunSourceKind.DEFINITION,
+            label=problem.label,
+        )
         self._refresh_status()
         self._update_buttons()
 
@@ -607,19 +439,14 @@ class ObserverControls(QWidget):
             os.getcwd(), "Python (*.py)")
         if not py_path:
             return
-        root, label = launcher.parse_job_location(py_path)
-        self._folder = None
+        self._run.clear_result()
         self._last_shown = 0
         self.panel.reset()
         self._save_morph_def = False   # a foreign script: do not write our .morph
-        self._source = {
-            "kind": "py",
-            "path": py_path,
-            "root": root,
-            "label": label,
-            "zh": f"全新优化 · 脚本 {os.path.basename(py_path)}",
-            "en": f"Fresh run · script {os.path.basename(py_path)}",
-        }
+        self._source = RunSource(
+            kind=RunSourceKind.PYTHON,
+            path=py_path,
+        )
         self._refresh_status()
         self._update_buttons()
 
@@ -630,8 +457,7 @@ class ObserverControls(QWidget):
             os.getcwd())
         if not folder:
             return
-        if not os.path.exists(os.path.join(
-                folder, "scripts", "MAIN_SCRIPT_FOR_RESTART.py")):
+        if not self._run.is_result_folder(folder):
             QMessageBox.warning(
                 self, T("不是有效结果", "Invalid result"), T(
                     "该目录不是有效的优化结果（缺少 "
@@ -640,40 +466,36 @@ class ObserverControls(QWidget):
                     "scripts/MAIN_SCRIPT_FOR_RESTART.py)."))
             return
         self._adopt(folder)   # bind + show the last iteration (browsing)
-        self._source = {
-            "kind": "continue",
-            "path": folder,
-            "zh": f"续跑已有结果 · {os.path.basename(folder)}",
-            "en": f"Continue result · {os.path.basename(folder)}",
-        }
+        self._source = RunSource(
+            kind=RunSourceKind.CONTINUE,
+            path=folder,
+            label=os.path.basename(folder),
+        )
         self._refresh_status()
         self._update_buttons()
 
     def _adopt(self, folder: str) -> None:
-        self._folder = folder
-        self.panel.ensure_loaded(folder)
-        last = _last_iteration(folder)
+        self._run.adopt(folder)
+        self.panel.ensure_loaded(self._run.folder)
+        last = last_completed_iteration(self._run.folder)
         if last >= 1:
             self._last_shown = last
-            self.panel.show_iteration(folder, last)
-        self._run_mode = None
-        self._proc = None
+            self.panel.show_iteration(self._run.folder, last)
 
     def _clear_source(self) -> None:
         """Reset the chosen source (a source is used for one run only)."""
         self._source = None
         self._update_buttons()
-        if self._proc is None:
+        if not self._run.active:
             self._refresh_status()
 
     def _refresh_status(self) -> None:
         """Status line for the current source / idle state."""
         src = self._source
         if src is not None:
-            self.status.setText(T(f"当前任务：{src['zh']}",
-                                  f"Current task: {src['en']}"))
+            self.status.setText(self._source_status(src))
             return
-        if self._proc is not None:
+        if self._run.active:
             return  # running-status lines are set by the run methods
         if self._problem is not None:
             self.status.setText(T(
@@ -685,7 +507,7 @@ class ObserverControls(QWidget):
                 "No definition received; build a problem first."))
 
     def _start(self) -> None:
-        if self._proc is not None:
+        if self._run.active:
             return
         src = self._source
         if src is None:
@@ -694,11 +516,11 @@ class ObserverControls(QWidget):
                 "Click 0 to choose a task source first."))
             return
         launched = False
-        if src["kind"] == "continue":
+        if src.kind is RunSourceKind.CONTINUE:
             launched = self._continue_flow()
-        elif src["kind"] == "definition":
+        elif src.kind is RunSourceKind.DEFINITION:
             launched = self._launch_fresh()
-        elif src["kind"] == "py":
+        elif src.kind is RunSourceKind.PYTHON:
             launched = self._launch_py_source()
         if launched:
             # a source is consumed by one run: reset it so the next run /
@@ -706,26 +528,23 @@ class ObserverControls(QWidget):
             self._clear_source()
 
     def _continue_flow(self) -> bool:
-        folder = self._source["path"]
-        last = _last_iteration(folder)
-        dlg = _ContinueDialog(max_step=last, parent=self)
+        folder = self._source.path
+        last = last_completed_iteration(folder)
+        dlg = ContinueDialog(max_step=last, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return False
-        target = dlg.target()
-        scripts = os.path.join(folder, "scripts", "MAIN_SCRIPT_FOR_RESTART.py")
-        device, restart = launcher.parse_run_options(scripts)
+        target = dlg.target_iteration()
         try:
-            self._proc = launcher.run_continue(
-                folder, target_iteration=target, device=device,
-                restart_per_iteration=restart)
+            self._run.start_continue(
+                folder,
+                target_iteration=target,
+            )
         except Exception as exc:
             QMessageBox.warning(self, T("继续失败", "Continue failed"), str(exc))
             return False
         if self._save_morph_def:
             self._save_definition(folder)
-        self._run_mode = "continue"
         self._capture_process_output()
-        self._launch_t0 = time.time()
         self._last_shown = max(0, target or last)
         self.status.setText(T(
             f"正在继续优化：自第 {target if target else last} 步起。",
@@ -739,17 +558,12 @@ class ObserverControls(QWidget):
         if problem is None:
             return False
         try:
-            _job, self._proc = launcher.run_job(problem)
+            self._run.start_definition(problem)
         except Exception as exc:
             QMessageBox.warning(self, T("启动失败", "Launch failed"), str(exc))
             return False
         self._save_morph_def = True
-        self._folder = None
-        self._fresh_label = launcher._sanitize(problem.label)
-        self._fresh_root = launcher.run_root_for(problem)
-        self._launch_t0 = time.time()
         self._last_shown = 0
-        self._run_mode = "fresh"
         self._capture_process_output()
         self.status.setText(T(
             "正在从头开始优化…等待首轮结果。",
@@ -761,19 +575,13 @@ class ObserverControls(QWidget):
     def _launch_py_source(self) -> bool:
         """Run a fresh optimization from an existing definition ``.py``."""
         src = self._source
-        py = src["path"]
+        py = src.path
         try:
-            root, label, proc = launcher.run_py_definition(py)
+            self._run.start_python(py)
         except Exception as exc:
             QMessageBox.warning(self, T("启动失败", "Launch failed"), str(exc))
             return False
-        self._proc = proc
-        self._folder = None
-        self._fresh_root = root
-        self._fresh_label = label
-        self._launch_t0 = time.time()
         self._last_shown = 0
-        self._run_mode = "fresh"
         self._capture_process_output()
         self.status.setText(T(
             f"正在从脚本优化：{os.path.basename(py)}…等待首轮结果。",
@@ -784,7 +592,7 @@ class ObserverControls(QWidget):
 
     def _stop(self) -> None:
         self._stop_job()
-        if self._folder:
+        if self._run.folder:
             self.status.setText(T(
                 "优化任务已停止，当前可视化已保留。若需续跑，请点击 0 重新选择结果。",
                 "Optimization stopped; current visualization kept. To continue, "
@@ -805,27 +613,21 @@ class ObserverControls(QWidget):
         if self._problem is None or folder in self._saved_def:
             return
         try:
-            from .model.loaders import save_morph
-            scripts = os.path.join(folder, "scripts")
-            if not os.path.isdir(scripts):
-                scripts = folder
-            save_morph(self._problem,
-                       os.path.join(scripts, "MAIN_SCRIPT_FOR_RESTART.morph"))
+            ProblemLibrary.save_result_copy(self._problem, folder)
             self._saved_def.add(folder)
         except Exception as exc:  # pragma: no cover - best effort
             print(f"save definition to result failed: {exc}")
 
     def _stop_job(self) -> None:
-        if self._proc is None:
+        if not self._run.active:
             return
-        launcher.stop_job(self._proc)
-        self._proc = None
+        self._run.stop()
         self._timer.stop()
-        if self._folder:
-            last = _last_iteration(self._folder)
+        if self._run.folder:
+            last = last_completed_iteration(self._run.folder)
             if last >= 1 and last != self._last_shown:
                 self._last_shown = last
-                self.panel.show_iteration(self._folder, last)
+                self.panel.show_iteration(self._run.folder, last)
         self._update_buttons()
 
     # ------------------------------------------------------------ run output
@@ -836,7 +638,7 @@ class ObserverControls(QWidget):
 
     def _capture_process_output(self) -> None:
         """Stream this UI-launched process's combined output into the log box."""
-        process = self._proc
+        process = self._run.process
         self._output_run_id += 1
         run_id = self._output_run_id
         self._clear_output()
@@ -881,25 +683,23 @@ class ObserverControls(QWidget):
 
     # -------------------------------------------------------------- polling
     def _poll_once(self) -> None:
-        if self._proc is None:
+        if not self._run.active:
             return
-        folder = self._folder
-        if self._run_mode == "fresh":
-            cand = launcher.latest_result_dir(self._fresh_root, self._fresh_label)
-            # ignore folders that already existed before this run started
-            if cand is None or os.path.getmtime(cand) < self._launch_t0 - 2:
+        folder = self._run.folder
+        if self._run.mode is RunMode.FRESH:
+            candidate = self._run.discover_folder()
+            if candidate is None:
                 self._check_exit()
                 return
-            if folder != cand:
-                folder = cand
-                self._folder = cand
-                self.panel.ensure_loaded(cand)
+            if folder != candidate:
+                folder = candidate
+                self.panel.ensure_loaded(candidate)
             if self._save_morph_def:
                 self._save_definition(folder)
         if folder is None:
             self._check_exit()
             return
-        last = _last_iteration(folder)
+        last = last_completed_iteration(folder)
         if last >= 1 and last != self._last_shown:
             self._last_shown = last
             self.panel.show_iteration(folder, last)
@@ -909,29 +709,47 @@ class ObserverControls(QWidget):
         self._check_exit()
 
     def _check_exit(self) -> None:
-        if self._proc is not None and self._proc.poll() is not None:
-            self._proc = None
+        if self._run.has_exited():
+            self._run.release_finished()
             self._timer.stop()
-            if self._folder:
-                last = _last_iteration(self._folder)
+            if self._run.folder:
+                last = last_completed_iteration(self._run.folder)
                 if last >= 1 and last != self._last_shown:
                     self._last_shown = last
-                    self.panel.show_iteration(self._folder, last)
+                    self.panel.show_iteration(self._run.folder, last)
             self.status.setText(T(
                 "优化任务已结束。如需再次运行/续跑，请点击 0 重新选择任务来源。",
                 "Optimization finished. Choose a source via 0 to run again."))
             self._update_buttons()
 
     def _update_buttons(self) -> None:
-        running = self._proc is not None
+        running = self._run.active
         src = self._source
         self.btn_open.setEnabled(not running)
         self.btn_stop.setEnabled(running)
-        if src is not None and src["kind"] == "continue":
+        if src is not None and src.kind is RunSourceKind.CONTINUE:
             self.btn_start.setText(T("1 · 继续优化", "1 · Continue"))
         else:
             self.btn_start.setText(T("1 · 开始优化", "1 · Start"))
         self.btn_start.setEnabled(not running and src is not None)
+
+    @staticmethod
+    def _source_status(source: RunSource) -> str:
+        if source.kind is RunSourceKind.DEFINITION:
+            return T(
+                f"当前任务：全新优化 · 定义 {source.label}",
+                f"Current task: fresh run · definition {source.label}",
+            )
+        if source.kind is RunSourceKind.PYTHON:
+            filename = os.path.basename(source.path)
+            return T(
+                f"当前任务：全新优化 · 脚本 {filename}",
+                f"Current task: fresh run · script {filename}",
+            )
+        return T(
+            f"当前任务：续跑已有结果 · {source.label}",
+            f"Current task: continue result · {source.label}",
+        )
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
@@ -961,7 +779,7 @@ class ObserverControls(QWidget):
             "Standard output and errors from optimization tasks appear here."))
         self.panel.apply_language()
         self._update_buttons()
-        if self._proc is not None:
+        if self._run.active:
             self.status.setText(T("优化运行中。", "Optimization running."))
         else:
             self._refresh_status()

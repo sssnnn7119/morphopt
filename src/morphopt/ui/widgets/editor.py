@@ -3,11 +3,8 @@
 ``fields_for_node`` decides which parameter fields / code slots belong to each
 tree-node kind (surface / interface / material / geometry / solver / ...);
 ``PropertyEditor`` renders those fields into editable widgets and keeps them in
-sync with the node's typed fields.  Hand-written Python code slots such as
-``_map_bsp_designfield`` are edited with the
-:class:`~morphopt.ui.widgets.codeeditor.CodeEditor` widget; the geometry
-``apply_surface_constraints`` body belongs to an equality constraint item
-(normally the ``MirrorSymmetry`` template) in the updater editor.
+sync with the node's typed fields.  Geometry equality code belongs to an
+equality constraint item in the updater editor.
 """
 
 from __future__ import annotations
@@ -31,7 +28,14 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import T, pick
-from ..model.problem import Node
+from ..model.problem import (
+    INSTANCE_REFERENCE_FIELDS,
+    REFERENCE_POINT_FIELDS,
+    InterfaceNode,
+    MaterialNode,
+    Node,
+    PartInterfaceNode,
+)
 from ..model.schemas import (
     INTERFACE_TYPES,
     MATERIAL_MODEL_PARAMETERS,
@@ -68,11 +72,6 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
         return list(spec.get("params", [])), {}, choices
     if kind == "material":
         mt = node.get_field("type", "")
-        if problem is not None:
-            from ..schemes.base import get_template
-
-            if mt not in get_template(problem.scheme).available_material_types():
-                return [], {}, {}
         spec = MATERIAL_TYPES.get(mt, {})
         model = node.get_field("material_model", "NeoHookeanLnJ")
         fields = list(spec.get("params", []))
@@ -93,8 +92,6 @@ def fields_for_node(node: Node, problem=None) -> tuple[list[dict], dict, dict]:
                 allowed = common | set(MATERIAL_MODEL_PARAMETERS.get(model, ()))
             fields = [field for field in fields if field["key"] in allowed]
         code_slots = {}
-        if mt == "SIMP_BSPFieldMaterials":
-            code_slots["_map_bsp_designfield"] = "map_bsp_designfield(nodes)"
         choices = {}
         if problem is not None and mt in (
             "SIMP_BSPFieldMaterials",
@@ -148,8 +145,8 @@ def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
     summary = problem.imported_model_summary()
     is_imported = summary is not None
 
-    def local_surface_sets(instance_name: str) -> list[str]:
-        part = problem.part_interface_for_instance(instance_name)
+    def local_surface_sets(instance) -> list[str]:
+        part = problem.part_interface_for_instance(instance)
         surfaces = part.surfaces() if part is not None else problem.surfaces()
         names = [f"surface_{i}_All" for i in range(len(surfaces))]
         if problem.scheme == "codesign":
@@ -171,31 +168,39 @@ def dynamic_choices(problem, itype: str, iface: Node) -> dict[str, list[str]]:
         if key in ("instance_name", "instance_name1", "instance_name2"):
             choices[key] = problem.instance_names()
         elif key == "set_nodes_name" and is_imported:
-            choices[key] = problem.node_set_names(iface.instance_name or "")
+            choices[key] = problem.node_set_names(
+                iface.instance.name if iface.instance is not None else ""
+            )
         elif key == "surface_name" and is_imported:
-            choices[key] = problem.surface_set_names(iface.instance_name or "")
+            choices[key] = problem.surface_set_names(
+                iface.instance.name if iface.instance is not None else ""
+            )
         elif key == "surface_name1" and is_imported:
-            choices[key] = problem.surface_set_names(iface.instance_name1 or "")
+            choices[key] = problem.surface_set_names(
+                iface.instance1.name if iface.instance1 is not None else ""
+            )
         elif key == "surface_name2" and is_imported:
-            choices[key] = problem.surface_set_names(iface.instance_name2 or "")
+            choices[key] = problem.surface_set_names(
+                iface.instance2.name if iface.instance2 is not None else ""
+            )
         elif key in (
             "surface_name",
             "set_nodes_name",
             "surface_name1",
             "surface_name2",
         ):
-            instance_key = {
-                "surface_name": "instance_name",
-                "set_nodes_name": "instance_name",
-                "surface_name1": "instance_name1",
-                "surface_name2": "instance_name2",
+            instance_attr = {
+                "surface_name": "instance",
+                "set_nodes_name": "instance",
+                "surface_name1": "instance1",
+                "surface_name2": "instance2",
             }[key]
-            choices[key] = local_surface_sets(
-                str(getattr(iface, instance_key, "") or "")
-            )
+            choices[key] = local_surface_sets(getattr(iface, instance_attr, None))
         elif key == "element_name" and is_imported:
             part = (
-                summary.part_for_instance(iface.instance_name or "")
+                summary.part_for_instance(
+                    iface.instance.name if iface.instance is not None else ""
+                )
                 if summary is not None
                 else None
             )
@@ -269,23 +274,30 @@ class PropertyEditor(QWidget):
             self._form.removeRow(0)
 
         self._title.setText(title if title is not None else (node.name or node.kind))
-        if node.kind in {"interface", "part_interface", "instance"}:
+        if node.kind in {"interface", "part_interface", "material", "instance"}:
             name_edit = QLineEdit(node.name or "")
             name_edit.setToolTip(
                 T(
-                    "载荷名称（在载荷步矩阵 / jacobian_needed 中引用）。改名会自动级联更新。"
+                    "载荷名称；载荷步矩阵和 Jacobian 持有对象引用，会自动跟随改名。"
                     if node.kind == "interface"
                     else "几何接口在 GeometryParams 中的注册名称；改名会同步几何优化器。"
                     if node.kind == "part_interface"
                     else "该 Part 实例在装配体中的唯一名称。",
-                    "Load name (referenced by the step matrix / jacobian_needed). "
-                    "Renaming cascades automatically."
+                    "Load name. The step matrix / jacobian_needed hold object "
+                    "references and follow a rename automatically."
                     if node.kind == "interface"
                     else "Registration name in GeometryParams; geometry updaters are retargeted."
                     if node.kind == "part_interface"
                     else "Unique Assembly name of this Part Instance.",
                 )
             )
+            if node.kind == "material":
+                name_edit.setToolTip(
+                    T(
+                        "材料接口在 MaterialsParams 中的注册名称；改名会同步材料优化器。",
+                        "Registration name in MaterialsParams; material updaters are retargeted.",
+                    )
+                )
             name_edit.editingFinished.connect(
                 lambda e=name_edit: self._rename_node(e.text())
             )
@@ -295,6 +307,8 @@ class PropertyEditor(QWidget):
                     if node.kind == "interface"
                     else T("几何接口名称", "Geometry interface name")
                     if node.kind == "part_interface"
+                    else T("材料接口名称", "Material interface name")
+                    if node.kind == "material"
                     else T("实体名称", "Instance name")
                 ),
                 name_edit,
@@ -316,24 +330,17 @@ class PropertyEditor(QWidget):
         text = text.strip()
         if not text or text == self._node.name:
             return
-        if self._node.kind == "interface":
-            problem = self._completion_problem
-            if problem is not None:
-                if not problem.rename_interface(self._node, text):
-                    return
-            else:
-                self._node.name = text
-        elif self._node.kind == "instance":
+        if self._node.kind == "instance":
             problem = self._completion_problem
             if problem is not None:
                 if not problem.rename_instance(self._node, text):
                     return
             else:
                 self._node.name = text
-        elif self._node.kind == "part_interface":
+        elif self._node.kind in {"interface", "part_interface", "material"}:
             problem = self._completion_problem
             if problem is not None:
-                if not problem.rename_part_interface(self._node, text):
+                if not problem.rename_interface(self._node, text):
                     return
             else:
                 self._node.name = text
@@ -472,6 +479,36 @@ class PropertyEditor(QWidget):
     def _set(self, key: str, value) -> None:
         if self._node is None:
             return
+        problem = self._completion_problem
+        if isinstance(self._node, InterfaceNode) and key in {
+            *INSTANCE_REFERENCE_FIELDS,
+            *REFERENCE_POINT_FIELDS,
+        }:
+            if problem is not None and not problem.set_interface_reference(
+                self._node, key, value
+            ):
+                return
+            if problem is None:
+                self._node.set_field(key, value)
+            self.changed.emit(self._node)
+            return
+        if key == "part_name" and isinstance(self._node, MaterialNode):
+            if problem is not None and not problem.set_material_part(self._node, value):
+                control = self._controls.get(key)
+                if isinstance(control, QLineEdit):
+                    control.setText(self._node.part_name)
+                return
+            if problem is None:
+                self._node.set_field(key, value)
+            self.changed.emit(self._node)
+            return
+        if key == "part_name" and isinstance(self._node, PartInterfaceNode):
+            if problem is not None:
+                if not problem.rename_part(self._node, str(value or "")):
+                    control = self._controls.get(key)
+                    if isinstance(control, QLineEdit):
+                        control.setText(self._node.part_name)
+                    return
         self._node.set_field(key, value)
         self.changed.emit(self._node)
 

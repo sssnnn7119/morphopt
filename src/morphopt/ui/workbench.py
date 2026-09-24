@@ -36,7 +36,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .codegen.generator import generate_source
+from .application import (
+    EditorKind,
+    MissingImportedModelError,
+    ProblemSession,
+    route_editor,
+)
 from .i18n import T
 from .model.problem import Node, ProblemDefinition
 from .model.schemas import MATERIAL_TYPES
@@ -71,7 +76,7 @@ class Workbench(QWidget):
 
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
-        self.problem = problem
+        self.session = ProblemSession(problem)
         self._last_selected: Node | None = None
         self._rebuild_timer = QTimer(self)
         self._rebuild_timer.setSingleShot(True)
@@ -79,6 +84,11 @@ class Workbench(QWidget):
         self._rebuild_timer.timeout.connect(self._on_any_change)
         self._build_ui()
         self.reload()
+
+    @property
+    def problem(self) -> ProblemDefinition:
+        """The canonical definition owned by this workbench's session."""
+        return self.session.problem
 
     # ------------------------------------------------------------- layout
     def _build_ui(self) -> None:
@@ -281,9 +291,6 @@ class Workbench(QWidget):
         self._loads_hint = self._make_loads_hint()
         stack.addWidget(self._loads_hint)
 
-        # when a load name is edited in the property form, cascade the rename
-        self._open_name: str | None = None
-        self.prop_editor.changed.connect(self._maybe_cascade_rename)
 
     @staticmethod
     def _make_optimizer_overview() -> QLabel:
@@ -329,6 +336,7 @@ class Workbench(QWidget):
 
     # ------------------------------------------------------------- reload
     def reload(self) -> None:
+        self.session.synchronize()
         self._name_edit.setText(self.problem.label)
         self._path_edit.setText(self.problem.result_folder)
         # show the current compute device without re-triggering a save
@@ -342,11 +350,6 @@ class Workbench(QWidget):
             self._device_block = False
         self._update_caption()
         imported = self.problem.imported_model_part_node()
-        if imported is not None:
-            # Sync generated Part interfaces before rebuilding the tree so the
-            # editor and viewer see the same model structure.
-            self.problem.sync_imported_part_interfaces()
-            imported = self.problem.imported_model_part_node()
         self.tree.set_problem(self.problem)
         self.objective_editor.set_problem(self.problem)
         self._select_editor(self._last_selected)
@@ -447,8 +450,7 @@ class Workbench(QWidget):
     # -------------------------------------------- name / output-path slots
     def _apply_name(self) -> None:
         v = self._name_edit.text().strip()
-        if v and v != self.problem.label:
-            self.problem.label = v
+        if self.session.set_label(v):
             self._update_caption()
             self.refresh_code()
             self.notify.emit(T(f"优化名称：{v}", f"Optimization name: {v}"))
@@ -457,8 +459,7 @@ class Workbench(QWidget):
 
     def _apply_path(self) -> None:
         v = self._path_edit.text().strip()
-        if v != self.problem.result_folder:
-            self.problem.result_folder = v
+        if self.session.set_result_folder(v):
             self.refresh_code()
 
     def _save_device(self, text: str) -> None:
@@ -468,8 +469,7 @@ class Workbench(QWidget):
         text = (text or "").strip()
         if not text:
             return
-        if text != self.problem.device:
-            self.problem.device = text
+        if self.session.set_device(text):
             self.refresh_code()
             self.notify.emit(T(f"设备：{text}", f"Device: {text}"))
 
@@ -480,12 +480,12 @@ class Workbench(QWidget):
         )
         if folder:
             self._path_edit.setText(folder)
-            self.problem.result_folder = folder
-            self.refresh_code()
+            if self.session.set_result_folder(folder):
+                self.refresh_code()
 
     def refresh_code(self) -> None:
         try:
-            self.code_view.setPlainText(generate_source(self.problem))
+            self.code_view.setPlainText(self.session.source())
         except Exception as exc:  # pragma: no cover
             self.code_view.setPlainText(f"# code generation failed:\n{exc}")
 
@@ -495,35 +495,32 @@ class Workbench(QWidget):
         self._select_editor(node)
 
     def _select_editor(self, node: Node | None) -> None:
-        if node is None:
-            self._stack.setCurrentWidget(self.prop_editor)
-            return
-        kind = node.kind
-        self._open_name = node.name if node.kind == "interface" else None
-        if kind == "solver":
-            self.solver_editor.edit_node(node, self.problem)
+        route = route_editor(node)
+        if route.kind is EditorKind.SOLVER:
+            self.solver_editor.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.solver_editor)
-        elif kind in {"loads_group", "loads"}:
+        elif route.kind is EditorKind.LOADS:
             self._stack.setCurrentWidget(self._loads_hint)
-        elif kind == "steps":
-            self.step_matrix.edit_node(node, self.problem)
+        elif route.kind is EditorKind.STEPS:
+            self.step_matrix.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.step_matrix)
-        elif kind == "updater":
+        elif route.kind is EditorKind.OPTIMIZER_OVERVIEW:
             self._stack.setCurrentWidget(self.optimizer_overview)
-        elif kind.startswith("updater_"):
-            # These transient leaf nodes point at the canonical updater
-            # configuration and open the selected sub-optimizer in full.
-            self.updater_editor.edit_node(node.updater_parent, self.problem, focus=node)
+        elif route.kind is EditorKind.UPDATER:
+            self.updater_editor.edit_node(
+                route.node, self.problem, focus=route.focus
+            )
             self._stack.setCurrentWidget(self.updater_editor)
-        elif kind == "objective":
+        elif route.kind is EditorKind.OBJECTIVE:
             self.objective_editor.set_problem(self.problem)
             self._stack.setCurrentWidget(self.objective_editor)
-        elif (
-            kind == "part_interface" and node.interface_type == "TorchFEAPartInterface"
-        ):
-            self.torchfea_model_editor.edit_node(node)
+        elif route.kind is EditorKind.TORCHFEA_MODEL:
+            self.torchfea_model_editor.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.torchfea_model_editor)
         else:
+            if node is None:
+                self._stack.setCurrentWidget(self.prop_editor)
+                return
             fields, code_slots, extra = fields_for_node(node, self.problem)
             subtitle = self._subtitle(node)
             title = None
@@ -552,42 +549,9 @@ class Workbench(QWidget):
             )
             self._stack.setCurrentWidget(self.prop_editor)
 
-    def _maybe_cascade_rename(self, node: Node) -> None:
-        """Delegate load rename invariants to the problem aggregate."""
-        if node.kind != "interface" or self._open_name is None:
-            return
-        old, new = self._open_name, node.name
-        if old == new or not new:
-            return
-        # PropertyEditor applies its local text field before emitting changed.
-        # Restore the original name so ``rename_interface`` can atomically
-        # validate uniqueness and update all cross-references.
-        node.name = old
-        if self.problem.rename_interface(node, new):
-            self._open_name = new
-        else:
-            self._open_name = old
-        self._schedule_rebuild()
-
     def _sync_single_imported_part(self, _node: Node) -> None:
         """Select unambiguous imported material targets without name conventions."""
-        summary = self.problem.imported_model_summary()
-        materials = self.problem.material_nodes()
-        if summary is None or not materials:
-            return
-        parts = {part.name: part for part in summary.parts}
-        for material in materials:
-            if not material.part_name or material.part_name not in parts:
-                if len(summary.parts) == 1:
-                    material.part_name = summary.parts[0].name
-            part = parts.get(material.part_name)
-            if (
-                part is not None
-                and len(part.element_types) == 1
-                and material.elementname not in part.element_types
-                and material.elementname
-            ):
-                material.elementname = part.element_types[0]
+        self.session.sync_imported_material_targets()
 
     @staticmethod
     def _subtitle(node: Node) -> str:
@@ -626,7 +590,10 @@ class Workbench(QWidget):
         self._rebuild_timer.start()
 
     def _on_any_change(self) -> None:
-        self.problem.sync_imported_part_interfaces()
+        # Coalesce all editor signals into one refresh after re-binding the
+        # model's object-reference graph.  Tree labels, open forms, generated
+        # code, and the preview therefore observe the same model snapshot.
+        self.session.synchronize()
         try:
             self.refresh_code()
         except Exception:
@@ -640,15 +607,15 @@ class Workbench(QWidget):
         self.notify.emit(self.problem.label)
 
     def set_problem(self, problem: ProblemDefinition) -> None:
-        self.problem = problem
+        self.session.replace(problem)
+        self._last_selected = None
         self.reload()
 
     # --------------------------------------------------------- footer slots
     def _submit_to_observer(self) -> None:
-        if (
-            self.problem.imported_model_part_node() is not None
-            and self.problem.imported_model_summary() is None
-        ):
+        try:
+            self.session.validate_for_run()
+        except MissingImportedModelError:
             QMessageBox.warning(
                 self,
                 T("缺少 TorchFEA 模型", "TorchFEA model required"),
@@ -659,8 +626,6 @@ class Workbench(QWidget):
                 ),
             )
             return
-        try:
-            generate_source(self.problem)
         except Exception as exc:
             QMessageBox.warning(
                 self,

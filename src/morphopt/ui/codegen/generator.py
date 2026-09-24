@@ -12,6 +12,8 @@ from dataclasses import fields
 from ...optcore.modelparams.materialinterface import MaterialModels
 from ..model.modelinfo import PartSummary, TorchFEAModelSummary
 from ..model.problem import (
+    INSTANCE_REFERENCE_FIELDS,
+    InterfaceNode,
     Node,
     ObjectiveNode,
     PartInterfaceNode,
@@ -28,6 +30,24 @@ from ..model.schemas import (
     UPDATER_CATALOG,
 )
 from ..schemes.base import SchemeTemplate, get_template
+
+
+CORE_BASES = {
+    "controller": "morphopt.Controller",
+    "objective": "morphopt.ObjectiveFunction",
+    "params": "morphopt.Params",
+    "geometry": "morphopt.GeometryParams",
+    "fea": "morphopt.FEAParams",
+    "materials": "morphopt.MaterialsParams",
+    "solver": "morphopt.Solver",
+    "updaters": "morphopt.Updaters",
+}
+
+BOUNDARY_PART_BASE = "morphopt.BoundaryPartInterface"
+GEOMETRY_UPDATER_BASE = "morphopt.UpdaterBoundaryPart"
+MATERIAL_UPDATER_BASE = "morphopt.UpdaterSIMPMaterial"
+HOMOGENEOUS_MATERIAL_BASE = "morphopt.HomogeneousMaterial"
+SIMP_MATERIAL_BASE = "morphopt.SIMP_BSPFieldMaterials"
 
 # --------------------------------------------------------------------------
 # small helpers
@@ -114,12 +134,12 @@ def generate_source(problem: ProblemDefinition) -> str:
     Code-launched runs never open an observer window; results are watched by
     the MorphOpt UI's in-window observer (disk polling per iteration).
     """
+    problem.resolve_references()
     template = get_template(problem.scheme)
-    B = template.BASES
     L: list[str] = []
     a = L.append
 
-    controller_ref = B["controller"]  # morphopt.Controller
+    controller_ref = CORE_BASES["controller"]
     run_dev = problem.device or "cpu"
     upd_dev = problem.updater_device or run_dev
     device = repr(run_dev)  # -> morphopt.start_optimization(device=...)
@@ -142,11 +162,11 @@ def generate_source(problem: ProblemDefinition) -> str:
 
     # -------- ObjectiveFunction ------------------------------------------
     objective = problem.objective or ObjectiveNode()
-    jac = list(objective.jacobian_needed)
+    jac = [item.name for item in objective.jacobian_needed]
     obj_body = objective._objective_function or template.default_objective_slot()
     met_body = objective._get_metrics or template.default_metrics_slot()
 
-    a(f"    class ObjectiveFunction({B['objective']}):")
+    a(f"    class ObjectiveFunction({CORE_BASES['objective']}):")
     a("")
     a("        def __init__(self) -> None:")
     a("            super().__init__()")
@@ -161,17 +181,17 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
 
     # -------- Params ------------------------------------------------------
-    a(f"    class Params({B['params']}):")
+    a(f"    class Params({CORE_BASES['params']}):")
     a("")
-    a(f"        class GeometryParams({B['geometry']}):")
+    a(f"        class GeometryParams({CORE_BASES['geometry']}):")
     a("")
-    local_classes = _emit_part_classes(a, problem, template)
+    local_classes = _emit_part_classes(a, problem)
     a("")
     a("            def define_interface(self) -> None:")
-    _emit_part_init(a, problem, template, local_classes)
+    _emit_part_init(a, problem, local_classes)
     a("")
     a("")
-    a(f"        class FEAParams({B['fea']}):")
+    a(f"        class FEAParams({CORE_BASES['fea']}):")
     a("")
     a("            def __init__(self) -> None:")
     a("                super().__init__()")
@@ -182,7 +202,7 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("            def define_steps(self) -> None:")
     _emit_steps(a, problem)
     a("")
-    a(f"        class MaterialsParams({B['materials']}):")
+    a(f"        class MaterialsParams({CORE_BASES['materials']}):")
     a("")
     _emit_material_init(a, problem, template)
     a("")
@@ -195,7 +215,7 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("")
 
     # -------- Solver ------------------------------------------------------
-    a(f"    class Solver({B['solver']}):")
+    a(f"    class Solver({CORE_BASES['solver']}):")
     a("")
     a("        def __init__(self, params: Any) -> None:")
     solver = problem.solver or SolverNode()
@@ -268,7 +288,6 @@ def _render_part_constructor(
 def _emit_part_classes(
     a: Callable[[str], object],
     problem: ProblemDefinition,
-    template: SchemeTemplate,
 ) -> dict[str, str]:
     """Emit local Part subclasses carrying surfaces and Instances.
 
@@ -277,20 +296,15 @@ def _emit_part_classes(
     declare their surfaces and optional equality constraints.
     Returns the mapping interface name -> emitted class name.
     """
-    boundary_base = template.BASES.get("boundary_part")
     fixed_bases = {
-        "INPPartInterface": (
-            "morphopt.optcore.modelparams.partinterface.INPPartInterface"
-        ),
-        "TorchFEAPartInterface": (
-            "morphopt.optcore.modelparams.partinterface.TorchFEAPartInterface"
-        ),
+        "INPPartInterface": "morphopt.INPPartInterface",
+        "TorchFEAPartInterface": "morphopt.TorchFEAPartInterface",
     }
     local_class: dict[str, str] = {}
 
     constraints = _surface_constraints_bodies(problem)
     for index, interface in enumerate(problem.part_interfaces()):
-        base = boundary_base if interface.has_surfaces else fixed_bases.get(
+        base = BOUNDARY_PART_BASE if interface.has_surfaces else fixed_bases.get(
             interface.interface_type
         )
         if not base:
@@ -337,7 +351,6 @@ def _emit_part_classes(
 def _emit_part_init(
     a: Callable[[str], object],
     problem: ProblemDefinition,
-    template: SchemeTemplate,
     local_classes: dict[str, str] | None = None,
 ) -> None:
     """Emit the ``GeometryParams.define_interface`` body of the model."""
@@ -388,11 +401,12 @@ def _validate_imported_interface_selections(
         for instance_key in ("instance_name", "instance_name1", "instance_name2"):
             if instance_key not in fields_for_type:
                 continue
-            selected = str(interface.get_field(instance_key, "") or "").strip()
-            if not selected:
+            target = getattr(interface, INSTANCE_REFERENCE_FIELDS[instance_key])
+            if target is None:
                 raise ValueError(
                     f"Interface {interface.name!r} must select {instance_key}."
                 )
+            selected = target.name
             if selected not in instances:
                 owner = problem.part_interface_for_instance(selected)
                 if owner is not None and owner.has_surfaces:
@@ -421,7 +435,8 @@ def _validate_imported_interface_selections(
             if key not in fields_for_type:
                 continue
             selected = str(interface.get_field(key, "") or "").strip()
-            instance_name = str(interface.get_field(instance_key, "") or "").strip()
+            target = getattr(interface, INSTANCE_REFERENCE_FIELDS[instance_key])
+            instance_name = target.name if target is not None else ""
             if not selected:
                 raise ValueError(f"Interface {interface.name!r} must select {key}.")
             instance = instances.get(instance_name)
@@ -435,12 +450,13 @@ def _validate_imported_interface_selections(
 
         if "element_name" in fields_for_type:
             element_name = str(interface.element_name or "").strip()
-            instance = instances.get(str(interface.instance_name or "").strip())
+            instance_name = interface.instance.name if interface.instance else ""
+            instance = instances.get(instance_name)
             part = parts.get(instance.part_name) if instance is not None else None
             if part is None or element_name not in part.element_types:
                 raise ValueError(
                     f"Interface {interface.name!r} references unknown element "
-                    f"{element_name!r} on Instance {interface.instance_name!r}."
+                    f"{element_name!r} on Instance {instance_name!r}."
                 )
 
 
@@ -509,19 +525,22 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
     # every amplitude-bearing load interface must be set for every step, so a
     # load that was added but left unset in a step is written explicitly as a
     # zero amplitude (matching the step-matrix UI, where an empty cell is 0).
-    amps: dict[str, int] = {}
+    amps: dict[InterfaceNode, int] = {}
     for it in problem.interfaces():
         nv = INTERFACE_TYPES.get(it.interface_type, {}).get("num_values", 0)
         if nv and it.name:
-            amps[it.name] = nv
+            amps[it] = nv
 
     a(f"                self.set_step_num({n})")
     for s in range(n):
         step_dict = (values[s] if s < len(values) else {}) or {}
-        for name, nv in amps.items():
-            stored = step_dict.get(name)
+        for interface, nv in amps.items():
+            stored = step_dict.get(interface)
             amps_values = stored if stored is not None else [0.0] * nv
-            a(f"                self.set_step_params({s}, {name!r}, {amps_values!r})")
+            a(
+                f"                self.set_step_params({s}, {interface.name!r}, "
+                f"{amps_values!r})"
+            )
 
 
 def _emit_material_init(
@@ -548,31 +567,11 @@ def _emit_material_init(
         parameter_class = getattr(MaterialModels, f"{model}Params")
         model_keys = tuple(field.name for field in fields(parameter_class))
 
-        base = template.BASES.get("material_interface")
-        if mtype == "HomogeneousMaterial":
-            base = template.BASES.get(
-                "homogeneous_material_interface",
-                "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
-            )
-        elif mtype == "SIMP_BSPFieldMaterials":
-            base = "morphopt.simp.SIMP_BSPFieldMaterials"
-
-        custom_map = ""
+        base = HOMOGENEOUS_MATERIAL_BASE
         if mtype == "SIMP_BSPFieldMaterials":
-            custom_map = str(
-                mat._map_bsp_designfield or template.default_map_bsp_designfield()
-            ).strip()
+            base = SIMP_MATERIAL_BASE
 
         interface_class = base
-        if custom_map and "return nodes" not in custom_map:
-            class_name = f"MaterialInterface{index}"
-            interface_class = class_name
-            a("")
-            a(f"                class {class_name}({base}):")
-            a("")
-            a("                    def _map_bsp_designfield(self, nodes: Any) -> Any:")
-            a(indent_block(custom_map, 24))
-
         kw = []
         if mtype == "SIMP_BSPFieldMaterials":
             keys = [
@@ -625,11 +624,11 @@ def _resolve_geometry_targets(
     """Validate the Part every geometry sub-updater is bound to.
 
     Only boundary part interfaces carry surfaces, so an updater must target one
-    of them; an empty ``part_name`` means "the only boundary part".
+    of those Part objects.
     """
     if not geom_cfgs:
         return []
-    boundary = [node.name for node in problem.boundary_part_nodes()]
+    boundary = problem.boundary_part_nodes()
     if not boundary:
         raise ValueError(
             "A geometry optimizer needs a boundary part interface; INP / TorchFEA "
@@ -637,19 +636,13 @@ def _resolve_geometry_targets(
         )
     targets: list[str] = []
     for index, cfg in enumerate(geom_cfgs):
-        name = str((cfg or {}).get("part_name") or "").strip()
-        if not name:
-            if len(boundary) > 1:
-                raise ValueError(
-                    f"Geometry optimizer {index + 1} has no target Part; choose one "
-                    f"of {boundary}."
-                )
-            name = boundary[0]
-        if name not in boundary:
+        target = problem.config_part_node(cfg)
+        if target is None:
             raise ValueError(
-                f"Geometry optimizer {index + 1} targets {name!r}, which is not a "
-                f"boundary part interface ({boundary})."
+                f"Geometry optimizer {index + 1} has no target boundary Part; choose "
+                f"one of {[node.name for node in boundary]}."
             )
+        name = target.name
         if name in targets:
             raise ValueError(
                 f"Two geometry optimizers both target {name!r}; give each one its "
@@ -665,12 +658,15 @@ def _resolve_material_targets(
     """Validate the material interface every material sub-updater is bound to.
 
     Only design-carrying material interfaces (SIMP density fields) have
-    variables, so an updater must target one of them; an empty
-    ``interface_name`` means "the only design-carrying interface".
+    variables, so an updater must target one of those material objects.
     """
     if not mat_cfgs:
         return []
-    design = problem.design_material_names()
+    design = [
+        material
+        for material in problem.material_nodes()
+        if material.name in problem.design_material_names()
+    ]
     if not design:
         raise ValueError(
             "A material optimizer needs a design-carrying material interface "
@@ -678,19 +674,13 @@ def _resolve_material_targets(
         )
     targets: list[str] = []
     for index, cfg in enumerate(mat_cfgs):
-        name = str((cfg or {}).get("interface_name") or "").strip()
-        if not name:
-            if len(design) > 1:
-                raise ValueError(
-                    f"Material optimizer {index + 1} has no target interface; "
-                    f"choose one of {design}."
-                )
-            name = design[0]
-        if name not in design:
+        target = problem.config_material_node(cfg)
+        if target is None or target not in design:
             raise ValueError(
-                f"Material optimizer {index + 1} targets {name!r}, which is not a "
-                f"design-carrying material interface ({design})."
+                f"Material optimizer {index + 1} has no target design material; "
+                f"choose one of {[material.name for material in design]}."
             )
+        name = target.name
         if name in targets:
             raise ValueError(
                 f"Two material optimizers both target {name!r}; give each one its "
@@ -714,13 +704,12 @@ def _emit_updater(
     has_geom = bool(geom_cfgs)
     has_mat = bool(mat_cfgs)
     if not has_geom and not has_mat:
-        a(f"    class Updater({template.BASES['updaters']}):")
+        a(f"    class Updater({CORE_BASES['updaters']}):")
         a("")
         a("        def __init__(self, params: Any) -> None:")
         a("            super().__init__(params=params)")
         return
 
-    updater_base = template.BASES["updaters"]
     geometry_classes = [
         "UpdaterBoundaryPart" if index == 0 else f"UpdaterBoundaryPart{index}"
         for index in range(len(geom_cfgs))
@@ -730,7 +719,7 @@ def _emit_updater(
         for index in range(len(mat_cfgs))
     ]
 
-    a(f"    class Updater({updater_base}):")
+    a(f"    class Updater({CORE_BASES['updaters']}):")
     a("")
     a("        def define_updater(self) -> None:")
     for class_name, target in zip(geometry_classes, geom_targets):
@@ -748,10 +737,10 @@ def _emit_updater(
     a(f"            super().__init__(params=params, device={device})")
     a("")
     for class_name, config in zip(geometry_classes, geom_cfgs):
-        _emit_nested_updater(a, class_name, template.BASES.get("updater_geom"), config)
+        _emit_nested_updater(a, class_name, GEOMETRY_UPDATER_BASE, config)
         a("")
     for class_name, config in zip(material_classes, mat_cfgs):
-        _emit_nested_updater(a, class_name, template.BASES.get("updater_mat"), config)
+        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config)
         a("")
 
 

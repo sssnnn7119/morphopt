@@ -121,15 +121,7 @@ class PreviewViewer(QWidget):
         for mat in self._problem.material_nodes():
             bb = mat.bounding_box
             if bb and any(bb) and len(bb) == 6:
-                target = next(
-                    (
-                        part
-                        for part in self._problem.part_interfaces()
-                        if part.resolved_part_name() == mat.part_name
-                        or part.name == mat.part_name
-                    ),
-                    None,
-                )
+                target = mat.part
                 instances = target.instances() if target is not None else []
                 if not instances:
                     instances = [None]
@@ -340,22 +332,12 @@ class PreviewViewer(QWidget):
         return assembly
 
     # ----------------------------------------------------------------- loads
-    def _interfaces_by_name(self) -> dict[str, Node]:
-        return {
-            interface.name: interface
-            for interface in self._problem.interfaces()
-            if interface.name
-        }
-
-    def _rp_location(self, rp_name: str):
-        for interface in self._problem.interfaces():
-            if (
-                interface.name == rp_name
-                and interface.interface_type == "ReferencePoint"
-            ):
-                loc = interface.rp_location or [0.0, 0.0, 0.0]
-                return [float(x) for x in loc]
-        return None
+    @staticmethod
+    def _rp_location(reference_point: Node | None):
+        if reference_point is None:
+            return None
+        loc = reference_point.rp_location or [0.0, 0.0, 0.0]
+        return [float(x) for x in loc]
 
     def _redraw_loads(self) -> None:
         plotter = self.host.plotter
@@ -381,13 +363,9 @@ class PreviewViewer(QWidget):
         if idx >= len(values):
             return
         step = values[idx] or {}
-        by_name = self._interfaces_by_name()
         scale_len = self._model_diagonal() if self._base_meshes else _diag(self._problem)
 
-        for name, amps in step.items():
-            iface = by_name.get(name)
-            if iface is None:
-                continue
+        for iface, amps in step.items():
             itype = iface.interface_type
             amps = [float(a) for a in (amps or [])]
             if itype == "Pressure":
@@ -400,30 +378,21 @@ class PreviewViewer(QWidget):
                 # tint the referenced surface with a semi-transparent copy
                 surf_name = str(iface.surface_name or "")
                 mesh = None
-                if self._model_assembly is not None:
+                if self._model_assembly is not None and iface.instance is not None:
                     try:
                         mesh = self._model_assembly.get_instance(
-                            iface.instance_name
+                            iface.instance.name
                         ).get_mesh(surf_name=surf_name)
                     except (KeyError, ValueError):
                         mesh = None
                 if mesh is None:
-                    part = self._problem.part_interface_for_instance(
-                        str(iface.instance_name or "")
-                    )
+                    part = self._problem.part_interface_for_instance(iface.instance)
                     surfaces = part.surfaces() if part is not None else self._problem.surfaces()
                     srf_idx = _surface_index_from_name(surf_name)
                     if 0 <= srf_idx < len(surfaces):
                         mesh = self._surface_mesh(surfaces[srf_idx])
                         if part is not None:
-                            instance = next(
-                                (
-                                    item
-                                    for item in part.instances()
-                                    if item.name == iface.instance_name
-                                ),
-                                None,
-                            )
+                            instance = iface.instance
                             if instance is not None and mesh is not None:
                                 mesh = self._apply_instance_pose(mesh, instance)
                 if mesh is not None:
@@ -433,8 +402,7 @@ class PreviewViewer(QWidget):
                     )
                     self._overlay_actors.append(act)
             elif itype in ("ConcentratedForce", "ConcentratedMoment"):
-                rp = iface.rp_name or ""
-                loc = self._rp_location(rp)
+                loc = self._rp_location(iface.reference_point)
                 if loc is None:
                     continue
                 vals = [float(a) for a in amps[:3]]

@@ -13,7 +13,7 @@ MorphOpt 的任务定义是“控制器驱动”的：
 2. 在控制器内定义四个模块：`ObjectiveFunction / Params / Solver / Updater`。
 3. 通过 `morphopt.start_optimization(...)` 启动。
 
-代码骨架（以 shapeopt 方案为例）：
+代码骨架：通用模块全部直接继承顶层 `morphopt`；按需组合具体接口与更新器。
 
 ```python
 import morphopt
@@ -22,20 +22,21 @@ class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(path_result_folder='D:/Results', opt_label='MyTask')
 
-    class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.ObjectiveFunction):
         ...
 
-    class Params(morphopt.shapeopt.Params):
+    class Params(morphopt.Params):
         ...
 
-    class Solver(morphopt.shapeopt.Solver):
+    class Solver(morphopt.Solver):
         ...
 
-    class Updater(morphopt.shapeopt.Updaters):
+    class Updater(morphopt.Updaters):
         ...
 ```
 
-> **继承必须写完整的方案前缀**。不要用顶层裸名（`morphopt.ObjectiveFunction`、`morphopt.Materials`、`morphopt.UpdaterBoundaryPart` 等在顶层并不存在）。三种方案（shapeopt / simp / codesign）的基类对照：
+> **通用基类只从顶层 `morphopt` 继承**。`shapeopt` 与 `simp` 不是优化问题
+> 基类层级；它们只实现可组合的具体 Part / 材料接口和更新器。
 
 ### 1.1 通用约定：构造函数轻量，解析放在 `initialize()`
 
@@ -61,19 +62,16 @@ class ThisController(morphopt.Controller):
 好处：`Params()` / `Updater()` 可以随时构造（UI 预览、模型对比都不需要真网格）；名字写错只在
 `initialize()` 报错——那时控制器已持有完整模型，可以直接给出“可选项列表”。
 
-| 控制器内模块 | shapeopt（曲面形状） | simp（拓扑） | codesign（协同） |
-|---|---|---|---|
-| `ObjectiveFunction` | `morphopt.shapeopt.ObjectiveFunction` | `morphopt.simp.ObjectiveFunction` | `morphopt.codesign.ObjectiveFunction` |
-| `Params` | `morphopt.shapeopt.Params` | `morphopt.simp.Params` | `morphopt.codesign.Params` |
-| `GeometryParams` | `morphopt.shapeopt.GeometryParams` | `morphopt.simp.GeometryParams` | `morphopt.codesign.GeometryParams` |
-| `FEAParams` | `morphopt.shapeopt.FEAParams` | `morphopt.simp.FEAParams` | `morphopt.codesign.CodesignFEAParams` |
-| `MaterialsParams` | `morphopt.shapeopt.MaterialsParams` | `morphopt.simp.MaterialsParams` | `morphopt.codesign.MaterialsParams` |
-| `Solver` | `morphopt.shapeopt.Solver` | `morphopt.simp.SIMPSolver` | `morphopt.codesign.Solver` |
-| `Updater` | `morphopt.shapeopt.Updaters` | `morphopt.simp.Updaters` | `morphopt.codesign.Updaters` |
-| 几何更新器（Updater 内层） | `morphopt.shapeopt.UpdaterBoundaryPart` | — | `morphopt.codesign.UpdaterBoundaryPart` |
-| 材料更新器（Updater 内层） | — | `morphopt.simp.UpdaterSIMPMaterial` | `morphopt.codesign.UpdaterSIMPMaterial` |
+| 类型 | 顶层基类 |
+|---|---|
+| 控制器模块 | `morphopt.ObjectiveFunction` / `Params` / `Solver` / `Updaters` |
+| 参数集合 | `morphopt.GeometryParams` / `FEAParams` / `MaterialsParams` |
+| 边界曲面 Part | `morphopt.BoundaryPartInterface` |
+| SIMP 密度场材料 | `morphopt.SIMP_BSPFieldMaterials` |
+| 几何更新器 | `morphopt.UpdaterBoundaryPart` |
+| 材料更新器 | `morphopt.UpdaterSIMPMaterial` |
 
-（`—` 表示该方案不需要此类更新器：`shapeopt` 只挂几何更新器，`simp` 只挂材料更新器，`codesign` 两者都挂。）
+不使用的接口和更新器不注册即可；同一问题可以同时有多个 Part、多个 Instance 和多个材料更新器。
 
 ## 2. ObjectiveFunction 怎么定义
 
@@ -87,7 +85,7 @@ class ThisController(morphopt.Controller):
 模板：
 
 ```python
-class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):  # simp/codesign 分别换成 morphopt.simp/codesign.ObjectiveFunction
+class ObjectiveFunction(morphopt.ObjectiveFunction):
     def __init__(self):
         super().__init__()
         self.jacobian_needed = ['force_1']
@@ -117,9 +115,9 @@ class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):  # simp/codesign �
 模板：
 
 ```python
-class Params(morphopt.shapeopt.Params):
-    class GeometryParams(morphopt.shapeopt.GeometryParams):
-        class Body(morphopt.shapeopt.BoundaryPartInterface):
+class Params(morphopt.Params):
+    class GeometryParams(morphopt.GeometryParams):
+        class Body(morphopt.BoundaryPartInterface):
             def define_surfaces(self):
                 self.add_surface_interface(
                     self.BSP.initialize_cylinder(r0=10.0, length=50.0, seed_size=1.0, flip=False))
@@ -127,7 +125,7 @@ class Params(morphopt.shapeopt.Params):
         def define_interface(self):
             self.add_interface(self.Body(fea_seed_size=1.0, mesh_order=1), name='body')
 
-    class FEAParams(morphopt.shapeopt.FEAParams):
+    class FEAParams(morphopt.FEAParams):
         def define_interface(self):
             self.add_interface(self.BoundaryConditionInterface(instance_name='body', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
             self.add_interface(self.PressureInterface(instance_name='body', surface_name='surface_0_All'), name='pressure_1')
@@ -136,7 +134,7 @@ class Params(morphopt.shapeopt.Params):
             self.set_step_num(1)
             self.set_step_params(0, 'pressure_1', [0.06])
 
-    class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+    class MaterialsParams(morphopt.MaterialsParams):
         def define_interface(self):
             self.add_interface(
                 self.HomogeneousMaterial(
@@ -183,12 +181,12 @@ class Frame(morphopt.INPPartInterface):
 Part 子类中：
 
 ```python
-class GeometryParams(morphopt.shapeopt.GeometryParams):
+class GeometryParams(morphopt.GeometryParams):
 
-    class CPGEO_Symmetry(morphopt.shapeopt.BoundaryPartInterface.CPGEO):  # 模型级自定义曲面类
+    class CPGEO_Symmetry(morphopt.BoundaryPartInterface.CPGEO):  # 模型级自定义曲面类
         ...
 
-    class BoundaryPart(morphopt.shapeopt.BoundaryPartInterface):
+    class BoundaryPart(morphopt.BoundaryPartInterface):
         """可优化实体：曲面参数化，一个 Part 两个曲面（0 外表面、1 内腔）。"""
 
         def define_surfaces(self):
@@ -260,7 +258,7 @@ class GeometryParams(morphopt.shapeopt.GeometryParams):
 
 两条路线：
 
-1. 先继承方案对应的 `MaterialsParams`。
+1. 继承 `morphopt.MaterialsParams`。
 2. 在 `define_interface()` 中调用 `add_interface(...)` 注册一个或多个接口。
 3. 均质材料使用 `HomogeneousMaterial`；SIMP 材料使用 `SIMP_BSPFieldMaterials`。
 
@@ -289,7 +287,7 @@ self.HomogeneousMaterial(
 SIMP 接口也使用相同的模型选择；例如 Yeoh 模型的参数通过对应类型传入：
 
 ```python
-morphopt.simp.SIMP_BSPFieldMaterials(
+morphopt.SIMP_BSPFieldMaterials(
     material_parameters=self.materialmodels.YeohParams(
         c1=0.48, c2=0.0, c3=0.0, kappa=4.8),
     mumax=10.0, kappamax=100.0,
@@ -302,8 +300,8 @@ morphopt.simp.SIMP_BSPFieldMaterials(
 
 SIMP 场常见重写点：
 
-- `_map_bsp_designfield(nodes)`：由 B 样条控制点场计算材料密度；可在里面加对称/旋转副本等自定义映射。
-- `_map_bsp_designfield_with_spartial_derivative(nodes)`：配套的、输出含一阶空间导数的版本（灵敏度计算用）。
+- SIMP 的 B 样条映射由材料接口内部统一完成；材料节点只配置设计域、分辨率、阶次和材料参数。
+- 对称等式约束应作为材料更新器的约束项注册，不应修改内部映射函数。
 
 ## 4. Solver 怎么定义
 
@@ -312,8 +310,8 @@ SIMP 场常见重写点：
 通常只需设置并行参数：
 
 ```python
-class Solver(morphopt.shapeopt.Solver):  # simp→morphopt.simp.SIMPSolver；codesign→morphopt.codesign.Solver
-    def __init__(self, params: morphopt.shapeopt.Params):
+class Solver(morphopt.Solver):
+    def __init__(self, params: morphopt.Params):
         super().__init__(params=params, num_process=1)
 ```
 
@@ -349,13 +347,13 @@ class Solver(morphopt.shapeopt.Solver):  # simp→morphopt.simp.SIMPSolver；cod
 **updater 类本身不写目标**，所以同一个类可以对不同对象分别优化不同的 Part；目标与目标函数分开声明：构造只给“自己的超参”，目标/约束写在 `define_objective()` 里（和 `define_interface()` 对称，由注册方法调用一次）：
 
 ```python
-class Updater(morphopt.shapeopt.Updaters):
+class Updater(morphopt.Updaters):
     def define_updater(self) -> None:
         # 同一个类，两个对象，各自优化自己的 Part
         self.add_geometry_updater(self.Shape(), name='body')
         self.add_geometry_updater(self.Shape(), name='leg')
 
-    class Shape(morphopt.shapeopt.UpdaterBoundaryPart):
+    class Shape(morphopt.UpdaterBoundaryPart):
         def __init__(self, interface_name=None):
             super().__init__(interface_name=interface_name, max_step_iter=200)
 
@@ -438,10 +436,9 @@ class Updater(morphopt.codesign.Updaters):
 （上面 `define_updater()` 里的 `name='body'` / `name='frame'` 就是说“这个对象优化哪个 Part”；
 两个几何类不同是因为它们的目保/约束不同——如果完全一样，完全可以只写一个类、注册两次。）
 
-> 只做几何（shapeopt）：`Updater` 继承 `morphopt.shapeopt.Updaters`，`define_updater()` 里只写
-> `add_geometry_updater(self.UpdaterBoundaryPart(), name='body')`（内层类继承
-> `morphopt.shapeopt.UpdaterBoundaryPart`）。只做拓扑（simp）：`Updater` 继承
-> `morphopt.simp.Updaters`，只写 `add_material_updater(...)`。用不到的 add 方法不写即可。
+> 只做几何时只注册 `add_geometry_updater(...)`；只做拓扑时只注册
+> `add_material_updater(...)`。两者都直接继承 `morphopt.Updaters`，不使用的
+> 注册方法不写即可。
 
 定义规则：
 
@@ -475,7 +472,7 @@ class Updater(morphopt.codesign.Updaters):
 
 codesign 里自定义 CPGEO 曲面类应继承
 `morphopt.codesign.CodesignBoundaryPartInterface.CPGEO`；
-自定义 SIMP 接口常重写 `_map_bsp_designfield` 加入旋转对称副本。
+SIMP 材料的空间映射属于内核实现，不在 UI 的材料节点中编辑。
 
 几何约束可直接加：
 

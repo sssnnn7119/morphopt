@@ -63,8 +63,8 @@ B 样条的核心优势在于**局部支撑性**：调整一个控制点只会�
 在 `src/morphopt/shapeopt/surfaceinterfaces/` 中，`BspSurfaceInterface`（别名 `BSP`）实现了 B 样条曲面的初始化与操作；曲面属于某个边界 Part：
 
 ```python
-class GeometryParams(morphopt.shapeopt.GeometryParams):
-    class BoundaryPart(morphopt.shapeopt.BoundaryPartInterface):
+class GeometryParams(morphopt.GeometryParams):
+    class BoundaryPart(morphopt.BoundaryPartInterface):
         def define_surfaces(self):
             self.add_surface_interface(
                 self.BSP.initialize_cylinder(
@@ -151,7 +151,7 @@ $$
 **代码对应**：`myjobs/ral2026fea/shapeoptimization.py` 中设置材料参数：
 
 ```python
-class MaterialsParams(morphopt.shapeopt.MaterialsParams):
+class MaterialsParams(morphopt.MaterialsParams):
     def define_interface(self):
         self.add_interface(
             self.HomogeneousMaterial(
@@ -223,10 +223,10 @@ $$
 
 #### 代码对应
 
-在 `myjobs/ral2026fea/shapeoptimization.py`（或 `examples/bendingactuator.py`）中，目标函数通过继承 `morphopt.shapeopt.ObjectiveFunction` 实现，例如最大化末端轴向位移：
+在 `myjobs/ral2026fea/shapeoptimization.py`（或 `examples/bendingactuator.py`）中，目标函数通过继承 `morphopt.ObjectiveFunction` 实现，例如最大化末端轴向位移：
 
 ```python
-class ObjectiveFunction(morphopt.shapeopt.ObjectiveFunction):
+class ObjectiveFunction(morphopt.ObjectiveFunction):
     def objective_function(self):
         return self.fe_results[0].GC[-2]  # 末端位移的 z 分量
 ```

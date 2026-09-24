@@ -37,7 +37,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
     updater the single resolved target.
 
     ```python
-    class Updater(morphopt.shapeopt.Updaters):
+    class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
             # one class, two objects, two different Parts:
             self.add_geometry_updater(self.Shape(), name="body")
@@ -404,12 +404,12 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
     collection** when the updater initializes):
 
     ```python
-    class Updater(morphopt.shapeopt.Updaters):
+    class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
             self.add_geometry_updater(self.Shape(), name="body")
             self.add_material_updater(self.Solid(), name="solid")
 
-        class Shape(morphopt.shapeopt.UpdaterBoundaryPart):
+        class Shape(morphopt.UpdaterBoundaryPart):
             def __init__(self):
                 super().__init__(max_step_iter=200)
     ```

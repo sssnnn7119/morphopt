@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
 
-from ..model.problem import Node
+from ..model.problem import InterfaceNode, Node
 from ..model.schemas import INTERFACE_TYPES
 from ..i18n import T
 
@@ -68,17 +68,17 @@ class StepMatrix(QWidget):
         if self._problem is None:
             return []
         return [
-            (interface.name, INTERFACE_TYPES[interface.interface_type]["num_values"])
+            (interface, INTERFACE_TYPES[interface.interface_type]["num_values"])
             for interface in self._problem.amplitude_interfaces()
         ]
 
     def _step_values(self) -> list[dict]:
         return list(self._node.step_values)
 
-    def _value(self, step: int, name: str, comp: int):
+    def _value(self, step: int, interface: InterfaceNode, comp: int):
         d = self._step_values()
         if step < len(d):
-            amps = d[step].get(name)
+            amps = d[step].get(interface)
             if amps is not None and comp < len(amps):
                 return amps[comp]
         return 0.0
@@ -88,14 +88,14 @@ class StepMatrix(QWidget):
             return
         self._loading = True
         amps = self._amplitude_interfaces()
-        # each column = (interface name, component index, header)
-        cols: list[tuple[str, int, str]] = []
-        for name, nv in amps:
+        # each column = (interface object, component index, header)
+        cols: list[tuple[InterfaceNode, int, str]] = []
+        for interface, nv in amps:
             if nv == 1:
-                cols.append((name, 0, name))
+                cols.append((interface, 0, interface.name))
             else:
                 for c in range(nv):
-                    cols.append((name, c, f"{name}.{c}"))
+                    cols.append((interface, c, f"{interface.name}.{c}"))
         n = int(self._node.num_steps)
         self._table.blockSignals(True)
         self._table.clear()
@@ -103,8 +103,10 @@ class StepMatrix(QWidget):
         self._table.setHorizontalHeaderLabels([h for _, _, h in cols])
         self._table.setRowCount(n)
         for s in range(n):
-            for ci, (name, comp, _h) in enumerate(cols):
-                item = QTableWidgetItem(f"{self._value(s, name, comp):.6g}")
+            for ci, (interface, comp, _h) in enumerate(cols):
+                item = QTableWidgetItem(
+                    f"{self._value(s, interface, comp):.6g}"
+                )
                 self._table.setItem(s, ci, item)
         self._table.blockSignals(False)
         self._loading = False
@@ -195,32 +197,29 @@ class StepMatrix(QWidget):
         except ValueError:
             return
         amps = self._amplitude_interfaces()
-        name = None
+        interface = None
         comp = 0
         idx = 0
-        for nm, nv in amps:
+        for candidate, nv in amps:
             if idx + nv > c:
-                name = nm
+                interface = candidate
                 comp = c - idx
                 break
             idx += nv
-        if name is None:
+        if interface is None:
             return
         vals = list(self._node.step_values)
         while len(vals) <= r:
             vals.append({})
         row = dict(vals[r])
-        try:
-            itype = next(p.interface_type for p in self._problem.interfaces()
-                         if p.name == name)
-            nvals = INTERFACE_TYPES[itype].get("num_values", 1)
-        except (StopIteration, KeyError):
-            nvals = 1
-        cur = list(row.get(name, [0.0] * nvals))
+        nvals = INTERFACE_TYPES.get(interface.interface_type, {}).get(
+            "num_values", 1
+        )
+        cur = list(row.get(interface, [0.0] * nvals))
         while len(cur) <= comp:
             cur.append(0.0)
         cur[comp] = value
-        row[name] = cur
+        row[interface] = cur
         vals[r] = row
         self._node.step_values = vals
         self.changed.emit(self._node)

@@ -216,9 +216,13 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
 
         
 
-        # save the FEA results
-        if iteration == 0:
-            self.fe.save_model(f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}")
+        # The FEA model and its result must be a matched pair.  A model is
+        # rebuilt from the current design at every iteration, so retaining
+        # only iteration 0 makes later result files impossible to inspect
+        # against the model that produced them.
+        self.fe.save_model(
+            f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}"
+        )
 
         for caseidx in range(self.num_tasks):
             self.fe_results[caseidx].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{caseidx}_iter_{iteration}.npz")

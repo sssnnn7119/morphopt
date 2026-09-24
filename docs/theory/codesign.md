@@ -584,7 +584,7 @@ def set_materials(self, fe):
 class MaterialsParams(morphopt.codesign.MaterialsParams):
     def define_interface(self):
         self.add_interface(
-            morphopt.simp.SIMP_BSPFieldMaterials(
+            morphopt.SIMP_BSPFieldMaterials(
                 material_parameters=self.materialmodels.NeoHookeanLnJParams(
                     mu=4.5, kappa=45.0),
                 mumax=4.5, kappamax=45.0, simp_ratio_min=1e-4,
@@ -856,7 +856,7 @@ class ThisController(morphopt.Controller):
 
         class MaterialsParams(morphopt.codesign.MaterialsParams):
             def define_interface(self):
-                self.add_interface(morphopt.simp.SIMP_BSPFieldMaterials(
+                self.add_interface(morphopt.SIMP_BSPFieldMaterials(
                     material_parameters=self.materialmodels.NeoHookeanLnJParams(
                         mu=mumax, kappa=mumax * 10),
                     mumax=mumax, kappamax=mumax * 10,

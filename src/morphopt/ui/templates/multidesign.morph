@@ -267,8 +267,7 @@
               "mu": 0.482,
               "kappa": 4.8,
               "density": 1.08e-09,
-              "elementname": "",
-              "_map_bsp_designfield": ""
+              "elementname": ""
             },
             "children": []
           },
@@ -296,8 +295,7 @@
               "degree": 2,
               "initial_ratio": 0.5,
               "voidpenalfactor": 0.01,
-              "materialpenalty": 8.0,
-              "_map_bsp_designfield": "return nodes\n"
+              "materialpenalty": 8.0
             },
             "children": []
           }
@@ -437,28 +435,9 @@
     "id": "multidesign",
     "label": "多实体联合优化（形状 + SIMP）",
     "label_en": "Multi-entity co-optimization (shape + SIMP)",
-    "schema_scheme": "shapeopt",
-    "material_types": ["HomogeneousMaterial", "SIMP_BSPFieldMaterials"],
-    "geometry_types": ["BoundaryPartInterface", "TorchFEAPartInterface", "INPPartInterface"],
     "geometry_title": "Geometry (shape + fixed mesh)",
     "body_name": "body",
-    "bases": {
-      "controller": "morphopt.Controller",
-      "params": "morphopt.optcore.modelparams.Params",
-      "geometry": "morphopt.optcore.modelparams.GeometryParams",
-      "boundary_part": "morphopt.shapeopt.BoundaryPartInterface",
-      "fea": "morphopt.optcore.modelparams.FEAParams",
-      "materials": "morphopt.optcore.modelparams.MaterialsParams",
-      "material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
-      "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
-      "objective": "morphopt.optcore.ObjectiveFunction",
-      "solver": "morphopt.optcore.Solver",
-      "updaters": "morphopt.optcore.Updaters",
-      "updater_geom": "morphopt.shapeopt.UpdaterBoundaryPart",
-      "updater_mat": "morphopt.simp.UpdaterSIMPMaterial"
-    },
     "default_objective_slot": "return self.fe_results[0].GC[-2]\n",
-    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n",
-    "default_map_bsp_designfield": "return nodes\n"
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
   }
 }

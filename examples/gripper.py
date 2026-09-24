@@ -59,7 +59,7 @@ class ThisController(morphopt.Controller):
             opt_label="Gripper",
         )
 
-    class ObjectiveFunction(morphopt.simp.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.ObjectiveFunction):
         def __init__(self):
             super().__init__()
 
@@ -124,48 +124,59 @@ class ThisController(morphopt.Controller):
 
             return metrics_list + [self.get_volume_fraction()]
 
-    class Params(morphopt.simp.Params):
-        class GeometryParams(morphopt.simp.FixedGeometry):
-            def define_assembly(self):
-                box_cad = torchfea.cad.CADModel()
-                box_history = box_cad.add_part("final_model")
-                box_history.add_box(
-                    x=0.0, y=-0.5, z=-30.0,
-                    dx=80.0, dy=1.0, dz=30.0,
-                )
-                part = box_cad.mesh_part("final_model", mesh_size=0.5)
-                _add_gripper_sets(part)
+    class Params(morphopt.Params):
+        class GeometryParams(morphopt.GeometryParams):
+            class GripperPart(morphopt.BasePartInterface):
+                """The fixed gripper body and its identity instance."""
 
-                instance = torchfea.Instance(part_name="final_model")
-                assembly = torchfea.Assembly()
-                assembly.add_part(part, name="final_model")
-                assembly.add_instance(instance, name="final_model")
-                instance.exterior_surface = "surface_0_All"
+                cache_part = True
 
-                cylinder_cad = torchfea.cad.CADModel()
-                cylinder_history = cylinder_cad.add_part("cylinder")
-                cylinder_history.add_cylinder(
-                    x=80.0, y=-10.0, z=15.0,
-                    dy=20.0, radius=15.0,
-                )
-                part_cylinder = cylinder_cad.mesh_part(
-                    "cylinder", mesh_size=1.5)
-                part_cylinder.add_node_set(
-                    "cylinder", part_cylinder.set_nodes["all"])
-
-                assembly.add_part(part_cylinder, name="cylinder")
-
-                for i in range(len(cylinder_x)):
-                    instance_cylinder = torchfea.Instance(
-                        part_name="cylinder", translation=[cylinder_x[i] - 80, 0.0, 0.0]
+                def build_part(self, path_result=None, pools=None):
+                    box_cad = torchfea.cad.CADModel()
+                    box_history = box_cad.add_part(self.part_name)
+                    box_history.add_box(
+                        x=0.0, y=-0.5, z=-30.0,
+                        dx=80.0, dy=1.0, dz=30.0,
                     )
-                    assembly.add_instance(
-                        instance_cylinder, name=f"cylinder{cylinder_x[i]}"
-                    )
-                    instance_cylinder.exterior_surface = "extern"
-                return assembly
+                    part = box_cad.mesh_part(self.part_name, mesh_size=0.5)
+                    _add_gripper_sets(part)
+                    return part
 
-        class FEAParams(morphopt.simp.FEAParams):
+            class CylinderPart(morphopt.BasePartInterface):
+                """One rigid-cylinder Part placed at four x positions."""
+
+                cache_part = True
+
+                def define_instance(self) -> None:
+                    for x in cylinder_x:
+                        self.add_instance(
+                            self.part_name,
+                            f"cylinder{x}",
+                            [x - 80.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        )
+
+                def build_part(self, path_result=None, pools=None):
+                    cylinder_cad = torchfea.cad.CADModel()
+                    cylinder_history = cylinder_cad.add_part(self.part_name)
+                    cylinder_history.add_cylinder(
+                        x=80.0, y=-10.0, z=15.0,
+                        dy=20.0, radius=15.0,
+                    )
+                    part = cylinder_cad.mesh_part(self.part_name, mesh_size=1.5)
+                    part.add_node_set("cylinder", part.set_nodes["all"])
+                    return part
+
+            def define_interface(self) -> None:
+                self.add_interface(
+                    self.GripperPart(exterior_surface="surface_0_All"),
+                    name="final_model",
+                )
+                self.add_interface(
+                    self.CylinderPart(exterior_surface="extern"),
+                    name="cylinder",
+                )
+
+        class FEAParams(morphopt.FEAParams):
             def define_interface(self) -> None:
                 # Boundary the xmin as base
                 self.add_interface(
@@ -250,13 +261,20 @@ class ThisController(morphopt.Controller):
                             else [1e2, 0.0],
                         )
 
-        class MaterialsParams(morphopt.simp.MaterialsParams):
+        class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self) -> None:
                 self.add_interface(
-                    ThisController.Params.BodyMaterial(), name="body")
+                    ThisController.Params.BodyMaterial(
+                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                            mu=mumax,
+                            kappa=mumax * 10,
+                        )
+                    ),
+                    name="body",
+                )
 
-        class BodyMaterial(morphopt.simp.SIMP_BSPFieldMaterials):
-            def __init__(self) -> None:
+        class BodyMaterial(morphopt.SIMP_BSPFieldMaterials):
+            def __init__(self, material_parameters) -> None:
                 super().__init__(
                     mumax=mumax,
                     kappamax=mumax * 10,
@@ -266,6 +284,7 @@ class ThisController(morphopt.Controller):
                     bounding_box=[0.0, 80.0, -1.0, 1.0, -30.0, 0.0],
                     simp_field_resolution=1.0,
                     degree=2,
+                    material_parameters=material_parameters,
                     voidpenalfactor=0e-2,
                     elementname="C3D4",
                     part_name="final_model",
@@ -328,22 +347,22 @@ class ThisController(morphopt.Controller):
 
         def __init__(self):
             super().__init__(
-                surfaces=self.GeometryParams(),
+                geometry=self.GeometryParams(),
                 feamodel=self.FEAParams(),
                 materials=self.MaterialsParams(),
             )
 
-    class Solver(morphopt.simp.SIMPSolver):
+    class Solver(morphopt.Solver):
         """
         Solver class for morphopt.
         This class is responsible for solving the finite element analysis (FEA) problem.
         """
 
-        def __init__(self, params: morphopt.simp.Params):
+        def __init__(self, params: morphopt.Params):
 
-            super().__init__(params=params, available_gpus=["cuda:0"], num_process=1)
+            super().__init__(params=params, available_gpus=["cpu"], num_process=1)
 
-    class Updater(morphopt.simp.Updaters):
+    class Updater(morphopt.Updaters):
         """
         Updater class for morphopt.
         This class is responsible for updating the design variables based on the results of the optimization process.
@@ -352,10 +371,10 @@ class ThisController(morphopt.Controller):
         def define_updater(self) -> None:
             self.add_material_updater(self.UpdaterSIMPMaterial(), name="body")
 
-        def __init__(self, params: morphopt.simp.Params):
+        def __init__(self, params: morphopt.Params):
             super().__init__(params=params, device="cpu")
 
-        class UpdaterSIMPMaterial(morphopt.simp.UpdaterSIMPMaterial):
+        class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
             """
             Material updater based on SIMP control points.
             """

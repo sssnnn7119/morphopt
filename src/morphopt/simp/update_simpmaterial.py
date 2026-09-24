@@ -21,12 +21,12 @@ class UpdaterSIMPMaterial(BaseUpdater):
     from the ``name`` of that call::
 
     ```python
-    class Updater(morphopt.simp.Updaters):
+    class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
             # this object optimizes the interface named "solid"
             self.add_material_updater(self.Density(), name="solid")
 
-        class Density(morphopt.simp.UpdaterSIMPMaterial):
+        class Density(morphopt.UpdaterSIMPMaterial):
             def __init__(self):
                 super().__init__(max_step_iter=50)   # no target here
     ```

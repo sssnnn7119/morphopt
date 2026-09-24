@@ -6,14 +6,14 @@ boundary, ``1..n`` = cavities), exports them, meshes them into one volume Part,
 and carries their design variables.  The geometry updater binds to this class.
 
 ```python
-class Boundary(morphopt.shapeopt.BoundaryPartInterface):
+class Boundary(morphopt.BoundaryPartInterface):
     def define_surfaces(self) -> None:
         self.add_surface_interface(self.BSP.initialize_cylinder(r0=8.0, length=80.0))
 
     def apply_surface_constraints(self) -> None:
         ...   # equality constraints on self.surface_interfaces()[...]
 
-class GeometryParams(morphopt.shapeopt.GeometryParams):
+class GeometryParams(morphopt.GeometryParams):
     def define_interface(self) -> None:
         self.add_interface(self.Boundary(fea_seed_size=1.0, mesh_order=1),
                            name="body")
@@ -315,7 +315,7 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
 
         ``max_step_length`` is ``None`` (no limiting) or **one tensor per
         surface**, holding the step length of each control point (that is the
-        form :class:`~morphopt.shapeopt.UpdaterBoundaryPart` keeps per iteration).
+        form :class:`~morphopt.UpdaterBoundaryPart` keeps per iteration).
         """
         x_change = torch.as_tensor(x_change).reshape(-1)
         surfaces = self.surfaceinterfaces

@@ -22,12 +22,12 @@ class UpdaterBoundaryPart(BaseUpdater):
     ``name`` of that call::
 
     ```python
-    class Updater(morphopt.shapeopt.Updaters):
+    class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
             # this object optimizes the Part named "body"
             self.add_geometry_updater(self.Shape(), name="body")
 
-        class Shape(morphopt.shapeopt.UpdaterBoundaryPart):
+        class Shape(morphopt.UpdaterBoundaryPart):
             def __init__(self):
                 super().__init__(max_step_iter=200)   # no target here
 

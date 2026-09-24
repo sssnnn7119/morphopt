@@ -28,22 +28,17 @@ class SchemeTemplate:
     """Describes one optimization scheme for the UI.
 
     A template is the single source of truth for *one* task-tree shape: it
-    declares the backend ``BASES`` mapping, the scheme's data (geometry
-    title, material type, code-slot defaults) and builds a
+    declares starter data (geometry title, default material type and code-slot
+    defaults) and builds a
     fully-populated :class:`ProblemDefinition` out of the typed task-tree
     nodes via the shared ``make_*`` section builders below.
     """
 
     scheme: str = ""
-    #: Schema catalogue used by a template.  File templates may use a custom
-    #: id while reusing the shapeopt/simp field catalogue.
-    schema_scheme: str = ""
     label: str = ""
     label_en: str = ""
     #: material implementation chosen by this scheme's default tree.
     MATERIAL_TYPE: str = ""
-    #: class-name mapping used by the code generator
-    BASES: dict = {}
     #: display title of the Geometry section (used by the model tree)
     geometry_title: str = "Geometry"
     #: registration (Part) name of the scheme's default geometry
@@ -78,26 +73,18 @@ class SchemeTemplate:
     def make_material(
         self, material_type: str | None = None, **overrides
     ) -> MaterialNode:
-        """Build a fresh material of this scheme's concrete type."""
+        """Build a fresh material interface."""
         selected_type = material_type or self.material_type
         if selected_type not in self.available_material_types():
             raise ValueError(
-                f"Material type {selected_type!r} is not available for "
-                f"scheme {self.scheme!r}."
+                f"Unknown material interface type {selected_type!r}."
             )
         mat = MaterialNode.create(selected_type, **overrides)
-        if selected_type == "SIMP_BSPFieldMaterials":
-            mat.set_field("_map_bsp_designfield", self.default_map_bsp_designfield())
         return mat
 
     def available_material_types(self) -> tuple[str, ...]:
-        """Return material interfaces supported by this optimization scheme."""
-        scheme = self.schema_scheme or self.scheme
-        return tuple(
-            material_type
-            for material_type, spec in S.MATERIAL_TYPES.items()
-            if scheme in spec.get("schemes", ())
-        )
+        """Return every material interface supported by the unified kernel."""
+        return tuple(S.MATERIAL_TYPES)
 
     def make_materials(self, *materials: MaterialNode) -> MaterialsNode:
         """Build the material-interface collection for the problem tree."""
@@ -130,15 +117,21 @@ class SchemeTemplate:
         selected = interface_type or self.default_part_interface_type()
         if selected not in self.available_geometry_types():
             raise ValueError(
-                f"Geometry interface type {selected!r} is not available for "
-                f"scheme {self.scheme!r}."
+                f"Unknown geometry interface type {selected!r}."
             )
         return PartInterfaceNode.create(selected, name=name or "", **overrides)
 
     def available_geometry_types(self) -> tuple[str, ...]:
-        """Geometry interfaces supported by this optimization scheme."""
-        scheme = self.schema_scheme or self.scheme
-        return tuple(S.GEOMETRY_SCHEMES.get(scheme, ()))
+        """Return every UI-enabled Part interface.
+
+        Templates choose an initial model only.  The Part types that can be
+        combined into that model are independent of the starter template.
+        """
+        return tuple(
+            name
+            for name, spec in S.PART_INTERFACE_TYPES.items()
+            if not spec.get("hidden", False)
+        )
 
     def default_part_interface_type(self) -> str:
         """Part-interface type used by this scheme's default geometry."""
@@ -250,9 +243,6 @@ class SchemeTemplate:
     def default_apply_surface_constraints(self) -> str:
         return "pass\n"
 
-    def default_map_bsp_designfield(self) -> str:
-        return "return None\n"
-
 
 class MorphTemplate(SchemeTemplate):
     """Optimization template loaded from one ``ui/templates/*.morph`` file.
@@ -267,15 +257,11 @@ class MorphTemplate(SchemeTemplate):
         meta = dict(data.get("template") or {})
         self.path = path
         self.scheme = str(data.get("scheme") or meta.get("id") or path.stem)
-        self.schema_scheme = str(meta.get("schema_scheme") or self.scheme)
         self.label = str(meta.get("label") or self.scheme)
         self.label_en = str(meta.get("label_en") or self.label)
         self.MATERIAL_TYPE = str(meta.get("material_type") or "")
-        self.BASES = dict(meta.get("bases") or {})
         self.geometry_title = str(meta.get("geometry_title") or "Geometry")
         self.BODY_NAME = str(meta.get("body_name") or "body")
-        self._material_types = tuple(meta.get("material_types") or ())
-        self._geometry_types = tuple(meta.get("geometry_types") or ())
         self._blank_interface_fields = tuple(
             meta.get("blank_interface_fields")
             or (
@@ -290,7 +276,6 @@ class MorphTemplate(SchemeTemplate):
         )
         self._objective_slot = meta.get("default_objective_slot")
         self._metrics_slot = meta.get("default_metrics_slot")
-        self._map_slot = meta.get("default_map_bsp_designfield")
         self._problem = ProblemDefinition.from_dict(data)
 
     def create_problem(self, label: str) -> ProblemDefinition:
@@ -313,21 +298,11 @@ class MorphTemplate(SchemeTemplate):
                 overrides.setdefault(field["key"], "")
         return super().make_interface(interface_type, name=name, **overrides)
 
-    def available_material_types(self) -> tuple[str, ...]:
-        return self._material_types or super().available_material_types()
-
-    def available_geometry_types(self) -> tuple[str, ...]:
-        return self._geometry_types or super().available_geometry_types()
-
     def default_objective_slot(self) -> str:
         return self._objective_slot or super().default_objective_slot()
 
     def default_metrics_slot(self) -> str:
         return self._metrics_slot or super().default_metrics_slot()
-
-    def default_map_bsp_designfield(self) -> str:
-        return self._map_slot or super().default_map_bsp_designfield()
-
 
 #: Registry name -> template instance.  It is built lazily so importing the
 #: data model never scans the package filesystem unnecessarily.

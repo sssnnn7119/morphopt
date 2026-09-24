@@ -767,7 +767,6 @@ MATERIAL_TYPES: dict[str, dict] = {
     "HomogeneousMaterial": {
         "label": "均质材料 (HomogeneousMaterial)",
         "label_en": "Homogeneous material (HomogeneousMaterial)",
-        "schemes": ("shapeopt", "codesign"),
         "params": [
             fld(
                 "part_name",
@@ -800,7 +799,6 @@ MATERIAL_TYPES: dict[str, dict] = {
     "SIMP_BSPFieldMaterials": {
         "label": "SIMP B样条密度场材料 (SIMP_BSPFieldMaterials)",
         "label_en": "SIMP B-spline density-field material (SIMP_BSPFieldMaterials)",
-        "schemes": ("simp", "codesign"),
         "design": True,
         "params": [
             fld(
@@ -883,7 +881,6 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
     "BoundaryPartInterface": {
         "label": "边界曲面 Part (BoundaryPartInterface)",
         "label_en": "Boundary-surface Part (BoundaryPartInterface)",
-        "schemes": ("shapeopt", "codesign"),
         "surfaces": True,
         "params": fields_from_specs(
             [
@@ -912,7 +909,7 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
         "label": "边界曲面 Part + 偏置壳 (CodesignBoundaryPartInterface)",
         "label_en": "Boundary-surface Part + offset shell "
         "(CodesignBoundaryPartInterface)",
-        "schemes": ("codesign",),
+        "hidden": True,
         "surfaces": True,
         "params": fields_from_specs(
             [
@@ -956,7 +953,6 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
     "INPPartInterface": {
         "label": "INP 网格 Part (INPPartInterface)",
         "label_en": "INP mesh Part (INPPartInterface)",
-        "schemes": ("shapeopt", "simp", "codesign"),
         "surfaces": False,
         "params": fields_from_specs(
             [
@@ -982,7 +978,6 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
     "TorchFEAPartInterface": {
         "label": "TorchFEA 模型 Part (TorchFEAPartInterface)",
         "label_en": "TorchFEA model Part (TorchFEAPartInterface)",
-        "schemes": ("shapeopt", "simp", "codesign"),
         "surfaces": False,
         "params": fields_from_specs(
             [
@@ -1012,24 +1007,6 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
             ]
         ),
     },
-}
-
-#: template -> allowed part-interface types (first entry = default type)
-GEOMETRY_SCHEMES: dict[str, tuple[str, ...]] = {
-    "shapeopt": (
-        "BoundaryPartInterface",
-        "INPPartInterface",
-        "TorchFEAPartInterface",
-    ),
-    "simp": (
-        "TorchFEAPartInterface",
-        "INPPartInterface",
-    ),
-    "codesign": (
-        "CodesignBoundaryPartInterface",
-        "INPPartInterface",
-        "TorchFEAPartInterface",
-    ),
 }
 
 
@@ -1075,7 +1052,7 @@ SOLVER_FIELDS: list[dict] = fields_from_specs(
 # Code slots (Python fields) rendered with the code editor.  Surface equality
 # is intentionally not a GeometryNode code slot; it is an updater equality
 # item whose body is stored in ``params['code']``.
-CODE_SLOT_KEYS = ("map_bsp_designfield", "objective_function", "get_metrics")
+CODE_SLOT_KEYS = ("objective_function", "get_metrics")
 
 # --------------------------------------------------------------------------
 # updater: structured objective / constraint catalogues (UI chooser, no code)
@@ -1088,7 +1065,6 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
         "label": "结构灵敏度 (ShapeDerivative)",
         "label_en": "Structural sensitivity (ShapeDerivative)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.ShapeDerivative()",
         "params": [],
     },
@@ -1096,7 +1072,6 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
         "label": "材料灵敏度 (Sensitivity)",
         "label_en": "Sensitivity (linear material-sensitivity term)",
         "group": "materials",
-        "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
         "params": [fld("normalize_gradient", "normalize_gradient", "bool", False)],
     },
@@ -1104,7 +1079,6 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
         "label": "密度场正则化 (DensityFieldMinimize)",
         "label_en": "Density field regularization (DensityFieldMinimize)",
         "group": "materials",
-        "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
         "params": [fld("scale", "scale", "float", 1e-7)],
     },
@@ -1126,7 +1100,6 @@ EQUALITY_CONSTRAINTS: dict[str, dict] = {
         "label": "镜面对称",
         "label_en": "Mirror symmetry",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "special": "surface_equality",
         "params": [_EQUALITY_CODE_FIELD],
     },
@@ -1136,7 +1109,6 @@ EQUALITY_CONSTRAINTS: dict[str, dict] = {
         "label": "自定义曲面等式约束 (SurfaceEquality)",
         "label_en": "Custom surface equality constraint (SurfaceEquality)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "special": "surface_equality",
         "params": [_EQUALITY_CODE_FIELD],
     },
@@ -1147,7 +1119,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "表面曲率正则化 (Fairness)",
         "label_en": "surface-curvature regularization (Fairness)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Fairness()",
         "params": [],
     },
@@ -1155,7 +1126,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "表面间最小距离约束 (Distance)",
         "label_en": "minimum inter-surface distance constraint (Distance)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.Distance(min_distance={min_distance})",
         "params": [
             fld(
@@ -1167,7 +1137,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "最大圆柱包络约束 (Cylinder)",
         "label_en": "maximum cylindrical envelope constraint (Cylinder)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.Cylinder(radius={radius}, height={height}, bottom={bottom})",
         "params": [
             fld("radius", "radius", "float", 10.0),
@@ -1179,7 +1148,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "最小半径约束 (MinRadius)",
         "label_en": "minimum-radius constraint (MinRadius)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinRadius(radius={radius})",
         "params": [fld("radius", "radius", "float", 2.0)],
     },
@@ -1187,7 +1155,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "腔体体积最大化 (VolumeMaximization)",
         "label_en": "cavity-volume maximization (VolumeMaximization)",
         "group": "geometry",
-        "schemes": ["shapeopt", "codesign"],
         "gen": "self.objectivefuncs.VolumeMaximization(surf_idx={surf_idx}, weight={weight})",
         "params": [
             fld("surf_idx", "surf_idx", "int", 1, minimum=1),
@@ -1198,7 +1165,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "内曲率半径约束 (InwardCurvatureRadius)",
         "label_en": "inward curvature radius constraint (InwardCurvatureRadius)",
         "group": "geometry",
-        "schemes": ["codesign"],
+        "hidden": True,
         "gen": (
             "morphopt.codesign.InwardCurvatureRadius("
             "margin={margin}, margin_ratio={margin_ratio}, p={p}, penalty_scale={penalty_scale})"
@@ -1214,7 +1181,7 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "偏置后表面最小厚度约束 (OffsetSurfaceMinThickness)",
         "label_en": "minimum thickness constraint for offset surfaces (OffsetSurfaceMinThickness)",
         "group": "geometry",
-        "schemes": ["codesign"],
+        "hidden": True,
         "gen": "morphopt.codesign.OffsetSurfaceMinThickness(min_distance={min_distance})",
         "params": [fld("min_distance", "min_distance", "float", 2.0)],
     },
@@ -1222,7 +1189,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "体积分数约束 (VolFrac)",
         "label_en": "volume-fraction band constraint (VolFrac)",
         "group": "materials",
-        "schemes": ["simp", "codesign"],
         "gen": (
             "self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, "
             "penalty={penalty}, elementname={elementname})"
@@ -1245,7 +1211,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "最小密度约束 (MinValue)",
         "label_en": "minimum density constraint (MinValue)",
         "group": "materials",
-        "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MinValue(xmin={xmin}, threshold={threshold}, p={p})",
         "params": [
             fld("xmin", "xmin", "float", -15.0),
@@ -1257,7 +1222,6 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
         "label": "最大密度约束 (MaxValue)",
         "label_en": "maximum density constraint (MaxValue)",
         "group": "materials",
-        "schemes": ["simp", "codesign"],
         "gen": "self.objectivefuncs.boundarys.MaxValue(xmax={xmax}, threshold={threshold}, p={p})",
         "params": [
             fld("xmax", "xmax", "float", 15.0),

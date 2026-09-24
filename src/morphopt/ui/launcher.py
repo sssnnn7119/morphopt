@@ -57,7 +57,8 @@ def export_to_py(problem: ProblemDefinition, path) -> str:
     return path
 
 
-def _sanitize(name: str) -> str:
+def sanitize_name(name: str) -> str:
+    """Return a filesystem- and module-friendly problem label."""
     out = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in name)
     return out or "problem"
 
@@ -98,7 +99,7 @@ def run_job(problem: ProblemDefinition, workdir: str | None = None) -> tuple[str
     problem.result_folder = run_root
 
     # system temp launch module (unique, import-safe stem) -- never in base
-    stem = re.sub(r"[^A-Za-z0-9_]", "_", _sanitize(problem.label))
+    stem = re.sub(r"[^A-Za-z0-9_]", "_", sanitize_name(problem.label))
     job_path = os.path.join(tempfile.gettempdir(), f"{stem}_{os.getpid()}.py")
     export_to_py(problem, job_path)
 

@@ -69,10 +69,14 @@ class TemplateInsertDialog(QDialog):
         moment_name = str(values.get("moment_load_name", "")).strip()
 
         interfaces = self._problem.interfaces()
-        reference_exists = any(
-            interface.interface_type == "ReferencePoint"
-            and interface.name == reference_name
-            for interface in interfaces
+        reference = next(
+            (
+                interface
+                for interface in interfaces
+                if interface.interface_type == "ReferencePoint"
+                and interface.name == reference_name
+            ),
+            None,
         )
         force = next(
             (interface for interface in interfaces
@@ -87,15 +91,16 @@ class TemplateInsertDialog(QDialog):
             None,
         )
 
-        if not reference_exists or force is None or moment is None:
+        if reference is None or force is None or moment is None:
             return self._show_validation_error(T(
                 "雅可比模板必须选择当前模型中已定义的参考点、集中力和集中力矩。",
                 "The Jacobian template requires a reference point, force, and "
                 "moment that are defined in the current model."))
 
-        if (force.rp_name != reference_name
-                or moment.rp_name != reference_name
-                or force.rp_name != moment.rp_name):
+        if (
+            force.reference_point is not reference
+            or moment.reference_point is not reference
+        ):
             return self._show_validation_error(T(
                 "集中力、集中力矩和所选参考点必须完全一致，当前选择不能插入。",
                 "The concentrated force, concentrated moment, and selected "

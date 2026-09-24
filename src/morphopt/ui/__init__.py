@@ -15,6 +15,7 @@ ui/app.py            application entry point
 ui/mainwindow.py     top-level window hosting the two parts
 ui/workbench.py      definition workspace (problem-level actions live here)
 ui/observe_panel.py  in-window observer + run/continue/stop controls
+ui/application/      definition, result and process application services
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source
 ui/widgets/          modeltree / editor / stepmatrix / codeeditor / viewer

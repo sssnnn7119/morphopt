@@ -99,7 +99,6 @@ class UpdaterEditor(QWidget):
         outer.addWidget(scroll, 1)
         self._node: Node | None = None
         self._problem: ProblemDefinition | None = None
-        self._scheme = "shapeopt"
         self._loading = False
 
     # ------------------------------------------------------------------ api
@@ -108,7 +107,6 @@ class UpdaterEditor(QWidget):
     ) -> None:
         self._node = node
         self._problem = problem
-        self._scheme = problem.scheme if problem is not None else "shapeopt"
         focus_group = focus.section_group if focus is not None else None
         focus_category = focus.group if focus is not None else None
         self._focus_label.setText(self._focus_text(focus))
@@ -140,7 +138,8 @@ class UpdaterEditor(QWidget):
             index = min(focus.config_index, max(len(configs) - 1, 0))
             configs = configs[index : index + 1]
         for index, cfg in enumerate(configs):
-            part = str(cfg.get("part_name") or "").strip()
+            target = self._problem.config_part_node(cfg) if self._problem else None
+            part = target.name if target is not None else ""
             title = T(
                 "几何优化器 (UpdaterBoundaryPart)",
                 "Geometry optimizer (UpdaterBoundaryPart)",
@@ -161,7 +160,10 @@ class UpdaterEditor(QWidget):
             )
             material_configs = material_configs[index : index + 1]
         for index, cfg in enumerate(material_configs):
-            interface = str(cfg.get("interface_name") or "").strip()
+            target = (
+                self._problem.config_material_node(cfg) if self._problem else None
+            )
+            interface = target.name if target is not None else ""
             title = T(
                 "材料优化器 (UpdaterSIMPMaterial)",
                 "Material optimizer (UpdaterSIMPMaterial)",
@@ -260,7 +262,7 @@ class UpdaterEditor(QWidget):
             )
 
         if show_objectives:
-            form.addRow(_objective_readonly(cfg, group, self._scheme))
+            form.addRow(_objective_readonly(cfg, group))
 
         n_surfaces = self._surface_count(cfg, group)
         if show_equality:
@@ -271,9 +273,7 @@ class UpdaterEditor(QWidget):
             )
         if show_penalties:
             form.addRow(
-                _item_list(
-                    cfg, group, "constraints", self._scheme, self._on_change, n_surfaces
-                )
+                _item_list(cfg, group, "constraints", self._on_change, n_surfaces)
             )
         return g
 
@@ -285,14 +285,14 @@ class UpdaterEditor(QWidget):
         re-binds the generated ``UpdaterBoundaryPart(interface_name=...)``.
         """
         combo = QComboBox()
-        combo.addItem(T("(唯一的边界 Part)", "(the only boundary part)"), "")
         if self._problem is not None:
             for node in self._problem.boundary_part_nodes():
-                combo.addItem(node.name, node.name)
-        index = combo.findData(str(cfg.get("part_name") or "").strip())
+                combo.addItem(node.name, node)
+        target = self._problem.config_part_node(cfg) if self._problem else None
+        index = combo.findData(target)
         combo.setCurrentIndex(max(index, 0))
         combo.currentIndexChanged.connect(
-            lambda _i: self._set(cfg, "part_name", combo.currentData() or "")
+            lambda _i: self._set_geometry_target(cfg, combo.currentData())
         )
         return combo
 
@@ -304,14 +304,15 @@ class UpdaterEditor(QWidget):
         ``UpdaterSIMPMaterial(interface_name=...)``.
         """
         combo = QComboBox()
-        combo.addItem(T("(唯一的可设计材料)", "(the only design material)"), "")
         if self._problem is not None:
-            for name in self._problem.design_material_names():
-                combo.addItem(name, name)
-        index = combo.findData(str(cfg.get("interface_name") or "").strip())
+            for material in self._problem.material_nodes():
+                if material.name in self._problem.design_material_names():
+                    combo.addItem(material.name, material)
+        target = self._problem.config_material_node(cfg) if self._problem else None
+        index = combo.findData(target)
         combo.setCurrentIndex(max(index, 0))
         combo.currentIndexChanged.connect(
-            lambda _i: self._set(cfg, "interface_name", combo.currentData() or "")
+            lambda _i: self._set_material_target(cfg, combo.currentData())
         )
         return combo
 
@@ -325,7 +326,7 @@ class UpdaterEditor(QWidget):
             return 0
         if group != "geometry":
             return len(self._problem.surfaces())
-        node = self._problem.part_interface_node(str(cfg.get("part_name") or ""))
+        node = self._problem.config_part_node(cfg)
         if node is None:
             return len(self._problem.surfaces())
         return len(node.surfaces())
@@ -340,9 +341,7 @@ class UpdaterEditor(QWidget):
         if group == "geometry":
             surfaces = []
             if self._problem is not None:
-                node = self._problem.part_interface_node(
-                    str(cfg.get("part_name") or "")
-                )
+                node = self._problem.config_part_node(cfg)
                 surfaces = node.surfaces() if node is not None else self._problem.surfaces()
             if surfaces:
                 return _IfUpdateDropDown(cfg, cur, surfaces, self._on_change)
@@ -361,6 +360,18 @@ class UpdaterEditor(QWidget):
     def _set(self, cfg: dict, key: str, value) -> None:
         cfg[key] = value
         self._on_change()
+
+    def _set_geometry_target(self, cfg: dict, target) -> None:
+        if self._problem is not None and self._problem.set_geometry_updater_target(
+            cfg, target
+        ):
+            self._on_change()
+
+    def _set_material_target(self, cfg: dict, target) -> None:
+        if self._problem is not None and self._problem.set_material_updater_target(
+            cfg, target
+        ):
+            self._on_change()
 
     def _on_change(self, *_args) -> None:
         if self._node is not None:
@@ -613,8 +624,8 @@ def _distance_params_form(item: dict, n_surfaces: int, on_change) -> QWidget:
     return w
 
 
-def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
-    """Read-only summary of the scheme-default objective functions."""
+def _objective_readonly(cfg: dict, group: str) -> QWidget:
+    """Read-only summary of the sub-optimizer objective functions."""
     w = QWidget()
     lay = QVBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
@@ -622,7 +633,7 @@ def _objective_readonly(cfg: dict, group: str, scheme: str) -> QWidget:
     cap.setStyleSheet("color:#9aa4b2;")
     lay.addWidget(cap)
     items = cfg.get("objective_functions") or []
-    specs = {s.get("_type"): s for s in _specs_for(scheme, group, "objectives")}
+    specs = {s.get("_type"): s for s in _specs_for(group, "objectives")}
     if not items:
         lay.addWidget(QLabel("—"))
         return w
@@ -678,7 +689,7 @@ def _equality_item_list(
 
 
 def _item_list(
-    cfg: dict, group: str, category: str, scheme: str, on_change, n_surfaces: int = 0
+    cfg: dict, group: str, category: str, on_change, n_surfaces: int = 0
 ) -> QWidget:
     """A compact list manager for one category of the section."""
     w = QWidget()
@@ -689,7 +700,7 @@ def _item_list(
     lay.addWidget(cap)
 
     items = cfg.setdefault(category, [])
-    specs = {s.get("_type"): s for s in _specs_for(scheme, group, category)}
+    specs = {s.get("_type"): s for s in _specs_for(group, category)}
 
     for it in items:
         itype = it.get("type", "")
@@ -727,7 +738,7 @@ def _item_list(
     btn_add = QPushButton("＋")
     btn_add.setFixedWidth(34)
     btn_add.clicked.connect(
-        lambda: _add(items, combo, scheme, group, category, on_change)
+        lambda: _add(items, combo, category, on_change)
     )
     addbar.addWidget(btn_add)
     lay.addLayout(addbar)
@@ -769,14 +780,11 @@ def _set_surface_equality_code(params: dict, editor: CodeEditor, on_change) -> N
     on_change()
 
 
-def _specs_for(scheme: str, group: str, category: str):
-    from ..schemes.base import get_template
-
-    schema_scheme = get_template(scheme).schema_scheme or scheme
+def _specs_for(group: str, category: str):
     out = []
     cat = S.UPDATER_CATALOG.get(category, {})
     for name, spec in cat.items():
-        if spec["group"] == group and schema_scheme in spec["schemes"]:
+        if spec["group"] == group and not spec.get("hidden", False):
             s = dict(spec)
             s["_type"] = name
             out.append(s)
@@ -789,9 +797,7 @@ def _find_spec(itype: str, category: str):
     return dict(spec) if spec else None
 
 
-def _add(
-    items: list, combo: QComboBox, scheme: str, group: str, category: str, on_change
-) -> None:
+def _add(items: list, combo: QComboBox, category: str, on_change) -> None:
     data = combo.currentData()
     if data is None:
         return

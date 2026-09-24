@@ -193,27 +193,9 @@
     "id": "shapeopt",
     "label": "形状优化",
     "label_en": "Shape optimization",
-    "schema_scheme": "shapeopt",
     "material_type": "HomogeneousMaterial",
-    "material_types": ["HomogeneousMaterial"],
-    "geometry_types": ["BoundaryPartInterface", "TorchFEAPartInterface", "INPPartInterface"],
     "geometry_title": "Geometry",
     "body_name": "body",
-    "bases": {
-      "controller": "morphopt.Controller",
-      "params": "morphopt.optcore.modelparams.Params",
-      "geometry": "morphopt.optcore.modelparams.GeometryParams",
-      "boundary_part": "morphopt.shapeopt.BoundaryPartInterface",
-      "fea": "morphopt.optcore.modelparams.FEAParams",
-      "materials": "morphopt.optcore.modelparams.MaterialsParams",
-      "material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
-      "homogeneous_material_interface": "morphopt.optcore.modelparams.materialinterface.HomogeneousMaterial",
-      "objective": "morphopt.optcore.ObjectiveFunction",
-      "solver": "morphopt.optcore.Solver",
-      "updaters": "morphopt.optcore.Updaters",
-      "updater_geom": "morphopt.shapeopt.UpdaterBoundaryPart",
-      "updater_mat": "morphopt.simp.UpdaterSIMPMaterial"
-    },
     "default_objective_slot": "return self.fe_results[0].GC[-2]\n",
     "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
   }

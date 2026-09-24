@@ -72,14 +72,6 @@ _SURFACE_CONSTRAINT_ITEMS = (
     CompletionItem("pass", "pass"),
 )
 
-_DESIGN_FIELD_ITEMS = (
-    CompletionItem("nodes", "nodes"),
-    CompletionItem("return nodes", "return nodes"),
-    CompletionItem("torch.where", "torch.where(, , )"),
-    CompletionItem("torch.clamp", "torch.clamp(, min=, max=)"),
-)
-
-
 def completion_items(slot_key: str,
                      problem: "ProblemDefinition | None" = None,
                      member_expression: str | None = None,
@@ -101,8 +93,6 @@ def completion_items(slot_key: str,
     elif key == "apply_surface_constraints":
         items.extend(_SURFACE_CONSTRAINT_ITEMS)
         items.extend(_surface_items(problem))
-    elif key == "map_bsp_designfield":
-        items.extend(_DESIGN_FIELD_ITEMS)
     return _unique_items(items)
 
 

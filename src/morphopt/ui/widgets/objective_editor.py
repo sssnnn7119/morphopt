@@ -168,7 +168,7 @@ class ObjectiveEditor(QWidget):
             if self._obj is not None:
                 self.jacobian_loads.set_loads(
                     [interface.name for interface in problem.amplitude_interfaces()],
-                    list(self._obj.get_field("jacobian_needed", []) or []),
+                    [interface.name for interface in self._obj.jacobian_needed],
                 )
                 self.obj_editor.set_body(str(self._obj.get_field("_objective_function", "")))
                 self.met_editor.set_body(str(self._obj.get_field("_get_metrics", "")))
@@ -195,7 +195,10 @@ class ObjectiveEditor(QWidget):
         nd = self._current()
         if nd is None:
             return
-        nd.set_field("jacobian_needed", self.jacobian_loads.selected_names())
+        if self._problem is not None:
+            self._problem.set_jacobian_interfaces(
+                self.jacobian_loads.selected_names()
+            )
         self.changed.emit(nd)
 
     def _save_objective(self) -> None:

@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from ..i18n import T
 from ..model.modelinfo import inspect_model
-from ..model.problem import PartInterfaceNode, resolve_model_directory
+from ..model.problem import PartInterfaceNode, ProblemDefinition, resolve_model_directory
 
 
 class TorchFEAModelEditor(QWidget):
@@ -36,6 +36,7 @@ class TorchFEAModelEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._node: PartInterfaceNode | None = None
+        self._problem: ProblemDefinition | None = None
         self._known_mtimes: dict[str, int] = {}
         self._updating = False
 
@@ -64,6 +65,21 @@ class TorchFEAModelEditor(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color:#9aa4b2;")
         outer.addWidget(note)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel(T("几何接口名称", "Geometry interface name")))
+        self.name = QLineEdit()
+        self.name.setToolTip(
+            T(
+                "GeometryParams 中的注册名称；改名会同步几何优化器。"
+                "导入模型内的实际 Part 名称不会被修改。",
+                "Registration name in GeometryParams; geometry updaters are "
+                "retargeted. This does not change the imported model's Part name.",
+            )
+        )
+        self.name.editingFinished.connect(self._rename_interface)
+        name_row.addWidget(self.name, 1)
+        outer.addLayout(name_row)
 
         directory_row = QHBoxLayout()
         directory_row.addWidget(QLabel(T("模型目录", "Model directory")))
@@ -132,10 +148,12 @@ class TorchFEAModelEditor(QWidget):
             lambda: self._scan_directory(auto_import_new=True)
         )
 
-    def edit_node(self, node: PartInterfaceNode) -> None:
+    def edit_node(self, node: PartInterfaceNode, problem: ProblemDefinition) -> None:
         self._node = node
+        self._problem = problem
         self._updating = True
         try:
+            self.name.setText(node.name)
             directory = resolve_model_directory(node.model_directory)
             self.directory.setText(directory)
             self._watch_directory(directory)
@@ -145,6 +163,18 @@ class TorchFEAModelEditor(QWidget):
                 self._show_summary(node.model_filename, show_error=False)
         finally:
             self._updating = False
+
+    def _rename_interface(self) -> None:
+        """Apply the same aggregate-owned rename rule as every other interface."""
+        if self._updating or self._node is None or self._problem is None:
+            return
+        name = self.name.text().strip()
+        if name == self._node.name:
+            return
+        if not self._problem.rename_interface(self._node, name):
+            self.name.setText(self._node.name)
+            return
+        self.changed.emit(self._node)
 
     def validate_link(self, node: PartInterfaceNode) -> bool:
         """Validate a persisted SIMP link without requiring page selection."""
