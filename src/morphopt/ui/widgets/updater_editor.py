@@ -21,10 +21,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QScrollArea,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -251,11 +251,17 @@ class UpdaterEditor(QWidget):
                     self._material_target_control(cfg),
                 )
 
-            spin = QSpinBox()
-            spin.setRange(1, 100000)
-            spin.setValue(int(cfg.get("max_step_iter", 50)))
-            spin.valueChanged.connect(lambda v: self._set(cfg, "max_step_iter", int(v)))
-            form.addRow(T("最大迭代次数", "max_step_iter"), spin)
+            iterations = QLineEdit(str(cfg.get("max_step_iter", 50)))
+            def save_iterations() -> None:
+                text = iterations.text().strip()
+                if text:
+                    try:
+                        value = int(text)
+                    except ValueError:
+                        value = text
+                    self._set(cfg, "max_step_iter", value)
+            iterations.editingFinished.connect(save_iterations)
+            form.addRow(T("最大迭代次数", "max_step_iter"), iterations)
 
             cur = cfg.get("if_update")
             form.addRow(
@@ -481,12 +487,13 @@ class _DistanceMatrixDropDown(QToolButton):
 
     _DEFAULT = 2.5
 
-    def __init__(self, params: dict, n: int, on_change, parent=None):
+    def __init__(self, params: dict, n: int, on_change, parent=None, helper_names=()):
         super().__init__(parent)
         self._params = params
         self._n = max(1, int(n))
         self._on_change = on_change
         self._loading = False
+        self._helper_names = set(helper_names)
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setMinimumWidth(110)
@@ -540,22 +547,21 @@ class _DistanceMatrixDropDown(QToolButton):
         self._table.cellChanged.connect(self._on_cell)
 
     # ------------------------------------------------------------ helpers
-    def _matrix(self) -> list[list[float]]:
+    def _matrix(self) -> list[list[float | str]]:
         """Current N x N matrix (stored value padded / squared to N x N)."""
         default = self._DEFAULT
         n = self._n
         stored = self._params.get("min_distance")
-        rows: list[list[float]] = []
+        rows: list[list[float | str]] = []
         if isinstance(stored, (list, tuple)):
             for r in stored:
                 if isinstance(r, (list, tuple)):
-                    rows.append([float(x) for x in r])
+                    rows.append([x if isinstance(x, str) else float(x) for x in r])
                 elif isinstance(r, (int, float)):
                     rows.append([float(r)])
         out = []
         for i in range(n):
             row = rows[i] if i < len(rows) else []
-            row = [float(x) for x in row]
             out.append(row[:n] + [default] * (n - len(row)))
         return out
 
@@ -565,7 +571,8 @@ class _DistanceMatrixDropDown(QToolButton):
         try:
             for i in range(self._n):
                 for j in range(self._n):
-                    self._table.setItem(i, j, QTableWidgetItem(f"{mat[i][j]:g}"))
+                    value = mat[i][j]
+                    self._table.setItem(i, j, QTableWidgetItem(value if isinstance(value, str) else f"{value:g}"))
         finally:
             self._loading = False
         self._params["min_distance"] = mat
@@ -580,7 +587,9 @@ class _DistanceMatrixDropDown(QToolButton):
         try:
             val = float(item.text())
         except ValueError:
-            return
+            val = item.text().strip()
+            if val not in self._helper_names:
+                return
         mat = self._matrix()
         mat[r][c] = val
         self._params["min_distance"] = mat
@@ -608,13 +617,14 @@ class _DistanceMatrixDropDown(QToolButton):
         self.setFixedHeight(26)
 
 
-def _distance_params_form(item: dict, n_surfaces: int, on_change) -> QWidget:
+def _distance_params_form(item: dict, n_surfaces: int, on_change, problem=None) -> QWidget:
     """Form for a Distance constraint: a labelled matrix dropdown."""
     w = QWidget()
     form = QFormLayout(w)
     form.setContentsMargins(0, 0, 0, 0)
     params = item.setdefault("params", {})
-    dd = _DistanceMatrixDropDown(params, n_surfaces, on_change)
+    helper_names = [node.name for node in problem.helper_variables] if problem else []
+    dd = _DistanceMatrixDropDown(params, n_surfaces, on_change, helper_names=helper_names)
     form.addRow(
         T(
             "最小距离矩阵 min_distance [[i][j]]",
@@ -723,9 +733,10 @@ def _item_list(
             if itype == "Distance" and n_surfaces:
                 # Distance carries an N x N min_distance matrix; edit it in a
                 # dedicated popup grid instead of a raw text field.
-                col.addWidget(_distance_params_form(it, n_surfaces, on_change))
+                col.addWidget(_distance_params_form(it, n_surfaces, on_change, problem))
             else:
-                pf = ParamForm(it.setdefault("params", {}), spec["params"])
+                helper_names = [node.name for node in problem.helper_variables] if problem else []
+                pf = ParamForm(it.setdefault("params", {}), spec["params"], helper_names=helper_names)
                 pf.changed.connect(lambda _k, i=it: on_change(i))
                 col.addWidget(pf)
         lay.addWidget(grp)

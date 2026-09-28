@@ -23,8 +23,15 @@ def test_retired_updater_code_is_rejected():
 
 def test_unknown_format_version_is_rejected():
     data = ProblemLibrary.create("shapeopt").to_dict()
-    data["version"] = 0
+    data["version"] = 1
     with pytest.raises(ValueError, match="Unsupported .morph version"):
+        ProblemDefinition.from_dict(data)
+
+
+def test_definition_requires_helper_groups():
+    data = ProblemLibrary.create("shapeopt").to_dict()
+    del data["helper_variables"]
+    with pytest.raises(KeyError, match="helper_variables"):
         ProblemDefinition.from_dict(data)
 
 

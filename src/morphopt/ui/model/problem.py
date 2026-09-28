@@ -479,7 +479,9 @@ class InstanceNode(Node):
         self.rotation = self._vector3(data.get("rotation"), "rotation")
 
     @staticmethod
-    def _vector3(value: object, label: str) -> list[float]:
+    def _vector3(value: object, label: str) -> list[float] | str:
+        if isinstance(value, str):
+            return value
         values = [0.0, 0.0, 0.0] if value is None else [float(item) for item in value]
         if len(values) != 3:
             raise ValueError(f"Instance {label} must have exactly 3 components")
@@ -488,6 +490,8 @@ class InstanceNode(Node):
     @property
     def pose(self) -> list[float]:
         """Return TorchFEA's six-component translation/rotation pose."""
+        if isinstance(self.translation, str) or isinstance(self.rotation, str):
+            raise ValueError("A helper variable pose cannot be previewed before execution")
         return [*self.translation, *self.rotation]
 
 
@@ -978,7 +982,7 @@ class SolverNode(Node):
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
-        self.num_process: int = int(data["num_process"]) if "num_process" in data else 1
+        self.num_process: int | str = data.get("num_process", 1)
         self.gpus: list = list(data.get("gpus") or [])
         self.task_index_list: list = list(data.get("task_index_list") or [])
 
@@ -1066,10 +1070,35 @@ class CustomClassNode(Node):
         self.base_class: str = str((params or {}).get("base_class", ""))
 
 
+class HelperVariableNode(Node):
+    """One named module-level value expression."""
+
+    kind = "helper_variable"
+    _FIELDS = ("value",)
+
+    def __init__(self, kind=None, name="", params=None, children=None):
+        super().__init__(kind=kind, name=name, children=children)
+        self.value: str = str((params or {}).get("value", "None"))
+
+
+class HelperFunctionNode(Node):
+    """One named module-level function with explicit parameters and body."""
+
+    kind = "helper_function"
+    _FIELDS = ("parameters", "body")
+
+    def __init__(self, kind=None, name="", params=None, children=None):
+        super().__init__(kind=kind, name=name, children=children)
+        self.parameters: str = str((params or {}).get("parameters", ""))
+        self.body: str = str((params or {}).get("body", "pass"))
+
+
 #: kind -> concrete node class used by :meth:`Node.from_dict`.
 NODE_TYPES: dict[str, type[Node]] = {
     CustomClassNode.kind: CustomClassNode,
     MethodOverrideNode.kind: MethodOverrideNode,
+    HelperVariableNode.kind: HelperVariableNode,
+    HelperFunctionNode.kind: HelperFunctionNode,
     KIND_PROBLEM: ProblemNode,
     KIND_GEOMETRY: GeometryNode,
     KIND_PART_INTERFACE: PartInterfaceNode,
@@ -1104,6 +1133,9 @@ class ProblemDefinition:
         root: Node | None = None,
         custom_classes: list[CustomClassNode] | None = None,
         class_bindings: dict[str, str] | None = None,
+        helper_code: str = "",
+        helper_variables: list[HelperVariableNode] | None = None,
+        helper_functions: list[HelperFunctionNode] | None = None,
     ) -> None:
         scheme = str(scheme or "").strip()
         if not scheme:
@@ -1118,6 +1150,9 @@ class ProblemDefinition:
         self.root = root if root is not None else ProblemNode(name=label)
         self.custom_classes = list(custom_classes or [])
         self.class_bindings: dict[str, str] = dict(class_bindings or {})
+        self.helper_code = str(helper_code)
+        self.helper_variables = list(helper_variables or [])
+        self.helper_functions = list(helper_functions or [])
 
     # ------------------------------------------------------------ accessors
     def node(self, kind: str) -> Node | None:
@@ -1285,6 +1320,8 @@ class ProblemDefinition:
                     owner.resolved_part_name(),
                     f"{owner.resolved_part_name()}-1",
                 }
+                and not isinstance(current_instances[0].translation, str)
+                and not isinstance(current_instances[0].rotation, str)
                 and current_instances[0].pose == [0.0] * 6
             )
             if archive_instances and is_synthetic:
@@ -2340,13 +2377,13 @@ class ProblemDefinition:
         return [bool(item) for item in value]
 
     @staticmethod
-    def _square_matrix(value: object) -> list[list[float]] | None:
+    def _square_matrix(value: object) -> list[list[float | str]] | None:
         if not isinstance(value, (list, tuple)) or not value:
             return None
-        rows: list[list[float]] = []
+        rows: list[list[float | str]] = []
         for row in value:
             if isinstance(row, (list, tuple)):
-                rows.append([float(item) for item in row])
+                rows.append([item if isinstance(item, str) else float(item) for item in row])
             elif isinstance(row, (int, float)):
                 rows.append([float(row)])
             else:
@@ -2363,7 +2400,7 @@ class ProblemDefinition:
         ]
 
     @staticmethod
-    def _resize_matrix(matrix: list[list[float]], size: int) -> list[list[float]]:
+    def _resize_matrix(matrix: list[list[float | str]], size: int) -> list[list[float | str]]:
         return [
             [
                 matrix[row_index][column_index]
@@ -2476,7 +2513,7 @@ class ProblemDefinition:
     def to_dict(self) -> dict:
         self.resolve_references()
         return {
-            "version": 1,
+            "version": 3,
             "scheme": self.scheme,
             "label": self.label,
             "result_folder": self.result_folder,
@@ -2486,11 +2523,14 @@ class ProblemDefinition:
             "root": self.root.to_dict(),
             "custom_classes": [node.to_dict() for node in self.custom_classes],
             "class_bindings": dict(self.class_bindings),
+            "helper_code": self.helper_code,
+            "helper_variables": [node.to_dict() for node in self.helper_variables],
+            "helper_functions": [node.to_dict() for node in self.helper_functions],
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
-        if data.get("version") != 1:
+        if data.get("version") != 3:
             raise ValueError(f"Unsupported .morph version: {data.get('version')}")
         root = Node.from_dict(data["root"])
         problem = cls(
@@ -2503,6 +2543,9 @@ class ProblemDefinition:
             root=root,
             custom_classes=[Node.from_dict(node) for node in data.get("custom_classes", [])],
             class_bindings=data.get("class_bindings", {}),
+            helper_code=data["helper_code"],
+            helper_variables=[Node.from_dict(node) for node in data["helper_variables"]],
+            helper_functions=[Node.from_dict(node) for node in data["helper_functions"]],
         )
         problem.resolve_references()
         return problem

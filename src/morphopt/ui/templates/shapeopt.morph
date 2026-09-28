@@ -1,5 +1,8 @@
 {
-  "version": 1,
+  "version": 3,
+  "helper_code": "",
+  "helper_variables": [],
+  "helper_functions": [],
   "scheme": "shapeopt",
   "label": "形状优化",
   "label_en": "Shape optimization",

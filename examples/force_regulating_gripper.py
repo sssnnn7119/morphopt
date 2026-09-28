@@ -2,7 +2,7 @@
 
 Units: mm, N, MPa. A single fixed finger and a 32 mm rigid cylinder represent
 one symmetric half of a parallel gripper. The cylinder is progressively
-closed; every load step contributes to a force-displacement tracking objective.
+closed; the objective tracks a constant contact force over the working stroke.
 The pad uses one C3D8 element layer through its thickness with zero transverse
 displacement, giving a plane-strain approximation. Contact is frictionless.
 This model calibrates contact force; it does not simulate a lift.
@@ -32,117 +32,14 @@ skin_depth = finger_width
 initial_gap = 40.0
 object_diameter = 32.0
 closure_steps = np.arange(0.0, 20.0 + 0.5, 1.0).tolist()
-force_ramp_end = 10.0  # mm; end of the C3 preload transition, start of the plateau.
+working_stroke_start = 10.0  # mm of commanded closure; contact begins near 4 mm.
 target_force = 3.0  # Per finger; not the cancelling pair resultant.
-plateau_slope_weight = 0.1  # Dimensionless; penalize force variation over the stroke.
-preload_tracking_weight = 0.05  # Keep all early steps, with priority on the plateau.
 initial_density = 0.35
 volume_fraction_max = (
     0.7  # Existing fixed-volume setting (min=max); design region only.
 )
 drive_stiffness = 1e2  # N/mm; track displacement error in the metrics.
 contact_distance = 3.0  # Smooth-contact support; refine with the mesh.
-
-
-def _objective_steps():
-    """Use the complete loading path, including approach and contact onset."""
-    return list(range(len(closure_steps)))
-
-
-def _smoothstep_c3(value):
-    """Septic transition with zero first through third derivatives at both ends."""
-    if isinstance(value, torch.Tensor):
-        fraction = value.clamp(0.0, 1.0)
-    else:
-        fraction = np.clip(value, 0.0, 1.0)
-    return fraction**4 * (
-        35.0 + fraction * (-84.0 + fraction * (70.0 - 20.0 * fraction))
-    )
-
-
-def _target_force_at_closure(closure):
-    """C3 reference versus commanded closure; smooth contact can act before the gap closes."""
-    contact_closure = max(0.0, (initial_gap - object_diameter) / 2)
-    ramp_span = force_ramp_end - contact_closure
-    if ramp_span <= 0:
-        raise ValueError("force_ramp_end must be greater than the initial clearance.")
-    if not isinstance(closure, torch.Tensor):
-        closure = np.asarray(closure)
-    return target_force * _smoothstep_c3((closure - contact_closure) / ramp_span)
-
-
-def _force_objective_grid():
-    """Validate the prescribed grid; region selection never depends on the design."""
-    closures = np.asarray(closure_steps, dtype=float)
-    if (
-        closures.ndim != 1
-        or closures.size < 3
-        or not np.all(np.isfinite(closures))
-        or closures[0] != 0.0
-        or np.any(np.diff(closures) <= 0.0)
-    ):
-        raise ValueError("Load steps must be finite and increase from zero closure.")
-    contact_closure = max(0.0, (initial_gap - object_diameter) / 2)
-    if not contact_closure < force_ramp_end < closures[-1]:
-        raise ValueError(
-            "force_ramp_end must lie between the initial clearance and final closure."
-        )
-    plateau_start = np.flatnonzero(
-        np.isclose(closures, force_ramp_end, rtol=0.0, atol=1e-10)
-    )
-    if plateau_start.size != 1:
-        raise ValueError(
-            "Include force_ramp_end once in closure_steps to resolve both regions."
-        )
-    if not np.isfinite(target_force) or target_force <= 0.0:
-        raise ValueError("target_force must be finite and positive.")
-    if not np.isfinite(plateau_slope_weight) or plateau_slope_weight < 0.0:
-        raise ValueError("plateau_slope_weight must be finite and nonnegative.")
-    if not np.isfinite(preload_tracking_weight) or preload_tracking_weight <= 0.0:
-        raise ValueError(
-            "preload_tracking_weight must be finite and positive to retain early steps."
-        )
-    return closures, int(plateau_start[0])
-
-
-def _force_objective_terms(forces):
-    """Plateau force error, plateau slope, and weak full-preload tracking.
-
-    All three terms are quadratic (C-infinity) in the force samples. Quadrature
-    uses the commanded displacement grid, including nonuniform increments.
-    The reference is C3 in closure. Smoothness in design variables additionally
-    requires a smooth, nonsingular equilibrium branch of the contact problem.
-
-    Force-level tracking follows Liu et al. (2020), doi:10.1089/soro.2019.0122,
-    and Xia et al., doi:10.1002/aisy.202500935. The independent flatness term is
-    motivated by Reddy et al., arXiv:2201.01538, Sec. 3.1. Squared, normalized
-    terms and the C3 preload guide are the choices made for this example.
-    """
-    closures, start = _force_objective_grid()
-    forces = forces.reshape(-1)
-    if forces.numel() != len(closures):
-        raise ValueError("Provide one force sample per prescribed closure step.")
-    displacement = forces.new_tensor(closures)
-    error = (forces - _target_force_at_closure(displacement)) / target_force
-
-    preload_error = torch.trapezoid(
-        error[: start + 1].square(), displacement[: start + 1]
-    )
-    preload_error = preload_error / (displacement[start] - displacement[0])
-    plateau_length = displacement[-1] - displacement[start]
-    plateau_error = (
-        torch.trapezoid(error[start:].square(), displacement[start:]) / plateau_length
-    )
-    increments = displacement[start + 1 :] - displacement[start:-1]
-    # Fixed, positive denominators avoid a division by a vanishing force or by
-    # a design-dependent actual displacement increment.
-    slope = (
-        (forces[start + 1 :] - forces[start:-1])
-        * plateau_length
-        / (target_force * increments)
-    )
-    plateau_slope = (increments * slope.square()).sum() / plateau_length
-    return plateau_error, plateau_slope, preload_error
 
 
 def _build_finger_part():
@@ -234,18 +131,18 @@ class ThisController(morphopt.Controller):
             return force, -displacement
 
         def objective_function(self):
+            """J = (1/L) integral [(F(s) / target_force - 1)^2] ds."""
+            # Keep working_stroke_start in closure_steps when refining the load grid.
+            start = closure_steps.index(working_stroke_start)
             forces = torch.stack(
                 [
                     self.get_force_displacement(stepidx)[0]
-                    for stepidx in _objective_steps()
+                    for stepidx in range(start, len(closure_steps))
                 ]
             )
-            plateau_error, plateau_slope, preload_error = _force_objective_terms(forces)
-            return (
-                plateau_error
-                + plateau_slope_weight * plateau_slope
-                + preload_tracking_weight * preload_error
-            )
+            closures = forces.new_tensor(closure_steps[start:])
+            error = ((forces - target_force) / target_force).square()
+            return torch.trapezoid(error, closures) / (closures[-1] - closures[0])
 
         def get_volume_fraction(self):
             material = morphopt.controller.params.materials.interfaces["body"]
@@ -259,7 +156,7 @@ class ThisController(morphopt.Controller):
         def get_metrics(self):
             # Full force-displacement trace, drive errors [mm], and volume fraction.
             forces, errors = [], []
-            for stepidx in _objective_steps():
+            for stepidx in range(len(closure_steps)):
                 force, closure = self.get_force_displacement(stepidx)
                 forces.append(force)
                 errors.append(closure_steps[stepidx] - closure)
@@ -359,7 +256,6 @@ class ThisController(morphopt.Controller):
                 )
 
             def define_steps(self):
-                _force_objective_grid()
                 self.set_step_num(len(closure_steps))
                 for stepidx, closure in enumerate(closure_steps):
                     self.set_step_params(

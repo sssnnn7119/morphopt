@@ -13,7 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QCheckBox,
-    QSpinBox, QTableWidget, QTableWidgetItem,
+    QLineEdit, QTableWidget, QTableWidgetItem,
 )
 
 from ..model.problem import Node
@@ -58,9 +58,8 @@ class SolverEditor(QWidget):
         devhost.setLayout(self._device_box)
         form.addRow(T("设备", "Devices"), devhost)
 
-        self._numproc = QSpinBox()
-        self._numproc.setRange(1, 64)
-        self._numproc.valueChanged.connect(self._on_numproc)
+        self._numproc = QLineEdit()
+        self._numproc.editingFinished.connect(self._on_numproc)
         form.addRow(T("进程数 num_process", "Processes (num_process)"), self._numproc)
         lay.addLayout(form)
 
@@ -92,7 +91,7 @@ class SolverEditor(QWidget):
         self._problem = problem
         self._loading = True
         try:
-            self._numproc.setValue(int(node.get_field("num_process", 1)))
+            self._numproc.setText(str(node.get_field("num_process", 1)))
             gpus = list(node.get_field("gpus", []) or [])
             cpu_cb = self._device_checks.get("cpu")
             for name, cb in self._device_checks.items():
@@ -107,10 +106,17 @@ class SolverEditor(QWidget):
             self._loading = False
 
     # ------------------------------------------------------------- devices
-    def _on_numproc(self, value: int) -> None:
+    def _on_numproc(self) -> None:
         if self._loading or self._node is None:
             return
-        self._node.set_field("num_process", int(value))
+        text = self._numproc.text().strip()
+        if not text:
+            return
+        try:
+            value = int(text)
+        except ValueError:
+            value = text
+        self._node.set_field("num_process", value)
         self._emit()
 
     def _on_devices_changed(self, *_a) -> None:

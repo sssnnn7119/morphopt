@@ -101,9 +101,8 @@ class StepMatrix(QWidget):
         self._table.setRowCount(n)
         for s in range(n):
             for ci, (interface, comp, _h) in enumerate(cols):
-                item = QTableWidgetItem(
-                    f"{self._value(s, interface, comp):.6g}"
-                )
+                value = self._value(s, interface, comp)
+                item = QTableWidgetItem(value if isinstance(value, str) else f"{value:.6g}")
                 self._table.setItem(s, ci, item)
         self._table.blockSignals(False)
         self._loading = False
@@ -192,7 +191,12 @@ class StepMatrix(QWidget):
         try:
             value = float(item.text())
         except ValueError:
-            return
+            text = item.text().strip()
+            if self._problem is None or text not in {
+                node.name for node in self._problem.helper_variables
+            }:
+                return
+            value = text
         amps = self._amplitude_interfaces()
         interface = None
         comp = 0

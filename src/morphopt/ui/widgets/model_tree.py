@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
 from ..i18n import T, pick
 from ..codegen.custom_classes import class_path_for_node, custom_options
 from ..model.problem import (
+    HelperFunctionNode,
+    HelperVariableNode,
     InstanceNode,
     InterfaceNode,
     MaterialNode,
@@ -48,6 +50,10 @@ CONTAINER_ORDER = ["geometry", "loads_group", "materials", "solver", "updater"]
 #: location, not a translation.
 CONTAINER_TITLES_ZH = {
     "problem": "控制器",
+    "helper_code": "辅助代码",
+    "helper_code_block": "自由代码块",
+    "helper_variables_group": "辅助变量",
+    "helper_functions_group": "辅助函数",
     "params_class": "模型参数",
     "geometry": "几何（初始构型）",
     "loads_group": "载荷",
@@ -60,6 +66,10 @@ CONTAINER_TITLES_ZH = {
 }
 CONTAINER_TITLES_EN = {
     "problem": "Controller",
+    "helper_code": "Helper code",
+    "helper_code_block": "Free code block",
+    "helper_variables_group": "Helper variables",
+    "helper_functions_group": "Helper functions",
     "params_class": "Model parameters",
     "geometry": "Geometry — Initial configuration",
     "loads_group": "Loads",
@@ -90,6 +100,27 @@ class ParamsTreeNode(Node):
 
     def __init__(self) -> None:
         super().__init__(kind="params_class", name="Params")
+
+
+class HelperCodeTreeNode(Node):
+    """Navigation entry for module-level code stored on the problem."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="helper_code", name="Helper code")
+
+
+class HelperGroupTreeNode(Node):
+    """Navigation group under Helper code."""
+
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind=kind, name=container_title(kind))
+
+
+class HelperCodeBlockTreeNode(Node):
+    """Navigation entry for the one free-form module code block."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="helper_code_block", name=container_title("helper_code_block"))
 
 
 class LoadsTreeNode(Node):
@@ -218,6 +249,23 @@ class ModelTree(QTreeWidget):
         self._node_item.clear()
         if self._problem is None:
             return
+        helper_item = self._make_item(
+            container_title("helper_code"), HelperCodeTreeNode(), bold=True
+        )
+        self.addTopLevelItem(helper_item)
+        helper_item.addChild(self._make_item(
+            container_title("helper_code_block"), HelperCodeBlockTreeNode()
+        ))
+        for kind, entries in (
+            ("helper_variables_group", self._problem.helper_variables),
+            ("helper_functions_group", self._problem.helper_functions),
+        ):
+            group_item = self._make_item(
+                container_title(kind), HelperGroupTreeNode(kind), bold=True
+            )
+            helper_item.addChild(group_item)
+            for entry in entries:
+                group_item.addChild(self._make_item(entry.name, entry))
         controller_item = self._make_item(container_title("problem"), self._problem.root, bold=True)
         self.addTopLevelItem(controller_item)
         params_item = self._make_item(container_title("params_class"), ParamsTreeNode(), bold=True)
@@ -280,8 +328,13 @@ class ModelTree(QTreeWidget):
     def apply_language(self) -> None:
         """Re-localize the tree titles in place (keeps the selection)."""
         for item, node in list(self._item_node.items()):
-            if node.kind in CONTAINER_ORDER or node.kind in {"problem", "params_class"}:
+            if node.kind in CONTAINER_ORDER or node.kind in {
+                "problem", "helper_code", "helper_code_block", "helper_variables_group",
+                "helper_functions_group", "params_class",
+            }:
                 item.setText(0, container_title(node.kind))
+            elif node.kind in {"helper_variable", "helper_function"}:
+                item.setText(0, node.name)
             elif node.kind == "part_interface":
                 item.setText(0, part_interface_title_text(node))
             elif node.kind == "instance":
@@ -315,7 +368,7 @@ class ModelTree(QTreeWidget):
         if isinstance(node, PartInterfaceNode):
             item.setToolTip(0, f"Part: {node.resolved_part_name()}\nInstances: {', '.join(node.resolved_instance_names())}")
         elif isinstance(node, InstanceNode):
-            item.setToolTip(0, f"Pose: {node.pose}")
+            item.setToolTip(0, f"Translation: {node.translation}\nRotation: {node.rotation}")
         elif isinstance(node, MaterialNode):
             item.setToolTip(0, f"Part: {node.part_name}\nElements: {node.elementname or 'all'}")
         if bold:
@@ -391,6 +444,8 @@ class ModelTree(QTreeWidget):
             return None
         if node.kind == "params_class":
             return ("params_class",)
+        if node.kind in {"helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group"}:
+            return (node.kind,)
         if isinstance(node, UpdaterTreeNode):
             return (
                 "updater",
@@ -478,6 +533,15 @@ class ModelTree(QTreeWidget):
     def _build_node_menu(self, menu: QMenu, node: Node) -> None:
         kind = node.kind
         scheme = self._problem.scheme if self._problem else "shapeopt"
+
+        if kind in {"helper_code", "helper_variables_group"}:
+            menu.addAction(T("添加辅助变量", "Add helper variable"),
+                           lambda: self.add_helper("helper_variable"))
+        if kind in {"helper_code", "helper_functions_group"}:
+            menu.addAction(T("添加辅助函数", "Add helper function"),
+                           lambda: self.add_helper("helper_function"))
+        if kind in {"helper_variable", "helper_function"}:
+            menu.addAction(T("删除", "Delete"), lambda: self.remove_helper(node))
 
         if kind == "geometry":
             sub = menu.addMenu(T("添加几何接口 ▸", "Add geometry interface ▸"))
@@ -626,6 +690,46 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
     # --------------------------------------------------------------- edits
+    def add_helper(self, kind: str) -> Node | None:
+        if self._problem is None:
+            return None
+        if kind == "helper_variable":
+            entries = self._problem.helper_variables
+            node_type = HelperVariableNode
+            base = "variable"
+        elif kind == "helper_function":
+            entries = self._problem.helper_functions
+            node_type = HelperFunctionNode
+            base = "helper"
+        else:
+            raise ValueError(f"Unknown helper kind: {kind}")
+        taken = {entry.name for entry in self._problem.helper_variables + self._problem.helper_functions}
+        index = 1
+        while f"{base}_{index}" in taken:
+            index += 1
+        name = f"{base}_{index}"
+        params = {"value": "None"} if kind == "helper_variable" else {"parameters": "", "body": "pass"}
+        node = node_type(name=name, params=params)
+        entries.append(node)
+        self.rebuild(select=node)
+        self.treeChanged.emit()
+        return node
+
+    def remove_helper(self, node: Node) -> None:
+        if self._problem is None:
+            return
+        if node.kind in {"helper_variable", "helper_function"}:
+            entries = (self._problem.helper_variables if node.kind == "helper_variable"
+                       else self._problem.helper_functions)
+            if node not in entries:
+                return
+            entries.remove(node)
+            group_kind = "helper_variables_group" if node.kind == "helper_variable" else "helper_functions_group"
+        else:
+            return
+        self.rebuild(select=HelperGroupTreeNode(group_kind))
+        self.treeChanged.emit()
+
     def _add_geometry_updater(self) -> None:
         if self._problem is None or self._problem.updater is None:
             return

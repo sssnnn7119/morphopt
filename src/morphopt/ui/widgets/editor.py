@@ -10,7 +10,6 @@ equality constraint item in the updater editor.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,7 +21,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -363,15 +361,10 @@ class PropertyEditor(QWidget):
             w.setChecked(bool(cur))
             w.toggled.connect(lambda v, k=key: self._set(k, bool(v)))
         elif typ == "int":
-            w = QSpinBox()
-            lo = f.get("min")
-            hi = f.get("max")
-            w.setRange(
-                int(lo) if lo is not None else -(10**6),
-                int(hi) if hi is not None else 10**6,
+            w = QLineEdit(str(cur) if cur is not None else "")
+            w.editingFinished.connect(
+                lambda k=key: self._set(k, _parse_text_value(w.text(), "int"))
             )
-            w.setValue(int(cur) if cur is not None else 0)
-            w.valueChanged.connect(lambda v, k=key: self._set(k, int(v)))
         elif typ == "combo":
             w = QComboBox()
             w.setEditable(True)
@@ -436,7 +429,10 @@ class PropertyEditor(QWidget):
             w.setText(_vec_to_text(cur))
             keep_int = bool(f.get("ints", False))
             w.editingFinished.connect(
-                lambda k=key: self._set(k, parse_vec_text(w.text(), ints=keep_int))
+                lambda k=key: self._set(
+                    k, w.text().strip() if self._is_helper_name(w.text().strip())
+                    else parse_vec_text(w.text(), ints=keep_int)
+                )
             )
         elif typ == "code" or typ == "text":
             w = QPlainTextEdit()
@@ -448,8 +444,6 @@ class PropertyEditor(QWidget):
             return
         else:  # float / str
             w = QLineEdit()
-            if typ == "float":
-                w.setValidator(QDoubleValidator())
             w.setText(str(cur) if cur is not None else "")
             w.editingFinished.connect(
                 lambda k=key: self._set(k, _parse_text_value(w.text(), typ))
@@ -475,6 +469,11 @@ class PropertyEditor(QWidget):
         boxes = self._dof_groups.get(key, [])
         vals = sorted(i for i, cb in enumerate(boxes) if cb.isChecked())
         self._set(key, vals)
+
+    def _is_helper_name(self, text: str) -> bool:
+        return self._completion_problem is not None and any(
+            node.name == text for node in self._completion_problem.helper_variables
+        )
 
     def _set(self, key: str, value) -> None:
         if self._node is None:
@@ -557,6 +556,11 @@ def _vec_to_text(val) -> str:
 
 
 def _parse_text_value(text: str, typ: str):
+    if typ == "int":
+        try:
+            return int(text)
+        except ValueError:
+            return text.strip()
     if typ == "float":
         try:
             return float(text)

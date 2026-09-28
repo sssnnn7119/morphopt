@@ -20,6 +20,7 @@ class EditorKind(Enum):
     OBJECTIVE = auto()
     TORCHFEA_MODEL = auto()
     CUSTOM_CLASS = auto()
+    HELPER_CODE = auto()
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,11 @@ def route_editor(node: Node | None) -> EditorRoute:
         return EditorRoute(EditorKind.PROPERTIES)
     if node.kind in {"custom_class", "method_override"}:
         return EditorRoute(EditorKind.CUSTOM_CLASS, node)
+    if node.kind in {
+        "helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group",
+        "helper_variable", "helper_function",
+    }:
+        return EditorRoute(EditorKind.HELPER_CODE, node)
     if node.kind == "solver":
         return EditorRoute(EditorKind.SOLVER, node)
     if node.kind in {"loads_group", "loads"}:

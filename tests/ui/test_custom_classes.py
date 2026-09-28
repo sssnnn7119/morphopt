@@ -79,6 +79,45 @@ def test_custom_classes_round_trip(tmp_path):
     }
 
 
+def test_helper_entries_round_trip_and_use_from_override(tmp_path):
+    problem = ProblemLibrary.create("shapeopt")
+    from morphopt.ui.model.problem import HelperFunctionNode, HelperVariableNode
+
+    problem.helper_code = "import torch"
+    problem.helper_variables = [
+        HelperVariableNode(name="target_force", params={"value": "3.0"}),
+    ]
+    problem.helper_functions = [HelperFunctionNode(
+        name="force_error",
+        params={"parameters": "force", "body": "return torch.square(force - target_force)"},
+    )]
+    customize(
+        problem,
+        "ThisController.ObjectiveFunction",
+        "MyObjective",
+        "get_metrics",
+        "return {'error': force_error(torch.tensor(4.0)).item()}",
+    )
+    path = ProblemLibrary.save(problem, tmp_path / "with_helpers.morph")
+    loaded = ProblemLibrary.load(path)
+    assert loaded.helper_code == problem.helper_code
+    assert [node.value for node in loaded.helper_variables] == [node.value for node in problem.helper_variables]
+    assert [node.body for node in loaded.helper_functions] == [node.body for node in problem.helper_functions]
+    source = ProblemSession(loaded).source()
+    assert source.index("def force_error") < source.index("class MyObjective")
+    assert source.index("class MyObjective") < source.index("class ThisController")
+    assert load_classes(loaded).ObjectiveFunction().get_metrics() == {"error": 1.0}
+
+
+def test_invalid_helper_function_is_rejected_before_run():
+    problem = ProblemLibrary.create("shapeopt")
+    from morphopt.ui.model.problem import HelperFunctionNode
+
+    problem.helper_functions = [HelperFunctionNode(name="broken", params={"parameters": "(", "body": "pass"})]
+    with pytest.raises(ValueError, match="Invalid helper code"):
+        ProblemSession(problem).validate_for_run()
+
+
 def test_custom_classes_are_top_level_and_only_selected_class_is_used():
     problem = ProblemLibrary.create("shapeopt")
     first = customize(
@@ -316,9 +355,11 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     customize(problem, "morphopt.Controller", "CustomController", bind=False)
     customize(problem, "morphopt.Params", "CustomParams", bind=False)
     window = workbench.Workbench(problem)
-    assert window.tree.topLevelItemCount() == 1
-    root_item = window.tree.topLevelItem(0)
+    assert window.tree.topLevelItemCount() == 2
+    helper_item = window.tree.topLevelItem(0)
+    root_item = window.tree.topLevelItem(1)
     assert window.tree._item_node[root_item] is problem.root
+    assert window.tree._item_node[helper_item].kind == "helper_code"
     assert [
         window.tree._item_node[root_item.child(i)].kind
         for i in range(root_item.childCount())
@@ -411,6 +452,81 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     assert "ThisController.ObjectiveFunction" not in problem.class_bindings
     assert not problem.objective.custom_class
     assert window._stack.currentWidget() is window.prop_editor
+    window.close()
+    app.processEvents()
+
+
+def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    from morphopt.ui import workbench
+
+    app = QApplication.instance() or QApplication([])
+
+    class Viewer(QWidget):
+        def set_problem(self, problem):
+            pass
+
+        def apply_language(self):
+            pass
+
+    monkeypatch.setattr(workbench, "PreviewViewer", Viewer)
+    problem = ProblemLibrary.create("shapeopt")
+    window = workbench.Workbench(problem)
+    assert window._center.count() == 2
+    helper_item = window.tree.topLevelItem(0)
+    helper_node = window.tree._item_node[helper_item]
+    assert route_editor(helper_node).kind is EditorKind.HELPER_CODE
+    assert [window.tree._item_node[helper_item.child(i)].kind for i in range(3)] == [
+        "helper_code_block", "helper_variables_group", "helper_functions_group",
+    ]
+    window._center.setCurrentWidget(window.code_view)
+    window.tree.setCurrentItem(helper_item)
+    assert window._center.currentIndex() == 0
+    assert window._stack.currentWidget() is window.helper_page
+    variable = window.tree.add_helper("helper_variable")
+    assert window.tree._item_node[window.tree.currentItem()] is variable
+    window.helper_name.setText("target_force")
+    window.helper_value.setText("3.0")
+    window._save_helper_fields()
+    assert variable.name == "target_force"
+    assert variable.value == "3.0"
+    function = window.tree.add_helper("helper_function")
+    window.helper_name.setText("target")
+    window.helper_editor.set_body("return target_force")
+    window._save_helper_fields()
+    assert function.name == "target"
+    assert function.body == "return target_force"
+    window._on_any_change()
+    assert window.tree._item_node[window.tree.currentItem()] is function
+    assert window._stack.currentWidget() is window.helper_page
+    window.refresh_code()
+    assert "def target():" in window.code_view.toPlainText()
+    window.apply_language()
+    assert window.helper_editor.body() == function.body
+    assert window._stack.currentWidget() is window.helper_page
+
+    window._center.setCurrentWidget(window.code_view)
+    window.tree.setCurrentItem(window.tree.topLevelItem(1))
+    assert window._center.currentIndex() == 0
+    assert window._stack.currentWidget() is window.prop_editor
+    window._center.setCurrentWidget(window.code_view)
+    window.tree.itemClicked.emit(window.tree.currentItem(), 0)
+    assert window._center.currentIndex() == 0
+    assert window._stack.currentWidget() is window.prop_editor
+
+    path = ProblemLibrary.save(problem, tmp_path / "helpers.morph")
+    window.set_problem(ProblemLibrary.load(path))
+    loaded_function = window.problem.helper_functions[0]
+    window.tree.setCurrentItem(window.tree._node_item[loaded_function])
+    assert window._stack.currentWidget() is window.helper_page
+    window.helper_parameters.setText("(")
+    window._save_helper_fields()
+    assert window.helper_error.text()
+    window.refresh_code()
+    assert "code generation failed" in window.code_view.toPlainText()
+    window.tree.remove_helper(loaded_function)
+    assert not window.problem.helper_functions
     window.close()
     app.processEvents()
 

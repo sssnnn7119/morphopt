@@ -2,10 +2,10 @@
 
 Layout:
   header      template + label
-  center      two tabs only:
+  center      two tabs:
                 1. 编辑   -> a QStackedWidget routed by the selected tree node
-                              (property / solver / loads / steps / updater /
-                               objective pages)
+                              (properties / helper code / solver / loads /
+                               steps / updater / objective pages)
                 2. 代码(只读) -> generated ``ThisController`` (auto-synced)
   right       PyVista preview of the initial geometry + per-step loads
   footer      ▶ 进入优化器 (hand the definition to the observer page)
@@ -16,7 +16,10 @@ generated from the model in the read-only code tab (no .py import).
 
 from __future__ import annotations
 
+import ast
+import keyword
 import os
+from textwrap import indent
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -58,6 +61,7 @@ from .widgets.model_tree import (
 )
 from .widgets.objective_editor import ObjectiveEditor
 from .widgets.custom_classes import CustomClassEditor, CustomClassTree, ModelClassSelector
+from .widgets.codeeditor import CodeEditor
 from .widgets.solver_editor import SolverEditor, detect_devices
 from .widgets.stepmatrix import StepMatrix
 from .widgets.torchfea_model_editor import TorchFEAModelEditor
@@ -83,6 +87,11 @@ class Workbench(QWidget):
         self._rebuild_timer.setSingleShot(True)
         self._rebuild_timer.setInterval(250)
         self._rebuild_timer.timeout.connect(self._on_any_change)
+        self._helper_refresh_timer = QTimer(self)
+        self._helper_refresh_timer.setSingleShot(True)
+        self._helper_refresh_timer.setInterval(250)
+        self._helper_refresh_timer.timeout.connect(self.refresh_code)
+        self._helper_loading = False
         self._build_ui()
         self.reload()
 
@@ -204,6 +213,7 @@ class Workbench(QWidget):
         # ---- left tree
         self.tree = ModelTree()
         self.tree.nodeSelected.connect(self._on_node_selected)
+        self.tree.itemClicked.connect(self._on_model_item_clicked)
         self.tree.treeChanged.connect(self._schedule_rebuild)
         self.custom_tree = CustomClassTree()
         self.custom_tree.nodeSelected.connect(self._on_node_selected)
@@ -290,6 +300,48 @@ class Workbench(QWidget):
         self.custom_class_editor = CustomClassEditor()
         self.torchfea_model_editor = TorchFEAModelEditor()
         self.optimizer_overview = self._make_optimizer_overview()
+        self.helper_page = QWidget()
+        helper_layout = QVBoxLayout(self.helper_page)
+        self.helper_hint = QLabel()
+        self.helper_hint.setWordWrap(True)
+        helper_layout.addWidget(self.helper_hint)
+        helper_actions = QHBoxLayout()
+        self.helper_add_variable = QPushButton(T("添加辅助变量", "Add helper variable"))
+        self.helper_add_variable.clicked.connect(lambda: self.tree.add_helper("helper_variable"))
+        helper_actions.addWidget(self.helper_add_variable)
+        self.helper_add_function = QPushButton(T("添加辅助函数", "Add helper function"))
+        self.helper_add_function.clicked.connect(lambda: self.tree.add_helper("helper_function"))
+        helper_actions.addWidget(self.helper_add_function)
+        self.helper_delete = QPushButton(T("删除此项", "Delete item"))
+        self.helper_delete.clicked.connect(self._delete_selected_helper)
+        helper_actions.addWidget(self.helper_delete)
+        helper_actions.addStretch(1)
+        helper_layout.addLayout(helper_actions)
+        self.helper_name = QLineEdit()
+        self.helper_name.editingFinished.connect(self._save_helper_fields)
+        self.helper_name_label = QLabel(T("名称", "Name"))
+        helper_layout.addWidget(self.helper_name_label)
+        helper_layout.addWidget(self.helper_name)
+        self.helper_value = QLineEdit()
+        self.helper_value.editingFinished.connect(self._save_helper_fields)
+        self.helper_value_label = QLabel(T("值", "Value"))
+        helper_layout.addWidget(self.helper_value_label)
+        helper_layout.addWidget(self.helper_value)
+        self.helper_parameters = QLineEdit()
+        self.helper_parameters.editingFinished.connect(self._save_helper_fields)
+        self.helper_parameters_label = QLabel(T("输入形参", "Parameters"))
+        helper_layout.addWidget(self.helper_parameters_label)
+        helper_layout.addWidget(self.helper_parameters)
+        self.helper_editor_label = QLabel()
+        helper_layout.addWidget(self.helper_editor_label)
+        self.helper_editor = CodeEditor("Python")
+        self.helper_editor.edit.textChanged.connect(self._save_helper_fields)
+        helper_layout.addWidget(self.helper_editor, 1)
+        self.helper_error = QLabel()
+        self.helper_error.setWordWrap(True)
+        self.helper_error.setStyleSheet("color:#e57373;")
+        helper_layout.addWidget(self.helper_error)
+        self._edit_helper_node(None)
         for editor in (
             self.prop_editor,
             self.solver_editor,
@@ -303,6 +355,7 @@ class Workbench(QWidget):
             editor.changed.connect(self._schedule_rebuild)
         # read-only overview: no ``changed`` signal to wire
         stack.addWidget(self.optimizer_overview)
+        stack.addWidget(self.helper_page)
         self.updater_editor.codeChanged.connect(self.refresh_code)
         self.custom_class_editor.nodeSelected.connect(self._on_node_selected)
         self.torchfea_model_editor.changed.connect(self._sync_single_imported_part)
@@ -379,7 +432,10 @@ class Workbench(QWidget):
             # is not the currently selected page.
             self.torchfea_model_editor.validate_link(imported)
         self.refresh_code()
-        self.viewer.set_problem(self.problem)
+        try:
+            self.viewer.set_problem(self.problem)
+        except (TypeError, ValueError) as exc:
+            self.notify.emit(T(f"预览暂不可用：{exc}", f"Preview unavailable: {exc}"))
 
     def _update_caption(self) -> None:
         self.title.setText(
@@ -449,6 +505,8 @@ class Workbench(QWidget):
         self._update_caption()
         self._center.setTabText(0, T("编辑", "Edit"))
         self._center.setTabText(1, T("代码 (只读)", "Code (read-only)"))
+        self._update_helper_text()
+        self._update_helper_error()
         self._b_import.setText(T("▶ 进入优化器", "▶ Send to Observer"))
         self._b_import.setToolTip(
             T(
@@ -471,6 +529,98 @@ class Workbench(QWidget):
         self.viewer.apply_language()
 
     # -------------------------------------------- name / output-path slots
+    def _update_helper_text(self) -> None:
+        self.helper_hint.setText(T(
+            "自由代码块可写任意脚本级代码；辅助变量填写名称和 Python 值表达式；辅助函数填写名称、形参和函数体。参数框可直接填写辅助变量名。",
+            "Use the free code block for module code. Variables have a name and Python value; functions have a name, parameters and body. Parameter fields accept helper variable names.",
+        ))
+
+    def _update_helper_error(self) -> None:
+        node = self._last_selected
+        if node is None or node.kind not in {"helper_code_block", "helper_variable", "helper_function"}:
+            self.helper_error.clear()
+            return
+        try:
+            if node.kind == "helper_code_block":
+                compile(self.helper_editor.body(), "<helper code>", "exec")
+            elif node.kind == "helper_variable":
+                if not node.name.isidentifier() or keyword.iskeyword(node.name):
+                    raise ValueError(T("变量名无效", "Invalid variable name"))
+                ast.parse(self.helper_value.text(), mode="eval")
+            else:
+                if not node.name.isidentifier() or keyword.iskeyword(node.name):
+                    raise ValueError(T("函数名无效", "Invalid function name"))
+                body = self.helper_editor.body() or "pass"
+                compile(f"def {node.name}({self.helper_parameters.text()}):\n{indent(body, '    ')}", "<helper function>", "exec")
+        except (SyntaxError, ValueError) as exc:
+            self.helper_error.setText(T(
+                f"辅助定义有误：{exc}",
+                f"Invalid helper definition: {exc}",
+            ))
+        else:
+            self.helper_error.clear()
+
+    def _save_helper_fields(self) -> None:
+        if self._helper_loading:
+            return
+        node = self._last_selected
+        if node is None or node.kind not in {"helper_code_block", "helper_variable", "helper_function"}:
+            return
+        if node.kind == "helper_code_block":
+            self.problem.helper_code = self.helper_editor.body()
+        else:
+            name = self.helper_name.text().strip()
+            if name:
+                node.name = name
+                item = self.tree._node_item.get(node)
+                if item is not None:
+                    item.setText(0, name)
+            if node.kind == "helper_variable":
+                node.value = self.helper_value.text()
+            else:
+                node.parameters = self.helper_parameters.text()
+                node.body = self.helper_editor.body()
+        self._update_helper_error()
+        self._helper_refresh_timer.start()
+
+    def _delete_selected_helper(self) -> None:
+        if self._last_selected is not None:
+            self.tree.remove_helper(self._last_selected)
+
+    def _edit_helper_node(self, node: Node | None) -> None:
+        kind = node.kind if node is not None else "helper_code"
+        self.helper_add_variable.setVisible(kind in {"helper_code", "helper_variables_group"})
+        self.helper_add_function.setVisible(kind in {"helper_code", "helper_functions_group"})
+        editable = kind in {"helper_variable", "helper_function"}
+        self.helper_delete.setVisible(editable)
+        self.helper_name_label.setVisible(editable)
+        self.helper_name.setVisible(editable)
+        self.helper_value_label.setVisible(kind == "helper_variable")
+        self.helper_value.setVisible(kind == "helper_variable")
+        self.helper_parameters_label.setVisible(kind == "helper_function")
+        self.helper_parameters.setVisible(kind == "helper_function")
+        self.helper_editor_label.setVisible(kind in {"helper_code_block", "helper_function"})
+        self.helper_editor.setVisible(kind in {"helper_code_block", "helper_function"})
+        self.helper_error.setVisible(kind in {"helper_code_block", "helper_variable", "helper_function"})
+        self._helper_loading = True
+        try:
+            self.helper_name.setPlaceholderText(T("名称", "Name"))
+            self.helper_value.setPlaceholderText(T("值（Python 表达式）", "Value (Python expression)"))
+            self.helper_parameters.setPlaceholderText(T("形参，例如 x, scale=1", "Parameters, e.g. x, scale=1"))
+            self.helper_name_label.setText(T("名称", "Name"))
+            self.helper_value_label.setText(T("值（Python 表达式）", "Value (Python expression)"))
+            self.helper_parameters_label.setText(T("输入形参", "Parameters"))
+            self.helper_editor_label.setText(T("自由代码", "Free code") if kind == "helper_code_block" else T("函数体", "Function body"))
+            self.helper_name.setText(node.name if editable else "")
+            self.helper_value.setText(node.value if kind == "helper_variable" else "")
+            self.helper_parameters.setText(node.parameters if kind == "helper_function" else "")
+            code = self.problem.helper_code if kind == "helper_code_block" else node.body if kind == "helper_function" else ""
+            self.helper_editor.set_body(code)
+        finally:
+            self._helper_loading = False
+        self._update_helper_text()
+        self._update_helper_error()
+
     def _apply_name(self) -> None:
         v = self._name_edit.text().strip()
         if self.session.set_label(v):
@@ -513,8 +663,17 @@ class Workbench(QWidget):
             self.code_view.setPlainText(f"# code generation failed:\n{exc}")
 
     # ------------------------------------------------------ node selection
+    def _on_model_item_clicked(self, item, _column: int) -> None:
+        # currentItemChanged does not fire when the selected row is clicked again.
+        if self._center.currentWidget() is self.code_view:
+            node = item.data(0, Qt.ItemDataRole.UserRole)
+            if node is not None:
+                self._on_node_selected(node)
+
     def _on_node_selected(self, node: Node) -> None:
         self._last_selected = node
+        if self._center.currentWidget() is self.code_view:
+            self._center.setCurrentIndex(0)
         if node is not None and node.kind in {"custom_class", "method_override"}:
             current = self.custom_tree.tree.currentItem()
             if current is None or current.data(0, Qt.ItemDataRole.UserRole) is not node:
@@ -535,6 +694,9 @@ class Workbench(QWidget):
         if route.kind is EditorKind.CUSTOM_CLASS:
             self.custom_class_editor.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.custom_class_editor)
+        elif route.kind is EditorKind.HELPER_CODE:
+            self._edit_helper_node(node)
+            self._stack.setCurrentWidget(self.helper_page)
         elif route.kind is EditorKind.SOLVER:
             self.solver_editor.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.solver_editor)
@@ -637,7 +799,10 @@ class Workbench(QWidget):
             self.refresh_code()
         except Exception:
             pass
-        self.viewer.set_problem(self.problem)
+        try:
+            self.viewer.set_problem(self.problem)
+        except (TypeError, ValueError) as exc:
+            self.notify.emit(T(f"预览暂不可用：{exc}", f"Preview unavailable: {exc}"))
         self.objective_editor.set_problem(self.problem)
         # refresh tree summaries (e.g. load param rows) and the visible editor
         self.tree.rebuild(select=self._last_selected)

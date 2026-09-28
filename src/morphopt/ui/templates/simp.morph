@@ -1,5 +1,8 @@
 {
-  "version": 1,
+  "version": 3,
+  "helper_code": "",
+  "helper_variables": [],
+  "helper_functions": [],
   "scheme": "simp",
   "label": "simp_template",
   "result_folder": ".results/",

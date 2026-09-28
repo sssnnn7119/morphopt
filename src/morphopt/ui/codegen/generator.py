@@ -5,6 +5,8 @@ class), ready for ``morphopt.start_optimization`` / ``restart_optimization``.
 
 from __future__ import annotations
 
+import ast
+import keyword
 from collections.abc import Callable
 from dataclasses import fields
 
@@ -57,11 +59,12 @@ SIMP_MATERIAL_BASE = "morphopt.SIMP_BSPFieldMaterials"
 def _material_parameters_expression(
     model: str,
     parameters: dict[str, object],
+    problem: ProblemDefinition | None = None,
 ) -> str:
     """Render model parameters with their typed parameter constructor."""
     parameter_class = getattr(MaterialModels, f"{model}Params")
     parameter_type = parameter_class.__name__
-    values = ", ".join(f"{key}={repr(value)}" for key, value in parameters.items())
+    values = ", ".join(f"{key}={_render_value(value, problem)}" for key, value in parameters.items())
     return f"self.materialmodels.{parameter_type}({values})"
 
 
@@ -69,6 +72,21 @@ def indent_block(text: str, spaces: int) -> str:
     """Indent every non-empty line of ``text`` by ``spaces``."""
     pad = " " * spaces
     return "\n".join(pad + ln if ln.strip() else ln for ln in text.splitlines())
+
+
+def _helper_names(problem: ProblemDefinition | None) -> set[str]:
+    return {node.name for node in problem.helper_variables} if problem is not None else set()
+
+
+def _render_value(value: object, problem: ProblemDefinition | None) -> str:
+    """Use a helper variable as an expression when a field names it exactly."""
+    if isinstance(value, str) and value in _helper_names(problem):
+        return value
+    if isinstance(value, list):
+        return "[" + ", ".join(_render_value(item, problem) for item in value) + "]"
+    if isinstance(value, tuple):
+        return "(" + ", ".join(_render_value(item, problem) for item in value) + ("," if len(value) == 1 else "") + ")"
+    return repr(value)
 
 
 # --------------------------------------------------------------------------
@@ -80,26 +98,24 @@ def _surface_factory(surface: Node) -> str:
     return SURFACE_TYPES[surface.surface_type]["factory"]
 
 
-def render_surface_call(surface: Node) -> str:
+def render_surface_call(surface: Node, problem: ProblemDefinition | None = None) -> str:
     factory = _surface_factory(surface)
     prefix = surface.custom_class or "self.FixedSurface"
     if factory is None:  # fixed_stl
-        return f"{prefix}.initialize_from_stl_file(%s)" % repr(
-            surface.path_stl or ""
-        )
+        return f"{prefix}.initialize_from_stl_file({_render_value(surface.path_stl or '', problem)})"
     kwargs = []
     for field in SURFACE_TYPES[surface.surface_type]["params"]:
         key = field["key"]
         value = surface.get_field(key)
         if value is None:
             continue
-        kwargs.append(f"{key}={repr(value)}")
+        kwargs.append(f"{key}={_render_value(value, problem)}")
     kwargs.append(f"flip={repr(surface.flip)}")
     factory = (surface.custom_class + "." + factory.split(".", 1)[1]) if surface.custom_class else f"self.{factory}"
     return f"{factory}({', '.join(kwargs)})"
 
 
-def render_interface_call(interface: Node) -> str:
+def render_interface_call(interface: Node, problem: ProblemDefinition | None = None) -> str:
     cls = f"{interface.interface_type}Interface"
     kwargs = []
     for field in INTERFACE_TYPES[interface.interface_type]["params"]:
@@ -107,7 +123,7 @@ def render_interface_call(interface: Node) -> str:
         value = interface.get_field(key)
         if value is None:
             continue
-        kwargs.append(f"{key}={repr(value)}")
+        kwargs.append(f"{key}={_render_value(value, problem)}")
     cls = interface.custom_class or f"self.{cls}"
     return f"{cls}({', '.join(kwargs)})"
 
@@ -130,7 +146,46 @@ def generate_source(problem: ProblemDefinition) -> str:
         from .custom_classes import apply_custom_classes
 
         source = apply_custom_classes(problem, source)
-    return source
+    helper_blocks = [problem.helper_code]
+    seen: set[str] = set()
+    for node in [*problem.helper_variables, *problem.helper_functions]:
+        if not node.name.isidentifier() or keyword.iskeyword(node.name) or node.name in seen:
+            raise ValueError(f"Invalid or duplicate helper name: {node.name!r}")
+        seen.add(node.name)
+        if node.kind == "helper_variable":
+            try:
+                ast.parse(node.value, mode="eval")
+            except SyntaxError as exc:
+                raise ValueError(f"Invalid helper variable {node.name!r}: {exc}") from exc
+            helper_blocks.append(f"{node.name} = {node.value}")
+        else:
+            helper_blocks.append(
+                f"def {node.name}({node.parameters}):\n{indent_block(node.body or 'pass', 4)}"
+            )
+    return _insert_helpers(source, "\n\n".join(block for block in helper_blocks if block.strip()))
+
+
+def _insert_helpers(source: str, helper_source: str) -> str:
+    """Place helper definitions before custom classes and ThisController."""
+    if not helper_source.strip():
+        return source
+    try:
+        compile(helper_source, "<helper code>", "exec")
+    except SyntaxError as exc:
+        raise ValueError(f"辅助代码语法错误 / Invalid helper code: {exc}") from exc
+
+    first_class = next(
+        node.lineno - 1 for node in ast.parse(source).body
+        if isinstance(node, ast.ClassDef)
+    )
+    lines = source.splitlines()
+    lines[first_class:first_class] = [helper_source.rstrip(), "", ""]
+    result = "\n".join(lines) + "\n"
+    try:
+        compile(result, "<generated model>", "exec")
+    except SyntaxError as exc:
+        raise ValueError(f"生成脚本语法错误 / Invalid generated script: {exc}") from exc
+    return result
 
 
 def generate_base_source(problem: ProblemDefinition) -> str:
@@ -224,7 +279,7 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     a("")
     a("        def __init__(self, params: Any) -> None:")
     solver = problem.solver or SolverNode()
-    np_ = int(solver.num_process)
+    np_ = _render_value(solver.num_process, problem)
     gpus = list(solver.gpus)
     tasklist = list(solver.task_index_list)
     args = ["params=params", f"num_process={np_}"]
@@ -259,7 +314,8 @@ _REQUIRED_GEOMETRY_FIELDS = {"model_directory", "mesh_file"}
 
 
 def _render_part_constructor(
-    interface: PartInterfaceNode, class_name: str | None = None
+    interface: PartInterfaceNode, class_name: str | None = None,
+    problem: ProblemDefinition | None = None,
 ) -> str:
     """Render ``self.<ClassName>(...)`` for one part interface.
 
@@ -283,7 +339,7 @@ def _render_part_constructor(
             )
             kwargs.append(f"{key}={value_source}")
         else:
-            kwargs.append(f"{key}={repr(value if value is not None else '')}")
+            kwargs.append(f"{key}={_render_value(value if value is not None else '', problem)}")
     if not kwargs:
         return f"self.{type_name}()"
     inner = ",\n".join("    " + option for option in kwargs)
@@ -340,7 +396,7 @@ def _emit_part_classes(
             for surface in surfaces:
                 a(
                     "                    self.add_surface_interface("
-                    f"{render_surface_call(surface)})"
+                    f"{render_surface_call(surface, problem)})"
                 )
             code = constraints.get(interface.name)
             if code:
@@ -355,11 +411,17 @@ def _emit_part_classes(
             a("                    super().define_instance()")
         for instance in instances:
             a("")
+            pose = (
+                f"[*{_render_value(instance.translation, problem)}, "
+                f"*{_render_value(instance.rotation, problem)}]"
+                if isinstance(instance.translation, str) or isinstance(instance.rotation, str)
+                else repr(instance.pose)
+            )
             a(
                 "                    self.add_instance("
                 f"{interface.resolved_part_name()!r}, "
                 f"{instance.name!r}, "
-                f"{instance.pose!r})"
+                f"{pose})"
             )
         local_class[interface.name] = class_name
     return local_class
@@ -388,7 +450,7 @@ def _emit_part_init(
         variable = f"part_{index}"
         name = interface.name or interface.resolved_part_name() or f"part{index + 1}"
         constructor = _render_part_constructor(
-            interface, local_class.get(interface.name)
+            interface, local_class.get(interface.name), problem
         ).replace("\n", "\n" + prefix)
 
         a("")
@@ -399,7 +461,7 @@ def _emit_part_init(
             for surface in interface.surfaces():
                 a(
                     f"                {variable}.add_surface_interface("
-                    f"{render_surface_call(surface)})"
+                    f"{render_surface_call(surface, problem)})"
                 )
         a(f"                self.add_interface({variable}, name={name!r})")
 
@@ -523,7 +585,7 @@ def _emit_interfaces(a: Callable[[str], object], problem: ProblemDefinition) -> 
         return
     for it in interfaces:
         a(
-            f"                self.add_interface({render_interface_call(it)}, name={it.name!r})"
+            f"                self.add_interface({render_interface_call(it, problem)}, name={it.name!r})"
         )
 
 
@@ -554,7 +616,7 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
             amps_values = stored if stored is not None else [0.0] * nv
             a(
                 f"                self.set_step_params({s}, {interface.name!r}, "
-                f"{amps_values!r})"
+                f"{_render_value(amps_values, problem)})"
             )
 
 
@@ -611,19 +673,19 @@ def _emit_material_init(
                 }
             kw.append(
                 "material_parameters="
-                + _material_parameters_expression(model, material_parameters)
+                + _material_parameters_expression(model, material_parameters, problem)
             )
         else:
             keys = ["part_name", "elementname", "density"]
             material_parameters = {key: mat.get_field(key) for key in model_keys}
             kw.append(
                 "material_parameters="
-                + _material_parameters_expression(model, material_parameters)
+                + _material_parameters_expression(model, material_parameters, problem)
             )
         for key in keys:
             value = mat.get_field(key)
             if value is not None:
-                kw.append(f"{key}={repr(value)}")
+                kw.append(f"{key}={_render_value(value, problem)}")
 
         a("")
         name = mat.name or f"material_{index}"
@@ -752,14 +814,14 @@ def _emit_updater(
     a(f"            super().__init__(params=params, device={device})")
     a("")
     for class_name, config in zip(geometry_classes, geom_cfgs):
-        _emit_nested_updater(a, class_name, GEOMETRY_UPDATER_BASE, config)
+        _emit_nested_updater(a, class_name, GEOMETRY_UPDATER_BASE, config, problem)
         a("")
     for class_name, config in zip(material_classes, mat_cfgs):
-        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config)
+        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config, problem)
         a("")
 
 
-def _render_updater_item(item: dict, category: str) -> str:
+def _render_updater_item(item: dict, category: str, problem: ProblemDefinition | None = None) -> str:
     """Render one valid structured objective/constraint item into source."""
     if not isinstance(item, dict):
         raise ValueError(f"Invalid updater item: {item}")
@@ -782,14 +844,17 @@ def _render_updater_item(item: dict, category: str) -> str:
         and not str(params.get("elementname") or "").strip()
     ):
         raise ValueError("VolFrac requires an explicit elems name.")
-    fmt = {k: repr(v) for k, v in params.items()}
+    fmt = {k: _render_value(v, problem) for k, v in params.items()}
     try:
         return gen.format(**fmt)
     except (KeyError, IndexError, ValueError) as exc:
         raise ValueError(f"Invalid updater parameters: {item['type']}") from exc
 
 
-def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, cfg) -> None:
+def _emit_nested_updater(
+    a: Callable[[str], object], cls_name: str, base: str, cfg,
+    problem: ProblemDefinition,
+) -> None:
     """Emit one sub-updater class.
 
     The class is **target-free** -- it carries the objectives / constraints of
@@ -806,7 +871,7 @@ def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, c
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")
-    a(f"                super().__init__(max_step_iter={int(cfg.get('max_step_iter', 50))})")
+    a(f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)})")
 
     body: list[str] = []
     # NOTE: the model stores the lists under ``objective_functions`` / ``constraints``
@@ -816,7 +881,7 @@ def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, c
         ("constraints", "constraints", "add_constraints"),
     ):
         for item in cfg.get(model_key, []) or []:
-            line = _render_updater_item(item, catalog_key)
+            line = _render_updater_item(item, catalog_key, problem)
             body.append(f"self.{call}({line})")
 
     if "if_update" in cfg and cfg["if_update"] is not None:

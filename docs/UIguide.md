@@ -28,7 +28,7 @@ python -m morphopt.ui
 
 中间主区（Abaqus 风格）：
 - **左：模型树** —— 初始构型几何 / 载荷（载荷定义、载荷工况）/ 材料 / 求解器 / 优化问题定义；优化问题定义下并列显示优化目标、几何优化器和材料优化器（如有），优化器下再分别进入子优化目标、等式约束和罚函数约束。
-- **中：编辑页** 与只读生成的代码（每次修改自动刷新）。
+- **中：编辑页** 与只读生成的代码（每次修改自动刷新）；辅助代码在编辑页中编写。
 - **右：预览** —— 初始几何与各工况载荷。
 
 编辑要点：
@@ -60,6 +60,8 @@ python -m morphopt.ui
 ### 自定义类与方法重写（进阶）
 
 模型树下方是 **自定义类（进阶）**，中间的分割栏可以拖动调整高度。
+
+左侧模型树的 **辅助代码** 位于 **控制器** 前面，下面依次是 **自由代码块**、**辅助变量** 和 **辅助函数**。自由代码块可写完整的脚本级 Python 代码和 `import`。辅助变量逐项填写名称和 Python 值表达式，例如名称 `target_force`、值 `3.0`；辅助函数逐项填写名称、输入形参和函数体。变量和函数可通过分组的“添加”按钮或右键菜单新增，通过条目的“删除此项”按钮或右键菜单删除。后续参数输入框直接填写辅助变量名时，生成脚本会引用该变量，不会将名称当作字符串。辅助代码出现在生成脚本的导入语句之后、所有自定义类及 `ThisController` 之前，并随 `.morph` 保存。语法错误会显示在编辑页，并阻止运行或导出无效脚本。从只读代码页选中模型树节点时，界面会自动返回编辑页。
 
 1. 点击下方的 **+**（或右键 → 添加自定义类），输入 Python 类名，选择框架父类，例如 `morphopt.Solver`。自定义类生成在脚本最外层；同一父类可以定义多个自定义类。
 2. 选中自定义类，点击 **重写方法…**，从下拉框选择方法。列表包含父类及其继承的方法，包括 `__init__`、实例方法、类方法和静态方法。
@@ -117,7 +119,7 @@ class ThisController(morphopt.Controller):
     └── MAIN_SCRIPT_FOR_RESTART.morph   # 本次优化定义（由 UI 发起时自动写入）
 ```
 
-- **`.morph`**：JSON 无损格式，顶层含 `scheme/label/result_folder/device/restart_per_iteration/root/custom_classes/class_bindings`（root 为参数树，custom_classes 保存自定义类和方法体，class_bindings 保存类选择）。它知道自己属于哪种优化问题，可直接被 UI“打开 .morph”载入继续编辑、再“导出运行 .py”运行。
+- **`.morph`**：第 3 版 JSON 格式，顶层含 `scheme/label/result_folder/device/restart_per_iteration/root/custom_classes/class_bindings/helper_code/helper_variables/helper_functions`（root 为参数树，custom_classes 保存自定义类和方法体，class_bindings 保存类选择，helper_code 保存自由代码块，helper_variables 和 helper_functions 保存结构化条目）。可直接被 UI“打开 .morph”载入继续编辑、再“导出运行 .py”运行。
 - 由 UI 发起的运行，会在结果目录 `scripts/` 里与 `MAIN_SCRIPT_FOR_RESTART.py` 并列保存一份 `MAIN_SCRIPT_FOR_RESTART.morph`，便于事后复现/继续。
 - 代码/命令行运行**不再显示任何 UI 窗口**：生成脚本 `__main__` 调用
   `morphopt.start_optimization(device=…, restart_per_iteration=…)`，headless 执行。

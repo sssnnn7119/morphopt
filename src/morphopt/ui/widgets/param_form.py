@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QComboBox, QCheckBox, QSpinBox,
+    QWidget, QFormLayout, QLineEdit, QComboBox, QCheckBox,
     QPushButton, QHBoxLayout, QFileDialog,
 )
 
@@ -29,11 +29,12 @@ class ParamForm(QWidget):
 
     changed = Signal(str)   # key
 
-    def __init__(self, params: dict, fields, extra_choices=None, parent=None):
+    def __init__(self, params: dict, fields, extra_choices=None, parent=None, helper_names=()):
         super().__init__(parent)
         self.params = params
         self.fields = list(fields)
         self.extra_choices = extra_choices or {}
+        self.helper_names = set(helper_names)
         self._form = QFormLayout(self)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._form.setVerticalSpacing(3)
@@ -59,13 +60,8 @@ class ParamForm(QWidget):
             self._form.addRow(w)
             return
         if typ == "int":
-            w = QSpinBox()
-            lo = f.get("min")
-            hi = f.get("max")
-            w.setRange(int(lo) if lo is not None else -10**6,
-                       int(hi) if hi is not None else 10**6)
-            w.setValue(int(cur) if cur is not None else 0)
-            w.valueChanged.connect(lambda v, k=key: self._set(k, int(v)))
+            w = QLineEdit(str(cur) if cur is not None else "")
+            w.editingFinished.connect(lambda k=key: self._set(k, _to_int(w.text())))
             self._form.addRow(label, w)
             return
         if typ == "combo":
@@ -115,15 +111,14 @@ class ParamForm(QWidget):
         # line-edit typed fields
         w = QLineEdit()
         if typ == "float":
-            from PySide6.QtGui import QDoubleValidator
-            w.setValidator(QDoubleValidator())
             w.setText(str(cur) if cur is not None else "")
             w.editingFinished.connect(lambda k=key: self._set(k, _to_float(w.text())))
         elif typ in ("mat", "vecN", "vec3", "vec6", "vec2d"):
             w.setText(_text_of(cur) if cur is not None else "")
             keep_int = bool(f.get("ints", False))
             w.editingFinished.connect(
-                lambda k=key: self._set(k, parse_mat(w.text()) if typ == "mat"
+                lambda k=key: self._set(k, w.text().strip() if w.text().strip() in self.helper_names
+                                        else parse_mat(w.text()) if typ == "mat"
                                         else parse_vec_text(w.text(), ints=keep_int)))
         else:  # str / text
             w.setText(str(cur) if cur is not None else "")
@@ -156,3 +151,10 @@ def _to_float(text: str):
         return float(text)
     except ValueError:
         return text
+
+
+def _to_int(text: str):
+    try:
+        return int(text)
+    except ValueError:
+        return text.strip()

@@ -1,5 +1,8 @@
 {
-  "version": 1,
+  "version": 3,
+  "helper_code": "",
+  "helper_variables": [],
+  "helper_functions": [],
   "scheme": "multidesign",
   "label": "multidesign_untitled",
   "result_folder": "/run/media/song/SS/minedata/learning/code/projects/morphopt/ui_runs/.results/",
