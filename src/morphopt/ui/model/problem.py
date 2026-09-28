@@ -128,6 +128,7 @@ class Node:
         self.kind = kind or type(self).kind or ""
         self.name = name
         self.children: list[Node] = list(children or [])
+        self.custom_class: str = str((params or {}).get("custom_class") or "")
         # ``params`` is only forwarded by ``Node.from_dict`` for hydration;
         # concrete subclasses read it and assign their own typed attributes.
 
@@ -200,10 +201,13 @@ class Node:
     # ----------------------------------------------------------- persistence
     def to_dict(self) -> dict:
         """Return an independent persistence mapping for this subtree."""
+        params = deepcopy(dict(self.field_items()))
+        if self.custom_class:
+            params["custom_class"] = self.custom_class
         return {
             "kind": self.kind,
             "name": self.name,
-            "params": deepcopy(dict(self.field_items())),
+            "params": params,
             "children": [c.to_dict() for c in self.children],
         }
 
@@ -214,14 +218,22 @@ class Node:
         The concrete subclass is selected from the stored ``kind`` so typed
         accessors keep working after a save / load round-trip.
         """
-        kind = data.get("kind") or cls.kind or ""
-        node_type = NODE_TYPES.get(kind, Node)
-        return node_type(
+        kind = data["kind"]
+        if kind not in NODE_TYPES:
+            raise ValueError(f"Unknown model node kind: {kind}")
+        node_type = NODE_TYPES[kind]
+        params = dict(data.get("params", {}))
+        unknown = set(params) - set(node_type._FIELDS) - {"custom_class"}
+        if unknown:
+            raise ValueError(f"Unknown fields for {kind}: {sorted(unknown)}")
+        node = node_type(
             kind=kind,
             name=data.get("name", ""),
-            params=deepcopy(dict(data.get("params", {}) or {})),
+            params=deepcopy(params),
             children=[cls.from_dict(c) for c in data.get("children", [])],
         )
+        node.custom_class = str((data.get("params") or {}).get("custom_class") or "")
+        return node
 
     # ---------------------------------------------------------------- misc
     def clone(self) -> Node:
@@ -332,8 +344,6 @@ class PartInterfaceNode(Node):
         "part_name",
         "fea_seed_size",
         "mesh_order",
-        "shell_thickness",
-        "num_layers",
         "exterior_surface",
         "mesh_file",
         "inp_part_name",
@@ -355,8 +365,6 @@ class PartInterfaceNode(Node):
         self.part_name: str = str(data.get("part_name") or "").strip()
         self.fea_seed_size: float | None = data.get("fea_seed_size")
         self.mesh_order: int | None = data.get("mesh_order")
-        self.shell_thickness: float | None = data.get("shell_thickness")
-        self.num_layers: int | None = data.get("num_layers")
         self.exterior_surface: str | None = data.get("exterior_surface")
         self.mesh_file: str | None = data.get("mesh_file")
         self.inp_part_name: str | None = data.get("inp_part_name")
@@ -998,6 +1006,8 @@ class UpdaterNode(Node):
         data = dict(params or {})
         self.geometry: list[dict] = list(data.get("geometry") or [])
         self.materials: list[dict] = list(data.get("materials") or [])
+        if any("code" in config for config in self.geometry + self.materials):
+            raise ValueError("Raw updater code is unsupported; use method overrides")
 
     def field_items(self) -> Iterator[tuple[str, object]]:
         """Serialize object targets without retaining name references in memory."""
@@ -1034,8 +1044,32 @@ class UpdaterNode(Node):
         return config
 
 
+class MethodOverrideNode(Node):
+    """Body of one overridden method; its signature comes from the base class."""
+
+    kind = "method_override"
+    _FIELDS = ("body",)
+
+    def __init__(self, kind=None, name="", params=None, children=None):
+        super().__init__(kind=kind, name=name, children=children)
+        self.body: str = str((params or {}).get("body", ""))
+
+
+class CustomClassNode(Node):
+    """A module-level framework subclass, selected explicitly by model nodes."""
+
+    kind = "custom_class"
+    _FIELDS = ("base_class",)
+
+    def __init__(self, kind=None, name="", params=None, children=None):
+        super().__init__(kind=kind, name=name, children=children)
+        self.base_class: str = str((params or {}).get("base_class", ""))
+
+
 #: kind -> concrete node class used by :meth:`Node.from_dict`.
 NODE_TYPES: dict[str, type[Node]] = {
+    CustomClassNode.kind: CustomClassNode,
+    MethodOverrideNode.kind: MethodOverrideNode,
     KIND_PROBLEM: ProblemNode,
     KIND_GEOMETRY: GeometryNode,
     KIND_PART_INTERFACE: PartInterfaceNode,
@@ -1068,6 +1102,8 @@ class ProblemDefinition:
         updater_device: str | None = None,
         restart_per_iteration: int = 10,
         root: Node | None = None,
+        custom_classes: list[CustomClassNode] | None = None,
+        class_bindings: dict[str, str] | None = None,
     ) -> None:
         scheme = str(scheme or "").strip()
         if not scheme:
@@ -1080,6 +1116,8 @@ class ProblemDefinition:
         self.updater_device = updater_device
         self.restart_per_iteration = restart_per_iteration
         self.root = root if root is not None else ProblemNode(name=label)
+        self.custom_classes = list(custom_classes or [])
+        self.class_bindings: dict[str, str] = dict(class_bindings or {})
 
     # ------------------------------------------------------------ accessors
     def node(self, kind: str) -> Node | None:
@@ -2129,7 +2167,7 @@ class ProblemDefinition:
 
         ``part_name`` may be empty, in which case the Part again follows the
         geometry-interface name.  Only the conventional identity instance
-        (``<part>-1``, or its legacy ``<part>`` spelling) follows this change;
+        (``<part>-1``) follows this change;
         explicitly named instances retain both their names and their poses.
         """
         if interface not in self.part_interfaces():
@@ -2264,10 +2302,7 @@ class ProblemDefinition:
         conventional = f"{part_name}-1"
         return next(
             (instance for instance in interface.instances() if instance.name == conventional),
-            next(
-                (instance for instance in interface.instances() if instance.name == part_name),
-                None,
-            ),
+            None,
         )
 
     def _rename_default_instance(
@@ -2449,19 +2484,25 @@ class ProblemDefinition:
             "updater_device": self.updater_device,
             "restart_per_iteration": self.restart_per_iteration,
             "root": self.root.to_dict(),
+            "custom_classes": [node.to_dict() for node in self.custom_classes],
+            "class_bindings": dict(self.class_bindings),
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
-        root = Node.from_dict(data.get("root", {"kind": "problem"}))
+        if data.get("version") != 1:
+            raise ValueError(f"Unsupported .morph version: {data.get('version')}")
+        root = Node.from_dict(data["root"])
         problem = cls(
-            scheme=data.get("scheme", "shapeopt"),
+            scheme=data["scheme"],
             label=data.get("label", "Untitled"),
             result_folder=data.get("result_folder", ".results/"),
             device=data.get("device", "cpu"),
             updater_device=data.get("updater_device"),
             restart_per_iteration=data.get("restart_per_iteration", 10),
             root=root,
+            custom_classes=[Node.from_dict(node) for node in data.get("custom_classes", [])],
+            class_bindings=data.get("class_bindings", {}),
         )
         problem.resolve_references()
         return problem

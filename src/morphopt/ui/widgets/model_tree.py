@@ -14,8 +14,6 @@ the viewer and the read-only generated code.
 
 from __future__ import annotations
 
-import re
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -26,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import T, pick
+from ..codegen.custom_classes import class_path_for_node, custom_options
 from ..model.problem import (
     InstanceNode,
     InterfaceNode,
@@ -45,9 +44,11 @@ from ..model.schemas import (
 #: containers that hold children we show in the tree
 CONTAINER_ORDER = ["geometry", "loads_group", "materials", "solver", "updater"]
 
-#: Localized tree labels.  The parenthesized suffix is a generated-code
+#: Localized tree labels.  The bracketed suffix is a generated-code
 #: location, not a translation.
 CONTAINER_TITLES_ZH = {
+    "problem": "控制器",
+    "params_class": "模型参数",
     "geometry": "几何（初始构型）",
     "loads_group": "载荷",
     "loads": "载荷定义",
@@ -58,6 +59,8 @@ CONTAINER_TITLES_ZH = {
     "updater": "优化问题定义",
 }
 CONTAINER_TITLES_EN = {
+    "problem": "Controller",
+    "params_class": "Model parameters",
     "geometry": "Geometry — Initial configuration",
     "loads_group": "Loads",
     "loads": "Load definition",
@@ -69,6 +72,8 @@ CONTAINER_TITLES_EN = {
 }
 
 CODE_REFERENCES = {
+    "problem": "Controller",
+    "params_class": "Params",
     "geometry": "GeometryParams",
     "loads_group": "FEAParams",
     "loads": "define_interface",
@@ -78,6 +83,13 @@ CODE_REFERENCES = {
     "solver": "Solver",
     "updater": "Updater",
 }
+
+
+class ParamsTreeNode(Node):
+    """Navigation parent for the persisted geometry, loads and materials."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="params_class", name="Params")
 
 
 class LoadsTreeNode(Node):
@@ -131,10 +143,10 @@ class UpdaterTreeNode(Node):
 
 
 def container_title(kind: str) -> str:
-    """Localized title with its generated-code location in parentheses."""
+    """Localized title with its generated-code location in brackets."""
     label = pick(CONTAINER_TITLES_ZH.get(kind, kind), CONTAINER_TITLES_EN.get(kind))
     reference = CODE_REFERENCES.get(kind)
-    return f"{label} ({reference})" if reference else label
+    return f"{label} [{reference}]" if reference else label
 
 
 def _full_label(spec: dict, key: str) -> str:
@@ -142,46 +154,26 @@ def _full_label(spec: dict, key: str) -> str:
     return pick(spec.get("label", key), spec.get("label_en"))
 
 
-def _short_phrase(spec: dict, key: str) -> str:
-    """``解释 (TypeName)`` -> just the readable phrase ``解释``."""
-    full = _full_label(spec, key)
-    return re.sub(r"\s*\([^)]*\)\s*$", "", full).strip() or full
-
-
 def surface_title_text(srf: Node, index: int) -> str:
-    """Tree/editor label for one geometry surface: ``"0: 圆柱面"``.
-
-    Surfaces are *not* given descriptive names; they are identified by their
-    0-based index inside their Part interface (0 = outer boundary, >= 1 =
-    inner cavity).  The index comes from the current position, so moving a
-    surface up/down renumbers it automatically.
-    """
+    """Surface name followed by its concrete interface class."""
     st = srf.surface_type or "?"
     spec = SURFACE_TYPES.get(st, {})
-    return f"{index}: {_short_phrase(spec, st)}"
+    factory = spec.get("factory") or "FixedSurface"
+    class_name = {"BSP": "BspSurfaceInterface", "CPGEO": "CPGEOSurfaceInterface"}.get(
+        factory.split(".")[0], factory.split(".")[0]
+    )
+    return f"{srf.name or f'surface_{index}'} [{srf.custom_class or class_name}]"
 
 
 def part_interface_title_text(interface: Node) -> str:
-    """Tree label for one geometry interface: ``"body  [Part: body, 实体: body-1]"``.
-
-    Shows the interface (Part) name and its instances, which are the names
-    every load / material / contact interface refers to.
-    """
-    itype = interface.interface_type or "?"
-    spec = PART_INTERFACE_TYPES.get(itype, {})
-    phrase = _short_phrase(spec, itype)
-    instances = interface.resolved_instance_names()
-    instance_text = ", ".join(instances) if instances else "?"
-    name = f"{interface.name}: " if interface.name else ""
-    return (
-        f"{name}{phrase}  [part={interface.resolved_part_name()}, 实体={instance_text}]"
-    )
+    """Registration name followed by the selected Part interface class."""
+    name = interface.name or interface.resolved_part_name()
+    return f"{name} [{interface.custom_class or interface.interface_type or '?'}]"
 
 
 def instance_title_text(instance: InstanceNode) -> str:
-    """Tree label for one Part Instance and its six-component pose."""
-    pose = ", ".join(f"{value:g}" for value in instance.pose)
-    return f"{instance.name}: [{pose}]"
+    """Instance name followed by its backend class."""
+    return f"{instance.name} [Instance]"
 
 
 def surface_index(problem: ProblemDefinition | None, srf: Node) -> int | None:
@@ -226,24 +218,27 @@ class ModelTree(QTreeWidget):
         self._node_item.clear()
         if self._problem is None:
             return
-        # Top-level sections are supplied by the model aggregate; the widget
-        # only turns them into rows.  Loads and load cases share one visual
-        # parent even though they remain separate model sections and are
-        # serialized unchanged.
+        controller_item = self._make_item(container_title("problem"), self._problem.root, bold=True)
+        self.addTopLevelItem(controller_item)
+        params_item = self._make_item(container_title("params_class"), ParamsTreeNode(), bold=True)
+        controller_item.addChild(params_item)
+        # Params and load grouping are visual navigation nodes. Persisted
+        # sections keep their canonical order and identity in the definition.
         for kind in CONTAINER_ORDER:
             if kind == "loads_group":
                 group_node = LoadsTreeNode()
                 group_item = self._make_item(
                     container_title("loads_group"), group_node, bold=True
                 )
-                self.addTopLevelItem(group_item)
+                params_item.addChild(group_item)
                 self._add_loads_children(group_item)
                 continue
             node = self._problem.section(kind)
             if node is None:
                 continue
             item = self._make_item(container_title(kind), node, bold=True)
-            self.addTopLevelItem(item)
+            parent = params_item if kind in {"geometry", "materials"} else controller_item
+            parent.addChild(item)
             if kind == "geometry":
                 for interface in self._problem.part_interfaces():
                     interface_item = self._make_item(
@@ -273,7 +268,7 @@ class ModelTree(QTreeWidget):
                 it = next(
                     (
                         candidate_item
-                        for candidate_item, candidate_node in self._node_item.items()
+                        for candidate_node, candidate_item in self._node_item.items()
                         if self._node_key(candidate_node) == select_key
                     ),
                     None,
@@ -285,7 +280,7 @@ class ModelTree(QTreeWidget):
     def apply_language(self) -> None:
         """Re-localize the tree titles in place (keeps the selection)."""
         for item, node in list(self._item_node.items()):
-            if node.kind in CONTAINER_ORDER:
+            if node.kind in CONTAINER_ORDER or node.kind in {"problem", "params_class"}:
                 item.setText(0, container_title(node.kind))
             elif node.kind == "part_interface":
                 item.setText(0, part_interface_title_text(node))
@@ -305,10 +300,24 @@ class ModelTree(QTreeWidget):
                 item.setText(0, container_title("objective"))
             elif node.kind.startswith("updater_"):
                 item.setText(0, self._updater_title(node))
+            item.setText(0, self._display_text(item.text(0), node))
 
     # ------------------------------------------------------------ rendering
+    def _display_text(self, text: str, node: Node) -> str:
+        path = class_path_for_node(node)
+        selected = self._problem.class_bindings.get(path) if self._problem and path else None
+        if selected:
+            return f"{text.rsplit(' [', 1)[0]} [{selected}]"
+        return text
+
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
-        item = QTreeWidgetItem([text])
+        item = QTreeWidgetItem([self._display_text(text, node)])
+        if isinstance(node, PartInterfaceNode):
+            item.setToolTip(0, f"Part: {node.resolved_part_name()}\nInstances: {', '.join(node.resolved_instance_names())}")
+        elif isinstance(node, InstanceNode):
+            item.setToolTip(0, f"Pose: {node.pose}")
+        elif isinstance(node, MaterialNode):
+            item.setToolTip(0, f"Part: {node.part_name}\nElements: {node.elementname or 'all'}")
         if bold:
             f = item.font(0)
             f.setBold(True)
@@ -325,20 +334,12 @@ class ModelTree(QTreeWidget):
     @staticmethod
     def _interface_title(iface: Node) -> str:
         it = iface.interface_type or "?"
-        spec = INTERFACE_TYPES.get(it, {})
-        phrase = _short_phrase(spec, it)
-        return f"{iface.name}  [{phrase}]" if iface.name else phrase
+        return f"{iface.name or it} [{iface.custom_class or it + 'Interface'}]"
 
     @staticmethod
     def _material_title(material: Node) -> str:
         mtype = material.material_type or "?"
-        spec = MATERIAL_TYPES.get(mtype, {})
-        type_label = _full_label(spec, mtype)
-        part_name = str(material.part_name or "<Part?>").strip()
-        elem_name = str(material.elementname or "").strip()
-        elem_name = elem_name or T("全部 elems", "all elems")
-        name = f"{material.name}: " if material.name else ""
-        return f"{name}{type_label}  [part={part_name}, elem={elem_name}]"
+        return f"{material.name or mtype} [{material.custom_class or mtype}]"
 
     def _updater_title(self, node: Node) -> str:
         """Return the localized title for a transient updater tree entry."""
@@ -380,14 +381,16 @@ class ModelTree(QTreeWidget):
                     )
                 elif len(node.updater_parent.materials) > 1:
                     part = f" · {node.config_index}"
-            return f"{label} ({node.code_reference}){part}"
+            return f"{label}{part} [{node.code_reference}]"
         return container_title("updater")
 
     @staticmethod
     def _node_key(node: Node | None):
-        """Stable identity for transient updater entries across rebuilds."""
+        """Stable identity for transient Params/updater entries across rebuilds."""
         if node is None:
             return None
+        if node.kind == "params_class":
+            return ("params_class",)
         if isinstance(node, UpdaterTreeNode):
             return (
                 "updater",
@@ -485,7 +488,11 @@ class ModelTree(QTreeWidget):
                 act = QAction(_full_label(spec, itype), sub)
                 act.setData(itype)
                 sub.addAction(act)
-            sub.triggered.connect(lambda a: self._add_part_interface(a.data()))
+                act.triggered.connect(lambda _=False, kind=itype: self._add_part_interface(kind))
+            candidates = {kind: "morphopt.BoundaryPartInterface" if PART_INTERFACE_TYPES[kind].get("surfaces")
+                          else f"morphopt.{kind}" for kind in get_template(scheme).available_geometry_types()}
+            candidates["BasePartInterface"] = "morphopt.BasePartInterface"
+            self._custom_add_menu(sub, candidates, self._add_part_interface)
 
         if kind == "part_interface":
             act_instance = QAction(T("添加实体 Instance", "Add Instance"), menu)
@@ -498,9 +505,10 @@ class ModelTree(QTreeWidget):
                     act = QAction(_full_label(spec, stype), sub)
                     act.setData(stype)
                     sub.addAction(act)
-                sub.triggered.connect(
-                    lambda a, owner=node: self._add_surface(a.data(), owner)
-                )
+                    act.triggered.connect(lambda _=False, kind=stype, owner=node: self._add_surface(kind, owner))
+                candidates = {kind: "morphopt.BoundaryPartInterface." + (spec["factory"].split(".")[0] if spec["factory"] else "FixedSurface")
+                              for kind, spec in SURFACE_TYPES.items()}
+                self._custom_add_menu(sub, candidates, lambda kind, custom: self._add_surface(kind, node, custom))
                 menu.addSeparator()
 
             act_copy = QAction(T("复制", "Copy"), menu)
@@ -532,7 +540,8 @@ class ModelTree(QTreeWidget):
                 act = QAction(_full_label(spec, mtype), sub)
                 act.setData(mtype)
                 sub.addAction(act)
-            sub.triggered.connect(lambda a: self._add_material(a.data()))
+                act.triggered.connect(lambda _=False, kind=mtype: self._add_material(kind))
+            self._custom_add_menu(sub, {kind: f"morphopt.{kind}" for kind in available}, self._add_material)
 
         if kind == "material":
             act_copy = QAction(T("复制", "Copy"), menu)
@@ -565,6 +574,10 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "updater":
+            objective_menu = menu.addMenu(T("添加/替换优化目标", "Add/replace objective"))
+            objective_menu.addAction(T("默认优化目标", "Default objective"), lambda: self._set_objective_class(""))
+            self._custom_add_menu(objective_menu, {"objective": "morphopt.ObjectiveFunction"},
+                                  lambda kind, custom: self._set_objective_class(custom))
             act = QAction(T("添加几何优化器", "Add geometry optimizer"), menu)
             act.triggered.connect(self._add_geometry_updater)
             menu.addAction(act)
@@ -594,7 +607,8 @@ class ModelTree(QTreeWidget):
                 act = QAction(_full_label(spec, itype), sub)
                 act.setData(itype)
                 sub.addAction(act)
-            sub.triggered.connect(lambda a: self._add_interface(a.data()))
+                act.triggered.connect(lambda _=False, kind=itype: self._add_interface(kind))
+            self._custom_add_menu(sub, {kind: f"morphopt.FEAParams.{kind}Interface" for kind in INTERFACE_TYPES}, self._add_interface)
 
         if kind == "interface":
             act_copy = QAction(T("复制", "Copy"), menu)
@@ -693,14 +707,42 @@ class ModelTree(QTreeWidget):
         self.rebuild(select=self._problem.updater)
         self.treeChanged.emit()
 
-    def _add_part_interface(self, itype: str) -> None:
+    def _custom_add_menu(self, menu, candidates, add):
+        sub = menu.addMenu(T("自定义类", "Custom class"))
+        options = custom_options(self._problem, candidates)
+        shown = set()
+        for kind, custom in options:
+            if custom.name in shown:
+                continue
+            shown.add(custom.name)
+            action = sub.addAction(f"{custom.name} [{kind}]")
+            action.triggered.connect(lambda _=False, kind=kind, name=custom.name: add(kind, name))
+        if not options:
+            action = sub.addAction(T("请先创建兼容的自定义类", "Create a compatible custom class first"))
+            action.setEnabled(False)
+
+    def _set_objective_class(self, custom_class):
+        if self._problem is None or self._problem.objective is None:
+            return
+        self._problem.objective.custom_class = custom_class
+        self._problem.class_bindings.pop("ThisController.ObjectiveFunction", None)
+        self.rebuild(select=self._problem.objective)
+        self.treeChanged.emit()
+
+    def _add_part_interface(self, itype: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
         name = self._problem.suggest_part_interface_name()
-        interface = tpl.make_part_interface(itype, name=name)
+        if PART_INTERFACE_TYPES.get(itype, {}).get("custom_only"):
+            if not custom_class:
+                return
+            interface = PartInterfaceNode.create(itype, name=name)
+        else:
+            interface = tpl.make_part_interface(itype, name=name)
+        interface.custom_class = custom_class
         self._problem.add_part_interface(interface)
         self.rebuild(select=interface)
         self.treeChanged.emit()
@@ -749,7 +791,7 @@ class ModelTree(QTreeWidget):
         self.rebuild()
         self.treeChanged.emit()
 
-    def _add_surface(self, stype: str, owner: Node | None = None) -> None:
+    def _add_surface(self, stype: str, owner: Node | None = None, custom_class: str = "") -> None:
         if self._problem is None:
             return
         from ..schemes.base import get_template
@@ -761,6 +803,7 @@ class ModelTree(QTreeWidget):
         tpl = get_template(self._problem.scheme)
         index = len(owner.surfaces())
         srf = tpl.make_surface(stype, index)
+        srf.custom_class = custom_class
         self._problem.add_surface(srf, interface=owner)
         self.rebuild(select=srf)
         self.treeChanged.emit()
@@ -790,13 +833,14 @@ class ModelTree(QTreeWidget):
         self.rebuild(select=srf)
         self.treeChanged.emit()
 
-    def _add_interface(self, itype: str) -> None:
+    def _add_interface(self, itype: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
         iface = tpl.make_interface(itype)
+        iface.custom_class = custom_class
         spec = INTERFACE_TYPES.get(itype, {})
         iface.name = self._problem.suggest_interface_name(
             spec.get("name_hint", "load_")
@@ -805,13 +849,14 @@ class ModelTree(QTreeWidget):
         self.rebuild(select=iface)
         self.treeChanged.emit()
 
-    def _add_material(self, material_type: str) -> None:
+    def _add_material(self, material_type: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
         from ..schemes.base import get_template
 
         tpl = get_template(self._problem.scheme)
         material = tpl.make_material(material_type=material_type)
+        material.custom_class = custom_class
         self._problem.add_material(material)
         self.rebuild(select=material)
         self.treeChanged.emit()

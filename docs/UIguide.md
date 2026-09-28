@@ -57,6 +57,36 @@ python -m morphopt.ui
 页脚：
 - **`▶ 进入优化器`** —— 把当前定义交给观察页；在观察页点击 0 选择任务来源（当前定义 / 已有 .py / 已有结果续跑）后开始。
 
+### 自定义类与方法重写（进阶）
+
+模型树下方是 **自定义类（进阶）**，中间的分割栏可以拖动调整高度。
+
+1. 点击下方的 **+**（或右键 → 添加自定义类），输入 Python 类名，选择框架父类，例如 `morphopt.Solver`。自定义类生成在脚本最外层；同一父类可以定义多个自定义类。
+2. 选中自定义类，点击 **重写方法…**，从下拉框选择方法。列表包含父类及其继承的方法，包括 `__init__`、实例方法、类方法和静态方法。
+3. 在代码编辑器中填写方法体。方法签名自动沿用框架父类；初始代码调用父类方法，可在它前后添加自己的逻辑。签名的提示信息显示父类文档。
+4. **根级配置**：模型树以 Controller 为根；Params 是几何、载荷、材料的父节点，Solver 和 Updater 是 Controller 的其他子节点。选中 Controller、Params 或几何、载荷、材料、求解器、Updater，在编辑页顶部使用 **使用类** 下拉框。这里只列出兼容的类；**默认**恢复框架类。
+5. **接口和目标函数**：右键对应父节点，在“添加几何接口 / 添加载荷 / 添加材料接口 / 添加曲面”菜单的 **自定义类** 子菜单中选择。优化目标通过 Updater 的“添加/替换优化目标 → 自定义类”选择。子优化目标和罚函数约束通过各自添加列表中的“自定义类”条目添加；继承具体类型的类沿用其参数表单，继承 BaseObjective / BaseConstraints 的类以自己的构造器默认值创建。
+6. 通过左侧自定义类树中的方法节点切换编辑；**删除重写**恢复父类方法。右键自定义类 → **删除**，引用它的节点恢复默认选择。类改名时，节点选择也会同步更新。
+
+例如创建 `CustomSolver(morphopt.Solver)`，在求解器节点中选用它。生成代码如下：
+
+```python
+class CustomSolver(morphopt.Solver):
+    def reinitialize(self, iteration):
+        return super().reinitialize(iteration)
+
+class ThisController(morphopt.Controller):
+    class Solver(CustomSolver):
+        def __init__(self, params: Any) -> None:
+            super().__init__(params=params, num_process=1)
+```
+
+自定义类提供行为，模型中的生成类传入 UI 参数。`super()` 调用框架父类；重写 `__init__` 时仍会收到 UI 配置的参数。如果重写 `define_interface`、`define_surfaces`、`define_instance`、`define_steps`、`define_objective` 等声明方法，该方法会替代对应的 UI 自动生成方法，请在方法体中写完整声明。
+
+接口、曲面、目标函数和约束的自定义类保存到新建条目中，只影响该条目。树标签显示所用的自定义类名称。`.morph` 的 `custom_classes` 保存类和方法源码，`class_bindings` 保存根级配置选择，条目的 `custom_class` 保存其所用类；代码页、导出 `.py` 和 UI 发起的运行都会使用这些选择。只读取当前格式，不转换旧路径或隐式类选择。删除 Part 或子优化器后，应检查对应的类选择。
+
+模型树条目统一显示为 **名称 [类名]**，例如 `finger [CustomGripperPart]`、`Root [BoundaryConditionInterface]`、`body [CustomBodyMaterial]`。选用自定义类时显示其实际名称。Part 的实例列表、实例位置及材料关联信息可通过悬停查看。`BasePartInterface` 本身没有建模实现，只能通过“添加几何接口 → 自定义类”添加继承它的已定义类，不出现在普通几何类型菜单中。
+
 ## 2. 优化器
 
 顶栏三个按钮：
@@ -87,7 +117,7 @@ python -m morphopt.ui
     └── MAIN_SCRIPT_FOR_RESTART.morph   # 本次优化定义（由 UI 发起时自动写入）
 ```
 
-- **`.morph`**：JSON 无损格式，顶层含 `scheme/label/result_folder/device/restart_per_iteration/root`（root 为参数树，含各代码槽源码）。它知道自己属于哪种优化问题，可直接被 UI“打开 .morph”载入继续编辑、再“导出运行 .py”运行。
+- **`.morph`**：JSON 无损格式，顶层含 `scheme/label/result_folder/device/restart_per_iteration/root/custom_classes/class_bindings`（root 为参数树，custom_classes 保存自定义类和方法体，class_bindings 保存类选择）。它知道自己属于哪种优化问题，可直接被 UI“打开 .morph”载入继续编辑、再“导出运行 .py”运行。
 - 由 UI 发起的运行，会在结果目录 `scripts/` 里与 `MAIN_SCRIPT_FOR_RESTART.py` 并列保存一份 `MAIN_SCRIPT_FOR_RESTART.morph`，便于事后复现/继续。
 - 代码/命令行运行**不再显示任何 UI 窗口**：生成脚本 `__main__` 调用
   `morphopt.start_optimization(device=…, restart_per_iteration=…)`，headless 执行。

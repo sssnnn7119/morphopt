@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QPushButton, QHBoxLayout, QFileDialog,
 )
 
-from ..model.schemas import fld, clone_defaults
 from .values import (combo_value, display_choice, parse_vec_text, parse_mat,
                      DOF_LABELS)
 from ..i18n import T, pick

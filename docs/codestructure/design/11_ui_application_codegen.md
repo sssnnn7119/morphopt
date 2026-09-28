@@ -68,12 +68,15 @@ ProblemDefinition
  ├─ ObjectiveNode                              → ObjectiveFunction 子类
  ├─ SolverNode                                 → Solver 构造
  ├─ UpdaterNode                                → Updaters 子类
+ ├─ CustomClassNode / MethodOverrideNode        → 自定义子类与方法重写
  └─ root                                       → ThisController
 ```
 
 生成代码从顶层 `morphopt` 导入通用类型，从 `morphopt.shapeopt`、`morphopt.simp` 导入具体扩展类型。它通过 `add_interface()`、`add_instance()`、`add_geometry_updater()`、`add_material_updater()` 生成与内核一致的声明顺序；引用节点在输出时读取目标节点的当前名称。
 
-用户代码只位于 `ObjectiveNode` 的目标体、指标体和模板代码槽。生成器保留这些代码块的内容与缩进边界，同时拥有其余类结构，因而 `.morph` 保持为可编辑源文件。
+用户代码位于目标函数、约束代码槽和 `MethodOverrideNode.body`。`ProblemDefinition.custom_classes` 保存顶层自定义类，`class_bindings` 保存模型节点选择的类名。`codegen/custom_classes.py` 从生成代码读取可配置的类位置，从框架父类读取方法签名与文档，不执行用户代码。自定义类在模块顶层继承框架类，例如 `CustomSolver(morphopt.Solver)`；模型节点选用后，其生成类改为 `Solver(CustomSolver)`。生成构造器通过 `super()` 传入 UI 配置；显式重写的声明方法替代相应生成方法。接口、材料及曲面的构造表达式直接使用条目选中的自定义类。未选用的自定义类仅被定义，不改变模型行为。同一框架父类可以有多个可选自定义类。
+
+展示层的 `ModelClassSelector` 只服务根级配置。模型树以持久化问题根作为 Controller 节点，以临时 Params 导航节点归组几何、载荷、材料；Solver 和 Updater 同属 Controller。选中这些配置节点时使用编辑页的类选择控件；Params 的稳定导航键保证重建后仍能恢复选中项。此层级只用于展示，持久化章节结构保持不变。接口、曲面和优化目标在添加菜单中选择，`Node.custom_class` 随条目持久化；子优化目标/罚函数约束在添加列表中选择，类名随配置条目持久化。生成器按条目构造自定义对象，不替换同类型的其他条目。生成器检查名称冲突、缺失父类、缺失选择、类型兼容性、无效方法和方法语法。父类只接受框架类路径；根级选择只接受固定配置类路径。旧 Part 编号、深层别名绑定和隐式类替换不再支持。
 
 ## 验证与失败边界
 

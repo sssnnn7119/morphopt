@@ -1,10 +1,9 @@
 """Persistence for UI problem definitions (canonical ``*.morph`` only).
 
 ``*.morph`` is a JSON serialization of the :class:`ProblemDefinition` and is
-the standard interchange format (lossless).  There is intentionally *no*
-Python-script import: legacy ``.py`` files are no longer parsed; the UI only
-imports ``*.morph`` and exports ``*.morph`` / a runnable ``*.py`` (generated
-from the serialized model).
+the standard interchange format (lossless).  The definition editor
+imports ``*.morph`` and exports ``*.morph`` / a runnable ``*.py`` generated
+from the serialized model.
 """
 
 from __future__ import annotations

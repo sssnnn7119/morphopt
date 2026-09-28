@@ -82,8 +82,6 @@ _FIELD_LABELS_ZH = {
     "fea_seed_size": "FEA 网格种子尺寸",
     "mesh_order": "网格阶次",
     "thickness": "壳层厚度",
-    "num_layers": "壳层层数",
-    "shell_thickness": "壳层厚度",
     "part_name": "装配体 Part 名称",
     "translation": "平移 [tx, ty, tz]",
     "rotation": "旋转指数坐标 [rx, ry, rz]",
@@ -165,8 +163,6 @@ _FIELD_DOCS_ZH = {
     "fea_seed_size": "全局 Gmsh 网格种子尺寸。",
     "mesh_order": "网格阶次。",
     "thickness": "内表面的偏置壳层厚度。",
-    "shell_thickness": "内表面（空腔）的偏置壳层厚度。",
-    "num_layers": "壳层中的 C3D6 楔形单元层数。",
     "part_name": "生成的 Part 名称；留空时使用接口注册名。",
     "instance_name": "对应的 TorchFEA Instance 名称。",
     "exterior_surface": "作为 Part 外表面的表面集合名称。",
@@ -905,51 +901,6 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
             ]
         ),
     },
-    "CodesignBoundaryPartInterface": {
-        "label": "边界曲面 Part + 偏置壳 (CodesignBoundaryPartInterface)",
-        "label_en": "Boundary-surface Part + offset shell "
-        "(CodesignBoundaryPartInterface)",
-        "hidden": True,
-        "surfaces": True,
-        "params": fields_from_specs(
-            [
-                fld(
-                    "fea_seed_size",
-                    "FEA seed size",
-                    "float",
-                    2.5,
-                    "Gmsh volume-mesh seed size.",
-                    minimum=1e-3,
-                ),
-                fld(
-                    "mesh_order",
-                    "Mesh order",
-                    "combo",
-                    2,
-                    "Element order of the generated mesh.",
-                    choices=[1, 2],
-                ),
-                fld(
-                    "shell_thickness",
-                    "Shell thickness",
-                    "float",
-                    2.0,
-                    "Offset thickness of the cavity (inner) surfaces.",
-                    minimum=0.0,
-                ),
-                fld(
-                    "num_layers",
-                    "Shell layers",
-                    "int",
-                    1,
-                    "C3D6 wedge layers through the shell.",
-                    minimum=1,
-                ),
-                _exterior_surface_field("surface_0_All"),
-                *_COMMON_PART_FIELDS,
-            ]
-        ),
-    },
     "INPPartInterface": {
         "label": "INP 网格 Part (INPPartInterface)",
         "label_en": "INP mesh Part (INPPartInterface)",
@@ -1005,6 +956,15 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
                 _exterior_surface_field(""),
                 *_COMMON_PART_FIELDS,
             ]
+        ),
+    },
+    "BasePartInterface": {
+        "label": "自定义建模 Part (BasePartInterface)",
+        "label_en": "Custom-built Part (BasePartInterface)",
+        "surfaces": False,
+        "custom_only": True,
+        "params": fields_from_specs(
+            [_exterior_surface_field(""), *_COMMON_PART_FIELDS]
         ),
     },
 }
@@ -1103,8 +1063,7 @@ EQUALITY_CONSTRAINTS: dict[str, dict] = {
         "special": "surface_equality",
         "params": [_EQUALITY_CODE_FIELD],
     },
-    # Generic entry retained for custom/legacy definitions.  New templates
-    # use the named MirrorSymmetry template above.
+    # General equality code; MirrorSymmetry is the named symmetry preset.
     "SurfaceEquality": {
         "label": "自定义曲面等式约束 (SurfaceEquality)",
         "label_en": "Custom surface equality constraint (SurfaceEquality)",
@@ -1289,7 +1248,6 @@ def geometry_updater_config(
     if_update: list | None = None,
     objective_functions: tuple = (),
     constraints: tuple = (),
-    code: str = "",
     equality_constraints: tuple = (),
 ) -> dict:
     """Config of one geometry sub-optimizer.
@@ -1304,7 +1262,6 @@ def geometry_updater_config(
         "objective_functions": list(objective_functions),
         "constraints": list(constraints),
         "equality_constraints": list(equality_constraints),
-        "code": code,
     }
 
 
@@ -1314,7 +1271,6 @@ def materials_updater_config(
     if_update: bool | list[bool] = True,
     objective_functions: tuple = (),
     constraints: tuple = (),
-    code: str = "",
 ) -> dict:
     """Config of one material sub-optimizer.
 
@@ -1327,7 +1283,6 @@ def materials_updater_config(
         "if_update": if_update,
         "objective_functions": list(objective_functions),
         "constraints": list(constraints),
-        "code": code,
     }
 
 

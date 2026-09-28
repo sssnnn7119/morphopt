@@ -57,6 +57,7 @@ from .widgets.model_tree import (
     surface_title_text,
 )
 from .widgets.objective_editor import ObjectiveEditor
+from .widgets.custom_classes import CustomClassEditor, CustomClassTree, ModelClassSelector
 from .widgets.solver_editor import SolverEditor, detect_devices
 from .widgets.stepmatrix import StepMatrix
 from .widgets.torchfea_model_editor import TorchFEAModelEditor
@@ -204,7 +205,16 @@ class Workbench(QWidget):
         self.tree = ModelTree()
         self.tree.nodeSelected.connect(self._on_node_selected)
         self.tree.treeChanged.connect(self._schedule_rebuild)
-        split.addWidget(self.tree)
+        self.custom_tree = CustomClassTree()
+        self.custom_tree.nodeSelected.connect(self._on_node_selected)
+        self.custom_tree.treeChanged.connect(self._schedule_rebuild)
+        self.custom_tree.overrideRequested.connect(self._override_method)
+        self._tree_split = QSplitter(Qt.Orientation.Vertical)
+        self._tree_split.addWidget(self.tree)
+        self._tree_split.addWidget(self.custom_tree)
+        self._tree_split.setSizes([500, 220])
+        self._tree_split.setChildrenCollapsible(False)
+        split.addWidget(self._tree_split)
 
         # ---- center: 编辑 (stacked) + 代码(只读)
         center = QTabWidget()
@@ -212,7 +222,14 @@ class Workbench(QWidget):
 
         self._stack = QStackedWidget()
         self._repopulate_stack()
-        center.addTab(self._stack, T("编辑", "Edit"))
+        edit_page = QWidget()
+        edit_layout = QVBoxLayout(edit_page)
+        edit_layout.setContentsMargins(0, 0, 0, 0)
+        self.class_selector = ModelClassSelector()
+        self.class_selector.changed.connect(self._schedule_rebuild)
+        edit_layout.addWidget(self.class_selector)
+        edit_layout.addWidget(self._stack, 1)
+        center.addTab(edit_page, T("编辑", "Edit"))
 
         self.code_view = QPlainTextEdit()
         self.code_view.setReadOnly(True)
@@ -270,6 +287,7 @@ class Workbench(QWidget):
         self.step_matrix = StepMatrix()
         self.updater_editor = UpdaterEditor()
         self.objective_editor = ObjectiveEditor()
+        self.custom_class_editor = CustomClassEditor()
         self.torchfea_model_editor = TorchFEAModelEditor()
         self.optimizer_overview = self._make_optimizer_overview()
         for editor in (
@@ -278,6 +296,7 @@ class Workbench(QWidget):
             self.step_matrix,
             self.updater_editor,
             self.objective_editor,
+            self.custom_class_editor,
             self.torchfea_model_editor,
         ):
             stack.addWidget(editor)
@@ -285,6 +304,7 @@ class Workbench(QWidget):
         # read-only overview: no ``changed`` signal to wire
         stack.addWidget(self.optimizer_overview)
         self.updater_editor.codeChanged.connect(self.refresh_code)
+        self.custom_class_editor.nodeSelected.connect(self._on_node_selected)
         self.torchfea_model_editor.changed.connect(self._sync_single_imported_part)
 
         # loads hint: loads are added/edited in the left tree per type
@@ -351,6 +371,7 @@ class Workbench(QWidget):
         self._update_caption()
         imported = self.problem.imported_model_part_node()
         self.tree.set_problem(self.problem)
+        self.custom_tree.set_problem(self.problem)
         self.objective_editor.set_problem(self.problem)
         self._select_editor(self._last_selected)
         if imported is not None:
@@ -440,6 +461,8 @@ class Workbench(QWidget):
         # language.  Only the cheap form editors are re-created (data lives on
         # the model nodes); the PyVista preview viewport is left untouched.
         self.tree.apply_language()
+        self.custom_tree.apply_language()
+        self.class_selector.apply_language()
         center_idx = self._center.currentIndex()
         self._repopulate_stack()
         self._select_editor(self._last_selected)
@@ -492,11 +515,27 @@ class Workbench(QWidget):
     # ------------------------------------------------------ node selection
     def _on_node_selected(self, node: Node) -> None:
         self._last_selected = node
+        if node is not None and node.kind in {"custom_class", "method_override"}:
+            current = self.custom_tree.tree.currentItem()
+            if current is None or current.data(0, Qt.ItemDataRole.UserRole) is not node:
+                self.custom_tree.rebuild(select=node)
+        if (node is not None and node.kind == "method_override"
+                and self._stack.currentWidget() is self.custom_class_editor
+                and self.custom_class_editor.current_method is node):
+            return
         self._select_editor(node)
 
+    def _override_method(self, node: Node) -> None:
+        self._on_node_selected(node)
+        self.custom_class_editor.add_override()
+
     def _select_editor(self, node: Node | None) -> None:
+        self.class_selector.edit_node(node, self.problem)
         route = route_editor(node)
-        if route.kind is EditorKind.SOLVER:
+        if route.kind is EditorKind.CUSTOM_CLASS:
+            self.custom_class_editor.edit_node(route.node, self.problem)
+            self._stack.setCurrentWidget(self.custom_class_editor)
+        elif route.kind is EditorKind.SOLVER:
             self.solver_editor.edit_node(route.node, self.problem)
             self._stack.setCurrentWidget(self.solver_editor)
         elif route.kind is EditorKind.LOADS:
@@ -532,8 +571,8 @@ class Workbench(QWidget):
                 mt = node.material_type
                 spec = MATERIAL_TYPES.get(mt, {})
                 title = _full_label(spec, mt)
-            elif node.kind == "geometry":
-                title = container_title("geometry")
+            elif node.kind in {"geometry", "problem", "params_class"}:
+                title = container_title(node.kind)
             elif node.kind == "part_interface":
                 title = part_interface_title_text(node)
             elif node.kind == "instance":
@@ -602,6 +641,7 @@ class Workbench(QWidget):
         self.objective_editor.set_problem(self.problem)
         # refresh tree summaries (e.g. load param rows) and the visible editor
         self.tree.rebuild(select=self._last_selected)
+        self.custom_tree.rebuild(select=self._last_selected)
         if self._last_selected is not None:
             self._select_editor(self._last_selected)
         self.notify.emit(self.problem.label)

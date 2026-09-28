@@ -5,7 +5,6 @@ class), ready for ``morphopt.start_optimization`` / ``restart_optimization``.
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Callable
 from dataclasses import fields
 
@@ -24,6 +23,7 @@ from ..model.problem import (
     UpdaterNode,
 )
 from ..model.schemas import (
+    EQUALITY_CONSTRAINTS,
     INTERFACE_TYPES,
     PART_INTERFACE_TYPES,
     SURFACE_TYPES,
@@ -54,20 +54,6 @@ SIMP_MATERIAL_BASE = "morphopt.SIMP_BSPFieldMaterials"
 # --------------------------------------------------------------------------
 
 
-def _literal(value: object) -> str:
-    """Turn a stored field value into valid Python source.
-
-    Strings that *look* like numbers / lists (common when a text field is
-    used instead of a typed widget) are normalised with ``ast.literal_eval``.
-    """
-    if isinstance(value, str):
-        try:
-            return repr(ast.literal_eval(value))
-        except (ValueError, SyntaxError):
-            return repr(value)
-    return repr(value)
-
-
 def _material_parameters_expression(
     model: str,
     parameters: dict[str, object],
@@ -75,7 +61,7 @@ def _material_parameters_expression(
     """Render model parameters with their typed parameter constructor."""
     parameter_class = getattr(MaterialModels, f"{model}Params")
     parameter_type = parameter_class.__name__
-    values = ", ".join(f"{key}={_literal(value)}" for key, value in parameters.items())
+    values = ", ".join(f"{key}={repr(value)}" for key, value in parameters.items())
     return f"self.materialmodels.{parameter_type}({values})"
 
 
@@ -96,8 +82,9 @@ def _surface_factory(surface: Node) -> str:
 
 def render_surface_call(surface: Node) -> str:
     factory = _surface_factory(surface)
+    prefix = surface.custom_class or "self.FixedSurface"
     if factory is None:  # fixed_stl
-        return "self.FixedSurface.initialize_from_stl_file(%s)" % _literal(
+        return f"{prefix}.initialize_from_stl_file(%s)" % repr(
             surface.path_stl or ""
         )
     kwargs = []
@@ -106,9 +93,10 @@ def render_surface_call(surface: Node) -> str:
         value = surface.get_field(key)
         if value is None:
             continue
-        kwargs.append(f"{key}={_literal(value)}")
-    kwargs.append(f"flip={_literal(surface.flip)}")
-    return f"self.{factory}({', '.join(kwargs)})"
+        kwargs.append(f"{key}={repr(value)}")
+    kwargs.append(f"flip={repr(surface.flip)}")
+    factory = (surface.custom_class + "." + factory.split(".", 1)[1]) if surface.custom_class else f"self.{factory}"
+    return f"{factory}({', '.join(kwargs)})"
 
 
 def render_interface_call(interface: Node) -> str:
@@ -119,8 +107,9 @@ def render_interface_call(interface: Node) -> str:
         value = interface.get_field(key)
         if value is None:
             continue
-        kwargs.append(f"{key}={_literal(value)}")
-    return f"self.{cls}({', '.join(kwargs)})"
+        kwargs.append(f"{key}={repr(value)}")
+    cls = interface.custom_class or f"self.{cls}"
+    return f"{cls}({', '.join(kwargs)})"
 
 
 # --------------------------------------------------------------------------
@@ -129,6 +118,22 @@ def render_interface_call(interface: Node) -> str:
 
 
 def generate_source(problem: ProblemDefinition) -> str:
+    """Generate the configured model and activate its custom subclasses."""
+    source = generate_base_source(problem)
+    custom_items = problem.updater and any(
+        item.get("custom_class")
+        for config in problem.updater.geometry + problem.updater.materials
+        for key in ("objective_functions", "constraints")
+        for item in config.get(key, [])
+    )
+    if problem.custom_classes or problem.class_bindings or custom_items or any(node.custom_class for node in problem.root.iter_nodes()):
+        from .custom_classes import apply_custom_classes
+
+        source = apply_custom_classes(problem, source)
+    return source
+
+
+def generate_base_source(problem: ProblemDefinition) -> str:
     """Return the full source of a runnable problem module (always headless).
 
     Code-launched runs never open an observer window; results are watched by
@@ -155,7 +160,7 @@ def generate_source(problem: ProblemDefinition) -> str:
     a("    def __init__(self) -> None:")
     a("        super().__init__(")
     a(
-        f"            path_result_folder={_literal(problem.result_folder)}, opt_label={_literal(problem.label)}"
+        f"            path_result_folder={repr(problem.result_folder)}, opt_label={repr(problem.label)}"
     )
     a("        )")
     a("")
@@ -278,11 +283,23 @@ def _render_part_constructor(
             )
             kwargs.append(f"{key}={value_source}")
         else:
-            kwargs.append(f"{key}={_literal(value if value is not None else '')}")
+            kwargs.append(f"{key}={repr(value if value is not None else '')}")
     if not kwargs:
         return f"self.{type_name}()"
     inner = ",\n".join("    " + option for option in kwargs)
     return f"self.{type_name}(\n{inner},\n)"
+
+
+def part_class_names(problem: ProblemDefinition) -> dict[str, str]:
+    """Name generated subclasses after their actual interface type."""
+    names = {}
+    counts: dict[str, int] = {}
+    for interface in problem.part_interfaces():
+        type_name = "BoundaryPartInterface" if interface.has_surfaces else interface.interface_type
+        count = counts.get(type_name, 0) + 1
+        counts[type_name] = count
+        names[interface.name] = type_name if count == 1 else f"{type_name}{count}"
+    return names
 
 
 def _emit_part_classes(
@@ -297,21 +314,21 @@ def _emit_part_classes(
     Returns the mapping interface name -> emitted class name.
     """
     fixed_bases = {
+        "BasePartInterface": "morphopt.BasePartInterface",
         "INPPartInterface": "morphopt.INPPartInterface",
         "TorchFEAPartInterface": "morphopt.TorchFEAPartInterface",
     }
     local_class: dict[str, str] = {}
+    class_names = part_class_names(problem)
 
     constraints = _surface_constraints_bodies(problem)
-    for index, interface in enumerate(problem.part_interfaces()):
+    for interface in problem.part_interfaces():
         base = BOUNDARY_PART_BASE if interface.has_surfaces else fixed_bases.get(
             interface.interface_type
         )
         if not base:
             continue
-        class_name = (
-            f"BoundaryPart{index}" if interface.has_surfaces else f"PartInterface{index}"
-        )
+        class_name = class_names[interface.name]
         surfaces = interface.surfaces()
         a("")
         a(f"            class {class_name}({base}):")
@@ -488,10 +505,8 @@ def _constraint_body_of(config: dict) -> str:
     equality_items = config.get("equality_constraints")
     equality_bodies = []
     for item in equality_items or []:
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") not in {"MirrorSymmetry", "SurfaceEquality"}:
-            continue
+        if not isinstance(item, dict) or item.get("type") not in EQUALITY_CONSTRAINTS:
+            raise ValueError(f"Invalid geometry equality constraint: {item}")
         equality_bodies.append((item.get("params") or {}).get("code", ""))
     return _clean_body("\n\n".join(equality_bodies))
 
@@ -571,7 +586,7 @@ def _emit_material_init(
         if mtype == "SIMP_BSPFieldMaterials":
             base = SIMP_MATERIAL_BASE
 
-        interface_class = base
+        interface_class = mat.custom_class or base
         kw = []
         if mtype == "SIMP_BSPFieldMaterials":
             keys = [
@@ -608,7 +623,7 @@ def _emit_material_init(
         for key in keys:
             value = mat.get_field(key)
             if value is not None:
-                kw.append(f"{key}={_literal(value)}")
+                kw.append(f"{key}={repr(value)}")
 
         a("")
         name = mat.name or f"material_{index}"
@@ -744,17 +759,21 @@ def _emit_updater(
         a("")
 
 
-def _render_updater_item(item: dict, category: str) -> str | None:
-    """Render one structured objective/constraint item into source (or None)."""
+def _render_updater_item(item: dict, category: str) -> str:
+    """Render one valid structured objective/constraint item into source."""
     if not isinstance(item, dict):
-        return None
+        raise ValueError(f"Invalid updater item: {item}")
+    if item.get("type") == "Custom" and item.get("custom_class"):
+        return f"{item['custom_class']}()"
     cat = UPDATER_CATALOG.get(category, {})
     spec = cat.get(item.get("type", ""))
     if spec is None:
-        return None
+        raise ValueError(f"Unknown updater {category} type: {item.get('type')}")
     gen = spec.get("gen", "")
     if not gen:
-        return None
+        raise ValueError(f"Missing generator for updater item: {item['type']}")
+    if item.get("custom_class"):
+        gen = item["custom_class"] + gen[gen.index("("):]
     params = dict(item.get("params") or {})
     for f in spec.get("params", []):
         params.setdefault(f["key"], f["default"])
@@ -763,11 +782,11 @@ def _render_updater_item(item: dict, category: str) -> str | None:
         and not str(params.get("elementname") or "").strip()
     ):
         raise ValueError("VolFrac requires an explicit elems name.")
-    fmt = {k: _literal(v) for k, v in params.items()}
+    fmt = {k: repr(v) for k, v in params.items()}
     try:
         return gen.format(**fmt)
-    except (KeyError, IndexError, ValueError):
-        return None
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ValueError(f"Invalid updater parameters: {item['type']}") from exc
 
 
 def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, cfg) -> None:
@@ -782,6 +801,8 @@ def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, c
     of the params collections.  The hook must not access the bound target.
     """
     cfg = cfg or {}
+    if "code" in cfg:
+        raise ValueError("Raw updater code is unsupported; use method overrides")
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")
@@ -796,14 +817,7 @@ def _emit_nested_updater(a: Callable[[str], object], cls_name: str, base: str, c
     ):
         for item in cfg.get(model_key, []) or []:
             line = _render_updater_item(item, catalog_key)
-            if line is None:
-                continue
             body.append(f"self.{call}({line})")
-
-    # raw-code fallback / escape hatch (kept for imported job scripts)
-    code = (cfg.get("code") or "").strip()
-    if code:
-        body.append(code)
 
     if "if_update" in cfg and cfg["if_update"] is not None:
         body.append(f"self.if_update = {cfg['if_update']!r}")

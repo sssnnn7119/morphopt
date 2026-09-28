@@ -13,8 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QCheckBox,
-    QSpinBox, QTableWidget, QTableWidgetItem, QComboBox, QPushButton,
-    QMessageBox,
+    QSpinBox, QTableWidget, QTableWidgetItem,
 )
 
 from ..model.problem import Node

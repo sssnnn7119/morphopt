@@ -130,7 +130,7 @@ class SchemeTemplate:
         return tuple(
             name
             for name, spec in S.PART_INTERFACE_TYPES.items()
-            if not spec.get("hidden", False)
+            if not spec.get("hidden", False) and not spec.get("custom_only", False)
         )
 
     def default_part_interface_type(self) -> str:

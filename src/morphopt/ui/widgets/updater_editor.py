@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import T, pick
+from ..codegen.custom_classes import custom_options, updater_item_base
 from ..model import schemas as S
 from ..model.problem import Node, ProblemDefinition
 from .codeeditor import CodeEditor
@@ -262,7 +263,7 @@ class UpdaterEditor(QWidget):
             )
 
         if show_objectives:
-            form.addRow(_objective_readonly(cfg, group))
+            form.addRow(_item_list(cfg, group, "objectives", self._on_change, problem=self._problem))
 
         n_surfaces = self._surface_count(cfg, group)
         if show_equality:
@@ -273,7 +274,7 @@ class UpdaterEditor(QWidget):
             )
         if show_penalties:
             form.addRow(
-                _item_list(cfg, group, "constraints", self._on_change, n_surfaces)
+                _item_list(cfg, group, "constraints", self._on_change, n_surfaces, self._problem)
             )
         return g
 
@@ -689,7 +690,7 @@ def _equality_item_list(
 
 
 def _item_list(
-    cfg: dict, group: str, category: str, on_change, n_surfaces: int = 0
+    cfg: dict, group: str, category: str, on_change, n_surfaces: int = 0, problem=None
 ) -> QWidget:
     """A compact list manager for one category of the section."""
     w = QWidget()
@@ -699,13 +700,15 @@ def _item_list(
     cap.setStyleSheet("color:#9aa4b2;")
     lay.addWidget(cap)
 
-    items = cfg.setdefault(category, [])
+    items = cfg.setdefault("objective_functions" if category == "objectives" else category, [])
     specs = {s.get("_type"): s for s in _specs_for(group, category)}
 
     for it in items:
         itype = it.get("type", "")
         spec = specs.get(itype) or _find_spec(itype, category)
         label = pick(spec["label"], spec.get("label_en")) if spec else itype
+        if it.get("custom_class"):
+            label = it["custom_class"] + f" ({itype})"
         grp = QGroupBox(label)
         col = QVBoxLayout(grp)
         top = QHBoxLayout()
@@ -733,6 +736,20 @@ def _item_list(
     combo = QComboBox()
     for spec in specs.values():
         combo.addItem(pick(spec["label"], spec.get("label_en")), spec.get("_type"))
+    if problem is not None:
+        candidates = {item_type: expression for item_type in specs
+                      if (expression := updater_item_base(item_type, category)) is not None}
+        options = custom_options(problem, candidates)
+        concrete_names = {custom.name for _, custom in options}
+        options.extend((item_type, custom) for item_type, custom in custom_options(
+            problem, {"Custom": updater_item_base("Custom", category, group)}) if custom.name not in concrete_names)
+        combo.insertSeparator(combo.count())
+        if options:
+            for item_type, custom in options:
+                combo.addItem(T("自定义类：", "Custom class: ") + f"{custom.name} ({item_type})",
+                              ("custom", item_type, custom.name))
+        else:
+            combo.addItem(T("自定义类（请先创建兼容的类）", "Custom class (create a compatible class first)"), None)
     combo.setCurrentIndex(-1)
     addbar.addWidget(combo, 1)
     btn_add = QPushButton("＋")
@@ -801,8 +818,14 @@ def _add(items: list, combo: QComboBox, category: str, on_change) -> None:
     data = combo.currentData()
     if data is None:
         return
-    params = S.updater_item_defaults(data, category)
-    items.append({"type": data, "params": params})
+    custom_class = ""
+    if isinstance(data, (list, tuple)) and data[0] == "custom":
+        _, data, custom_class = data
+    params = {} if data == "Custom" else S.updater_item_defaults(data, category)
+    item = {"type": data, "params": params}
+    if custom_class:
+        item["custom_class"] = custom_class
+    items.append(item)
     combo.setCurrentIndex(-1)
     on_change()
 

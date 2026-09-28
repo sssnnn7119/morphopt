@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-)
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem
 
 from ..model.problem import InterfaceNode, Node
 from ..model.schemas import INTERFACE_TYPES

@@ -23,6 +23,9 @@ QPushButton:hover { background-color: #1565c0; }
 QPushButton:disabled { background-color: #333; color: #777; }
 QLineEdit, QComboBox, QSpinBox { background: #262a33; color: #e0e0e0;
     border: 1px solid #3a3f4a; padding: 3px; }
+QComboBox { combobox-popup: 0; qproperty-maxVisibleItems: 12; }
+QComboBox QAbstractItemView { background: #1c1f26; color: #e0e0e0;
+    border: 1px solid #3a3f4a; selection-background-color: #0d47a1; }
 QCheckBox { color: #e0e0e0; }
 QScrollBar:vertical { background: #1a1a1a; width: 10px; }
 QScrollBar::handle:vertical { background: #3a3f4a; border-radius: 5px; }
