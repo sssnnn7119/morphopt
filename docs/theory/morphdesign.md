@@ -122,7 +122,7 @@ $$
 \min_{\hat{\boldsymbol{\psi}}} \sum_{m=1}^{n'} \left[\left\|\mathbf{r}^{m}_\text{opt} - f(\mathbf{\Psi}^{m}; \hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}})\right\|^2 + \alpha \left\|\mathbf{r}^m_\text{opt} - \boldsymbol{\psi}^{m}\right\|^2\right]
 $$
 
-**代码对应**：`src/morphopt/codesign/geometry.py` 中的 `CPGEOinterface` 类实现了曲面重建逻辑。
+**代码对应**：`src/morphopt/codesign/offsetboundarypartinterface.py` 中的 `CPGEOinterface` 类实现了曲面重建逻辑。
 
 ---
 

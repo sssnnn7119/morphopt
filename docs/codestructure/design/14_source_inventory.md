@@ -117,12 +117,10 @@
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `geometry.py` | `CodesignBoundaryPartInterface` | 偏置壳边界 Part。 |
-| `geometryparams.py` | `GeometryParams` | 壳接口和厚度查询。 |
-| `feaparams.py` | `CodesignFEAParams` | 壳相关 FEA 组装。 |
-| `constraints.py` | `InwardCurvatureRadius`, `OffsetSurfaceMinThickness` | 协同设计形状约束。 |
-| `params.py` | `Params` | 协同设计参数根类型。 |
-| `__init__.py` | 子包入口 | 协同设计命名空间。 |
+| `offsetboundarypartinterface.py` | `OffsetBoundaryPartInterface` | 内腔偏置层构建、网格检查及可微节点更新。 |
+| `update_offsetboundarypart.py` | `UpdaterOffsetBoundaryPart` | 复用形状更新流程，仅绑定偏置 Part。 |
+| `constraints.py` | `InwardCurvatureRadius`, `OffsetSurfaceMinThickness` | 偏置层的曲率和间距约束。 |
+| `__init__.py` | 子包入口 | 只导出偏置专用组件。 |
 
 ## `ui/`
 

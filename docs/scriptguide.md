@@ -400,17 +400,17 @@ collection.interface('solid')       # MaterialsParams.interface(name)
 模板（codesign：两个 Part 各一个几何优化器，两个材料接口各一个材料优化器）：
 
 ```python
-class Updater(morphopt.codesign.Updaters):
+class Updater(morphopt.Updaters):
     def define_updater(self) -> None:
         self.add_geometry_updater(self.UpdaterBoundaryPart(), name='body')
         self.add_geometry_updater(self.UpdaterBoundaryPartFrame(), name='frame')
         self.add_material_updater(self.UpdaterSIMPMaterial(), name='solid')
         self.add_material_updater(self.UpdaterSIMPMaterialShell(), name='shell')
 
-    def __init__(self, params: morphopt.codesign.Params):
+    def __init__(self, params: morphopt.Params):
         super().__init__(params=params, device='cuda:0')
 
-    class UpdaterBoundaryPart(morphopt.codesign.UpdaterBoundaryPart):
+    class UpdaterBoundaryPart(morphopt.UpdaterOffsetBoundaryPart):
         def __init__(self):
             super().__init__(max_step_iter=100)
 
@@ -419,7 +419,7 @@ class Updater(morphopt.codesign.Updaters):
             # 约束只作用于本更新器自己的 Part，因此不需要再传 surfaces
             self.add_constraints(self.objectivefuncs.Fairness())
 
-    class UpdaterBoundaryPartFrame(morphopt.codesign.UpdaterBoundaryPart):
+    class UpdaterBoundaryPartFrame(morphopt.UpdaterOffsetBoundaryPart):
         def __init__(self):
             super().__init__(max_step_iter=80)
 
@@ -427,7 +427,7 @@ class Updater(morphopt.codesign.Updaters):
             self.add_objective_function(self.objectivefuncs.ShapeDerivative())
             self.add_constraints(self.objectivefuncs.Fairness())
 
-    class UpdaterSIMPMaterial(morphopt.codesign.UpdaterSIMPMaterial):
+    class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
         def __init__(self):
             super().__init__(max_step_iter=200, max_step_length=0.2)
 
@@ -437,7 +437,7 @@ class Updater(morphopt.codesign.Updaters):
             self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
             self.if_update = True
 
-    class UpdaterSIMPMaterialShell(morphopt.codesign.UpdaterSIMPMaterial):
+    class UpdaterSIMPMaterialShell(morphopt.UpdaterSIMPMaterial):
         def __init__(self):
             super().__init__(max_step_iter=100)
 
@@ -472,18 +472,17 @@ class Updater(morphopt.codesign.Updaters):
   已注册的子优化器直接保存在 `updaters` 字典中。
 ## 6. Codesign 模块怎么定义
 
-如果你要做壳层偏移 + 材料协同设计，控制器内每个模块都用 codesign 前缀（见第 1 节对照表）：
+协同设计直接使用公共的 `morphopt.Params`、`GeometryParams`、`FEAParams`、
+`MaterialsParams`、`ObjectiveFunction`、`Solver` 和 `Updaters`。
+只有内腔偏置 Part 和对应的几何更新器使用专用实现：
 
-- `ObjectiveFunction` → `morphopt.codesign.ObjectiveFunction`
-- `Params` → `morphopt.codesign.Params`
-  - `GeometryParams` → `morphopt.codesign.GeometryParams`
-  - `FEAParams` → `morphopt.codesign.CodesignFEAParams`
-  - `MaterialsParams` → `morphopt.codesign.MaterialsParams`
-- `Solver` → `morphopt.codesign.Solver`
-- `Updater` → `morphopt.codesign.Updaters`（内层 `UpdaterBoundaryPart` / `UpdaterSIMPMaterial` 同样用 codesign 前缀）
+- Part：`morphopt.OffsetBoundaryPartInterface`。
+- 几何更新器：`morphopt.UpdaterOffsetBoundaryPart`，注册到 `add_geometry_updater(..., name="body")`。
+- 材料更新器：`morphopt.UpdaterSIMPMaterial`，注册到 `add_material_updater(...)`。
 
-codesign 里自定义 CPGEO 曲面类应继承
-`morphopt.codesign.CodesignBoundaryPartInterface.CPGEO`；
+自定义 CPGEO 曲面类继承 `morphopt.OffsetBoundaryPartInterface.CPGEO`。
+壳网格由 Part 构建、转换为指定阶次并检查，不需要专用 FEAParams。
+
 SIMP 材料的空间映射属于内核实现，不在 UI 的材料节点中编辑。
 
 几何约束可直接加：

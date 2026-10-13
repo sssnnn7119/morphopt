@@ -1,6 +1,5 @@
 # My own jobs
 myjobs/
-src/morphopt/codesign/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

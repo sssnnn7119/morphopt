@@ -61,7 +61,7 @@
 
 | 挑战 | 解决方案 | 代码位置 |
 |------|---------|---------|
-| 薄壁密封层需精确仿真 | **偏置壳单元**：CPGEO 曲面 + 法向偏置 → C3D6 楔形元 | `codesign/geometry.py` |
+| 薄壁密封层需精确仿真 | **偏置壳单元**：CPGEO 曲面 + 法向偏置 → C3D6 楔形元 | `codesign/offsetboundarypartinterface.py` |
 | 外骨骼需大范围拓扑优化 | **SIMP + BSP 场参数化** + **RAMP 惩罚插值** | `simp/simpmaterial.py` |
 | 低密度区零能模式导致数值不稳定 | **Fskew 正则化**：惩罚位移二阶梯度反对称分量 + 逐高斯点自适应惩罚 | `simpmaterial.py` |
 | 壳结构在优化中可能自交或畸变 | **内凹曲率约束** + **偏移面最小距离约束** | `codesign/constraints.py` |
@@ -373,9 +373,8 @@ MorphOpt codesign 中的约束体系：
 morphopt/
 ├── codesign/
 │   ├── __init__.py
-│   ├── geometry.py        ← 偏置壳构建、法向量、modify_assembly
-│   ├── __init__.py        ← MaterialsParams 与材料接口导出
-│   ├── feaparams.py       ← CodesignFEAParams（FEA 参数定义）
+│   ├── offsetboundarypartinterface.py ← 偏置壳构建、法向量、modify_assembly
+│   ├── update_offsetboundarypart.py ← 偏置 Part 更新器
 │   └── constraints.py     ← InwardCurvatureRadius / OffsetSurfaceMinThickness
 ├── optcore/
 │   ├── modelparams/materialinterface/
@@ -413,7 +412,7 @@ torchfea.elements.Element_3D
 Φ_M (BSP cps)   ──→ set_materials()   ──→ μ(χ), κ(χ), p(χ)  @ 高斯点
                                          └─→ 替换为 SIMPElementC3D10
 FEA 求解 ──→ 目标函数 ──→ 伴随法 ──→ dJ/dΦ_G + dJ/dΦ_M
-                                        ├──→ UpdaterBoundaryPart
+                                        ├──→ UpdaterOffsetBoundaryPart
                                         └──→ UpdaterSIMPMaterial
 ```
 
@@ -423,9 +422,9 @@ FEA 求解 ──→ 目标函数 ──→ 伴随法 ──→ dJ/dΦ_G + dJ/d�
 
 ### 8.1 几何：偏置壳构建与计算图保持
 
-#### 8.1.1 壳网格生成（`codesign/geometry.py`）
+#### 8.1.1 壳网格生成（`codesign/offsetboundarypartinterface.py`）
 
-`CodesignBoundaryPartInterface._build_shell_c3d6()` 在初始网格划分时执行一次，以 CPGEO 分界面为起点向气腔侧偏置并构建 C3D6 楔形单元（内腔曲面索引从 1 开始）：
+`OffsetBoundaryPartInterface._build_shell_c3d6()` 在每次重建网格时执行，以 CPGEO 分界面为起点向气腔侧偏置并构建 C3D6 楔形单元（内腔曲面索引从 1 开始）：
 
 ```python
 def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
@@ -455,7 +454,7 @@ def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
 CPGEO 曲面的 `get_normals()` 直接返回指向 C3D4 侧（外侧）的参数化法向量（曲面从所属 Part 接口的 `surface_interfaces()` 取）：
 
 ```python
-def _compute_normals(self, base_nodes, tri_local):
+def _compute_normals(self, base_nodes):
     normal_list = []
     for sfidx in range(1, self.num_surface_interfaces):
         normals = self.surface_interfaces()[sfidx].get_normals(surf_node_uv)
@@ -474,7 +473,7 @@ def modify_assembly(self, design_sensitivity_vars, assembly):
     # 当前控制点 → 曲面节点 → 法向偏置目标 → 壳层节点
     # 整个链条通过 autograd 保持连接
     base_nodes = nodes[base_ids]
-    target_nodes = self._compute_offset_targets(base_nodes, self._tri_local)
+    target_nodes = self._compute_offset_targets(base_nodes)
     disp = target_nodes - base_nodes
 
     # 更新各层节点（计算图保留，用于后续灵敏度反传）
@@ -483,12 +482,12 @@ def modify_assembly(self, design_sensitivity_vars, assembly):
         nodes[layer_ids] = base_nodes + alpha * disp
 ```
 
-#### 8.1.4 负高斯权重检测
+#### 8.1.4 偏置层网格检查
 
 ```python
-if (element_shell.gaussian_weight.min() < 0):
-    raise ValueError("The Gaussian weights of the C3D6 elements "
-                     "are negative. Please check the mesh quality.")
+weights = shell.gaussian_weight
+if not torch.isfinite(weights).all() or (weights <= 0).any():
+    raise ValueError("Invalid offset shell mesh.")
 ```
 
 ---
@@ -581,7 +580,7 @@ def set_materials(self, fe):
 #### 8.2.6 壳材料处理（独立材料接口）
 
 ```python
-class MaterialsParams(morphopt.codesign.MaterialsParams):
+class MaterialsParams(morphopt.MaterialsParams):
     def define_interface(self):
         self.add_interface(
             morphopt.SIMP_BSPFieldMaterials(
@@ -771,11 +770,11 @@ while 未收敛:
 ```
 Controller                         → 优化主循环 (optcore/controller.py)
 ├── Params                         → 参数组合 (optcore/modelparams/params.py)
-│   ├── Geometry (CodesignBoundaryPartInterface) → 气腔 CPGEO + 偏置壳 (codesign/geometry.py)
+│   ├── Geometry (OffsetBoundaryPartInterface) → 气腔 CPGEO + 偏置壳 (codesign/offsetboundarypartinterface.py)
 │   │   └── _build_shell_c3d6()    → C3D6 壳生成
 │   │   └── modify_assembly()      → 更新节点坐标
-│   ├── FEAParams (CodesignFEAParams) → FEA 参数 (codesign/feaparams.py)
-│   │   └── create_fea()           → 壳单元校验
+│   ├── FEAParams (FEAParams) → FEA 参数 (optcore/modelparams/feaparams.py)
+│   │   └── create_fea()           → 通用载荷和约束组装
 │   └── MaterialsParams → solid SIMP + shell HomogeneousMaterial interfaces
 │       ├── SIMPElementC3D10       → C3D10 + Fskew 正则化
 │       ├── get_material_ratio()    → Sigmoid + RAMP(p=8) 密度插值
@@ -784,7 +783,7 @@ Controller                         → 优化主循环 (optcore/controller.py)
 ├── Solver                    → FEA 求解 (optcore/solver.py)
 ├── ObjectiveFunction              → 目标函数 (由示例定义)
 └── Updaters                       → 设计变量更新 (optcore/updaters/updaters.py)
-    ├── UpdaterBoundaryPart          → 几何子优化
+    ├── UpdaterOffsetBoundaryPart    → 几何子优化
     │   ├── ShapeDerivative         → 形状灵敏度代理
     │   ├── Fairness / Distance    → 几何约束
     │   ├── InwardCurvatureRadius   → 内凹曲率约束 (codesign/constraints.py)
@@ -827,7 +826,7 @@ minratio = 1e-6       # 最小密度比
 class ThisController(morphopt.Controller):
 
     # ---- 目标函数 ----
-    class ObjectiveFunction(morphopt.codesign.ObjectiveFunction):
+    class ObjectiveFunction(morphopt.ObjectiveFunction):
         def objective_function(self):
             # 两个载荷步的势能差（扭转能量）
             E0 = assembly._total_Potential_Energy(RGC=RGC0)
@@ -835,11 +834,11 @@ class ThisController(morphopt.Controller):
             return E1 - E0
 
     # ---- 参数定义 ----
-    class Params(morphopt.codesign.Params):
-        class GeometryParams(morphopt.codesign.GeometryParams):
+    class Params(morphopt.Params):
+        class GeometryParams(morphopt.GeometryParams):
             def define_interface(self):
                 # 一个边界 Part：内腔曲面带偏置壳
-                body = self.CodesignBoundaryPartInterface(
+                body = morphopt.OffsetBoundaryPartInterface(
                     fea_seed_size=2.5,
                     shell_thickness=2.5,   # 壳厚度 2.5mm
                     num_layers=1)          # 单层壳
@@ -847,14 +846,14 @@ class ThisController(morphopt.Controller):
                 body.add_surface_interface(body.CPGEO.initialize_Sphere(...))
                 self.add_interface(body, name='body')
 
-        class FEAParams(morphopt.codesign.CodesignFEAParams):
+        class FEAParams(morphopt.FEAParams):
             def define_interface(self):
                 self.add_interface(self.PressureInterface(
                     instance_name='body',
                     surface_name='surface_1_offset'),  # 气压加载在偏移面
                     name='pressure_1')
 
-        class MaterialsParams(morphopt.codesign.MaterialsParams):
+        class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self):
                 self.add_interface(morphopt.SIMP_BSPFieldMaterials(
                     material_parameters=self.materialmodels.NeoHookeanLnJParams(
@@ -874,30 +873,30 @@ class ThisController(morphopt.Controller):
                     name="shell")
 
     # ---- 更新器 ----
-    class Updater(morphopt.codesign.Updaters):
+    class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
             # 注册行的 name 就是它要优化的接口：从 params.geometry 里找名为 body 的 Part
-            self.add_geometry_updater(self.UpdaterBoundaryPart(), name='body')
+            self.add_geometry_updater(self.UpdaterOffsetBoundaryPart(), name='body')
             # 从 params.materials 里找名为 solid 的材料接口
             self.add_material_updater(self.UpdaterSIMPMaterial(), name='solid')
 
         def __init__(self, params):
             super().__init__(params=params)
 
-        class UpdaterBoundaryPart(morphopt.codesign.UpdaterBoundaryPart):
+        class UpdaterOffsetBoundaryPart(morphopt.UpdaterOffsetBoundaryPart):
             def __init__(self):
                 super().__init__(max_step_iter=100)   # 不带目标
 
             def define_objective(self) -> None:
-                self.add_objective_function(ShapeDerivative())
+                self.add_objective_function(self.objectivefuncs.ShapeDerivative())
                 # 约束只作用于本更新器绑定的 Part
-                self.add_constraints(Fairness())
-                self.add_constraints(Distance(min_distance=...))
-                self.add_constraints(InwardCurvatureRadius())
-                self.add_constraints(OffsetSurfaceMinThickness(min_distance=2.0))
+                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_constraints(self.objectivefuncs.Distance(min_distance=...))
+                self.add_constraints(self.objectivefuncs.InwardCurvatureRadius())
+                self.add_constraints(self.objectivefuncs.OffsetSurfaceMinThickness(min_distance=2.0))
                 self.if_update = [False, True]  # 只更新气腔
 
-        class UpdaterSIMPMaterial(morphopt.codesign.UpdaterSIMPMaterial):
+        class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
             def __init__(self):
                 super().__init__(max_step_iter=200, max_step_length=0.1)
 

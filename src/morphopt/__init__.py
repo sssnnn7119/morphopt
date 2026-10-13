@@ -92,6 +92,7 @@ from .optcore.protocal import (
 from .optcore.solver import Solver
 from .optcore.updaters import Updaters
 from .shapeopt import BoundaryPartInterface, UpdaterBoundaryPart
+from .codesign import OffsetBoundaryPartInterface, UpdaterOffsetBoundaryPart
 from .simp import SIMP_BSPFieldMaterials, UpdaterSIMPMaterial
 
 # endregion
