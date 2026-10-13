@@ -1,13 +1,20 @@
-"""Density optimization of one symmetric half of a force-regulating gripper.
+"""Density optimization of a mirror-symmetric force-regulating gripper finger.
 
-Units: mm, N, MPa. A single fixed finger and a 32 mm rigid cylinder represent
-one symmetric half of a parallel gripper. The cylinder is progressively
+Units: mm, N, MPa. Only the z >= 0 half of a fixed finger is modeled, with
+Uz = 0 on z = 0. A 32 mm rigid cylinder is progressively
 closed; the objective tracks a constant contact force over the working stroke.
-The pad uses one C3D8 element layer through its thickness with zero transverse
-displacement, giving a plane-strain approximation. Contact is frictionless.
+The drive stiffness is halved and reported forces represent the full finger.
+The pad uses one C3D20 element layer through its thickness with zero transverse
+displacement, giving a plane-strain approximation. The design region uses the
+SIMP third-medium Fskew penalty. Contact is frictionless.
 This model calibrates contact force; it does not simulate a lift.
-The dimensions, material and 3 N target are starting values, not validated data.
+The dimensions, material and force target are starting values, not validated data.
 """
+
+import os
+
+# This optimization saves figures to files; it does not run a Qt event loop.
+os.environ["MPLBACKEND"] = "Agg"
 
 import numpy as np
 import torch
@@ -18,11 +25,11 @@ import morphopt
 mu_material = 0.482
 kappa_material = 4.8
 minratio = 1e-5
-mesh_size = 0.5
+mesh_size = 1.0
 field_resolution = 1.0
 simp_degree = 2
 finger_depth = 36.0
-finger_height = 72.0
+finger_height = 72.0  # Full finger height; the mesh covers z in [0, height / 2].
 finger_width = (
     1.0  # Keep the single-layer physical thickness fixed as the mesh is refined.
 )
@@ -31,19 +38,20 @@ root_depth = 2 * finger_width
 skin_depth = finger_width
 initial_gap = 40.0
 object_diameter = 32.0
-closure_steps = np.arange(0.0, 20.0 + 0.5, 1.0).tolist()
+closure_steps = np.arange(4.0, 15.0 + 0.5, 1.0).tolist()
 working_stroke_start = 10.0  # mm of commanded closure; contact begins near 4 mm.
-target_force = 3.0  # Per finger; not the cancelling pair resultant.
+target_force = 5.0  # Per finger; not the cancelling pair resultant.
 initial_density = 0.35
+void_penalty_factor = 1e-4  # Third-medium Fskew stabilization in low-density regions.
 volume_fraction_max = (
     0.7  # Existing fixed-volume setting (min=max); design region only.
 )
-drive_stiffness = 1e2  # N/mm; track displacement error in the metrics.
+drive_stiffness = 1e3  # N/mm; track displacement error in the metrics.
 contact_distance = 3.0  # Smooth-contact support; refine with the mesh.
 
 
 def _build_finger_part():
-    """Conforming bricks: exact solid/design interfaces with shared nodes."""
+    """Conforming C3D20 bricks with shared solid/design interface nodes."""
 
     def coordinates(start, end):
         return np.linspace(
@@ -57,9 +65,9 @@ def _build_finger_part():
             coordinates(finger_depth - skin_depth, finger_depth),
         ]
     )
-    # One C3D8 layer through thickness, as in the 2D-style gripper model.
+    # Build one linear brick layer, then add shared midside nodes below.
     y = np.array([-finger_width / 2, finger_width / 2])
-    z = coordinates(-finger_height / 2, finger_height / 2)
+    z = coordinates(0.0, finger_height / 2)
     nodes = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
     node_ids = np.arange(len(nodes)).reshape(len(x), len(y), len(z))
     offsets = [
@@ -106,15 +114,20 @@ def _build_finger_part():
         )
     part.add_node_set("all", np.arange(len(nodes)))
     part.add_node_set("root", np.flatnonzero(np.isclose(nodes[:, 0], 0.0)))
+    part.add_node_set("symmetry", np.flatnonzero(np.isclose(nodes[:, 2], 0.0)))
     part.add_surface_set("extern", exterior)
     part.add_surface_set("contact", contact)
+    # Convert both regions together so interface midside nodes are shared.
+    # Node sets also gain midside nodes for all boundary conditions.
+    part.convert_linear_to_quadratic_elements(["design", "solid"], ["design", "solid"])
     return part
 
 
 class ThisController(morphopt.Controller):
     def __init__(self):
         super().__init__(
-            path_result_folder=".results/", opt_label="ForceRegulatingGripper"
+            path_result_folder="/run/media/song/缓存/results/",
+            opt_label="ForceRegulatingGripper",
         )
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
@@ -127,7 +140,8 @@ class ThisController(morphopt.Controller):
             drive = assembly.get_load("Drive")
             # Positive compressive contact reaction, inferred from the drive
             # spring at equilibrium. Do not abs()/clamp() the sign or detach AD.
-            force = drive.k * (displacement - drive.target)
+            # The half-model reaction is half of the full finger's force.
+            force = 2 * drive.k * (displacement - drive.target)
             return force, -displacement
 
         def objective_function(self):
@@ -145,13 +159,19 @@ class ThisController(morphopt.Controller):
             return torch.trapezoid(error, closures) / (closures[-1] - closures[0])
 
         def get_volume_fraction(self):
-            material = morphopt.controller.params.materials.interfaces["body"]
-            part = self.fe.assembly.get_part("finger")
-            elems = part.elems["design"]
-            points = elems.get_gaussian_points(part.nodes).reshape(-1, 3)
-            rho = torch.sigmoid(material._map_bsp_designfield(points)).flatten()
-            weights = elems.gaussian_weight.flatten()
-            return (rho * weights).sum() / weights.sum()
+            elems = self.fe.assembly._parts["finger"].elems["design"]
+
+            materials = elems.materials
+
+            ratio_now = materials["material-0"].scale
+            gaussian_weight = elems.gaussian_weight  # [gaussian, element]
+
+            volume = gaussian_weight * ratio_now
+            volume_total = gaussian_weight.sum()
+
+            volume_fraction = volume.sum() / volume_total
+
+            return volume_fraction
 
         def get_metrics(self):
             # Full force-displacement trace, drive errors [mm], and volume fraction.
@@ -222,6 +242,14 @@ class ThisController(morphopt.Controller):
                     name="BC_PlaneStrain",
                 )
                 self.add_interface(
+                    self.BoundaryConditionInterface(
+                        instance_name="finger",
+                        set_nodes_name="symmetry",
+                        index_dof=[2],
+                    ),
+                    name="BC_SymmetryZ",
+                )
+                self.add_interface(
                     self.ReferencePointInterface(
                         rp_location=[finger_depth + initial_gap / 2, 0, 0]
                     ),
@@ -261,7 +289,7 @@ class ThisController(morphopt.Controller):
                     self.set_step_params(
                         step_index=stepidx,
                         load_name="Drive",
-                        values=[drive_stiffness, -closure],
+                        values=[drive_stiffness / 2, -closure],
                     )
 
         class MaterialsParams(morphopt.MaterialsParams):
@@ -297,13 +325,13 @@ class ThisController(morphopt.Controller):
                         finger_depth - skin_depth,
                         -simp_field_thickness / 2,
                         simp_field_thickness / 2,
-                        -finger_height / 2,
+                        0.0,
                         finger_height / 2,
                     ],
                     simp_field_resolution=field_resolution,
                     degree=simp_degree,
                     material_parameters=material_parameters,
-                    voidpenalfactor=0.0,
+                    voidpenalfactor=void_penalty_factor,
                     elementname="design",
                     part_name="finger",
                 )
@@ -311,20 +339,16 @@ class ThisController(morphopt.Controller):
                 # volume constraint uses sigmoid(field), not stiffness scale.
 
             def update_variables(self, x_change, max_step_length=None):
-                """Keep updates uniform through thickness and symmetric in height."""
+                """Keep half-domain updates uniform through thickness."""
                 nx, ny, nz = self._bsp_size
                 x_change_3d = x_change.reshape(nx, ny, nz)
                 x_change_3d = x_change_3d.mean(dim=1, keepdim=True).expand(nx, ny, nz)
-                x_change_3d = 0.5 * (x_change_3d + x_change_3d.flip(dims=[2]))
                 if isinstance(max_step_length, list):
                     max_step_length = max_step_length[0]
                 if max_step_length is not None and max_step_length.numel() > 1:
                     max_step_length = max_step_length.reshape(nx, ny, nz)
                     max_step_length = max_step_length.mean(dim=1, keepdim=True).expand(
                         nx, ny, nz
-                    )
-                    max_step_length = 0.5 * (
-                        max_step_length + max_step_length.flip(dims=[2])
                     )
                 if max_step_length is None:
                     max_step_length = torch.ones_like(self._cps)
@@ -340,7 +364,7 @@ class ThisController(morphopt.Controller):
                 )
 
             def get_meshes(self):
-                """Show the full 2D finger, including its solid end regions."""
+                """Show the half finger, including its solid end regions."""
                 xmin, xmax, _ymin, _ymax, zmin, zmax = self._bounding_box
                 nx, _ny, nz = self._bsp_size
 
@@ -452,7 +476,6 @@ class ThisController(morphopt.Controller):
                 control_points = (
                     control_points.mean(dim=1, keepdim=True).expand(nx, ny, nz).clone()
                 )
-                control_points = 0.5 * (control_points + control_points.flip(dims=[2]))
                 # Keep the design field invariant through the single-layer
                 # thickness; the solid contact skin is defined geometrically.
                 self._cps = control_points.reshape_as(self._cps)
@@ -473,11 +496,6 @@ class ThisController(morphopt.Controller):
                 num_process=1,
                 task_index_list=[list(range(len(closure_steps)))],
             )
-
-        def _previous_solution(self):
-            # Repeat loading from the undeformed configuration each iteration.
-            # Within this group, the base solver continues from the last step.
-            return None
 
     class Updater(morphopt.Updaters):
         def __init__(self, params):

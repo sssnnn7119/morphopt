@@ -38,6 +38,12 @@ class BasePartInterface(BaseParams):
     cache_part: bool = False
     """Whether :meth:`build_part` may be called only once and cached."""
 
+    is_variable: bool = False
+    """Whether optimization may change this Part's geometry or mesh.
+
+    Fixed-mesh material optimization does not make a Part variable.
+    """
+
     def pathlog_required(self) -> list[str]:
         """Return the log directory used by this geometry interface."""
         return ["geometry"]
@@ -167,6 +173,7 @@ class BasePartInterface(BaseParams):
 
         if self.exterior_surface:
             part.exterior_surface = self.exterior_surface
+        part.is_variable = self.is_variable
         assembly.add_part(part=part, name=part_name)
 
         for declared_part_name, instance_name, pose in self._instance_definitions:

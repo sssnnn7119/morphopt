@@ -61,6 +61,8 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
         Surface set used as the Part exterior surface (default ``surface_0_All``).
     """
 
+    is_variable = True
+
     from .surfaceinterfaces import (
         BaseSurfaceInterface,
         CpBasedSurfaceInterface,

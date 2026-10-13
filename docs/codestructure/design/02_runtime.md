@@ -63,10 +63,16 @@ Controller.step()
 |---|---|
 | `params` | 当前模型参数集合，用于读取载荷步和装配信息。 |
 | `num_process`、`task_index_list` | 并行求解任务配置。 |
-| `_GC_pre` | 前一轮自由度解，用于下一轮 warm start。 |
 | `available_gpus` | 可用于并行任务的 GPU 信息。 |
 
 `initialize()` 建立任务配置，`reinitialize(iteration)` 依据当前参数刷新，`solve(U_guess=None)` 对每个载荷步求解并返回 `torchfea.solver.StaticResult` 列表。`_previous_solution()` 与 `_solve_FEA()` 分别封装 warm start 选择和单个 FEA 任务。
+
+自动初值只用于全部 Part 接口满足 `is_variable=False` 的模型，通过
+`StaticResult.load()` 读取 `history.iteration` 对应的最近一次已保存结果；
+首次求解或缺失的工况结果对应 `None`。几何或网格可变的 Part 禁用跨迭代复用，
+父进程按 `task_index_list` 为各子进程提取初值列表。子进程逐工况优先使用对应的
+`U_guess[i]`，该项为 `None` 才使用上一载荷步结果，首步使用模型初始坐标。
+返回结果按全局工况编号排序。
 
 ## `ObjectiveFunction`
 

@@ -206,6 +206,7 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     upd_device = repr(upd_dev)  # -> Updater(..., device=...) (independent)
 
     a("import os")
+    a('os.environ["MPLBACKEND"] = "Agg"')
     a("import morphopt")
     a("from typing import Any")
     a("")

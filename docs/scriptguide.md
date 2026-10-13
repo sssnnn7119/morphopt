@@ -320,6 +320,18 @@ class Solver(morphopt.Solver):
 - `task_index_list`：手动控制工况到进程的分配。
 - `available_gpus`：多 GPU 场景下显式绑定。
 
+未显式传入 `U_guess` 时，模型中的 Part 接口都满足 `is_variable=False`，
+求解器才会通过 `StaticResult.load()` 读取最近一次已保存迭代的各工况坐标作为初值。
+首次求解或某个工况的结果文件不存在时，对应初值为 `None`。
+`BasePartInterface` 默认 `is_variable=False`，`BoundaryPartInterface` 默认 `True`；
+该标记也会传到装配中的 `torchfea.Part`。
+自定义 Part 的几何或网格会随优化变化时，在类中设置 `is_variable=True`。
+仅优化材料密度而保持网格不变的 SIMP Part 使用 `False`。
+
+`U_guess` 按全局工况编号排列，求解器按 `task_index_list` 为每个子进程提取初值列表。
+子进程逐工况使用对应初值；该项为 `None` 时，使用同一任务上一工况的求解结果，
+任务首工况则使用模型初始坐标。例如任务 `[2, 0]` 接收 `[U_guess[2], U_guess[0]]`。
+
 ## 5. Updater 怎么定义
 
 功能：根据灵敏度更新设计变量。
