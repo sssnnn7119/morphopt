@@ -7,6 +7,8 @@ from .materials import MaterialsParams
 from .params import Params
 from .partinterface import (
     BasePartInterface,
+    BoxPartInterface,
+    CylinderPartInterface,
     INPPartInterface,
     TorchFEAPartInterface,
     load_model_assembly,

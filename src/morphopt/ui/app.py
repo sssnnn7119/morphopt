@@ -21,7 +21,7 @@ QPushButton { background-color: #0d47a1; color: #fff; border: none;
     padding: 5px 14px; border-radius: 3px; }
 QPushButton:hover { background-color: #1565c0; }
 QPushButton:disabled { background-color: #333; color: #777; }
-QLineEdit, QComboBox, QSpinBox { background: #262a33; color: #e0e0e0;
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: #262a33; color: #e0e0e0;
     border: 1px solid #3a3f4a; padding: 3px; }
 QComboBox { combobox-popup: 0; qproperty-maxVisibleItems: 12; }
 QComboBox QAbstractItemView { background: #1c1f26; color: #e0e0e0;

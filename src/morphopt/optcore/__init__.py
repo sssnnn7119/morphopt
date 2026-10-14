@@ -1,6 +1,8 @@
 from .modelparams import (
     BaseParams,
     BasePartInterface,
+    BoxPartInterface,
+    CylinderPartInterface,
     FEAParams,
     GeometryParams,
     INPPartInterface,

@@ -72,6 +72,8 @@ from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
     BasePartInterface,
+    BoxPartInterface,
+    CylinderPartInterface,
     FEAParams,
     GeometryParams,
     INPPartInterface,
@@ -91,7 +93,14 @@ from .optcore.protocal import (
 )
 from .optcore.solver import Solver
 from .optcore.updaters import Updaters
-from .shapeopt import BoundaryPartInterface, UpdaterBoundaryPart
+from .shapeopt import (
+    BoundaryPartInterface,
+    UpdaterBoundaryPart,
+    BaseSurfaceConstraints,
+    SurfaceRelationConstraint,
+    BspSurfaceRelationConstraint,
+    CPGEOSurfaceRelationConstraint,
+)
 from .codesign import OffsetBoundaryPartInterface, UpdaterOffsetBoundaryPart
 from .simp import SIMP_BSPFieldMaterials, UpdaterSIMPMaterial
 

@@ -3,7 +3,7 @@
 Each sub-optimizer (UpdaterBoundaryPart / UpdaterSIMPMaterial) exposes:
 * max_step_iter, if_update
 * a list of objective functions
-* one equality-constraint code item and a list of penalty constraints
+* one Part-level equality-constraint item and a list of penalty constraints
 and every item can have parameters edited in an inline form.  Equality code
 is emitted on the boundary Part interface; penalty terms are turned back into
 ``add_objective_function`` / ``add_constraints`` calls.
@@ -145,6 +145,8 @@ class UpdaterEditor(QWidget):
                 "几何优化器 (UpdaterBoundaryPart)",
                 "Geometry optimizer (UpdaterBoundaryPart)",
             )
+            if target is not None and target.interface_type == "OffsetBoundaryPartInterface":
+                title = T("偏置几何优化器 (UpdaterOffsetBoundaryPart)", "Offset geometry optimizer (UpdaterOffsetBoundaryPart)")
             if len(node.geometry) > 1:
                 title = f"{title} · {part or index}"
             self._layout.addWidget(
@@ -663,11 +665,11 @@ def _objective_readonly(cfg: dict, group: str) -> QWidget:
 def _equality_item_list(
     cfg: dict, on_change, problem: ProblemDefinition | None, on_code_change
 ) -> QWidget:
-    """Render the single geometry equality-constraint code editor.
+    """Render the single geometry equality-constraint item.
 
-    The representation is a one-item list because one geometry equality hook
-    is enough for each geometry optimizer.  The UI deliberately exposes no
-    add/delete controls.
+    The representation is a one-item list because each geometry optimizer
+    has at most one Part-level equality hook. Surface-local constraints are
+    registered on the surfaces themselves.
     """
     w = QWidget()
     lay = QVBoxLayout(w)
@@ -783,28 +785,33 @@ def _surface_equality_editor(
     layout.addWidget(
         QLabel(
             T(
-                "每次几何变量更新后执行；用于投影/修正曲面控制点。",
-                "Runs after each geometry update to project or correct surface "
-                "control points.",
+                "普通对称约束添加在曲面自身的约束列表中，并自动在更新和重建时执行。"
+                "这里用于跨曲面的 Part 级扩展约束。",
+                "Register ordinary symmetry constraints on each surface; its hooks "
+                "run automatically after updates and rebuilds. Use this editor for "
+                "optional Part-level constraints spanning surfaces.",
             )
         )
     )
     params = item.setdefault("params", {})
     editor = CodeEditor(
-        T("等式约束函数体", "Equality-constraint function body"),
+        T("Part 级约束代码", "Part-level constraint code"),
         completion_context="apply_surface_constraints",
         completion_problem=problem,
     )
     editor.set_body(str(params.get("code") or ""))
     editor.edit.textChanged.connect(
-        lambda: _set_surface_equality_code(params, editor, on_change)
+        lambda: _set_surface_equality_code(params, "code", editor, on_change)
     )
     layout.addWidget(editor)
+
     return host
 
 
-def _set_surface_equality_code(params: dict, editor: CodeEditor, on_change) -> None:
-    params["code"] = editor.body()
+def _set_surface_equality_code(
+    params: dict, key: str, editor: CodeEditor, on_change
+) -> None:
+    params[key] = editor.body()
     on_change()
 
 

@@ -10,11 +10,18 @@ import bspmap
 
 
 from .basesurfaceinterface import CpBasedSurfaceInterface
+from .bspsurfaceconstraints import (
+    BspMirrorConstraint,
+    BspSurfaceRelationConstraint,
+)
 
 class BspSurfaceInterface(CpBasedSurfaceInterface):
     """
     Class to handle the B-spline surface interface.
     """
+    mirror: type[BspMirrorConstraint] = BspMirrorConstraint
+    relate: type[BspSurfaceRelationConstraint] = BspSurfaceRelationConstraint
+
     class BSplineSolidGenerator:
         def __init__(self, P0, degree_u=3, degree_v=3):
             """
@@ -343,7 +350,7 @@ class BspSurfaceInterface(CpBasedSurfaceInterface):
     def __init__(self, surface: bspmap.BSP, init_size: float, MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
         super().__init__(surface)
 
-        self.model = surface
+        self.model: bspmap.BSP = surface
         """The B-spline surface model."""
 
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
@@ -664,11 +671,13 @@ class BspSurfaceInterface(CpBasedSurfaceInterface):
 
         numU = round(r0 * 2 * np.pi / seed_size)
         numV = round(length / seed_size)
-
-        numU = round(numU / 12) * 12
-
-        numU = round(numU / num_U_ratio) * num_U_ratio
+        numU_unit = int(np.lcm(12, num_U_ratio))
+        numU = max(numU_unit, round(numU / numU_unit) * numU_unit)
         numV = round(numV / num_V_ratio) * num_V_ratio
+        # Keep a control-point row on the mid-plane.  This makes the standard
+        # axial mirror planes directly representable by the BSP control net.
+        if numV % 2 == 0:
+            numV += 1
 
         P0 = torch.zeros(numV, numU, 3)
 
@@ -676,7 +685,9 @@ class BspSurfaceInterface(CpBasedSurfaceInterface):
         y = torch.linspace(0, 1, numV)
 
         [y, x] = torch.meshgrid(y, x, indexing='ij')
-        theta = 2 * torch.pi * x + (1 / numU) * torch.pi
+        # Put control points on the xz/yz mirror planes.  The periodic surface
+        # itself is unchanged; only the control-net phase is aligned.
+        theta = 2 * torch.pi * x
 
         P0[:, :, 0] = torch.cos(theta) * r0
         P0[:, :, 1] = torch.sin(theta) * r0

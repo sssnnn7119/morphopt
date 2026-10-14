@@ -1,21 +1,10 @@
-"""Top-level window: definition part + observer part, in ONE window.
-
-No initial "pick a template" step: the app opens directly in the *definition*
-part with a default problem.  The definition page owns all problem-level
-actions (选择模板 / 打开 .morph / 导出 .morph / 导出运行 .py — it emits
-request signals that MainWindow fulfils); the observer page owns the run/view
-controls.  ``*.morph`` carries its own template id so reopening a file always
-shows the right problem type.  A language switch (中文 / English) sits in the
-status bar and re-applies the current language to both parts.
-"""
+"""Top-level window: an empty definition workbench and an observer page."""
 
 from __future__ import annotations
 
 import os
 
-from PySide6.QtWidgets import (
-    QMainWindow, QStackedWidget, QFileDialog, QMessageBox, QInputDialog,
-)
+from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStackedWidget
 
 from .model.problem import ProblemDefinition
 from .application import ProblemLibrary
@@ -24,8 +13,7 @@ from .schemes.base import scheme_label
 from .i18n import LanguageSelector, T
 from .workbench import Workbench
 from .observe_panel import ObserverControls
-
-DEFAULT_TEMPLATE = "shapeopt"
+from .widgets.quickstart import QuickstartDialog
 
 
 class MainWindow(QMainWindow):
@@ -38,9 +26,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.stack)
         self._add_language_switch()
         self.resize(1500, 880)
-
-        # open directly into the definition part (no initial scheme pick)
-        self.open_scheme(DEFAULT_TEMPLATE)
+        self.set_problem(ProblemLibrary.create_blank())
 
     # ------------------------------------------------------------------ api
     def current_problem(self) -> ProblemDefinition | None:
@@ -69,26 +55,13 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle(T("MorphOpt UI — 优化定义", "MorphOpt UI — Definition"))
 
-    # ------------------------------------------------------------- templates
-    def change_problem(self) -> None:
-        """Choose a file-backed definition template and replace the tree."""
-        templates = list(ProblemLibrary.templates())
-        entries = [T(template.label, template.label_en) for template in templates]
-        text, ok = QInputDialog.getItem(
-            self, T("选择模板", "Select template"),
-            T("请选择一个问题模板：", "Choose a problem template:"),
-            entries, 0, False)
-        if not ok or not text:
-            return
-        self.open_scheme(templates[entries.index(text)].scheme)
-
-    def open_scheme(self, scheme: str) -> None:
-        """Create a fresh default problem of ``scheme`` and show it."""
-        problem = ProblemLibrary.create(scheme)
-        self.set_problem(problem)
-        self.statusBar().showMessage(
-            T(f"已创建 {scheme_label(scheme)} 问题",
-              f"Created: {scheme_label(scheme, english=True)}"), 3000)
+    # ------------------------------------------------------------- creation
+    def quickstart(self) -> None:
+        """Generate a fresh model from the user's design intent."""
+        dialog = QuickstartDialog(self.current_problem(), self)
+        if dialog.exec():
+            self.set_problem(dialog.problem)
+            self.statusBar().showMessage(T("已生成优化问题，可预览或继续编辑。", "Problem created; preview it or continue editing."), 4000)
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
@@ -144,7 +117,7 @@ class MainWindow(QMainWindow):
     def _build_workbench(self, problem: ProblemDefinition) -> None:
         wb = Workbench(problem)
         wb.notify.connect(self.statusBar().showMessage)
-        wb.changeProblemRequested.connect(self.change_problem)
+        wb.quickstartRequested.connect(self.quickstart)
         wb.openMorphRequested.connect(self.open_morph)
         wb.exportMorphRequested.connect(self.export_morph)
         wb.exportRunPyRequested.connect(self.export_run_py)

@@ -350,6 +350,15 @@ class PartInterfaceNode(Node):
         "model_directory",
         "model_filename",
         "model_part_name",
+        "shell_thickness",
+        "length",
+        "height",
+        "depth",
+        "mesh_size",
+        "r0",
+        "init_location",
+        "direction",
+        "num_layers",
     )
 
     def __init__(
@@ -371,6 +380,15 @@ class PartInterfaceNode(Node):
         self.model_directory: str | None = data.get("model_directory")
         self.model_filename: str | None = data.get("model_filename")
         self.model_part_name: str | None = data.get("model_part_name")
+        self.shell_thickness: float | None = data.get("shell_thickness")
+        self.num_layers: int | None = data.get("num_layers")
+        self.length: float | None = data.get("length")
+        self.height: float | None = data.get("height")
+        self.depth: float | None = data.get("depth")
+        self.mesh_size: float | None = data.get("mesh_size")
+        self.r0: float | None = data.get("r0")
+        self.init_location: list | None = data.get("init_location")
+        self.direction: list | None = data.get("direction")
 
         # A Part always has at least its identity Instance.  Keeping this in
         # the model tree makes placement a real persisted UI value instead of

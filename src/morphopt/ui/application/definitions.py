@@ -6,7 +6,17 @@ from pathlib import Path
 
 from ..codegen.generator import generate_source
 from ..model.loaders import load_morph, save_morph
-from ..model.problem import ProblemDefinition
+from ..model.problem import (
+    GeometryNode,
+    LoadsNode,
+    MaterialsNode,
+    ObjectiveNode,
+    ProblemDefinition,
+    ProblemNode,
+    SolverNode,
+    StepsNode,
+    UpdaterNode,
+)
 from ..schemes.base import SchemeTemplate, available_templates, get_template
 
 
@@ -140,6 +150,21 @@ class ProblemLibrary:
         template = get_template(template_id)
         problem = template.create_problem(label or f"{template_id}_untitled")
         ProblemSession(problem).synchronize()
+        return problem
+
+    @staticmethod
+    def create_blank(label: str = "Untitled") -> ProblemDefinition:
+        """Create an empty editable definition with the standard tree sections."""
+        problem = ProblemDefinition(scheme="shapeopt", label=label)
+        problem.root = ProblemNode(
+            name=label,
+            children=[
+                GeometryNode(),
+                LoadsNode(),
+                StepsNode(params={"num_steps": 1, "step_values": [{}]}),
+                MaterialsNode(), ObjectiveNode(), SolverNode(), UpdaterNode(),
+            ],
+        )
         return problem
 
     @staticmethod

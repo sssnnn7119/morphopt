@@ -1,7 +1,7 @@
 """Definition workbench (v2).
 
 Layout:
-  header      template + label
+  header      Quickstart + name + output folder
   center      two tabs:
                 1. 编辑   -> a QStackedWidget routed by the selected tree node
                               (properties / helper code / solver / loads /
@@ -74,7 +74,7 @@ class Workbench(QWidget):
     #: emitted with the finished problem when the user wants the observer page
     importToObserver = Signal(object)
     #: definition-level file / problem actions (fulfilled by the MainWindow)
-    changeProblemRequested = Signal()
+    quickstartRequested = Signal()
     openMorphRequested = Signal()
     exportMorphRequested = Signal()
     exportRunPyRequested = Signal()
@@ -110,13 +110,13 @@ class Workbench(QWidget):
         self._act_buttons: dict[str, QPushButton] = {}
         actions = [
             (
-                "change",
-                T("选择模板", "Select Template"),
+                "quickstart",
+                T("快速开始 · Quickstart", "Quickstart"),
                 T(
-                    "选择一个 .morph 优化模板",
-                    "Choose a .morph optimization template",
+                    "从初始结构和设计目标创建优化问题",
+                    "Create a problem from a starting structure and design goal",
                 ),
-                self.changeProblemRequested.emit,
+                self.quickstartRequested.emit,
             ),
             (
                 "open",
@@ -452,11 +452,11 @@ class Workbench(QWidget):
         centre editors are all refreshed; the preview viewport keeps its state.
         """
         act_text = {
-            "change": (
-                T("选择模板", "Select Template"),
+            "quickstart": (
+                T("快速开始 · Quickstart", "Quickstart"),
                 T(
-                    "选择一个 .morph 优化模板",
-                    "Choose a .morph optimization template",
+                    "从初始结构和设计目标创建优化问题",
+                    "Create a problem from a starting structure and design goal",
                 ),
             ),
             "open": (

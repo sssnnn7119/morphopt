@@ -25,44 +25,32 @@ class ThisController(morphopt.Controller):
                     Register this Part's boundary surfaces in index order:
                     surface 0 is the outer boundary, 1.. are cavities.
                     """
-                    self.add_surface_interface(
-                        self.BSP.initialize_cylinder(
-                            r0=8.0,
-                            length=80.0,
-                            seed_size=0.8,
-                            flip=False,
-                            maxR=0.2,
-                            maxC=1.5,
-                            maxFF=0.2,
-                            perturbation_L=10.0,
-                        )
+                    exterior = self.BSP.initialize_cylinder(
+                        r0=8.0,
+                        length=80.0,
+                        seed_size=0.8,
+                        flip=False,
+                        maxR=0.2,
+                        maxC=1.5,
+                        maxFF=0.2,
+                        perturbation_L=10.0,
                     )
+                    exterior.add_constraint(exterior.mirror("xz"))
+                    self.add_surface_interface(exterior)
 
-                    self.add_surface_interface(
-                        self.BSP.initialize_cylinder(
-                            r0=4.0,
-                            length=74.0,
-                            seed_size=0.8,
-                            init_location=[0, 0, 3],
-                            flip=True,
-                            maxR=0.2,
-                            maxC=1.5,
-                            maxFF=0.2,
-                            perturbation_L=10.0,
-                        )
+                    cavity = self.BSP.initialize_cylinder(
+                        r0=4.0,
+                        length=74.0,
+                        seed_size=0.8,
+                        init_location=[0, 0, 3],
+                        flip=True,
+                        maxR=0.2,
+                        maxC=1.5,
+                        maxFF=0.2,
+                        perturbation_L=10.0,
                     )
-
-                def apply_surface_constraints(self) -> None:
-                    """
-                    Apply the constraints (e.g. the surface constraint) of the surfaces.
-                    """
-                    a = self.surface_interfaces()[0]
-                    cp0 = a._cps.reshape(a.model.size[0], a.model.size[1], 3)
-                    import torch
-
-                    cp0[:, :, 0] = (cp0[:, :, 0] + torch.flip(cp0[:, :, 0], dims=[1])) / 2
-                    cp0[:, :, 1] = (cp0[:, :, 1] - torch.flip(cp0[:, :, 1], dims=[1])) / 2
-                    cp0[:, :, 2] = (cp0[:, :, 2] + torch.flip(cp0[:, :, 2], dims=[1])) / 2
+                    cavity.add_constraint(cavity.mirror("xz"))
+                    self.add_surface_interface(cavity)
 
             def define_interface(self):
 

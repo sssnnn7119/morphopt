@@ -33,7 +33,7 @@ BoundaryPartInterface : BasePartInterface + ProtocalUpdatable
 | `surface_interfaces()` / `surface_interface(index)` | 获取全部或单个曲面。 |
 | `initialize()` | 构建曲面声明、初始化曲面与基类 instances。 |
 | `reinitialize(iteration)` | 刷新每张曲面当前几何。 |
-| `apply_surface_constraints()` | 用户在曲面层组合几何约束的钩子。 |
+| `apply_surface_constraints()` | 可选的 Part 级钩子，在曲面自身约束之后运行，供跨曲面扩展逻辑使用。 |
 | `build_part(...)` | 输出曲面、调用体网格流程、装入 Part。 |
 | `get_parameters/set_parameters/update_variables` | 获取、恢复、更新控制点张量。 |
 | `get_geometry_values()` | 收集每张曲面的点、一次和二次导数。 |
@@ -63,16 +63,23 @@ BaseSurfaceInterface
 
 `num_variables` 默认是零；固定面因此自然参与网格与展示，而控制变量拼接只选择可更新曲面。`barrier_function()` 提供曲面约束使用的统一平滑障碍项。
 
+每张曲面还维护一个按注册顺序执行的 `constraints` 列表。`mirror` 和 `relate` 属性直接引用
+对应的约束类，通过 `surface.add_constraint(surface.mirror(...))` 等方式显式登记。BSP 目前只
+支持 xz 平面和 `z=offset` 的 xy 平面对称；其它 BSP 对称方式暂不支持。CPGEO 还支持 `rotate`。
+约束由 `add_constraint()` 按调用顺序维护。自定义约束继承 `BaseSurfaceConstraints`，
+实现 `apply(surface)` 和 `reinitialize(surface)`。Part 更新或重建时自动调用对应钩子；
+所有约束均按列表顺序逐个执行。
+
 ### `CpBasedSurfaceInterface`
 
-控制点曲面的公共层，保存控制点、预加载投影数据和导数计算缓存。`control_points` 是公开属性；`get_surface_parameters()`、`set_surface_parameters()`、`update_variables()` 和 `num_variables` 使其参与 Part 的可更新变量块。`pre_load()`、`get_preloaddata()`、`get_r()`、`get_rdu()`、`get_rdu2()` 支持网格节点与参数面之间的快速映射。
+控制点曲面的公共层，保存控制点、预加载投影数据和导数计算缓存。`control_points` 是公开属性；`get_surface_parameters()`、`set_surface_parameters()`、`update_variables()` 和 `num_variables` 使其参与 Part 的可更新变量块。`surface.relate(other, pose)` 创建后端专属的跨曲面关系约束，将源曲面的几何复制到目标曲面；两侧必须使用同一曲面类型（BSP 对 BSP、CPGEO 对 CPGEO），并通过 `add_constraint(...)` 登记。`pose` 与 Instance 一致，为 `[tx, ty, tz, rx, ry, rz]`，后三项是旋转向量（弧度）。`pre_load()`、`get_preloaddata()`、`get_r()`、`get_rdu()`、`get_rdu2()` 支持网格节点与参数面之间的快速映射。
 
 ### 具体曲面
 
 | 类 | 几何来源 | 公开构造/操作 |
 |---|---|---|
-| `BspSurfaceInterface` | `bspmap.BSP` 曲面 | `initialize_cylinder()`；映射、法线、STEP 输出、保存/恢复、预加载和控制点更新。 |
-| `CPGEOSurfaceInterface` | `cpgeo.CPGEO` 曲面 | `initialize_cylinder()`、`initialize_Sphere()`；重建检查、重初始化、STL 输出、保存/恢复。 |
+| `BspSurfaceInterface` | `bspmap.BSP` 曲面 | `initialize_cylinder()`、xz/xy 平面 `mirror()`；映射、法线、STEP 输出、保存/恢复、预加载和控制点更新。 |
+| `CPGEOSurfaceInterface` | `cpgeo.CPGEO` 曲面 | `initialize_cylinder()`、`initialize_Sphere()`、`mirror()`、`rotate()`；重建检查、重初始化、STL 输出、保存/恢复。 |
 | `FixedSurface` | 顶点与三角面 | `initialize_from_stl_file()`、`output_stl_file()`、`output_data()`、`get_mesh()`。 |
 
 `BspSurfaceInterface` 和 `CPGEOSurfaceInterface` 都给出曲面公平性数据及点权重；它们分别将控制点更新同步回 B-spline 或 CPGEO 后端。`FixedSurface` 的 `num_variables=0`，适合作为固定外形或边界的一部分。

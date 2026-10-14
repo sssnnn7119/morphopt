@@ -5,6 +5,11 @@ import torch
 import morphopt
 
 from .basesurfaceinterface import CpBasedSurfaceInterface
+from .cpgeosurfaceconstraints import (
+    CPGEOMirrorConstraint,
+    CPGEORotationalSymmetryConstraint,
+    CPGEOSurfaceRelationConstraint,
+)
 
 class CPGEOSurfaceInterface(CpBasedSurfaceInterface):
     """
@@ -13,11 +18,16 @@ class CPGEOSurfaceInterface(CpBasedSurfaceInterface):
     CPGEO uses triangular meshes with control points for morphology optimization,
     providing a flexible alternative to B-spline surfaces for complex geometries.
     """
+    mirror: type[CPGEOMirrorConstraint] = CPGEOMirrorConstraint
+    rotate: type[CPGEORotationalSymmetryConstraint] = (
+        CPGEORotationalSymmetryConstraint
+    )
+    relate: type[CPGEOSurfaceRelationConstraint] = CPGEOSurfaceRelationConstraint
 
     def __init__(self, surface: cpgeo.CPGEO, init_size: float, MaxC = 1.0):
         super().__init__(surface)
 
-        self.model = surface
+        self.model: cpgeo.CPGEO = surface
         """The CPGEO surface model."""
 
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
@@ -370,11 +380,15 @@ class CPGEOSurfaceInterface(CpBasedSurfaceInterface):
         # Create cylindrical mesh using trimesh
         # Estimate number of segments based on seed size
         num_segments_circ = max(12, round(r0 * 2 * np.pi / seed_size))
-        num_segments_circ = round(num_segments_circ / 12) * 12  # Make it divisible by 12
-        num_segments_circ = round(num_segments_circ / num_U_ratio) * num_U_ratio
+        circ_ratio = int(np.lcm(12, num_U_ratio))
+        num_segments_circ = max(
+            circ_ratio, round(num_segments_circ / circ_ratio) * circ_ratio
+        )
         
         num_segments_axial = max(2, round(length / seed_size))
         num_segments_axial = round(num_segments_axial / num_V_ratio) * num_V_ratio
+        if num_segments_axial % 2:
+            num_segments_axial += 1
         
         # Generate cylinder vertices
         vertices = []

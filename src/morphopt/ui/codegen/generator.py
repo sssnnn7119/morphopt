@@ -45,7 +45,6 @@ CORE_BASES = {
     "updaters": "morphopt.Updaters",
 }
 
-BOUNDARY_PART_BASE = "morphopt.BoundaryPartInterface"
 GEOMETRY_UPDATER_BASE = "morphopt.UpdaterBoundaryPart"
 MATERIAL_UPDATER_BASE = "morphopt.UpdaterSIMPMaterial"
 HOMOGENEOUS_MATERIAL_BASE = "morphopt.HomogeneousMaterial"
@@ -352,7 +351,7 @@ def part_class_names(problem: ProblemDefinition) -> dict[str, str]:
     names = {}
     counts: dict[str, int] = {}
     for interface in problem.part_interfaces():
-        type_name = "BoundaryPartInterface" if interface.has_surfaces else interface.interface_type
+        type_name = interface.interface_type
         count = counts.get(type_name, 0) + 1
         counts[type_name] = count
         names[interface.name] = type_name if count == 1 else f"{type_name}{count}"
@@ -372,6 +371,8 @@ def _emit_part_classes(
     """
     fixed_bases = {
         "BasePartInterface": "morphopt.BasePartInterface",
+        "BoxPartInterface": "morphopt.BoxPartInterface",
+        "CylinderPartInterface": "morphopt.CylinderPartInterface",
         "INPPartInterface": "morphopt.INPPartInterface",
         "TorchFEAPartInterface": "morphopt.TorchFEAPartInterface",
     }
@@ -380,8 +381,10 @@ def _emit_part_classes(
 
     constraints = _surface_constraints_bodies(problem)
     for interface in problem.part_interfaces():
-        base = BOUNDARY_PART_BASE if interface.has_surfaces else fixed_bases.get(
-            interface.interface_type
+        base = (
+            f"morphopt.{interface.interface_type}"
+            if interface.has_surfaces
+            else fixed_bases.get(interface.interface_type)
         )
         if not base:
             continue
@@ -815,7 +818,13 @@ def _emit_updater(
     a(f"            super().__init__(params=params, device={device})")
     a("")
     for class_name, config in zip(geometry_classes, geom_cfgs):
-        _emit_nested_updater(a, class_name, GEOMETRY_UPDATER_BASE, config, problem)
+        target = problem.config_part_node(config)
+        base = (
+            "morphopt.UpdaterOffsetBoundaryPart"
+            if target.interface_type == "OffsetBoundaryPartInterface"
+            else GEOMETRY_UPDATER_BASE
+        )
+        _emit_nested_updater(a, class_name, base, config, problem)
         a("")
     for class_name, config in zip(material_classes, mat_cfgs):
         _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config, problem)

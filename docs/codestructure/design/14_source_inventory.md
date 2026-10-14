@@ -20,6 +20,7 @@
 | `solver.py` | `Solver` | 多载荷步 FEA 求解与 warm start。 |
 | `objfunc.py` | `ObjectiveFunction` | 多步目标、自动微分灵敏度、结果可视化。 |
 | `updaters.py` | `BaseUpdater`, `Updaters` | 局部设计子问题、梯度切片和设备作用域。 |
+| `quadrature.py` | `actuation_boundary_gauss_points` | 驱动参数域边界上的二维边和三维面高斯求积。 |
 
 ### `optcore/modelparams/`
 
@@ -36,6 +37,8 @@
 | 文件 | 主要类型/函数 | 责任 |
 |---|---|---|
 | `basepartinterface.py` | `BasePartInterface` | 一个 Part、多个 instance、位姿和 Assembly 添加。 |
+| `chamberlayout.py` | `ChamberLayer`, `LayeredChambers` | 串联气腔层、层内并联排布及显式压力通道。 |
+| `primitivepartinterface.py` | `BoxPartInterface`, `CylinderPartInterface` | 固定设计块和圆柱的内核建模、网格生成及初始预览。 |
 | `inppartinterface.py` | `INPPartInterface` | 从 Abaqus `.inp` 导入固定 Part。 |
 | `torchfeapartinterface.py` | `TorchFEAPartInterface`, `resolve_model_path`, `load_model_assembly` | 从 TorchFEA `.npz` 存档导入 Part/instances。 |
 | `__init__.py` | Part API 导出 | 子包公共导入。 |

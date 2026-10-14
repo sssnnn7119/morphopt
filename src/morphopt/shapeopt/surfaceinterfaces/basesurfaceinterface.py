@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 import datetime
 import math
+from typing import Any, Optional
+
 import numpy as np
 import torch
-from typing import Optional
 
 import pyvista as pv
 
 import morphopt
+from .basesurfaceconstraints import BaseSurfaceConstraints
 from ...optcore.protocal import (
     ProtocalInitializable,
     ProtocalSavable,
@@ -43,6 +47,35 @@ class BaseSurfaceInterface(
 
 
         self.flip: bool = False
+
+        self.constraints: list[BaseSurfaceConstraints[Any]] = []
+        """Surface-owned constraints in their execution order."""
+
+    def add_constraint(
+        self, constraint: BaseSurfaceConstraints[Any]
+    ) -> BaseSurfaceInterface:
+        """Append a lifecycle constraint to this surface and return ``self``.
+
+        Constraints run in insertion order and must inherit
+        :class:`BaseSurfaceConstraints`.
+        """
+        if not isinstance(constraint, BaseSurfaceConstraints):
+            raise TypeError(
+                "A surface constraint must inherit BaseSurfaceConstraints."
+            )
+        constraint.validate_surface(self)
+        self.constraints.append(constraint)
+        return self
+
+    def apply_constraints(self) -> None:
+        """Apply the registered constraints in insertion order."""
+        for constraint in self.constraints:
+            constraint.apply(self)
+
+    def reinitialize_constraints(self) -> None:
+        """Refresh constraints after this surface rebuilds, in list order."""
+        for constraint in self.constraints:
+            constraint.reinitialize(self)
         
     def map(self, uv: torch.Tensor) -> torch.Tensor:
         """
@@ -830,6 +863,16 @@ class CpBasedSurfaceInterface(BaseSurfaceInterface):
             torch.Tensor: The control points of the surface.
         """
         return self._cps
+
+    @control_points.setter
+    def control_points(self, points: torch.Tensor | np.ndarray) -> None:
+        """Replace the control points while preserving tensor dtype and device."""
+        points = torch.as_tensor(
+            points, dtype=self._cps.dtype, device=self._cps.device
+        )
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Control points must have shape (num_points, 3).")
+        self._cps = points
 
     def get_surface_parameters(self) -> torch.Tensor:
         """

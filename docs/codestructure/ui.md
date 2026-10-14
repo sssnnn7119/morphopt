@@ -24,6 +24,7 @@ ui/
 ├── workbench.py              定义页组合视图
 ├── observe_panel.py          运行与结果观察组合视图
 ├── application/
+│   ├── quickstart.py         设计意图 → 类型化问题树
 │   ├── definitions.py        定义同步、校验、模板和文件用例
 │   ├── editor_routing.py     Node → editor 的纯路由
 │   ├── results.py            结果目录、History、Params 的只读会话
@@ -122,6 +123,23 @@ ProblemNode
 - `.morph` 是唯一可编辑定义格式；Python 只作为生成结果，不反向解析成定义。
 
 ## 5. 模板体系
+
+启动时直接显示空白定义工作台；标准栏目存在，但不预填具体设计。用户可手动定义，或使用 Quickstart。
+`application/quickstart.py` 的类型化配置负责参数校验、
+独立的几何定义、多目标加权函数、目标对应的载荷工况和更新器生成，`widgets/quickstart.py` 只收集输入及展示
+摘要与示意。配置保存为辅助变量 `quickstart_settings`，生成物是普通 `ProblemDefinition`，
+不建立另一个模型格式。Quickstart 按参数组合创建节点，不克隆模板。
+几何工厂、网格构建及其参数化变换归内核；UI 不生成重写几何工厂的类，
+也不生成设计块或接触物体的建网格脚本。设计块和圆柱 Part 使用 optcore 的具体接口。
+
+分层参数使用内核 `ChamberLayer` / `LayeredChambers`；UI 表格负责编辑，布局与几何检查归内核。
+工作空间驱动边界的高斯点、权重、切向和取向由 `optcore/quadrature.py` 生成；应用服务将
+边界点映射为载荷工况；用户选择的压力通道映射到驱动积分坐标，同通道气腔联动，未选通道固定零压。目标按所选通道汇总 Jacobian 列，并通过散度定理计算边界积分。
+普通目标不使用高斯点密度。
+预览从内核获取初始网格，在 widget 中仅执行正等轴测投影、着色和坐标轴绘制。
+
+内腔偏置 Part 在统一 Part schema 中注册，代码生成器按目标 Part 类型选择
+`UpdaterOffsetBoundaryPart`；参数集合、FEA 和求解器仍使用公共接口。
 
 模板是 `ui/templates/*.morph`，由 `schemes/base.py` 自动发现。新增模板不增加新的
 “优化方法”类：

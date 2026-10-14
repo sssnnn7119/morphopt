@@ -6,6 +6,7 @@ widgets are responsible only for interaction and presentation.
 """
 
 from .definitions import MissingImportedModelError, ProblemLibrary, ProblemSession
+from .quickstart import QuickstartObjective, QuickstartOptions, build_quickstart
 from .editor_routing import EditorKind, EditorRoute, route_editor
 from .results import ResultSession, last_completed_iteration
 from .runs import (
@@ -22,6 +23,9 @@ __all__ = [
     "MissingImportedModelError",
     "ProblemLibrary",
     "ProblemSession",
+    "QuickstartObjective",
+    "QuickstartOptions",
+    "build_quickstart",
     "ResultSession",
     "RunMode",
     "RunSource",

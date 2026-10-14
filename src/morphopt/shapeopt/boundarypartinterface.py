@@ -8,10 +8,12 @@ and carries their design variables.  The geometry updater binds to this class.
 ```python
 class Boundary(morphopt.BoundaryPartInterface):
     def define_surfaces(self) -> None:
-        self.add_surface_interface(self.BSP.initialize_cylinder(r0=8.0, length=80.0))
+        exterior = self.BSP.initialize_cylinder(r0=8.0, length=80.0)
+        exterior.add_constraint(exterior.mirror("xz"))
+        self.add_surface_interface(exterior)
 
     def apply_surface_constraints(self) -> None:
-        ...   # equality constraints on self.surface_interfaces()[...]
+        ...   # optional cross-surface extension; local constraints run first
 
 class GeometryParams(morphopt.GeometryParams):
     def define_interface(self) -> None:
@@ -146,15 +148,27 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
             self._surfaces_defined = True
         for surface in self.surfaceinterfaces:
             surface.initialize(*args, **kwargs)
+        self._reinitialize_constraints()
+        self._apply_surface_constraints()
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
         """Re-initialize every boundary surface (reconstruction / refinement)."""
         for surface in self.surfaceinterfaces:
             surface.reinitialize(iteration, *args, **kwargs)
+        self._reinitialize_constraints()
+        self._apply_surface_constraints()
+
+    def _reinitialize_constraints(self) -> None:
+        for surface in self.surfaceinterfaces:
+            surface.reinitialize_constraints()
+
+    def _apply_surface_constraints(self) -> None:
+        for surface in self.surfaceinterfaces:
+            surface.apply_constraints()
         self.apply_surface_constraints()
 
     def apply_surface_constraints(self) -> None:
-        """Hook applied after every design update (equality constraints)."""
+        """Optional Part-level hook after surface constraints have run."""
 
     # ---------------------------------------------------------------- meshing
     def build_part(
@@ -307,6 +321,7 @@ class BoundaryPartInterface(BasePartInterface, ProtocalUpdatable):
             raise ValueError("Surface parameter list does not match surfaces.")
         for surface, value in zip(self.surfaceinterfaces, values):
             surface.set_surface_parameters(value.detach().clone())
+        self.apply_surface_constraints()
 
     def update_variables(
         self,

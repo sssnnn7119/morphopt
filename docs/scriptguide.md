@@ -190,19 +190,15 @@ class GeometryParams(morphopt.GeometryParams):
         """可优化实体：曲面参数化，一个 Part 两个曲面（0 外表面、1 内腔）。"""
 
         def define_surfaces(self):
-            self.add_surface_interface(self.BSP.initialize_cylinder(
-                r0=8.0, length=80.0, seed_size=0.8, flip=False,
-                maxR=0.2, maxC=1.5, maxFF=0.2, perturbation_L=10.0))
-            self.add_surface_interface(self.BSP.initialize_cylinder(
-                r0=4.0, length=74.0, seed_size=0.8, init_location=[0, 0, 3], flip=True,
-                maxR=0.2, maxC=1.5, maxFF=0.2, perturbation_L=10.0))
+            outer = self.BSP.initialize_cylinder(
+                r0=8.0, length=80.0, seed_size=0.8, flip=False)
+            outer.add_constraint(outer.mirror("xz"))
+            self.add_surface_interface(outer)
 
-        def apply_surface_constraints(self):
-            """每次几何更新后的等式约束（对称/周期…）。"""
-            self.apply_symmetry(self.surface_interfaces()[0])
-
-        def apply_symmetry(self, surface):
-            ...
+            cavity = self.BSP.initialize_cylinder(
+                r0=4.0, length=74.0, seed_size=0.8, flip=True)
+            cavity.add_constraint(cavity.mirror("xz"))
+            self.add_surface_interface(cavity)
 
     def define_interface(self):
         # 可优化实体
@@ -216,8 +212,18 @@ class GeometryParams(morphopt.GeometryParams):
 
 其他要点：
 
-- 只有 `BoundaryPartInterface` 的子类才能被几何优化器更新；它的
-  `apply_surface_constraints()` 是几何等式约束钩子（如对称/周期）。
+- 每个 `BaseSurfaceInterface` 持有一个有序的约束列表。BSP 支持 `mirror("xz")`
+  和 `mirror("xy", offset=h/2)`；其它 BSP 对称方式暂不支持。CPGEO 的
+  `surface.mirror(...)` 和 `surface.rotate(...)` 创建曲面专属约束；跨曲面关系直接构造
+  `surface.relate(other, pose=...)`。`relate` 是对应后端的约束类属性。用
+  `surface.add_constraint(...)` 显式登记，调用顺序就是执行顺序。约束会自动在
+  曲面更新和重初始化时按登记顺序逐个执行。BSP 和 CPGEO 各自复制所需的曲面数据，
+  将源曲面的几何变换后写入目标曲面；两侧必须是同一类曲面。相对位姿用
+  `pose=(tx, ty, tz, rx, ry, rz)` 表示，与 Instance 一致，后三项是旋转向量（弧度）。
+  自定义约束继承 `morphopt.BaseSurfaceConstraints`，并实现
+  `apply(surface)` 和 `reinitialize(surface)`，再通过
+  `surface.add_constraint(MyConstraint())` 注册。
+  `apply_surface_constraints()` 可用于需要跨曲面整体处理的 Part 级扩展逻辑。
 - 曲面顺序即设计变量顺序：先按 Part 注册顺序，再按曲面注册顺序；几何优化器
   按 Part 切分梯度。
 - 每个曲面在实例下的集合名约定为 `surface_<i>_<标签>`，FEA 接口按实例名 +

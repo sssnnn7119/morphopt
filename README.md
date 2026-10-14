@@ -48,7 +48,9 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
    # python -m morphopt.ui works too (handy when running from a source code directory)
    ```
 
-The complete UI workflow (definition part + observer part) is described in [`docs/UI_usage.md`](docs/UI_usage.md).
+The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Build a definition yourself or use **Quickstart** to choose shape or topology optimization, define geometry separately, and add weighted objective terms with their own load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable scripts.
+
+The complete UI workflow (definition part + observer part) is described in [`docs/UIguide.md`](docs/UIguide.md).
 
 Further references:
 

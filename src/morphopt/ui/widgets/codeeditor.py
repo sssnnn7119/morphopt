@@ -310,7 +310,7 @@ class CodeEditor(QWidget):
     Completion is activated with ``Ctrl+Space`` or automatically after member
     access / a three-character identifier.  ``completion_context`` is a model
     slot key such as ``"_objective_function"`` or
-    ``"apply_surface_constraints"`` (the geometry equality constraint).
+    ``"apply_surface_constraints"`` (the optional Part-level geometry hook).
     """
 
     focusReceived = Signal()

@@ -27,6 +27,8 @@ from pyvistaqt import QtInteractor
 from ...optcore.modelparams.partinterface import load_model_assembly, resolve_model_path
 from ..i18n import T
 from ..model.problem import Node, ProblemDefinition, resolve_model_directory
+from ...optcore.modelparams.partinterface import BoxPartInterface, CylinderPartInterface
+from ..model.schemas import PART_INTERFACE_TYPES
 
 
 class _PlotHost(QWidget):
@@ -116,6 +118,20 @@ class PreviewViewer(QWidget):
         # imported TorchFEA Parts.  The imported model must not hide the
         # boundary geometry from the preview.
         self._draw_boundary_parts()
+        for part in self._problem.part_interfaces():
+            backend = {"BoxPartInterface": BoxPartInterface, "CylinderPartInterface": CylinderPartInterface}.get(part.interface_type)
+            if backend is None:
+                continue
+            options = {field["key"]: part.get_field(field["key"])
+                       for field in PART_INTERFACE_TYPES[part.interface_type]["params"]}
+            mesh = backend(**options).get_initial_mesh()
+            if mesh is None:
+                continue
+            for instance in part.instances():
+                placed = self._apply_instance_pose(mesh.copy(), instance)
+                actor = plotter.add_mesh(placed, name=f"primitive-instance:{instance.name}",
+                    color="#2878b5", opacity=0.65, show_edges=True)
+                self._base_meshes.append((instance.name, placed, actor))
 
         # material bounding box (SIMP / codesign)
         for mat in self._problem.material_nodes():

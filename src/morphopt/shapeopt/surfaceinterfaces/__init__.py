@@ -9,11 +9,18 @@ from .basesurfaceinterface import (
     CpBasedSurfaceInterface,
     FixedSurface,
 )
+from .basesurfaceconstraints import BaseSurfaceConstraints, SurfaceRelationConstraint
+from .bspsurfaceconstraints import BspSurfaceRelationConstraint
+from .cpgeosurfaceconstraints import CPGEOSurfaceRelationConstraint
 from .bspsurfaceinterface import BspSurfaceInterface
 from .cpgeosurfaceinterface import CPGEOSurfaceInterface
 
 __all__ = [
     "BaseSurfaceInterface",
+    "BaseSurfaceConstraints",
+    "SurfaceRelationConstraint",
+    "BspSurfaceRelationConstraint",
+    "CPGEOSurfaceRelationConstraint",
     "CpBasedSurfaceInterface",
     "FixedSurface",
     "BspSurfaceInterface",

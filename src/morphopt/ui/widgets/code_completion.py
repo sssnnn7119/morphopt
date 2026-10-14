@@ -59,15 +59,8 @@ _TENSOR_MEMBERS = (
 
 _SURFACE_CONSTRAINT_ITEMS = (
     CompletionItem("self", "self"),
-    CompletionItem("self.surfaces()", "self.surfaces()"),
-    CompletionItem("ThisController", "ThisController"),
-    CompletionItem("ThisController.Params.GeometryParams",
-                   "ThisController.Params.GeometryParams"),
-    CompletionItem("surface = self.surfaces()[0]",
-                   "surface = self.surfaces()[0]"),
-    CompletionItem("control_points = surface._cps.reshape(...)",
-                   "control_points = surface._cps.reshape(\n"
-                   "    surface.model.size[0], surface.model.size[1], 3)"),
+    CompletionItem("self.surface_interfaces()", "self.surface_interfaces()"),
+    CompletionItem("self.surface_interface(0)", "self.surface_interface(0)"),
     CompletionItem("torch.flip(..., dims=[1])", "torch.flip("),
     CompletionItem("pass", "pass"),
 )

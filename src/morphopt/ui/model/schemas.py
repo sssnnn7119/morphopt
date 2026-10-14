@@ -970,6 +970,43 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
 }
 
 
+PART_INTERFACE_TYPES["BoxPartInterface"] = {
+    "label": "长方体设计域", "label_en": "Box design domain", "surfaces": False,
+    "params": [
+        fld("length", "长度", "float", 40., minimum=1e-3),
+        fld("height", "高度", "float", 16., minimum=1e-3),
+        fld("depth", "厚度", "float", 8., minimum=1e-3),
+        fld("mesh_size", "网格尺寸", "float", 2., minimum=1e-3),
+        fld("mesh_order", "Mesh order", "combo", 2, choices=[1, 2]),
+        _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
+    ],
+}
+PART_INTERFACE_TYPES["CylinderPartInterface"] = {
+    "label": "圆柱 Part", "label_en": "Cylinder Part", "surfaces": False,
+    "params": [
+        fld("r0", "半径", "float", 10., minimum=1e-3),
+        fld("length", "长度", "float", 20., minimum=1e-3),
+        fld("init_location", "初始位置", "vec3", [0., 0., 0.]),
+        fld("direction", "轴向", "vec3", [0., 0., 1.]),
+        fld("mesh_size", "网格尺寸", "float", 2., minimum=1e-3),
+        fld("mesh_order", "Mesh order", "combo", 1, choices=[1, 2]),
+        _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
+    ],
+}
+
+
+PART_INTERFACE_TYPES["OffsetBoundaryPartInterface"] = {
+    "label": "内腔偏置 Part",
+    "label_en": "Cavity offset Part",
+    "surfaces": True,
+    "params": [
+        *PART_INTERFACE_TYPES["BoundaryPartInterface"]["params"],
+        fld("shell_thickness", "偏置层厚度", "float", 0.5, minimum=1e-3, label_en="Offset thickness"),
+        fld("num_layers", "偏置层数", "int", 1, minimum=1, label_en="Offset layers"),
+    ],
+}
+
+
 def part_interface_spec(interface_type: str) -> dict:
     """Return the schema entry of one geometry-interface type."""
     try:
@@ -1046,24 +1083,24 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
 
 _EQUALITY_CODE_FIELD = fld(
     "code",
-    "等式约束代码",
+    "应用约束代码",
     "code",
     "",
-    "每次几何变量更新后执行，用于投影/修正曲面控制点。",
+    "用于需要跨曲面协调的 Part 级扩展约束。单曲面对称约束请添加到曲面自己的约束列表。",
     label_en="Equality-constraint code",
-    doc_en="Runs after each geometry update to project or correct "
-    "surface control points.",
+    doc_en="Optional Part-level constraint code for relations spanning surfaces. "
+    "Single-surface symmetry belongs on the surface constraint list.",
 )
 
 EQUALITY_CONSTRAINTS: dict[str, dict] = {
     "MirrorSymmetry": {
-        "label": "镜面对称",
-        "label_en": "Mirror symmetry",
+        "label": "曲面关系（对称/变换）",
+        "label_en": "Surface relations (symmetry / transform)",
         "group": "geometry",
         "special": "surface_equality",
         "params": [_EQUALITY_CODE_FIELD],
     },
-    # General equality code; MirrorSymmetry is the named symmetry preset.
+    # General equality code, used for composed mirror/rotation/surface relations.
     "SurfaceEquality": {
         "label": "自定义曲面等式约束 (SurfaceEquality)",
         "label_en": "Custom surface equality constraint (SurfaceEquality)",

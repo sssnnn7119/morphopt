@@ -174,6 +174,15 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
             spec.methods = _backend_methods(spec.backend, expression)
             parents[expression] = spec
     definition = next(iter(parents.values())).definition
+    # Surface factories remain reusable when the owning Part is changed to
+    # an offset Part; their canonical parents do not depend on that owner.
+    for name in ("BSP", "CPGEO", "FixedSurface"):
+        expression = f"morphopt.BoundaryPartInterface.{name}"
+        if expression not in parents:
+            backend = _resolve(expression)
+            spec = ClassSpec(expression, expression, definition, backend)
+            spec.methods = _backend_methods(backend, expression)
+            parents[expression] = spec
     for interface_type in PART_INTERFACE_TYPES:
         expression = f"morphopt.{interface_type}"
         if expression not in parents:
