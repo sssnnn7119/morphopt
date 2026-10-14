@@ -16,21 +16,11 @@ from PySide6.QtWidgets import (
     QLineEdit, QTableWidget, QTableWidgetItem,
 )
 
-from ..model.problem import Node
-from ..i18n import T
-
-
-def detect_devices() -> list[str]:
-    """Return a list of usable devices: CPU plus any torch cuda devices."""
-    devs = ["cpu"]
-    try:
-        import torch
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                devs.append(f"cuda:{i}")
-    except Exception:
-        pass
-    return devs
+from ..model.problem import SolverNode, ProblemDefinition
+from ..i18n import tr
+from ..application.devices import detect_devices
+from ..application.editing import SolverTasks
+from ..application.values import parse_field
 
 
 class SolverEditor(QWidget):
@@ -42,8 +32,7 @@ class SolverEditor(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         form = QFormLayout()
-        hint = QLabel(T("设备（可多选 GPU；勾选 CPU 则只用 CPU）",
-                        "Devices (multi-select GPUs; checking CPU uses CPU only)"))
+        hint = QLabel(tr('ui.widgets.solver_editor.devices_multi_select_gpus_checking_cpu_uses_cpu_only'))
         hint.setStyleSheet("color:#7f8c8d;")
         form.addRow(hint)
         self._device_box = QHBoxLayout()
@@ -56,39 +45,36 @@ class SolverEditor(QWidget):
         self._device_box.addStretch(1)
         devhost = QWidget()
         devhost.setLayout(self._device_box)
-        form.addRow(T("设备", "Devices"), devhost)
+        form.addRow(tr('ui.widgets.solver_editor.devices'), devhost)
 
         self._numproc = QLineEdit()
         self._numproc.editingFinished.connect(self._on_numproc)
-        form.addRow(T("进程数 num_process", "Processes (num_process)"), self._numproc)
+        form.addRow(tr('ui.widgets.solver_editor.processes_num_process'), self._numproc)
         lay.addLayout(form)
 
-        grp_title = QLabel(T("工况(载荷步) → 进程任务分组", "Load steps → process task groups"))
+        grp_title = QLabel(tr('ui.widgets.solver_editor.load_steps_process_task_groups'))
         grp_title.setStyleSheet("font-weight:600;")
         lay.addWidget(grp_title)
-        help = QLabel(T(
-            "同组工况在同一个进程内先后求解，下一步用上一步结果（热启动）。"
-            "默认：每个工况各自一个进程。",
-            "Load steps in the same group are solved sequentially in one process "
-            "(warm start). Default: one process per load step."))
+        help = QLabel(tr('ui.widgets.solver_editor.load_steps_in_the_same_group_are_solved_sequentially_in_one_process_warm'))
         help.setStyleSheet("color:#7f8c8d;")
         help.setWordWrap(True)
         lay.addWidget(help)
         self._table = QTableWidget()
         self._table.setColumnCount(2)
         self._table.setHorizontalHeaderLabels(
-            [T("载荷步", "Step"), T("进程组号", "Process group")])
+            [tr('ui.widgets.solver_editor.step'), tr('ui.widgets.solver_editor.process_group')])
         self._table.cellChanged.connect(self._on_cell)
         lay.addWidget(self._table, 1)
 
-        self._node: Node | None = None
+        self._node: SolverNode | None = None
         self._problem = None
         self._loading = False
 
     # ------------------------------------------------------------------ api
-    def edit_node(self, node: Node, problem) -> None:
+    def edit_node(self, node: SolverNode, problem: ProblemDefinition) -> None:
         self._node = node
         self._problem = problem
+        self.tasks = SolverTasks(node, problem)
         self._loading = True
         try:
             self._numproc.setText(str(node.get_field("num_process", 1)))
@@ -112,10 +98,7 @@ class SolverEditor(QWidget):
         text = self._numproc.text().strip()
         if not text:
             return
-        try:
-            value = int(text)
-        except ValueError:
-            value = text
+        value = parse_field(text, {"type": "int"})
         self._node.set_field("num_process", value)
         self._emit()
 
@@ -140,30 +123,16 @@ class SolverEditor(QWidget):
         self._emit()
 
     # ------------------------------------------------------------- tasks
-    def _n_steps(self) -> int:
-        steps = next((n for n in self._problem.root.iter_nodes() if n.kind == "steps"), None)
-        return int(steps.get_field("num_steps", 1)) if steps is not None else 1
-
-    def _task_list(self) -> list[list[int]]:
-        """task_index_list stored on the solver node, or default per-step."""
-        return self._node.get_field("task_index_list", [])
-
     def _fill_task_table(self) -> None:
-        n = self._n_steps()
-        tl = self._task_list()
-        # build step->group assignment
-        assign: dict[int, int] = {}
-        if tl:
-            for gi, steps in enumerate(tl):
-                for s in steps:
-                    assign[s] = gi
+        assignments = self.tasks.assignments()
+        n = len(assignments)
         self._table.blockSignals(True)
         self._table.setRowCount(n)
         self._table.setColumnCount(2)
         for s in range(n):
             self._table.setItem(s, 0, QTableWidgetItem(
-                T(f"工况 {s}", f"Step {s}")))
-            self._table.setItem(s, 1, QTableWidgetItem(str(assign.get(s, s))))
+                tr('ui.widgets.solver_editor.step_value', value_0=s)))
+            self._table.setItem(s, 1, QTableWidgetItem(str(assignments[s])))
         self._table.blockSignals(False)
 
     def _on_cell(self, r: int, c: int) -> None:
@@ -176,14 +145,14 @@ class SolverEditor(QWidget):
             gi = max(0, int(item.text()))
         except ValueError:
             return
-        n = self._table.rowCount()
-        groups: dict[int, list[int]] = {}
-        for s in range(n):
-            it = self._table.item(s, 1)
-            g = gi if s == r else int(it.text())
-            groups.setdefault(g, []).append(s)
-        tl = [groups[k] for k in sorted(groups)]
-        self._node.set_field("task_index_list", tl)
+        try:
+            assignments = [gi if row == r else int(self._table.item(
+                row,
+                1,
+            ).text()) for row in range(self._table.rowCount())]
+        except ValueError:
+            return
+        self.tasks.assign(assignments)
         self._emit()
 
     # ------------------------------------------------------------- misc

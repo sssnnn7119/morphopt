@@ -1,7 +1,6 @@
 """Design-intent Quickstart dialog; detailed model editing stays in Workbench."""
 from __future__ import annotations
 
-import math
 import numpy as np
 
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal
@@ -14,11 +13,19 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem,
 )
 
-from ..application.quickstart import GOALS, QuickstartObjective, QuickstartOptions, build_quickstart
-from ...optcore.modelparams.partinterface.chamberlayout import ChamberLayer
-from ...optcore.modelparams.partinterface import BoxPartInterface
+from ..application.quickstart import (
+    GOALS,
+    QuickstartOptions,
+    build_quickstart,
+    ObjectiveDraft,
+    available_objectives,
+    select_workspace_channels,
+)
+from ..model.chamberlayout import ChamberLayer
+from ..visualization.geometry import InitialDesignGeometry
 from ..application.definitions import ProblemSession
-from ..i18n import T
+from ..i18n import tr
+from ..presentation.labels import quickstart_summary
 
 
 class ChamberLayersEditor(QWidget):
@@ -30,14 +37,14 @@ class ChamberLayersEditor(QWidget):
         self._loading = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        hint = QLabel(T("沿 Z 轴从底部到末端排列各层；相同压力通道共用压力。", "Layers run from base to tip along Z; equal channel numbers share pressure."))
+        hint = QLabel(tr('ui.widgets.quickstart.layers_run_from_base_to_tip_along_z_equal_channel_numbers_share_pressure'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
-            T("层长 mm", "Length mm"), T("并联气腔数", "Cavities"), T("截面排布", "Arrangement"),
-            T("气腔半径 mm", "Radius mm"), T("中心半径 mm", "Center mm"), T("初始形状", "Shape"),
-            T("相位 °", "Phase °"), T("压力通道", "Channels")])
+            tr('ui.widgets.quickstart.length_mm_30b65866'), tr('ui.widgets.quickstart.cavities'), tr('ui.widgets.quickstart.arrangement'),
+            tr('ui.widgets.quickstart.radius_mm'), tr('ui.widgets.quickstart.center_mm'), tr('ui.widgets.quickstart.shape'),
+            tr('ui.widgets.quickstart.phase'), tr('ui.widgets.quickstart.channels')])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -45,8 +52,8 @@ class ChamberLayersEditor(QWidget):
         self.table.cellChanged.connect(self._cell_changed)
         layout.addWidget(self.table)
         buttons = QHBoxLayout()
-        for label, callback in [(T("增加一层", "Add layer"), self._add), (T("删除层", "Remove layer"), self._remove),
-                                (T("上移", "Move up"), lambda: self._move(-1)), (T("下移", "Move down"), lambda: self._move(1))]:
+        for label, callback in [(tr('ui.widgets.quickstart.add_layer'), self._add), (tr('ui.widgets.quickstart.remove_layer'), self._remove),
+                                (tr('ui.widgets.quickstart.move_up'), lambda: self._move(-1)), (tr('ui.widgets.quickstart.move_down'), lambda: self._move(1))]:
             button = QPushButton(label)
             button.clicked.connect(callback)
             buttons.addWidget(button)
@@ -61,11 +68,14 @@ class ChamberLayersEditor(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
             values = [f"{layer.length:g}", str(layer.chambers), layer.arrangement, f"{layer.radius:g}",
-                      f"{layer.center_radius:g}", layer.shape, f"{layer.phase_degrees:g}", ",".join(map(str, layer.pressure_channels))]
+                      f"{layer.center_radius:g}", layer.shape, f"{layer.phase_degrees:g}", ",".join(map(
+                          str,
+                          layer.pressure_channels,
+                      ))]
             for column, value in enumerate(values):
                 if column in (2, 5):
                     combo = QComboBox()
-                    choices = [("ring", T("周向", "Ring")), ("line", T("并排", "Line"))] if column == 2 else [("cylinder", T("圆柱", "Cylinder")), ("sphere", T("球形", "Sphere"))]
+                    choices = [("ring", tr('ui.widgets.quickstart.ring')), ("line", tr('ui.widgets.quickstart.line'))] if column == 2 else [("cylinder", tr('ui.widgets.quickstart.cylinder')), ("sphere", tr('ui.widgets.quickstart.sphere'))]
                     for key, caption in choices:
                         combo.addItem(caption, key)
                     combo.setCurrentIndex(combo.findData(value))
@@ -85,7 +95,7 @@ class ChamberLayersEditor(QWidget):
                     center_radius=float(value(4)), shape=self.table.cellWidget(row, 5).currentData(),
                     phase_degrees=float(value(6)), pressure_channels=[int(c.strip()) for c in value(7).split(",")]))
         except ValueError as exc:
-            raise ValueError(T("请填写有效的层参数；压力通道用逗号分隔。", "Enter valid layer parameters; separate channel numbers with commas.")) from exc
+            raise ValueError(tr('ui.widgets.quickstart.enter_valid_layer_parameters_separate_channel_numbers_with_commas')) from exc
         return layers
 
     def _cell_changed(self, row, column):
@@ -161,21 +171,17 @@ class WorkspaceChannelSelector(QWidget):
         chosen = [channel for channel in selected if channel in members]
         context_changed = required != self._required or available != self._channels
         if required is not None and context_changed:
-            chosen = chosen[:required]
-            for channel in available:
-                if len(chosen) >= required:
-                    break
-                if channel not in chosen:
-                    chosen.append(channel)
+            chosen = select_workspace_channels(members, chosen, required)
         self._required = required
         self._channels = available
         self._updating = True
         self.list.clear()
         for channel in available:
             cavities = ", ".join(map(str, members[channel]))
-            item = QListWidgetItem(T(
-                f"通道 {channel} · 气腔 {cavities}",
-                f"Channel {channel} · chambers {cavities}",
+            item = QListWidgetItem(tr(
+                'ui.widgets.quickstart.channel_value_chambers_value',
+                value_0=channel,
+                value_1=cavities,
             ))
             item.setData(Qt.ItemDataRole.UserRole, channel)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -184,14 +190,11 @@ class WorkspaceChannelSelector(QWidget):
             )
             self.list.addItem(item)
         if required is None:
-            self.hint.setText(T(
-                "同一压力通道下的气腔联动。",
-                "Chambers on the same pressure channel move together.",
-            ))
+            self.hint.setText(tr('ui.widgets.quickstart.chambers_on_the_same_pressure_channel_move_together'))
         else:
-            self.hint.setText(T(
-                f"选择 {required} 路独立压力；同一通道下的气腔联动。",
-                f"Select {required} independent inputs; chambers on one channel move together.",
+            self.hint.setText(tr(
+                'ui.widgets.quickstart.select_value_independent_inputs_chambers_on_one_channel_move_together',
+                value_0=required,
             ))
         self._updating = False
 
@@ -242,7 +245,11 @@ class ChannelPressureEditor(QWidget):
             spin.valueChanged.connect(self._value_changed)
             self.fields[channel] = spin
             self.form.addRow(
-                QLabel(T(f"通道 {channel} · 气腔 {cavities}", f"Channel {channel} · chambers {cavities}")),
+                QLabel(tr(
+                    'ui.widgets.quickstart.channel_value_chambers_value',
+                    value_0=channel,
+                    value_1=cavities,
+                )),
                 spin,
             )
         self._updating = False
@@ -261,9 +268,7 @@ class ObjectiveListEditor(QWidget):
 
     def __init__(self, objectives, method, channel_members, parent=None):
         super().__init__(parent)
-        self.method = method
-        self.members = {key: list(value) for key, value in channel_members.items()}
-        self.objectives = [self._copy_objective(item) for item in objectives]
+        self.draft = ObjectiveDraft(objectives, method, channel_members)
         self._current_index = -1
         self._updating = False
 
@@ -276,8 +281,8 @@ class ObjectiveListEditor(QWidget):
         self.list.currentRowChanged.connect(self._selection_changed)
         list_row.addWidget(self.list, 1)
         buttons = QVBoxLayout()
-        self.add_button = QPushButton(T("添加目标", "Add objective"))
-        self.remove_button = QPushButton(T("删除目标", "Remove objective"))
+        self.add_button = QPushButton(tr('ui.widgets.quickstart.add_objective'))
+        self.remove_button = QPushButton(tr('ui.widgets.quickstart.remove_objective'))
         self.add_button.clicked.connect(self._add)
         self.remove_button.clicked.connect(self._remove)
         buttons.addWidget(self.add_button)
@@ -307,18 +312,31 @@ class ObjectiveListEditor(QWidget):
         self.workspace_order.setRange(1, 8)
         self.pressures = ChannelPressureEditor()
         self.workspace_inputs = WorkspaceChannelSelector()
-        self.kind_caption = self._add_row("kind", T("目标类型", "Objective type"), self.kind)
-        self.weight_caption = self._add_row("weight", T("权重", "Weight"), self.weight)
-        self.target_caption = self._add_row("target", T("目标值", "Target"), self.target)
-        self.force_caption = self._add_row("force", T("载荷力 · −Z (N)", "Load · −Z (N)"), self.force)
-        self.pressure_caption = self._add_row("pressures", T("压力载荷工况", "Pressure load case"), self.pressures)
-        self.workspace_caption = self._add_row("workspace_channels", T("工作空间驱动", "Workspace drives"), self.workspace_inputs)
-        self.workspace_pressure_caption = self._add_row("workspace_pressure", T("工作空间最大压力 (kPa)", "Workspace max pressure (kPa)"), self.workspace_pressure)
-        self.workspace_order_caption = self._add_row("workspace_order", T("边界高斯点数 / 自由方向", "Boundary Gauss points / free axis"), self.workspace_order)
-        self.workspace_note = QLabel(T(
-            "工作空间不指定单点载荷工况；系统会按所选驱动自动生成边界积分工况。",
-            "Workspace has no manually selected load case; boundary integration cases are generated from the selected drives.",
-        ))
+        self.kind_caption = self._add_row("kind", tr('ui.widgets.quickstart.objective_type'), self.kind)
+        self.weight_caption = self._add_row("weight", tr('ui.widgets.quickstart.weight'), self.weight)
+        self.target_caption = self._add_row("target", tr('ui.widgets.quickstart.target'), self.target)
+        self.force_caption = self._add_row("force", tr('ui.widgets.quickstart.load_z_n'), self.force)
+        self.pressure_caption = self._add_row(
+            "pressures",
+            tr('ui.widgets.quickstart.pressure_load_case'),
+            self.pressures,
+        )
+        self.workspace_caption = self._add_row(
+            "workspace_channels",
+            tr('ui.widgets.quickstart.workspace_drives'),
+            self.workspace_inputs,
+        )
+        self.workspace_pressure_caption = self._add_row(
+            "workspace_pressure",
+            tr('ui.widgets.quickstart.workspace_max_pressure_kpa'),
+            self.workspace_pressure,
+        )
+        self.workspace_order_caption = self._add_row(
+            "workspace_order",
+            tr('ui.widgets.quickstart.boundary_gauss_points_free_axis'),
+            self.workspace_order,
+        )
+        self.workspace_note = QLabel(tr('ui.widgets.quickstart.workspace_has_no_manually_selected_load_case_boundary_integration_cases'))
         self.workspace_note.setWordWrap(True)
         self.form.addRow(self.workspace_note)
 
@@ -331,27 +349,9 @@ class ObjectiveListEditor(QWidget):
         self.pressures.changed.connect(self._details_changed)
         self.workspace_inputs.changed.connect(self._details_changed)
         self._refresh_list()
-        if self.objectives:
+        if self.draft.objectives:
             self.list.setCurrentRow(0)
         self._update_buttons()
-
-    @staticmethod
-    def _copy_objective(objective):
-        if isinstance(objective, dict):
-            objective = QuickstartObjective(**objective)
-        return QuickstartObjective(
-            kind=objective.kind,
-            weight=objective.weight,
-            target=objective.target,
-            pressures_kpa=dict(objective.pressures_kpa),
-            workspace_channels=list(objective.workspace_channels),
-            workspace_pressure_kpa=objective.workspace_pressure_kpa,
-            gauss_order=objective.gauss_order,
-            force_n=objective.force_n,
-        )
-
-    def _allowed(self):
-        return sorted(set(GOALS)-{"stiffness"}) if self.method == "shapeopt" else ["stiffness", "bend"]
 
     def _add_row(self, key, text, widget):
         caption = QLabel(text)
@@ -361,28 +361,28 @@ class ObjectiveListEditor(QWidget):
     def _refresh_list(self):
         self._updating = True
         self.list.clear()
-        for objective in self.objectives:
+        for objective in self.draft.objectives:
             self.list.addItem(self._objective_label(objective))
         self._updating = False
 
     def _objective_label(self, objective):
-        label = T(*GOALS[objective.kind][:2])
-        if self.method == "simp" and objective.kind == "bend":
-            label = T("末端目标挠度", "Target tip deflection")
+        label = tr(GOALS[objective.kind][0])
+        if self.draft.method == "simp" and objective.kind == "bend":
+            label = tr('ui.widgets.quickstart.target_tip_deflection')
         return f"{label} · w={objective.weight:g}"
 
     def _update_list_item(self, row):
-        if 0 <= row < len(self.objectives) and self.list.item(row) is not None:
-            self.list.item(row).setText(self._objective_label(self.objectives[row]))
+        if 0 <= row < len(self.draft.objectives) and self.list.item(row) is not None:
+            self.list.item(row).setText(self._objective_label(self.draft.objectives[row]))
 
     def _update_buttons(self):
-        self.add_button.setEnabled(len(self.objectives) < 8)
-        self.remove_button.setEnabled(len(self.objectives) > 1)
+        self.add_button.setEnabled(len(self.draft.objectives) < 8)
+        self.remove_button.setEnabled(len(self.draft.objectives) > 1)
 
     def _save_current(self):
-        if not 0 <= self._current_index < len(self.objectives):
+        if not 0 <= self._current_index < len(self.draft.objectives):
             return
-        objective = self.objectives[self._current_index]
+        objective = self.draft.objectives[self._current_index]
         objective.kind = self.kind.currentData() or objective.kind
         objective.weight = self.weight.value()
         objective.target = self.target.value()
@@ -395,16 +395,16 @@ class ObjectiveListEditor(QWidget):
     def _load_current(self):
         row = self.list.currentRow()
         self._current_index = row
-        if not 0 <= row < len(self.objectives):
+        if not 0 <= row < len(self.draft.objectives):
             self.detail.hide()
             return
-        objective = self.objectives[row]
+        objective = self.draft.objectives[row]
         self._updating = True
         self.kind.clear()
-        for kind in self._allowed():
-            label = T(*GOALS[kind][:2])
-            if self.method == "simp" and kind == "bend":
-                label = T("末端目标挠度", "Target tip deflection")
+        for kind in available_objectives(self.draft.method):
+            label = tr(GOALS[kind][0])
+            if self.draft.method == "simp" and kind == "bend":
+                label = tr('ui.widgets.quickstart.target_tip_deflection')
             self.kind.addItem(label, kind)
         self.kind.setCurrentIndex(max(0, self.kind.findData(objective.kind)))
         self.weight.setValue(objective.weight)
@@ -412,9 +412,9 @@ class ObjectiveListEditor(QWidget):
         self.force.setValue(objective.force_n)
         self.workspace_pressure.setValue(objective.workspace_pressure_kpa)
         self.workspace_order.setValue(objective.gauss_order)
-        self.pressures.set_channels(self.members, objective.pressures_kpa)
-        dimensions = len(GOALS[objective.kind][2]) if objective.is_workspace else None
-        self.workspace_inputs.set_channels(self.members, dimensions, objective.workspace_channels)
+        self.pressures.set_channels(self.draft.members, objective.pressures_kpa)
+        dimensions = len(GOALS[objective.kind][1]) if objective.is_workspace else None
+        self.workspace_inputs.set_channels(self.draft.members, dimensions, objective.workspace_channels)
         self._updating = False
         self.detail.show()
         self._set_detail_visibility(objective)
@@ -422,10 +422,10 @@ class ObjectiveListEditor(QWidget):
 
     def _set_detail_visibility(self, objective):
         workspace = objective.is_workspace
-        shape = self.method == "shapeopt"
+        shape = self.draft.method == "shapeopt"
         target_visible = not workspace and objective.kind != "stiffness"
         target_unit = "°" if objective.kind == "twist" else "N" if objective.kind == "contact" else "mm"
-        self.target_caption.setText(T(f"目标值 ({target_unit})", f"Target ({target_unit})"))
+        self.target_caption.setText(tr('ui.widgets.quickstart.target_value', value_0=target_unit))
         self.target_caption.setVisible(target_visible)
         self.target.setVisible(target_visible)
         self.force_caption.setVisible(not shape)
@@ -464,45 +464,34 @@ class ObjectiveListEditor(QWidget):
         self.changed.emit()
 
     def _add(self):
-        if len(self.objectives) >= 8:
+        if len(self.draft.objectives) >= 8:
             return
         self._save_current()
-        channels = sorted(self.members)
-        obj = QuickstartObjective(
-            kind="bend" if self.method == "shapeopt" else "stiffness",
-            pressures_kpa={channel: (60. if channel == 1 else 0.) for channel in channels},
-            workspace_channels=channels[:2],
-        )
-        self.objectives.append(obj)
+        self.draft.add()
         self._refresh_list()
-        self.list.setCurrentRow(len(self.objectives)-1)
+        self.list.setCurrentRow(len(self.draft.objectives)-1)
         self._update_buttons()
         self.changed.emit()
 
     def _remove(self):
-        if len(self.objectives) <= 1 or not 0 <= self.list.currentRow() < len(self.objectives):
+        if len(self.draft.objectives) <= 1 or not 0 <= self.list.currentRow() < len(self.draft.objectives):
             return
         index = self.list.currentRow()
         self._save_current()
-        self.objectives.pop(index)
+        self.draft.remove(index)
         self._current_index = -1
         self._refresh_list()
-        self.list.setCurrentRow(min(index, len(self.objectives)-1))
+        self.list.setCurrentRow(min(index, len(self.draft.objectives)-1))
         self._update_buttons()
         self.changed.emit()
 
     def set_method(self, method):
-        if method == self.method:
+        if method == self.draft.method:
             return
         self._save_current()
-        self.method = method
-        fallback = "bend" if method == "shapeopt" else "stiffness"
-        allowed = set(self._allowed())
-        for objective in self.objectives:
-            if objective.kind not in allowed:
-                objective.kind = fallback
+        self.draft.set_method(method)
         self._refresh_list()
-        selected = min(max(self._current_index, 0), len(self.objectives)-1)
+        selected = min(max(self._current_index, 0), len(self.draft.objectives)-1)
         self._updating = True
         self.list.setCurrentRow(selected)
         self._updating = False
@@ -510,51 +499,31 @@ class ObjectiveListEditor(QWidget):
 
     def set_geometry_channels(self, members):
         members = {key: list(value) for key, value in members.items()}
-        if members == self.members:
+        if members == self.draft.members:
             return
         self._save_current()
-        self.members = members
-        available = sorted(members)
-        for objective in self.objectives:
-            objective.pressures_kpa = {
-                channel: objective.pressures_kpa.get(channel, 0.0)
-                for channel in available
-            }
-            if objective.is_workspace:
-                required = len(GOALS[objective.kind][2])
-                selected = [channel for channel in objective.workspace_channels if channel in members][:required]
-                for channel in available:
-                    if len(selected) >= required:
-                        break
-                    if channel not in selected:
-                        selected.append(channel)
-                objective.workspace_channels = selected
+        self.draft.set_channels(members)
         self._load_current()
 
     def values(self):
         self._save_current()
-        return [self._copy_objective(objective) for objective in self.objectives]
+        return self.draft.values()
 
 
 class InitialDesignPreview(QWidget):
     """Orthographic isometric rendering of initial meshes supplied by the kernel."""
-    _horizontal = np.array([1., -1., 0.])/math.sqrt(2)
-    _vertical = np.array([1., 1., -2.])/math.sqrt(6)
-    _depth = np.array([1., 1., 1.])/math.sqrt(3)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(300, 350)
         self.options = QuickstartOptions()
-        self.meshes = {}
+        self.geometry = None
 
     def set_options(self, options):
         self.options = options
         try:
-            self.meshes = options.geometry_layout().get_initial_meshes() if options.method == "shapeopt" else {
-                "body": BoxPartInterface(length=options.length, height=options.height, depth=options.depth).get_initial_mesh()}
+            self.geometry = InitialDesignGeometry(options)
         except ValueError:
-            self.meshes = {}
+            self.geometry = None
         self.update()
 
     def paintEvent(self, event):
@@ -562,63 +531,49 @@ class InitialDesignPreview(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#17212e"))
         painter.setPen(QColor("#b4c5db"))
-        painter.drawText(16, 25, T("初始设计 · 正等轴测投影", "Initial design · isometric projection"))
-        if self.meshes:
-            vertices = np.concatenate([mesh.points for mesh in self.meshes.values()])
-            projected = np.column_stack((vertices@self._horizontal, vertices@self._vertical))
-            lo, hi = projected.min(axis=0), projected.max(axis=0)
-            scale = min((self.width()-80)/max(hi[0]-lo[0], 1.), (self.height()-110)/max(hi[1]-lo[1], 1.))
-            shift = np.array([self.width()/2, self.height()/2])-scale*(lo+hi)/2
-            polygons = []
-            palette = ["#69ddd0", "#f4bb69", "#a6a0ef", "#f596af"]
-            for name, mesh in self.meshes.items():
-                mesh = mesh.triangulate()
-                points = mesh.points
-                for triangle in mesh.faces.reshape(-1, 4)[:, 1:]:
-                    xyz = points[triangle]
-                    normal = np.cross(xyz[1]-xyz[0], xyz[2]-xyz[0])
-                    light = .65+.35*abs(np.dot(normal, np.array([1., -1., 2.])))/(max(np.linalg.norm(normal), 1e-12)*math.sqrt(6))
-                    color = QColor("#417ba4" if name == "body" else palette[int(name.split(":")[0].split("-")[1]) % len(palette)])
-                    color = color.lighter(int(100*light))
-                    color.setAlpha(48 if name == "body" and self.options.method == "shapeopt" else 210)
-                    uv = scale*np.column_stack((xyz@self._horizontal, xyz@self._vertical))+shift
-                    polygons.append((float(xyz.mean(axis=0)@self._depth), uv, color))
+        painter.drawText(16, 25, tr('ui.widgets.quickstart.initial_design_isometric_projection'))
+        if self.geometry is not None:
+            scale, shift = self.geometry.transform(self.width(), self.height())
             painter.setPen(Qt.PenStyle.NoPen)
-            for depth, uv, color in sorted(polygons, key=lambda item: item[0]):
-                painter.setBrush(color)
+            for _depth, points, color, shade, alpha in self.geometry.triangles:
+                brush = QColor(color).lighter(shade)
+                brush.setAlpha(alpha)
+                painter.setBrush(brush)
+                uv = scale * points + shift
                 painter.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in uv]))
             painter.setPen(QPen(QColor("#94acc4"), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            # Silhouette and end rings make the transparent cylindrical envelope legible.
-            if self.options.method == "shapeopt":
-                for sign in (-1., 1.):
-                    xy = sign*self.options.radius*self._horizontal[:2]
-                    xyz = np.array([[xy[0], xy[1], 0.], [xy[0], xy[1], self.options.total_length]])
-                    uv = scale*np.column_stack((xyz@self._horizontal, xyz@self._vertical))+shift
-                    painter.drawLine(QPointF(*map(float, uv[0])), QPointF(*map(float, uv[1])))
-                for z in (0., self.options.total_length):
-                    angles = np.linspace(0., 2*np.pi, 49)
-                    xyz = np.column_stack((self.options.radius*np.cos(angles), self.options.radius*np.sin(angles), np.full_like(angles, z)))
-                    uv = scale*np.column_stack((xyz@self._horizontal, xyz@self._vertical))+shift
-                    painter.drawPolyline(QPolygonF([QPointF(float(x), float(y)) for x, y in uv]))
+            for line in self.geometry.lines:
+                painter.drawPolyline(QPolygonF([QPointF(float(x), float(y)) for x, y in scale * line + shift]))
         origin = QPointF(48, self.height()-58)
         for vector, label, color in [(np.array([1.,0.,0.]), "X", "#f18b85"), (np.array([0.,1.,0.]), "Y", "#79d795"), (np.array([0.,0.,1.]), "Z", "#85bafa")]:
-            delta = QPointF(float(30*vector@self._horizontal), float(30*vector@self._vertical))
+            delta = QPointF(
+                float(30*vector@InitialDesignGeometry.horizontal),
+                float(30*vector@InitialDesignGeometry.vertical),
+            )
             end = origin+delta
             painter.setPen(QPen(QColor(color), 2))
             painter.drawLine(origin, end)
             painter.drawText(end+QPointF(3, -3), label)
         painter.setPen(QColor("#b4c5db"))
-        caption = T(f"长度 {self.options.total_length:g} mm", f"Length {self.options.total_length:g} mm")
+        caption = tr('ui.widgets.quickstart.length_value_mm', value_0=self.options.total_length)
         if self.options.method == "shapeopt":
-            caption += T(f" · {len(self.options.layers)} 层 · {self.options.chambers} 气腔", f" · {len(self.options.layers)} layers · {self.options.chambers} cavities")
-        painter.drawText(QRectF(85, self.height()-42, self.width()-95, 36), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, caption)
+            caption += tr(
+                'ui.widgets.quickstart.value_layers_value_cavities',
+                value_0=len(self.options.layers),
+                value_1=self.options.chambers,
+            )
+        painter.drawText(
+            QRectF(85, self.height()-42, self.width()-95, 36),
+            Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+            caption,
+        )
 
 
 class QuickstartDialog(QDialog):
     def __init__(self, problem=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(T("快速开始 · Quickstart", "Quickstart"))
+        self.setWindowTitle(tr('ui.widgets.quickstart.quickstart'))
         self.resize(1250, 850)
         self.problem = None
         initial = QuickstartOptions.from_problem(problem) if problem else QuickstartOptions()
@@ -629,38 +584,64 @@ class QuickstartDialog(QDialog):
         self.fields = {}
         self._rows = []
         outer = QVBoxLayout(self)
-        title = QLabel(T("从想实现的运动开始", "Start with the motion you want"))
+        title = QLabel(tr('ui.widgets.quickstart.start_with_the_motion_you_want'))
         title.setStyleSheet("font-size:22px; font-weight:600;")
         outer.addWidget(title)
-        description = QLabel(T("描述初始结构和目标，自动生成可继续编辑的优化问题。", "Describe the starting structure and goal to create an editable optimization problem."))
+        description = QLabel(tr('ui.widgets.quickstart.describe_the_starting_structure_and_goal_to_create_an_editable_optimizat'))
         description.setWordWrap(True)
         outer.addWidget(description)
         columns = QHBoxLayout()
         content = QWidget()
         left = QVBoxLayout(content)
         left.setContentsMargins(0, 0, 12, 0)
-        task = self._group(left, T("1 · 选择设计任务", "1 · Choose a design task"))
-        self._combo(task, "method", T("优化方式", "Optimization method"), [("shapeopt", T("形状优化", "Shape optimization")), ("simp", T("拓扑优化", "Topology optimization"))])
-        geometry = self._group(left, T("2 · 定义几何", "2 · Define geometry"))
-        self._double(geometry, "length", T("长度 (mm)", "Length (mm)"), 80., 5., 1000.)
-        self._double(geometry, "radius", T("外半径 (mm)", "Body radius (mm)"), 10., 1., 200., group="shape")
+        task = self._group(left, tr('ui.widgets.quickstart.1_choose_a_design_task'))
+        self._combo(
+            task,
+            "method",
+            tr('ui.widgets.quickstart.optimization_method'),
+            [("shapeopt", tr('ui.widgets.quickstart.shape_optimization')), ("simp", tr('ui.widgets.quickstart.topology_optimization'))],
+        )
+        geometry = self._group(left, tr('ui.widgets.quickstart.2_define_geometry'))
+        self._double(geometry, "length", tr('ui.widgets.quickstart.length_mm'), 80., 5., 1000.)
+        self._double(geometry, "radius", tr('ui.widgets.quickstart.body_radius_mm'), 10., 1., 200., group="shape")
         self.layers_editor = ChamberLayersEditor(initial.layers)
         self.layers_editor.changed.connect(self._refresh)
-        layer_caption = QLabel(T("串联层 / 层内并联气腔", "Serial layers / parallel cavities"))
+        layer_caption = QLabel(tr('ui.widgets.quickstart.serial_layers_parallel_cavities'))
         geometry.addRow(layer_caption)
         geometry.addRow(self.layers_editor)
         self._rows.append(("layers", layer_caption, self.layers_editor, "shape"))
-        self._double(geometry, "wall", T("最小壁厚 (mm)", "Minimum wall (mm)"), 2., .2, 30., group="shape")
-        self._double(geometry, "height", T("设计域高度 (mm)", "Domain height (mm)"), 16., 1., 300., group="topology")
-        self._double(geometry, "depth", T("设计域厚度 (mm)", "Domain depth (mm)"), 8., 1., 100., group="topology")
-        self._double(geometry, "mesh_size", T("网格尺寸 (mm)", "Mesh size (mm)"), 2., .2, 10.)
-        self._check(geometry, "optimize_outer", T("优化内外轮廓（默认开启）", "Optimize inner and outer profiles (on by default)"), group="shape")
+        self._double(geometry, "wall", tr('ui.widgets.quickstart.minimum_wall_mm'), 2., .2, 30., group="shape")
+        self._double(
+            geometry,
+            "height",
+            tr('ui.widgets.quickstart.domain_height_mm'),
+            16.,
+            1.,
+            300.,
+            group="topology",
+        )
+        self._double(
+            geometry,
+            "depth",
+            tr('ui.widgets.quickstart.domain_depth_mm'),
+            8.,
+            1.,
+            100.,
+            group="topology",
+        )
+        self._double(geometry, "mesh_size", tr('ui.widgets.quickstart.mesh_size_mm'), 2., .2, 10.)
+        self._check(
+            geometry,
+            "optimize_outer",
+            tr('ui.widgets.quickstart.optimize_inner_and_outer_profiles_on_by_default'),
+            group="shape",
+        )
 
-        material = self._group(left, T("3 · 材料参数", "3 · Material properties"))
-        self._double(material, "mu", T("剪切模量 μ (MPa)", "Shear modulus μ (MPa)"), .482, .001, 1000.)
-        self._double(material, "kappa", T("体积模量 κ (MPa)", "Bulk modulus κ (MPa)"), 4.8, .001, 10000.)
+        material = self._group(left, tr('ui.widgets.quickstart.3_material_properties'))
+        self._double(material, "mu", tr('ui.widgets.quickstart.shear_modulus_mpa'), .482, .001, 1000.)
+        self._double(material, "kappa", tr('ui.widgets.quickstart.bulk_modulus_mpa'), 4.8, .001, 10000.)
 
-        objective_group = QGroupBox(T("4 · 定义目标函数", "4 · Define objectives"))
+        objective_group = QGroupBox(tr('ui.widgets.quickstart.4_define_objectives'))
         objective_layout = QVBoxLayout(objective_group)
         self.objectives_editor = ObjectiveListEditor(
             initial.objectives, initial.method, initial.channel_members
@@ -669,11 +650,19 @@ class QuickstartDialog(QDialog):
         objective_layout.addWidget(self.objectives_editor)
         left.addWidget(objective_group)
 
-        conditions = self._group(left, T("5 · 求解与输出", "5 · Solve and output"))
-        self._double(conditions, "volume_fraction", T("材料占比", "Material fraction"), .4, .05, .95, group="topology")
-        self._line(conditions, "label", T("任务名称", "Task name"), initial.label)
-        self._line(conditions, "result_folder", T("结果目录", "Result folder"), initial.result_folder)
-        folder = QPushButton(T("选择结果目录…", "Choose output folder…"))
+        conditions = self._group(left, tr('ui.widgets.quickstart.5_solve_and_output'))
+        self._double(
+            conditions,
+            "volume_fraction",
+            tr('ui.widgets.quickstart.material_fraction'),
+            .4,
+            .05,
+            .95,
+            group="topology",
+        )
+        self._line(conditions, "label", tr('ui.widgets.quickstart.task_name'), initial.label)
+        self._line(conditions, "result_folder", tr('ui.widgets.quickstart.result_folder'), initial.result_folder)
+        folder = QPushButton(tr('ui.widgets.quickstart.choose_output_folder'))
         folder.clicked.connect(self._browse_folder)
         conditions.addRow("", folder)
         left.addStretch()
@@ -697,8 +686,11 @@ class QuickstartDialog(QDialog):
         columns.addLayout(right, 2)
         outer.addLayout(columns, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(T("取消", "Cancel"))
-        self.create_button = buttons.addButton(T("生成并编辑", "Create and edit"), QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('ui.widgets.quickstart.cancel'))
+        self.create_button = buttons.addButton(
+            tr('ui.widgets.quickstart.create_and_edit'),
+            QDialogButtonBox.ButtonRole.AcceptRole,
+        )
         self.create_button.setDefault(True)
         self.create_button.setStyleSheet("padding:8px 24px; font-weight:600;")
         buttons.accepted.connect(self._create)
@@ -826,7 +818,7 @@ class QuickstartDialog(QDialog):
         for key, caption, widget, group in self._rows:
             visible = (group is None or group == "shape" and shape or group == "topology" and not shape)
             if key == "length":
-                caption.setText(T("总长度 (mm)", "Total length (mm)") if shape else T("设计域长度 (mm)", "Domain length (mm)"))
+                caption.setText(tr('ui.widgets.quickstart.total_length_mm') if shape else tr('ui.widgets.quickstart.domain_length_mm'))
             caption.setVisible(visible)
             widget.setVisible(visible)
         self.fields["length"].setReadOnly(shape)
@@ -836,34 +828,7 @@ class QuickstartDialog(QDialog):
             self.fields["length"].setValue(o.total_length)
             self.fields["length"].blockSignals(False)
         self.preview.set_options(o)
-        mode = T("形状优化", "Shape optimization") if shape else T("拓扑优化", "Topology optimization")
-        parts = [f"<h3>{mode}</h3>"]
-        if shape:
-            parts += [T(f"几何：{len(o.layers)} 个串联层 · 共 {o.chambers} 个气腔 · 总长 {o.total_length:g} mm", f"Geometry: {len(o.layers)} serial layers · {o.chambers} cavities · total length {o.total_length:g} mm"), T("固定底部，末端自由运动", "Fixed base, freely moving tip")]
-        else:
-            parts += [T(f"几何：{o.length:g} × {o.height:g} × {o.depth:g} mm · 材料占比 {100*o.volume_fraction:g}%", f"Geometry: {o.length:g} × {o.height:g} × {o.depth:g} mm · material fraction {100*o.volume_fraction:g}%"), T("左端固定；目标对应的载荷沿 −Z", "Left end fixed; objective load cases act along −Z")]
-        parts.append(T("目标项与各自工况", "Objective terms and their load cases"))
-        for index, objective in enumerate(o.objectives, 1):
-            label = T(*GOALS[objective.kind][:2])
-            if objective.kind.startswith("workspace_"):
-                load = T(
-                    f"边界积分驱动：通道 {', '.join(map(str, objective.workspace_channels))}；最大压力 {objective.workspace_pressure_kpa:g} kPa；每方向 {objective.gauss_order} 点",
-                    f"Boundary drives: channels {', '.join(map(str, objective.workspace_channels))}; max pressure {objective.workspace_pressure_kpa:g} kPa; {objective.gauss_order} points per free axis; cases generated by integration",
-                )
-            elif shape:
-                pressures = ", ".join(f"{channel}:{objective.pressures_kpa.get(channel, 0.):g}" for channel in o.channel_ids)
-                target_zh = "" if objective.kind == "stiffness" else f" · 目标 {objective.target:g}"
-                target_en = "" if objective.kind == "stiffness" else f" · target {objective.target:g}"
-                load = T(f"压力工况 (kPa)：{pressures}{target_zh}", f"Pressure case (kPa): {pressures}{target_en}")
-                if objective.kind == "contact":
-                    load += T(" · 固定圆柱接触", " · fixed-cylinder contact")
-            else:
-                target_zh = "" if objective.kind == "stiffness" else f" · 目标挠度 {objective.target:g} mm"
-                target_en = "" if objective.kind == "stiffness" else f" · target deflection {objective.target:g} mm"
-                load = T(f"末端 −Z 载荷 {objective.force_n:g} N{target_zh}", f"Tip load −Z {objective.force_n:g} N{target_en}")
-            parts.append(T(f"{index}. {label} · 权重 {objective.weight:g} · {load}", f"{index}. {label} · weight {objective.weight:g} · {load}"))
-        parts.append(T("生成后可直接预览、保存或进入优化器，也可展开模型继续细调。", "Preview, save or run the generated model, or expand its tree for further editing."))
-        self.summary.setText("<br><br>".join(parts))
+        self.summary.setText(quickstart_summary(o))
         try:
             o.validate()
         except ValueError as exc:
@@ -874,7 +839,11 @@ class QuickstartDialog(QDialog):
             self.create_button.setEnabled(True)
 
     def _browse_folder(self):
-        directory = QFileDialog.getExistingDirectory(self, T("结果目录", "Output folder"), self.fields["result_folder"].text())
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            tr('ui.widgets.quickstart.output_folder'),
+            self.fields["result_folder"].text(),
+        )
         if directory:
             self.fields["result_folder"].setText(directory)
 

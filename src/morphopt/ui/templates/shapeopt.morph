@@ -183,7 +183,7 @@
                 {"type": "Distance", "params": {"min_distance": [[2.5, 2.5], [2.5, 2.5]]}},
                 {"type": "Cylinder", "params": {"radius": 10.0, "height": 80.0, "bottom": 0.0}}
               ],
-              "equality_constraints": []
+              "symmetry_constraints": []
             }
           ],
           "materials": []

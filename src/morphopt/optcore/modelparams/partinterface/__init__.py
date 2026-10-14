@@ -1,9 +1,9 @@
 """Part interfaces: one ``torchfea.Part`` plus its Instances per interface."""
 
 from .basepartinterface import BasePartInterface
-from .chamberlayout import ChamberLayer, LayeredChambers
+from .cadpartinterface import CADPartInterface
 from .inppartinterface import INPPartInterface
-from .primitivepartinterface import BoxPartInterface, CylinderPartInterface
+from .primitivepartinterface import BoxPartInterface
 from .torchfeapartinterface import (
     TorchFEAPartInterface,
     load_model_assembly,
@@ -12,10 +12,8 @@ from .torchfeapartinterface import (
 
 __all__ = [
     "BasePartInterface",
-    "ChamberLayer",
-    "LayeredChambers",
+    "CADPartInterface",
     "BoxPartInterface",
-    "CylinderPartInterface",
     "INPPartInterface",
     "TorchFEAPartInterface",
     "load_model_assembly",

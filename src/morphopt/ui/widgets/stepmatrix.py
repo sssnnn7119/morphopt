@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+)
 
-from ..model.problem import InterfaceNode, Node
-from ..model.schemas import INTERFACE_TYPES
-from ..i18n import T
+from ..model.problem import StepsNode, ProblemDefinition
+from ..application.editing import LoadCaseSession
+from ..i18n import tr
 
 
 class StepMatrix(QWidget):
@@ -19,24 +28,22 @@ class StepMatrix(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel(T("载荷工况：", "Load steps:")))
+        bar.addWidget(QLabel(tr('ui.widgets.stepmatrix.load_steps')))
         self._nspin = QSpinBox()
         self._nspin.setRange(1, 200)
         self._nspin.valueChanged.connect(self._on_n_steps)
         bar.addWidget(self._nspin)
-        for zh, en, fn in [
-                ("添加工况", "Add step", self._add_step),
-                ("复制选中行", "Copy selected row", self._copy_selected_row),
-                ("删除选中行", "Delete selected row", self._remove_selected_row)]:
-            b = QPushButton(T(zh, en))
+        for key, fn in [
+                ("ui.widgets.stepmatrix.add_step", self._add_step),
+                ("ui.widgets.stepmatrix.copy_selected_row", self._copy_selected_row),
+                ("ui.widgets.stepmatrix.delete_selected_row", self._remove_selected_row)]:
+            b = QPushButton(tr(key))
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch(1)
         lay.addLayout(bar)
 
-        hint = QLabel(T(
-            "幅值载荷接口（行=工况）。空格沿用上一工况/置零。",
-            "Amplitude interfaces (rows = steps). Empty cells keep the previous value / zero."))
+        hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_interfaces_rows_steps_empty_cells_keep_the_previous_value_zero'))
         hint.setStyleSheet("color:#7f8c8d; font-size:11px;")
         lay.addWidget(hint)
 
@@ -47,53 +54,32 @@ class StepMatrix(QWidget):
         self._table.cellChanged.connect(self._on_cell_changed)
         lay.addWidget(self._table, 1)
 
-        self._node: Node | None = None
+        self._node: StepsNode | None = None
         self._problem = None
         self._loading = False
+        self._structure = None
 
     # ------------------------------------------------------------------ api
-    def edit_node(self, node: Node, problem=None) -> None:
+    def edit_node(self, node: StepsNode, problem: ProblemDefinition) -> None:
         self._node = node
         self._problem = problem
+        self.session = LoadCaseSession(node, problem)
         self._nspin.blockSignals(True)
         self._nspin.setValue(int(node.num_steps))
         self._nspin.blockSignals(False)
         self._rebuild()
 
     # ------------------------------------------------------------- helpers
-    def _amplitude_interfaces(self):
-        if self._problem is None:
-            return []
-        return [
-            (interface, INTERFACE_TYPES[interface.interface_type]["num_values"])
-            for interface in self._problem.amplitude_interfaces()
-        ]
-
-    def _step_values(self) -> list[dict]:
-        return list(self._node.step_values)
-
-    def _value(self, step: int, interface: InterfaceNode, comp: int):
-        d = self._step_values()
-        if step < len(d):
-            amps = d[step].get(interface)
-            if amps is not None and comp < len(amps):
-                return amps[comp]
-        return 0.0
-
     def _rebuild(self) -> None:
         if self._node is None:
             return
-        self._loading = True
-        amps = self._amplitude_interfaces()
-        # each column = (interface object, component index, header)
-        cols: list[tuple[InterfaceNode, int, str]] = []
-        for interface, nv in amps:
-            if nv == 1:
-                cols.append((interface, 0, interface.name))
-            else:
-                for c in range(nv):
-                    cols.append((interface, c, f"{interface.name}.{c}"))
+        cols = self.session.columns()
         n = int(self._node.num_steps)
+        signature = (id(self._node), n, tuple((id(interface), component, caption) for interface, component, caption in cols))
+        if signature == self._structure:
+            return
+        self._structure = signature
+        self._loading = True
         self._table.blockSignals(True)
         self._table.clear()
         self._table.setColumnCount(len(cols))
@@ -101,7 +87,7 @@ class StepMatrix(QWidget):
         self._table.setRowCount(n)
         for s in range(n):
             for ci, (interface, comp, _h) in enumerate(cols):
-                value = self._value(s, interface, comp)
+                value = self.session.value(s, interface, comp)
                 item = QTableWidgetItem(value if isinstance(value, str) else f"{value:.6g}")
                 self._table.setItem(s, ci, item)
         self._table.blockSignals(False)
@@ -111,13 +97,7 @@ class StepMatrix(QWidget):
     def _on_n_steps(self, n: int) -> None:
         if self._node is None:
             return
-        old = list(self._node.step_values)
-        if n < len(old):
-            old = old[:n]
-        while len(old) < n:
-            old.append({})   # empty dict -> interface amplitude zero/unset
-        self._node.num_steps = n
-        self._node.step_values = old
+        self.session.resize(n)
         self._rebuild()
         self.changed.emit(self._node)
 
@@ -138,15 +118,7 @@ class StepMatrix(QWidget):
             r = n - 1  # nothing selected -> treat the last row as the source
         if r < 0 or r >= n or n >= self._nspin.maximum():
             return
-        vals = list(self._node.step_values)
-        while len(vals) < n:
-            vals.append({})
-        src = dict(vals[r] or {})
-        new_row = {k: list(v) for k, v in src.items()}
-        newvals = list(vals)
-        newvals.insert(r + 1, new_row)
-        self._node.step_values = newvals
-        self._node.num_steps = n + 1
+        self.session.copy(r)
         self._nspin.blockSignals(True)
         self._nspin.setValue(n + 1)
         self._nspin.blockSignals(False)
@@ -165,12 +137,7 @@ class StepMatrix(QWidget):
             r = n - 1
         if r < 0 or r >= n or n <= 1:
             return
-        vals = list(self._node.step_values)
-        while len(vals) < n:
-            vals.append({})
-        del vals[r]
-        self._node.step_values = vals
-        self._node.num_steps = n - 1
+        self.session.remove(r)
         self._nspin.blockSignals(True)
         self._nspin.setValue(n - 1)
         self._nspin.blockSignals(False)
@@ -188,39 +155,5 @@ class StepMatrix(QWidget):
         item = self._table.item(r, c)
         if item is None:
             return
-        try:
-            value = float(item.text())
-        except ValueError:
-            text = item.text().strip()
-            if self._problem is None or text not in {
-                node.name for node in self._problem.helper_variables
-            }:
-                return
-            value = text
-        amps = self._amplitude_interfaces()
-        interface = None
-        comp = 0
-        idx = 0
-        for candidate, nv in amps:
-            if idx + nv > c:
-                interface = candidate
-                comp = c - idx
-                break
-            idx += nv
-        if interface is None:
-            return
-        vals = list(self._node.step_values)
-        while len(vals) <= r:
-            vals.append({})
-        row = dict(vals[r])
-        nvals = INTERFACE_TYPES.get(interface.interface_type, {}).get(
-            "num_values", 1
-        )
-        cur = list(row.get(interface, [0.0] * nvals))
-        while len(cur) <= comp:
-            cur.append(0.0)
-        cur[comp] = value
-        row[interface] = cur
-        vals[r] = row
-        self._node.step_values = vals
-        self.changed.emit(self._node)
+        if self.session.set_value(r, c, item.text()):
+            self.changed.emit(self._node)

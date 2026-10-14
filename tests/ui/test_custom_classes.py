@@ -484,17 +484,17 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     window.tree.setCurrentItem(helper_item)
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.helper_page
-    variable = window.tree.add_helper("helper_variable")
+    variable = window.actions.add_helper("helper_variable")
     assert window.tree._item_node[window.tree.currentItem()] is variable
-    window.helper_name.setText("target_force")
-    window.helper_value.setText("3.0")
-    window._save_helper_fields()
+    window.helper_page.name.setText("target_force")
+    window.helper_page.value.setText("3.0")
+    window.helper_page._save()
     assert variable.name == "target_force"
     assert variable.value == "3.0"
-    function = window.tree.add_helper("helper_function")
-    window.helper_name.setText("target")
-    window.helper_editor.set_body("return target_force")
-    window._save_helper_fields()
+    function = window.actions.add_helper("helper_function")
+    window.helper_page.name.setText("target")
+    window.helper_page.code.set_body("return target_force")
+    window.helper_page._save()
     assert function.name == "target"
     assert function.body == "return target_force"
     window._on_any_change()
@@ -503,7 +503,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     window.refresh_code()
     assert "def target():" in window.code_view.toPlainText()
     window.apply_language()
-    assert window.helper_editor.body() == function.body
+    assert window.helper_page.code.body() == function.body
     assert window._stack.currentWidget() is window.helper_page
 
     window._center.setCurrentWidget(window.code_view)
@@ -520,12 +520,12 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     loaded_function = window.problem.helper_functions[0]
     window.tree.setCurrentItem(window.tree._node_item[loaded_function])
     assert window._stack.currentWidget() is window.helper_page
-    window.helper_parameters.setText("(")
-    window._save_helper_fields()
-    assert window.helper_error.text()
+    window.helper_page.parameters.setText("(")
+    window.helper_page._save()
+    assert window.helper_page.error.text()
     window.refresh_code()
     assert "code generation failed" in window.code_view.toPlainText()
-    window.tree.remove_helper(loaded_function)
+    window.actions.remove_helper(loaded_function)
     assert not window.problem.helper_functions
     window.close()
     app.processEvents()
@@ -589,7 +589,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     custom_pressure = problem.interfaces()[-1]
     assert len(problem.interfaces()) == previous + 1
     assert custom_pressure.custom_class == "MyPressure"
-    tree._add_interface("Pressure")
+    tree.actions.add_interface("Pressure")
     default_pressure = problem.interfaces()[-1]
     assert not default_pressure.custom_class
     trigger_custom(problem.materials, "MyMaterial")
@@ -754,7 +754,7 @@ def test_custom_parts_are_added_only_through_defined_classes():
         if action.text() == "CustomPart [BasePartInterface]"
     )
     previous = len(problem.part_interfaces())
-    tree._add_part_interface("BasePartInterface")
+    tree.actions.add_part_interface("BasePartInterface")
     assert len(problem.part_interfaces()) == previous
     action.trigger()
     added = problem.part_interfaces()[-1]

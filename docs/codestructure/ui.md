@@ -6,51 +6,75 @@
 ## 1. 总体分层
 
 ```text
-MainWindow / Workbench / ObserverControls       组合视图
-                    ↓
-ui.application                                  应用服务
-                    ↓
-model / codegen / launcher / schemes            领域与基础设施
-                    ↓
-MorphOpt / TorchFEA core                        数值内核
+MainWindow / Workbench / ObserverControls          页面组合
+        ↓                     ↓
+widgets / presentation      application             展示 / 用例
+        ↓                     ↓
+visualization              model / codegen / schemes 场景准备 / 领域与文件
+        ↓                     ↓
+MorphOpt / TorchFEA core                             数值内核
 ```
 
-目录职责固定如下：
+目录职责：
 
 ```text
 ui/
-├── app.py                    QApplication、主题和进程环境
-├── mainwindow.py             页面组合、导航、文件对话框和用户确认
-├── workbench.py              定义页组合视图
-├── observe_panel.py          运行与结果观察组合视图
-├── application/
-│   ├── quickstart.py         设计意图 → 类型化问题树
-│   ├── definitions.py        定义同步、校验、模板和文件用例
-│   ├── editor_routing.py     Node → editor 的纯路由
-│   ├── results.py            结果目录、History、Params 的只读会话
-│   └── runs.py               优化进程和新结果目录发现
+├── app.py / mainwindow.py / workbench.py / observe_panel.py
 ├── model/
-│   ├── problem.py            类型化任务树与跨节点不变量
-│   ├── schemas.py            字段、后端类型和 updater 项目录
-│   ├── loaders.py            `.morph` JSON 边界
-│   └── modelinfo.py          TorchFEA 模型摘要
-├── codegen/generator.py      ProblemDefinition → 可运行 Python
-├── schemes/
-│   ├── base.py               文件模板发现、模板元数据和共享工厂
-│   └── snippets.py           目标函数可插入代码片段
-├── templates/*.morph         可发现的问题模板
-├── widgets/                  Qt 编辑器和可视化组件
-└── launcher.py               无 Qt 的 subprocess 基础设施
+│   ├── nodes.py             节点字段、序列化和节点内部行为
+│   ├── problem.py           问题聚合：跨节点关联、增删排序、不变量
+│   ├── schemas.py           字段、后端类型和 updater 目录（保存文本 key）
+│   ├── loaders.py           .morph JSON 边界
+│   └── modelinfo.py          导入存档摘要
+├── application/
+│   ├── definitions.py       ProblemSession、模板和文件用例
+│   ├── editing.py           节点/工况/任务分组、辅助代码、自定义类的编辑用例
+│   ├── fields.py            字段、动态选项、目标代码片段的模型参数校验
+│   ├── part_sets.py         各类 Part 的集合查询注册表
+│   ├── cad.py               UI CAD 节点 → torchfea.cad 操作
+│   ├── expressions.py       辅助代码与表达式求值上下文
+│   ├── updaters.py           优化器分节投影、统一有序项、对称约束和距离矩阵规则
+│   ├── editor_routing.py     Node → EditorRoute
+│   ├── imported_models.py   导入文件扫描、模型摘要和外部建模器启动
+│   ├── completion.py        代码补全候选
+│   ├── values.py / devices.py 数值文本解析、设备发现
+│   └── quickstart.py / results.py / runs.py
+├── presentation/
+│   ├── navigation.py        任务树投影、临时导航节点、稳定选择标识
+│   ├── labels.py            树与编辑卡片共用的标题
+│   └── history.py           History → 表格数据
+├── visualization/
+│   ├── scene.py             场景、标签、载荷图元的数据结构
+│   ├── geometry.py          Part / Surface visitor、预览资源缓存
+│   └── loads.py             工况与边界条件 → 载荷场景
+├── widgets/
+│   ├── definition_actions.py 树菜单和编辑页共用的 Qt 操作入口
+│   ├── editor_pages.py      页面加入编辑栈、绑定路由、连接 changed 信号
+│   ├── preview_renderer.py  场景数据 → PyVista actor；管理 actor 生命周期
+│   ├── viewer.py            Part / Assembly / 工况选择与视口组合
+│   ├── model_tree.py        导航投影 → QTreeWidget；菜单与选择信号
+│   ├── language_selector.py 语言选择与 Qt 设置持久化
+│   ├── param_form.py        节点与参数字典共用的 schema 表单
+│   ├── editor.py            节点编辑页的标题、动作和代码槽
+│   ├── codeeditor.py        代码控件与独立的 HelperCodeEditor
+│   └── ...                  专用编辑器、结果页、对话框
+├── i18n.py / locales/*.json  无 Qt 的本地化服务与语言资源
+├── codegen/ / schemes/ / templates/
+└── launcher.py              无 Qt 的 subprocess 基础设施
 ```
 
-依赖只能向下：
+依赖规则：
 
-- `model/` 不得 import Qt、widget、Workbench 或 Observer。
-- `application/` 不得创建 Qt widget、对话框或翻译文案。
-- `widgets/` 可以读取 model，并通过信号表达用户操作；不得启动进程、解析结果目录或
-  生成运行脚本。
-- `launcher.py` 不得持有界面状态；视图只能通过 `OptimizationRunSession` 使用它。
-- `mainwindow.py` 是组合根，不实现字段规则、代码生成规则或结果解析。
+- `model`、`application`、`presentation`、`visualization`、`codegen`、`schemes` 不导入
+  Qt、widget、Workbench 或 Observer。
+- `application` 处理用例、数值输入和模型查询；对话框及翻译后的用户提示归展示层。
+- `presentation` 可查询本地化资源，生成标题、导航和表格数据，不创建控件。
+- `visualization` 可使用 PyVista 数据集，不持有 plotter、Qt 控件或 VTK actor。
+- `widgets` 将数据渲染成控件；结构操作共用 `DefinitionActions`，不调用其他 widget
+  的私有方法来修改模型。文件扫描和进程启动交给应用服务。
+- `i18n.py` 仅查询语言资源、格式化参数和通知订阅者；Qt 的设置和语言选择器在
+  `widgets/language_selector.py`。
+- 顶层窗口只编排页面、对话框和信号，不实现字段规则、代码生成或结果解析。
 
 ## 2. 状态所有权
 
@@ -60,8 +84,11 @@ ui/
 |---|---|---|
 | 可保存的问题定义 | `ProblemDefinition` | `.morph` 的完整业务状态 |
 | 定义工作流 | `ProblemSession` | 同步、校验、代码生成和跨对象编辑用例 |
-| 当前结果 | `ResultSession` | controller、params、history、iteration |
-| 优化进程 | `OptimizationRunSession` | subprocess、运行模式、结果目录发现 |
+| 当前结果 | `ResultSession` | controller、params、history、iteration、参数载入缓存与变形网格读取 |
+| 优化运行 | `OptimizationRunSession` | 当前定义与任务来源、subprocess、进度、输出与结果目录发现 |
+| 导航树与结果表格投影 | `presentation` | 根据当前定义或结果生成，不改模型 |
+| 预览几何及查询缓存 | `PreviewGeometry` | 每次构建清除局部资源，导入存档按路径/时间/位姿缓存 |
+| VTK actor | `PreviewRenderer` | 统一创建、移除；几何与载荷分别管理 |
 | 当前页/节点/相机 | Qt view/widget | 仅短生命周期展示状态 |
 
 禁止在两个 QWidget 中各存一份同一业务值。Widget 缓存只允许用于选中项、相机、
@@ -70,12 +97,16 @@ ui/
 ## 3. 统一变更流
 
 ```text
-用户编辑
-  → editor 调用类型化 Node 或 ProblemDefinition 聚合操作
+用户结构操作（树右键 / 编辑页按钮）
+  → 共用 DefinitionActions（对话框、选中项）
+  → DefinitionCommands（创建默认值）/ ProblemDefinition（跨节点规则）
+用户字段编辑
+  → editor 修改类型化 Node
   → 发出一次 changed
   → Workbench 合并短时间内的变化
   → ProblemSession.synchronize()
-  → tree / active editor / generated source / preview 仅刷新一次
+  → tree / active editor / generated source / preview 刷新
+  → 本轮 source(synchronize=False)，避免重复同步
 ```
 
 规则：
@@ -127,12 +158,15 @@ ProblemNode
 启动时直接显示空白定义工作台；标准栏目存在，但不预填具体设计。用户可手动定义，或使用 Quickstart。
 `application/quickstart.py` 的类型化配置负责参数校验、
 独立的几何定义、多目标加权函数、目标对应的载荷工况和更新器生成，`widgets/quickstart.py` 只收集输入及展示
-摘要与示意。配置保存为辅助变量 `quickstart_settings`，生成物是普通 `ProblemDefinition`，
+摘要与示意。`ObjectiveDraft` 统一处理方法切换、目标列表与压力通道调整；初始示意的
+三角形、光照和投影准备由 `InitialDesignGeometry` 处理，`paintEvent()` 只绘制准备好的数据。
+配置保存为辅助变量 `quickstart_settings`，生成物是普通 `ProblemDefinition`，
 不建立另一个模型格式。Quickstart 按参数组合创建节点，不克隆模板。
 几何工厂、网格构建及其参数化变换归内核；UI 不生成重写几何工厂的类，
-也不生成设计块或接触物体的建网格脚本。设计块和圆柱 Part 使用 optcore 的具体接口。
+也不生成设计块或接触物体的建网格脚本。结构化设计块使用 `BoxPartInterface`；
+其他 CAD 几何由 `CADPartInterface` 交给 `torchfea.cad` 建模和网格化。
 
-分层参数使用内核 `ChamberLayer` / `LayeredChambers`；UI 表格负责编辑，布局与几何检查归内核。
+`ui/model/chamberlayout.py` 中的 `ChamberLayer` / `LayeredChambers` 只负责 Quickstart 的分层气腔配置、排布校验和初始预览；生成的形状优化定义仍使用内核现有的曲面与 Part 接口。
 工作空间驱动边界的高斯点、权重、切向和取向由 `optcore/quadrature.py` 生成；应用服务将
 边界点映射为载荷工况；用户选择的压力通道映射到驱动积分坐标，同通道气腔联动，未选通道固定零压。目标按所选通道汇总 Jacobian 列，并通过散度定理计算边界积分。
 普通目标不使用高斯点密度。
@@ -156,12 +190,61 @@ ProblemNode
 ## 6. 编辑器规范
 
 - Node 与中央编辑页的关系只在 `application/editor_routing.py::route_editor()` 定义。
-- 参数表单字段只读 `model/schemas.py`，不在 widget 保存第二份字段目录。
+- 参数表单字段由 `application/fields.py` 根据 schema 与模型查询决定；控件只负责渲染。
+- 动态集合按所属 Part 经 `PartSetCatalog` 查询，不能用“问题是否包含导入模型”决定所有 Part 的选项。
+- 页面加入编辑栈、路由绑定和变更信号连接统一注册在 `EditorPages`；不用维护第二份页面清单。
+- `ParamForm` 是唯一 schema 字段渲染器。参数字典直接绑定字典；类型化节点通过 read/write
+  回调绑定。禁止将节点字段复制到临时字典，再同步两份值。
+- 数字、向量、矩阵和辅助变量表达式统一由 `application/values.py` 解析。
+- `HelperCodeEditor` 负责辅助代码页面；辅助定义的保存和语法校验由 `HelperCodeSession` 处理。
+- 自定义类名称校验、改名/删除后的全局引用更新由 `CustomClassSession` 处理，树与编辑器复用。
+- 载荷工况的矩阵数据操作由 `LoadCaseSession` 处理；求解任务的行/分组转换由 `SolverTasks` 处理。
+- 目标、罚函数、对称约束共用 `UpdaterItems` 和 `UpdaterItemList`；不得各写一套增删卡片。
+- 普通字段变更保留表单；只有 schema、目标或列表结构变化才重建。动态下拉选项单独刷新。
+- `DefinitionNavigation` 生成任务树投影；临时导航节点不加入可保存的问题树。
 - 所有可编辑 widget 统一发出 `changed`；结构树统一发出 `treeChanged`。
 - 编辑器收到 `ProblemDefinition` 是为了动态选项和上下文，不拥有它。
-- 标题和提示使用 `T(zh, en)`；业务名称、Part 名和接口名不翻译。
+- 标题和提示保存稳定 key，经 `tr(key, **values)` 查询 JSON 资源；业务名称不翻译。
+- 缺失翻译按默认语言回退；本地化管理器不依赖 Qt 或 QSettings。
 - 语言切换原地刷新文本，不重建 PyVista/OpenGL viewport。
 - 一个专用 editor 只在通用 schema 表单无法清楚表达交互时新增。
+
+### 可视化的扩展协议
+
+```text
+ProblemDefinition → PreviewGeometry + PartPreviewVisitor → PreviewScene
+工况与边界条件    → LoadPreviewVisitor                  → LoadScene
+PreviewScene / LoadScene → PreviewRenderer              → PyVista actors
+```
+
+每类 Part 的 adapter 提供 `preview()`、`surface()` 和可选的 `model_part()`：分别负责
+初始形状、载荷/边界面的几何、节点集合查询所需的模型。Boundary、Box、CAD、INP、
+TorchFEA 导入模型分别实现；`PreviewViewer` 不按 Part 类型写分支。
+CAD adapter 只保留三角面实际引用的顶点，按 OCC 顺序显示 `face_0` 起的面号与轮廓边。
+Part 视图使用局部坐标；Assembly 视图对每个 Instance 应用位姿后显示工况载荷。
+
+增加 Part 预览时继承 `PartPreviewAdapter` 并注册；增加集合查询时注册 `PartSetCatalog`
+的 provider（工作台的 `part_sets` 共享注册表在数据变更时失效缓存）。增加载荷时调用 `LoadPreviewVisitor.register()`，返回已有载荷图元；若需要
+新图元，则在 `PreviewRenderer.draw` 的 `singledispatchmethod` 注册处理器。
+
+```python
+from morphopt.ui.visualization import PreviewGeometry, PartPreviewAdapter, apply_instance_pose
+
+class MyPartPreview(PartPreviewAdapter):
+    def preview(self, context, part, instance):
+        mesh = ...  # 从模型或内核获取初始几何
+        if instance is not None:
+            mesh = apply_instance_pose(mesh, instance, context.values)
+        name = instance.name if instance is not None else part.name
+        context.scene.add_base(name, mesh, color="#667fa8")
+
+geometry = PreviewGeometry()
+geometry.parts.register("MyPartInterface", MyPartPreview())
+# 将 geometry 注入 PreviewViewer(geometry=geometry)
+```
+
+先调用 `PreviewGeometry.build()` 绑定问题和资源，然后查询集合或构建载荷场景。
+单个 Part 预览错误显示在场景中，不阻止其他 Part 的显示；它不会修改优化模型或生成兜底几何。
 
 ## 7. 定义、代码生成与文件边界
 
@@ -180,8 +263,13 @@ ProblemNode
 - `RunSource`/`RunSourceKind` 表达下一次运行来源，禁止使用包含魔法键的 dict。
 - `ResultSession` 一次绑定一个结果目录；controller/params 每个目录初始化一次，
   History 按滑块选择的 iteration 加载。
-- `ObserverControls` 只处理按钮、对话框、轮询定时器和状态文字。
-- `ObserverPanel` 只将 ResultSession 的对象交给 observation page 渲染。
+- `ObserverControls` 只处理按钮、对话框、定时器和状态文字。任务来源、一次性启动消费、
+  标准输出线程、终端日志过滤、伴随定义保存和轮询状态都由 `OptimizationRunSession` 负责。
+- `RunProgress` 是一次轮询快照，页面消费快照，不自行比较结果路径或保存另一份运行状态。
+- 工况编号与列表行号分开保存；工况 0、3、7 可以显示在连续的三个列表行中。
+- `ObserverPanel` 和结果页共用一个 `ResultSession`。参数按迭代载入一次，变形文件路径和
+  网格读取不出现在 widget 内；结果页只渲染已准备的对象。
+- 参数载入发生在清空视口之前；载入失败时保留现有图像。
 - 可更新结构展示由可更新 interface 自身的加载/绘图协议提供，不根据 shape/SIMP
   模板写分支；显示名采用 `Part: name`、`Material: name`。
 - 进程 stdout 在线程中读取，通过 Qt signal 回到 UI 线程；不得在 UI 线程阻塞读取。
@@ -206,8 +294,10 @@ ProblemNode
 4. 新文件/模板动作：`ProblemLibrary`。
 5. 新结果文件：`ResultSession`。
 6. 新进程模式：`OptimizationRunSession`。
-7. 新编辑页面：widget + `route_editor()` 一处注册。
-8. 新模板：一个 `.morph`，不是一套新 UI 分支。
+7. 新编辑页面：widget + `route_editor()` + `EditorPages` 的页面绑定。
+8. 新 Part/载荷预览：visitor 注册，render widget 不增加类型分支。
+9. 新结构动作：领域操作/应用策略 + `DefinitionActions`，树和编辑页复用。
+10. 新模板：一个 `.morph`。
 
 ## 11. 提交前检查
 

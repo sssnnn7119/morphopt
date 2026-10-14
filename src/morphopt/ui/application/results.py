@@ -82,6 +82,7 @@ class ResultSession:
         self.params = None
         self.history = None
         self.iteration = 0
+        self._parameters_iteration: int | None = None
 
     def bind(self, folder: str) -> bool:
         folder = str(Path(folder).resolve())
@@ -116,6 +117,23 @@ class ResultSession:
         self.history = history
         return history
 
+    def load_parameters(self, iteration: int):
+        if self.params is not None and self._parameters_iteration != iteration:
+            with _cpu_torch_defaults():
+                self.params.load(foldpath=str(Path(self.folder) / "log"), iteration=iteration)
+            self._parameters_iteration = iteration
+        return self.params
+
+    def interfaces(self) -> tuple[tuple[str, object], ...]:
+        return visualizable_interfaces(self.params)
+
+    def deformation_mesh(self, case: int, iteration: int):
+        import pyvista as pv
+        if self.folder is None:
+            return None
+        path = Path(self.folder) / "log" / "deformation" / f"task_{case}_iter_{iteration}.stl"
+        return pv.read(path) if path.is_file() else None
+
     def deformation_cases(self) -> tuple[int, ...]:
         if not self.folder:
             return ()
@@ -126,3 +144,16 @@ class ResultSession:
             if match:
                 found.add(int(match.group(1)))
         return tuple(sorted(found))
+
+
+def visualizable_interfaces(parameters) -> tuple[tuple[str, object], ...]:
+    """Discover result structures by protocol, independently of a Qt selector."""
+    from ...optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
+    if parameters is None:
+        return ()
+    return tuple(
+        (category, interface)
+        for category, collection in (("Part", parameters.geometry), ("FEA", parameters.feamodel), ("Material", parameters.materials))
+        for interface in collection.interfaces.values()
+        if isinstance(interface, ProtocalUpdatable) and isinstance(interface, ProtocalVisualizable)
+    )

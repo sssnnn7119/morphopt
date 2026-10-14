@@ -72,8 +72,8 @@ from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
     BasePartInterface,
+    CADPartInterface,
     BoxPartInterface,
-    CylinderPartInterface,
     FEAParams,
     GeometryParams,
     INPPartInterface,

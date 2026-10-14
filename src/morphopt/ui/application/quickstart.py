@@ -7,25 +7,26 @@ import math
 from textwrap import dedent
 
 from ...optcore.quadrature import actuation_boundary_gauss_points
-from ...optcore.modelparams.partinterface.chamberlayout import ChamberLayer, LayeredChambers
+from ..model.chamberlayout import ChamberLayer, LayeredChambers
 from ..model.problem import (
+    CADOperationNode,
     GeometryNode, HelperFunctionNode, HelperVariableNode,
     InterfaceNode, LoadsNode, MaterialNode, MaterialsNode,
     ObjectiveNode, PartInterfaceNode, ProblemDefinition, SolverNode, StepsNode,
     SurfaceNode, UpdaterNode,
 )
 
-# key, Chinese label, English label, selected tip DOFs
+# key, localized label key, selected tip DOFs
 GOALS = {
-    "bend": ("末端弯曲", "Tip bending", (0,)),
-    "extend": ("轴向伸长", "Axial extension", (2,)),
-    "twist": ("轴向扭转", "Axial twisting", (5,)),
-    "workspace_plane": ("平面位置工作空间 · 2 自由度", "Planar position workspace · 2 DOF", (0, 2)),
-    "workspace_space": ("空间位置工作空间 · 3 自由度", "Spatial position workspace · 3 DOF", (0, 1, 2)),
-    "workspace_rotation": ("旋转工作空间 · 3 自由度", "Rotation workspace · 3 DOF", (3, 4, 5)),
-    "workspace_pose": ("平面位姿工作空间 · 3 自由度", "Planar pose workspace · 3 DOF", (0, 2, 4)),
-    "contact": ("接触夹持 · 目标力", "Contact gripping · target force", (0,)),
-    "stiffness": ("承载刚度", "Load-bearing stiffness", (2,)),
+    "bend": ("ui.quickstart.goal.bend", (0,)),
+    "extend": ("ui.quickstart.goal.extend", (2,)),
+    "twist": ("ui.quickstart.goal.twist", (5,)),
+    "workspace_plane": ("ui.quickstart.goal.workspace_plane", (0, 2)),
+    "workspace_space": ("ui.quickstart.goal.workspace_space", (0, 1, 2)),
+    "workspace_rotation": ("ui.quickstart.goal.workspace_rotation", (3, 4, 5)),
+    "workspace_pose": ("ui.quickstart.goal.workspace_pose", (0, 2, 4)),
+    "contact": ("ui.quickstart.goal.contact", (0,)),
+    "stiffness": ("ui.quickstart.goal.stiffness", (2,)),
 }
 
 
@@ -157,7 +158,7 @@ class QuickstartOptions:
         self.geometry_layout()
         for objective in self.objectives:
             if objective.is_workspace:
-                dimensions = len(GOALS[objective.kind][2])
+                dimensions = len(GOALS[objective.kind][1])
                 selected = objective.workspace_channels
                 if not math.isfinite(objective.workspace_pressure_kpa) or objective.workspace_pressure_kpa <= 0:
                     raise ValueError("工作空间最大压力必须为正数 / Workspace pressure limits must be positive.")
@@ -215,7 +216,10 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
         step_values, objective_code, metrics_code, jacobians, updater = _topology(
             options, geometry, loads, materials
         )
-    problem.root.add_section(StepsNode(name="Load steps", params={"num_steps": len(step_values), "step_values": step_values}))
+    problem.root.add_section(StepsNode(
+        name="Load steps",
+        params={"num_steps": len(step_values), "step_values": step_values},
+    ))
     problem.root.add_section(materials)
     problem.root.add_section(ObjectiveNode(name="Objective Function", params={
         "_objective_function": objective_code,
@@ -234,9 +238,25 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
 
 
 def _common_loads(loads, length, fixed="surface_0_Bottom", tip="surface_0_Head", location=None):
-    loads.add_interface(InterfaceNode.create("BoundaryCondition", name="base_fixed", instance_name="body-1", set_nodes_name=fixed, index_dof=[0, 1, 2]))
-    loads.add_interface(InterfaceNode.create("ReferencePoint", name="RP_tip", rp_location=location or [0., 0., length]))
-    loads.add_interface(InterfaceNode.create("Couple", name="tip_coupling", instance_name="body-1", set_nodes_name=tip, rp_name="RP_tip"))
+    loads.add_interface(InterfaceNode.create(
+        "BoundaryCondition",
+        name="base_fixed",
+        instance_name="body-1",
+        set_nodes_name=fixed,
+        index_dof=[0, 1, 2],
+    ))
+    loads.add_interface(InterfaceNode.create(
+        "ReferencePoint",
+        name="RP_tip",
+        rp_location=location or [0., 0., length],
+    ))
+    loads.add_interface(InterfaceNode.create(
+        "Couple",
+        name="tip_coupling",
+        instance_name="body-1",
+        set_nodes_name=tip,
+        rp_name="RP_tip",
+    ))
 
 
 def _shape_geometry(options, geometry, loads, materials):
@@ -338,7 +358,7 @@ def _shape(p, options, geometry, loads, materials):
             }
             for key, value in (
                 ("weights", weights.tolist()),
-                ("axes", list(GOALS[objective.kind][2])),
+                ("axes", list(GOALS[objective.kind][1])),
                 ("channels", groups),
                 ("tangents", tangents.tolist()),
                 ("orientations", orientations.tolist()),
@@ -346,7 +366,7 @@ def _shape(p, options, geometry, loads, materials):
                 p.helper_variables.append(HelperVariableNode(name=names[key], params={"value": repr(value)}))
             function_name = f"workspace_measure_{index}"
             _workspace_function(p, function_name, names)
-            scale = options.total_length**sum(axis < 3 for axis in GOALS[objective.kind][2])
+            scale = options.total_length**sum(axis < 3 for axis in GOALS[objective.kind][1])
             measure = f"{function_name}(self, {workspace_steps!r})"
             objective_records.append({
                 "objective": objective,
@@ -445,10 +465,19 @@ def _workspace_function(problem, function_name, names):
 
 def _contact_setup(problem, options, geometry, loads, materials):
     object_part = PartInterfaceNode.create(
-        "CylinderPartInterface", name="object", exterior_surface="extern",
-        r0=options.radius, length=2*options.radius,
-        init_location=[2*options.radius+options.wall, -options.radius, .7*options.total_length],
-        direction=[0., 1., 0.], mesh_size=options.mesh_size,
+        "CADPartInterface", name="object", exterior_surface="extern",
+        mesh_size=options.mesh_size,
+    )
+    object_part.add_cad_operation(
+        CADOperationNode.create(
+            "Cylinder",
+            "object-cylinder",
+            x=2 * options.radius + options.wall,
+            y=-options.radius,
+            z=0.7 * options.total_length,
+            dy=2 * options.radius,
+            radius=options.radius,
+        )
     )
     geometry.add_interface(object_part)
     loads.add_interface(InterfaceNode.create(
@@ -482,7 +511,7 @@ def _topology(options, geometry, loads, materials):
         mesh_size=options.mesh_size, mesh_order=2,
     )
     geometry.add_interface(part)
-    _common_loads(loads, options.total_length, fixed="fixed", tip="tip",
+    _common_loads(loads, options.total_length, fixed="nodes_xmin", tip="nodes_xmax",
                   location=[options.total_length, options.height/2, options.depth/2])
     loads.add_interface(InterfaceNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
     materials.add_material(MaterialNode.create(
@@ -531,3 +560,75 @@ def _topology(options, geometry, loads, materials):
     objective_code = "\n".join(objective_lines+["return "+" + ".join(terms)])+"\n"
     metrics_code = "return ["+", ".join(metrics)+"]\n"
     return steps, objective_code, metrics_code, [], updater
+
+
+def available_objectives(method: str) -> list[str]:
+    return sorted(set(GOALS) - {"stiffness"}) if method == "shapeopt" else ["stiffness", "bend"]
+
+
+def select_workspace_channels(members, selected, required: int) -> list[int]:
+    chosen = [channel for channel in selected if channel in members][:required]
+    for channel in sorted(members):
+        if len(chosen) >= required:
+            break
+        if channel not in chosen:
+            chosen.append(channel)
+    return chosen
+
+
+class ObjectiveDraft:
+    """Editable Quickstart terms, with one policy for method/channel changes."""
+    def __init__(self, objectives, method: str, members):
+        self.method = method
+        self.members = {key: list(value) for key, value in members.items()}
+        self.objectives = [self.copy(item) for item in objectives]
+
+    @staticmethod
+    def copy(objective) -> QuickstartObjective:
+        from dataclasses import replace
+        item = QuickstartObjective(**objective) if isinstance(objective, dict) else objective
+        return replace(
+            item,
+            pressures_kpa=dict(item.pressures_kpa),
+            workspace_channels=list(item.workspace_channels),
+        )
+
+    def add(self) -> int:
+        if len(self.objectives) >= 8:
+            raise ValueError("Quickstart supports at most eight objective terms.")
+        channels = sorted(self.members)
+        self.objectives.append(QuickstartObjective(
+            kind="bend" if self.method == "shapeopt" else "stiffness",
+            pressures_kpa={channel: 60. if channel == 1 else 0. for channel in channels},
+            workspace_channels=channels[:2],
+        ))
+        return len(self.objectives) - 1
+
+    def remove(self, index: int) -> None:
+        if len(self.objectives) <= 1:
+            raise ValueError("Keep at least one objective term.")
+        self.objectives.pop(index)
+
+    def set_method(self, method: str) -> None:
+        self.method = method
+        allowed = available_objectives(method)
+        for objective in self.objectives:
+            if objective.kind not in allowed:
+                objective.kind = "bend" if method == "shapeopt" else "stiffness"
+
+    def set_channels(self, members) -> None:
+        self.members = {key: list(value) for key, value in members.items()}
+        for objective in self.objectives:
+            objective.pressures_kpa = {channel: objective.pressures_kpa.get(
+                channel,
+                0.,
+            ) for channel in sorted(members)}
+            if objective.is_workspace:
+                objective.workspace_channels = select_workspace_channels(
+                    members,
+                    objective.workspace_channels,
+                    len(GOALS[objective.kind][1]),
+                )
+
+    def values(self) -> list[QuickstartObjective]:
+        return [self.copy(objective) for objective in self.objectives]

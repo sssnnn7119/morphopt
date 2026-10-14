@@ -371,14 +371,7 @@
                   }
                 }
               ],
-              "equality_constraints": [
-                {
-                  "type": "MirrorSymmetry",
-                  "params": {
-                    "code": ""
-                  }
-                }
-              ]
+              "symmetry_constraints": []
             }
           ],
           "materials": [

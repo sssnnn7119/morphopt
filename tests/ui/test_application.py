@@ -15,7 +15,7 @@ from morphopt.ui.application import (
 from morphopt.ui import launcher
 from morphopt.ui.model.problem import InstanceNode
 from morphopt.ui.schemes.base import get_template
-from morphopt.ui.widgets.editor import fields_for_node
+from morphopt.ui.application.fields import fields_for_node
 
 
 def test_domain_packages_expose_only_concrete_components() -> None:

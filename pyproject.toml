@@ -40,4 +40,4 @@ pythonpath = ["src"]
 addopts = "-ra"
 
 [tool.setuptools.package-data]
-"morphopt.ui" = ["templates/*.morph", "templates/*.npz"]
+"morphopt.ui" = ["templates/*.morph", "templates/*.npz", "locales/*.json"]

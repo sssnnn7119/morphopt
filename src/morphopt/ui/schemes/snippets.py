@@ -17,8 +17,7 @@ class SnippetParameter:
     """One model-backed selectable value needed to render a code snippet."""
 
     key: str
-    label: str
-    label_en: str
+    label_key: str
     source: str
     default: object
 
@@ -28,8 +27,7 @@ class CodeSnippet:
     """A source fragment that can be inserted into either objective code slot."""
 
     key: str
-    name_zh: str
-    name_en: str
+    name_key: str
     parameters: tuple[SnippetParameter, ...]
     source: str
 
@@ -39,26 +37,25 @@ class CodeSnippet:
         return self.source.format(**(defaults | dict(values or {})))
 
 
-_LOAD_STEP = SnippetParameter("step_index", "载荷步", "Load step",
+_LOAD_STEP = SnippetParameter("step_index", 'ui.snippets.parameters.step_index',
                               "load_steps", 0)
-_INSTANCE = SnippetParameter("instance_name", "实体", "Instance",
+_INSTANCE = SnippetParameter("instance_name", 'ui.snippets.parameters.instance_name',
                              "instances", "final_model")
-_REFERENCE_POINT = SnippetParameter("reference_point_name", "参考点",
-                                    "Reference point", "reference_points", "RP_head")
-_AXIS = SnippetParameter("axis", "方向", "Axis", "axis", 2)
+_REFERENCE_POINT = SnippetParameter("reference_point_name", 'ui.snippets.parameters.reference_point_name', "reference_points", "RP_head")
+_AXIS = SnippetParameter("axis", 'ui.snippets.parameters.axis', "axis", 2)
 _TRANSLATION_AXIS = SnippetParameter(
-    "axis", "平移方向", "Translation axis", "translation_axis", 2)
+    "axis", 'ui.snippets.parameters.translation_axis', "translation_axis", 2)
 _ROTATION_AXIS = SnippetParameter(
-    "axis", "旋转方向", "Rotation axis", "rotation_axis", 5)
-_COMPONENT = SnippetParameter("component", "分量", "Component",
+    "axis", 'ui.snippets.parameters.rotation_axis', "rotation_axis", 5)
+_COMPONENT = SnippetParameter("component", 'ui.snippets.parameters.component',
                               "six_component", 2)
-_ELEMENT = SnippetParameter("element_name", "单元类型", "Element type",
+_ELEMENT = SnippetParameter("element_name", 'ui.snippets.parameters.element_name',
                             "elements", "C3D4")
 _FORCE_LOAD = SnippetParameter(
-    "force_load_name", "集中力载荷", "Concentrated-force load",
+    "force_load_name", 'ui.snippets.parameters.force_load_name',
     "force_loads", "force_RP_head")
 _MOMENT_LOAD = SnippetParameter(
-    "moment_load_name", "集中力矩载荷", "Concentrated-moment load",
+    "moment_load_name", 'ui.snippets.parameters.moment_load_name',
     "moment_loads", "moment_RP_head")
 
 
@@ -68,20 +65,17 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
     reference_point_state = _reference_point_state_source()
     return (
         CodeSnippet(
-            "instance_displacement", "实体节点位移（RGC）",
-            "Instance nodal displacement (RGC)",
+            "instance_displacement", 'ui.snippets.instance_displacement',
             (_LOAD_STEP, _INSTANCE),
             instance_state + "# node_displacement: [num_nodes, 3].\n",
         ),
         CodeSnippet(
-            "reference_point_motion", "参考点位移 / 转角（RGC）",
-            "Reference-point displacement / rotation (RGC)",
+            "reference_point_motion", 'ui.snippets.reference_point_motion',
             (_LOAD_STEP, _REFERENCE_POINT),
             reference_point_state + "# reference_point_motion: [Ux, Uy, Uz, Rx, Ry, Rz].\n",
         ),
         CodeSnippet(
-            "end_effector_translation", "末端执行器平移分量",
-            "End-effector translation component",
+            "end_effector_translation", 'ui.snippets.end_effector_translation',
             (_LOAD_STEP, _REFERENCE_POINT, _TRANSLATION_AXIS),
             reference_point_state + (
                 "end_effector_translation = reference_point_motion[{axis}]\n"
@@ -89,8 +83,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "end_effector_rotation", "末端执行器旋转分量",
-            "End-effector rotation component",
+            "end_effector_rotation", 'ui.snippets.end_effector_rotation',
             (_LOAD_STEP, _REFERENCE_POINT, _ROTATION_AXIS),
             reference_point_state + (
                 "end_effector_rotation = reference_point_motion[{axis}]\n"
@@ -98,8 +91,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "instance_force", "实体节点残余力 / 广义残量（R）",
-            "Instance nodal residual force / generalized residual (R)",
+            "instance_force", 'ui.snippets.instance_force',
             (_LOAD_STEP, _INSTANCE, _AXIS),
             instance_state + (
                 "R = assembly._assemble_generalized_Matrix(GC=GC)[0]\n"
@@ -111,8 +103,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "reference_point_force", "参考点残余力 / 力矩（R）",
-            "Reference-point residual force / moment (R)",
+            "reference_point_force", 'ui.snippets.reference_point_force',
             (_LOAD_STEP, _REFERENCE_POINT, _COMPONENT),
             reference_point_state + (
                 "R = assembly._assemble_generalized_Matrix(GC=GC)[0]\n"
@@ -124,8 +115,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "gaussian_energy_density", "实体单元高斯点应变能密度",
-            "Instance Gaussian-point strain-energy density",
+            "gaussian_energy_density", 'ui.snippets.gaussian_energy_density',
             (_LOAD_STEP, _INSTANCE, _ELEMENT),
             instance_state + (
                 "element_name = {element_name!r}\n"
@@ -135,8 +125,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "gaussian_deformation_gradient", "实体单元高斯点变形梯度 F",
-            "Instance Gaussian-point deformation gradient F",
+            "gaussian_deformation_gradient", 'ui.snippets.gaussian_deformation_gradient',
             (_LOAD_STEP, _INSTANCE, _ELEMENT),
             instance_state + (
                 "element_name = {element_name!r}\n"
@@ -146,16 +135,14 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "jacobian_6d_matrix", "末端 6×6 雅可比矩阵",
-            "End-effector 6x6 Jacobian matrix",
+            "jacobian_6d_matrix", 'ui.snippets.jacobian_6d_matrix',
             (_LOAD_STEP, _REFERENCE_POINT, _FORCE_LOAD, _MOMENT_LOAD),
             _jacobian_6d_source() + (
                 "# jacobian_6x6 maps force/moment parameters to the six RP DOFs.\n"
             ),
         ),
         CodeSnippet(
-            "jacobian_translation_response", "平移方向雅可比响应范数",
-            "Translation Jacobian response norm",
+            "jacobian_translation_response", 'ui.snippets.jacobian_translation_response',
             (_LOAD_STEP, _REFERENCE_POINT, _FORCE_LOAD, _MOMENT_LOAD),
             _jacobian_6d_source() + (
                 "translation_jacobian_norm = torch.linalg.matrix_norm(\n"
@@ -164,8 +151,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "jacobian_rotation_response", "旋转方向雅可比响应范数",
-            "Rotation Jacobian response norm",
+            "jacobian_rotation_response", 'ui.snippets.jacobian_rotation_response',
             (_LOAD_STEP, _REFERENCE_POINT, _FORCE_LOAD, _MOMENT_LOAD),
             _jacobian_6d_source() + (
                 "rotation_jacobian_norm = torch.linalg.matrix_norm(\n"
@@ -174,8 +160,7 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
             ),
         ),
         CodeSnippet(
-            "jacobian_6d_response", "6×6 雅可比整体响应范数",
-            "Overall 6x6 Jacobian response norm",
+            "jacobian_6d_response", 'ui.snippets.jacobian_6d_response',
             (_LOAD_STEP, _REFERENCE_POINT, _FORCE_LOAD, _MOMENT_LOAD),
             _jacobian_6d_source() + (
                 "jacobian_6d_norm = torch.linalg.matrix_norm(\n"

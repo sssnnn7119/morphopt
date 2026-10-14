@@ -37,8 +37,8 @@
 | 文件 | 主要类型/函数 | 责任 |
 |---|---|---|
 | `basepartinterface.py` | `BasePartInterface` | 一个 Part、多个 instance、位姿和 Assembly 添加。 |
-| `chamberlayout.py` | `ChamberLayer`, `LayeredChambers` | 串联气腔层、层内并联排布及显式压力通道。 |
-| `primitivepartinterface.py` | `BoxPartInterface`, `CylinderPartInterface` | 固定设计块和圆柱的内核建模、网格生成及初始预览。 |
+| `primitivepartinterface.py` | `BoxPartInterface` | 结构化长方体网格及坐标面节点/表面集合。 |
+| `cadpartinterface.py` | `CADPartInterface` | 调用 TorchFEA CAD 操作历史生成 Part 和网格。 |
 | `inppartinterface.py` | `INPPartInterface` | 从 Abaqus `.inp` 导入固定 Part。 |
 | `torchfeapartinterface.py` | `TorchFEAPartInterface`, `resolve_model_path`, `load_model_assembly` | 从 TorchFEA `.npz` 存档导入 Part/instances。 |
 | `__init__.py` | Part API 导出 | 子包公共导入。 |
@@ -130,14 +130,25 @@
 | 目录/文件 | 责任 |
 |---|---|
 | `model/` | 类型化问题树、schema、`.morph`、TorchFEA 存档摘要。 |
-| `application/` | 问题、结果和运行会话；编辑路由。 |
+| `model/chamberlayout.py` | `ChamberLayer`, `CavitySpec`, `LayeredChambers` | Quickstart 专用气腔层排布、配置校验和初始预览。 |
+| `model/nodes.py`、`model/problem.py` | 节点内部行为与问题聚合的跨节点规则。 |
+| `application/` | 问题、编辑、字段/集合查询、结果和运行用例。 |
+| `presentation/` | 无 Qt 的导航、标题与结果表格投影。 |
+| `visualization/` | Part/Surface/载荷 visitor 与场景数据。 |
 | `codegen/` | 问题树到 Python 的确定性生成。 |
 | `schemes/` 与 `templates/` | 模板描述、代码片段和内置 `.morph/.npz` 资产。 |
 | `widgets/` | 树、表单、专用编辑器、预览、结果页和运行对话框。 |
 | `mainwindow.py` | `MainWindow`，应用页面编排。 |
 | `workbench.py` | `Workbench`，优化定义编辑页。 |
 | `observe_panel.py` | `ObserverPanel` 与运行控制。 |
-| `i18n.py` | 翻译与 `LanguageSelector`。 |
+| `i18n.py`、`locales/` | 无 Qt 的 key 查询、本地化订阅与语言资源。 |
+| `widgets/definition_actions.py`、`editor_pages.py` | 共用操作；编辑页生命周期与信号注册。 |
+| `widgets/param_form.py`、`editor.py` | 共用字段渲染器与节点页组合。 |
+| `widgets/updater_editor.py` | 统一目标/罚函数/对称约束卡片管理器。 |
+| `application/editing.py`、`updaters.py` | 节点、工况、任务、自定义类和优化器有序项的编辑规则。 |
+| `application/runs.py`、`results.py` | 运行来源、进度与输出；结果参数、History 和网格读取。 |
+| `widgets/preview_renderer.py`、`viewer.py` | 场景渲染与视口控件。 |
+| `widgets/language_selector.py` | 语言选择器与 Qt 设置存储。 |
 | `app.py`、`launcher.py`、`__main__.py` | Qt 应用启动入口。 |
 
 ## `utils/`

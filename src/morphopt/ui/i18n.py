@@ -1,74 +1,118 @@
-"""Lightweight bilingual (中文 / English) support for the MorphOpt UI.
-
-Usage
------
-* ``T("中文", "English")`` returns the text for the current language.
-* ``LanguageSelector`` is a small combo box; on change it switches the
-  language and calls the given callback so the UI can re-apply texts.
-* The language is remembered between sessions via ``QSettings``.
-"""
+"""Key based localization for the MorphOpt UI."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QComboBox
+import json
+import logging
+import weakref
+from collections.abc import Callable
+from pathlib import Path
 
-_ZH = "zh"
-_EN = "en"
-_APP = "MorphOptUI"
-
-
-def _settings() -> QSettings:
-    return QSettings(_APP, "ui")
-
-
-def lang() -> str:
-    return _settings().value("language", _ZH, str)
-
-
-def set_lang(code: str) -> None:
-    code = _EN if code == _EN else _ZH
-    _settings().setValue("language", code)
+_LOGGER = logging.getLogger(__name__)
+SUPPORTED_LOCALES = {
+    "zh-CN": "中文",
+    "en-US": "English",
+}
+_FALLBACK_LOCALE = "en-US"
+_RESOURCE_DIR = Path(__file__).with_name("locales")
 
 
-def is_en() -> bool:
-    return lang() == _EN
+class LocalizationManager:
+    """Load keyed string tables, format messages, and notify locale listeners."""
+
+    def __init__(
+        self, locale: str = "zh-CN", fallback_locale: str = _FALLBACK_LOCALE
+    ):
+        self._locale = self._normalize_locale(locale)
+        self.fallback_locale = self._normalize_locale(fallback_locale)
+        self._tables: dict[str, dict[str, str]] = {}
+        self._listeners: list[weakref.WeakMethod | weakref.ReferenceType] = []
+        self._missing_keys: set[str] = set()
+
+    @property
+    def locale(self) -> str:
+        return self._locale
+
+    @staticmethod
+    def _normalize_locale(locale: str) -> str:
+        aliases = {"zh": "zh-CN", "en": "en-US"}
+        normalized = aliases.get(locale, locale)
+        return normalized if normalized in SUPPORTED_LOCALES else "zh-CN"
+
+    def load_locale(self, locale: str) -> dict[str, str]:
+        """Load a locale file once and return its string table."""
+        locale = self._normalize_locale(locale)
+        if locale not in self._tables:
+            path = _RESOURCE_DIR / f"{locale}.json"
+            with path.open("r", encoding="utf-8") as resource:
+                table = json.load(resource)
+            if not isinstance(table, dict) or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in table.items()
+            ):
+                raise ValueError(f"Invalid localization table: {path}")
+            self._tables[locale] = table
+        return self._tables[locale]
+
+    def set_locale(self, locale: str) -> None:
+        locale = self._normalize_locale(locale)
+        if locale == self._locale:
+            return
+        self.load_locale(locale)
+        self._locale = locale
+        self._notify_locale_changed()
+
+    def subscribe(self, callback: Callable[[str], None]) -> Callable[[], None]:
+        """Subscribe to locale changes and return a function that unsubscribes."""
+        reference = (
+            weakref.WeakMethod(callback)
+            if getattr(callback, "__self__", None) is not None
+            else weakref.ref(callback)
+        )
+        self._listeners.append(reference)
+
+        def unsubscribe() -> None:
+            if reference in self._listeners:
+                self._listeners.remove(reference)
+
+        return unsubscribe
+
+    def _notify_locale_changed(self) -> None:
+        live: list[weakref.WeakMethod | weakref.ReferenceType] = []
+        for reference in self._listeners:
+            callback = reference()
+            if callback is None:
+                continue
+            live.append(reference)
+            callback(self._locale)
+        self._listeners = live
+
+    def tr(self, key: str, **values: object) -> str:
+        """Resolve ``key`` in the active table, then the fallback table."""
+        text = self.load_locale(self._locale).get(key)
+        if text is None:
+            text = self.load_locale(self.fallback_locale).get(key)
+        if text is None:
+            if key not in self._missing_keys:
+                _LOGGER.warning("Missing localization key: %s", key)
+                self._missing_keys.add(key)
+            return key
+        if not values:
+            return text
+        try:
+            return text.format(**values)
+        except (IndexError, KeyError, TypeError, ValueError) as exc:
+            _LOGGER.error("Cannot format localization key %s: %s", key, exc)
+            return text
 
 
-def T(zh: str, en: str) -> str:
-    """Pick the Chinese or English variant for the current language."""
-    return pick(zh, en)
+localization = LocalizationManager()
+
+def tr(key: str, **values: object) -> str:
+    """Translate a stable message key and interpolate named values."""
+    return localization.tr(key, **values)
 
 
-def pick(primary: str, secondary: str | None = None) -> str:
-    """Select a display string by the current language.
-
-    ``primary``  is the Chinese master text (or a language-neutral English term
-    when the entry is not localized); ``secondary`` is the English variant when
-    it differs from ``primary``.  Use this in place, next to the data it
-    describes (no external translation table).
-    """
-    return secondary if (is_en() and secondary) else primary
-
-
-class LanguageSelector(QComboBox):
-    """A 中文 / English switch; emits ``languageChanged`` after applying."""
-
-    def __init__(self, on_change=None, parent=None):
-        super().__init__(parent)
-        self.addItem("中文", _ZH)
-        self.addItem("English", _EN)
-        self.setFixedWidth(110)
-        self._on_change = on_change
-        self.set_lang(lang())
-        self.currentIndexChanged.connect(self._apply)
-
-    def _apply(self) -> None:
-        set_lang(self.currentData())
-        if self._on_change is not None:
-            self._on_change()
-
-    def set_lang(self, code: str) -> None:
-        idx = self.findData(code)
-        if idx >= 0 and idx != self.currentIndex():
-            self.setCurrentIndex(idx)
+def set_locale(locale: str) -> None:
+    """Set the active locale and notify subscribed UI components."""
+    localization.set_locale(locale)

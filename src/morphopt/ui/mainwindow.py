@@ -10,7 +10,8 @@ from .model.problem import ProblemDefinition
 from .application import ProblemLibrary
 from .model.loaders import MORPH_SUFFIX
 from .schemes.base import scheme_label
-from .i18n import LanguageSelector, T
+from .i18n import localization, tr
+from .widgets.language_selector import LanguageSelector
 from .workbench import Workbench
 from .observe_panel import ObserverControls
 from .widgets.quickstart import QuickstartDialog
@@ -34,10 +35,11 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ language
     def _add_language_switch(self) -> None:
-        self._lang_switch = LanguageSelector(on_change=self._apply_language)
+        self._lang_switch = LanguageSelector()
+        self._unsubscribe_locale = localization.subscribe(self._apply_language)
         self.statusBar().addPermanentWidget(self._lang_switch)
 
-    def _apply_language(self) -> None:
+    def _apply_language(self, _locale: str | None = None) -> None:
         # Directly re-apply the current language to both parts in place: no
         # viewport is recreated, so it is safe regardless of which page is
         # currently shown (recreating a PyVista viewport while the observer's
@@ -47,13 +49,13 @@ class MainWindow(QMainWindow):
         if self._workbench is not None:
             self._workbench.apply_language()
         self._set_titles()
-        self.statusBar().showMessage(T("就绪", "Ready"), 3000)
+        self.statusBar().showMessage(tr('ui.mainwindow.ready'), 3000)
 
     def _set_titles(self) -> None:
         if self.stack.currentWidget() is self._observer:
-            self.setWindowTitle(T("MorphOpt UI — 优化器", "MorphOpt UI — Observer"))
+            self.setWindowTitle(tr('ui.mainwindow.morphopt_ui_observer'))
         else:
-            self.setWindowTitle(T("MorphOpt UI — 优化定义", "MorphOpt UI — Definition"))
+            self.setWindowTitle(tr('ui.mainwindow.morphopt_ui_definition'))
 
     # ------------------------------------------------------------- creation
     def quickstart(self) -> None:
@@ -61,35 +63,34 @@ class MainWindow(QMainWindow):
         dialog = QuickstartDialog(self.current_problem(), self)
         if dialog.exec():
             self.set_problem(dialog.problem)
-            self.statusBar().showMessage(T("已生成优化问题，可预览或继续编辑。", "Problem created; preview it or continue editing."), 4000)
+            self.statusBar().showMessage(tr('ui.mainwindow.problem_created_preview_it_or_continue_editing'), 4000)
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, T("打开 .morph", "Open .morph"), os.getcwd(),
+            self, tr('ui.mainwindow.open_morph'), os.getcwd(),
             "MorphOpt problem (*.morph);;All (*)")
         if not path:
             return
         try:
             problem = ProblemLibrary.load(path)
         except Exception as exc:
-            QMessageBox.warning(self, T("打开失败", "Open failed"), str(exc))
+            QMessageBox.warning(self, tr('ui.mainwindow.open_failed'), str(exc))
             return
         self.set_problem(problem)
         self.statusBar().showMessage(
-            T(f"已打开：{problem.label} [{scheme_label(problem.scheme)}]",
-              f"Opened: {problem.label} [{scheme_label(problem.scheme, english=True)}]"), 4000)
+            tr('ui.mainwindow.opened_value_value', value_0=problem.label, value_1=scheme_label(problem.scheme)), 4000)
 
     def export_morph(self) -> None:
         problem = self.current_problem()
         if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, T("导出 .morph", "Export .morph"), os.getcwd(),
+            self, tr('ui.mainwindow.export_morph'), os.getcwd(),
             f"{problem.label}{MORPH_SUFFIX}", "MorphOpt problem (*.morph)")
         if path:
             out = ProblemLibrary.save(problem, path)
-            self.statusBar().showMessage(T("已导出：", "Exported: ") + out, 3000)
+            self.statusBar().showMessage(tr('ui.mainwindow.exported') + out, 3000)
 
     def export_run_py(self) -> None:
         """Generate the runnable job .py from the serialized .morph model."""
@@ -97,12 +98,12 @@ class MainWindow(QMainWindow):
         if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, T("导出运行用 .py", "Export runnable .py"),
+            self, tr('ui.mainwindow.export_runnable_py'),
             problem.label + ".py", "Python (*.py)")
         if path:
             ProblemLibrary.export_python(problem, path)
             self.statusBar().showMessage(
-                T("已导出运行脚本：", "Exported runnable script: ") + path, 3000)
+                tr('ui.mainwindow.exported_runnable_script') + path, 3000)
 
     # ------------------------------------------------------------- problem
     def set_problem(self, problem: ProblemDefinition) -> None:
@@ -135,8 +136,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self._observer)
         self._set_titles()
         self.statusBar().showMessage(
-            T("优化器：点击 0 选择任务来源，再开始/停止优化。",
-              "Observer: choose a task source with 0, then start / stop."), 3000)
+            tr('ui.mainwindow.observer_choose_a_task_source_with_0_then_start_stop'), 3000)
 
     def _ensure_observer(self) -> None:
         """Create and connect the observer page once."""
@@ -155,19 +155,14 @@ class MainWindow(QMainWindow):
         running = self._observer is not None and self._observer.is_running()
         if running:
             reply = QMessageBox.question(
-                self, T("退出确认", "Exit confirmation"),
-                T(
-                    "优化仍在运行。\n\n退出将终止该优化进程；"
-                    "已保存的迭代仍可通过结果目录查看。\n\n确认退出吗？",
-                    "An optimization is still running.\n\nQuitting will "
-                    "terminate it; completed iterations remain available in "
-                    "the result folder.\n\nQuit anyway?"),
+                self, tr('ui.mainwindow.exit_confirmation'),
+                tr('ui.mainwindow.an_optimization_is_still_running_quitting_will_terminate_it_completed_it'),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
         else:
             reply = QMessageBox.question(
-                self, T("退出确认", "Exit confirmation"),
-                T("确定要退出 MorphOpt UI 吗？", "Quit MorphOpt UI?"),
+                self, tr('ui.mainwindow.exit_confirmation'),
+                tr('ui.mainwindow.quit_morphopt_ui'),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:

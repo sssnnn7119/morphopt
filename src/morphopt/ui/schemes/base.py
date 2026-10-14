@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..i18n import localization
 from ..model import schemas as S
 from ..model.problem import (
     GeometryNode,
@@ -344,10 +345,12 @@ def get_template(scheme: str) -> SchemeTemplate:
     return SCHEME_REGISTRY[scheme]
 
 
-def scheme_label(scheme: str, *, english: bool = False) -> str:
+def scheme_label(scheme: str, *, english: bool | None = None) -> str:
     """Return a scheme-owned display name without consulting field schemas."""
     try:
         template = get_template(scheme)
     except KeyError:
         return scheme
+    if english is None:
+        english = localization.locale == "en-US"
     return template.label_en if english else template.label

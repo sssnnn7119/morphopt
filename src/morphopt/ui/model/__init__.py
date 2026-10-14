@@ -11,12 +11,16 @@ tree and backend metadata used to emit valid morphopt code.
 
 from .problem import (
     Node, ProblemDefinition, MaterialsNode, MaterialNode, InstanceNode,
+    CADOperationNode,
     CustomClassNode, MethodOverrideNode, HelperVariableNode, HelperFunctionNode,
     find_node, list_node_paths,
 )
+from .chamberlayout import ChamberLayer, CavitySpec, LayeredChambers
 from . import schemas
 from . import loaders
 
 __all__ = ["Node", "ProblemDefinition", "MaterialsNode", "MaterialNode", "InstanceNode",
+           "CADOperationNode",
            "CustomClassNode", "MethodOverrideNode", "HelperVariableNode", "HelperFunctionNode",
-           "find_node", "list_node_paths", "schemas", "loaders"]
+           "find_node", "list_node_paths", "ChamberLayer", "CavitySpec",
+           "LayeredChambers", "schemas", "loaders"]

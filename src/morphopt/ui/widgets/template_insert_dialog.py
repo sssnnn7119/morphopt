@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..i18n import T
+from ..i18n import tr
+from ..application.fields import SnippetInputs
 from ..model.problem import ProblemDefinition
 from ..schemes.snippets import CodeSnippet, SnippetParameter
 
@@ -18,23 +19,16 @@ class TemplateInsertDialog(QDialog):
     def __init__(self, snippet: CodeSnippet, problem: ProblemDefinition,
                  parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(T("插入代码片段", "Insert code snippet"))
-        self._problem = problem
+        self.setWindowTitle(tr('ui.widgets.template_insert_dialog.insert_code_snippet'))
+        self.inputs = SnippetInputs(problem)
         self._snippet = snippet
         self._fields: dict[str, QComboBox] = {}
         self._field_sources: dict[str, str] = {}
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(T(snippet.name_zh, snippet.name_en)))
+        layout.addWidget(QLabel(tr(snippet.name_key)))
         if snippet.key.startswith("jacobian_"):
-            hint = QLabel(T(
-                "使用前请确认：集中力和集中力矩施加在同一个末端参考点，"
-                "参考点下拉框用于定位该参考点在 GC 中的自由度，"
-                "并且对应载荷已在目标函数面板中手动勾选 Jacobian。",
-                "Before using this template, make sure the concentrated force "
-                "and moment act at the same end reference point. The selected "
-                "reference point locates its GC rows; manually check both "
-                "loads for Jacobian computation in the objective panel."))
+            hint = QLabel(tr('ui.widgets.template_insert_dialog.before_using_this_template_make_sure_the_concentrated_force_and_moment_a'))
             hint.setWordWrap(True)
             hint.setStyleSheet("color:#d6a85f;")
             layout.addWidget(hint)
@@ -44,7 +38,7 @@ class TemplateInsertDialog(QDialog):
             combo = self._parameter_combo(parameter)
             self._fields[parameter.key] = combo
             self._field_sources[parameter.key] = parameter.source
-            form.addRow(T(parameter.label, parameter.label_en), combo)
+            form.addRow(tr(parameter.label_key), combo)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -63,53 +57,11 @@ class TemplateInsertDialog(QDialog):
         self.accept()
 
     def _validate_jacobian_reference_point(self) -> bool:
-        values = self.parameter_values()
-        reference_name = str(values.get("reference_point_name", "")).strip()
-        force_name = str(values.get("force_load_name", "")).strip()
-        moment_name = str(values.get("moment_load_name", "")).strip()
-
-        interfaces = self._problem.interfaces()
-        reference = next(
-            (
-                interface
-                for interface in interfaces
-                if interface.interface_type == "ReferencePoint"
-                and interface.name == reference_name
-            ),
-            None,
-        )
-        force = next(
-            (interface for interface in interfaces
-             if interface.interface_type == "ConcentratedForce"
-             and interface.name == force_name),
-            None,
-        )
-        moment = next(
-            (interface for interface in interfaces
-             if interface.interface_type == "ConcentratedMoment"
-             and interface.name == moment_name),
-            None,
-        )
-
-        if reference is None or force is None or moment is None:
-            return self._show_validation_error(T(
-                "雅可比模板必须选择当前模型中已定义的参考点、集中力和集中力矩。",
-                "The Jacobian template requires a reference point, force, and "
-                "moment that are defined in the current model."))
-
-        if (
-            force.reference_point is not reference
-            or moment.reference_point is not reference
-        ):
-            return self._show_validation_error(T(
-                "集中力、集中力矩和所选参考点必须完全一致，当前选择不能插入。",
-                "The concentrated force, concentrated moment, and selected "
-                "reference point must match exactly; this template cannot be "
-                "inserted."))
-        return True
+        issue = self.inputs.jacobian_issue(self.parameter_values())
+        return self._show_validation_error(tr(issue)) if issue else True
 
     def _show_validation_error(self, message: str) -> bool:
-        QMessageBox.warning(self, T("参数不一致", "Inconsistent parameters"), message)
+        QMessageBox.warning(self, tr('ui.widgets.template_insert_dialog.inconsistent_parameters'), message)
         return False
 
     def parameter_values(self) -> dict[str, object]:
@@ -121,14 +73,14 @@ class TemplateInsertDialog(QDialog):
             source = self._field_sources[key]
             value = combo.currentData()
             values[key] = (combo.currentText()
-                           if value is None or self._is_customizable(source)
+                           if value is None or source in self.inputs.editable
                            else value)
         return values
 
     def _parameter_combo(self, parameter: SnippetParameter) -> QComboBox:
         options = self._options(parameter.source)
         combo = QComboBox()
-        is_customizable = self._is_customizable(parameter.source)
+        is_customizable = parameter.source in self.inputs.editable
         combo.setEditable(is_customizable)
         for label, value in options:
             combo.addItem(label, value)
@@ -147,58 +99,19 @@ class TemplateInsertDialog(QDialog):
         return combo
 
     def _options(self, source: str) -> list[tuple[str, object]]:
-        if source == "load_steps":
-            count = self._problem.steps.num_steps if self._problem.steps else 1
-            return [(T(f"工况 {index}", f"Load step {index}"), index)
-                    for index in range(count)]
-        if source == "instances":
-            return [(name, name) for name in self._problem.instance_names()]
-        if source == "reference_points":
-            return [(name, name) for name in self._problem.reference_point_names()]
-        if source == "elements":
-            return [(name, name) for name in self._problem.element_names()]
-        if source == "force_loads":
-            return [
-                (interface.name, interface.name)
-                for interface in self._problem.interfaces()
-                if interface.interface_type == "ConcentratedForce" and interface.name
-            ]
-        if source == "moment_loads":
-            return [
-                (interface.name, interface.name)
-                for interface in self._problem.interfaces()
-                if interface.interface_type == "ConcentratedMoment" and interface.name
-            ]
-        if source == "axis":
-            return [
-                (T(f"X（{index}）", f"X ({index})"), index)
-                for index in range(3)
-            ]
-        if source == "translation_axis":
-            return [
-                (T(f"平移 X（{index}）", f"Translation X ({index})"), index)
-                for index in range(3)
-            ]
-        if source == "rotation_axis":
-            return [
-                (T(f"旋转 {label}（{index}）",
-                   f"Rotation {label} ({index})"), index)
-                for index, label in enumerate(("Rx", "Ry", "Rz"), start=3)
-            ]
-        if source == "six_component":
-            labels = (
-                ("力/位移 X", "Fx / Ux"), ("力/位移 Y", "Fy / Uy"),
-                ("力/位移 Z", "Fz / Uz"), ("力矩/转角 X", "Mx / Rx"),
-                ("力矩/转角 Y", "My / Ry"), ("力矩/转角 Z", "Mz / Rz"),
-            )
-            return [(T(f"{zh}（{index}）", f"{en} ({index})"), index)
-                    for index, (zh, en) in enumerate(labels)]
-        raise ValueError(f"Unknown template parameter source: {source!r}")
-
-    @staticmethod
-    def _is_customizable(source: str) -> bool:
-        """Allow custom FEA names not representable in a *.morph definition."""
-        return source in {
-            "instances", "reference_points", "elements",
-            "force_loads", "moment_loads",
+        captions = {
+            "load_steps": lambda value: tr('ui.widgets.template_insert_dialog.load_step_value', value_0=value),
+            "axis": lambda value: tr('ui.widgets.template_insert_dialog.x_value', value_0=value),
+            "translation_axis": lambda value: tr(
+                'ui.widgets.template_insert_dialog.translation_x_value',
+                value_0=value,
+            ),
+            "rotation_axis": lambda value: tr(
+                'ui.widgets.template_insert_dialog.rotation_value_value',
+                value_0=("Rx", "Ry", "Rz")[value-3],
+                value_1=value,
+            ),
+            "six_component": lambda value: f"{tr(f'ui.snippet.component.{value}')} ({value})",
         }
+        caption = captions.get(source, str)
+        return [(caption(value), value) for value in self.inputs.values(source)]

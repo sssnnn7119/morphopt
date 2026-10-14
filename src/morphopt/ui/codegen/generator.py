@@ -13,6 +13,7 @@ from dataclasses import fields
 from ...optcore.modelparams.materialinterface import MaterialModels
 from ..model.modelinfo import PartSummary, TorchFEAModelSummary
 from ..model.problem import (
+    CADOperationNode,
     INSTANCE_REFERENCE_FIELDS,
     InterfaceNode,
     Node,
@@ -25,10 +26,12 @@ from ..model.problem import (
     UpdaterNode,
 )
 from ..model.schemas import (
-    EQUALITY_CONSTRAINTS,
+    CAD_OPERATION_TYPES,
     INTERFACE_TYPES,
     PART_INTERFACE_TYPES,
+    SURFACE_SYMMETRY_CONSTRAINTS,
     SURFACE_TYPES,
+    surface_factory_for_type,
     UPDATER_CATALOG,
 )
 from ..schemes.base import SchemeTemplate, get_template
@@ -112,6 +115,34 @@ def render_surface_call(surface: Node, problem: ProblemDefinition | None = None)
     kwargs.append(f"flip={repr(surface.flip)}")
     factory = (surface.custom_class + "." + factory.split(".", 1)[1]) if surface.custom_class else f"self.{factory}"
     return f"{factory}({', '.join(kwargs)})"
+
+
+def render_cad_operation_call(
+    operation: CADOperationNode, problem: ProblemDefinition | None = None
+) -> str:
+    """Render one structured UI CAD operation as a TorchFEA constructor."""
+    operation_type = operation.operation_type
+    spec = CAD_OPERATION_TYPES[operation_type]
+    if operation_type == "StepImport":
+        return (
+            "torchfea.cad.StepImport("
+            f"{operation.operation_id!r}, "
+            f"filename={operation.filename or 'import.step'!r}, "
+            f"data={operation.data or ''!r})"
+        )
+
+    kwargs = [f"id={operation.operation_id!r}"]
+    for field in spec["params"]:
+        key = field["key"]
+        value = operation.get_field(key)
+        if value is not None:
+            expression = (
+                _render_value(value, problem)
+                if field["type"] == "float"
+                else repr(value)
+            )
+            kwargs.append(f"{key}={expression}")
+    return f"torchfea.cad.{operation_type}({', '.join(kwargs)})"
 
 
 def render_interface_call(interface: Node, problem: ProblemDefinition | None = None) -> str:
@@ -207,6 +238,7 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     a("import os")
     a('os.environ["MPLBACKEND"] = "Agg"')
     a("import morphopt")
+    a("import torchfea")
     a("from typing import Any")
     a("")
     a("")
@@ -320,7 +352,7 @@ def _render_part_constructor(
     """Render ``self.<ClassName>(...)`` for one part interface.
 
     ``class_name`` overrides the schema type name, used when the model emits a
-    local subclass (the boundary part that carries the equality constraints).
+    local subclass (the boundary part that carries symmetry constraints).
     """
     type_name = class_name or interface.interface_type
     spec = PART_INTERFACE_TYPES.get(interface.interface_type, {})
@@ -366,20 +398,20 @@ def _emit_part_classes(
 
     Every Part gets a local subclass so its ``define_instance`` method can
     declare the UI's complete placement list. Boundary Parts additionally
-    declare their surfaces and optional equality constraints.
+    declare their surfaces, local symmetry constraints and optional custom
+    ``apply_surface_constraints`` hook.
     Returns the mapping interface name -> emitted class name.
     """
     fixed_bases = {
         "BasePartInterface": "morphopt.BasePartInterface",
+        "CADPartInterface": "morphopt.CADPartInterface",
         "BoxPartInterface": "morphopt.BoxPartInterface",
-        "CylinderPartInterface": "morphopt.CylinderPartInterface",
         "INPPartInterface": "morphopt.INPPartInterface",
         "TorchFEAPartInterface": "morphopt.TorchFEAPartInterface",
     }
     local_class: dict[str, str] = {}
     class_names = part_class_names(problem)
 
-    constraints = _surface_constraints_bodies(problem)
     for interface in problem.part_interfaces():
         base = (
             f"morphopt.{interface.interface_type}"
@@ -395,18 +427,34 @@ def _emit_part_classes(
         a("")
         if interface.has_surfaces:
             a("                def define_surfaces(self) -> None:")
-            if not surfaces:
+            config = _geometry_config_for_part(problem, interface)
+            constraint_lines, custom_code = _surface_constraints_for_part(
+                config, interface, problem
+            )
+            if not surfaces and not constraint_lines:
                 a("                    pass")
-            for surface in surfaces:
+            for index, surface in enumerate(surfaces):
                 a(
-                    "                    self.add_surface_interface("
-                    f"{render_surface_call(surface, problem)})"
+                    f"                    surface_{index} = "
+                    f"{render_surface_call(surface, problem)}"
                 )
-            code = constraints.get(interface.name)
-            if code:
+                a(f"                    self.add_surface_interface(surface_{index})")
+            for line in constraint_lines:
+                a(f"                    {line}")
+            if custom_code:
                 a("")
                 a("                def apply_surface_constraints(self) -> None:")
-                a(indent_block(code, 20))
+                a(indent_block(custom_code, 20))
+        elif interface.interface_type == "CADPartInterface":
+            a("                def define_operations(self) -> None:")
+            operations = interface.cad_operations()
+            if not operations:
+                a("                    pass")
+            for operation in operations:
+                a(
+                    "                    self.add_operation("
+                    f"{render_cad_operation_call(operation, problem)})"
+                )
 
         a("")
         a("                def define_instance(self) -> None:")
@@ -449,8 +497,7 @@ def _emit_part_init(
     local_class = dict(local_classes or {})
     prefix = " " * 16
     for index, interface in enumerate(parts):
-        spec = PART_INTERFACE_TYPES.get(interface.interface_type, {})
-        label = spec.get("label_en") or interface.interface_type
+        label = interface.interface_type
         variable = f"part_{index}"
         name = interface.name or interface.resolved_part_name() or f"part{index + 1}"
         constructor = _render_part_constructor(
@@ -543,38 +590,92 @@ def _validate_imported_interface_selections(
                 )
 
 
-def _surface_constraints_bodies(problem: ProblemDefinition) -> dict[str, str]:
-    """Equality-constraint body per boundary part (only non-empty bodies).
-
-    Every geometry sub-optimizer owns one Part, so its equality code is emitted
-    on the Part subclass it constrains.
-    """
+def _geometry_config_for_part(
+    problem: ProblemDefinition, part: PartInterfaceNode
+) -> dict | None:
+    """Return the geometry updater config bound to ``part``, if any."""
     updater = problem.updater
-    configs = updater.geometry if updater is not None else []
-    bodies: dict[str, str] = {}
+    if updater is None:
+        return None
+    return next(
+        (
+            config
+            for config in updater.geometry
+            if problem.config_part_node(config) is part
+        ),
+        None,
+    )
 
-    for config in configs:
-        node = problem.config_part_node(config)
-        if node is None:
+
+def _surface_constraints_for_part(
+    config: dict | None,
+    part: PartInterfaceNode,
+    problem: ProblemDefinition,
+) -> tuple[list[str], str]:
+    """Render surface-owned symmetry hooks and an optional Part code hook."""
+    if config is None:
+        return [], ""
+
+    surfaces = part.surfaces()
+    statements: list[str] = []
+    custom_bodies: list[str] = []
+    for item in config.get("symmetry_constraints", []) or []:
+        if not isinstance(item, dict):
+            raise ValueError(f"Invalid geometry symmetry constraint: {item}")
+        item_type = item.get("type")
+        spec = SURFACE_SYMMETRY_CONSTRAINTS.get(item_type)
+        if spec is None:
+            raise ValueError(f"Unknown geometry symmetry constraint: {item_type!r}")
+        params = item.get("params") or {}
+        if item_type == "Custom":
+            custom_bodies.append(str(params.get("code") or ""))
             continue
-        body = _constraint_body_of(config)
-        if body:
-            bodies[node.name] = body
 
-    return bodies
+        surface_index = item.get("surface_index")
+        if not isinstance(surface_index, int) or not 0 <= surface_index < len(surfaces):
+            raise ValueError(
+                f"Geometry symmetry constraint {item_type!r} on Part "
+                f"{part.name!r} references invalid surface index {surface_index!r}."
+            )
+        surface = surfaces[surface_index]
+        surface_factory = surface_factory_for_type(surface.surface_type)
+        if surface_factory != spec["factory"]:
+            raise ValueError(
+                f"Geometry symmetry constraint {item_type!r} requires a "
+                f"{spec['factory']} surface; surface {surface_index} on Part "
+                f"{part.name!r} is {surface.surface_type!r}."
+            )
 
+        method_args = []
+        if spec.get("related_surface"):
+            related_index = item.get("related_surface_index")
+            if not isinstance(related_index, int) or not 0 <= related_index < len(surfaces):
+                raise ValueError(
+                    f"Geometry symmetry constraint {item_type!r} on Part "
+                    f"{part.name!r} references invalid related surface index "
+                    f"{related_index!r}."
+                )
+            related = surfaces[related_index]
+            related_factory = surface_factory_for_type(related.surface_type)
+            if related_factory != spec["factory"]:
+                raise ValueError(
+                    f"Geometry symmetry constraint {item_type!r} requires both "
+                    f"surfaces to use {spec['factory']}."
+                )
+            method_args.append(f"surface_{related_index}")
 
-def _constraint_body_of(config: dict) -> str:
-    """Equality-constraint body of one geometry sub-optimizer config."""
-    # Equality constraints are kept separate from penalty constraints in the
-    # model tree.
-    equality_items = config.get("equality_constraints")
-    equality_bodies = []
-    for item in equality_items or []:
-        if not isinstance(item, dict) or item.get("type") not in EQUALITY_CONSTRAINTS:
-            raise ValueError(f"Invalid geometry equality constraint: {item}")
-        equality_bodies.append((item.get("params") or {}).get("code", ""))
-    return _clean_body("\n\n".join(equality_bodies))
+        kwargs = []
+        for field in spec["params"]:
+            key = field["key"]
+            value = params.get(key, field["default"])
+            kwargs.append(f"{key}={_render_value(value, problem)}")
+        surface_name = f"surface_{surface_index}"
+        statements.append(
+            f"{surface_name}.add_constraint("
+            f"{surface_name}.{spec['method']}({', '.join(method_args + kwargs)}))"
+        )
+
+    return statements, _clean_body("\n\n".join(custom_bodies))
 
 
 def _clean_body(code: str) -> str:

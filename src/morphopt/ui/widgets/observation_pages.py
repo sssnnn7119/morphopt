@@ -7,11 +7,8 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
-import os
 
 import matplotlib.pyplot as plt
-import numpy as np
-import pyvista as pv
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
@@ -25,8 +22,9 @@ from PySide6.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from ...optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
-from ..i18n import T
+from ..i18n import tr
+from ..application.results import ResultSession
+from ..presentation.history import history_table
 
 
 class PlotViewport(QWidget):
@@ -68,84 +66,16 @@ class MetricsPage(QWidget):
         """Render all available history records up to ``iteration``."""
         self._last_history = history
         self._last_iteration = iteration
-        objectives = list(history.history_objective)
-        metrics = history.history_metrics
-        deformation = history.history_deformation
-        metric_count = self._metric_count(metrics)
-        deformation_labels, flat_deformation = self._deformation_columns(deformation)
-        headers = (
-            [T("迭代", "Iteration"), T("目标值", "Objective")]
-            + [T(f"指标 {index}", f"Metric {index}")
-               for index in range(metric_count)]
-            + [T("初始化", "Init"), T("有限元", "FEA"),
-               T("灵敏度", "Sens"), T("更新", "Update"),
-               T("单元数", "Elements"), T("节点数", "Nodes")]
-            + deformation_labels
-        )
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
-        self.table.setRowCount(len(objectives))
-
-        times = history.history_time
-        elements = history.history_num_elements
-        nodes = history.history_num_nodes
-        for row_index, objective in enumerate(objectives):
-            values = self._row_values(
-                row_index, objective, metrics, metric_count, times, elements,
-                nodes, flat_deformation,
-            )
+        table = history_table(history)
+        self.table.setColumnCount(len(table.headers))
+        self.table.setHorizontalHeaderLabels(table.headers)
+        self.table.setRowCount(len(table.rows))
+        self.table.clearContents()
+        for row_index, values in enumerate(table.rows):
             for column_index, value in enumerate(values):
                 if value is not None:
-                    self.table.setItem(
-                        row_index, column_index, QTableWidgetItem(value))
-        self._draw_objectives(objectives)
-
-    @staticmethod
-    def _metric_count(metrics) -> int:
-        if metrics is None or metrics.size == 0:
-            return 0
-        return metrics.shape[-1] if metrics.ndim > 1 else 1
-
-    @staticmethod
-    def _deformation_columns(deformation) -> tuple[list[str], object]:
-        if deformation is None or deformation.size == 0:
-            return [], None
-        if deformation.ndim == 2:
-            return ([T(f"位移 U0-{index}", f"U0-{index}")
-                     for index in range(deformation.shape[1])],
-                    deformation)
-        if deformation.ndim == 3:
-            tasks, dimensions = deformation.shape[1:]
-            labels = [T(f"位移 U{task}-{dimension}", f"U{task}-{dimension}")
-                      for task in range(tasks)
-                      for dimension in range(dimensions)]
-            return labels, deformation.reshape(deformation.shape[0], -1)
-        return [], None
-
-    @staticmethod
-    def _row_values(row_index, objective, metrics, metric_count, times,
-                    elements, nodes, flat_deformation) -> list[str | None]:
-        values: list[str | None] = [str(row_index + 1), f"{objective:.6f}"]
-        for metric_index in range(metric_count):
-            if metrics is None or row_index >= len(metrics):
-                values.append(None)
-                continue
-            metric_row = metrics[row_index]
-            metric_value = (metric_row[metric_index] if np.ndim(metric_row)
-                            else metric_row)
-            values.append(f"{metric_value:.6f}")
-        if times is not None and row_index < len(times):
-            values.extend(f"{value:.2f}" for value in times[row_index][:4])
-            values.extend([None] * max(0, 4 - len(times[row_index][:4])))
-        else:
-            values.extend([None] * 4)
-        values.append(str(elements[row_index]) if elements is not None and row_index < len(elements)
-                      else None)
-        values.append(str(nodes[row_index]) if nodes is not None and row_index < len(nodes)
-                      else None)
-        if flat_deformation is not None and row_index < len(flat_deformation):
-            values.extend(f"{value:.4e}" for value in flat_deformation[row_index])
-        return values
+                    self.table.setItem(row_index, column_index, QTableWidgetItem(value))
+        self._draw_objectives(table.objectives)
 
     def _draw_objectives(self, objectives: list[float]) -> None:
         plt.style.use("dark_background")
@@ -158,9 +88,9 @@ class MetricsPage(QWidget):
         self.figure.clear()
         axes = self.figure.add_subplot(111)
         axes.plot(range(1, len(objectives) + 1), objectives, marker="o", color="cyan")
-        axes.set_xlabel(T("迭代", "Iteration"))
-        axes.set_ylabel(T("目标值", "Objective"))
-        axes.set_title(T("目标值随迭代变化", "Objective vs Iteration"))
+        axes.set_xlabel(tr('ui.widgets.observation_pages.iteration'))
+        axes.set_ylabel(tr('ui.widgets.observation_pages.objective'))
+        axes.set_title(tr('ui.widgets.observation_pages.objective_vs_iteration'))
         axes.grid(True, color="white", linestyle="--", linewidth=0.5)
         self.canvas.draw()
 
@@ -190,7 +120,7 @@ class UpdatableStructurePage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         controls = QHBoxLayout()
-        self.interface_label = QLabel(T("显示接口", "Display interface"))
+        self.interface_label = QLabel(tr('ui.widgets.observation_pages.display_interface'))
         controls.addWidget(self.interface_label)
         self.interface_selector = QComboBox()
         self.interface_selector.currentIndexChanged.connect(
@@ -201,15 +131,12 @@ class UpdatableStructurePage(QWidget):
 
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
-        self._parameters = None
-        self._result_folder: str | None = None
+        self._results: ResultSession | None = None
         self._iteration = 0
         self._last_rendered: tuple[str, int, int | None] | None = None
 
-    def build(self, parameters, result_folder: str, iteration: int) -> None:
-        """Load and render the selected updateable interface."""
-        self._parameters = parameters
-        self._result_folder = result_folder
+    def build(self, results: ResultSession, iteration: int) -> None:
+        self._results = results
         self._iteration = iteration
         self._sync_interface_selector()
         self._render_selected()
@@ -217,24 +144,6 @@ class UpdatableStructurePage(QWidget):
     def _interface_changed(self, _index: int) -> None:
         self._last_rendered = None
         self._render_selected()
-
-    def _display_interfaces(self) -> list[tuple[str, object]]:
-        """Return visualizable design interfaces in collection order."""
-        if self._parameters is None:
-            return []
-        interfaces: list[tuple[str, object]] = []
-        for category, collection in (
-            ("Part", self._parameters.geometry),
-            ("FEA", self._parameters.feamodel),
-            ("Material", self._parameters.materials),
-        ):
-            for interface in collection.interfaces.values():
-                if (
-                    isinstance(interface, ProtocalUpdatable)
-                    and isinstance(interface, ProtocalVisualizable)
-                ):
-                    interfaces.append((category, interface))
-        return interfaces
 
     @staticmethod
     def _interface_label(category: str, interface) -> str:
@@ -246,7 +155,7 @@ class UpdatableStructurePage(QWidget):
         return label
 
     def _sync_interface_selector(self) -> None:
-        interfaces = self._display_interfaces()
+        interfaces = self._results.interfaces() if self._results else ()
         current = self.interface_selector.currentData()
         self.interface_selector.blockSignals(True)
         try:
@@ -257,7 +166,7 @@ class UpdatableStructurePage(QWidget):
                 )
             if not interfaces:
                 self.interface_selector.addItem(
-                    T("没有可更新接口", "No updateable interfaces"), None
+                    tr('ui.widgets.observation_pages.no_updateable_interfaces'), None
                 )
                 self.interface_selector.setEnabled(False)
             else:
@@ -268,11 +177,11 @@ class UpdatableStructurePage(QWidget):
             self.interface_selector.blockSignals(False)
 
     def _render_selected(self) -> None:
-        if self._parameters is None or self._result_folder is None:
+        if self._results is None or self._results.params is None or self._results.folder is None:
             return
         selected = self.interface_selector.currentData()
         marker = (
-            self._result_folder,
+            self._results.folder,
             self._iteration,
             id(selected) if selected is not None else None,
         )
@@ -281,14 +190,12 @@ class UpdatableStructurePage(QWidget):
 
         def build_scene(plotter) -> None:
             plotter.enable_lightkit()
-            self._parameters.load(
-                foldpath=f"{self._result_folder}/log/", iteration=self._iteration
-            )
             if selected is not None:
                 selected.plot(plotter=plotter)
             plotter.show_axes()
 
         try:
+            self._results.load_parameters(self._iteration)
             self.viewport.rebuild(build_scene)
             self._last_rendered = marker
         except Exception as exc:  # pragma: no cover - best-effort rendering
@@ -299,14 +206,13 @@ class UpdatableStructurePage(QWidget):
 
     def clear_view(self) -> None:
         """Empty the viewport and forget the previous render marker."""
-        self._parameters = None
-        self._result_folder = None
+        self._results = None
         self._last_rendered = None
         self.interface_selector.blockSignals(True)
         try:
             self.interface_selector.clear()
             self.interface_selector.addItem(
-                T("没有可更新接口", "No updatable interfaces"), None
+                tr('ui.widgets.observation_pages.no_updatable_interfaces'), None
             )
             self.interface_selector.setEnabled(False)
         finally:
@@ -318,30 +224,8 @@ class UpdatableStructurePage(QWidget):
 
     def apply_language(self) -> None:
         """Refresh the interface selector without rebuilding the scene."""
-        self.interface_label.setText(T("显示接口", "Display interface"))
-        current = self.interface_selector.currentData()
-        self.interface_selector.blockSignals(True)
-        try:
-            interfaces = self._display_interfaces()
-            self.interface_selector.clear()
-            for category, interface in interfaces:
-                self.interface_selector.addItem(
-                    self._interface_label(category, interface), interface
-                )
-            if not interfaces:
-                self.interface_selector.addItem(
-                T("没有可更新接口", "No updatable interfaces"), None
-                )
-                self.interface_selector.setEnabled(False)
-                return
-            self.interface_selector.setEnabled(True)
-            index = self.interface_selector.findData(current)
-            if index >= 0:
-                self.interface_selector.setCurrentIndex(index)
-            else:
-                self.interface_selector.setCurrentIndex(0)
-        finally:
-            self.interface_selector.blockSignals(False)
+        self.interface_label.setText(tr('ui.widgets.observation_pages.display_interface'))
+        self._sync_interface_selector()
 
 
 class DeformationCasePage(QWidget):
@@ -356,25 +240,16 @@ class DeformationCasePage(QWidget):
         layout.addWidget(self.viewport)
         self._last_rendered: tuple[str, int] | None = None
 
-    def build(self, result_folder: str, iteration: int) -> None:
-        """Render this load case unless it is already current."""
-        marker = (result_folder, iteration)
+    def build(self, results: ResultSession, iteration: int) -> None:
+        marker = (results.folder, iteration)
         if marker == self._last_rendered:
             return
-        mesh_path = (
-            f"{result_folder}/log/deformation/"
-            f"task_{self.case_index}_iter_{iteration}.stl"
-        )
-
+        mesh = results.deformation_mesh(self.case_index, iteration)
         def build_scene(plotter) -> None:
             plotter.enable_lightkit()
-            if os.path.exists(mesh_path):
-                mesh = pv.read(mesh_path)
-                plotter.add_mesh(
-                    mesh, color=(40 / 255, 120 / 255, 181 / 255),
-                    opacity=1.0, show_edges=True,
-                )
+            if mesh is not None:
+                plotter.add_mesh(mesh, color=(40 / 255, 120 / 255, 181 / 255), opacity=1.0, show_edges=True)
                 plotter.show_axes()
-
         self.viewport.rebuild(build_scene)
-        self._last_rendered = marker
+        if mesh is not None:
+            self._last_rendered = marker

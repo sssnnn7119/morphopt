@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..application import RunSourceKind
-from ..i18n import T
+from ..i18n import tr
 
 
 class ContinueDialog(QDialog):
@@ -21,24 +21,20 @@ class ContinueDialog(QDialog):
 
     def __init__(self, max_step: int, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(T("继续优化", "Continue Optimization"))
+        self.setWindowTitle(tr('ui.widgets.run_dialogs.continue_optimization'))
         self.setMinimumWidth(380)
         layout = QVBoxLayout(self)
         layout.addWidget(
             QLabel(
-                T(
-                    f"当前结果已完成至第 {max_step} 步。请选择续跑起始位置：",
-                    f"The result has reached step {max_step}. "
-                    "Choose where to resume:",
-                )
+                tr('ui.widgets.run_dialogs.the_result_has_reached_step_value_choose_where_to_resume', value_0=max_step)
             )
         )
         self.last_step = QRadioButton(
-            T("从结果最后一步续跑", "Resume from the last step")
+            tr('ui.widgets.run_dialogs.resume_from_the_last_step')
         )
         self.last_step.setChecked(True)
         self.chosen_step = QRadioButton(
-            T("从指定步骤续跑：", "Resume from a chosen step:")
+            tr('ui.widgets.run_dialogs.resume_from_a_chosen_step')
         )
         self.step = QSpinBox()
         self.step.setRange(1, max(1, max_step))
@@ -55,9 +51,9 @@ class ContinueDialog(QDialog):
         layout.addLayout(step_row)
 
         buttons = QHBoxLayout()
-        accept = QPushButton(T("继续", "Continue"))
+        accept = QPushButton(tr('ui.widgets.run_dialogs.continue'))
         accept.clicked.connect(self.accept)
-        cancel = QPushButton(T("取消", "Cancel"))
+        cancel = QPushButton(tr('ui.widgets.run_dialogs.cancel'))
         cancel.clicked.connect(self.reject)
         buttons.addStretch(1)
         buttons.addWidget(cancel)
@@ -73,15 +69,12 @@ class SourceDialog(QDialog):
 
     def __init__(self, has_definition: bool, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(T("选择任务来源", "Choose task source"))
+        self.setWindowTitle(tr('ui.widgets.run_dialogs.choose_task_source'))
         self.setMinimumWidth(480)
         self._chosen: RunSourceKind | None = None
         layout = QVBoxLayout(self)
         caption = QLabel(
-            T(
-                "选择本次优化/运行的任务来源：",
-                "Choose the task source for this run:",
-            )
+            tr('ui.widgets.run_dialogs.choose_the_task_source_for_this_run')
         )
         caption.setStyleSheet("color:#9aa4b2;")
         layout.addWidget(caption)
@@ -89,30 +82,18 @@ class SourceDialog(QDialog):
         options = (
             (
                 RunSourceKind.DEFINITION,
-                T("从当前定义优化（全新）", "Optimize current definition (fresh)"),
-                T(
-                    "使用定义页给出的定义，导出 .py 后从头运行。",
-                    "Use the definition from the definition page; export .py "
-                    "and run from scratch.",
-                ),
+                tr('ui.widgets.run_dialogs.optimize_current_definition_fresh'),
+                tr('ui.widgets.run_dialogs.use_the_definition_from_the_definition_page_export_py_and_run_from_scrat'),
             ),
             (
                 RunSourceKind.PYTHON,
-                T("从定义脚本 (.py) 优化", "Optimize from a definition script (.py)"),
-                T(
-                    "选择已有可运行的 .py，按脚本自身设置从头运行。",
-                    "Pick an existing runnable .py; run from scratch with its "
-                    "own settings.",
-                ),
+                tr('ui.widgets.run_dialogs.optimize_from_a_definition_script_py'),
+                tr('ui.widgets.run_dialogs.pick_an_existing_runnable_py_run_from_scratch_with_its_own_settings'),
             ),
             (
                 RunSourceKind.CONTINUE,
-                T("从已有结果继续优化", "Continue an existing result"),
-                T(
-                    "选择已有结果目录，从最后一步或指定步续跑。",
-                    "Pick an existing result folder; continue from the last or "
-                    "a chosen step.",
-                ),
+                tr('ui.widgets.run_dialogs.continue_an_existing_result'),
+                tr('ui.widgets.run_dialogs.pick_an_existing_result_folder_continue_from_the_last_or_a_chosen_step'),
             ),
         )
         for kind, title, description in options:
@@ -128,16 +109,12 @@ class SourceDialog(QDialog):
 
         if not has_definition:
             note = QLabel(
-                T(
-                    "提示：尚未收到定义页定义，“从当前定义优化”不可用。",
-                    "Note: no definition received, so the current-definition "
-                    "option is unavailable.",
-                )
+                tr('ui.widgets.run_dialogs.note_no_definition_received_so_the_current_definition_option_is_unavaila')
             )
             note.setStyleSheet("color:#7f8c8d;")
             layout.addWidget(note)
 
-        cancel = QPushButton(T("取消", "Cancel"))
+        cancel = QPushButton(tr('ui.widgets.run_dialogs.cancel'))
         cancel.clicked.connect(self.reject)
         layout.addWidget(cancel)
 

@@ -16,10 +16,7 @@ generated from the model in the read-only code tab (no .py import).
 
 from __future__ import annotations
 
-import ast
-import keyword
 import os
-from textwrap import indent
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -41,30 +38,33 @@ from PySide6.QtWidgets import (
 
 from .application import (
     EditorKind,
+    EditorRoute,
     MissingImportedModelError,
     ProblemSession,
     route_editor,
 )
-from .i18n import T
-from .model.problem import Node, ProblemDefinition
-from .model.schemas import MATERIAL_TYPES
-from .schemes.base import scheme_label
-from .widgets.editor import PropertyEditor, fields_for_node
-from .widgets.model_tree import (
-    ModelTree,
-    _full_label,
-    container_title,
-    instance_title_text,
-    part_interface_title_text,
-    surface_index,
-    surface_title_text,
+from .i18n import tr
+from .model.problem import (
+    Node,
+    ProblemDefinition,
 )
+from .schemes.base import scheme_label
+from .widgets.editor import PropertyEditor
+from .widgets.editor_pages import EditorPages
+from .application.fields import fields_for_node
+from .application.part_sets import PartSetCatalog
+from .widgets.definition_manager import DefinitionManagerEditor
+from .widgets.model_tree import ModelTree
+from .widgets.definition_actions import DefinitionActions
+from .presentation.labels import container_title
+
 from .widgets.objective_editor import ObjectiveEditor
 from .widgets.custom_classes import CustomClassEditor, CustomClassTree, ModelClassSelector
-from .widgets.codeeditor import CodeEditor
-from .widgets.solver_editor import SolverEditor, detect_devices
+from .widgets.codeeditor import HelperCodeEditor
+from .widgets.solver_editor import SolverEditor
+from .application.devices import detect_devices
 from .widgets.stepmatrix import StepMatrix
-from .widgets.torchfea_model_editor import TorchFEAModelEditor
+from .application.imported_models import ImportedModelLibrary
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
 
@@ -82,16 +82,12 @@ class Workbench(QWidget):
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
         self.session = ProblemSession(problem)
+        self.part_sets = PartSetCatalog(problem)
         self._last_selected: Node | None = None
         self._rebuild_timer = QTimer(self)
         self._rebuild_timer.setSingleShot(True)
         self._rebuild_timer.setInterval(250)
         self._rebuild_timer.timeout.connect(self._on_any_change)
-        self._helper_refresh_timer = QTimer(self)
-        self._helper_refresh_timer.setSingleShot(True)
-        self._helper_refresh_timer.setInterval(250)
-        self._helper_refresh_timer.timeout.connect(self.refresh_code)
-        self._helper_loading = False
         self._build_ui()
         self.reload()
 
@@ -111,32 +107,26 @@ class Workbench(QWidget):
         actions = [
             (
                 "quickstart",
-                T("快速开始 · Quickstart", "Quickstart"),
-                T(
-                    "从初始结构和设计目标创建优化问题",
-                    "Create a problem from a starting structure and design goal",
-                ),
+                tr('ui.workbench.quickstart'),
+                tr('ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal'),
                 self.quickstartRequested.emit,
             ),
             (
                 "open",
-                T("打开 .morph", "Open .morph"),
-                T("打开已有的 .morph 定义", "Open an existing .morph definition"),
+                tr('ui.workbench.open_morph'),
+                tr('ui.workbench.open_an_existing_morph_definition'),
                 self.openMorphRequested.emit,
             ),
             (
                 "export",
-                T("导出 .morph", "Export .morph"),
-                T("把当前定义保存为 .morph", "Save the current definition as .morph"),
+                tr('ui.workbench.export_morph'),
+                tr('ui.workbench.save_the_current_definition_as_morph'),
                 self.exportMorphRequested.emit,
             ),
             (
                 "runpy",
-                T("导出运行 .py", "Export Run .py"),
-                T(
-                    "由当前定义生成可运行的无界面 .py",
-                    "Generate a headless runnable .py from the current definition",
-                ),
+                tr('ui.workbench.export_run_py'),
+                tr('ui.workbench.generate_a_headless_runnable_py_from_the_current_definition'),
                 self.exportRunPyRequested.emit,
             ),
         ]
@@ -152,28 +142,22 @@ class Workbench(QWidget):
 
         # header: optimization name + output path (editable) + scheme caption
         head = QHBoxLayout()
-        self._lbl_name = QLabel(T("优化名称", "Optimization name"))
+        self._lbl_name = QLabel(tr('ui.workbench.optimization_name'))
         head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
         self._name_edit.setFixedWidth(180)
         self._name_edit.setToolTip(
-            T(
-                "优化问题名称（导出/运行的 opt_label）",
-                "Problem name (opt_label used when exporting / running)",
-            )
+            tr('ui.workbench.problem_name_opt_label_used_when_exporting_running')
         )
         self._name_edit.editingFinished.connect(self._apply_name)
         head.addWidget(self._name_edit)
         head.addSpacing(10)
-        self._lbl_path = QLabel(T("输出路径", "Output folder"))
+        self._lbl_path = QLabel(tr('ui.workbench.output_folder'))
         head.addWidget(self._lbl_path)
         self._path_edit = QLineEdit()
         self._path_edit.setMinimumWidth(120)
         self._path_edit.setToolTip(
-            T(
-                "结果输出目录（Controller.path_result_folder）",
-                "Result output directory (Controller.path_result_folder)",
-            )
+            tr('ui.workbench.result_output_directory_controller_path_result_folder')
         )
         self._path_edit.editingFinished.connect(self._apply_path)
         head.addWidget(self._path_edit, 1)
@@ -183,7 +167,7 @@ class Workbench(QWidget):
         head.addWidget(btn_dir)
         head.addSpacing(12)
         # global compute device (used by start_optimization and the Updater)
-        self._lbl_device = QLabel(T("设备", "Device"))
+        self._lbl_device = QLabel(tr('ui.workbench.device'))
         head.addWidget(self._lbl_device)
         self._device = QComboBox()
         self._device.setEditable(True)
@@ -193,11 +177,7 @@ class Workbench(QWidget):
             if dev != "cpu":
                 self._device.addItem(dev)
         self._device.setToolTip(
-            T(
-                "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
-                "Global compute device (cpu / cuda:0…); used by start_optimization "
-                "and the Updater.",
-            )
+            tr('ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda')
         )
         self._device.currentTextChanged.connect(self._save_device)
         head.addWidget(self._device)
@@ -211,7 +191,8 @@ class Workbench(QWidget):
         split = QSplitter(Qt.Orientation.Horizontal)
 
         # ---- left tree
-        self.tree = ModelTree()
+        self.actions = DefinitionActions(self)
+        self.tree = ModelTree(actions=self.actions)
         self.tree.nodeSelected.connect(self._on_node_selected)
         self.tree.itemClicked.connect(self._on_model_item_clicked)
         self.tree.treeChanged.connect(self._schedule_rebuild)
@@ -239,12 +220,12 @@ class Workbench(QWidget):
         self.class_selector.changed.connect(self._schedule_rebuild)
         edit_layout.addWidget(self.class_selector)
         edit_layout.addWidget(self._stack, 1)
-        center.addTab(edit_page, T("编辑", "Edit"))
+        center.addTab(edit_page, tr('ui.workbench.edit'))
 
         self.code_view = QPlainTextEdit()
         self.code_view.setReadOnly(True)
         self.code_view.setFont(QFont("DejaVu Sans Mono", 10))
-        center.addTab(self.code_view, T("代码 (只读)", "Code (read-only)"))
+        center.addTab(self.code_view, tr('ui.workbench.code_read_only'))
         center.setMinimumWidth(440)
         split.addWidget(center)
 
@@ -263,12 +244,9 @@ class Workbench(QWidget):
         self._msg = QLabel("")
         self._msg.setStyleSheet("color:#9aa4b2;")
         foot.addWidget(self._msg, 1)
-        self._b_import = QPushButton(T("▶ 进入优化器", "▶ Send to Observer"))
+        self._b_import = QPushButton(tr('ui.workbench.send_to_observer'))
         self._b_import.setToolTip(
-            T(
-                "将当前定义提交至优化器，以开始或继续优化",
-                "Hand the current definition to the observer page to start or continue",
-            )
+            tr('ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue')
         )
         self._b_import.setStyleSheet(
             "background-color:#00695c; font-weight:600; padding:6px 18px;"
@@ -296,116 +274,45 @@ class Workbench(QWidget):
         self.solver_editor = SolverEditor()
         self.step_matrix = StepMatrix()
         self.updater_editor = UpdaterEditor()
+        self.geometry_editor = DefinitionManagerEditor("geometry", self.actions, sets=self.part_sets)
+        self.loads_editor = DefinitionManagerEditor("loads", self.actions, sets=self.part_sets)
+        self.materials_editor = DefinitionManagerEditor("materials", self.actions, sets=self.part_sets)
         self.objective_editor = ObjectiveEditor()
         self.custom_class_editor = CustomClassEditor()
-        self.torchfea_model_editor = TorchFEAModelEditor()
         self.optimizer_overview = self._make_optimizer_overview()
-        self.helper_page = QWidget()
-        helper_layout = QVBoxLayout(self.helper_page)
-        self.helper_hint = QLabel()
-        self.helper_hint.setWordWrap(True)
-        helper_layout.addWidget(self.helper_hint)
-        helper_actions = QHBoxLayout()
-        self.helper_add_variable = QPushButton(T("添加辅助变量", "Add helper variable"))
-        self.helper_add_variable.clicked.connect(lambda: self.tree.add_helper("helper_variable"))
-        helper_actions.addWidget(self.helper_add_variable)
-        self.helper_add_function = QPushButton(T("添加辅助函数", "Add helper function"))
-        self.helper_add_function.clicked.connect(lambda: self.tree.add_helper("helper_function"))
-        helper_actions.addWidget(self.helper_add_function)
-        self.helper_delete = QPushButton(T("删除此项", "Delete item"))
-        self.helper_delete.clicked.connect(self._delete_selected_helper)
-        helper_actions.addWidget(self.helper_delete)
-        helper_actions.addStretch(1)
-        helper_layout.addLayout(helper_actions)
-        self.helper_name = QLineEdit()
-        self.helper_name.editingFinished.connect(self._save_helper_fields)
-        self.helper_name_label = QLabel(T("名称", "Name"))
-        helper_layout.addWidget(self.helper_name_label)
-        helper_layout.addWidget(self.helper_name)
-        self.helper_value = QLineEdit()
-        self.helper_value.editingFinished.connect(self._save_helper_fields)
-        self.helper_value_label = QLabel(T("值", "Value"))
-        helper_layout.addWidget(self.helper_value_label)
-        helper_layout.addWidget(self.helper_value)
-        self.helper_parameters = QLineEdit()
-        self.helper_parameters.editingFinished.connect(self._save_helper_fields)
-        self.helper_parameters_label = QLabel(T("输入形参", "Parameters"))
-        helper_layout.addWidget(self.helper_parameters_label)
-        helper_layout.addWidget(self.helper_parameters)
-        self.helper_editor_label = QLabel()
-        helper_layout.addWidget(self.helper_editor_label)
-        self.helper_editor = CodeEditor("Python")
-        self.helper_editor.edit.textChanged.connect(self._save_helper_fields)
-        helper_layout.addWidget(self.helper_editor, 1)
-        self.helper_error = QLabel()
-        self.helper_error.setWordWrap(True)
-        self.helper_error.setStyleSheet("color:#e57373;")
-        helper_layout.addWidget(self.helper_error)
-        self._edit_helper_node(None)
-        for editor in (
-            self.prop_editor,
-            self.solver_editor,
-            self.step_matrix,
-            self.updater_editor,
-            self.objective_editor,
-            self.custom_class_editor,
-            self.torchfea_model_editor,
-        ):
-            stack.addWidget(editor)
-            editor.changed.connect(self._schedule_rebuild)
-        # read-only overview: no ``changed`` signal to wire
-        stack.addWidget(self.optimizer_overview)
-        stack.addWidget(self.helper_page)
+        self.helper_page = HelperCodeEditor(self.actions)
+        self.helper_page.edit_node(None, self.problem)
         self.updater_editor.codeChanged.connect(self.refresh_code)
+        self.geometry_editor.changed.connect(self._sync_single_imported_part)
         self.custom_class_editor.nodeSelected.connect(self._on_node_selected)
-        self.torchfea_model_editor.changed.connect(self._sync_single_imported_part)
+        self._register_editor_pages()
 
-        # loads hint: loads are added/edited in the left tree per type
-        self._loads_hint = self._make_loads_hint()
-        stack.addWidget(self._loads_hint)
-
-
-    @staticmethod
-    def _make_optimizer_overview() -> QLabel:
-        """Concise landing page for the model-tree optimization definition."""
-        overview = QLabel(
-            T(
-                "优化问题定义\n\n"
-                "这里集中管理优化目标、几何优化器和材料优化器。\n"
-                "各优化器下分别管理子优化目标、等式约束和罚函数约束。\n"
-                "请在左侧展开并选择具体项目后编辑详细参数。",
-                "Optimization definition\n\n"
-                "This section contains the optimization objective, geometry "
-                "optimizer, and material optimizer.\n"
-                "Each optimizer contains its sub-objectives, equality constraints, "
-                "and penalty constraints.\n"
-                "Expand the section on the left and select a concrete item to edit "
-                "its details.",
-            )
+    def _make_optimizer_overview(self) -> QWidget:
+        """Landing page with the two supported optimizer-add actions."""
+        overview = QWidget()
+        layout = QVBoxLayout(overview)
+        description = QLabel(
+            tr('ui.workbench.optimization_definition_this_section_contains_the_optimization_objective')
         )
-        overview.setWordWrap(True)
-        overview.setAlignment(Qt.AlignmentFlag.AlignTop)
-        overview.setContentsMargins(16, 16, 16, 16)
+        description.setWordWrap(True)
+        description.setAlignment(Qt.AlignmentFlag.AlignTop)
+        description.setContentsMargins(16, 16, 16, 16)
+        layout.addWidget(description)
+        buttons = QHBoxLayout()
+        add_geometry = QPushButton(tr('ui.workbench.geometry_optimizer'))
+        add_geometry.clicked.connect(
+            lambda _checked=False: self.actions.add_geometry_updater()
+        )
+        buttons.addWidget(add_geometry)
+        add_materials = QPushButton(tr('ui.workbench.material_optimizer'))
+        add_materials.clicked.connect(
+            lambda _checked=False: self.actions.add_materials_updater()
+        )
+        buttons.addWidget(add_materials)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        layout.addStretch(1)
         return overview
-
-    @staticmethod
-    def _make_loads_hint() -> QLabel:
-        hint = QLabel(
-            T(
-                "载荷：左树的“载荷”节点下分为“载荷定义”和“载荷工况”。\n"
-                "• 右键“载荷定义” → 添加载荷类型\n"
-                "• 右键单个载荷：删除 / 上移 / 下移\n"
-                "• 点选单个载荷，按该类型专属字段编辑参数与名称",
-                "Loads are grouped into Load definition and Load cases.\n"
-                "• Right-click Load definition → add a load type\n"
-                "• Right-click a load: delete / move up / move down\n"
-                "• Select a load to edit its type-specific fields and its name",
-            )
-        )
-        hint.setWordWrap(True)
-        hint.setAlignment(Qt.AlignmentFlag.AlignTop)
-        hint.setContentsMargins(12, 12, 12, 12)
-        return hint
 
     # ------------------------------------------------------------- reload
     def reload(self) -> None:
@@ -428,14 +335,18 @@ class Workbench(QWidget):
         self.objective_editor.set_problem(self.problem)
         self._select_editor(self._last_selected)
         if imported is not None:
-            # Validate persisted TorchFEA links even when the geometry editor
-            # is not the currently selected page.
-            self.torchfea_model_editor.validate_link(imported)
+            issue = ImportedModelLibrary.validate_link(imported)
+            if issue is not None:
+                QMessageBox.warning(
+                    self,
+                    tr('ui.widgets.torchfea_model_editor.torchfea_model_link_cleared'),
+                    issue,
+                )
         self.refresh_code()
         try:
             self.viewer.set_problem(self.problem)
         except (TypeError, ValueError) as exc:
-            self.notify.emit(T(f"预览暂不可用：{exc}", f"Preview unavailable: {exc}"))
+            self.notify.emit(tr('ui.workbench.preview_unavailable_value', value_0=exc))
 
     def _update_caption(self) -> None:
         self.title.setText(
@@ -453,26 +364,20 @@ class Workbench(QWidget):
         """
         act_text = {
             "quickstart": (
-                T("快速开始 · Quickstart", "Quickstart"),
-                T(
-                    "从初始结构和设计目标创建优化问题",
-                    "Create a problem from a starting structure and design goal",
-                ),
+                tr('ui.workbench.quickstart'),
+                tr('ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal'),
             ),
             "open": (
-                T("打开 .morph", "Open .morph"),
-                T("打开已有的 .morph 定义", "Open an existing .morph definition"),
+                tr('ui.workbench.open_morph'),
+                tr('ui.workbench.open_an_existing_morph_definition'),
             ),
             "export": (
-                T("导出 .morph", "Export .morph"),
-                T("把当前定义保存为 .morph", "Save the current definition as .morph"),
+                tr('ui.workbench.export_morph'),
+                tr('ui.workbench.save_the_current_definition_as_morph'),
             ),
             "runpy": (
-                T("导出运行 .py", "Export Run .py"),
-                T(
-                    "由当前定义生成可运行的无界面 .py",
-                    "Generate a headless runnable .py from the current definition",
-                ),
+                tr('ui.workbench.export_run_py'),
+                tr('ui.workbench.generate_a_headless_runnable_py_from_the_current_definition'),
             ),
         }
         for key, (text, tip) in act_text.items():
@@ -480,39 +385,24 @@ class Workbench(QWidget):
             if b is not None:
                 b.setText(text)
                 b.setToolTip(tip)
-        self._lbl_name.setText(T("优化名称", "Optimization name"))
-        self._lbl_path.setText(T("输出路径", "Output folder"))
-        self._lbl_device.setText(T("设备", "Device"))
+        self._lbl_name.setText(tr('ui.workbench.optimization_name'))
+        self._lbl_path.setText(tr('ui.workbench.output_folder'))
+        self._lbl_device.setText(tr('ui.workbench.device'))
         self._name_edit.setToolTip(
-            T(
-                "优化问题名称（导出/运行的 opt_label）",
-                "Problem name (opt_label used when exporting / running)",
-            )
+            tr('ui.workbench.problem_name_opt_label_used_when_exporting_running')
         )
         self._path_edit.setToolTip(
-            T(
-                "结果输出目录（Controller.path_result_folder）",
-                "Result output directory (Controller.path_result_folder)",
-            )
+            tr('ui.workbench.result_output_directory_controller_path_result_folder')
         )
         self._device.setToolTip(
-            T(
-                "全局计算设备（cpu / cuda:0…）；作用于 start_optimization 与 Updater",
-                "Global compute device (cpu / cuda:0…); used by start_optimization "
-                "and the Updater.",
-            )
+            tr('ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda')
         )
         self._update_caption()
-        self._center.setTabText(0, T("编辑", "Edit"))
-        self._center.setTabText(1, T("代码 (只读)", "Code (read-only)"))
-        self._update_helper_text()
-        self._update_helper_error()
-        self._b_import.setText(T("▶ 进入优化器", "▶ Send to Observer"))
+        self._center.setTabText(0, tr('ui.workbench.edit'))
+        self._center.setTabText(1, tr('ui.workbench.code_read_only'))
+        self._b_import.setText(tr('ui.workbench.send_to_observer'))
         self._b_import.setToolTip(
-            T(
-                "将当前定义提交至优化器，以开始或继续优化",
-                "Hand the current definition to the observer page to start or continue",
-            )
+            tr('ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue')
         )
 
         # Refresh the model-tree titles and the centre editors in the new
@@ -529,104 +419,13 @@ class Workbench(QWidget):
         self.viewer.apply_language()
 
     # -------------------------------------------- name / output-path slots
-    def _update_helper_text(self) -> None:
-        self.helper_hint.setText(T(
-            "自由代码块可写任意脚本级代码；辅助变量填写名称和 Python 值表达式；辅助函数填写名称、形参和函数体。参数框可直接填写辅助变量名。",
-            "Use the free code block for module code. Variables have a name and Python value; functions have a name, parameters and body. Parameter fields accept helper variable names.",
-        ))
-
-    def _update_helper_error(self) -> None:
-        node = self._last_selected
-        if node is None or node.kind not in {"helper_code_block", "helper_variable", "helper_function"}:
-            self.helper_error.clear()
-            return
-        try:
-            if node.kind == "helper_code_block":
-                compile(self.helper_editor.body(), "<helper code>", "exec")
-            elif node.kind == "helper_variable":
-                if not node.name.isidentifier() or keyword.iskeyword(node.name):
-                    raise ValueError(T("变量名无效", "Invalid variable name"))
-                ast.parse(self.helper_value.text(), mode="eval")
-            else:
-                if not node.name.isidentifier() or keyword.iskeyword(node.name):
-                    raise ValueError(T("函数名无效", "Invalid function name"))
-                body = self.helper_editor.body() or "pass"
-                compile(f"def {node.name}({self.helper_parameters.text()}):\n{indent(body, '    ')}", "<helper function>", "exec")
-        except (SyntaxError, ValueError) as exc:
-            self.helper_error.setText(T(
-                f"辅助定义有误：{exc}",
-                f"Invalid helper definition: {exc}",
-            ))
-        else:
-            self.helper_error.clear()
-
-    def _save_helper_fields(self) -> None:
-        if self._helper_loading:
-            return
-        node = self._last_selected
-        if node is None or node.kind not in {"helper_code_block", "helper_variable", "helper_function"}:
-            return
-        if node.kind == "helper_code_block":
-            self.problem.helper_code = self.helper_editor.body()
-        else:
-            name = self.helper_name.text().strip()
-            if name:
-                node.name = name
-                item = self.tree._node_item.get(node)
-                if item is not None:
-                    item.setText(0, name)
-            if node.kind == "helper_variable":
-                node.value = self.helper_value.text()
-            else:
-                node.parameters = self.helper_parameters.text()
-                node.body = self.helper_editor.body()
-        self._update_helper_error()
-        self._helper_refresh_timer.start()
-
-    def _delete_selected_helper(self) -> None:
-        if self._last_selected is not None:
-            self.tree.remove_helper(self._last_selected)
-
-    def _edit_helper_node(self, node: Node | None) -> None:
-        kind = node.kind if node is not None else "helper_code"
-        self.helper_add_variable.setVisible(kind in {"helper_code", "helper_variables_group"})
-        self.helper_add_function.setVisible(kind in {"helper_code", "helper_functions_group"})
-        editable = kind in {"helper_variable", "helper_function"}
-        self.helper_delete.setVisible(editable)
-        self.helper_name_label.setVisible(editable)
-        self.helper_name.setVisible(editable)
-        self.helper_value_label.setVisible(kind == "helper_variable")
-        self.helper_value.setVisible(kind == "helper_variable")
-        self.helper_parameters_label.setVisible(kind == "helper_function")
-        self.helper_parameters.setVisible(kind == "helper_function")
-        self.helper_editor_label.setVisible(kind in {"helper_code_block", "helper_function"})
-        self.helper_editor.setVisible(kind in {"helper_code_block", "helper_function"})
-        self.helper_error.setVisible(kind in {"helper_code_block", "helper_variable", "helper_function"})
-        self._helper_loading = True
-        try:
-            self.helper_name.setPlaceholderText(T("名称", "Name"))
-            self.helper_value.setPlaceholderText(T("值（Python 表达式）", "Value (Python expression)"))
-            self.helper_parameters.setPlaceholderText(T("形参，例如 x, scale=1", "Parameters, e.g. x, scale=1"))
-            self.helper_name_label.setText(T("名称", "Name"))
-            self.helper_value_label.setText(T("值（Python 表达式）", "Value (Python expression)"))
-            self.helper_parameters_label.setText(T("输入形参", "Parameters"))
-            self.helper_editor_label.setText(T("自由代码", "Free code") if kind == "helper_code_block" else T("函数体", "Function body"))
-            self.helper_name.setText(node.name if editable else "")
-            self.helper_value.setText(node.value if kind == "helper_variable" else "")
-            self.helper_parameters.setText(node.parameters if kind == "helper_function" else "")
-            code = self.problem.helper_code if kind == "helper_code_block" else node.body if kind == "helper_function" else ""
-            self.helper_editor.set_body(code)
-        finally:
-            self._helper_loading = False
-        self._update_helper_text()
-        self._update_helper_error()
 
     def _apply_name(self) -> None:
         v = self._name_edit.text().strip()
         if self.session.set_label(v):
             self._update_caption()
             self.refresh_code()
-            self.notify.emit(T(f"优化名称：{v}", f"Optimization name: {v}"))
+            self.notify.emit(tr('ui.workbench.optimization_name_value', value_0=v))
         else:
             self._name_edit.setText(self.problem.label)
 
@@ -644,21 +443,21 @@ class Workbench(QWidget):
             return
         if self.session.set_device(text):
             self.refresh_code()
-            self.notify.emit(T(f"设备：{text}", f"Device: {text}"))
+            self.notify.emit(tr('ui.workbench.device_value', value_0=text))
 
     def _browse_path(self) -> None:
         start = self._path_edit.text() or os.getcwd()
         folder = QFileDialog.getExistingDirectory(
-            self, T("选择输出路径", "Select output folder"), start
+            self, tr('ui.workbench.select_output_folder'), start
         )
         if folder:
             self._path_edit.setText(folder)
             if self.session.set_result_folder(folder):
                 self.refresh_code()
 
-    def refresh_code(self) -> None:
+    def refresh_code(self, *, synchronize: bool = True) -> None:
         try:
-            self.code_view.setPlainText(self.session.source())
+            self.code_view.setPlainText(self.session.source(synchronize=synchronize))
         except Exception as exc:  # pragma: no cover
             self.code_view.setPlainText(f"# code generation failed:\n{exc}")
 
@@ -688,67 +487,87 @@ class Workbench(QWidget):
         self._on_node_selected(node)
         self.custom_class_editor.add_override()
 
+    def _register_editor_pages(self) -> None:
+        self.pages = EditorPages(self._stack, self._schedule_rebuild)
+        for kind, editor in (
+            (EditorKind.CUSTOM_CLASS, self.custom_class_editor),
+            (EditorKind.SOLVER, self.solver_editor),
+            (EditorKind.STEPS, self.step_matrix),
+        ):
+            self.pages.register(
+                kind,
+                editor,
+                lambda route, problem, editor=editor: editor.edit_node(route.node, problem),
+                changed=editor.changed,
+            )
+        for kind, editor, section in (
+            (EditorKind.GEOMETRY, self.geometry_editor, "geometry"),
+            (EditorKind.LOADS, self.loads_editor, "loads"),
+            (EditorKind.MATERIALS, self.materials_editor, "materials"),
+        ):
+            self.pages.register(
+                kind,
+                editor,
+                lambda route, problem, editor=editor, section=section: editor.edit_node(
+                    problem.section(section),
+                    problem,
+                    focus=route.focus,
+                ),
+                changed=editor.changed,
+            )
+        self.pages.register(
+            EditorKind.UPDATER,
+            self.updater_editor,
+            lambda route, problem: self.updater_editor.edit_node(route.node, problem, focus=route.focus),
+            changed=self.updater_editor.changed,
+        )
+        self.pages.register(
+            EditorKind.OBJECTIVE,
+            self.objective_editor,
+            lambda route, problem: self.objective_editor.set_problem(problem),
+            changed=self.objective_editor.changed,
+        )
+        self.pages.register(
+            EditorKind.HELPER_CODE,
+            self.helper_page,
+            lambda route, problem: self.helper_page.edit_node(route.node, problem),
+            changed=self.helper_page.changed,
+        )
+        self.pages.register(EditorKind.OPTIMIZER_OVERVIEW, self.optimizer_overview, lambda route, problem: None)
+        self.pages.register(
+            EditorKind.PROPERTIES,
+            self.prop_editor,
+            self._bind_properties,
+            changed=self.prop_editor.changed,
+        )
+
     def _select_editor(self, node: Node | None) -> None:
         self.class_selector.edit_node(node, self.problem)
         route = route_editor(node)
-        if route.kind is EditorKind.CUSTOM_CLASS:
-            self.custom_class_editor.edit_node(route.node, self.problem)
-            self._stack.setCurrentWidget(self.custom_class_editor)
-        elif route.kind is EditorKind.HELPER_CODE:
-            self._edit_helper_node(node)
-            self._stack.setCurrentWidget(self.helper_page)
-        elif route.kind is EditorKind.SOLVER:
-            self.solver_editor.edit_node(route.node, self.problem)
-            self._stack.setCurrentWidget(self.solver_editor)
-        elif route.kind is EditorKind.LOADS:
-            self._stack.setCurrentWidget(self._loads_hint)
-        elif route.kind is EditorKind.STEPS:
-            self.step_matrix.edit_node(route.node, self.problem)
-            self._stack.setCurrentWidget(self.step_matrix)
-        elif route.kind is EditorKind.OPTIMIZER_OVERVIEW:
-            self._stack.setCurrentWidget(self.optimizer_overview)
-        elif route.kind is EditorKind.UPDATER:
-            self.updater_editor.edit_node(
-                route.node, self.problem, focus=route.focus
-            )
-            self._stack.setCurrentWidget(self.updater_editor)
-        elif route.kind is EditorKind.OBJECTIVE:
-            self.objective_editor.set_problem(self.problem)
-            self._stack.setCurrentWidget(self.objective_editor)
-        elif route.kind is EditorKind.TORCHFEA_MODEL:
-            self.torchfea_model_editor.edit_node(route.node, self.problem)
-            self._stack.setCurrentWidget(self.torchfea_model_editor)
-        else:
-            if node is None:
-                self._stack.setCurrentWidget(self.prop_editor)
-                return
-            fields, code_slots, extra = fields_for_node(node, self.problem)
-            subtitle = self._subtitle(node)
-            title = None
-            if node.kind == "surface":
-                idx = surface_index(self.problem, node)
-                if idx is not None:
-                    title = surface_title_text(node, idx)
-            elif node.kind == "material":
-                mt = node.material_type
-                spec = MATERIAL_TYPES.get(mt, {})
-                title = _full_label(spec, mt)
-            elif node.kind in {"geometry", "problem", "params_class"}:
-                title = container_title(node.kind)
-            elif node.kind == "part_interface":
-                title = part_interface_title_text(node)
-            elif node.kind == "instance":
-                title = instance_title_text(node)
-            self.prop_editor.edit_node(
-                node,
-                fields=fields,
-                code_slots=code_slots,
-                extra_choices=extra,
-                subtitle=subtitle,
-                title=title,
-                completion_problem=self.problem,
-            )
-            self._stack.setCurrentWidget(self.prop_editor)
+        for kind, editor in (
+            (EditorKind.GEOMETRY, self.geometry_editor),
+            (EditorKind.LOADS, self.loads_editor),
+            (EditorKind.MATERIALS, self.materials_editor),
+        ):
+            if route.kind is not kind:
+                editor.invalidate()
+        self.pages.select(route, self.problem)
+
+    def _bind_properties(self, route: EditorRoute, problem: ProblemDefinition) -> None:
+        node = route.node
+        if node is None:
+            return
+        fields, code_slots, extra = fields_for_node(node, problem, sets=self.part_sets)
+        title = container_title(node.kind) if node.kind in {"geometry", "problem", "params_class"} else None
+        self.prop_editor.edit_node(
+            node,
+            fields=fields,
+            code_slots=code_slots,
+            extra_choices=extra,
+            subtitle=self._subtitle(node),
+            title=title,
+            completion_problem=problem,
+        )
 
     def _sync_single_imported_part(self, _node: Node) -> None:
         """Select unambiguous imported material targets without name conventions."""
@@ -757,33 +576,15 @@ class Workbench(QWidget):
     @staticmethod
     def _subtitle(node: Node) -> str:
         if node.kind == "surface":
-            return T(
-                "每个 Part 的表面 0 = 外表面；表面 ≥1 = 内腔(flip)。修改后自动更新预览。",
-                "Surface 0 = outer within each Part; surfaces ≥1 = cavities (flip). "
-                "The preview updates automatically.",
-            )
+            return tr('ui.workbench.surface_0_outer_within_each_part_surfaces_1_cavities_flip_the_preview_up')
         if node.kind == "geometry":
-            return T(
-                "这里定义优化的初始构型：每个几何接口负责一个 Part 及其实例"
-                "（可右键添加/删除）。未命名的实例自动为 <part>-1, <part>-2, ...",
-                "Define the optimization's initial configuration here: every "
-                "geometry interface owns one Part and its instances (right-click "
-                "to add/remove). Unnamed instances become <part>-1, <part>-2, ...",
-            )
+            return tr('ui.workbench.define_the_optimization_s_initial_configuration_here_every_geometry_inte')
         if node.kind == "part_interface":
-            return T(
-                "这里可以修改几何接口注册名；它负责一个 Part 及其实例。"
-                "part_name 留空时使用接口名，下面的曲面仅对边界曲面接口有效。",
-                "Edit the geometry-interface registration name here. It owns one "
-                "Part and its instances; part_name falls back to the interface "
-                "name. Surfaces below apply only to boundary-surface interfaces.",
-            )
+            if node.get_field("type") == "CADPartInterface":
+                return tr('ui.workbench.use_the_buttons_below_or_the_context_menu_to_add_features_boolean_and_tr')
+            return tr('ui.workbench.edit_the_geometry_interface_registration_name_here_it_owns_one_part_and')
         if node.kind == "instance":
-            return T(
-                "平移和旋转均使用 TorchFEA 的指数坐标；旋转字段为 [rx, ry, rz]。",
-                "Translation and rotation use TorchFEA exponential coordinates; "
-                "rotation is [rx, ry, rz].",
-            )
+            return tr('ui.workbench.translation_and_rotation_use_torchfea_exponential_coordinates_rotation_i')
         return ""
 
     # ------------------------------------------------------ change refresh
@@ -795,17 +596,15 @@ class Workbench(QWidget):
         # model's object-reference graph.  Tree labels, open forms, generated
         # code, and the preview therefore observe the same model snapshot.
         self.session.synchronize()
-        try:
-            self.refresh_code()
-        except Exception:
-            pass
+        self.part_sets.invalidate()
+        self.refresh_code(synchronize=False)
         try:
             self.viewer.set_problem(self.problem)
         except (TypeError, ValueError) as exc:
-            self.notify.emit(T(f"预览暂不可用：{exc}", f"Preview unavailable: {exc}"))
+            self.notify.emit(tr('ui.workbench.preview_unavailable_value', value_0=exc))
         self.objective_editor.set_problem(self.problem)
         # refresh tree summaries (e.g. load param rows) and the visible editor
-        self.tree.rebuild(select=self._last_selected)
+        self.tree.rebuild(select=self._last_selected, notify=False)
         self.custom_tree.rebuild(select=self._last_selected)
         if self._last_selected is not None:
             self._select_editor(self._last_selected)
@@ -813,6 +612,7 @@ class Workbench(QWidget):
 
     def set_problem(self, problem: ProblemDefinition) -> None:
         self.session.replace(problem)
+        self.part_sets.bind(problem)
         self._last_selected = None
         self.reload()
 
@@ -823,18 +623,14 @@ class Workbench(QWidget):
         except MissingImportedModelError:
             QMessageBox.warning(
                 self,
-                T("缺少 TorchFEA 模型", "TorchFEA model required"),
-                T(
-                    "请先在初始几何节点选择模型目录并导入有效的 .npz 模型。",
-                    "Select a model directory and import a valid .npz model "
-                    "from the initial-geometry node first.",
-                ),
+                tr('ui.workbench.torchfea_model_required'),
+                tr('ui.workbench.select_a_model_directory_and_import_a_valid_npz_model_from_the_initial_g'),
             )
             return
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                T("优化定义不完整", "Incomplete optimization definition"),
+                tr('ui.workbench.incomplete_optimization_definition'),
                 str(exc),
             )
             return

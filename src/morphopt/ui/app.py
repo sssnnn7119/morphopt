@@ -56,6 +56,9 @@ def main() -> int:
     """Launch the definition page in the main application window."""
     app = create_application()
 
+    from .widgets.language_selector import restore_locale
+    restore_locale()
+
     from .mainwindow import MainWindow
 
     win = MainWindow()

@@ -50,9 +50,10 @@ class ProblemSession:
         self._problem.align_surface_dependent_state()
         return changed
 
-    def source(self) -> str:
+    def source(self, *, synchronize: bool = True) -> str:
         """Return runnable source for the current, synchronized definition."""
-        self.synchronize()
+        if synchronize:
+            self.synchronize()
         return generate_source(self._problem)
 
     def validate_for_run(self) -> None:

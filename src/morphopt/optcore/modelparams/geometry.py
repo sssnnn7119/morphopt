@@ -34,8 +34,8 @@ class GeometryParams(BaseParams):
 
     from .partinterface import (
         BasePartInterface,
+        CADPartInterface,
         BoxPartInterface,
-        CylinderPartInterface,
         INPPartInterface,
         TorchFEAPartInterface,
     )

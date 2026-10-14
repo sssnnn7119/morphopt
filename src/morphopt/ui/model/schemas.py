@@ -18,6 +18,7 @@ code snippets; those belong to :mod:`morphopt.ui.schemes`.
 from __future__ import annotations
 
 from dataclasses import fields
+import re
 
 from ...optcore.modelparams.materialinterface import MaterialModels
 
@@ -113,7 +114,7 @@ _FIELD_LABELS_ZH = {
     "xmin": "最小值",
     "xmax": "最大值",
     "threshold": "阈值",
-    "code": "等式约束代码",
+    "code": "自定义代码",
 }
 
 _FIELD_DOCS_ZH = {
@@ -192,12 +193,27 @@ _FIELD_DOCS_ZH = {
     "xmin": "允许的最小密度值。",
     "xmax": "允许的最大密度值。",
     "threshold": "密度阈值。",
-    "code": "在每次几何变量更新后执行的曲面等式约束代码。",
+    "code": "在几何更新时执行的自定义代码。",
 }
 
 
 def _contains_chinese(text: str) -> bool:
     return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _key_component(text: str) -> str:
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", text.lower())).strip("_") or "text"
+
+
+def _field_text_key(field_key: str, kind: str, english_text: str) -> str:
+    return (
+        f"ui.schema.fields.{_key_component(field_key)}.{kind}."
+        f"{_key_component(english_text)}"
+    )
+
+
+def _catalog_label_key(category: str, item_type: str) -> str:
+    return f"ui.schema.catalog.{category}.{_key_component(item_type)}.label"
 
 
 def fld(
@@ -216,8 +232,8 @@ def fld(
 ) -> dict:
     """Build a field spec dict (see module docstring for types).
 
-    ``label_en`` / ``doc_en`` provide the English variants of ``label`` /
-    ``doc`` when they are localized (pick() selects them in English mode).
+    ``label_en`` / ``doc_en`` identify the English message used to construct
+    stable localization keys for the field label and help text.
     ``ints=True`` marks index-like list fields (kept as int on parse).
     """
     # Most schemas are keyed by backend names.  Keep those names as the
@@ -229,21 +245,21 @@ def fld(
     )
     doc_zh = doc if _contains_chinese(doc) else _FIELD_DOCS_ZH.get(key, doc)
     doc_en_value = doc_en if doc_en is not None else (doc if doc_zh != doc else None)
+    label_text_en = label_en_value or label_zh
+    doc_text_en = doc_en_value or doc_zh
     spec = {
         "key": key,
-        "label": label_zh,
+        "label_key": _field_text_key(key, "label", label_text_en),
         "type": typ,
         "default": default,
-        "doc": doc_zh,
+        "doc_key": (
+            _field_text_key(key, "help", doc_text_en) if doc_zh else ""
+        ),
         "choices": choices,
         "size": size,
         "min": minimum,
         "max": maximum,
     }
-    if label_en_value is not None:
-        spec["label_en"] = label_en_value
-    if doc_en_value is not None:
-        spec["doc_en"] = doc_en_value
     if ints is not None:
         spec["ints"] = ints
     return spec
@@ -275,6 +291,212 @@ def clone_defaults(specs: list[dict]) -> dict:
 
 def v3(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> list[float]:
     return [float(x), float(y), float(z)]
+
+
+# --------------------------------------------------------------------------
+# CAD feature operations
+# --------------------------------------------------------------------------
+
+def _cad_number(key: str, label: str, default: float) -> dict:
+    return fld(key, label, "float", default, label_en=key.replace("_", " ").title())
+
+
+def _cad_reference(key: str, label: str) -> dict:
+    return fld(key, label, "combo", "", label_en=key.replace("_", " ").title())
+
+
+def _cad_position() -> list[dict]:
+    return [
+        _cad_number("x", "X", 0.0),
+        _cad_number("y", "Y", 0.0),
+        _cad_number("z", "Z", 0.0),
+    ]
+
+
+CAD_OPERATION_TYPES: dict[str, dict] = {
+    "Box": {
+        "group": "primitive",
+        "kind": "box",
+        "label": "长方体",
+        "label_en": "Box",
+        "params": [
+            *_cad_position(),
+            _cad_number("dx", "长度 X", 20.0),
+            _cad_number("dy", "长度 Y", 10.0),
+            _cad_number("dz", "长度 Z", 5.0),
+        ],
+    },
+    "Wedge": {
+        "group": "primitive",
+        "kind": "wedge",
+        "label": "楔体",
+        "label_en": "Wedge",
+        "params": [
+            *_cad_position(),
+            _cad_number("dx", "长度 X", 20.0),
+            _cad_number("dy", "长度 Y", 10.0),
+            _cad_number("dz", "长度 Z", 5.0),
+            _cad_number("ltx", "顶部偏移 X", 0.0),
+        ],
+    },
+    "Cylinder": {
+        "group": "primitive",
+        "kind": "cylinder",
+        "label": "圆柱",
+        "label_en": "Cylinder",
+        "params": [
+            *_cad_position(),
+            _cad_number("dx", "轴向 X", 0.0),
+            _cad_number("dy", "轴向 Y", 0.0),
+            _cad_number("dz", "轴向 Z", 20.0),
+            _cad_number("radius", "半径", 5.0),
+        ],
+    },
+    "Sphere": {
+        "group": "primitive",
+        "kind": "sphere",
+        "label": "球体",
+        "label_en": "Sphere",
+        "params": [*_cad_position(), _cad_number("radius", "半径", 5.0)],
+    },
+    "Cone": {
+        "group": "primitive",
+        "kind": "cone",
+        "label": "圆锥",
+        "label_en": "Cone",
+        "params": [
+            *_cad_position(),
+            _cad_number("dx", "轴向 X", 0.0),
+            _cad_number("dy", "轴向 Y", 0.0),
+            _cad_number("dz", "轴向 Z", 20.0),
+            _cad_number("radius1", "底部半径", 5.0),
+            _cad_number("radius2", "顶部半径", 1.0),
+        ],
+    },
+    "Torus": {
+        "group": "primitive",
+        "kind": "torus",
+        "label": "圆环体",
+        "label_en": "Torus",
+        "params": [
+            *_cad_position(),
+            _cad_number("major_radius", "主半径", 8.0),
+            _cad_number("minor_radius", "管半径", 2.0),
+        ],
+    },
+    "StepImport": {
+        "group": "import",
+        "kind": "step_import",
+        "label": "导入 STEP",
+        "label_en": "Import STEP",
+        "params": [
+            fld(
+                "filename",
+                "STEP 文件",
+                "str",
+                "",
+                "STEP 几何以文件内容嵌入模型。",
+                label_en="STEP file",
+                doc_en="The STEP geometry is embedded in the model.",
+            )
+            | {"read_only": True},
+            fld("data", "STEP 几何数据", "str", "", label_en="STEP data")
+            | {"hidden": True},
+        ],
+    },
+    "Fuse": {
+        "group": "boolean",
+        "kind": "fuse",
+        "label": "融合",
+        "label_en": "Fuse",
+        "params": [
+            _cad_reference("object_id", "对象 ID"),
+            _cad_reference("tool_id", "工具 ID"),
+        ],
+    },
+    "Cut": {
+        "group": "boolean",
+        "kind": "cut",
+        "label": "切除",
+        "label_en": "Cut",
+        "params": [
+            _cad_reference("object_id", "对象 ID"),
+            _cad_reference("tool_id", "工具 ID"),
+        ],
+    },
+    "Intersect": {
+        "group": "boolean",
+        "kind": "intersect",
+        "label": "相交",
+        "label_en": "Intersect",
+        "params": [
+            _cad_reference("object_id", "对象 ID"),
+            _cad_reference("tool_id", "工具 ID"),
+        ],
+    },
+    "Fragment": {
+        "group": "boolean",
+        "kind": "fragment",
+        "label": "碎片分割",
+        "label_en": "Fragment",
+        "params": [
+            _cad_reference("object_id", "对象 ID"),
+            _cad_reference("tool_id", "工具 ID"),
+        ],
+    },
+    "Translate": {
+        "group": "transform",
+        "kind": "translate",
+        "label": "平移",
+        "label_en": "Translate",
+        "params": [
+            _cad_reference("input_id", "输入 ID"),
+            _cad_number("dx", "平移 X", 5.0),
+            _cad_number("dy", "平移 Y", 0.0),
+            _cad_number("dz", "平移 Z", 0.0),
+        ],
+    },
+    "Rotate": {
+        "group": "transform",
+        "kind": "rotate",
+        "label": "旋转",
+        "label_en": "Rotate",
+        "params": [
+            _cad_reference("input_id", "输入 ID"),
+            *_cad_position(),
+            _cad_number("ax", "轴向 X", 0.0),
+            _cad_number("ay", "轴向 Y", 0.0),
+            _cad_number("az", "轴向 Z", 1.0),
+            _cad_number("angle", "角度（弧度）", 1.5707963267948966),
+        ],
+    },
+    "Dilate": {
+        "group": "transform",
+        "kind": "dilate",
+        "label": "缩放",
+        "label_en": "Scale",
+        "params": [
+            _cad_reference("input_id", "输入 ID"),
+            *_cad_position(),
+            _cad_number("sx", "缩放 X", 1.0),
+            _cad_number("sy", "缩放 Y", 1.0),
+            _cad_number("sz", "缩放 Z", 1.0),
+        ],
+    },
+    "Mirror": {
+        "group": "transform",
+        "kind": "mirror",
+        "label": "镜像",
+        "label_en": "Mirror",
+        "params": [
+            _cad_reference("input_id", "输入 ID"),
+            _cad_number("a", "平面法向 X", 1.0),
+            _cad_number("b", "平面法向 Y", 0.0),
+            _cad_number("c", "平面法向 Z", 0.0),
+            _cad_number("d", "平面偏移", 0.0),
+        ],
+    },
+}
 
 
 # --------------------------------------------------------------------------
@@ -981,13 +1203,9 @@ PART_INTERFACE_TYPES["BoxPartInterface"] = {
         _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
     ],
 }
-PART_INTERFACE_TYPES["CylinderPartInterface"] = {
-    "label": "圆柱 Part", "label_en": "Cylinder Part", "surfaces": False,
+PART_INTERFACE_TYPES["CADPartInterface"] = {
+    "label": "CAD Part", "label_en": "CAD Part", "surfaces": False,
     "params": [
-        fld("r0", "半径", "float", 10., minimum=1e-3),
-        fld("length", "长度", "float", 20., minimum=1e-3),
-        fld("init_location", "初始位置", "vec3", [0., 0., 0.]),
-        fld("direction", "轴向", "vec3", [0., 0., 1.]),
         fld("mesh_size", "网格尺寸", "float", 2., minimum=1e-3),
         fld("mesh_order", "Mesh order", "combo", 1, choices=[1, 2]),
         _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
@@ -1046,9 +1264,8 @@ SOLVER_FIELDS: list[dict] = fields_from_specs(
     ]
 )
 
-# Code slots (Python fields) rendered with the code editor.  Surface equality
-# is intentionally not a GeometryNode code slot; it is an updater equality
-# item whose body is stored in ``params['code']``.
+# Code slots (Python fields) rendered with the code editor. Custom geometry
+# symmetry code is an updater item emitted on the selected Part subclass.
 CODE_SLOT_KEYS = ("objective_function", "get_metrics")
 
 # --------------------------------------------------------------------------
@@ -1081,32 +1298,87 @@ UPDATER_OBJECTIVES: dict[str, dict] = {
     },
 }
 
-_EQUALITY_CODE_FIELD = fld(
+_CUSTOM_SYMMETRY_CODE_FIELD = fld(
     "code",
-    "应用约束代码",
+    "约束函数体",
     "code",
     "",
-    "用于需要跨曲面协调的 Part 级扩展约束。单曲面对称约束请添加到曲面自己的约束列表。",
-    label_en="Equality-constraint code",
-    doc_en="Optional Part-level constraint code for relations spanning surfaces. "
-    "Single-surface symmetry belongs on the surface constraint list.",
+    "在 apply_surface_constraints 中执行的自定义代码。",
+    label_en="Constraint function body",
+    doc_en="Custom code executed by apply_surface_constraints.",
 )
 
-EQUALITY_CONSTRAINTS: dict[str, dict] = {
-    "MirrorSymmetry": {
-        "label": "曲面关系（对称/变换）",
-        "label_en": "Surface relations (symmetry / transform)",
-        "group": "geometry",
-        "special": "surface_equality",
-        "params": [_EQUALITY_CODE_FIELD],
+SURFACE_SYMMETRY_CONSTRAINTS: dict[str, dict] = {
+    "BspMirror": {
+        "label": "BSP 镜面对称",
+        "label_en": "BSP mirror symmetry",
+        "factory": "BSP",
+        "method": "mirror",
+        "params": [
+            fld(
+                "plane", "对称面", "combo", "xz",
+                "支持 xz（y=0）和 xy（z=offset）。",
+                choices=["xz", "xy"],
+            ),
+            fld(
+                "offset", "平面对称位置", "float", 0.0,
+                "仅 xy 对称面使用；xz 对称面的偏移必须为 0。",
+            ),
+        ],
     },
-    # General equality code, used for composed mirror/rotation/surface relations.
-    "SurfaceEquality": {
-        "label": "自定义曲面等式约束 (SurfaceEquality)",
-        "label_en": "Custom surface equality constraint (SurfaceEquality)",
-        "group": "geometry",
-        "special": "surface_equality",
-        "params": [_EQUALITY_CODE_FIELD],
+    "CPGEOMirror": {
+        "label": "CPGEO 镜面对称",
+        "label_en": "CPGEO mirror symmetry",
+        "factory": "CPGEO",
+        "method": "mirror",
+        "params": [
+            fld(
+                "plane",
+                "对称面",
+                "combo",
+                "xz",
+                "镜像平面沿法向坐标为 offset。",
+                choices=["xy", "xz", "yz"],
+            ),
+            fld("offset", "平面对称位置", "float", 0.0),
+        ],
+    },
+    "CPGEORotation": {
+        "label": "CPGEO 旋转对称",
+        "label_en": "CPGEO rotational symmetry",
+        "factory": "CPGEO",
+        "method": "rotate",
+        "params": [
+            fld(
+                "axis", "旋转轴", "combo", "z", "对称轴方向。",
+                choices=["x", "y", "z"],
+            ),
+            fld("order", "对称阶数", "int", 2, minimum=2),
+            fld("center", "旋转中心", "vec3", v3()),
+        ],
+    },
+    "BspRelation": {
+        "label": "BSP 曲面关系",
+        "label_en": "BSP surface relation",
+        "factory": "BSP",
+        "method": "relate",
+        "related_surface": True,
+        "params": [fld("pose", "位姿 [tx, ty, tz, rx, ry, rz]", "vec6", [0.0] * 6)],
+    },
+    "CPGEORelation": {
+        "label": "CPGEO 曲面关系",
+        "label_en": "CPGEO surface relation",
+        "factory": "CPGEO",
+        "method": "relate",
+        "related_surface": True,
+        "params": [fld("pose", "位姿 [tx, ty, tz, rx, ry, rz]", "vec6", [0.0] * 6)],
+    },
+    "Custom": {
+        "label": "自定义约束",
+        "label_en": "Custom constraint",
+        "factory": None,
+        "method": None,
+        "params": [_CUSTOM_SYMMETRY_CODE_FIELD],
     },
 }
 
@@ -1230,20 +1502,63 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
 UPDATER_CATALOG = {"objectives": UPDATER_OBJECTIVES, "constraints": UPDATER_CONSTRAINTS}
 
 
-def equality_constraint_defaults(item_type: str) -> dict:
-    """Return defaults for one equality-constraint template."""
-    spec = EQUALITY_CONSTRAINTS.get(item_type)
+def _keyify_catalog_labels() -> None:
+    catalogs = {
+        "cad_operation": CAD_OPERATION_TYPES,
+        "surface": SURFACE_TYPES,
+        "interface": INTERFACE_TYPES,
+        "material": MATERIAL_TYPES,
+        "part_interface": PART_INTERFACE_TYPES,
+        "symmetry_constraint": SURFACE_SYMMETRY_CONSTRAINTS,
+        "updater_objective": UPDATER_OBJECTIVES,
+        "updater_constraint": UPDATER_CONSTRAINTS,
+    }
+    for category, catalog in catalogs.items():
+        for item_type, spec in catalog.items():
+            spec["label_key"] = _catalog_label_key(category, item_type)
+            spec.pop("label", None)
+            spec.pop("label_en", None)
+
+
+_keyify_catalog_labels()
+
+
+def symmetry_constraint_defaults(item_type: str) -> dict:
+    """Return defaults for one geometry-symmetry constraint."""
+    spec = SURFACE_SYMMETRY_CONSTRAINTS.get(item_type)
     if spec is None:
         return {}
     return clone_defaults(spec["params"])
 
 
-def equality_constraint(item_type: str, **overrides) -> dict:
-    """Build one equality-constraint item from the template catalogue."""
-    spec = EQUALITY_CONSTRAINTS[item_type]
-    params = equality_constraint_defaults(item_type)
+def symmetry_constraint(item_type: str, **overrides) -> dict:
+    """Build one geometry-symmetry constraint from its schema defaults."""
+    params = symmetry_constraint_defaults(item_type)
     params.update(overrides)
-    return {"type": item_type, "params": params}
+    item = {"type": item_type, "params": params}
+    if item_type != "Custom":
+        item["surface_index"] = 0
+    return item
+
+
+def surface_factory_for_type(surface_type: str) -> str | None:
+    """Backend surface family (BSP / CPGEO) for a registered surface type."""
+    factory = SURFACE_TYPES.get(surface_type, {}).get("factory")
+    return factory.split(".", 1)[0] if factory else None
+
+
+def available_surface_symmetry_types(surface_types) -> list[str]:
+    """List built-in symmetry constraints supported by the given surface types."""
+    counts: dict[str, int] = {}
+    for surface_type in surface_types:
+        factory = surface_factory_for_type(surface_type)
+        if factory:
+            counts[factory] = counts.get(factory, 0) + 1
+    return [
+        item_type
+        for item_type, spec in SURFACE_SYMMETRY_CONSTRAINTS.items()
+        if counts.get(spec["factory"], 0) >= (2 if spec.get("related_surface") else 1)
+    ]
 
 
 def updater_item_defaults(item_type: str, category: str) -> dict:
@@ -1285,7 +1600,7 @@ def geometry_updater_config(
     if_update: list | None = None,
     objective_functions: tuple = (),
     constraints: tuple = (),
-    equality_constraints: tuple = (),
+    symmetry_constraints: tuple = (),
 ) -> dict:
     """Config of one geometry sub-optimizer.
 
@@ -1298,7 +1613,7 @@ def geometry_updater_config(
         "if_update": list(if_update) if if_update is not None else [],
         "objective_functions": list(objective_functions),
         "constraints": list(constraints),
-        "equality_constraints": list(equality_constraints),
+        "symmetry_constraints": list(symmetry_constraints),
     }
 
 

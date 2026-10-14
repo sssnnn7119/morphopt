@@ -21,7 +21,7 @@ from ..model.problem import ObjectiveNode, ProblemDefinition
 from ..schemes.base import get_template
 from .codeeditor import CodeEditor
 from .template_insert_dialog import TemplateInsertDialog
-from ..i18n import T
+from ..i18n import tr
 
 
 class JacobianLoadSelector(QToolButton):
@@ -73,16 +73,18 @@ class JacobianLoadSelector(QToolButton):
     def _update_summary(self) -> None:
         selected = self.selected_names()
         if not self._load_names:
-            self.setText(T("无可选参数载荷", "No parameterized loads"))
-            self.setToolTip(T("请先添加带幅值的载荷工况。", "Add a load with an amplitude first."))
+            self.setText(tr('ui.widgets.objective_editor.no_parameterized_loads'))
+            self.setToolTip(tr('ui.widgets.objective_editor.add_a_load_with_an_amplitude_first'))
             return
         if not selected:
-            self.setText(T("未选择", "None selected"))
-            self.setToolTip(T("选择需要计算 Jacobian 的载荷。", "Select loads requiring Jacobians."))
+            self.setText(tr('ui.widgets.objective_editor.none_selected'))
+            self.setToolTip(tr('ui.widgets.objective_editor.select_loads_requiring_jacobians'))
             return
-        self.setText(T(
-            f"已选 {len(selected)} / {len(self._load_names)}",
-            f"{len(selected)} / {len(self._load_names)} selected"))
+        self.setText(tr(
+            'ui.widgets.objective_editor.value_value_selected',
+            value_0=len(selected),
+            value_1=len(self._load_names),
+        ))
         self.setToolTip(", ".join(selected))
 
 
@@ -94,9 +96,7 @@ class ObjectiveEditor(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        head = QLabel(T(
-            "目标函数（建议在IDE中编辑）",
-            "Objective function (edit in IDE recommended)"))
+        head = QLabel(tr('ui.widgets.objective_editor.objective_function_edit_in_ide_recommended'))
         head.setStyleSheet("font-weight:600; color:#e0e0e0;")
         lay.addWidget(head)
 
@@ -104,53 +104,40 @@ class ObjectiveEditor(QWidget):
         # composable FEA code-snippet chooser
         tbar = QHBoxLayout()
         self.tpl_combo = QComboBox()
-        self.btn_apply = QPushButton(T("插入片段", "Insert snippet"))
+        self.btn_apply = QPushButton(tr('ui.widgets.objective_editor.insert_snippet'))
         self.btn_apply.clicked.connect(self._insert_template)
         tbar.addWidget(self.tpl_combo, 1)
         tbar.addWidget(self.btn_apply)
-        form.addRow(T("模板", "Template"), self._wrap(tbar))
+        form.addRow(tr('ui.widgets.objective_editor.template'), tbar)
 
         self.jacobian_loads = JacobianLoadSelector()
         self.jacobian_loads.selectionChanged.connect(self._save_jacobian)
-        form.addRow(T("需要计算 Jacobian 的载荷", "Jacobian needed"), self.jacobian_loads)
-        self.jacobian_hint = QLabel(T(
-            "刚度模板不会自动选择载荷。请先在同一个参考点上添加集中力和集中力矩，"
-            "并手动勾选需要计算 Jacobian 的载荷。",
-            "Stiffness templates do not select loads automatically. Add a "
-            "concentrated force and moment at the same reference point, then "
-            "manually check the loads that need Jacobians."))
+        form.addRow(tr('ui.widgets.objective_editor.jacobian_needed'), self.jacobian_loads)
+        self.jacobian_hint = QLabel(tr('ui.widgets.objective_editor.stiffness_templates_do_not_select_loads_automatically_add_a_concentrated'))
         self.jacobian_hint.setWordWrap(True)
         self.jacobian_hint.setStyleSheet("color:#9aa4b2;")
         form.addRow("", self.jacobian_hint)
 
         lay.addLayout(form)
 
-        self.obj_editor = CodeEditor(T(
-            "objective_function() 函数体, 定义目标函数",
-            "objective_function() body, define the objective function"),
+        self.obj_editor = CodeEditor(tr('ui.widgets.objective_editor.objective_function_body_define_the_objective_function'),
             completion_context="_objective_function")
         self.obj_editor.focusReceived.connect(
             lambda: self._set_active_editor(self.obj_editor))
-        self.obj_editor.edit.textChanged.connect(self._save_objective)
+        self.obj_editor.edit.textChanged.connect(lambda: self._save_slot("_objective_function", self.obj_editor))
         lay.addWidget(self.obj_editor, 1)
 
-        self.met_editor = CodeEditor(T(
-            "get_metrics() 函数体, 返回一个列表, 作为指标显示在 MorphOpt UI 的指标栏",
-            "get_metrics() body, return a list, displayed in the MorphOpt UI metrics bar"),
+        self.met_editor = CodeEditor(tr('ui.widgets.objective_editor.get_metrics_body_return_a_list_displayed_in_the_morphopt_ui_metrics_bar'),
             completion_context="_get_metrics")
         self.met_editor.focusReceived.connect(
             lambda: self._set_active_editor(self.met_editor))
-        self.met_editor.edit.textChanged.connect(self._save_metrics)
+        self.met_editor.edit.textChanged.connect(lambda: self._save_slot("_get_metrics", self.met_editor))
         lay.addWidget(self.met_editor, 1)
 
         self._obj: ObjectiveNode | None = None
         self._problem: ProblemDefinition | None = None
         self._active_editor: CodeEditor | None = None
         self._loading = False
-
-    @staticmethod
-    def _wrap(w: QWidget) -> QWidget:
-        return w
 
     # ------------------------------------------------------------------ api
     def set_problem(self, problem: ProblemDefinition) -> None:
@@ -163,7 +150,7 @@ class ObjectiveEditor(QWidget):
             # composable FEA snippet list
             self.tpl_combo.clear()
             for snippet in get_template(problem.scheme).objective_code_snippets():
-                self.tpl_combo.addItem(T(snippet.name_zh, snippet.name_en), snippet)
+                self.tpl_combo.addItem(tr(snippet.name_key), snippet)
             self.tpl_combo.setCurrentIndex(0 if self.tpl_combo.count() else -1)
             if self._obj is not None:
                 self.jacobian_loads.set_loads(
@@ -180,10 +167,6 @@ class ObjectiveEditor(QWidget):
             self._loading = False
 
     # ------------------------------------------------------------- handlers
-    def _current(self) -> ObjectiveNode | None:
-        if self._obj is None and self._problem is not None:
-            self._obj = self._problem.objective
-        return self._obj
 
     def _set_active_editor(self, editor: CodeEditor) -> None:
         """Remember the slot containing the cursor before opening a dialog."""
@@ -192,7 +175,7 @@ class ObjectiveEditor(QWidget):
     def _save_jacobian(self) -> None:
         if self._loading:
             return
-        nd = self._current()
+        nd = self._obj
         if nd is None:
             return
         if self._problem is not None:
@@ -201,23 +184,10 @@ class ObjectiveEditor(QWidget):
             )
         self.changed.emit(nd)
 
-    def _save_objective(self) -> None:
-        if self._loading:
-            return
-        nd = self._current()
-        if nd is None:
-            return
-        nd.set_field("_objective_function", self.obj_editor.body())
-        self.changed.emit(nd)
-
-    def _save_metrics(self) -> None:
-        if self._loading:
-            return
-        nd = self._current()
-        if nd is None:
-            return
-        nd.set_field("_get_metrics", self.met_editor.body())
-        self.changed.emit(nd)
+    def _save_slot(self, key: str, editor: CodeEditor) -> None:
+        if not self._loading and self._obj is not None:
+            self._obj.set_field(key, editor.body())
+            self.changed.emit(self._obj)
 
     def _insert_template(self) -> None:
         """Prompt for parameters, then insert one template at the chosen slot."""

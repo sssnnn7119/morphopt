@@ -10,6 +10,8 @@ from pathlib import Path
 
 from .. import launcher
 from ..model.problem import ProblemDefinition
+from .definitions import ProblemLibrary
+from .results import last_completed_iteration
 
 
 class RunMode(str, Enum):
@@ -42,15 +44,97 @@ class OptimizationRunSession:
         self.fresh_root = ""
         self.fresh_label = ""
         self.started_at = 0.0
+        self.definition: ProblemDefinition | None = None
+        self.source: RunSource | None = None
+        self.last_iteration = 0
+        self._save_definition = True
+        self._saved_folders: set[str] = set()
+        self.output_id = 0
+        self.log = RunLog()
 
     @property
     def active(self) -> bool:
         """Whether the observer still owns a process awaiting final polling."""
         return self.process is not None
 
+    def set_definition(self, problem: ProblemDefinition) -> None:
+        self.stop()
+        self.clear_result()
+        self.definition, self.source = problem, None
+        self._save_definition = True
+        self._saved_folders.clear()
+
+    def select_source(self, source: RunSource) -> None:
+        self._ensure_idle()
+        if source.kind is RunSourceKind.CONTINUE:
+            if not self.is_result_folder(source.path):
+                raise ValueError("Missing scripts/MAIN_SCRIPT_FOR_RESTART.py in the selected result folder.")
+            self.adopt(source.path)
+        else:
+            self.clear_result()
+            self._save_definition = source.kind is RunSourceKind.DEFINITION
+        self.source = source
+
+    def start_selected(self, target_iteration: int | None = None) -> subprocess.Popen:
+        source = self.source
+        if source is None:
+            raise ValueError("Select a task source first.")
+        if source.kind is RunSourceKind.DEFINITION:
+            if self.definition is None:
+                raise ValueError("No definition is bound to this run.")
+            process = self.start_definition(self.definition)
+        elif source.kind is RunSourceKind.PYTHON:
+            process = self.start_python(source.path)
+        else:
+            process = self.start_continue(source.path, target_iteration)
+        self.last_iteration = (target_iteration or 0) if source.kind is RunSourceKind.CONTINUE else 0
+        self.source = None
+        return process
+
+    def poll(self) -> RunProgress:
+        previous = self.folder
+        if self.mode is RunMode.FRESH:
+            self.discover_folder()
+        if self.active and self.folder and self._save_definition and self.definition is not None and self.folder not in self._saved_folders:
+            try:
+                ProblemLibrary.save_result_copy(self.definition, self.folder)
+            except (OSError, ValueError, TypeError) as exc:
+                import logging
+                logging.getLogger(__name__).warning("Cannot save the result definition: %s", exc)
+            else:
+                self._saved_folders.add(self.folder)
+        iteration = last_completed_iteration(self.folder) if self.folder else 0
+        changed = previous != self.folder or iteration != self.last_iteration
+        self.last_iteration = iteration
+        finished = self.has_exited()
+        if finished:
+            self.release_finished()
+        return RunProgress(self.folder, iteration, changed, finished)
+
+    def stream_output(self, callback) -> None:
+        """Read the worker pipe off the UI thread; callback receives run id and text."""
+        import threading
+        self.output_id += 1
+        self.log.clear()
+        process, output_id = self.process, self.output_id
+        if process is None or process.stdout is None:
+            return
+        stream = process.stdout
+        def read() -> None:
+            try:
+                for raw in iter(stream.readline, b""):
+                    callback(output_id, raw.decode("utf-8", errors="replace"))
+            finally:
+                stream.close()
+        threading.Thread(target=read, name="morphopt-ui-output-reader", daemon=True).start()
+
+    def consume_output(self, output_id: int, text: str) -> str | None:
+        return self.log.consume(text) if output_id == self.output_id else None
+
     def adopt(self, folder: str) -> None:
         self._ensure_idle()
         self.folder = str(Path(folder).resolve())
+        self.last_iteration = 0
         self.process = None
         self.mode = None
 
@@ -61,27 +145,30 @@ class OptimizationRunSession:
         self.fresh_root = ""
         self.fresh_label = ""
         self.started_at = 0.0
+        self.last_iteration = 0
 
     def start_definition(self, problem: ProblemDefinition) -> subprocess.Popen:
         self._ensure_idle()
+        started_at = time.time()
         _job, process = launcher.run_job(problem)
         self.process = process
         self.mode = RunMode.FRESH
         self.folder = None
         self.fresh_root = launcher.run_root_for(problem)
         self.fresh_label = launcher.sanitize_name(problem.label)
-        self.started_at = time.time()
+        self.started_at = started_at
         return process
 
     def start_python(self, path: str) -> subprocess.Popen:
         self._ensure_idle()
+        started_at = time.time()
         root, label, process = launcher.run_py_definition(path)
         self.process = process
         self.mode = RunMode.FRESH
         self.folder = None
         self.fresh_root = root
         self.fresh_label = label
-        self.started_at = time.time()
+        self.started_at = started_at
         return process
 
     def start_continue(
@@ -129,6 +216,8 @@ class OptimizationRunSession:
             self.mode = None
 
     def stop(self) -> None:
+        if self.mode is RunMode.FRESH:
+            self.discover_folder()
         launcher.stop_job(self.process)
         self.process = None
         self.mode = None
@@ -136,3 +225,35 @@ class OptimizationRunSession:
     def _ensure_idle(self) -> None:
         if self.active:
             raise RuntimeError("An optimization process is already active")
+
+
+@dataclass(frozen=True)
+class RunProgress:
+    folder: str | None
+    iteration: int
+    changed: bool
+    finished: bool = False
+
+
+class RunLog:
+    """Normalize terminal redraws into a text log with stable table headers."""
+    def __init__(self):
+        self.headers: set[str] = set()
+
+    def clear(self) -> None:
+        self.headers.clear()
+
+    def consume(self, text: str) -> str | None:
+        import re
+        redraw = bool(re.search(r"\x1b\[[0-9;]*[ABEFG]", text))
+        line = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])", "", text).replace("\r\n", "\n")
+        line = line.rsplit("\r", 1)[-1].rstrip("\n")
+        if not line:
+            return None
+        words = line.strip().lower().split()
+        if len(words) >= 3 and words[0] == "iter" and "total" in words:
+            key = " ".join(line.split())
+            if redraw and key in self.headers:
+                return None
+            self.headers.add(key)
+        return line
