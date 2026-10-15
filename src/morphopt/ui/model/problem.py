@@ -4,6 +4,7 @@ Concrete nodes live in ``nodes`` and are re-exported here as the model API.
 """
 from __future__ import annotations
 from ..i18n import localized_message
+from ...constants import CONSTANT
 from collections.abc import Iterator
 from .nodes import (
     Node,
@@ -23,6 +24,7 @@ from .nodes import (
     UpdaterNode,
     MethodOverrideNode,
     CustomClassNode,
+    CustomFunctionNode,
     HelperVariableNode,
     HelperFunctionNode,
     KIND_PROBLEM,
@@ -69,6 +71,7 @@ __all__ = [
     'UpdaterNode',
     'MethodOverrideNode',
     'CustomClassNode',
+    'CustomFunctionNode',
     'HelperVariableNode',
     'HelperFunctionNode',
     'KIND_PROBLEM',
@@ -850,8 +853,6 @@ class ProblemDefinition:
         owner = geometry.owner(surface)
         if owner is None:
             raise ValueError(localized_message("ui.errors.problem.the_surface_is_not_part_of_this_problem"))
-        if len(geometry.surfaces()) <= 1:
-            raise ValueError(localized_message("ui.errors.problem.a_problem_must_keep_at_least_one_surface"))
         position = owner.surfaces().index(surface)
         self._remove_surface_state(owner, position)
         owner.remove_child(surface)
@@ -1461,7 +1462,7 @@ class ProblemDefinition:
             [
                 rows[row_index][column_index]
                 if row_index < len(rows) and column_index < len(rows[row_index])
-                else 2.5
+                else CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE
                 for column_index in range(size)
             ]
             for row_index in range(size)
@@ -1473,7 +1474,7 @@ class ProblemDefinition:
             [
                 matrix[row_index][column_index]
                 if row_index < len(matrix) and column_index < len(matrix[row_index])
-                else 2.5
+                else CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE
                 for column_index in range(size)
             ]
             for row_index in range(size)
@@ -1536,10 +1537,17 @@ class ProblemDefinition:
             if matrix is None:
                 continue
             matrix = self._resize_matrix(matrix, len(matrix))
-            matrix.insert(index, [2.5] * (len(matrix) + 1))
+            matrix.insert(
+                index,
+                [CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE]
+                * (len(matrix) + 1),
+            )
             for row_index, row in enumerate(matrix):
                 if row_index != index:
-                    row.insert(index, 2.5)
+                    row.insert(
+                        index,
+                        CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE,
+                    )
             parameters["min_distance"] = matrix
 
     def _remove_surface_state(self, part: PartNode, index: int) -> None:

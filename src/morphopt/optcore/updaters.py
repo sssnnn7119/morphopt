@@ -6,6 +6,7 @@ import torch
 
 import morphopt
 
+from ..constants import CONSTANT
 from .modelparams import GeometryParams, MaterialsParams, Params
 from .modelparams.materials.base_material import BaseMaterial
 from .modelparams.parts.base_part import BasePart
@@ -126,8 +127,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                 """
 
                 # params for line search
-                self._c1 = 1e-4
-                self._rou1 = 0.2
+                self._c1 = CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_C1
+                self._rou1 = CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_BACKTRACK_RATIO
 
             def set_line_search_params(self, c1: float = None, rou1: float = None):
                 """
@@ -181,15 +182,15 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                     ):
                         return alpha, obj_new
                     alpha *= self._rou1
-                    if (alpha * direction).abs().max() < 1e-14:
+                    if (alpha * direction).abs().max() < CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_MIN_STEP_TOLERANCE:
                         return 0.0, obj0
 
         class LBFGS(BaseOpt):
             def __init__(
                 self,
                 closure: Callable[[torch.Tensor], float],
-                num_limit: int = 10,
-                tol_error: float = 1e-10,
+                num_limit: int = CONSTANT.KERNEL.OPTIMIZER.LBFGS_MEMORY_PAIRS,
+                tol_error: float = CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
             ) -> None:
                 super().__init__(closure=closure)
                 self.SK = []
@@ -280,7 +281,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                 sk = alpha * dk.flatten()
 
                 # BFGS method
-                if yk.norm() > 1e-14 and sk.norm() > 1e-14:
+                curvature_tolerance = CONSTANT.KERNEL.OPTIMIZER.LBFGS_CURVATURE_TOLERANCE
+                if yk.norm() > curvature_tolerance and sk.norm() > curvature_tolerance:
                     self.SK.append(sk)
                     self.YK.append(yk)
                     self.rhok.append(1 / yk.dot(sk))

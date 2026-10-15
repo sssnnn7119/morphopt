@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Signal
 from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QVBoxLayout, QWidget
 
+from ...constants import CONSTANT
 from ..application.editing import HelperCodeSession
 from ..i18n import tr
 from ..model.problem import HelperFunctionNode, HelperVariableNode, Node, ProblemDefinition
@@ -59,7 +60,7 @@ class HelperCodeEditor(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             self.header.hide()
             self.hint.hide()
-            self.code.setMinimumHeight(220)
+            self.code.setMinimumHeight(CONSTANT.UI.EDITOR.HELPER_CODE_MINIMUM_HEIGHT)
         for edit in (self.name, self.value, self.parameters, self.code.edit):
             edit.installEventFilter(self)
         self.apply_language()

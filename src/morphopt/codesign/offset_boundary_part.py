@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import torchfea
 
+from ..constants import CONSTANT
 from ..shapeopt.boundary_part import BoundaryPart
 
 __all__ = ["OffsetBoundaryPart"]
@@ -31,7 +32,7 @@ class OffsetBoundaryPart(BoundaryPart):
 
     def __init__(
         self,
-        shell_thickness: float = 1.0,
+        shell_thickness: float = CONSTANT.KERNEL.CODESIGN_GEOMETRY.DEFAULT_SHELL_THICKNESS,
         num_layers: int = 1,
         **kwargs: object,
     ) -> None:
@@ -255,4 +256,8 @@ class OffsetBoundaryPart(BoundaryPart):
     @staticmethod
     def _default_opacity(index: int) -> float:
         """The solid volume is hidden so the shell stays visible."""
-        return 0.0 if index == 0 else 1.0
+        return (
+            0.0
+            if index == 0
+            else CONSTANT.KERNEL.VISUALIZATION.OFFSET_SHELL_SURFACE_OPACITY
+        )

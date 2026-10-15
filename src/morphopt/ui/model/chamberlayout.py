@@ -1,20 +1,23 @@
 """Layered series/parallel chamber geometry for the Quickstart editor."""
+from copy import deepcopy
 from ..i18n import localized_message
-
+from ...constants import CONSTANT
 from dataclasses import dataclass, field
 import math
 
 
 @dataclass
 class ChamberLayer:
-    length: float = 80.
-    chambers: int = 2
-    arrangement: str = "ring"
-    radius: float = 2.
-    center_radius: float = 5.
-    shape: str = "cylinder"
-    phase_degrees: float = 180.
-    pressure_channels: list[int] = field(default_factory=lambda: [1, 2])
+    length: float = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.LENGTH
+    chambers: int = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.CHAMBERS
+    arrangement: str = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.ARRANGEMENT
+    radius: float = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.RADIUS
+    center_radius: float = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.CENTER_RADIUS
+    shape: str = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.SHAPE
+    phase_degrees: float = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.PHASE_DEGREES
+    pressure_channels: list[int] = field(
+        default_factory=lambda: list(CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.PRESSURE_CHANNELS)
+    )
 
 
 @dataclass(frozen=True)
@@ -52,7 +55,7 @@ class LayeredChambers:
         )
 
     def validate(self):
-        if not 1 <= len(self.layers) <= 8:
+        if not CONSTANT.UI.QUICKSTART.LIMITS.LAYER_MIN_COUNT <= len(self.layers) <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT:
             raise ValueError(localized_message("ui.errors.chamberlayout.define_1_8_chamber_layers"))
         if (
             not math.isfinite(self.body_radius)
@@ -71,7 +74,8 @@ class LayeredChambers:
                         layer.phase_degrees,
                     )
                 )
-                or layer.length <= 4 * self.wall
+                or layer.length
+                <= CONSTANT.UI.QUICKSTART.LIMITS.MINIMUM_LAYER_LENGTH_WALL_RATIO * self.wall
                 or layer.radius <= 0
                 or layer.center_radius < 0
             ):
@@ -80,7 +84,7 @@ class LayeredChambers:
                 )
             if (
                 not isinstance(layer.chambers, int)
-                or not 1 <= layer.chambers <= 8
+                or not 1 <= layer.chambers <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT
                 or len(layer.pressure_channels) != layer.chambers
                 or any(
                     not isinstance(channel, int) or channel < 1
@@ -103,7 +107,10 @@ class LayeredChambers:
                 )
         cavities = self.cavity_specs()
         for cavity in cavities:
-            if math.hypot(cavity.x, cavity.y) + cavity.radius + self.wall > self.body_radius + 1e-9:
+            if (
+                math.hypot(cavity.x, cavity.y) + cavity.radius + self.wall
+                > self.body_radius + CONSTANT.UI.QUICKSTART.LIMITS.GEOMETRY_CLEARANCE_TOLERANCE
+            ):
                 raise ValueError(
                     localized_message("ui.errors.chamberlayout.layer_value_insufficient_outer_wall", value_0=cavity.layer + 1)
                 )
@@ -112,7 +119,10 @@ class LayeredChambers:
                 if (
                     cavity.layer == other.layer
                     and math.hypot(cavity.x - other.x, cavity.y - other.y)
-                    < cavity.radius + other.radius + self.wall - 1e-9
+                    < cavity.radius
+                    + other.radius
+                    + self.wall
+                    - CONSTANT.UI.QUICKSTART.LIMITS.GEOMETRY_CLEARANCE_TOLERANCE
                 ):
                     raise ValueError(
                         localized_message("ui.errors.chamberlayout.layer_value_insufficient_wall_between_parallel_cavities", value_0=cavity.layer + 1)
@@ -163,7 +173,7 @@ class LayeredChambers:
                 direction=[0., 0., 1.],
                 radius=self.body_radius,
                 height=self.length,
-                resolution=32,
+                resolution=CONSTANT.UI.QUICKSTART.PREVIEW.BODY_RESOLUTION,
             )
         }
         for index, cavity in enumerate(self.cavity_specs()):
@@ -172,8 +182,8 @@ class LayeredChambers:
                 pv.Sphere(
                     center=center,
                     radius=cavity.radius,
-                    theta_resolution=20,
-                    phi_resolution=16,
+                    theta_resolution=CONSTANT.UI.QUICKSTART.PREVIEW.SPHERE_THETA_RESOLUTION,
+                    phi_resolution=CONSTANT.UI.QUICKSTART.PREVIEW.SPHERE_PHI_RESOLUTION,
                 )
                 if cavity.shape == "sphere"
                 else pv.Cylinder(
@@ -181,7 +191,7 @@ class LayeredChambers:
                     direction=[0., 0., 1.],
                     radius=cavity.radius,
                     height=cavity.length,
-                    resolution=24,
+                    resolution=CONSTANT.UI.QUICKSTART.PREVIEW.CAVITY_CYLINDER_RESOLUTION,
                 )
             )
         return meshes

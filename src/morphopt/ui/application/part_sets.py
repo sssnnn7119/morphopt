@@ -61,10 +61,12 @@ class PartSetCatalog:
 
     @staticmethod
     def boundary(part: PartNode, problem: ProblemDefinition) -> PartSets:
-        names = [f"surface_{index}_All" for index in range(len(part.surfaces()))]
+        surface_count = len(part.surfaces())
+        names = [f"surface_{index}_All" for index in range(surface_count)]
         if part.interface_type == "OffsetBoundaryPart":
-            names.extend(f"surface_{index}_offset" for index in range(1, len(part.surfaces())))
-        names.extend(["surface_0_Bottom", "surface_0_Head"])
+            names.extend(f"surface_{index}_offset" for index in range(1, surface_count))
+        if surface_count:
+            names.extend(["surface_0_Bottom", "surface_0_Head"])
         return PartSets(nodes=tuple(names), surfaces=tuple(names))
 
     @staticmethod

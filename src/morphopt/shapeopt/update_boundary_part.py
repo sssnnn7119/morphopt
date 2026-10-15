@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from tabulate import tabulate
 
+from ..constants import CONSTANT
 from ..optcore import BaseUpdater
 from .boundary_part import BoundaryPart
 from .surfaces import BaseSurface
@@ -55,8 +56,8 @@ class UpdaterBoundaryPart(BaseUpdater):
     def __init__(
         self,
         interface_name: str | None = None,
-        max_step_iter: int = 100,
-        max_step_length: float = 0.5,
+        max_step_iter: int = CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_ITERATIONS,
+        max_step_length: float = CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
     ) -> None:
         """
         Initialize the Updater class with the given parameters.
@@ -101,17 +102,21 @@ class UpdaterBoundaryPart(BaseUpdater):
         The current maximum step length for each surface in the optimization process.
         """
 
-        self._step_length_min_ratio: float = 0.1
+        self._step_length_min_ratio: float = CONSTANT.KERNEL.SHAPE_UPDATE.MIN_STEP_LENGTH_RATIO
         """
         The minimum ratio for the step length relative to the maximum step length.
         """
 
-        self._step_length_decay: float = 0.5
+        self._step_length_decay: float = CONSTANT.KERNEL.SHAPE_UPDATE.STEP_LENGTH_DECAY
         """
         The decay factor for the step length relative to the maximum step length.
         """
 
-        self._step_length_increase: float = 1.5
+        self._step_length_increase: float = CONSTANT.KERNEL.SHAPE_UPDATE.STEP_LENGTH_INCREASE
+
+        self._low_step_length_tolerance: float = CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_TOLERANCE
+        self._low_step_length_iteration_limit: int = CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_ITERATION_LIMIT
+        self._status_log_interval: int = CONSTANT.KERNEL.SHAPE_UPDATE.STATUS_LOG_INTERVAL
         """
         The increase factor for the step length relative to the maximum step length.
         """
@@ -205,7 +210,7 @@ class UpdaterBoundaryPart(BaseUpdater):
                 self._max_step_length.append(
                     torch.ones(surfaces[i].num_variables // 3)
                     * self._max_step_length_max
-                    * 0.5
+                    * CONSTANT.KERNEL.SHAPE_UPDATE.INITIAL_STEP_LENGTH_RATIO
                 )
 
         for i in range(len(self._max_step_length)):
@@ -262,7 +267,9 @@ class UpdaterBoundaryPart(BaseUpdater):
 
     def _initialize_optimizer(self) -> None:
         self.optimizer = UpdaterBoundaryPart.Optimizer.LBFGS(
-            closure=self.closure, num_limit=20, tol_error=1e-10
+            closure=self.closure,
+            num_limit=CONSTANT.KERNEL.OPTIMIZER.LBFGS_SHAPE_MEMORY_PAIRS,
+            tol_error=CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
         )
         self.iteration_total = 0
 
@@ -296,8 +303,9 @@ class UpdaterBoundaryPart(BaseUpdater):
                     )
                     delta_difference[np.isnan(delta_difference)] = 0.0
 
-                    index_increase = (delta_difference > -0.5).flatten()
-                    index_decrease = (delta_difference <= -0.5).flatten()
+                    direction_threshold = CONSTANT.KERNEL.SHAPE_UPDATE.DIRECTION_CHANGE_THRESHOLD
+                    index_increase = (delta_difference > direction_threshold).flatten()
+                    index_decrease = (delta_difference <= direction_threshold).flatten()
                     self._max_step_length[i][index_increase] = torch.clamp(
                         self._max_step_length[i][index_increase]
                         * self._step_length_increase,
@@ -372,17 +380,17 @@ class UpdaterBoundaryPart(BaseUpdater):
             variables.data += delta_var * alpha
 
             # check if the step length is too small
-            if abs(alpha) < 1e-10:
+            if abs(alpha) < self._low_step_length_tolerance:
                 low_step_length_iter += 1
 
-            if low_step_length_iter > 10:
+            if low_step_length_iter > self._low_step_length_iteration_limit:
                 logger.info(
                     f"Low step length detected ({low_step_length_iter} iterations), stopping optimization."
                 )
                 break
 
             # get current objective function value
-            if self.iteration_total % 10 == 0:
+            if self.iteration_total % self._status_log_interval == 0:
                 with torch.no_grad():
                     obj_values, constraints_values = self.closure(
                         x=variables, return_list=True

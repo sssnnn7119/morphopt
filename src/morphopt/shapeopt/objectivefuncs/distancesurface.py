@@ -2,7 +2,7 @@
 import torch
 from .basefuncs import BaseConstraints
 import logging
-
+from ...constants import CONSTANT
 logger = logging.getLogger(__name__)
 
 class Distance(BaseConstraints):
@@ -37,7 +37,10 @@ class Distance(BaseConstraints):
             [i, j] the minimum distance between surface i and surface j.
         """
 
-        self.distance_threshold = max(self.min_distance.flatten()).item() * 1.5
+        self.distance_threshold = (
+            max(self.min_distance.flatten()).item()
+            * CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_SEARCH_RATIO
+        )
         """
         The distance threshold for the distance penalty.
         """
@@ -56,7 +59,10 @@ class Distance(BaseConstraints):
         normal0 = []
         for i in range(len(r0)):
             normal_vector = torch.cross(rdu0[i][:, :, 1], rdu0[i][:, :, 0], dim=1)
-            normal_vector /= normal_vector.norm(dim=1, keepdim=True)
+            normal_vector /= (
+                normal_vector.norm(dim=1, keepdim=True)
+                + CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMALIZATION_TOLERANCE
+            )
             normal0.append(normal_vector.detach().clone())
 
         num_points_total = []
@@ -96,7 +102,10 @@ class Distance(BaseConstraints):
 
                 if i == j:
                     distance0 = torch.sqrt(((r0_combined[self.neighbor_points[0, index]] - r0_combined[self.neighbor_points[1, index]])**2).sum(dim=1))
-                    index_remain[index] = distance0 > self.distance_threshold * 0.3
+                    index_remain[index] = distance0 > (
+                        self.distance_threshold
+                        * CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_PAIR_PRUNE_RATIO
+                    )
 
         self.neighbor_points = self.neighbor_points[:, index_remain]
         self.neighbor_mindist = self.neighbor_mindist[index_remain]
@@ -109,17 +118,20 @@ class Distance(BaseConstraints):
         RDU = torch.cat(rdu, dim=0).type(torch.float32)
         normal_vector = torch.cross(RDU[:, :, 1], RDU[:, :, 0], dim=1)
 
-        thre = 0.01
-        degree = 5
+        thre = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_THRESHOLD
+        degree = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_EXPONENT
         loss_distance = torch.tensor(0.0, dtype=torch.float32)
         weight_flatten = torch.cat(self.scaler, dim=0).type(torch.float32)
 
         
-        normal_min = -0.7
-        normal_max = 0.0
+        normal_min = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MIN
+        normal_max = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MAX
 
         normal_remain = normal_vector[self.neighbor_points, :]
-        normal_remain = normal_remain / (normal_remain.norm(dim=2, keepdim=True) + 1e-8)
+        normal_remain = normal_remain / (
+            normal_remain.norm(dim=2, keepdim=True)
+            + CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMALIZATION_TOLERANCE
+        )
 
         normal_penalty = (normal_remain[0] * normal_remain[1]).sum(dim=1)
 
@@ -136,7 +148,12 @@ class Distance(BaseConstraints):
 
             dist = neighbor_mindist - distance + thre
 
-            indexl, l = self.barrier_function(dist, thre, 0, degree)
+            indexl, l = self.barrier_function(
+                dist,
+                thre,
+                CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_RATIO,
+                degree,
+            )
             
             if len(indexl) > 0:
                 

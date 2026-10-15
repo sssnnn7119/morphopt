@@ -36,6 +36,8 @@ CONTAINER_TITLE_KEYS = {
     "helper_variables_group": "ui.widgets.model_tree.container.helper_variables_group",
     "helper_functions_group": "ui.widgets.model_tree.container.helper_functions_group",
     "custom_classes": "ui.widgets.model_tree.container.custom_classes",
+    "new_classes_group": "ui.widgets.model_tree.container.new_classes_group",
+    "override_classes_group": "ui.widgets.model_tree.container.override_classes_group",
     "params_class": "ui.widgets.model_tree.container.params_class",
     "geometry": "ui.widgets.model_tree.container.geometry",
     "loads_group": "ui.widgets.model_tree.container.loads_group",
@@ -216,10 +218,15 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         return surface_title_text(node, surface_index(problem, node) or 0)
     if node.kind.startswith("updater_"):
         return updater_title_text(problem, cast("UpdaterTreeNode", node))
-    if node.kind in {"helper_variable", "helper_function"}:
-        return node.name + ("()" if node.kind == "helper_function" else "")
+    if node.kind in {"helper_variable", "helper_function", "custom_function"}:
+        return node.name + ("()" if node.kind in {"helper_function", "custom_function"} else "")
     if isinstance(node, CustomClassNode):
-        return typed_title(node.name, node.base_class.rsplit(".", 1)[-1])
+        class_label = (
+            tr("ui.widgets.custom_classes.class_type_new")
+            if node.class_type == "new"
+            else node.base_class.rsplit(".", 1)[-1]
+        )
+        return typed_title(node.name, class_label)
     if node.kind == "method_override":
         return node.name + "()"
     path = class_path_for_node(node)

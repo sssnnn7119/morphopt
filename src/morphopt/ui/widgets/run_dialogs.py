@@ -14,15 +14,14 @@ from PySide6.QtWidgets import (
 
 from ..application import RunSourceKind
 from ..i18n import tr
-
-
+from ...constants import CONSTANT
 class ContinueDialog(QDialog):
     """Choose the persisted iteration from which a result should resume."""
 
     def __init__(self, max_step: int, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('ui.widgets.run_dialogs.continue_optimization'))
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(CONSTANT.UI.WIDGETS.CONTINUE_DIALOG_MINIMUM_WIDTH)
         layout = QVBoxLayout(self)
         layout.addWidget(
             QLabel(
@@ -70,7 +69,7 @@ class SourceDialog(QDialog):
     def __init__(self, has_definition: bool, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('ui.widgets.run_dialogs.choose_task_source'))
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(CONSTANT.UI.WIDGETS.SOURCE_DIALOG_MINIMUM_WIDTH)
         self._chosen: RunSourceKind | None = None
         layout = QVBoxLayout(self)
         caption = QLabel(

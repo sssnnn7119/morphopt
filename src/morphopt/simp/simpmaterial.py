@@ -6,6 +6,7 @@ import pyvista as pv
 import torch
 import torchfea
 
+from ..constants import CONSTANT
 from ..optcore.modelparams.materials import (
     BaseMaterial,
     MaterialModels,
@@ -519,10 +520,10 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         degree: int,
         material_parameters: MaterialModels.MaterialParameters,
         part_name: str,
-        density: float = 0.0,
-        initial_ratio: float = 0.5,
-        voidpenalfactor: float = 1e-2,
-        materialpenalty: int = 8,
+        density: float = CONSTANT.KERNEL.MATERIAL.DEFAULT_DENSITY,
+        initial_ratio: float = CONSTANT.KERNEL.SIMP.DEFAULT_INITIAL_RATIO,
+        voidpenalfactor: float = CONSTANT.KERNEL.SIMP.DEFAULT_VOID_PENALTY_FACTOR,
+        materialpenalty: int = CONSTANT.KERNEL.SIMP.DEFAULT_MATERIAL_PENALTY,
         elementname: str = "",
     ) -> None:
         """
@@ -692,7 +693,7 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         self._cps = xlist[0].reshape_as(self._cps).to(self._cps.device)
 
     def get_variables(self) -> torch.Tensor:
-        return torch.randn_like(self._cps.flatten()) * 1e-6
+        return torch.randn_like(self._cps.flatten()) * CONSTANT.KERNEL.SIMP.INITIAL_VARIABLE_NOISE
 
     def update_variables(
         self,
@@ -1065,17 +1066,23 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
 
         import matplotlib.pyplot as plt
 
-        plt.figure(figsize=(8, 5))
-        plt.hist(np.ravel(munow), bins=50, color="C0", alpha=0.8)
+        histogram = CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_HISTOGRAM
+        plt.figure(figsize=histogram.FIGURE_SIZE)
+        plt.hist(
+            np.ravel(munow),
+            bins=histogram.BINS,
+            color=histogram.COLOR,
+            alpha=histogram.BAR_OPACITY,
+        )
         plt.title(f"SIMP density histogram (iter {iteration})")
         plt.xlabel("Density")
         plt.ylabel("Count")
-        plt.grid(True, linestyle="--", alpha=0.4)
+        plt.grid(True, linestyle="--", alpha=histogram.GRID_OPACITY)
 
         hist_path = os.path.join(
             dirpath, f"simp_material_iter_{iteration}_density_hist.png"
         )
-        plt.savefig(hist_path, dpi=300, bbox_inches="tight")
+        plt.savefig(hist_path, dpi=histogram.DPI, bbox_inches="tight")
         plt.close()
 
     def load(self, foldpath: str, iteration: int) -> None:
@@ -1165,7 +1172,9 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         import pyvista as pv
 
         if plotter is None:
-            plotter = pv.Plotter(window_size=(1400, 1000))
+            plotter = pv.Plotter(
+                window_size=list(CONSTANT.KERNEL.VISUALIZATION.SIMP_WINDOW_SIZE)
+            )
 
         if meshes is None:
             meshes = self.get_meshes()[0]
@@ -1173,7 +1182,13 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         # Threshold to convert ImageData → UnstructuredGrid with all cells
         # preserved, so per-element opacity works (add_mesh on raw ImageData
         # only renders the outer surface).
-        thresh = meshes.threshold(value=0.5 * self._mumax, scalars="density")
+        thresh = meshes.threshold(
+            value=(
+                CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_THRESHOLD_RATIO
+                * self._mumax
+            ),
+            scalars="density",
+        )
 
         if thresh.n_cells > 0:
             plotter.add_mesh(

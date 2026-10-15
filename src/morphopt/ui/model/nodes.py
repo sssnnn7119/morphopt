@@ -1222,14 +1222,27 @@ class MethodOverrideNode(Node):
 
 
 class CustomClassNode(Node):
-    """A module-level framework subclass, selected explicitly by model nodes."""
+    """A module-level user class or framework subclass."""
 
     kind = "custom_class"
-    _FIELDS = ("base_class",)
+    _FIELDS = ("base_class", "class_type")
 
     def __init__(self, kind=None, name="", params=None, children=None):
         super().__init__(kind=kind, name=name, children=children)
         self.base_class: str = str((params or {}).get("base_class", ""))
+        self.class_type: str = str((params or {}).get("class_type", "override"))
+
+
+class CustomFunctionNode(Node):
+    """A user-defined function inside a newly created class."""
+
+    kind = "custom_function"
+    _FIELDS = ("parameters", "body")
+
+    def __init__(self, kind=None, name="", params=None, children=None):
+        super().__init__(kind=kind, name=name, children=children)
+        self.parameters: str = str((params or {}).get("parameters", "self"))
+        self.body: str = str((params or {}).get("body", "pass"))
 
 
 class HelperVariableNode(Node):
@@ -1258,6 +1271,7 @@ class HelperFunctionNode(Node):
 #: kind -> concrete node class used by :meth:`Node.from_dict`.
 NODE_TYPES: dict[str, type[Node]] = {
     CustomClassNode.kind: CustomClassNode,
+    CustomFunctionNode.kind: CustomFunctionNode,
     MethodOverrideNode.kind: MethodOverrideNode,
     HelperVariableNode.kind: HelperVariableNode,
     HelperFunctionNode.kind: HelperFunctionNode,

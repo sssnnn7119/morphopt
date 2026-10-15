@@ -11,7 +11,7 @@ import os
 import gmsh
 import numpy as np
 
-
+from ..constants import CONSTANT
 class MeshGenerator:
     def __init__(self, mesh_size_min=None, mesh_size_max=None):
         gmsh.initialize()
@@ -238,7 +238,7 @@ class MeshGenerator:
                         active_faces.append(f"{set_name}, {face_id}")
 
                         payload_lines.append(f"*ELSET, ELSET={set_name}, INTERNAL")
-                        chunk_size = 16
+                        chunk_size = CONSTANT.KERNEL.MESH.SURFACE_ELEMENT_LINE_CHUNK_SIZE
                         for k in range(0, len(el_list), chunk_size):
                             chunk = el_list[k : k + chunk_size]
                             line = ", ".join(str(e) for e in chunk)
@@ -252,7 +252,7 @@ class MeshGenerator:
                 if surface_nodes:
                     payload_lines.append(f"*Nset, nset={surf_name}")
                     sorted_nodes = sorted(surface_nodes)
-                    chunk_size = 16
+                    chunk_size = CONSTANT.KERNEL.MESH.SURFACE_NODE_LINE_CHUNK_SIZE
                     for k in range(0, len(sorted_nodes), chunk_size):
                         chunk = sorted_nodes[k : k + chunk_size]
                         line = ", ".join(str(e) for e in chunk)
@@ -293,7 +293,10 @@ class MeshGenerator:
         directory: str | None = None,
         part_name: str = "final_model",
     ) -> None:
-        generator = cls(mesh_size_max=seed_size * 1.0, mesh_size_min=seed_size * 0.5)
+        generator = cls(
+            mesh_size_max=seed_size * CONSTANT.KERNEL.MESH.MAXIMUM_SIZE_RATIO,
+            mesh_size_min=seed_size * CONSTANT.KERNEL.MESH.MINIMUM_SIZE_RATIO,
+        )
         try:
             generator.scan_directory(directory=directory)
             generator.load_and_process_files()

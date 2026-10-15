@@ -14,7 +14,7 @@ runnable source.
 
 from __future__ import annotations
 from ..i18n import localized_message
-
+from ...constants import CONSTANT
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -92,7 +92,7 @@ def _vector3(instance: object, attribute: str) -> tuple[float, float, float]:
     return values if len(values) == 3 else (0.0, 0.0, 0.0)
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=CONSTANT.UI.MODEL_SUMMARY.CACHE_ENTRIES)
 def _inspect_model_cached(path: str, _mtime_ns: int) -> TorchFEAModelSummary:
     assembly = torchfea.load_model(path).assembly
     parts = tuple(

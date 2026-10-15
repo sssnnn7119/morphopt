@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torchfea
 
+from ....constants import CONSTANT
 from ..base_model_component import BaseModelComponent
 from .models import MaterialModels
 
@@ -23,7 +24,7 @@ class BaseMaterial(BaseModelComponent):
         part_name: str,
         material_parameters: MaterialModels.MaterialParameters,
         elementname: str = "",
-        density: float = 0.0,
+        density: float = CONSTANT.KERNEL.MATERIAL.DEFAULT_DENSITY,
     ) -> None:
         super().__init__()
         self.part_name = str(part_name or "").strip()

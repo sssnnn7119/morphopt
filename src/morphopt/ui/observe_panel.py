@@ -17,6 +17,7 @@ group but keeps the current visualization for browsing.
 """
 
 from __future__ import annotations
+from copy import deepcopy
 
 import os
 from pathlib import Path
@@ -36,6 +37,7 @@ from .application import (
     last_completed_iteration,
 )
 from .application.runs import RunProgress
+from ..constants import CONSTANT
 from .i18n import tr
 from .widgets.observation_pages import (
     DeformationCasePage, MetricsPage, UpdatableStructurePage,
@@ -60,17 +62,17 @@ class ObserverPanel(QWidget):
 
         top = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
-        self.btn_prev.setFixedWidth(30)
+        self.btn_prev.setFixedWidth(CONSTANT.UI.OBSERVER.STEP_BUTTON_WIDTH)
         self.btn_prev.clicked.connect(lambda: self._nudge(-1))
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setMinimum(1)
         self.slider.setMaximum(1)
         self.slider.valueChanged.connect(self._on_slider)
         self.btn_next = QPushButton("▶")
-        self.btn_next.setFixedWidth(30)
+        self.btn_next.setFixedWidth(CONSTANT.UI.OBSERVER.STEP_BUTTON_WIDTH)
         self.btn_next.clicked.connect(lambda: self._nudge(1))
         self.iter_label = QLabel("0 / 0")
-        self.iter_label.setMinimumWidth(70)
+        self.iter_label.setMinimumWidth(CONSTANT.UI.OBSERVER.ITERATION_LABEL_MINIMUM_WIDTH)
         self.chk_follow = QCheckBox(tr('ui.observe_panel.follow_latest'))
         self.chk_follow.setChecked(True)
         self.chk_follow.toggled.connect(self._on_follow)
@@ -83,7 +85,7 @@ class ObserverPanel(QWidget):
 
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
-        self.options.setFixedWidth(160)
+        self.options.setFixedWidth(CONSTANT.UI.OBSERVER.OPTION_PANEL_WIDTH)
         self.options.addItem(tr('ui.observe_panel.metrics'))
         self.options.addItem(tr('ui.observe_panel.updatable_structures'))
         self.options.currentRowChanged.connect(self._on_option)
@@ -97,7 +99,7 @@ class ObserverPanel(QWidget):
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([160, 1100])
+        split.setSizes(list(CONSTANT.UI.OBSERVER.OPTION_SPLIT_SIZES))
         outer.addWidget(split, 1)
         self.options.setCurrentRow(0)
 
@@ -282,13 +284,16 @@ class ObserverControls(QWidget):
         self.output_view = QPlainTextEdit()
         self.output_view.setReadOnly(True)
         self.output_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.output_view.setMaximumBlockCount(10_000)
+        self.output_view.setMaximumBlockCount(
+            CONSTANT.UI.OBSERVER.OUTPUT_MAXIMUM_BLOCKS
+        )
         self.output_view.setPlaceholderText(tr('ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here'))
         output_layout.addWidget(self.output_view, 1)
         content.addWidget(output_area)
-        content.setStretchFactor(0, 5)
-        content.setStretchFactor(1, 1)
-        content.setSizes([700, 180])
+        stretch = deepcopy(CONSTANT.UI.OBSERVER.CONTENT_STRETCH_FACTORS)
+        content.setStretchFactor(0, stretch[0])
+        content.setStretchFactor(1, stretch[1])
+        content.setSizes(list(CONSTANT.UI.OBSERVER.CONTENT_SPLIT_SIZES))
         outer.addWidget(content, 1)
 
         # bottom-right: back to the definition page (mirrors the definition
@@ -303,7 +308,7 @@ class ObserverControls(QWidget):
         outer.addLayout(foot)
 
         self._timer = QTimer(self)
-        self._timer.setInterval(1000)
+        self._timer.setInterval(CONSTANT.UI.OBSERVER.POLL_INTERVAL_MS)
         self._timer.timeout.connect(self._poll_once)
         self.outputReceived.connect(self._append_process_output)
         self._update_buttons()

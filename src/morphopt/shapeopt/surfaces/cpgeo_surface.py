@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 import morphopt
-
+from ...constants import CONSTANT
 from .base_surface import ControlPointSurface
 from .cpgeo_constraints import (
     CPGEOMirrorConstraint,
@@ -24,7 +24,12 @@ class CPGEOSurface(ControlPointSurface):
     )
     relate: type[CPGEOSurfaceRelationConstraint] = CPGEOSurfaceRelationConstraint
 
-    def __init__(self, surface: cpgeo.CPGEO, init_size: float, MaxC = 1.0):
+    def __init__(
+        self,
+        surface: cpgeo.CPGEO,
+        init_size: float,
+        MaxC: float = CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
+    ):
         super().__init__(surface)
 
         self.model: cpgeo.CPGEO = surface
@@ -127,7 +132,7 @@ class CPGEOSurface(ControlPointSurface):
         area_g = torch.zeros(self.model.control_points.shape[0], device=torch.get_default_device())
         area_g.index_add_(0, indices_cps_t, torch.from_numpy(area).to(torch.get_default_device()).flatten()[indices_pts_t])
 
-        if area_g.max() / area_g.min() > 5:
+        if area_g.max() / area_g.min() > CONSTANT.KERNEL.SURFACE.CPGEO_AREA_IMBALANCE_THRESHOLD:
             return True
         else:
             return False
@@ -145,7 +150,10 @@ class CPGEOSurface(ControlPointSurface):
     
     def _reinitialize(self):
         """Internal method to reinitialize the CPGEO model without checking."""
-        self.model.refine_surface(seed_size=self.init_size, max_iterations=4)
+        self.model.refine_surface(
+            seed_size=self.init_size,
+            max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_INITIAL_REFINEMENT_ITERATIONS,
+        )
 
         # Load control points into torch tensor
         self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
@@ -259,7 +267,10 @@ class CPGEOSurface(ControlPointSurface):
         
         pools = morphopt.controller.pools
 
-        r_sphere, cpfaces = self.model.uniformly_mesh(seed_size=self.init_size, max_iterations=2)
+        r_sphere, cpfaces = self.model.uniformly_mesh(
+            seed_size=self.init_size,
+            max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_OUTPUT_REFINEMENT_ITERATIONS,
+        )
         r = self.model.map3(r_sphere)
 
         self._output_rsphere = r_sphere
@@ -312,8 +323,12 @@ class CPGEOSurface(ControlPointSurface):
     
         C0 = self._geofair_data(r, rdu, rdu2)
 
-        indexC, C = self.barrier_function(C0, self.MaxC, 0.8,
-                                                    5)
+        indexC, C = self.barrier_function(
+            C0,
+            self.MaxC,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.CPGEO_FAIRNESS_EXPONENT,
+        )
 
         return (weight[indexC] * C).sum()
 
@@ -353,7 +368,8 @@ class CPGEOSurface(ControlPointSurface):
     @classmethod
     def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, 
                           num_U_ratio: int = 1, num_V_ratio: int = 1, 
-                          init_location = [0.,0.,0.], maxC = 1.,
+                          init_location = [0.,0.,0.],
+                          maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
                           perturbation_L = -1.):
         """
         Initialize the CPGEO surface for cylinder shape optimization.
@@ -373,8 +389,9 @@ class CPGEOSurface(ControlPointSurface):
             CPGEOSurface: The initialized CPGEO surface object.
         """
         # Estimate number of segments based on seed size
-        num_segments_circ = max(12, round(r0 * 2 * np.pi / seed_size))
-        circ_ratio = int(np.lcm(12, num_U_ratio))
+        base_segments = CONSTANT.KERNEL.SURFACE.CYLINDER_CIRCUMFERENTIAL_BASE_SEGMENTS
+        num_segments_circ = max(base_segments, round(r0 * 2 * np.pi / seed_size))
+        circ_ratio = int(np.lcm(base_segments, num_U_ratio))
         num_segments_circ = max(
             circ_ratio, round(num_segments_circ / circ_ratio) * circ_ratio
         )
@@ -398,7 +415,11 @@ class CPGEOSurface(ControlPointSurface):
                 
                 # Apply perturbation if specified
                 if perturbation_L > 0:
-                    r_val = r0 * (1 + 0.04 * np.cos(2 * (z / length) * np.pi * (length / perturbation_L)))
+                    r_val = r0 * (
+                        1
+                        + CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+                        * np.cos(2 * (z / length) * np.pi * (length / perturbation_L))
+                    )
                 
                 x = r_val * np.cos(theta) + init_location[0]
                 y = r_val * np.sin(theta) + init_location[1]
@@ -444,7 +465,7 @@ class CPGEOSurface(ControlPointSurface):
     
     @classmethod
     def initialize_Sphere(cls, r0: float, seed_size: float, flip: bool, init_location = [0.,0.,0.], 
-                          MaxC = 1.0):
+                          MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT):
         """
         Initialize the CPGEO surface for sphere shape optimization.
 
@@ -466,7 +487,7 @@ class CPGEOSurface(ControlPointSurface):
         
         # Generate points using Fibonacci Lattice for uniform spherical distribution
         indices = np.arange(0, num_points, dtype=float) + 0.5
-        phi = np.arccos(1 - 2*indices/num_points) + 1e-9  # small offset to avoid north pole singularity
+        phi = np.arccos(1 - 2*indices/num_points) + CONSTANT.KERNEL.SURFACE.SPHERE_POLE_OFFSET  # avoid the pole singularity
         theta = np.pi * (1 + 5**0.5) * indices
 
         x = -r0 * np.cos(theta) * np.sin(phi) + init_location[0]
@@ -526,7 +547,7 @@ class CPGEOSurface(ControlPointSurface):
         except Exception:
             # fallback: chunked search over nodes to avoid creating an MxN matrix
             min_dist_uv_idx = np.empty(N, dtype=int)
-            node_chunk = 1024
+            node_chunk = CONSTANT.KERNEL.SURFACE.PROJECTION_NODE_CHUNK_SIZE
             for i in range(0, N, node_chunk):
                 j = min(N, i + node_chunk)
                 nb = nodes[i:j]                                # (B, 3)
@@ -537,11 +558,12 @@ class CPGEOSurface(ControlPointSurface):
         min_dist_uv = preuv[min_dist_uv_idx]                  # (N, 2)
 
         # --- Newton refinement in batches (reduces peak memory) ---
-        max_iter = 5
-        tol = 1e-2
+        max_iter = CONSTANT.KERNEL.SURFACE.PROJECTION_ITERATIONS_CPGEO
+        tol = CONSTANT.KERNEL.SURFACE.PROJECTION_TOLERANCE
         
         if batch_size is None:
-            batch_size = N if N <= 4096 else 4096
+            batch_limit = CONSTANT.KERNEL.SURFACE.PROJECTION_BATCH_SIZE_CPGEO
+            batch_size = N if N <= batch_limit else batch_limit
 
         uv_out = np.empty((N, 2), dtype=float)
 
@@ -573,7 +595,8 @@ class CPGEOSurface(ControlPointSurface):
 
                 det = A * C - B * B
                 det_reg = det.copy()
-                det_reg[np.abs(det_reg) < 1e-12] = 1e-12
+                regularization = CONSTANT.KERNEL.SURFACE.PROJECTION_REGULARIZATION_TOLERANCE
+                det_reg[np.abs(det_reg) < regularization] = regularization
 
                 du = -(C * gu - B * gv) / det_reg
                 dv = -(-B * gu + A * gv) / det_reg
@@ -596,8 +619,10 @@ class CPGEOSurface(ControlPointSurface):
 
                 if not np.all(accept):
                     remaining = ~accept
-                    for k in range(1, 8):
-                        alpha = 0.5 ** k
+                    for k in range(
+                        1, CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_STEPS + 1
+                    ):
+                        alpha = CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_DECAY ** k
                         uv_try = np.clip(uv + alpha * delta, 0.0, 1.0)
                         r_try = self.model.map2(uv_try)
                         f_try = np.einsum('ij,ij->i', (r_try - pts), (r_try - pts))

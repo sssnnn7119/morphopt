@@ -17,8 +17,10 @@ Scheme-specific initial definitions and code snippets belong to
 """
 
 from __future__ import annotations
+from copy import deepcopy
+from typing import Any
 from ..i18n import localized_message
-
+from ...constants import CONSTANT
 from dataclasses import fields
 
 from ...optcore.modelparams.materials import MaterialModels
@@ -73,6 +75,15 @@ def clone_defaults(specs: list[dict]) -> dict:
             d = list(d) if isinstance(d, (list, tuple)) else dict(d)
         defaults[f["key"]] = d
     return defaults
+
+
+def _copy_config_value(value: object) -> Any:
+    """Copy constant metadata into the mutable shapes expected by UI schemas."""
+    if isinstance(value, tuple):
+        return [_copy_config_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _copy_config_value(item) for key, item in value.items()}
+    return deepcopy(value)
 
 
 def v3(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> list[float]:
@@ -698,40 +709,25 @@ MATERIAL_MODEL_PARAMETERS: dict[str, tuple[str, ...]] = {
     if name.endswith("Params")
 }
 
-MATERIAL_MODEL_DEFAULTS: dict[str, object] = {
-    "E": 1.0,
-    "nu": 0.45,
-    "mu": 0.482,
-    "kappa": 4.8,
-    "c10": 0.241,
-    "c01": 0.241,
-    "c1": 0.482,
-    "c2": 0.0,
-    "c3": 0.0,
-    "Jm": 100.0,
-    "N": 10.0,
-    "alpha": [2.0],
-}
-
 _MATERIAL_PARAMETER_FIELDS: dict[str, dict[str, object]] = {
-    "E": fld("E", "ui.schema.fields.e.label.e", "float", MATERIAL_MODEL_DEFAULTS['E']),
-    "nu": fld("nu", "ui.schema.fields.nu.label.nu", "float", MATERIAL_MODEL_DEFAULTS['nu']),
+    "E": fld("E", "ui.schema.fields.e.label.e", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.E),
+    "nu": fld("nu", "ui.schema.fields.nu.label.nu", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.NU),
     "mu": fld(
-        "mu", "ui.schema.fields.mu.label.mu", "float", MATERIAL_MODEL_DEFAULTS['mu'],
+        "mu", "ui.schema.fields.mu.label.mu", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.MU,
         doc_key="ui.schema.fields.mu.help.text",
     ),
     "kappa": fld(
-        "kappa", "ui.schema.fields.kappa.label.kappa", "float", MATERIAL_MODEL_DEFAULTS['kappa'],
+        "kappa", "ui.schema.fields.kappa.label.kappa", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.KAPPA,
         doc_key="ui.schema.fields.kappa.help.text",
     ),
-    "c10": fld("c10", "ui.schema.fields.c10.label.c10", "float", MATERIAL_MODEL_DEFAULTS['c10']),
-    "c01": fld("c01", "ui.schema.fields.c01.label.c01", "float", MATERIAL_MODEL_DEFAULTS['c01']),
-    "c1": fld("c1", "ui.schema.fields.c1.label.c1", "float", MATERIAL_MODEL_DEFAULTS['c1']),
-    "c2": fld("c2", "ui.schema.fields.c2.label.c2", "float", MATERIAL_MODEL_DEFAULTS['c2']),
-    "c3": fld("c3", "ui.schema.fields.c3.label.c3", "float", MATERIAL_MODEL_DEFAULTS['c3']),
-    "Jm": fld("Jm", "ui.schema.fields.jm.label.jm", "float", MATERIAL_MODEL_DEFAULTS['Jm']),
-    "N": fld("N", "ui.schema.fields.n.label.n", "float", MATERIAL_MODEL_DEFAULTS['N']),
-    "alpha": fld("alpha", "ui.schema.fields.alpha.label.alpha", "vecN", MATERIAL_MODEL_DEFAULTS['alpha']),
+    "c10": fld("c10", "ui.schema.fields.c10.label.c10", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.C10),
+    "c01": fld("c01", "ui.schema.fields.c01.label.c01", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.C01),
+    "c1": fld("c1", "ui.schema.fields.c1.label.c1", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.C1),
+    "c2": fld("c2", "ui.schema.fields.c2.label.c2", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.C2),
+    "c3": fld("c3", "ui.schema.fields.c3.label.c3", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.C3),
+    "Jm": fld("Jm", "ui.schema.fields.jm.label.jm", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.JM),
+    "N": fld("N", "ui.schema.fields.n.label.n", "float", CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.N),
+    "alpha": fld("alpha", "ui.schema.fields.alpha.label.alpha", "vecN", list(CONSTANT.UI.MATERIAL_MODEL_DEFAULTS.ALPHA)),
 }
 
 _ALL_MATERIAL_PARAMETER_FIELDS: list[dict] = [
@@ -1474,3 +1470,31 @@ def interface_spec(interface_type: str) -> dict:
 
 def material_spec(material_type: str) -> dict:
     return MATERIAL_TYPES[material_type]
+
+
+def _apply_configured_field_values() -> None:
+    """Apply shared field defaults and bounds from the constants tree."""
+    catalogs = {
+        "cad_operations": CAD_OPERATION_TYPES,
+        "interfaces": INTERFACE_TYPES,
+        "surfaces": SURFACE_TYPES,
+        "materials": MATERIAL_TYPES,
+        "parts": PART_INTERFACE_TYPES,
+        "surface_constraints": SURFACE_SYMMETRY_CONSTRAINTS,
+        "updater_objectives": UPDATER_OBJECTIVES,
+        "updater_constraints": UPDATER_CONSTRAINTS,
+    }
+    for catalog_name, catalog in catalogs.items():
+        configured_entries = getattr(CONSTANT.UI.SCHEMA_FIELDS, catalog_name.upper())
+        for entry_name, spec in catalog.items():
+            for field in spec.get("params", []):
+                configured_fields = getattr(configured_entries, entry_name.upper())
+                configured_field = getattr(configured_fields, field["key"].upper())
+                field.update({
+                    name.lower(): _copy_config_value(value)
+                    for name, value in vars(configured_field).items()
+                    if name.isupper()
+                })
+
+
+_apply_configured_field_values()

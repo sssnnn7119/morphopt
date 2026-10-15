@@ -15,6 +15,7 @@ generated from the model in the read-only code tab (no .py import).
 """
 
 from __future__ import annotations
+from copy import deepcopy
 
 import os
 
@@ -47,6 +48,7 @@ from .application import (
     ProblemSession,
     route_editor,
 )
+from ..constants import CONSTANT
 from .i18n import tr
 from .model.problem import (
     Node,
@@ -173,33 +175,33 @@ class Workbench(QWidget):
         self._lbl_name = QLabel(tr("ui.workbench.optimization_name"))
         head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
-        self._name_edit.setFixedWidth(180)
+        self._name_edit.setFixedWidth(CONSTANT.UI.LAYOUT.WORKBENCH.OUTPUT_NAME_WIDTH)
         self._name_edit.setToolTip(
             tr("ui.workbench.problem_name_opt_label_used_when_exporting_running")
         )
         self._name_edit.editingFinished.connect(self._apply_name)
         head.addWidget(self._name_edit)
-        head.addSpacing(10)
+        head.addSpacing(CONSTANT.UI.LAYOUT.WORKBENCH.FIRST_HEADER_SPACING)
         self._lbl_path = QLabel(tr("ui.workbench.output_folder"))
         head.addWidget(self._lbl_path)
         self._path_edit = QLineEdit()
-        self._path_edit.setMinimumWidth(120)
+        self._path_edit.setMinimumWidth(CONSTANT.UI.LAYOUT.WORKBENCH.PATH_MINIMUM_WIDTH)
         self._path_edit.setToolTip(
             tr("ui.workbench.result_output_directory_controller_path_result_folder")
         )
         self._path_edit.editingFinished.connect(self._apply_path)
         head.addWidget(self._path_edit, 1)
         btn_dir = QPushButton("…")
-        btn_dir.setFixedWidth(30)
+        btn_dir.setFixedWidth(CONSTANT.UI.LAYOUT.WORKBENCH.DIRECTORY_BUTTON_WIDTH)
         btn_dir.clicked.connect(self._browse_path)
         head.addWidget(btn_dir)
-        head.addSpacing(12)
+        head.addSpacing(CONSTANT.UI.LAYOUT.WORKBENCH.SECOND_HEADER_SPACING)
         # global compute device (used by start_optimization and the Updater)
         self._lbl_device = QLabel(tr("ui.workbench.device"))
         head.addWidget(self._lbl_device)
         self._device = QComboBox()
         self._device.setEditable(True)
-        self._device.setFixedWidth(150)
+        self._device.setFixedWidth(CONSTANT.UI.LAYOUT.WORKBENCH.DEVICE_SELECTOR_WIDTH)
         self._device.addItem("cpu")
         for dev in detect_devices():
             if dev != "cpu":
@@ -212,7 +214,7 @@ class Workbench(QWidget):
         self._device.currentTextChanged.connect(self._save_device)
         head.addWidget(self._device)
         self._device_block = False
-        head.addSpacing(8)
+        head.addSpacing(CONSTANT.UI.LAYOUT.WORKBENCH.DEVICE_TITLE_SPACING)
         self.title = QLabel("")
         self.title.setStyleSheet("color:#7f8c8d;")
         head.addWidget(self.title)
@@ -227,7 +229,7 @@ class Workbench(QWidget):
         self.tree.itemClicked.connect(self._on_model_item_clicked)
         self.actions.changed.connect(self._on_structural_change)
         self.actions.selectionRequested.connect(self._on_node_selected)
-        self.tree.overrideRequested.connect(self._override_method)
+        self.tree.classMethodAddRequested.connect(self._add_custom_method)
         self.history_panel = EditHistoryPanel(self)
         self.history_panel.jumpRequested.connect(self._jump_to_history_step)
         self.history_panel.undoRequested.connect(self.undo)
@@ -237,7 +239,9 @@ class Workbench(QWidget):
         self._tree_split = QSplitter(Qt.Orientation.Vertical)
         self._tree_split.addWidget(self.tree)
         self._tree_split.addWidget(self.history_panel)
-        self._tree_split.setSizes([500, 260])
+        self._tree_split.setSizes(
+            list(CONSTANT.UI.LAYOUT.WORKBENCH.LEFT_SPLIT_SIZES)
+        )
         self._tree_split.setChildrenCollapsible(False)
         split.addWidget(self._tree_split)
 
@@ -258,9 +262,11 @@ class Workbench(QWidget):
 
         self.code_view = GeneratedSourceView()
         self.code_view.setReadOnly(True)
-        self.code_view.setFont(QFont("DejaVu Sans Mono", 10))
+        self.code_view.setFont(
+            QFont("DejaVu Sans Mono", CONSTANT.UI.EDITOR.CODE_FONT_SIZE)
+        )
         center.addTab(self.code_view, tr("ui.workbench.code_read_only"))
-        center.setMinimumWidth(440)
+        center.setMinimumWidth(CONSTANT.UI.LAYOUT.WORKBENCH.EDITOR_MINIMUM_WIDTH)
         split.addWidget(center)
 
         # ---- right preview
@@ -270,7 +276,7 @@ class Workbench(QWidget):
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 1)
-        split.setSizes([230, 560, 460])
+        split.setSizes(list(CONSTANT.UI.LAYOUT.WORKBENCH.MAIN_SPLIT_SIZES))
         outer.addWidget(split, 1)
 
         # ---- footer: hand the finished definition over to the observer page
@@ -365,7 +371,9 @@ class Workbench(QWidget):
         )
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignmentFlag.AlignTop)
-        description.setContentsMargins(16, 16, 16, 16)
+        description.setContentsMargins(
+            *deepcopy(CONSTANT.UI.LAYOUT.WORKBENCH.DESCRIPTION_MARGINS)
+        )
         layout.addWidget(description)
         layout.addStretch(1)
         return overview
@@ -539,11 +547,11 @@ class Workbench(QWidget):
             self._remember_selection()
         if self._center.currentWidget() is self.code_view:
             self._center.setCurrentIndex(0)
-        if node is not None and node.kind in {"custom_class", "method_override"}:
+        if node is not None and node.kind in {"custom_class", "method_override", "custom_function"}:
             self.tree.select_node(node)
         if (
             node is not None
-            and node.kind == "method_override"
+            and node.kind in {"method_override", "custom_function"}
             and self._stack.currentWidget() is self.custom_class_editor
             and self.custom_class_editor.current_method is node
         ):
@@ -557,15 +565,16 @@ class Workbench(QWidget):
         self._remember_selection()
         self.tree.select_node(node)
 
-    def _override_method(self, node: Node) -> None:
+    def _add_custom_method(self, node: Node) -> None:
         self._on_node_selected(node)
-        self.custom_class_editor.add_override()
+        self.custom_class_editor.add_member()
 
     def _register_editor_pages(self) -> None:
         self.pages = EditorPages(self._stack, self._on_model_change)
         self.pages.register(
-            EditorKind.CUSTOM_CLASSES, self.custom_class_overview,
-            lambda route, problem: self.custom_class_overview.set_problem(problem),
+            EditorKind.CUSTOM_CLASSES,
+            self.custom_class_overview,
+            lambda route, problem: self.custom_class_overview.set_problem(problem, route.node),
             refreshable=self.custom_class_overview,
         )
         for kind, editor in (

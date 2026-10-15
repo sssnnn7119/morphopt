@@ -10,8 +10,10 @@ symmetries are attached to their surfaces; custom code becomes the Part-level
 """
 
 from __future__ import annotations
+from copy import deepcopy
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Signal
+from ...constants import CONSTANT
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -97,8 +99,10 @@ class UpdaterEditor(QWidget):
         self._scroll.setWidgetResizable(True)
         body = QWidget()
         self._layout = QVBoxLayout(body)
-        self._layout.setContentsMargins(4, 4, 4, 4)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(
+            *deepcopy(CONSTANT.UI.WIDGETS.COLLECTION_CONTENTS_MARGINS)
+        )
+        self._layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
         self._scroll.setWidget(body)
         outer.addWidget(self._scroll, 1)
         self._node: UpdaterNode | None = None
@@ -193,7 +197,8 @@ class UpdaterEditor(QWidget):
             for editor in self._item_lists:
                 box = editor.item_boxes.get(id(self._selected_item.item))
                 if box is not None:
-                    self._scroll.ensureWidgetVisible(box, 10, 10)
+                    margins = deepcopy(CONSTANT.UI.UPDATER_EDITOR.SELECTION_SCROLL_MARGINS)
+                    self._scroll.ensureWidgetVisible(box, margins[0], margins[1])
                     return
 
     def _focus_text(self, focus: UpdaterTreeNode | None) -> str:
@@ -240,7 +245,14 @@ class UpdaterEditor(QWidget):
                     self._material_target_control(cfg),
                 )
 
-            iterations = QLineEdit(str(cfg.get("max_step_iter", 50)))
+            iterations = QLineEdit(
+                str(
+                    cfg.get(
+                        "max_step_iter",
+                        CONSTANT.UI.UPDATER_EDITOR.DEFAULT_MAX_STEP_ITERATIONS,
+                    )
+                )
+            )
             def save_iterations() -> None:
                 text = iterations.text().strip()
                 if text:
@@ -408,16 +420,16 @@ class _IfUpdateDropDown(QToolButton):
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setProperty("menuButton", True)
-        self.setFixedHeight(30)
+        self.setFixedHeight(CONSTANT.UI.UPDATER_EDITOR.ITEM_BUTTON_HEIGHT)
         menu = QMenu(self)
         self.setMenu(menu)
 
         act = QWidgetAction(menu)
         panel = QWidget()
-        panel.setMinimumWidth(250)
+        panel.setMinimumWidth(CONSTANT.UI.UPDATER_EDITOR.SURFACE_PANEL_MINIMUM_WIDTH)
         col = QVBoxLayout(panel)
-        col.setContentsMargins(8, 6, 8, 6)
-        col.setSpacing(4)
+        col.setContentsMargins(*deepcopy(CONSTANT.UI.UPDATER_EDITOR.SURFACE_PANEL_MARGINS))
+        col.setSpacing(CONSTANT.UI.UPDATER_EDITOR.SURFACE_PANEL_SPACING)
 
         bar = QHBoxLayout()
         b_all = QPushButton(tr('ui.widgets.updater_editor.all'))
@@ -433,7 +445,7 @@ class _IfUpdateDropDown(QToolButton):
         body = QWidget()
         vb = QVBoxLayout(body)
         vb.setContentsMargins(0, 0, 0, 0)
-        vb.setSpacing(2)
+        vb.setSpacing(CONSTANT.UI.UPDATER_EDITOR.SURFACE_CHECK_SPACING)
         for i, srf in enumerate(surfaces):
             cb = QCheckBox(surface_title_text(srf, i))
             cb.setChecked(states[i])
@@ -444,7 +456,13 @@ class _IfUpdateDropDown(QToolButton):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setFixedHeight(min(200, 18 + 26 * max(len(surfaces), 1)))
+        scroll.setFixedHeight(
+            min(
+                CONSTANT.UI.UPDATER_EDITOR.SURFACE_LIST_HEIGHT.MAXIMUM,
+                CONSTANT.UI.UPDATER_EDITOR.SURFACE_LIST_HEIGHT.BASE
+                + CONSTANT.UI.UPDATER_EDITOR.SURFACE_LIST_HEIGHT.ROW_HEIGHT * max(len(surfaces), 1),
+            )
+        )
         scroll.setWidget(body)
         col.addWidget(scroll)
 
@@ -471,7 +489,7 @@ class _IfUpdateDropDown(QToolButton):
     def _update_text(self) -> None:
         names = [c.text() for c in self._checks if c.isChecked()]
         self.setText(f"{len(names)}/{len(self._checks)}")
-        self.setMinimumWidth(80)
+        self.setMinimumWidth(CONSTANT.UI.UPDATER_EDITOR.SURFACE_SELECTOR_MINIMUM_WIDTH)
         self.setToolTip(
             tr('ui.widgets.updater_editor.surfaces_to_update_value', value_0=', '.join(names) or tr('ui.widgets.updater_editor.none'))
         )
@@ -487,7 +505,7 @@ class _DistanceMatrixDropDown(QToolButton):
     the model stay in sync.
     """
 
-    _DEFAULT = 2.5
+    _DEFAULT = CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE
 
     def __init__(self, params: dict, n: int, on_change, parent=None, helper_names=()):
         super().__init__(parent)
@@ -499,7 +517,7 @@ class _DistanceMatrixDropDown(QToolButton):
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setProperty("menuButton", True)
-        self.setMinimumWidth(110)
+        self.setMinimumWidth(CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_BUTTON_MINIMUM_WIDTH)
         self.setToolTip(
             tr('ui.widgets.updater_editor.edit_the_inter_surface_minimum_distance_matrix_min_distance_i_j')
         )
@@ -510,8 +528,8 @@ class _DistanceMatrixDropDown(QToolButton):
         act = QWidgetAction(menu)
         panel = QWidget()
         col = QVBoxLayout(panel)
-        col.setContentsMargins(8, 8, 8, 8)
-        col.setSpacing(6)
+        col.setContentsMargins(*deepcopy(CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_PANEL_MARGINS))
+        col.setSpacing(CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_PANEL_SPACING)
 
         cap = QLabel(
             tr('ui.widgets.updater_editor.inter_surface_minimum_distance_min_distance_i_j')
@@ -522,12 +540,19 @@ class _DistanceMatrixDropDown(QToolButton):
         self._table = QTableWidget(self._n, self._n)
         self._table.setHorizontalHeaderLabels([str(j) for j in range(self._n)])
         self._table.setVerticalHeaderLabels([str(i) for i in range(self._n)])
-        self._table.setMaximumHeight(min(440, 40 + 30 * self._n))
+        self._table.setMaximumHeight(
+            min(
+                CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_TABLE_HEIGHT.MAXIMUM,
+                CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_TABLE_HEIGHT.BASE + CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_TABLE_HEIGHT.ROW_HEIGHT * self._n,
+            )
+        )
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
         self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self._table.verticalHeader().setDefaultSectionSize(26)
+        self._table.verticalHeader().setDefaultSectionSize(
+            CONSTANT.UI.UPDATER_EDITOR.DISTANCE_MATRIX_TABLE_HEIGHT.SECTION_HEIGHT
+        )
         col.addWidget(self._table)
 
         bar = QHBoxLayout()
@@ -596,7 +621,7 @@ class _DistanceMatrixDropDown(QToolButton):
 
     def _update_text(self) -> None:
         self.setText(f"{self._n}×{self._n}")
-        self.setFixedHeight(30)
+        self.setFixedHeight(CONSTANT.UI.UPDATER_EDITOR.ITEM_BUTTON_HEIGHT)
 
 
 def _distance_params_form(item: dict, n_surfaces: int, on_change, problem=None) -> QWidget:
@@ -637,7 +662,7 @@ class UpdaterItemList(QWidget):
         self._items_by_widget: dict[QObject, dict] = {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
         self._add_menu = QMenu(self)
         specs = self.model.specs()
         for item_type, spec in specs.items():

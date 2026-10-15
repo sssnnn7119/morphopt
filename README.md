@@ -52,6 +52,10 @@ The GUI opens directly into the full definition workbench with its standard sect
 
 The complete UI workflow (definition part + observer part) is described in [`docs/UIguide.md`](docs/UIguide.md).
 
+### Numeric configuration
+
+Shared UI defaults and tunable kernel parameters live in [`src/morphopt/constants.py`](src/morphopt/constants.py), grouped under `CONSTANT.UI` and `CONSTANT.KERNEL`. Code accesses them directly, for example `CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE` or `CONSTANT.KERNEL.SOLVER.NUM_PROCESS`. Edit a value there to change its default; restart MorphOpt for the change to take effect. Coordinate indices, tensor dimensions, and coefficients that define mathematical formulas remain in code. UI translations remain in JSON files under `src/morphopt/ui/locales/`.
+
 Further references:
 
 - Task definition guide: `docs/module_definition_guide.md`

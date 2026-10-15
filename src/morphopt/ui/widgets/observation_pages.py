@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from pyvistaqt import QtInteractor
 
 from ..i18n import tr
+from ...constants import CONSTANT
 from ..application.results import ResultSession
 from ..presentation.history import history_table
 from ..presentation.labels import typed_title
@@ -59,7 +60,9 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.table = QTableWidget()
         layout.addWidget(self.table, 3)
-        self.figure = Figure(facecolor="#121212")
+        self.figure = Figure(
+            facecolor=CONSTANT.UI.OBSERVER.METRICS_CHART_BACKGROUND
+        )
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas, 2)
         self._last_history = None
@@ -90,11 +93,23 @@ class MetricsPage(QWidget):
         plt.rcParams["axes.unicode_minus"] = False
         self.figure.clear()
         axes = self.figure.add_subplot(111)
-        axes.plot(range(1, len(objectives) + 1), objectives, marker="o", color="cyan")
+        axes.plot(
+            range(1, len(objectives) + 1),
+            objectives,
+            marker="o",
+            color=CONSTANT.UI.OBSERVER.METRICS_LINE_COLOR,
+            linewidth=CONSTANT.UI.OBSERVER.METRICS_LINE_WIDTH,
+            markersize=CONSTANT.UI.OBSERVER.METRICS_MARKER_SIZE,
+        )
         axes.set_xlabel(tr('ui.widgets.observation_pages.iteration'))
         axes.set_ylabel(tr('ui.widgets.observation_pages.objective'))
         axes.set_title(tr('ui.widgets.observation_pages.objective_vs_iteration'))
-        axes.grid(True, color="white", linestyle="--", linewidth=0.5)
+        axes.grid(
+            True,
+            color=CONSTANT.UI.OBSERVER.METRICS_GRID_COLOR,
+            linestyle="--",
+            linewidth=CONSTANT.UI.OBSERVER.METRICS_GRID_WIDTH,
+        )
         self.canvas.draw()
 
     def apply_language(self) -> None:
@@ -257,7 +272,12 @@ class DeformationCasePage(QWidget):
         mesh = results.deformation_mesh(self.case_index, iteration)
         def build_scene(plotter) -> None:
             if mesh is not None:
-                plotter.add_mesh(mesh, color=(40 / 255, 120 / 255, 181 / 255), opacity=1.0, show_edges=True)
+                plotter.add_mesh(
+                    mesh,
+                    color=CONSTANT.UI.OBSERVER.DEFORMATION_MESH_COLOR,
+                    opacity=1.0,
+                    show_edges=True,
+                )
                 plotter.show_axes()
         self.viewport.rebuild(build_scene)
         if mesh is not None:

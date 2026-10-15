@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pyvista as pv
 
-
+from ...constants import CONSTANT
 @dataclass
 class MeshItem:
     mesh: pv.DataSet
@@ -59,10 +59,10 @@ class PreviewScene:
     def diagonal(self) -> float:
         bounds = [mesh.bounds for _, mesh, _ in self.base_meshes if mesh.n_points]
         if not bounds:
-            return 10.0
+            return CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
         lo = np.min([[b[0], b[2], b[4]] for b in bounds], axis=0)
         hi = np.max([[b[1], b[3], b[5]] for b in bounds], axis=0)
-        return float(np.linalg.norm(hi - lo)) or 10.0
+        return float(np.linalg.norm(hi - lo)) or CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
 
     @property
     def glyph_scale(self) -> float:
@@ -75,7 +75,14 @@ class PreviewScene:
             extents = extents[extents > 0]
             if extents.size:
                 widths.append(float(np.median(extents)))
-        return min(self.diagonal, 4.0 * float(np.median(widths))) if widths else self.diagonal
+        return (
+            min(
+                self.diagonal,
+                CONSTANT.UI.VIEWER.GLYPH_WIDTH_RATIO * float(np.median(widths)),
+            )
+            if widths
+            else self.diagonal
+        )
 
 
 @dataclass

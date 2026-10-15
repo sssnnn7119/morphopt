@@ -1,6 +1,7 @@
 """Collection editors for geometry, loads, materials and helper definitions."""
 
 from __future__ import annotations
+from copy import deepcopy
 
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ...constants import CONSTANT
 from ..refresh import RefreshContext
 from ..model.problem import (
     CADOperationNode,
@@ -25,7 +27,6 @@ from ..model.problem import (
     Node,
     PartNode,
     ProblemDefinition,
-    SurfaceNode,
 )
 from ..model.schemas import (
     INTERFACE_TYPES,
@@ -89,8 +90,10 @@ class DefinitionManagerEditor(QWidget):
         self._scroll.setWidgetResizable(True)
         body = QWidget()
         self._layout = QVBoxLayout(body)
-        self._layout.setContentsMargins(4, 4, 4, 4)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(
+            *deepcopy(CONSTANT.UI.WIDGETS.COLLECTION_CONTENTS_MARGINS)
+        )
+        self._layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
         self._layout.addStretch(1)
         self._scroll.setWidget(body)
         outer.addWidget(self._scroll, 1)
@@ -528,8 +531,6 @@ class DefinitionManagerEditor(QWidget):
         cannot_remove_last = isinstance(
             node, (PartNode, MaterialNode, InstanceNode)
         ) and count <= 1
-        if isinstance(node, SurfaceNode) and self._problem is not None:
-            cannot_remove_last = len(self._problem.surfaces()) <= 1
         layout.addWidget(ItemActions(
             index, count, remove,
             (lambda offset: move(node, offset)) if allow_move else None,

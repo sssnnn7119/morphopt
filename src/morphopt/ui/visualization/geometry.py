@@ -1,5 +1,6 @@
 """Per-Part preview visitors and cached model queries. No Qt or VTK actors."""
 from __future__ import annotations
+from copy import deepcopy
 
 import os
 from colorsys import hsv_to_rgb
@@ -9,6 +10,7 @@ import numpy as np
 import pyvista as pv
 import torchfea
 
+from ...constants import CONSTANT
 from ...optcore.modelparams.parts import (
     BoxPart,
     INPPart,
@@ -29,16 +31,8 @@ from ..model.problem import (
 from .scene import PreviewScene
 
 
-_INSTANCE_COLORS = (
-    "#71899a",
-    "#a77b6d",
-    "#6f8e83",
-    "#887e9d",
-    "#aa905f",
-    "#82916a",
-    "#a47787",
-    "#718397",
-)
+_INSTANCE_COLORS = tuple(deepcopy(CONSTANT.UI.VIEWER.GEOMETRY.INSTANCE_COLORS))
+_UNINSTANCED_COLOR = CONSTANT.UI.VIEWER.GEOMETRY.BASE_UNINSTANCED_COLOR
 
 
 def apply_instance_pose(
@@ -49,7 +43,7 @@ def apply_instance_pose(
     transformed = mesh.copy()
     rotation = np.asarray(values.resolve(instance.rotation) if values else instance.rotation, dtype=float)
     angle = float(np.linalg.norm(rotation))
-    if angle > 1e-12:
+    if angle > CONSTANT.UI.VIEWER.GEOMETRY.ROTATION_ZERO_TOLERANCE:
         transformed.rotate_vector(rotation / angle, np.degrees(angle), point=(0, 0, 0), inplace=True)
     transformed.translate(
         np.asarray(values.resolve(instance.translation) if values else instance.translation, dtype=float),
@@ -121,11 +115,15 @@ class BoundaryPreviewAdapter(PartPreviewAdapter):
                 color=(
                     context.instance_color(instance.name)
                     if instance is not None
-                    else "#77838c"
+                    else _UNINSTANCED_COLOR
                 ),
                 # Both sides of the exterior shell cover the cavity. Keep
                 # their combined opacity low enough to see internal loads.
-                opacity=0.28 if len(surfaces) > 1 and index == 0 else 1.0,
+                opacity=(
+                    CONSTANT.UI.VIEWER.BOUNDARY_SHELL_OPACITY
+                    if len(surfaces) > 1 and index == 0
+                    else 1.0
+                ),
                 show_edges=instance is None,
                 smooth_shading=True,
             )
@@ -171,7 +169,7 @@ class BoxPreviewAdapter(PartPreviewAdapter):
             name,
             mesh,
             name=f"box:{name}",
-            color=context.instance_color(instance.name) if instance else "#77838c",
+            color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
             opacity=1.0,
             show_edges=instance is None,
         )
@@ -228,7 +226,7 @@ class INPPreviewAdapter(PartPreviewAdapter):
                 name,
                 mesh,
                 name=f"inp:{name}",
-                color=context.instance_color(instance.name) if instance else "#77838c",
+                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
                 opacity=1.0,
                 show_edges=instance is None,
                 smooth_shading=True,
@@ -278,14 +276,14 @@ class CADPreviewAdapter(PartPreviewAdapter):
                 instance_name,
                 face,
                 name=f"cad-face:{instance_name}:{face_index}",
-                color=context.instance_color(instance.name) if instance else "#77838c",
+                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
                 opacity=1.0,
                 show_edges=False,
                 smooth_shading=True,
-                ambient=0.20,
-                diffuse=0.72,
-                specular=0.22,
-                specular_power=28,
+                ambient=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_AMBIENT,
+                diffuse=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_DIFFUSE,
+                specular=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_SPECULAR,
+                specular_power=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_SPECULAR_POWER,
             )
             centers = face.cell_centers().points
             if len(centers):
@@ -312,8 +310,8 @@ class CADPreviewAdapter(PartPreviewAdapter):
                 scene.add_mesh(
                     edge_mesh,
                     name=f"cad-edge:{instance_name}:{edge_tag}",
-                    color="#f5f6f8",
-                    line_width=2.5,
+                    color=CONSTANT.UI.VIEWER.GEOMETRY.CAD_EDGE_COLOR,
+                    line_width=CONSTANT.UI.VIEWER.GEOMETRY.CAD_EDGE_WIDTH,
                     render_lines_as_tubes=True,
                     lighting=False,
                 )
@@ -322,11 +320,11 @@ class CADPreviewAdapter(PartPreviewAdapter):
             scene.add_point_labels(
                 np.asarray(face_centers),
                 face_labels,
-                font_size=14,
+                font_size=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_FONT_SIZE,
                 text_color="#ffffff",
                 shape="rounded_rect",
-                shape_color="#101722",
-                shape_opacity=0.94,
+                shape_color=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_SHAPE_COLOR,
+                shape_opacity=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_SHAPE_OPACITY,
                 show_points=False,
                 always_visible=True,
                 name=f"cad-face-labels:{instance_name}",
@@ -376,7 +374,7 @@ class TorchFEAPreviewAdapter(PartPreviewAdapter):
                 name,
                 mesh,
                 name=f"torchfea:{name}",
-                color=context.instance_color(instance.name) if instance else "#77838c",
+                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
                 opacity=1.0,
                 show_edges=instance is None,
                 smooth_shading=True,
@@ -426,7 +424,7 @@ class SurfacePreviewVisitor:
             direction=(0., 0., 1.),
             radius=float(values.resolve(surface.r0)),
             height=length,
-            resolution=64,
+            resolution=CONSTANT.UI.VIEWER.GEOMETRY.CYLINDER_RESOLUTION,
         )
 
     @staticmethod
@@ -434,8 +432,8 @@ class SurfacePreviewVisitor:
         return pv.Sphere(
             center=values.resolve(surface.init_location or [0., 0., 0.]),
             radius=float(values.resolve(surface.r0)),
-            theta_resolution=48,
-            phi_resolution=48,
+            theta_resolution=CONSTANT.UI.VIEWER.GEOMETRY.SPHERE_THETA_RESOLUTION,
+            phi_resolution=CONSTANT.UI.VIEWER.GEOMETRY.SPHERE_PHI_RESOLUTION,
         )
 
     @staticmethod
@@ -620,19 +618,22 @@ class PreviewGeometry:
                     box,
                     name=name,
                     style="wireframe",
-                    color="#7f8c8d",
-                    opacity=0.6,
+                    color=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_COLOR,
+                    opacity=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_OPACITY,
                 )
                 scene.add_mesh(
                     box,
                     name=f"{name}:fill",
-                    color="#7f8c8d",
-                    opacity=0.03,
+                    color=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_COLOR,
+                    opacity=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_FILL_OPACITY,
                 )
 
     def _show_preview_message(self, message: str) -> None:
         self.scene.add_text(
-            message, position="upper_left", color="#e74c3c", font_size=10
+            message,
+            position="upper_left",
+            color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_ANNOTATION_ERROR,
+            font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
         )
 
     def _ensure_torchfea_model(self, geometry: PartNode) -> torchfea.Assembly:
@@ -748,8 +749,16 @@ def _cad_face_name(surface_name: str) -> str | None:
 def _instance_color(index: int) -> str:
     if index < len(_INSTANCE_COLORS):
         return _INSTANCE_COLORS[index]
-    hue = ((index - len(_INSTANCE_COLORS)) * 0.61803398875 + 0.11) % 1.0
-    red, green, blue = hsv_to_rgb(hue, 0.40, 0.76)
+    hue = (
+        (index - len(_INSTANCE_COLORS))
+        * CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_HUE_STEP
+        + CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_HUE_OFFSET
+    ) % 1.0
+    red, green, blue = hsv_to_rgb(
+        hue,
+        CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_SATURATION,
+        CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_VALUE,
+    )
     return (
         f"#{round(red * 255):02x}"
         f"{round(green * 255):02x}"
@@ -772,7 +781,11 @@ def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
     centers = mesh.cell_centers().points
     bounds = mesh.bounds
     target = bounds[5] if end == "Head" else bounds[4]
-    tolerance = max((bounds[5] - bounds[4]) * 1e-6, 1e-8)
+    tolerance = max(
+        (bounds[5] - bounds[4])
+        * CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_RELATIVE_TOLERANCE,
+        CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_ABSOLUTE_TOLERANCE,
+    )
     cap_cells = np.abs(centers[:, 2] - target) <= tolerance
     if not np.any(cap_cells):
         return mesh
@@ -792,7 +805,11 @@ def _preview_node_set_points(
         return points
     z = points[:, 2]
     target = float(z.max() if suffix == "Head" else z.min())
-    tolerance = max(float(np.ptp(points, axis=0).max()) * 1e-6, 1e-8)
+    tolerance = max(
+        float(np.ptp(points, axis=0).max())
+        * CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_RELATIVE_TOLERANCE,
+        CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_ABSOLUTE_TOLERANCE,
+    )
     return points[np.abs(z - target) <= tolerance]
 
 
@@ -810,21 +827,43 @@ class InitialDesignGeometry:
                 depth=options.depth,
             )
         }
-        palette = ["#69ddd0", "#f4bb69", "#a6a0ef", "#f596af"]
+        palette = CONSTANT.UI.QUICKSTART.PREVIEW.CAVITY_COLORS
         self.triangles = []
         self.lines = []
         for name, mesh in meshes.items():
             mesh = mesh.triangulate()
             xyz = mesh.points[mesh.faces.reshape(-1, 4)[:, 1:]]
             normals = np.cross(xyz[:, 1] - xyz[:, 0], xyz[:, 2] - xyz[:, 0])
-            light = .65 + .35 * np.abs(normals @ [1., -1., 2.]) / (np.maximum(
+            light_direction = np.asarray(
+                deepcopy(CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_DIRECTION), dtype=float
+            )
+            normal_length = np.maximum(
                 np.linalg.norm(normals, axis=1),
-                1e-12,
-            ) * np.sqrt(6))
-            color = "#417ba4" if name == "body" else palette[int(name.split(":")[0].split("-")[1]) % len(palette)]
-            alpha = 48 if name == "body" and options.method == "shapeopt" else 210
+                CONSTANT.UI.VIEWER.GEOMETRY.SURFACE_NORMAL_TOLERANCE,
+            )
+            light = CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_AMBIENT + (
+                CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_CONTRAST
+                * np.abs(normals @ light_direction)
+                / (normal_length * np.linalg.norm(light_direction))
+            )
+            color = (
+                CONSTANT.UI.QUICKSTART.PREVIEW.BODY_COLOR
+                if name == "body"
+                else palette[int(name.split(":")[0].split("-")[1]) % len(palette)]
+            )
+            alpha = (
+                CONSTANT.UI.QUICKSTART.PREVIEW.BODY_TRANSPARENCY_ALPHA
+                if name == "body" and options.method == "shapeopt"
+                else CONSTANT.UI.QUICKSTART.PREVIEW.OPAQUE_ALPHA
+            )
             for points, brightness in zip(xyz, light):
-                self.triangles.append((float(points.mean(axis=0) @ self.depth), self.coordinates(points), color, int(100 * brightness), alpha))
+                self.triangles.append((
+                    float(points.mean(axis=0) @ self.depth),
+                    self.coordinates(points),
+                    color,
+                    int(CONSTANT.UI.QUICKSTART.PREVIEW.LIGHT_INTENSITY_SCALE * brightness),
+                    alpha,
+                ))
         self.triangles.sort(key=lambda item: item[0])
         vertices = np.concatenate([mesh.points for mesh in meshes.values()])
         projected = self.coordinates(vertices)
@@ -833,7 +872,9 @@ class InitialDesignGeometry:
             for sign in (-1., 1.):
                 xy = sign * options.radius * self.horizontal[:2]
                 self.lines.append(self.coordinates(np.array([[*xy, 0.], [*xy, options.total_length]])))
-            angles = np.linspace(0., 2 * np.pi, 49)
+            angles = np.linspace(
+                0.0, 2 * np.pi, CONSTANT.UI.QUICKSTART.PREVIEW.OUTLINE_CIRCLE_SAMPLES
+            )
             for z in (0., options.total_length):
                 self.lines.append(self.coordinates(np.column_stack((options.radius * np.cos(angles), options.radius * np.sin(angles), np.full_like(
                     angles,
@@ -845,6 +886,11 @@ class InitialDesignGeometry:
         return np.column_stack((points @ cls.horizontal, points @ cls.vertical))
 
     def transform(self, width: int, height: int) -> tuple[float, np.ndarray]:
-        span = np.maximum(self.upper - self.lower, 1.)
-        scale = min((width - 80) / span[0], (height - 110) / span[1])
+        span = np.maximum(
+            self.upper - self.lower, CONSTANT.UI.QUICKSTART.PREVIEW.MINIMUM_PROJECTED_SPAN
+        )
+        scale = min(
+            (width - CONSTANT.UI.QUICKSTART.PREVIEW.HORIZONTAL_MARGIN) / span[0],
+            (height - CONSTANT.UI.QUICKSTART.PREVIEW.VERTICAL_MARGIN) / span[1],
+        )
         return scale, np.array([width / 2, height / 2]) - scale * (self.lower + self.upper) / 2

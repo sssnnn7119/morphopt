@@ -1,3 +1,4 @@
+from copy import deepcopy
 import math
 import torchfea
 import torch
@@ -6,7 +7,7 @@ from . import Params
 from .protocal import ProtocalInitializable, ProtocalSavable
 
 import pyvista as pv
-
+from ..constants import CONSTANT
 class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
     """
     This class is responsible for computing the objective function value and the design sensitivity variables.
@@ -150,9 +151,11 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             case (int): The index of the case to plot.
         """
 
-        color_list = [(40.0/255, 120.0/255, 181.0/255), (237.0/255, 177.0/255, 32.0/255), (175.0/255, 82.0/255, 205.0/255), (241.0/255, 88.0/255, 84.0/255), (119.0/255, 149.0/255, 72.0/255)]
+        color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
 
-        plotter = pv.Plotter(window_size=(1200, 1200))
+        plotter = pv.Plotter(
+            window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE)
+        )
 
         # Create faces list for pyvista
         # Create pyvista mesh
@@ -164,8 +167,8 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         # Approximate view
         plotter.set_background('white')
         plotter.enable_parallel_projection()
-        azimuth = 210
-        elevation = 20
+        azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
+        elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
         plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
             math.sin(math.radians(elevation))))
@@ -181,11 +184,14 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             iteration (int): The current iteration number.
         """
 
-        color_list = [(40.0/255, 120.0/255, 181.0/255), (237.0/255, 177.0/255, 32.0/255), (175.0/255, 82.0/255, 205.0/255), (241.0/255, 88.0/255, 84.0/255), (119.0/255, 149.0/255, 72.0/255)]
+        color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
 
         for caseidx in range(self.num_tasks):
 
-            plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
+            plotter = pv.Plotter(
+                off_screen=True,
+                window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE),
+            )
 
             # Create faces list for pyvista
             # Create pyvista mesh
@@ -197,8 +203,8 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             # Approximate view
             plotter.set_background('white')
             plotter.enable_parallel_projection()
-            azimuth = 210
-            elevation = 20
+            azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
+            elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
             plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
                 math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
                 math.sin(math.radians(elevation))))

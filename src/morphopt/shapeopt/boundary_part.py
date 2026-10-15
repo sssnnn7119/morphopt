@@ -35,6 +35,7 @@ import pyvista as pv
 import torch
 import torchfea
 
+from ..constants import CONSTANT
 from ..optcore.modelparams.parts import BasePart
 from ..optcore.protocal import ProtocalUpdatable
 from .meshgenerator import MeshGenerator
@@ -77,8 +78,8 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
 
     def __init__(
         self,
-        fea_seed_size: float = 1.0,
-        mesh_order: int = 1,
+        fea_seed_size: float = CONSTANT.KERNEL.MESH.DEFAULT_BOUNDARY_SEED_SIZE,
+        mesh_order: int = CONSTANT.KERNEL.MESH.DEFAULT_ELEMENT_ORDER,
         part_name: str | None = None,
         exterior_surface: str | None = "surface_0_All",
     ) -> None:
@@ -258,9 +259,14 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         for set_name, node_indices in inp.part[self.part_name].sets_nodes.items():
             part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
 
-        index_bottom = np.where(np.abs(nodes[:, 2] - 0) < 1e-3)[0]
+        node_set_tolerance = CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
+        index_bottom = np.where(
+            np.abs(nodes[:, 2] - 0) < node_set_tolerance
+        )[0]
         part.set_nodes["surface_0_Bottom"] = index_bottom
-        index_head = np.where(np.abs(nodes[:, 2] - np.max(nodes[:, 2])) < 1e-3)[0]
+        index_head = np.where(
+            np.abs(nodes[:, 2] - np.max(nodes[:, 2])) < node_set_tolerance
+        )[0]
         part.set_nodes["surface_0_Head"] = index_head
 
         for key in inp.part[self.part_name].elems.keys():
@@ -341,7 +347,13 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
                 continue
             delta = x_change[start : start + size].reshape(-1, 3)
             norm = delta.norm(dim=1, keepdim=True)
-            change = 2 / torch.pi * torch.atan(norm) * delta / (norm + 1e-15)
+            change = (
+                2
+                / torch.pi
+                * torch.atan(norm)
+                * delta
+                / (norm + CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON)
+            )
             if step is not None:
                 change = change * step
             surface.update_variables(change)
@@ -481,7 +493,11 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
     @staticmethod
     def _default_opacity(index: int) -> float:
         """Default surface opacity: the outer boundary is semi-transparent."""
-        return 0.6 if index == 0 else 1.0
+        return (
+            CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_OUTER_SURFACE_OPACITY
+            if index == 0
+            else 1.0
+        )
 
     def plot(
         self,
@@ -506,10 +522,10 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
                 name=f"boundary:{id(self)}:surface-{index}",
                 opacity=opacity[index] if index < len(opacity) else 1.0,
                 color=(40.0 / 255, 120.0 / 255, 181.0 / 255),
-                diffuse=0.8,
-                specular=0.2,
-                ambient=0.3,
-                specular_power=10,
+                diffuse=CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_DIFFUSE,
+                specular=CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_SPECULAR,
+                ambient=CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_AMBIENT,
+                specular_power=CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_SPECULAR_POWER,
                 smooth_shading=True,
                 show_edges=False,
             )

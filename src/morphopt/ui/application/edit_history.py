@@ -6,7 +6,7 @@ from datetime import datetime
 from functools import cached_property
 from hashlib import sha256
 
-
+from ...constants import CONSTANT
 @dataclass(frozen=True)
 class EditSnapshot:
     state: bytes
@@ -35,7 +35,9 @@ class EditHistory:
     all its other branches are discarded together. The current state survives.
     """
 
-    def __init__(self, *, max_nodes: int = 100, max_bytes: int = 64 * 1024 * 1024):
+    def __init__(self, *, max_nodes: int | None = None, max_bytes: int | None = None):
+        max_nodes = max_nodes if max_nodes is not None else CONSTANT.UI.HISTORY.MAX_NODES
+        max_bytes = max_bytes if max_bytes is not None else CONSTANT.UI.HISTORY.MAX_SNAPSHOT_BYTES
         if max_nodes < 1 or max_bytes < 1:
             raise ValueError("History limits must be positive.")
         self.max_nodes = max_nodes

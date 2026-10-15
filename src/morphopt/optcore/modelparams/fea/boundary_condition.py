@@ -1,6 +1,8 @@
+from copy import deepcopy
 from operator import index
 import torch
 
+from ....constants import CONSTANT
 from torchfea import FEAController
 from .base_component import BaseFEAComponent
 from torchfea.model.boundarys import Boundary_Condition, Boundary_Condition_RP
@@ -15,10 +17,19 @@ class BoundaryCondition(BaseFEAComponent):
             P*: ground point coordinates
     """
 
-    def __init__(self, instance_name: str, set_nodes_name: str, index_dof: list[int] = [0, 1, 2]) -> None:
+    def __init__(
+        self,
+        instance_name: str,
+        set_nodes_name: str,
+        index_dof: list[int] | None = None,
+    ) -> None:
         self.instance_name = instance_name
         self.set_nodes_name = set_nodes_name
-        self.index_dof = index_dof
+        self.index_dof = list(
+            deepcopy(CONSTANT.KERNEL.FEA.DEFAULT_TRANSLATION_DOFS)
+            if index_dof is None
+            else index_dof
+        )
         super().__init__()
 
     @property
@@ -42,9 +53,15 @@ class ReferencePointBoundaryCondition(BaseFEAComponent):
       prescribed values for each specified DoF.
     """
 
-    def __init__(self, rp_name: str, index_dof: list[int] = [0, 1, 2]) -> None:
+    def __init__(
+        self, rp_name: str, index_dof: list[int] | None = None
+    ) -> None:
         self.rp_name = rp_name
-        self.index_dof = index_dof
+        self.index_dof = list(
+            deepcopy(CONSTANT.KERNEL.FEA.DEFAULT_TRANSLATION_DOFS)
+            if index_dof is None
+            else index_dof
+        )
         super().__init__()
 
     @property

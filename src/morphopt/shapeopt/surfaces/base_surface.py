@@ -10,6 +10,7 @@ import torch
 import pyvista as pv
 
 import morphopt
+from ...constants import CONSTANT
 from .base_constraints import BaseSurfaceConstraints
 from ...optcore.modelparams.base_model_component import BaseModelComponent
 
@@ -302,7 +303,7 @@ class BaseSurface(BaseModelComponent):
             """去重顶点，合并重复的顶点"""
             unique_vertices = []
             vertex_map = {}
-            tolerance = 1e-6
+            tolerance = CONSTANT.KERNEL.SURFACE.OBJ_VERTEX_MERGE_TOLERANCE
             
             for i, vertex in enumerate(self.vertices):
                 found = False
@@ -575,7 +576,8 @@ class BaseSurface(BaseModelComponent):
             stp_content.append(f"#{solid_angle_unit_id}=(NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT());")
             
             # 几何表示上下文
-            stp_content.append(f"#{uncertainty_measure_id}=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.001),#{length_unit_id},'DISTANCE_ACCURACY_VALUE','Maximum model space distance');")
+            step_accuracy = CONSTANT.KERNEL.SURFACE.STEP_DISTANCE_ACCURACY_MM
+            stp_content.append(f"#{uncertainty_measure_id}=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({step_accuracy}),#{length_unit_id},'DISTANCE_ACCURACY_VALUE','Maximum model space distance');")
             stp_content.append(f"#{geometric_rep_context_id}=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty_measure_id})) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{solid_angle_unit_id},#{plane_angle_unit_id},#{length_unit_id})) REPRESENTATION_CONTEXT('ID1','3D'));")
             
             # 形状表示

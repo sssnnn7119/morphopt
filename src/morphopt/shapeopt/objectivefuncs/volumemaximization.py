@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ...constants import CONSTANT
 from ..surfaces import CPGEOSurface
 from .basefuncs import BaseConstraints
 
@@ -14,7 +15,9 @@ if TYPE_CHECKING:
 
 class VolumeMaximization(BaseConstraints):
     def __init__(
-        self, surf_idx: int, weight: float = 1.0
+        self,
+        surf_idx: int,
+        weight: float = CONSTANT.KERNEL.SHAPE_OBJECTIVES.DEFAULT_WEIGHT,
     ):
         super().__init__()
         self._weight = weight

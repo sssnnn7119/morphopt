@@ -1,5 +1,6 @@
 from torchfea import FEAController
 import torch
+from ....constants import CONSTANT
 from .base_component import BaseFEAComponent
 
 # Prefer the same import style as Pressure
@@ -34,7 +35,7 @@ class Contact(BaseFEAComponent):
 		surface_name1: str,
 		instance_name2: str,
 		surface_name2: str,
-		penalty_threshold_h: float = 3.0,
+		penalty_threshold_h: float = CONSTANT.KERNEL.FEA.CONTACT_PENALTY_THRESHOLD,
 		penalty_start_f: float | None = None,
 		penalty_end_f: float | None = None,
 	) -> None:

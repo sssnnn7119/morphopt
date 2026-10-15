@@ -9,7 +9,9 @@ from ..model.problem import (
 from ..model.schemas import (
     INTERFACE_TYPES, PART_INTERFACE_TYPES,
 )
-from ..model.problem import CustomClassNode, MethodOverrideNode, StepsNode, SolverNode
+from ..model.problem import (
+    CustomClassNode, CustomFunctionNode, MethodOverrideNode, StepsNode, SolverNode,
+)
 from ..schemes.base import get_template
 from .updaters import symmetry_item, updater_item
 
@@ -223,10 +225,15 @@ class CustomClassSession:
         if any(node is not current and node.name == name for node in self.problem.custom_classes):
             raise ValueError(localized_message("ui.errors.editing.class_name_already_exists_value", value_0=name))
 
-    def add_class(self, name: str, base: str) -> CustomClassNode:
+    def add_class(self, name: str, base: str = "", class_type: str = "override") -> CustomClassNode:
         from ..model.problem import CustomClassNode
+        if class_type not in {"new", "override"}:
+            raise ValueError(f"Unsupported custom class type: {class_type}")
         self.validate_name(name)
-        node = CustomClassNode(name=name, params={"base_class": base})
+        node = CustomClassNode(
+            name=name,
+            params={"base_class": base, "class_type": class_type},
+        )
         self.problem.custom_classes.append(node)
         return node
 
@@ -254,7 +261,9 @@ class CustomClassSession:
         self._replace_uses(old, name)
         return True
 
-    def remove(self, node: CustomClassNode | MethodOverrideNode) -> CustomClassNode | None:
+    def remove(
+        self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
+    ) -> CustomClassNode | None:
         from ..model.problem import CustomClassNode
         if isinstance(node, CustomClassNode):
             self.problem.custom_classes.remove(node)
@@ -272,11 +281,46 @@ class CustomClassSession:
         return override
 
     @staticmethod
+    def add_function(
+        custom: CustomClassNode, name: str, parameters: str = "self"
+    ) -> CustomFunctionNode:
+        function = CustomFunctionNode(
+            name=name,
+            params={"parameters": parameters, "body": "pass"},
+        )
+        custom.add_child(function)
+        return function
+
+    @staticmethod
+    def move_member(custom: CustomClassNode, node: Node, delta: int) -> bool:
+        index = custom.children.index(node)
+        target = index + delta
+        if not 0 <= target < len(custom.children):
+            return False
+        custom.children.insert(target, custom.children.pop(index))
+        return True
+
+    @staticmethod
     def validate_body(override: MethodOverrideNode, spec) -> None:
         from textwrap import indent
         compile(
             spec.header + "\n" + indent(override.body if override.body.strip() else "pass", "    "),
             "<method body>",
+            "exec",
+        )
+
+    @staticmethod
+    def validate_function(function: CustomFunctionNode) -> None:
+        from textwrap import indent
+        import keyword
+        if not function.name.isidentifier() or keyword.iskeyword(function.name):
+            raise ValueError(
+                localized_message("ui.errors.custom_classes.invalid_custom_function_name")
+            )
+        compile(
+            f"def {function.name}({function.parameters}):\n"
+            + indent(function.body if function.body.strip() else "pass", "    "),
+            "<custom class function>",
             "exec",
         )
 

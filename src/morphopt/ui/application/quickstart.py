@@ -1,5 +1,6 @@
 """Build editable optimization definitions from design intent, independently of Qt."""
 from __future__ import annotations
+from copy import deepcopy
 from ..i18n import localized_message
 
 from ast import literal_eval
@@ -7,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 import math
 from textwrap import dedent
 
+from ...constants import CONSTANT
 from ...optcore.quadrature import actuation_boundary_gauss_points
 from ..model.chamberlayout import ChamberLayer, LayeredChambers
 from ..model.problem import (
@@ -34,13 +36,19 @@ GOALS = {
 @dataclass
 class QuickstartObjective:
     kind: str = "bend"
-    weight: float = 1.0
-    target: float = 20.0
-    pressures_kpa: dict[int, float] = field(default_factory=lambda: {1: 60.0, 2: 0.0})
-    workspace_channels: list[int] = field(default_factory=lambda: [1, 2])
-    workspace_pressure_kpa: float = 60.0
-    gauss_order: int = 3
-    force_n: float = 1.0
+    weight: float = CONSTANT.UI.QUICKSTART.DEFAULT.OBJECTIVE_WEIGHT
+    target: float = CONSTANT.UI.QUICKSTART.DEFAULT.OBJECTIVE_TARGET
+    pressures_kpa: dict[int, float] = field(
+        default_factory=lambda: dict(
+            enumerate(CONSTANT.UI.QUICKSTART.DEFAULT.PRESSURES_KPA, start=1)
+        )
+    )
+    workspace_channels: list[int] = field(
+        default_factory=lambda: list(CONSTANT.UI.QUICKSTART.DEFAULT.WORKSPACE_CHANNELS)
+    )
+    workspace_pressure_kpa: float = CONSTANT.UI.QUICKSTART.DEFAULT.WORKSPACE_PRESSURE_KPA
+    gauss_order: int = CONSTANT.UI.QUICKSTART.DEFAULT.GAUSS_ORDER
+    force_n: float = CONSTANT.UI.QUICKSTART.DEFAULT.FORCE_N
 
     @property
     def is_workspace(self):
@@ -52,18 +60,18 @@ class QuickstartOptions:
     method: str = "shapeopt"
     label: str = "Quickstart"
     result_folder: str = ".results/"
-    length: float = 80.0
-    radius: float = 10.0
+    length: float = CONSTANT.UI.QUICKSTART.DEFAULT.LENGTH
+    radius: float = CONSTANT.UI.QUICKSTART.DEFAULT.BODY_RADIUS
     layers: list[ChamberLayer] = field(default_factory=lambda: [ChamberLayer()])
-    wall: float = 2.0
+    wall: float = CONSTANT.UI.QUICKSTART.DEFAULT.WALL
     objectives: list[QuickstartObjective] = field(default_factory=lambda: [QuickstartObjective()])
-    mesh_size: float = 2.0
-    mu: float = 0.482
-    kappa: float = 4.8
+    mesh_size: float = CONSTANT.UI.QUICKSTART.DEFAULT.MESH_SIZE
+    mu: float = CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_MU
+    kappa: float = CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_KAPPA
     optimize_outer: bool = True
-    height: float = 16.0
-    depth: float = 8.0
-    volume_fraction: float = 0.4
+    height: float = CONSTANT.UI.QUICKSTART.DEFAULT.BOX_HEIGHT
+    depth: float = CONSTANT.UI.QUICKSTART.DEFAULT.BOX_DEPTH
+    volume_fraction: float = CONSTANT.UI.QUICKSTART.DEFAULT.VOLUME_FRACTION
 
     @property
     def total_length(self):
@@ -91,7 +99,10 @@ class QuickstartOptions:
     def for_method(cls, method):
         if method == "simp":
             return cls(
-                method="simp", length=40.0, mu=10.0, kappa=100.0,
+                method="simp",
+                length=CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_LENGTH,
+                mu=CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_MU,
+                kappa=CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_KAPPA,
                 objectives=[QuickstartObjective(kind="stiffness")],
             )
         return cls()
@@ -117,8 +128,14 @@ class QuickstartOptions:
             raise ValueError(localized_message("ui.errors.quickstart.select_an_optimization_method"))
         if not self.label.strip() or not self.result_folder.strip():
             raise ValueError(localized_message("ui.errors.quickstart.enter_a_name_and_output_folder"))
-        if not 1 <= len(self.objectives) <= 8:
-            raise ValueError(localized_message("ui.errors.quickstart.add_1_8_objective_terms"))
+        if not CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MIN_COUNT <= len(self.objectives) <= CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT:
+            raise ValueError(
+                localized_message(
+                    "ui.errors.quickstart.add_1_8_objective_terms",
+                    value_0=CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MIN_COUNT,
+                    value_1=CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT,
+                )
+            )
         if any(not math.isfinite(obj.weight) or obj.weight < 0 for obj in self.objectives):
             raise ValueError(localized_message("ui.errors.quickstart.objective_weights_must_be_finite_and_nonnegative"))
         if sum(obj.weight for obj in self.objectives) <= 0:
@@ -141,7 +158,7 @@ class QuickstartOptions:
             raise ValueError(localized_message("ui.errors.quickstart.material_fraction_must_be_between_0_and_1"))
         if self.method == "simp":
             cells = math.ceil(self.length/self.mesh_size)*math.ceil(self.height/self.mesh_size)*math.ceil(self.depth/self.mesh_size)
-            if cells > 100000:
+            if cells > CONSTANT.UI.QUICKSTART.LIMITS.SIMP_MAX_ELEMENT_COUNT:
                 raise ValueError(localized_message("ui.errors.quickstart.increase_the_mesh_size"))
             for objective in self.objectives:
                 if not math.isfinite(objective.force_n) or objective.force_n <= 0:
@@ -157,8 +174,18 @@ class QuickstartOptions:
                 selected = objective.workspace_channels
                 if not math.isfinite(objective.workspace_pressure_kpa) or objective.workspace_pressure_kpa <= 0:
                     raise ValueError(localized_message("ui.errors.quickstart.workspace_pressure_limits_must_be_positive"))
-                if not isinstance(objective.gauss_order, int) or not 1 <= objective.gauss_order <= 8:
-                    raise ValueError(localized_message("ui.errors.quickstart.select_1_8_gaussian_points_per_free_boundary_coordinate"))
+                if not isinstance(objective.gauss_order, int) or not (
+                    CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MIN
+                    <= objective.gauss_order
+                    <= CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MAX
+                ):
+                    raise ValueError(
+                        localized_message(
+                            "ui.errors.quickstart.select_1_8_gaussian_points_per_free_boundary_coordinate",
+                            value_0=CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MIN,
+                            value_1=CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MAX,
+                        )
+                    )
                 if len(self.channel_ids) < dimensions:
                     raise ValueError(
                         localized_message("ui.errors.quickstart.this_workspace_needs_value_independent_inputs_but_the_design_has", value_0=dimensions, value_1=len(self.channel_ids))
@@ -220,7 +247,7 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
         "jacobian_needed": jacobians,
     }))
     problem.root.add_section(SolverNode(name="Solver", params={
-        "num_process": 1,
+        "num_process": CONSTANT.UI.QUICKSTART.DEFAULT.NUM_PROCESS,
         "gpus": ["cpu"],
         "task_index_list": [list(range(len(step_values)))],
     }))
@@ -258,7 +285,11 @@ def _shape_geometry(options, geometry, loads, materials):
         fea_seed_size=options.mesh_size, mesh_order=2,
     )
     geometry.add_interface(part)
-    seed = min(min(layer.radius for layer in options.layers)/2, options.total_length/12)
+    seed = min(
+        min(layer.radius for layer in options.layers)
+        / CONSTANT.UI.QUICKSTART.GENERATION.SHAPE_SEED_RADIUS_DIVISOR,
+        options.total_length / CONSTANT.UI.QUICKSTART.GENERATION.SHAPE_SEED_LENGTH_DIVISOR,
+    )
     part.add_surface(SurfaceNode.create(
         "bsp_cylinder", r0=options.radius, length=options.total_length,
         seed_size=seed, perturbation_L=-1.,
@@ -293,7 +324,8 @@ def _shape_geometry(options, geometry, loads, materials):
     ]
     updater = UpdaterNode(name="Updater", params={
         "geometry": [{
-            "part_name": "body", "max_step_iter": 50,
+            "part_name": "body",
+            "max_step_iter": CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
             "if_update": [options.optimize_outer]+[True]*options.chambers,
             "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
             "constraints": constraints,
@@ -467,7 +499,10 @@ def _contact_setup(problem, options, geometry, loads, materials):
             "object-cylinder",
             x=2 * options.radius + options.wall,
             y=-options.radius,
-            z=0.7 * options.total_length,
+            z=(
+                CONSTANT.UI.QUICKSTART.GENERATION.CONTACT_OBJECT_Z_FRACTION
+                * options.total_length
+            ),
             dy=2 * options.radius,
             radius=options.radius,
         )
@@ -480,7 +515,11 @@ def _contact_setup(problem, options, geometry, loads, materials):
     loads.add_interface(FEAComponentNode.create(
         "Contact", name="object_contact", instance_name1="body-1", surface_name1="surface_0_All",
         instance_name2="object-1", surface_name2="extern",
-        penalty_threshold_h=min(options.wall/2, options.mesh_size),
+        penalty_threshold_h=min(
+            options.wall
+            / CONSTANT.UI.QUICKSTART.GENERATION.CONTACT_WALL_THRESHOLD_DIVISOR,
+            options.mesh_size,
+        ),
     ))
     materials.add_material(MaterialNode.create(
         "HomogeneousMaterial", name="object_material", part_name="object",
@@ -512,22 +551,29 @@ def _topology(options, geometry, loads, materials):
         elementname="design", material_model="NeoHookeanLnJ", mu=options.mu,
         kappa=options.kappa, mumax=options.mu, kappamax=options.kappa,
         bounding_box=[0., options.total_length, 0., options.height, 0., options.depth],
-        degree=2,
-        simp_field_resolution=min(options.mesh_size, min(options.total_length, options.height, options.depth)/2),
+        degree=CONSTANT.UI.QUICKSTART.GENERATION.SIMP_DEGREE,
+        simp_field_resolution=min(
+            options.mesh_size,
+            min(options.total_length, options.height, options.depth)
+            / CONSTANT.UI.QUICKSTART.GENERATION.SIMP_FIELD_RESOLUTION_DIVISOR,
+        ),
         initial_ratio=math.log(options.volume_fraction/(1-options.volume_fraction)),
-        voidpenalfactor=.01,
+        voidpenalfactor=CONSTANT.KERNEL.SIMP.DEFAULT_VOID_PENALTY_FACTOR,
     ))
     updater = UpdaterNode(name="Updater", params={
         "geometry": [],
         "materials": [{
-            "interface_name": "density", "max_step_iter": 50, "if_update": True,
+            "interface_name": "density",
+            "max_step_iter": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
+            "if_update": True,
             "objective_functions": [{"type": "Sensitivity", "params": {"normalize_gradient": False}}],
             "constraints": [
-                {"type": "MinValue", "params": {"xmin": -15.}},
-                {"type": "MaxValue", "params": {"xmax": 15.}},
+                {"type": "MinValue", "params": {"xmin": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[0]}},
+                {"type": "MaxValue", "params": {"xmax": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[1]}},
                 {"type": "VolFrac", "params": {
                     "volfrac_min": options.volume_fraction, "volfrac_max": options.volume_fraction,
-                    "penalty": 1e6, "elementname": "design",
+                    "penalty": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VOLUME_FRACTION_PENALTY,
+                    "elementname": "design",
                 }},
             ],
         }],
@@ -587,18 +633,29 @@ class ObjectiveDraft:
         )
 
     def add(self) -> int:
-        if len(self.objectives) >= 8:
-            raise ValueError(localized_message("ui.errors.quickstart.quickstart_supports_at_most_eight_objective_terms"))
+        if len(self.objectives) >= CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT:
+            raise ValueError(
+                localized_message(
+                    "ui.errors.quickstart.quickstart_supports_at_most_eight_objective_terms",
+                    value_0=CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT,
+                )
+            )
         channels = sorted(self.members)
+        configured_pressures = dict(
+            enumerate(CONSTANT.UI.QUICKSTART.DEFAULT.PRESSURES_KPA, start=1)
+        )
         self.objectives.append(QuickstartObjective(
             kind="bend" if self.method == "shapeopt" else "stiffness",
-            pressures_kpa={channel: 60. if channel == 1 else 0. for channel in channels},
+            pressures_kpa={
+                channel: configured_pressures.get(channel, 0.0)
+                for channel in channels
+            },
             workspace_channels=channels[:2],
         ))
         return len(self.objectives) - 1
 
     def remove(self, index: int) -> None:
-        if len(self.objectives) <= 1:
+        if len(self.objectives) <= CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MIN_COUNT:
             raise ValueError(localized_message("ui.errors.quickstart.keep_at_least_one_objective_term"))
         self.objectives.pop(index)
 

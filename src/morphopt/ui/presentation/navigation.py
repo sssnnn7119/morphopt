@@ -13,18 +13,18 @@ class ParamsTreeNode(Node):
         super().__init__(kind="params_class", name="Params")
 
 
-class HelperCodeTreeNode(Node):
-    """Navigation entry for module-level code stored on the problem."""
-
-    def __init__(self) -> None:
-        super().__init__(kind="helper_code", name="Helper code")
-
-
 class CustomClassesTreeNode(Node):
     """Root-level collection of reusable custom classes."""
 
     def __init__(self) -> None:
         super().__init__(kind="custom_classes", name=container_title("custom_classes"))
+
+
+class CustomClassGroupTreeNode(Node):
+    """Transient collection for new classes or framework overrides."""
+
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind=kind, name=container_title(kind))
 
 
 class HelperGroupTreeNode(Node):
@@ -103,7 +103,11 @@ def node_key(node: Node | None):
         return None
     if node.kind == "params_class":
         return ("params_class",)
-    if node.kind in {"loads_group", "helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group", "custom_classes"}:
+    if node.kind in {
+        "loads_group", "helper_code_block",
+        "helper_variables_group", "helper_functions_group", "custom_classes",
+        "new_classes_group", "override_classes_group",
+    }:
         return (node.kind,)
     if isinstance(node, UpdaterItemTreeNode):
         return ("updater_item", id(node.updater_parent), node.group, node.config_index, id(node.item))
@@ -149,13 +153,18 @@ class DefinitionNavigation:
 
     def build(self) -> list[NavigationEntry]:
         problem = self.problem
-        helpers = self.entry(HelperCodeTreeNode(), bold=True, children=[self.entry(HelperCodeBlockTreeNode())])
-        for kind, nodes in (("helper_variables_group", problem.helper_variables), ("helper_functions_group", problem.helper_functions)):
-            helpers.children.append(self.entry(
+        free_code = self.entry(HelperCodeBlockTreeNode(), bold=True)
+        helper_groups = [
+            self.entry(
                 HelperGroupTreeNode(kind),
                 bold=True,
                 children=[self.entry(node) for node in nodes],
-            ))
+            )
+            for kind, nodes in (
+                ("helper_variables_group", problem.helper_variables),
+                ("helper_functions_group", problem.helper_functions),
+            )
+        ]
         params = self.entry(ParamsTreeNode(), bold=True)
         controller = self.entry(problem.root, bold=True, children=[params])
         if problem.geometry is not None:
@@ -213,11 +222,18 @@ class DefinitionNavigation:
                         bold=True,
                         children=children,
                     ))
-        custom_classes = self.entry(CustomClassesTreeNode(), bold=True, children=[
-            self.entry(custom, children=[self.entry(method) for method in custom.children])
-            for custom in problem.custom_classes
-        ])
-        return [helpers, custom_classes, controller]
+        custom_classes = self.entry(CustomClassesTreeNode(), bold=True, children=[])
+        for kind, class_type in (("new_classes_group", "new"), ("override_classes_group", "override")):
+            custom_classes.children.append(self.entry(
+                CustomClassGroupTreeNode(kind),
+                bold=True,
+                children=[
+                    self.entry(custom, children=[self.entry(method) for method in custom.children])
+                    for custom in problem.custom_classes
+                    if custom.class_type == class_type
+                ],
+            ))
+        return [free_code, *helper_groups, custom_classes, controller]
 
 
 def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] | None:

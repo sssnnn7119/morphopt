@@ -1,7 +1,7 @@
 """Shared schema form for live node fields and updater parameter dictionaries."""
 from __future__ import annotations
 from ..i18n import localized_message
-
+from ...constants import CONSTANT
 from collections.abc import Callable
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
@@ -169,7 +169,7 @@ class ParamForm(QWidget):
     def _text(self, spec, value, choices):
         key = spec["key"]
         edit = QPlainTextEdit(str(value or ""))
-        edit.setMinimumHeight(120)
+        edit.setMinimumHeight(CONSTANT.UI.WIDGETS.MULTILINE_FIELD_MINIMUM_HEIGHT)
         edit.setReadOnly(bool(spec.get("read_only")))
         edit.textChanged.connect(lambda: self._commit(key, edit.toPlainText()))
         self.controls[key] = edit
@@ -183,7 +183,7 @@ class ParamForm(QWidget):
         edit = QLineEdit(str(value or ""))
         edit.setReadOnly(bool(spec.get("read_only")))
         button = QPushButton("…")
-        button.setFixedWidth(28)
+        button.setFixedWidth(CONSTANT.UI.WIDGETS.PATH_BUTTON_WIDTH)
         button.clicked.connect(lambda: self._browse(key, spec["type"], edit))
         edit.editingFinished.connect(lambda: self._commit(key, edit.text()))
         layout.addWidget(edit, 1)

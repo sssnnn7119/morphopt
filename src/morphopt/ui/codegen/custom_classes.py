@@ -1,8 +1,7 @@
-"""Discover existing classes without executing user code and emit subclasses.
+"""Discover framework class signatures and emit module-level user classes.
 
-Custom classes are independent module-level subclasses of framework classes.
-Model nodes explicitly select a compatible class; generated configuration
-classes inherit that selection and pass the UI constructor parameters to it.
+New classes hold user-authored methods. Override classes subclass a framework
+type; model nodes can explicitly select a compatible override class.
 """
 
 from __future__ import annotations
@@ -16,7 +15,9 @@ from dataclasses import dataclass, field
 
 import morphopt
 
-from ..model.problem import CustomClassNode, MethodOverrideNode, ProblemDefinition
+from ..model.problem import (
+    CustomClassNode, CustomFunctionNode, MethodOverrideNode, ProblemDefinition,
+)
 from ..model.schemas import (
     INTERFACE_TYPES,
     PART_INTERFACE_TYPES,
@@ -236,6 +237,8 @@ def custom_options(problem, candidates):
     for item_type, expression in candidates.items():
         backend = _resolve(expression)
         for custom in problem.custom_classes:
+            if custom.class_type != "override":
+                continue
             base = parents.get(custom.base_class)
             if base is not None and issubclass(base.backend, backend):
                 choices.append((item_type, custom))
@@ -273,7 +276,8 @@ def class_path_for_node(node):
 def compatible_custom_classes(problem, target, parents=None):
     parents = parents if parents is not None else framework_class_catalog(problem)
     return [custom for custom in problem.custom_classes
-            if (base := parents.get(custom.base_class)) is not None
+            if custom.class_type == "override"
+            and (base := parents.get(custom.base_class)) is not None
             and issubclass(base.backend, target.backend)]
 
 
@@ -285,13 +289,42 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     for custom in problem.custom_classes:
         if not isinstance(custom, CustomClassNode):
             raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_class_definition"))
-        spec = parents.get(custom.base_class)
-        if spec is None:
+        if custom.class_type not in {"new", "override"}:
+            raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_class_definition"))
+        spec = parents.get(custom.base_class) if custom.class_type == "override" else None
+        if custom.class_type == "override" and spec is None:
             raise ValueError(localized_message("ui.errors.custom_classes.base_class_missing_value", value_0=custom.name, value_1=custom.base_class))
         validate_custom_name(custom.name, parents)
         if custom.name in customs:
             raise ValueError(localized_message("ui.errors.custom_classes.duplicate_class_name_value", value_0=custom.name))
         customs[custom.name] = (custom, spec)
+        if custom.class_type == "new":
+            lines = [f"class {custom.name}:"]
+            seen = set()
+            for function in custom.children:
+                if not isinstance(function, CustomFunctionNode):
+                    raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_function_value", value_0=custom.name))
+                if function.name in seen:
+                    raise ValueError(localized_message("ui.errors.custom_classes.duplicate_class_function_value", value_0=custom.name, value_1=function.name))
+                seen.add(function.name)
+                try:
+                    compile(
+                        f"def {function.name}({function.parameters}):\n"
+                        + "\n".join("    " + line if line.strip() else "" for line in (function.body or "pass").splitlines()),
+                        "<custom class function>",
+                        "exec",
+                    )
+                except SyntaxError as exc:
+                    raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_method_value", value_0=exc)) from exc
+                lines.append(f"    def {function.name}({function.parameters}):")
+                body = function.body if function.body.strip() else "pass"
+                lines.extend(f"        {line}" if line.strip() else "" for line in body.splitlines())
+                lines.append("")
+            if not seen:
+                lines.append("    pass")
+            definitions.append("\n".join(lines))
+            continue
+
         lines = [f"class {custom.name}({spec.base_expression}):"]
         seen = set()
         for override in custom.children:
@@ -322,7 +355,8 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     def check_usage(name, expression):
         if name not in customs:
             raise ValueError(localized_message("ui.errors.custom_classes.custom_class_missing_value", value_0=name))
-        if not issubclass(customs[name][1].backend, _resolve(expression)):
+        base = customs[name][1]
+        if base is None or not issubclass(base.backend, _resolve(expression)):
             raise ValueError(localized_message("ui.errors.custom_classes.incompatible_custom_class", value_0=name, value_1=expression))
 
     from .generator import part_class_names
@@ -365,7 +399,7 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
         if name not in customs:
             raise ValueError(localized_message("ui.errors.custom_classes.custom_class_missing_value", value_0=name))
         custom, base = customs[name]
-        if not issubclass(base.backend, target.backend):
+        if custom.class_type != "override" or base is None or not issubclass(base.backend, target.backend):
             raise ValueError(localized_message("ui.errors.custom_classes.incompatible_custom_class", value_0=name, value_1=path))
         node = target.definition
         lines[node.lineno - 1] = lines[node.lineno - 1].replace(

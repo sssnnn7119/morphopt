@@ -1,5 +1,6 @@
 import torch
 
+from ..constants import CONSTANT
 from ..shapeopt.objectivefuncs.basefuncs import BaseConstraints
 from .offset_boundary_part import OffsetBoundaryPart
 
@@ -17,13 +18,13 @@ class InwardCurvatureRadius(BaseConstraints):
         self,
         surface_start: int = 1,
         surface_ids: list[int] | None = None,
-        margin: float = 0.4,
-        margin_ratio: float = 0.45,
-        barrier_thre_ratio: float = 0.1,
-        barrier_ratio: float = 0.0,
-        p: int = 8,
-        penalty_scale: float = 1e3,
-        hard_violation_beta: float = 8.0,
+        margin: float = CONSTANT.KERNEL.CODESIGN.CURVATURE_MARGIN,
+        margin_ratio: float = CONSTANT.KERNEL.CODESIGN.CURVATURE_MARGIN_RATIO,
+        barrier_thre_ratio: float = CONSTANT.KERNEL.CODESIGN.CURVATURE_BARRIER_THRESHOLD_RATIO,
+        barrier_ratio: float = CONSTANT.KERNEL.CODESIGN.BARRIER_PENALTY_RATIO,
+        p: int = CONSTANT.KERNEL.CODESIGN.BARRIER_EXPONENT,
+        penalty_scale: float = CONSTANT.KERNEL.CODESIGN.PENALTY_SCALE,
+        hard_violation_beta: float = CONSTANT.KERNEL.CODESIGN.HARD_VIOLATION_BETA,
         normal_sign: float = 1.0,
     ) -> None:
         """
@@ -71,7 +72,9 @@ class InwardCurvatureRadius(BaseConstraints):
 
     @staticmethod
     def _principal_curvatures(
-        rdu: torch.Tensor, rdu2: torch.Tensor, eps: float = 1e-12
+        rdu: torch.Tensor,
+        rdu2: torch.Tensor,
+        eps: float = CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
         normal = normal0 / (normal0.norm(dim=1, keepdim=True) + eps)
@@ -127,9 +130,15 @@ class InwardCurvatureRadius(BaseConstraints):
             if t <= 0:
                 continue
 
-            margin_abs = max(float((self.margin_ratio * t) + self.margin), 1e-12)
+            margin_abs = max(
+                float((self.margin_ratio * t) + self.margin),
+                CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE,
+            )
             k_limit = 1.0 / (t + margin_abs)
-            barrier_thre = max(k_limit * self.barrier_thre_ratio, 1e-12)
+            barrier_thre = max(
+                k_limit * self.barrier_thre_ratio,
+                CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE,
+            )
 
             k1, k2 = self._principal_curvatures(rdu[i], rdu2[i])
 
@@ -146,7 +155,8 @@ class InwardCurvatureRadius(BaseConstraints):
                 rel_violation = (violation[index] / barrier_thre).clamp(min=0.0)
                 hard_boost = torch.exp(
                     (self.hard_violation_beta * (rel_violation - 1.0)).clamp(
-                        min=0.0, max=20.0
+                        min=0.0,
+                        max=CONSTANT.KERNEL.CODESIGN.HARD_VIOLATION_EXPONENT_MAX,
                     )
                 )
                 penalty_strong = self.penalty_scale * penalty * hard_boost
@@ -168,16 +178,16 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         surface_start: int = 1,
         surface_ids: list[int] | None = None,
         min_distance: float | None = None,
-        search_ratio: float = 1.5,
-        barrier_thre_ratio: float = 0.05,
-        barrier_ratio: float = 0.0,
-        p: int = 8,
-        penalty_scale: float = 1e3,
-        hard_violation_beta: float = 8.0,
+        search_ratio: float = CONSTANT.KERNEL.CODESIGN.THICKNESS_SEARCH_RATIO,
+        barrier_thre_ratio: float = CONSTANT.KERNEL.CODESIGN.THICKNESS_BARRIER_THRESHOLD_RATIO,
+        barrier_ratio: float = CONSTANT.KERNEL.CODESIGN.BARRIER_PENALTY_RATIO,
+        p: int = CONSTANT.KERNEL.CODESIGN.BARRIER_EXPONENT,
+        penalty_scale: float = CONSTANT.KERNEL.CODESIGN.PENALTY_SCALE,
+        hard_violation_beta: float = CONSTANT.KERNEL.CODESIGN.HARD_VIOLATION_BETA,
         normal_sign: float = 1.0,
-        normal_opposition_thre: float = 0.0,
-        normal_min: float = -0.7,
-        normal_max: float = -0.5,
+        normal_opposition_thre: float = CONSTANT.KERNEL.CODESIGN.NORMAL_OPPOSITION_THRESHOLD,
+        normal_min: float = CONSTANT.KERNEL.CODESIGN.NORMAL_TRANSITION_MIN,
+        normal_max: float = CONSTANT.KERNEL.CODESIGN.NORMAL_TRANSITION_MAX,
     ) -> None:
         """
         Initialize the minimum thickness constraint for the offset surface.
@@ -233,7 +243,10 @@ class OffsetSurfaceMinThickness(BaseConstraints):
     @staticmethod
     def _surface_normals(rdu_sf: torch.Tensor) -> torch.Tensor:
         normal0 = torch.cross(rdu_sf[:, :, 1], rdu_sf[:, :, 0], dim=1)
-        normals = normal0 / (normal0.norm(dim=1, keepdim=True) + 1e-12)
+        normals = normal0 / (
+            normal0.norm(dim=1, keepdim=True)
+            + CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE
+        )
         return normals
 
     def _offset_points(
@@ -249,7 +262,7 @@ class OffsetSurfaceMinThickness(BaseConstraints):
             if self.min_distance is not None
             else (2.0 * thickness)
         )
-        return max(dmin, 1e-12)
+        return max(dmin, CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE)
 
     def initialize(self, r0, rdu0, *args, part_interface=None, **kwargs) -> None:
         """Take the Part this constraint is evaluated for and pair its points.
@@ -318,7 +331,8 @@ class OffsetSurfaceMinThickness(BaseConstraints):
             if thickness <= 0:
                 continue
             barrier_thre = max(
-                self._min_distance(thickness) * self.barrier_thre_ratio, 1e-12
+                self._min_distance(thickness) * self.barrier_thre_ratio,
+                CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE,
             )
 
             # Base surface normals (offset surface shares same normal direction)
@@ -343,7 +357,10 @@ class OffsetSurfaceMinThickness(BaseConstraints):
                 r_sf=r[sf_idx], rdu_sf=rdu[sf_idx], thickness=thickness
             )
             delta = roff[pairs_n[0]] - roff[pairs_n[1]]
-            dist = torch.sqrt((delta * delta).sum(dim=1) + 1e-18)
+            dist = torch.sqrt(
+                (delta * delta).sum(dim=1)
+                + CONSTANT.KERNEL.CODESIGN.DISTANCE_SQUARED_TOLERANCE
+            )
 
             violation = mindist_n - dist + barrier_thre
             indexl, l = self.barrier_function(
@@ -361,7 +378,8 @@ class OffsetSurfaceMinThickness(BaseConstraints):
                 rel_violation = (violation[indexl] / barrier_thre).clamp(min=0.0)
                 hard_boost = torch.exp(
                     (self.hard_violation_beta * (rel_violation - 1.0)).clamp(
-                        min=0.0, max=20.0
+                        min=0.0,
+                        max=CONSTANT.KERNEL.CODESIGN.HARD_VIOLATION_EXPONENT_MAX,
                     )
                 )
                 penalty_strong = self.penalty_scale * l * hard_boost * np_smooth

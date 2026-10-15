@@ -6,6 +6,7 @@ import gmsh
 
 import morphopt
 
+from ...constants import CONSTANT
 import bspmap
 
 
@@ -347,7 +348,14 @@ class BspSurface(ControlPointSurface):
             gmsh.fltk.run()
 
 
-    def __init__(self, surface: bspmap.BSP, init_size: float, MaxR = 0.2, MaxFF = 0.1, MaxC = 1.0):
+    def __init__(
+        self,
+        surface: bspmap.BSP,
+        init_size: float,
+        MaxR=CONSTANT.KERNEL.SURFACE.DEFAULT_METRIC_VARIATION_LIMIT,
+        MaxFF=CONSTANT.KERNEL.SURFACE.BSP_CLASS_NONORTHOGONALITY_LIMIT,
+        MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
+    ):
         super().__init__(surface)
 
         self.model: bspmap.BSP = surface
@@ -443,7 +451,7 @@ class BspSurface(ControlPointSurface):
 
         if pre_points is None and faces is None:
             # preload the uv grid
-            ratio = 2
+            ratio = CONSTANT.KERNEL.SURFACE.BSP_PROJECTION_SUBDIVISION_RATIO
             preload_size = (self.model.size[0] * ratio, self.model.size[1] * ratio)
 
             uvgrids = np.meshgrid(np.linspace(0, 1, preload_size[0]), np.linspace(0, 1, preload_size[1]+1)[1:], indexing='ij')
@@ -518,8 +526,9 @@ class BspSurface(ControlPointSurface):
         
         x_change = x_change.reshape([self.model.size[0], self.model.size[1], 3])
 
-        x_change[:5, :, 2] = 0
-        x_change[-5:, :, 2] = 0
+        fixed_rows = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+        x_change[:fixed_rows, :, 2] = 0
+        x_change[-fixed_rows:, :, 2] = 0
 
         x_change[0] = 0
         x_change[-1] = 0
@@ -577,23 +586,43 @@ class BspSurface(ControlPointSurface):
     
         C0, FF0, RRuu0, RRuv0, RRvu0, RRvv0 = self._geofair_data(r, rdu, rdu2)
 
-        indexC, C = self.barrier_function(C0, self.MaxC, 0.8,
-                                                    3)
+        indexC, C = self.barrier_function(
+            C0,
+            self.MaxC,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        )
         
         indexFF, FF = self.barrier_function(
-            FF0, self.MaxFF, 0.8, 3)
+            FF0,
+            self.MaxFF,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        )
         indexRRuu, RRuu = (self.barrier_function(
-            RRuu0 * self.rr_compensation[0], self.MaxR, 0.8,
-            3))
+            RRuu0 * self.rr_compensation[0],
+            self.MaxR,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        ))
         indexRRuv, RRuv = (self.barrier_function(
-            RRuv0 * self.rr_compensation[1], self.MaxR, 0.8,
-            3))
+            RRuv0 * self.rr_compensation[1],
+            self.MaxR,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        ))
         indexRRvu, RRvu = (self.barrier_function(
-            RRvu0 * self.rr_compensation[2], self.MaxR, 0.8,
-            3))
+            RRvu0 * self.rr_compensation[2],
+            self.MaxR,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        ))
         indexRRvv, RRvv = (self.barrier_function(
-            RRvv0 * self.rr_compensation[3], self.MaxR, 0.8,
-            3))
+            RRvv0 * self.rr_compensation[3],
+            self.MaxR,
+            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
+            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
+        ))
 
         return (weight[indexC] * C).sum() + \
             (weight[indexFF] * FF).sum() + \
@@ -617,7 +646,7 @@ class BspSurface(ControlPointSurface):
 
     def get_mesh(self):
         import pyvista as pv
-        ratio = 2
+        ratio = CONSTANT.KERNEL.SURFACE.BSP_PROJECTION_SUBDIVISION_RATIO
         preload_size = (self.model.size[0] * ratio, self.model.size[1] * ratio)
 
         uvgrids = np.meshgrid(np.linspace(0, 1, preload_size[0]), np.linspace(0, 1, preload_size[1]+1)[1:], indexing='ij')
@@ -646,7 +675,21 @@ class BspSurface(ControlPointSurface):
 
 
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, num_U_ratio: int = 1, num_V_ratio: int = 1, degree = 3, init_location = [0.,0.,0.], maxR = 0.2, maxC = 1., maxFF = 0.2, perturbation_L = -1.):    
+    def initialize_cylinder(
+        cls,
+        r0: float,
+        length: float,
+        seed_size: float,
+        flip: bool,
+        num_U_ratio: int = 1,
+        num_V_ratio: int = 1,
+        degree=3,
+        init_location=[0.0, 0.0, 0.0],
+        maxR=CONSTANT.KERNEL.SURFACE.DEFAULT_METRIC_VARIATION_LIMIT,
+        maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
+        maxFF=CONSTANT.KERNEL.SURFACE.DEFAULT_NONORTHOGONALITY_LIMIT,
+        perturbation_L=-1.0,
+    ):
         """
         Initialize the B-spline surface for the optimization process.
 
@@ -674,7 +717,8 @@ class BspSurface(ControlPointSurface):
 
         numU = round(r0 * 2 * np.pi / seed_size)
         numV = round(length / seed_size)
-        numU_unit = int(np.lcm(12, num_U_ratio))
+        base_segments = CONSTANT.KERNEL.SURFACE.CYLINDER_CIRCUMFERENTIAL_BASE_SEGMENTS
+        numU_unit = int(np.lcm(base_segments, num_U_ratio))
         numU = max(numU_unit, round(numU / numU_unit) * numU_unit)
         numV = round(numV / num_V_ratio) * num_V_ratio
         # Keep a control-point row on the mid-plane.  This makes the standard
@@ -698,7 +742,11 @@ class BspSurface(ControlPointSurface):
         # Apply perturbation if specified
         if perturbation_L > 0:
             r = torch.sqrt(P0[:, :, 0]**2 + P0[:, :, 1]**2)
-            r_new = (1 + 0.04*torch.cos(2*(P0[:, :, 2] / length) * np.pi * (length/perturbation_L))) * r0
+            r_new = (
+                1
+                + CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+                * torch.cos(2 * (P0[:, :, 2] / length) * np.pi * (length / perturbation_L))
+            ) * r0
             P0[:, :, 0] *= r_new / r
             P0[:, :, 1] *= r_new / r
 
@@ -767,7 +815,7 @@ class BspSurface(ControlPointSurface):
         except Exception:
             # fallback: chunked search over nodes to avoid creating an MxN matrix
             min_dist_uv_idx = np.empty(N, dtype=int)
-            node_chunk = 1024
+            node_chunk = CONSTANT.KERNEL.SURFACE.PROJECTION_NODE_CHUNK_SIZE
             for i in range(0, N, node_chunk):
                 j = min(N, i + node_chunk)
                 nb = nodes[i:j]                                # (B, 3)
@@ -778,11 +826,11 @@ class BspSurface(ControlPointSurface):
         min_dist_uv = initpts[min_dist_uv_idx]                  # (N, 2)
 
         # --- Newton refinement in batches (reduces peak memory) ---
-        max_iter = 10
-        tol = 1e-2
+        max_iter = CONSTANT.KERNEL.SURFACE.PROJECTION_ITERATIONS_BSP
+        tol = CONSTANT.KERNEL.SURFACE.PROJECTION_TOLERANCE
         
         if batch_size is None:
-            batch_size = N if N <= 40960 else 40960
+            batch_size = min(N, CONSTANT.KERNEL.SURFACE.PROJECTION_BATCH_SIZE_BSP)
 
         uv_out = np.empty((N, 2), dtype=float)
 
@@ -813,7 +861,8 @@ class BspSurface(ControlPointSurface):
 
                 det = A * C - B * B
                 det_reg = det.copy()
-                det_reg[np.abs(det_reg) < 1e-12] = 1e-12
+                regularization = CONSTANT.KERNEL.SURFACE.PROJECTION_REGULARIZATION_TOLERANCE
+                det_reg[np.abs(det_reg) < regularization] = regularization
 
                 du = -(C * gu - B * gv) / det_reg
                 dv = -(-B * gu + A * gv) / det_reg
@@ -825,7 +874,9 @@ class BspSurface(ControlPointSurface):
                 f_best = f.copy()
                 accept = np.zeros(f.shape, dtype=bool)
 
-                uv_step = np.clip(uv + delta, 0.0, 1.0)
+                parameter_min = CONSTANT.KERNEL.SURFACE.PROJECTION_PARAMETER_MIN
+                parameter_max = CONSTANT.KERNEL.SURFACE.PROJECTION_PARAMETER_MAX
+                uv_step = np.clip(uv + delta, parameter_min, parameter_max)
                 r_step = self.model.map(uv_step)
                 f_step = np.einsum('ij,ij->i', (r_step - pts), (r_step - pts))
                 improved = f_step < f_best
@@ -836,9 +887,14 @@ class BspSurface(ControlPointSurface):
 
                 if not np.all(accept):
                     remaining = ~accept
-                    for k in range(1, 8):
-                        alpha = 0.5 ** k
-                        uv_try = np.clip(uv + alpha * delta, 0.0, 1.0)
+                    for k in range(
+                        1,
+                        CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_STEPS + 1,
+                    ):
+                        alpha = CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_DECAY ** k
+                        uv_try = np.clip(
+                            uv + alpha * delta, parameter_min, parameter_max
+                        )
                         r_try = self.model.map(uv_try)
                         f_try = np.einsum('ij,ij->i', (r_try - pts), (r_try - pts))
 

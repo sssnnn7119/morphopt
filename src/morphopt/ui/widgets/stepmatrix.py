@@ -18,6 +18,7 @@ from ..application.editing import LoadCaseSession
 from ..i18n import tr
 from ..refresh import RefreshContext
 from ..presentation.labels import interface_title_text
+from ...constants import CONSTANT
 from .collection_controls import ActionButton, AddButton
 
 
@@ -32,7 +33,10 @@ class StepMatrix(QWidget):
         bar = QHBoxLayout()
         bar.addWidget(QLabel(tr('ui.widgets.stepmatrix.load_steps')))
         self._nspin = QSpinBox()
-        self._nspin.setRange(1, 200)
+        self._nspin.setRange(
+            CONSTANT.UI.WIDGETS.MINIMUM_LOAD_STEPS,
+            CONSTANT.UI.WIDGETS.MAXIMUM_LOAD_STEPS,
+        )
         self._nspin.valueChanged.connect(self._on_n_steps)
         bar.addWidget(self._nspin)
         bar.addStretch(1)
@@ -53,7 +57,7 @@ class StepMatrix(QWidget):
         lay.addWidget(hint)
 
         self._table = QTableWidget()
-        self._table.setMinimumHeight(220)
+        self._table.setMinimumHeight(CONSTANT.UI.WIDGETS.LOAD_STEP_TABLE_MINIMUM_HEIGHT)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.cellChanged.connect(self._on_cell_changed)

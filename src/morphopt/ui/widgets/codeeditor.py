@@ -15,6 +15,7 @@ Editing behaviour (via the internal :class:`_CodeEdit`):
 from __future__ import annotations
 
 import re
+from ...constants import CONSTANT
 from PySide6.QtCore import Qt, QStringListModel, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QShortcut, QKeySequence,
@@ -131,7 +132,9 @@ class _CodeEdit(QPlainTextEdit):
             + popup.verticalScrollBar().sizeHint().width()
         )
         popup_rect = self.cursorRect()
-        popup_rect.setWidth(max(260, popup_width))
+        popup_rect.setWidth(
+            max(CONSTANT.UI.WIDGETS.CODE_COMPLETION_MINIMUM_WIDTH, popup_width)
+        )
         self._completer.complete(popup_rect)
 
     def _hide_completions(self) -> None:
@@ -327,7 +330,7 @@ class CodeEditor(QWidget):
         lay.addWidget(cap)
         self._edit = _CodeEdit(self)
         self._edit.focusReceived.connect(self.focusReceived)
-        self._edit.setMinimumHeight(140)
+        self._edit.setMinimumHeight(CONSTANT.UI.WIDGETS.CODE_EDITOR_MINIMUM_HEIGHT)
         mono = QFont("DejaVu Sans Mono", 10)
         self._edit.setFont(mono)
         metrics = QFontMetrics(mono)

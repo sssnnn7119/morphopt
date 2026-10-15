@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torchfea
 
+from ....constants import CONSTANT
 from .base_part import BasePart
 
 
@@ -24,11 +25,11 @@ class BoxPart(BasePart):
 
     def __init__(
         self,
-        length: float = 40.0,
-        height: float = 16.0,
-        depth: float = 8.0,
-        mesh_size: float = 2.0,
-        mesh_order: int = 2,
+        length: float = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.LENGTH.DEFAULT,
+        height: float = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.HEIGHT.DEFAULT,
+        depth: float = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.DEPTH.DEFAULT,
+        mesh_size: float = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.MESH_SIZE.DEFAULT,
+        mesh_order: int = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.MESH_ORDER.DEFAULT,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)

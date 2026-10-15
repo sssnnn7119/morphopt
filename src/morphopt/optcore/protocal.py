@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 
 import pyvista as pv
 import torch
+
+from ..constants import CONSTANT
 import torchfea
 
 __all__ = [
@@ -91,7 +93,13 @@ class ProtocalUpdatable(ABC):
         values = self.get_parameters()
         if not values:
             return torch.zeros(0)
-        return torch.cat([torch.randn_like(value.flatten()) * 1e-6 for value in values])
+        return torch.cat(
+            [
+                torch.randn_like(value.flatten())
+                * CONSTANT.KERNEL.SIMP.INITIAL_VARIABLE_NOISE
+                for value in values
+            ]
+        )
 
     @abstractmethod
     def set_parameters(self, values: list[torch.Tensor]) -> None:

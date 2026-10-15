@@ -18,6 +18,7 @@ import torch
 
 import morphopt
 
+from ..constants import CONSTANT
 from .history import History
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ class Controller:
         History: An instance of the History class from the History module to record the optimization history.
         """
 
-        self.restart_per_iteration: int = 20
+        self.restart_per_iteration: int = CONSTANT.KERNEL.CONTROLLER.RESTART_PER_ITERATION
         """
         The frequency of restarting the optimization process.
         """

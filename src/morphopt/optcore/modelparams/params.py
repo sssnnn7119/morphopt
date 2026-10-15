@@ -1,3 +1,4 @@
+from copy import deepcopy
 import math
 import tempfile
 
@@ -5,6 +6,7 @@ import pyvista as pv
 import torch
 from torchfea import Assembly
 
+from ...constants import CONSTANT
 from ..protocal import (
     ProtocalInitializable,
     ProtocalSavable,
@@ -140,14 +142,17 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
 
         import pyvista as pv
 
-        plotter = pv.Plotter(off_screen=True, window_size=(1200, 1200))
+        plotter = pv.Plotter(
+            off_screen=True,
+            window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE),
+        )
         plotter.set_background("white")
 
         self.plot(plotter=plotter)
 
         plotter.enable_parallel_projection()
-        azimuth = 210
-        elevation = 20
+        azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
+        elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
         plotter.view_vector(
             (
                 math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),

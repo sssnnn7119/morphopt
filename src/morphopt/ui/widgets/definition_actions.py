@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
 )
 from ..i18n import tr
+from ...constants import CONSTANT
 from ..codegen.custom_classes import custom_options
 from ..application.editing import CustomClassSession, DefinitionCommands
 from ..application.updaters import UpdaterItems
@@ -19,6 +20,7 @@ from ..model.problem import (
     ProblemDefinition,
     CADOperationNode,
     CustomClassNode,
+    CustomFunctionNode,
     InstanceNode,
     FEAComponentNode,
     MaterialNode,
@@ -47,7 +49,7 @@ class DefinitionActions(QObject):
     def _select(self, select: Node | None = None) -> None:
         self.selectionRequested.emit(select)
 
-    def add_custom_class(self) -> None:
+    def add_custom_class(self, class_type: str = "override") -> None:
         if self._problem is None:
             return
         session = CustomClassSession(self._problem)
@@ -57,18 +59,30 @@ class DefinitionActions(QObject):
             QMessageBox.warning(self.parent(), tr('ui.widgets.custom_classes.cannot_read_base_classes'), str(exc))
             return
         available = sorted(catalog)
-        if not available:
+        if class_type == "override" and not available:
             return
         dialog = QDialog(self.parent())
-        dialog.setWindowTitle(tr('ui.widgets.custom_classes.add_custom_class'))
+        dialog.setWindowTitle(tr(
+            "ui.widgets.custom_classes.add_new_class"
+            if class_type == "new"
+            else "ui.widgets.custom_classes.add_override_class"
+        ))
         layout = QFormLayout(dialog)
         name = QLineEdit("CustomClass")
-        base = QComboBox()
-        base.addItems(available)
-        base.setMinimumWidth(400)
         layout.addRow(tr('ui.widgets.custom_classes.class_name'), name)
-        layout.addRow(tr('ui.widgets.custom_classes.inherits_from'), base)
-        hint = QLabel(tr('ui.widgets.custom_classes.custom_classes_are_module_level_definitions_select_one_using_a_model_nod'))
+        if class_type == "override":
+            base = QComboBox()
+            base.addItems(available)
+            base.setMinimumWidth(CONSTANT.UI.WIDGETS.CUSTOM_CLASS_BASE_MINIMUM_WIDTH)
+            layout.addRow(tr('ui.widgets.custom_classes.inherits_from'), base)
+        else:
+            base = None
+        hint_key = (
+            "ui.widgets.custom_classes.new_class_hint"
+            if class_type == "new"
+            else "ui.widgets.custom_classes.override_class_hint"
+        )
+        hint = QLabel(tr(hint_key))
         hint.setWordWrap(True)
         layout.addRow(hint)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -87,11 +101,17 @@ class DefinitionActions(QObject):
         buttons.accepted.connect(accept)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        custom = session.add_class(name.text().strip(), base.currentText())
+        custom = session.add_class(
+            name.text().strip(),
+            base.currentText() if base is not None else "",
+            class_type,
+        )
         self._select(custom)
         self.changed.emit(custom)
 
-    def remove_custom_class(self, node: CustomClassNode | MethodOverrideNode) -> None:
+    def remove_custom_class(
+        self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
+    ) -> None:
         if self._problem is None:
             return
         selected = CustomClassSession(self._problem).remove(node)

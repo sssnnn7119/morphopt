@@ -1,5 +1,6 @@
 """Updater item construction and normalization, without Qt controls."""
 from __future__ import annotations
+from ...constants import CONSTANT
 from ..model import schemas as S
 from ..model.problem import SurfaceNode
 
@@ -26,7 +27,11 @@ def updater_item(item_type: str, category: str, custom_class: str = "") -> dict:
     return item
 
 
-def distance_matrix(stored, size: int, default: float = 2.5) -> list[list[float | str]]:
+def distance_matrix(
+    stored,
+    size: int,
+    default: float = CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE,
+) -> list[list[float | str]]:
     rows: list[list[float | str]] = []
     if isinstance(stored, (list, tuple)):
         for row in stored:

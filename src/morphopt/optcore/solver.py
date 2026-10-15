@@ -7,6 +7,7 @@ import torchfea
 
 import morphopt
 
+from ..constants import CONSTANT
 from .modelparams import FEAParams, Params
 from .protocal import ProtocalInitializable, ProtocalSavable
 
@@ -19,7 +20,7 @@ class Solver(ProtocalInitializable, ProtocalSavable):
     def __init__(
         self,
         params: Params,
-        num_process: int = 4,
+        num_process: int = CONSTANT.KERNEL.SOLVER.NUM_PROCESS,
         available_gpus: list[str] = None,
         task_index_list: list[list[int]] = None,
     ):

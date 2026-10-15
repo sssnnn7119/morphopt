@@ -1,5 +1,6 @@
 import torch
 
+from ...constants import CONSTANT
 from .basefuncs import BaseConstraints
 
 
@@ -10,17 +11,19 @@ class MinValue(BaseConstraints):
 
     def __init__(
         self,
-        xmin: float = 0.0,
-        threshold: float = 0.0,
-        p: int = 3,
-        barrier_thre: float = 0.05,
-        barrier_ratio: float = 0.0,
+        xmin: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.MINIMUM_VALUE,
+        threshold: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.DEFAULT_THRESHOLD,
+        p: int = CONSTANT.KERNEL.SIMP_CONSTRAINTS.DEFAULT_EXPONENT,
+        barrier_thre: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_THRESHOLD,
+        barrier_ratio: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_RATIO,
     ) -> None:
         super().__init__()
         self.xmin = float(xmin)
         self.threshold = float(threshold)
         self.p = int(p)
-        self.barrier_thre = max(float(barrier_thre), 1e-12)
+        self.barrier_thre = max(
+            float(barrier_thre), CONSTANT.KERNEL.SIMP_CONSTRAINTS.MINIMUM_THRESHOLD
+        )
         self.barrier_ratio = float(barrier_ratio)
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -44,17 +47,19 @@ class MaxValue(BaseConstraints):
 
     def __init__(
         self,
-        xmax: float = 1.0,
-        threshold: float = 0.0,
-        p: int = 3,
-        barrier_thre: float = 0.05,
-        barrier_ratio: float = 0.0,
+        xmax: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.MAXIMUM_VALUE,
+        threshold: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.DEFAULT_THRESHOLD,
+        p: int = CONSTANT.KERNEL.SIMP_CONSTRAINTS.DEFAULT_EXPONENT,
+        barrier_thre: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_THRESHOLD,
+        barrier_ratio: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_RATIO,
     ) -> None:
         super().__init__()
         self.xmax = float(xmax)
         self.threshold = float(threshold)
         self.p = int(p)
-        self.barrier_thre = max(float(barrier_thre), 1e-12)
+        self.barrier_thre = max(
+            float(barrier_thre), CONSTANT.KERNEL.SIMP_CONSTRAINTS.MINIMUM_THRESHOLD
+        )
         self.barrier_ratio = float(barrier_ratio)
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:

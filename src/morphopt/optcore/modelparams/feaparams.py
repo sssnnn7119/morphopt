@@ -1,6 +1,7 @@
 import torchfea
 from torchfea import FEAController
 
+from ...constants import CONSTANT
 from .baseparam import BaseParams
 
 
@@ -112,7 +113,9 @@ class FEAParams(BaseParams):
 
         fe = torchfea.FEAController()
         fe.assembly = assembly
-        fe.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-7)
+        fe.solver = torchfea.solver.StaticImplicitSolver(
+            tol_error=CONSTANT.KERNEL.SOLVER.STATIC_TOLERANCE_ERROR
+        )
 
         # Add fea features
         for name, interface in self.interfaces.items():

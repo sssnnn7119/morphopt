@@ -1,4 +1,4 @@
-"""Custom subclass navigation and body-of-method override editing."""
+"""New-class methods and framework-method overrides."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QHBoxLayout,
-    QInputDialog, QLabel, QLineEdit,
+    QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QGroupBox, QInputDialog, QLabel, QLineEdit, QMenu, QScrollArea,
     QListWidget, QListWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -21,9 +21,11 @@ from ..i18n import tr
 from ..refresh import RefreshContext
 from ..presentation.labels import node_title, typed_title
 from ..application.editing import CustomClassSession
-from ..model.problem import CustomClassNode, MethodOverrideNode, Node, ProblemDefinition
+from ..model.problem import (
+    CustomClassNode, CustomFunctionNode, MethodOverrideNode, Node, ProblemDefinition,
+)
 from .codeeditor import CodeEditor
-from .collection_controls import ActionButton, AddButton, CollectionHeader
+from .collection_controls import ActionButton, CollectionHeader, ItemActions
 
 if TYPE_CHECKING:
     from .definition_actions import DefinitionActions
@@ -37,7 +39,11 @@ class CustomClassOverview(QWidget):
         super().__init__(parent)
         self.actions = actions
         layout = QVBoxLayout(self)
-        header = CollectionHeader(tr('ui.widgets.model_tree.container.custom_classes'), actions.add_custom_class)
+        self.add_menu = QMenu(self)
+        header = CollectionHeader(
+            tr('ui.widgets.model_tree.container.custom_classes'), menu=self.add_menu
+        )
+        self.title_label = header.title
         self.remove_button = ActionButton(tr('ui.common.delete'), self._remove)
         header.actions.addWidget(self.remove_button)
         layout.addWidget(header)
@@ -49,14 +55,46 @@ class CustomClassOverview(QWidget):
         self.items.itemActivated.connect(self._activate)
         layout.addWidget(self.items)
         self.remove_button.setEnabled(False)
+        self._mode: str | None = None
 
-    def set_problem(self, problem: ProblemDefinition) -> None:
+    def set_problem(self, problem: ProblemDefinition, node=None) -> None:
+        if node is not None:
+            self._mode = {
+                "new_classes_group": "new",
+                "override_classes_group": "override",
+            }.get(node.kind)
+        title_key = {
+            "new": "ui.widgets.model_tree.container.new_classes_group",
+            "override": "ui.widgets.model_tree.container.override_classes_group",
+        }.get(self._mode, "ui.widgets.model_tree.container.custom_classes")
+        self.title_label.setText(tr(title_key))
+        self.add_menu.clear()
+        choices = (
+            [("new", "ui.widgets.custom_classes.add_new_class")]
+            if self._mode == "new"
+            else [("override", "ui.widgets.custom_classes.add_override_class")]
+            if self._mode == "override"
+            else [
+                ("new", "ui.widgets.custom_classes.add_new_class"),
+                ("override", "ui.widgets.custom_classes.add_override_class"),
+            ]
+        )
+        for class_type, label_key in choices:
+            action = self.add_menu.addAction(tr(label_key))
+            action.triggered.connect(
+                lambda _checked=False, class_type=class_type:
+                    self.actions.add_custom_class(class_type)
+            )
         selected = self.items.currentRow()
         self.items.clear()
         for custom in problem.custom_classes:
+            if self._mode == "new" and custom.class_type != "new":
+                continue
+            if self._mode == "override" and custom.class_type != "override":
+                continue
             item = QListWidgetItem(node_title(problem, custom))
             item.setData(Qt.ItemDataRole.UserRole, custom)
-            item.setToolTip(custom.base_class)
+            item.setToolTip(custom.base_class or "object")
             self.items.addItem(item)
         self.items.setCurrentRow(min(selected, self.items.count() - 1))
 
@@ -84,38 +122,41 @@ class CustomClassEditor(QWidget):
         self._custom = None
         self._problem = None
         self._methods = {}
-        self.current_method: MethodOverrideNode | None = None
+        self.current_method: MethodOverrideNode | CustomFunctionNode | None = None
         self._loading = False
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.name = QLineEdit()
         self.name.editingFinished.connect(self._rename)
+        self.base_label = QLabel(tr('ui.widgets.custom_classes.inherits_from'))
         self.base = QLabel()
         self.base.setWordWrap(True)
+        class_card = QGroupBox(tr('ui.widgets.custom_classes.class_definition'))
         form.addRow(tr('ui.widgets.custom_classes.class_name'), self.name)
-        form.addRow(tr('ui.widgets.custom_classes.inherits_from'), self.base)
-        layout.addLayout(form)
-        hint = QLabel(tr('ui.widgets.custom_classes.edit_the_body_signatures_follow_the_framework_base_super_calls_framework'))
+        form.addRow(self.base_label, self.base)
+        class_layout = QVBoxLayout(class_card)
+        class_layout.addLayout(form)
+        layout.addWidget(class_card)
+        self.hint = QLabel()
+        hint = self.hint
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        self.signature = QLabel()
-        self.signature.setWordWrap(True)
-        self.signature.setTextFormat(Qt.TextFormat.PlainText)
-        row.addWidget(self.signature, 1)
-        self.add_button = AddButton(self.add_override)
-        self.add_button.setToolTip(tr('ui.widgets.custom_classes.override_method'))
-        row.addWidget(self.add_button)
-        self.remove_button = ActionButton(
-            tr('ui.common.delete'), self._remove_override, danger=True,
-            tooltip=tr('ui.widgets.custom_classes.remove_override'),
+
+        self.method_header = CollectionHeader(
+            tr('ui.widgets.custom_classes.methods'), self._add_member
         )
-        row.addWidget(self.remove_button)
-        layout.addLayout(row)
-        self.code = CodeEditor(tr('ui.widgets.custom_classes.method_body'))
-        self.code.edit.textChanged.connect(self._save_body)
-        layout.addWidget(self.code, 1)
+        self.add_button = self.method_header.add_button
+        layout.addWidget(self.method_header)
+
+        self.method_scroll = QScrollArea(self)
+        self.method_scroll.setWidgetResizable(True)
+        self.method_container = QWidget(self.method_scroll)
+        self.method_list = QVBoxLayout(self.method_container)
+        self.method_list.setContentsMargins(0, 0, 0, 0)
+        self.method_list.setSpacing(8)
+        self.method_list.addStretch(1)
+        self.method_scroll.setWidget(self.method_container)
+        layout.addWidget(self.method_scroll, 1)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setStyleSheet("color:#e57373;")
@@ -132,43 +173,143 @@ class CustomClassEditor(QWidget):
         self.session = CustomClassSession(problem)
         self._loading = True
         self.name.setText(custom.name)
-        self.base.setText(custom.base_class)
+        self.base.setText(custom.base_class or "object")
         self.error.clear()
-        try:
-            spec = framework_class_catalog(problem).get(custom.base_class)
-            self._methods = spec.methods if spec else {}
-            if spec is not None:
-                self.base.setText(spec.path)
-            if spec is None:
-                self.error.setText(tr('ui.widgets.custom_classes.base_class_missing_recreate_the_subclass'))
-        except Exception as exc:
+        if custom.class_type == "override":
+            try:
+                spec = framework_class_catalog(problem).get(custom.base_class)
+                self._methods = spec.methods if spec else {}
+                if spec is not None:
+                    self.base.setText(spec.path)
+                if spec is None:
+                    self.error.setText(tr('ui.widgets.custom_classes.base_class_missing_recreate_the_subclass'))
+            except Exception as exc:
+                self._methods = {}
+                self.error.setText(str(exc))
+            self.base_label.show()
+            self.base.show()
+            self.hint.setText(tr('ui.widgets.custom_classes.override_class_hint'))
+            self.method_header.title.setText(tr('ui.widgets.custom_classes.method_overrides'))
+            self.add_button.setText(tr('ui.widgets.custom_classes.override_method'))
+            self.add_button.setEnabled(bool(self._methods))
+        else:
             self._methods = {}
-            self.error.setText(str(exc))
-        self.add_button.setEnabled(bool(self._methods))
-        focus = node if isinstance(node, MethodOverrideNode) else previous
+            self.base_label.hide()
+            self.base.hide()
+            self.hint.setText(tr('ui.widgets.custom_classes.new_class_hint'))
+            self.method_header.title.setText(tr('ui.widgets.custom_classes.methods'))
+            self.add_button.setText(tr('ui.common.add'))
+            self.add_button.setEnabled(True)
+        focus = node if isinstance(node, (MethodOverrideNode, CustomFunctionNode)) else previous
         self.current_method = focus if focus in custom.children else next(iter(custom.children), None)
         self._loading = False
-        self._show_method()
+        self._render_methods()
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        focus = QApplication.focusWidget()
+        if focus is not None and self.isAncestorOf(focus):
+            return
         node = self.current_method or self._custom
         if node is not None:
             self.edit_node(node, context.problem)
 
-    def _show_method(self, *_):
-        if self._loading:
+    def _render_methods(self):
+        while self.method_list.count() > 1:
+            item = self.method_list.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        if self._custom is None:
             return
-        override = self.current_method
-        spec = self._methods.get(override.name) if override else None
-        self.signature.setText(spec.header if spec else "")
-        self.signature.setToolTip(spec.documentation if spec else "")
-        self.code.setEnabled(override is not None)
-        self.remove_button.setEnabled(override is not None)
-        self._loading = True
-        self.code.set_body(override.body if override else "")
-        self.code.set_completion_context(override.name if override else "", self._problem)
-        self._loading = False
-        self._validate_body()
+        members = list(self._custom.children)
+        self._member_cards = {}
+        for index, member in enumerate(members):
+            spec = self._methods.get(member.name) if isinstance(member, MethodOverrideNode) else None
+            title = spec.header if spec is not None else f"{member.name}({getattr(member, 'parameters', '')})"
+            card = QGroupBox(title, self.method_container)
+            card.setToolTip(spec.documentation if spec is not None else "")
+            card_layout = QVBoxLayout(card)
+            card_layout.addWidget(ItemActions(
+                index,
+                len(members),
+                lambda member=member: self._remove_member(member),
+                lambda delta, member=member: self._move_member(member, delta),
+                remove_tooltip=tr('ui.widgets.custom_classes.remove_method'),
+            ))
+            if isinstance(member, CustomFunctionNode):
+                signature = QFormLayout()
+                method_name = QLineEdit(member.name, card)
+                parameters = QLineEdit(member.parameters, card)
+                method_name.editingFinished.connect(
+                    lambda member=member, field=method_name:
+                        self._save_function_signature(member, field, None)
+                )
+                parameters.editingFinished.connect(
+                    lambda member=member, field=parameters:
+                        self._save_function_signature(member, None, field)
+                )
+                signature.addRow(tr('ui.widgets.custom_classes.function_name'), method_name)
+                signature.addRow(tr('ui.widgets.custom_classes.parameters'), parameters)
+                card_layout.addLayout(signature)
+            code = CodeEditor(tr('ui.widgets.custom_classes.method_body'))
+            code.set_body(member.body)
+            code.set_completion_context(member.name, self._problem)
+            code.edit.textChanged.connect(
+                lambda member=member, code=code: self._save_member_body(member, code)
+            )
+            card_layout.addWidget(code, 1)
+            self.method_list.insertWidget(index, card)
+            self._member_cards[member] = card
+        if self.current_method in self._member_cards:
+            self.method_scroll.ensureWidgetVisible(self._member_cards[self.current_method])
+
+    def _add_member(self):
+        if self._custom is None:
+            return
+        if self._custom.class_type == "override":
+            self.add_override()
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('ui.widgets.custom_classes.add_function'))
+        layout = QFormLayout(dialog)
+        taken = {member.name for member in self._custom.children}
+        index = 1
+        while f"method_{index}" in taken:
+            index += 1
+        name = QLineEdit(f"method_{index}", dialog)
+        parameters = QLineEdit("self", dialog)
+        layout.addRow(tr('ui.widgets.custom_classes.function_name'), name)
+        layout.addRow(tr('ui.widgets.custom_classes.parameters'), parameters)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=dialog,
+        )
+        layout.addRow(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        temporary = CustomFunctionNode(
+            name=name.text().strip(),
+            params={"parameters": parameters.text().strip(), "body": "pass"},
+        )
+        try:
+            if any(member.name == temporary.name for member in self._custom.children):
+                raise ValueError(tr('ui.widgets.custom_classes.duplicate_function_name'))
+            self.session.validate_function(temporary)
+        except (SyntaxError, ValueError) as exc:
+            self.error.setText(str(exc))
+            return
+        self.current_method = self.session.add_function(
+            self._custom, temporary.name, temporary.parameters
+        )
+        self._render_methods()
+        self.changed.emit(self._custom)
+        self.nodeSelected.emit(self.current_method)
+
+    def add_member(self):
+        """Add one method using the editor's class-specific method policy."""
+        self._add_member()
 
     def add_override(self):
         taken = {method.name for method in self._custom.children}
@@ -183,44 +324,72 @@ class CustomClassEditor(QWidget):
         spec = methods[choices.index(text)]
         override = self.session.add_override(self._custom, spec)
         self.current_method = override
-        self._show_method()
+        self._render_methods()
         self.changed.emit(self._custom)
         self.nodeSelected.emit(override)
 
-    def _remove_override(self):
-        override = self.current_method
-        if override:
-            self.session.remove(override)
-            self.current_method = next(iter(self._custom.children), None)
-            self.error.clear()
-            self._show_method()
-            self.changed.emit(self._custom)
-            self.nodeSelected.emit(self._custom)
+    def _remove_member(self, member):
+        if self._custom is None:
+            return
+        self.session.remove(member)
+        self.current_method = next(iter(self._custom.children), None)
+        self.error.clear()
+        self._render_methods()
+        self.changed.emit(self._custom)
+        self.nodeSelected.emit(self.current_method or self._custom)
 
-    def _save_body(self):
+    def _move_member(self, member, delta):
+        if self._custom and self.session.move_member(self._custom, member, delta):
+            self.current_method = member
+            self._render_methods()
+            self.changed.emit(self._custom)
+            self.nodeSelected.emit(member)
+
+    def _save_member_body(self, member, code):
         if self._loading:
             return
-        override = self.current_method
-        if override:
-            override.body = self.code.body()
-            self._validate_body()
-            self.changed.emit(self._custom)
-
-    def _validate_body(self):
-        override = self.current_method
-        spec = self._methods.get(override.name) if override else None
-        if spec is None:
-            return
+        member.body = code.body()
         try:
-            self.session.validate_body(override, spec)
+            if isinstance(member, MethodOverrideNode):
+                spec = self._methods[member.name]
+                self.session.validate_body(member, spec)
+            else:
+                self.session.validate_function(member)
         except SyntaxError as exc:
             self.error.setText(tr(
                 'ui.widgets.custom_classes.syntax_error_body_line_value_value',
                 value_0=max(1, (exc.lineno or 2) - 1),
                 value_1=exc.msg,
             ))
+        except ValueError as exc:
+            self.error.setText(str(exc))
         else:
             self.error.clear()
+        self.changed.emit(self._custom)
+
+    def _save_function_signature(self, member, name_field, parameters_field):
+        previous_name = member.name
+        previous_parameters = member.parameters
+        if name_field is not None:
+            member.name = name_field.text().strip()
+        if parameters_field is not None:
+            member.parameters = parameters_field.text().strip()
+        try:
+            if any(other is not member and other.name == member.name for other in self._custom.children):
+                raise ValueError(tr('ui.widgets.custom_classes.duplicate_function_name'))
+            self.session.validate_function(member)
+        except (SyntaxError, ValueError) as exc:
+            member.name = previous_name
+            member.parameters = previous_parameters
+            if name_field is not None:
+                name_field.setText(previous_name)
+            if parameters_field is not None:
+                parameters_field.setText(previous_parameters)
+            self.error.setText(str(exc))
+            return
+        self.error.clear()
+        self._render_methods()
+        self.changed.emit(self._custom)
 
     def _rename(self):
         if self._custom is None:

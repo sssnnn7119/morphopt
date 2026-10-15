@@ -8,6 +8,7 @@ from typing import Any
 import torchfea
 from torchfea import cad as torchfea_cad
 
+from ....constants import CONSTANT
 from .base_part import BasePart
 
 
@@ -43,8 +44,8 @@ class CADPart(BasePart):
 
     def __init__(
         self,
-        mesh_size: float = 1.0,
-        mesh_order: int = 1,
+        mesh_size: float = CONSTANT.KERNEL.MESH.DEFAULT_CAD_MESH_SIZE,
+        mesh_order: int = CONSTANT.KERNEL.MESH.DEFAULT_ELEMENT_ORDER,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)

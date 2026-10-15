@@ -9,6 +9,7 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from ..constants import CONSTANT
 from .model.problem import Node, ProblemDefinition
 
 
@@ -68,7 +69,7 @@ class RefreshCoordinator(QObject):
         self._pending: list[Node | None] = []
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(250)
+        self._timer.setInterval(CONSTANT.UI.TIMING.REFRESH_DEBOUNCE_MS)
         self._timer.timeout.connect(self.flush)
 
     def set_components(self, components: Sequence[Refreshable]) -> None:

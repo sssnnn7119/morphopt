@@ -8,6 +8,7 @@ geometry updater editor.
 """
 
 from __future__ import annotations
+from copy import deepcopy
 
 from collections.abc import Callable
 
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ...constants import CONSTANT
 from ..refresh import RefreshContext
 from ..model.problem import Node
 from ..presentation.labels import node_title, reference_choice_title
@@ -69,8 +71,8 @@ class PropertyEditor(QWidget):
         self._body = QWidget()
         self._form = QFormLayout(self._body)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._form.setContentsMargins(8, 4, 8, 4)
-        self._form.setVerticalSpacing(6)
+        self._form.setContentsMargins(*deepcopy(CONSTANT.UI.WIDGETS.FORM_CONTENTS_MARGINS))
+        self._form.setVerticalSpacing(CONSTANT.UI.WIDGETS.STANDARD_FORM_SPACING)
         self._scroll.setWidget(self._body)
         outer.addWidget(self._scroll, 0 if compact else 1)
 
@@ -155,24 +157,36 @@ class PropertyEditor(QWidget):
 
         if actions:
             action_row = QWidget()
-            if len(actions) > 2:
+            action_grid_columns = CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS
+            if len(actions) > action_grid_columns:
                 action_layout = QGridLayout(action_row)
-                action_layout.setContentsMargins(0, 2, 0, 2)
-                action_layout.setHorizontalSpacing(6)
-                action_layout.setVerticalSpacing(6)
-                for column in range(2):
+                action_layout.setContentsMargins(
+                    0, CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN, 0,
+                    CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN,
+                )
+                action_layout.setHorizontalSpacing(
+                    CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING
+                )
+                action_layout.setVerticalSpacing(
+                    CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING
+                )
+                for column in range(CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS):
                     action_layout.setColumnStretch(column, 1)
             else:
                 action_layout = QHBoxLayout(action_row)
-                action_layout.setContentsMargins(0, 2, 0, 2)
-                action_layout.setSpacing(6)
+                action_layout.setContentsMargins(
+                    0, CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN, 0,
+                    CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN,
+                )
+                action_layout.setSpacing(CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING)
             for index, (label, callback, danger) in enumerate(actions):
                 button = ActionButton(label, callback, danger=danger)
-                if len(actions) > 2:
-                    action_layout.addWidget(button, index // 2, index % 2)
+                if len(actions) > CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS:
+                    columns = CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS
+                    action_layout.addWidget(button, index // columns, index % columns)
                 else:
                     action_layout.addWidget(button)
-            if len(actions) <= 2:
+            if len(actions) <= CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS:
                 action_layout.addStretch(1)
             self._form.addRow(action_row)
 

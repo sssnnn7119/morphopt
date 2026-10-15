@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ...constants import CONSTANT
 from ..application.imported_models import ImportedModelLibrary
 from ..model.problem import PartNode, ProblemDefinition, resolve_model_directory
 
@@ -98,14 +99,14 @@ class TorchFEAModelEditor(QWidget):
         )
         self.summary.setRootIsDecorated(True)
         self.summary.setAlternatingRowColors(True)
-        self.summary.setIndentation(18)
+        self.summary.setIndentation(CONSTANT.UI.WIDGETS.MODEL_SUMMARY_INDENTATION)
         self.summary.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.summary.header().setStretchLastSection(False)
         self.summary.header().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Interactive
         )
         self.summary.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.summary.setColumnWidth(0, 240)
+        self.summary.setColumnWidth(0, CONSTANT.UI.WIDGETS.MODEL_SUMMARY_NAME_COLUMN_WIDTH)
         outer.addWidget(self.summary)
         self._show_empty_summary(
             tr('ui.widgets.torchfea_model_editor.no_torchfea_model_imported')
@@ -117,7 +118,7 @@ class TorchFEAModelEditor(QWidget):
         self._watcher.directoryChanged.connect(self._directory_changed)
         self._scan_timer = QTimer(self)
         self._scan_timer.setSingleShot(True)
-        self._scan_timer.setInterval(500)
+        self._scan_timer.setInterval(CONSTANT.UI.WIDGETS.MODEL_SCAN_DEBOUNCE_MS)
         self._scan_timer.timeout.connect(
             lambda: self._scan_directory(auto_import_new=True)
         )

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QLabel, QComboBox, QPushButton,
     QHBoxLayout, QToolButton, QMenu, QWidgetAction, QCheckBox,
 )
-
+from ...constants import CONSTANT
 from ..model.problem import ObjectiveNode, ProblemDefinition
 from ..presentation.labels import interface_title_text, node_title
 from ..schemes.base import get_template
@@ -44,7 +44,7 @@ class JacobianLoadSelector(QToolButton):
         self.setMenu(self._menu)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setProperty("menuButton", True)
-        self.setFixedHeight(30)
+        self.setFixedHeight(CONSTANT.UI.WIDGETS.OBJECTIVE_SELECTOR_HEIGHT)
         self._update_summary()
 
     def set_loads(self, load_names: list[str], selected_names: list[str], titles: dict[str, str] | None = None) -> None:

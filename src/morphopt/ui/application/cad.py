@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torchfea
 
+from ...constants import CONSTANT
 from ...optcore.modelparams.parts import CADPart
 from ..model.problem import CADOperationNode, PartNode, ProblemDefinition
 from ..model.schemas import CAD_OPERATION_TYPES
@@ -57,7 +58,11 @@ def cad_part_from_node(
                 )
 
     part = PreviewCADPart(
-        mesh_size=values.resolve(node.mesh_size) if node.mesh_size is not None else 2.0,
+        mesh_size=(
+            values.resolve(node.mesh_size)
+            if node.mesh_size is not None
+            else CONSTANT.UI.SCHEMA_FIELDS.PARTS.CADPART.MESH_SIZE.DEFAULT
+        ),
         mesh_order=values.resolve(node.mesh_order) if node.mesh_order is not None else 1,
         exterior_surface=node.exterior_surface or "extern",
         part_name=node.resolved_part_name() or "CADPreview",

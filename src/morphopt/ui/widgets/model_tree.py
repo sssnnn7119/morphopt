@@ -30,6 +30,7 @@ from ..model.problem import (
     InstanceNode,
     MaterialNode,
     MethodOverrideNode,
+    CustomFunctionNode,
     Node,
     PartNode,
     ProblemDefinition,
@@ -61,7 +62,7 @@ from .definition_actions import DefinitionActions
 
 class ModelTree(QTreeWidget):
     nodeSelected = Signal(object)  # Node
-    overrideRequested = Signal(object)
+    classMethodAddRequested = Signal(object)
 
     def __init__(self, parent=None, *, actions: DefinitionActions | None = None):
         super().__init__(parent)
@@ -230,19 +231,42 @@ class ModelTree(QTreeWidget):
         kind = node.kind
         scheme = self._problem.scheme if self._problem else "shapeopt"
 
-        if kind in {"custom_classes", "custom_class", "method_override"}:
-            menu.addAction(tr('ui.widgets.custom_classes.add_custom_class'), self.actions.add_custom_class)
+        if kind == "custom_classes":
+            menu.addAction(
+                tr('ui.widgets.custom_classes.add_new_class'),
+                lambda _checked=False: self.actions.add_custom_class("new"),
+            )
+            menu.addAction(
+                tr('ui.widgets.custom_classes.add_override_class'),
+                lambda _checked=False: self.actions.add_custom_class("override"),
+            )
+        if kind == "new_classes_group":
+            menu.addAction(
+                tr('ui.widgets.custom_classes.add_new_class'),
+                lambda _checked=False: self.actions.add_custom_class("new"),
+            )
+        if kind == "override_classes_group":
+            menu.addAction(
+                tr('ui.widgets.custom_classes.add_override_class'),
+                lambda _checked=False: self.actions.add_custom_class("override"),
+            )
         if isinstance(node, CustomClassNode):
-            menu.addAction(tr('ui.widgets.custom_classes.override_method'),
-                           lambda: self.overrideRequested.emit(node))
-        if isinstance(node, (CustomClassNode, MethodOverrideNode)):
+            menu.addAction(
+                tr(
+                    'ui.widgets.custom_classes.add_function'
+                    if node.class_type == "new"
+                    else 'ui.widgets.custom_classes.override_method'
+                ),
+                lambda: self.classMethodAddRequested.emit(node),
+            )
+        if isinstance(node, (CustomClassNode, MethodOverrideNode, CustomFunctionNode)):
             menu.addAction(tr('ui.widgets.custom_classes.delete'),
                            lambda: self.actions.remove_custom_class(node))
 
-        if kind in {"helper_code", "helper_variables_group"}:
+        if kind == "helper_variables_group":
             menu.addAction(tr('ui.widgets.model_tree.add_helper_variable'),
                            lambda: self.actions.add_helper("helper_variable"))
-        if kind in {"helper_code", "helper_functions_group"}:
+        if kind == "helper_functions_group":
             menu.addAction(tr('ui.widgets.model_tree.add_helper_function'),
                            lambda: self.actions.add_helper("helper_function"))
         if kind in {"helper_variable", "helper_function"}:

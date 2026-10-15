@@ -1,5 +1,6 @@
 import torch
 
+from ...constants import CONSTANT
 from .basefuncs import BaseObjective
 
 
@@ -12,7 +13,10 @@ class DensityFieldMinimize(BaseObjective):
     that it only acts as a gentle regularization term.
     """
 
-    def __init__(self, scale: float = 1e-10) -> None:
+    def __init__(
+        self,
+        scale: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.DENSITY_FIELD_MINIMIZE_SCALE,
+    ) -> None:
         super().__init__()
         self.scale = float(scale)
 

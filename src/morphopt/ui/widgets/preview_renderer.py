@@ -1,12 +1,14 @@
 """Render scene descriptions; owns actors, never reads problem definitions."""
 from __future__ import annotations
 
+from copy import deepcopy
 from functools import singledispatchmethod
 import os
 from pathlib import Path
 
 import numpy as np
 import pyvista as pv
+from ...constants import CONSTANT
 from .plot_style import configure_plotter
 from ..i18n import localized_message
 from ..visualization.scene import (
@@ -40,8 +42,8 @@ class PreviewRenderer:
         self.plotter = plotter
         configure_plotter(self.plotter)
         self._overlay_actors: list = []
-        self._scale = 10.0
-        self._annotation_scale = 10.0
+        self._scale = CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
+        self._annotation_scale = CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
         self._callout_ranges: dict[float, list[tuple[float, float]]] = {}
         self._geometry_bounds: tuple[np.ndarray, np.ndarray] | None = None
 
@@ -83,22 +85,33 @@ class PreviewRenderer:
         if not entries:
             return
         labels = [[name, color, "rectangle"] for name, color in entries]
-        width = min(0.28, max(0.13, 0.055 + 0.008 * max(len(name) for name, _ in entries)))
-        height = min(0.4, 0.025 * len(labels))
+        width = min(
+            CONSTANT.UI.VIEWER.RENDER.LEGEND_MAX_WIDTH,
+            max(
+                CONSTANT.UI.VIEWER.RENDER.LEGEND_MIN_WIDTH,
+                CONSTANT.UI.VIEWER.RENDER.LEGEND_BASE_WIDTH
+                + CONSTANT.UI.VIEWER.RENDER.LEGEND_NAME_WIDTH_RATIO
+                * max(len(name) for name, _ in entries),
+            ),
+        )
+        height = min(
+            CONSTANT.UI.VIEWER.RENDER.LEGEND_MAX_HEIGHT,
+            CONSTANT.UI.VIEWER.RENDER.LEGEND_ROW_HEIGHT * len(labels),
+        )
         legend = self.plotter.add_legend(
             labels,
-            bcolor="#1a202a",
+            bcolor=CONSTANT.UI.VIEWER.RENDER.LEGEND_BACKGROUND,
             border=False,
             size=(width, height),
             name="instance-legend",
             loc="upper left",
             font_family="arial",
-            background_opacity=0.80,
+            background_opacity=CONSTANT.UI.VIEWER.RENDER.LEGEND_BACKGROUND_OPACITY,
         )
-        legend.SetPadding(4)
+        legend.SetPadding(CONSTANT.UI.VIEWER.RENDER.LEGEND_PADDING)
         text = legend.GetEntryTextProperty()
-        text.SetColor(0.86, 0.90, 0.95)
-        text.SetFontSize(10)
+        text.SetColor(*deepcopy(CONSTANT.UI.VIEWER.RENDER.LEGEND_TEXT_COLOR))
+        text.SetFontSize(CONSTANT.UI.VIEWER.RENDER.LEGEND_FONT_SIZE)
         text.SetShadow(False)
         font_file = _cjk_font_file()
         if font_file:
@@ -112,10 +125,10 @@ class PreviewRenderer:
     @draw.register
     def _(self, item: MeshItem):
         options = {
-            "ambient": 0.17,
-            "diffuse": 0.78,
-            "specular": 0.24,
-            "specular_power": 30,
+            "ambient": CONSTANT.UI.VIEWER.RENDER.MESH_AMBIENT,
+            "diffuse": CONSTANT.UI.VIEWER.RENDER.MESH_DIFFUSE,
+            "specular": CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR,
+            "specular_power": CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR_POWER,
             **item.options,
         }
         preview_offset = float(options.pop("preview_offset", 0.0))
@@ -180,18 +193,19 @@ class PreviewRenderer:
                 else surface.extract_surface(algorithm="dataset_surface")
             )
             highlighted_surface = self._offset_toward_camera(
-                surface, scale_len * 0.0015
+                surface,
+                scale_len * CONSTANT.UI.VIEWER.RENDER.COUPLING_NORMAL_OFFSET_RATIO,
             )
             self._overlay_actors.append(
                 self.plotter.add_mesh(
                     highlighted_surface,
-                    color="#dcae67",
-                    opacity=0.46,
+                    color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SURFACE_COLOR,
+                    opacity=CONSTANT.UI.VIEWER.RENDER.COUPLING_SURFACE_OPACITY,
                     smooth_shading=True,
-                    ambient=0.18,
-                    diffuse=0.78,
-                    specular=0.24,
-                    specular_power=30,
+                    ambient=CONSTANT.UI.VIEWER.RENDER.MESH_AMBIENT,
+                    diffuse=CONSTANT.UI.VIEWER.RENDER.MESH_DIFFUSE,
+                    specular=CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR,
+                    specular_power=CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR_POWER,
                     show_edges=False,
                 )
             )
@@ -204,13 +218,25 @@ class PreviewRenderer:
             if boundary.n_points:
                 self._overlay_actors.append(
                     self.plotter.add_mesh(
-                        boundary.tube(radius=scale_len * 0.0015),
-                        color="#edc27e",
+                        boundary.tube(
+                            radius=scale_len
+                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_BOUNDARY_WIDTH_RATIO
+                        ),
+                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_EDGE_COLOR,
                         lighting=False,
                     )
                 )
-            self._add_label(end, surface_label, "#edc27e", side=1.0)
-            spoke_targets = _spread_surface_points(surface.points, end, count=8)
+            self._add_label(
+                end,
+                surface_label,
+                CONSTANT.UI.VIEWER.RENDER.COUPLING_LABEL_COLOR,
+                side=CONSTANT.UI.VIEWER.RENDER.COUPLING_LABEL_SIDE,
+            )
+            spoke_targets = _spread_surface_points(
+                surface.points,
+                end,
+                count=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COUNT,
+            )
             if len(spoke_targets):
                 spoke_points = np.vstack((start, spoke_targets))
                 spoke_lines = np.asarray(
@@ -222,28 +248,43 @@ class PreviewRenderer:
                 lines.lines = spoke_lines
                 self._overlay_actors.append(
                     self.plotter.add_mesh(
-                        lines.tube(radius=scale_len * 0.0011),
-                        color="#dfad62",
-                        opacity=0.82,
+                        lines.tube(
+                            radius=scale_len
+                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_WIDTH_RATIO
+                        ),
+                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
+                        opacity=CONSTANT.UI.VIEWER.RENDER.COUPLING_LINE_OPACITY,
                         lighting=False,
                     )
                 )
         else:
             distance = float(np.linalg.norm(end - start))
-            if distance > 1e-12:
+            if distance > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
                 line = pv.PolyData()
                 line.points = np.vstack((start, end))
                 line.lines = np.array([2, 0, 1], dtype=np.int64)
                 self._overlay_actors.append(
                     self.plotter.add_mesh(
-                        line.tube(radius=scale_len * 0.0015),
-                        color="#dfad62",
+                        line.tube(
+                            radius=scale_len
+                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_LINE_WIDTH_RATIO
+                        ),
+                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
                         lighting=False,
                     )
                 )
-            self._add_label((start + end) / 2.0, label, "#dfad62")
+            self._add_label(
+                (start + end) / 2.0,
+                label,
+                CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
+            )
         if surface is None or not surface.n_points:
-            self._add_marker(end, "", "#dfad62", scale_len * 0.65)
+            self._add_marker(
+                end,
+                "",
+                CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_REFERENCE_POINT,
+                scale_len * CONSTANT.UI.VIEWER.RENDER.COUPLING_MARKER_SCALE_RATIO,
+            )
 
     def _add_load_arrow(
         self,
@@ -255,7 +296,7 @@ class PreviewRenderer:
     ) -> None:
         vector = np.asarray(vector, dtype=float).reshape(3)
         magnitude = float(np.linalg.norm(vector))
-        if magnitude <= 1e-12:
+        if magnitude <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
             return
         direction = vector / magnitude
         length = _load_arrow_length(scale_len)
@@ -263,13 +304,16 @@ class PreviewRenderer:
             start=np.asarray(start, dtype=float),
             direction=direction,
             scale=length,
-            tip_length=0.25,
-            tip_radius=0.055,
-            shaft_radius=0.015,
+            tip_length=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_TIP_LENGTH_RATIO,
+            tip_radius=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_TIP_RADIUS_RATIO,
+            shaft_radius=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_SHAFT_RADIUS_RATIO,
         )
         self._overlay_actors.append(self.plotter.add_mesh(arrow, color=color, lighting=False))
         if label:
-            label_position = np.asarray(start, dtype=float) + direction * length * 1.15
+            label_position = (
+                np.asarray(start, dtype=float)
+                + direction * length * CONSTANT.UI.VIEWER.RENDER.LOAD_ARROW_LABEL_OFFSET_RATIO
+            )
             self._add_label(label_position, label, color)
 
     def _add_moment_glyph(
@@ -277,17 +321,21 @@ class PreviewRenderer:
     ) -> None:
         axis = np.asarray(moment, dtype=float).reshape(3)
         magnitude = float(np.linalg.norm(axis))
-        if magnitude <= 1e-12:
+        if magnitude <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
             return
         axis /= magnitude
         reference = np.array([1.0, 0.0, 0.0])
-        if abs(float(axis @ reference)) > 0.85:
+        if abs(float(axis @ reference)) > CONSTANT.UI.VIEWER.RENDER.DIRECTION_ALIGNMENT_THRESHOLD:
             reference = np.array([0.0, 1.0, 0.0])
         first = np.cross(axis, reference)
         first /= np.linalg.norm(first)
         second = np.cross(axis, first)
-        radius = scale_len * 0.045
-        angles = np.linspace(0.0, 1.65 * np.pi, 48)
+        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_RADIUS_RATIO
+        angles = np.linspace(
+            0.0,
+            CONSTANT.UI.VIEWER.RENDER.MOMENT_ARC_END_RADIANS,
+            CONSTANT.UI.VIEWER.RENDER.MOMENT_ARC_SAMPLES,
+        )
         points = np.asarray(center, dtype=float) + radius * (
             np.cos(angles)[:, None] * first + np.sin(angles)[:, None] * second
         )
@@ -296,40 +344,77 @@ class PreviewRenderer:
         arc.lines = np.r_[len(points), np.arange(len(points), dtype=np.int64)]
         self._overlay_actors.append(
             self.plotter.add_mesh(
-                arc.tube(radius=scale_len * 0.0025), color="#f1c40f"
+                arc.tube(
+                    radius=scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_TUBE_RADIUS_RATIO
+                ),
+                color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
             )
         )
         tangent = -np.sin(angles[-1]) * first + np.cos(angles[-1]) * second
-        self._add_load_arrow(points[-1], tangent, "#f1c40f", "", scale_len * 0.45)
-        self._add_label(np.asarray(center) + radius * 1.35 * first, label, "#f1c40f")
+        self._add_load_arrow(
+            points[-1],
+            tangent,
+            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
+            "",
+            scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_ARROW_LENGTH_RATIO,
+        )
+        self._add_label(
+            np.asarray(center)
+            + radius * CONSTANT.UI.VIEWER.RENDER.MOMENT_LABEL_OFFSET_RATIO * first,
+            label,
+            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
+        )
 
     def _add_spring_glyph(self, start, end, scale_len: float, label: str) -> None:
         start = np.asarray(start, dtype=float).reshape(3)
         end = np.asarray(end, dtype=float).reshape(3)
         axis = end - start
         length = float(np.linalg.norm(axis))
-        if length <= 1e-12:
+        if length <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
             return
         direction = axis / length
         reference = np.array([0.0, 0.0, 1.0])
-        if abs(float(direction @ reference)) > 0.85:
+        if abs(float(direction @ reference)) > CONSTANT.UI.VIEWER.RENDER.DIRECTION_ALIGNMENT_THRESHOLD:
             reference = np.array([0.0, 1.0, 0.0])
         side = np.cross(direction, reference)
         side /= np.linalg.norm(side)
-        parameter = np.linspace(0.0, 1.0, 64)
+        parameter = np.linspace(
+            0.0, 1.0, CONSTANT.UI.VIEWER.RENDER.SPRING_SAMPLES
+        )
         points = start + parameter[:, None] * axis
-        points += np.sin(parameter * 12.0 * np.pi)[:, None] * min(scale_len * 0.015, length * 0.04) * side
+        points += (
+            np.sin(
+                parameter
+                * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_CYCLES
+                * np.pi
+            )[:, None]
+            * min(
+                scale_len * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_AMPLITUDE_RATIO,
+                length * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_LENGTH_RATIO,
+            )
+            * side
+        )
         line = pv.PolyData()
         line.points = points
         line.lines = np.r_[len(points), np.arange(len(points), dtype=np.int64)]
         actor = self.plotter.add_mesh(
-            line.tube(radius=min(scale_len * 0.0025, length * 0.01)), color="#c084fc"
+            line.tube(
+                radius=min(
+                    scale_len * CONSTANT.UI.VIEWER.RENDER.SPRING_WIDTH_RATIO,
+                    length * CONSTANT.UI.VIEWER.RENDER.SPRING_WIDTH_LENGTH_RATIO,
+                )
+            ),
+            color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_SPRING,
         )
         self._overlay_actors.append(actor)
-        self._add_label((start + end) / 2.0, label, "#c084fc")
+        self._add_label(
+            (start + end) / 2.0,
+            label,
+            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_SPRING,
+        )
 
     def _add_marker(self, location, label: str, color: str, scale_len: float) -> None:
-        radius = scale_len * 0.008
+        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.MARKER_RADIUS_RATIO
         sphere = pv.Sphere(center=np.asarray(location, dtype=float), radius=radius)
         self._overlay_actors.append(self.plotter.add_mesh(sphere, color=color))
         self._add_label(location, label, color)
@@ -338,32 +423,40 @@ class PreviewRenderer:
         self, location, label: str, color: str, scale_len: float
     ) -> None:
         location = np.asarray(location, dtype=float).reshape(3)
-        radius = scale_len * 0.010
+        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_RADIUS_RATIO
         sphere = pv.Sphere(
             center=location,
             radius=radius,
-            theta_resolution=20,
-            phi_resolution=16,
+            theta_resolution=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_THETA_RESOLUTION,
+            phi_resolution=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_PHI_RESOLUTION,
         )
         self._overlay_actors.append(
             self.plotter.add_mesh(
                 sphere,
                 color=color,
                 smooth_shading=True,
-                specular=0.55,
+                specular=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_SPECULAR,
             )
         )
-        half_axis = scale_len * 0.018
+        half_axis = scale_len * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_AXIS_LENGTH_RATIO
         for axis in np.eye(3):
             line = pv.Line(location - half_axis * axis, location + half_axis * axis)
             self._overlay_actors.append(
                 self.plotter.add_mesh(
-                    line.tube(radius=scale_len * 0.0012),
-                    color="#fff0c2",
+                    line.tube(
+                        radius=scale_len
+                        * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_AXIS_WIDTH_RATIO
+                    ),
+                    color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_REFERENCE_AXIS,
                     lighting=False,
                 )
             )
-        self._add_label(location, label, color, side=-1.0)
+        self._add_label(
+            location,
+            label,
+            color,
+            side=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_LABEL_SIDE,
+        )
 
     def _add_label(
         self, position, label: str, color: str, *, side: float | None = None
@@ -375,23 +468,26 @@ class PreviewRenderer:
         leader = pv.Line(anchor, label_position)
         self._overlay_actors.append(
             self.plotter.add_mesh(
-                leader.tube(radius=self._scale * 0.001),
+                leader.tube(
+                    radius=self._scale
+                    * CONSTANT.UI.VIEWER.RENDER.ANNOTATION_LEADER_WIDTH_RATIO
+                ),
                 color=color,
-                opacity=0.68,
+                opacity=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_LEADER_OPACITY,
                 lighting=False,
             )
         )
         actor = self.plotter.add_point_labels(
             label_position.reshape(1, 3),
             [label],
-            font_size=10,
-            text_color="#dce4ee",
+            font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
+            text_color=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_TEXT_COLOR,
             font_family="courier",
             bold=False,
             shape="rounded_rect",
-            shape_color="#202833",
-            shape_opacity=0.97,
-            margin=6,
+            shape_color=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_BACKGROUND_COLOR,
+            shape_opacity=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_BACKGROUND_OPACITY,
+            margin=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_MARGIN,
             show_points=False,
             always_visible=True,
             font_file=_cjk_font_file(),
@@ -441,15 +537,26 @@ class PreviewRenderer:
 
         text_width = max(
             (
-                sum(1.0 if char.isascii() else 1.65 for char in line)
+                sum(
+                    1.0
+                    if char.isascii()
+                    else CONSTANT.UI.VIEWER.RENDER.NON_ASCII_CHARACTER_WIDTH_RATIO
+                    for char in line
+                )
                 for line in label.splitlines()
             ),
             default=1.0,
         )
         half_card_width = self._annotation_scale * min(
-            0.25, 0.11 + text_width * 0.0018
+            CONSTANT.UI.VIEWER.RENDER.CALLOUT_MAX_WIDTH_RATIO,
+            CONSTANT.UI.VIEWER.RENDER.CALLOUT_MIN_WIDTH_RATIO
+            + text_width * CONSTANT.UI.VIEWER.RENDER.CALLOUT_TEXT_WIDTH_RATIO,
         )
-        horizontal_offset = edge_distance + half_card_width + self._annotation_scale * 0.035
+        horizontal_offset = (
+            edge_distance
+            + half_card_width
+            + self._annotation_scale * CONSTANT.UI.VIEWER.RENDER.CALLOUT_GAP_RATIO
+        )
         camera = self.plotter.camera
         if camera.GetParallelProjection():
             view_height = 2.0 * camera.GetParallelScale()
@@ -457,8 +564,11 @@ class PreviewRenderer:
             depth = abs(float(np.dot(anchor - camera_position, forward)))
             view_height = 2.0 * depth * np.tan(np.deg2rad(camera.GetViewAngle()) / 2.0)
         world_per_pixel = view_height / self.plotter.window_size[1]
-        half_height = (len(label.splitlines()) * 14.0 + 12.0) * world_per_pixel / 2.0
-        gap = 8.0 * world_per_pixel
+        half_height = (
+            len(label.splitlines()) * CONSTANT.UI.VIEWER.RENDER.CALLOUT_LINE_HEIGHT_PX
+            + CONSTANT.UI.VIEWER.RENDER.CALLOUT_VERTICAL_PADDING_PX
+        ) * world_per_pixel / 2.0
+        gap = CONSTANT.UI.VIEWER.RENDER.CALLOUT_GAP_PX * world_per_pixel
         vertical = float(np.dot(anchor, up))
         occupied = self._callout_ranges.setdefault(side, [])
         candidates = [vertical]
@@ -466,7 +576,12 @@ class PreviewRenderer:
             candidates.extend((center - height - half_height - gap, center + height + half_height + gap))
         center = next(
             value for value in sorted(candidates, key=lambda value: abs(value - vertical))
-            if all(abs(value - other) >= half_height + height + gap - 1e-12 for other, height in occupied)
+            if all(
+                abs(value - other)
+                >= half_height + height + gap
+                - CONSTANT.UI.VIEWER.RENDER.CALLOUT_MIN_SEPARATION_TOLERANCE
+                for other, height in occupied
+            )
         )
         occupied.append((center, half_height))
         return (
@@ -482,7 +597,7 @@ class PreviewRenderer:
         )
         direction = camera_position - focal_point
         norm = float(np.linalg.norm(direction))
-        if norm <= 1e-12:
+        if norm <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
             return mesh
         offset_mesh = mesh.copy()
         offset_mesh.translate(direction * (distance / norm), inplace=True)
@@ -510,4 +625,4 @@ def _spread_surface_points(
 
 
 def _load_arrow_length(characteristic_length: float) -> float:
-    return float(characteristic_length) * 0.04
+    return float(characteristic_length) * CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_LENGTH_RATIO

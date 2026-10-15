@@ -5,6 +5,7 @@ from PySide6.QtCore import QSignalBlocker, QTimer, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHeaderView, QHBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
+from ...constants import CONSTANT
 from ..application.edit_history import EditHistory, EditHistoryNode
 from ..i18n import tr
 from .collection_controls import ActionButton
@@ -36,12 +37,12 @@ class EditHistoryPanel(QWidget):
         layout.addLayout(header)
         self.tree = QTreeWidget(self)
         self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(14)
+        self.tree.setIndentation(CONSTANT.UI.LAYOUT.HISTORY.TREE_INDENTATION)
         self.tree.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.tree.setExpandsOnDoubleClick(False)
         self.tree.header().setStretchLastSection(False)
         self.tree.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self.tree.itemClicked.connect(self._request)
-        self.tree.itemActivated.connect(self._request)
+        self.tree.itemDoubleClicked.connect(self._request)
         layout.addWidget(self.tree)
         self.apply_language()
 

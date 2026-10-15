@@ -39,9 +39,9 @@ def route_editor(node: Node | None) -> EditorRoute:
     """Select an editor without touching Qt or mutating the definition."""
     if node is None:
         return EditorRoute(EditorKind.PROPERTIES)
-    if node.kind == "custom_classes":
+    if node.kind in {"custom_classes", "new_classes_group", "override_classes_group"}:
         return EditorRoute(EditorKind.CUSTOM_CLASSES, node)
-    if node.kind in {"custom_class", "method_override"}:
+    if node.kind in {"custom_class", "method_override", "custom_function"}:
         return EditorRoute(EditorKind.CUSTOM_CLASS, node)
     if node.kind in {"helper_code", "helper_code_block"}:
         return EditorRoute(EditorKind.HELPER_CODE, node)

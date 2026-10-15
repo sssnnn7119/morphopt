@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 import numpy as np
 import pyvista as pv
+from ...constants import CONSTANT
 from ..model.problem import FEAComponentNode
 from ..i18n import tr
 from .geometry import PreviewGeometry
@@ -101,7 +102,11 @@ class LoadPreviewVisitor:
             # still render, and the definition is never silently changed.
             scene.items.append(MessageItem(
                 tr("ui.visualization.load.error", name=interface.name, error=exc),
-                dict(position="upper_left", color="#e74c3c", font_size=10),
+                dict(
+                    position="upper_left",
+                    color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_ANNOTATION_ERROR,
+                    font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
+                ),
             ))
 
     @staticmethod
@@ -121,7 +126,7 @@ class LoadPreviewVisitor:
         values: list[float],
     ) -> None:
         pressure = values[0] if values else 0.
-        if abs(pressure) <= 1e-12:
+        if abs(pressure) <= CONSTANT.UI.VIEWER.LOADS.PRESSURE_ZERO_TOLERANCE:
             return
         mesh = geometry.mesh_for_surface(interface, str(interface.surface_name or ""))
         if mesh is None:
@@ -130,14 +135,17 @@ class LoadPreviewVisitor:
             MeshItem(
                 mesh,
                 dict(
-                    color="#38c7ce",
-                    opacity=0.90,
+                    color=CONSTANT.UI.VIEWER.LOADS.PRESSURE_SURFACE_COLOR,
+                    opacity=CONSTANT.UI.VIEWER.LOADS.PRESSURE_OPACITY,
                     show_edges=False,
                     smooth_shading=True,
-                    ambient=0.40,
-                    diffuse=0.60,
-                    specular=0.15,
-                    preview_offset=geometry.scene.diagonal * 0.0015,
+                    ambient=CONSTANT.UI.VIEWER.LOADS.PRESSURE_AMBIENT,
+                    diffuse=CONSTANT.UI.VIEWER.LOADS.PRESSURE_DIFFUSE,
+                    specular=CONSTANT.UI.VIEWER.LOADS.PRESSURE_SPECULAR,
+                    preview_offset=(
+                        geometry.scene.diagonal
+                        * CONSTANT.UI.VIEWER.LOADS.PRESSURE_PREVIEW_OFFSET_RATIO
+                    ),
                 ),
             )
         )
@@ -154,12 +162,19 @@ class LoadPreviewVisitor:
             return
         if not len(centers) or not len(normals):
             return
-        indices = np.unique(np.linspace(0, len(centers)-1, min(3, len(centers)), dtype=int))
+        indices = np.unique(
+            np.linspace(
+                0,
+                len(centers) - 1,
+                min(CONSTANT.UI.VIEWER.LOADS.PRESSURE_SURFACE_SAMPLES, len(centers)),
+                dtype=int,
+            )
+        )
         for sample, index in enumerate(indices):
             scene.items.append(ArrowLoad(
                 centers[index],
                 normals[index] * np.sign(pressure),
-                "#a8f5da",
+                CONSTANT.UI.VIEWER.LOADS.PRESSURE_ARROW_COLOR,
                 tr(
                     "ui.visualization.load.pressure", name=interface.name, value=pressure,
                     instance=interface.instance_name, surface=interface.surface_name,
@@ -180,7 +195,7 @@ class LoadPreviewVisitor:
             scene.items.append(ArrowLoad(
                 point,
                 vector,
-                "#e74c3c",
+                CONSTANT.UI.VIEWER.LOADS.FORCE_COLOR,
                 tr("ui.visualization.load.force", name=interface.name,
                    rp=interface.rp_name, vector=vector_text(vector)),
             ))
@@ -214,7 +229,7 @@ class LoadPreviewVisitor:
             scene.items.append(ArrowLoad(
                 center,
                 vector,
-                "#ff8c42",
+                CONSTANT.UI.VIEWER.LOADS.BODY_FORCE_COLOR,
                 tr("ui.visualization.load.bodyforce", name=interface.name,
                    instance=interface.instance_name, elements=interface.element_name,
                    vector=vector_text(vector)),
@@ -229,7 +244,11 @@ class LoadPreviewVisitor:
         values: list[float],
     ) -> None:
         point = cls.rp_location(geometry, interface.reference_point)
-        if point is not None and len(values) >= 5 and abs(values[0]) > 1e-12:
+        if (
+            point is not None
+            and len(values) >= 5
+            and abs(values[0]) > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE
+        ):
             scene.items.append(SpringLoad(
                 point, np.asarray(values[2:5]),
                 tr("ui.visualization.load.spring_to_ground", name=interface.name,
@@ -247,7 +266,12 @@ class LoadPreviewVisitor:
     ) -> None:
         first = cls.rp_location(geometry, interface.reference_point1)
         second = cls.rp_location(geometry, interface.reference_point2)
-        if first is not None and second is not None and len(values) >= 2 and abs(values[0]) > 1e-12:
+        if (
+            first is not None
+            and second is not None
+            and len(values) >= 2
+            and abs(values[0]) > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE
+        ):
             scene.items.append(SpringLoad(
                 first, second, tr("ui.visualization.load.spring_between", name=interface.name,
                                   rp1=interface.rp_name1, rp2=interface.rp_name2,
@@ -267,7 +291,7 @@ class LoadPreviewVisitor:
                 center, tr("ui.visualization.load.penalty", name=interface.name,
                            object=interface.obj_name, object_type=interface.obj_type,
                            dof=interface.s, stiffness=values[0], target=values[1]),
-                "#ec4899",
+                CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_PENALTY,
             ))
 
     @staticmethod
@@ -284,11 +308,14 @@ class LoadPreviewVisitor:
                 MeshItem(
                     mesh,
                     dict(
-                        color="#398bd0",
-                        opacity=0.60,
+                        color=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_COLOR,
+                        opacity=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OPACITY,
                         show_edges=False,
                         lighting=False,
-                        preview_offset=geometry.scene.diagonal * 0.0015,
+                        preview_offset=(
+                            geometry.scene.diagonal
+                            * CONSTANT.UI.VIEWER.LOADS.BOUNDARY_PREVIEW_OFFSET_RATIO
+                        ),
                     ),
                 )
             )
@@ -301,8 +328,14 @@ class LoadPreviewVisitor:
             if outline.n_points:
                 scene.items.append(
                     MeshItem(
-                        outline.tube(radius=geometry.scene.glyph_scale * 0.0018),
-                        dict(color="#8bc8ff", lighting=False),
+                        outline.tube(
+                            radius=geometry.scene.glyph_scale
+                            * CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OUTLINE_WIDTH_RATIO
+                        ),
+                        dict(
+                            color=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OUTLINE_COLOR,
+                            lighting=False,
+                        ),
                     )
                 )
         center = geometry.node_set_center(interface.instance_name or "", name)
@@ -311,7 +344,7 @@ class LoadPreviewVisitor:
                 center, tr("ui.visualization.load.boundary", name=interface.name,
                            instance=interface.instance_name, nodeset=name,
                            dofs=fixed_dofs_text(geometry, interface)),
-                "#4aa3df",
+                CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
             ))
 
     @classmethod
@@ -327,7 +360,7 @@ class LoadPreviewVisitor:
             scene.items.append(MarkerLoad(
                 point, tr("ui.visualization.load.boundary_rp", name=interface.name,
                           rp=interface.rp_name, dofs=fixed_dofs_text(geometry, interface)),
-                "#4aa3df",
+                CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
             ))
 
     @classmethod

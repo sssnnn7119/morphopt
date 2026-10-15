@@ -7,8 +7,7 @@ from functools import partial
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
 from ..i18n import tr
-
-
+from ...constants import CONSTANT
 def set_card_selected(card: QGroupBox, selected: bool) -> None:
     """Update only this card's selection border, without restyling its children."""
     if card.property("collectionSelected") != selected:
@@ -29,7 +28,7 @@ class ActionButton(QToolButton):
         self.setText(text)
         self.setToolTip(tooltip or text)
         self.setProperty("actionRole", "danger" if danger else "secondary")
-        self.setFixedHeight(30)
+        self.setFixedHeight(CONSTANT.UI.WIDGETS.ACTION_BUTTON_HEIGHT)
         if callback is not None:
             self.clicked.connect(lambda _checked=False: callback())
 
@@ -87,7 +86,7 @@ class ItemActions(QWidget):
         self.down_button = ActionButton("↓", partial(move, 1), tooltip=tr("ui.common.move_down")) if move is not None else None
         for button in (self.up_button, self.down_button):
             if button is not None:
-                button.setFixedWidth(32)
+                button.setFixedWidth(CONSTANT.UI.WIDGETS.ITEM_ACTION_BUTTON_WIDTH)
                 row.addWidget(button)
         self.delete_button = ActionButton(
             tr("ui.common.delete"), remove, danger=True, tooltip=remove_tooltip,
