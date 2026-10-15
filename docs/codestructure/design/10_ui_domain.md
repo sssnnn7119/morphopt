@@ -41,11 +41,11 @@
 ```text
 ProblemNode
 ├── GeometryNode
-│   └── PartInterfaceNode
+│   └── PartNode
 │        ├── InstanceNode*
 │        └── SurfaceNode*
 ├── LoadsNode
-│   └── InterfaceNode*
+│   └── FEAComponentNode*
 ├── StepsNode
 ├── MaterialsNode
 │   └── MaterialNode*
@@ -60,11 +60,11 @@ ProblemNode
 |---|---|
 | `ProblemNode` | 根节点；`add_section()`、`section()`、`sections()` 管理唯一章节。 |
 | `GeometryNode` | `add_interface()`、`interfaces()`、`owner(surface)`、`surfaces()`；拥有所有 Part 接口。 |
-| `PartInterfaceNode` | `interface_type`、`spec`、`has_surfaces`、`resolved_part_name()`、`resolved_instance_names()`；`add_instance()`、`add_surface()`。 |
+| `PartNode` | `interface_type`、`spec`、`has_surfaces`、`resolved_part_name()`、`resolved_instance_names()`；`add_instance()`、`add_surface()`。 |
 | `InstanceNode` | `translation`、`rotation` 字段与 `pose` 属性，规范为六维位姿。 |
 | `SurfaceNode` | `surface_type`、`is_inner`；`create()` 从曲面 schema 创建。 |
 | `LoadsNode` | `add_interface()`、`interfaces()`；拥有全部 FEA 接口。 |
-| `InterfaceNode` | `interface_type`；`set_reference()`、`reference_name()`、`pending_reference_name()` 维护载荷目标引用。 |
+| `FEAComponentNode` | `interface_type`；`set_reference()`、`reference_name()`、`pending_reference_name()` 维护载荷目标引用。 |
 | `StepsNode` | 载荷步数量与步值矩阵；`field_items()` 提供序列化字段。 |
 | `MaterialsNode` | `add_material()`、`materials()`。 |
 | `MaterialNode` | `material_type`、`part_name`；`set_part()` 与 `pending_part_name` 管理目标 Part 引用。 |

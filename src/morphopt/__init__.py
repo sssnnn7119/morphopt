@@ -71,19 +71,20 @@ from .opt_runner import debug_optimization, start_optimization
 from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
-    BasePartInterface,
-    CADPartInterface,
-    BoxPartInterface,
+    BaseModelComponent,
+    BasePart,
+    CADPart,
+    BoxPart,
     FEAParams,
     GeometryParams,
-    INPPartInterface,
+    INPPart,
     MaterialsParams,
     Params,
-    TorchFEAPartInterface,
+    TorchFEAPart,
     load_model_assembly,
     resolve_model_path,
 )
-from .optcore.modelparams.materialinterface import HomogeneousMaterial
+from .optcore.modelparams.materials import HomogeneousMaterial
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.protocal import (
     ProtocalInitializable,
@@ -94,14 +95,14 @@ from .optcore.protocal import (
 from .optcore.solver import Solver
 from .optcore.updaters import Updaters
 from .shapeopt import (
-    BoundaryPartInterface,
+    BoundaryPart,
     UpdaterBoundaryPart,
     BaseSurfaceConstraints,
     SurfaceRelationConstraint,
     BspSurfaceRelationConstraint,
     CPGEOSurfaceRelationConstraint,
 )
-from .codesign import OffsetBoundaryPartInterface, UpdaterOffsetBoundaryPart
+from .codesign import OffsetBoundaryPart, UpdaterOffsetBoundaryPart
 from .simp import SIMP_BSPFieldMaterials, UpdaterSIMPMaterial
 
 # endregion

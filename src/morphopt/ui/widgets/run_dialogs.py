@@ -101,7 +101,7 @@ class SourceDialog(QDialog):
                 continue
             button = QPushButton(title)
             button.setToolTip(description)
-            button.setStyleSheet("text-align:left; padding:8px 12px;")
+            button.setProperty("buttonLayout", "choice")
             button.clicked.connect(
                 lambda _checked=False, selected=kind: self._accept(selected)
             )

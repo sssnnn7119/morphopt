@@ -15,13 +15,6 @@ Editing behaviour (via the internal :class:`_CodeEdit`):
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..application.editing import HelperCodeSession
-    from ..model.problem import Node, ProblemDefinition
-    from .definition_actions import DefinitionActions
-
 from PySide6.QtCore import Qt, QStringListModel, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QShortcut, QKeySequence,
@@ -30,6 +23,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QWidget, QVBoxLayout, QLabel
 
 from ..application.completion import CompletionItem, completion_items
+from ..i18n import tr
 
 
 class _PythonHighlighter(QSyntaxHighlighter):
@@ -83,8 +77,9 @@ class _CodeEdit(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         # ensure undo / redo always work, even if native shortcuts are remapped
-        QShortcut(QKeySequence.StandardKey.Undo, self, activated=self.undo)
-        QShortcut(QKeySequence.StandardKey.Redo, self, activated=self.redo)
+        for key, slot in ((QKeySequence.StandardKey.Undo, self.undo), (QKeySequence.StandardKey.Redo, self.redo)):
+            shortcut = QShortcut(key, self, activated=slot)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         self._completion_slot = ""
         self._completion_problem = None
         self._completion_items: dict[str, CompletionItem] = {}
@@ -220,9 +215,9 @@ class _CodeEdit(QPlainTextEdit):
                 return
         super().keyPressEvent(event)
         if event.text() == ".":
-            QTimer.singleShot(0, lambda: self._show_completions(force=True))
+            QTimer.singleShot(0, self, lambda: self._show_completions(force=True))
         elif event.text().isalnum() or event.text() == "_":
-            QTimer.singleShot(0, self._show_completions)
+            QTimer.singleShot(0, self, self._show_completions)
         else:
             self._hide_completions()
 
@@ -321,13 +316,13 @@ class CodeEditor(QWidget):
 
     focusReceived = Signal()
 
-    def __init__(self, title: str = "Code", parent=None,
+    def __init__(self, title: str | None = None, parent=None,
                  completion_context: str = "", completion_problem=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(2)
-        cap = QLabel(title)
+        cap = QLabel(title if title is not None else tr("ui.common.code"))
         cap.setStyleSheet("color:#7f8c8d; font-size:11px;")
         lay.addWidget(cap)
         self._edit = _CodeEdit(self)
@@ -376,110 +371,3 @@ class CodeEditor(QWidget):
     @property
     def edit(self) -> _CodeEdit:
         return self._edit
-
-
-class HelperCodeEditor(QWidget):
-    """Module code, named variables and function bodies as one focused editor."""
-    changed = Signal(object)
-
-    def __init__(self, actions: DefinitionActions, parent=None):
-        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
-        super().__init__(parent)
-        self.actions = actions
-        self.session: HelperCodeSession | None = None
-        self._loading = False
-        layout = QVBoxLayout(self)
-        self.hint = QLabel()
-        self.hint.setWordWrap(True)
-        layout.addWidget(self.hint)
-        buttons = QHBoxLayout()
-        self.add_variable = QPushButton()
-        self.add_function = QPushButton()
-        self.delete = QPushButton()
-        self.add_variable.clicked.connect(lambda: actions.add_helper("helper_variable"))
-        self.add_function.clicked.connect(lambda: actions.add_helper("helper_function"))
-        self.delete.clicked.connect(self._delete)
-        for button in (self.add_variable, self.add_function, self.delete):
-            buttons.addWidget(button)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
-        self.name, self.value, self.parameters = QLineEdit(), QLineEdit(), QLineEdit()
-        self.name_label, self.value_label, self.parameters_label, self.code_label = QLabel(), QLabel(), QLabel(), QLabel()
-        for label, edit in ((self.name_label, self.name), (self.value_label, self.value), (self.parameters_label, self.parameters)):
-            layout.addWidget(label)
-            layout.addWidget(edit)
-            edit.editingFinished.connect(self._save)
-        layout.addWidget(self.code_label)
-        self.code = CodeEditor("Python")
-        self.code.edit.textChanged.connect(self._save)
-        layout.addWidget(self.code, 1)
-        self.error = QLabel()
-        self.error.setWordWrap(True)
-        self.error.setStyleSheet("color:#e57373;")
-        layout.addWidget(self.error)
-        self.apply_language()
-
-    def apply_language(self) -> None:
-        from ..i18n import tr
-        self.hint.setText(tr('ui.workbench.use_the_free_code_block_for_module_code_variables_have_a_name_and_python'))
-        self.add_variable.setText(tr('ui.workbench.add_helper_variable'))
-        self.add_function.setText(tr('ui.workbench.add_helper_function'))
-        self.delete.setText(tr('ui.workbench.delete_item'))
-        for label, key in ((self.name_label, 'name'), (self.value_label, 'value_python_expression'), (self.parameters_label, 'parameters')):
-            label.setText(tr(f'ui.workbench.{key}'))
-        self.name.setPlaceholderText(tr('ui.workbench.name'))
-        self.value.setPlaceholderText(tr('ui.workbench.value_python_expression'))
-        self.parameters.setPlaceholderText(tr('ui.workbench.parameters_e_g_x_scale_1'))
-
-    def edit_node(self, node: Node | None, problem: ProblemDefinition) -> None:
-        from ..application.editing import HelperCodeSession
-        from ..i18n import tr
-        if self.session is not None and self.session.node is node and self.session.problem is problem:
-            return
-        self.session = HelperCodeSession(problem, node)
-        kind = node.kind if node is not None else "helper_code"
-        editable = kind in {"helper_variable", "helper_function"}
-        self.add_variable.setVisible(kind in {"helper_code", "helper_variables_group"})
-        self.add_function.setVisible(kind in {"helper_code", "helper_functions_group"})
-        self.delete.setVisible(editable)
-        for label, widget, visible in (
-            (self.name_label, self.name, editable),
-            (self.value_label, self.value, kind == "helper_variable"),
-            (self.parameters_label, self.parameters, kind == "helper_function"),
-            (self.code_label, self.code, kind in {"helper_code_block", "helper_function"}),
-        ):
-            label.setVisible(visible)
-            widget.setVisible(visible)
-        self.error.setVisible(kind in {"helper_code_block", "helper_variable", "helper_function"})
-        self.code_label.setText(tr('ui.workbench.free_code' if kind == "helper_code_block" else 'ui.workbench.function_body'))
-        self._loading = True
-        try:
-            self.name.setText(node.name if editable else "")
-            self.value.setText(node.value if kind == "helper_variable" else "")
-            self.parameters.setText(node.parameters if kind == "helper_function" else "")
-            self.code.set_body(problem.helper_code if kind == "helper_code_block" else node.body if kind == "helper_function" else "")
-        finally:
-            self._loading = False
-        self._validate()
-
-    def _delete(self) -> None:
-        if self.session is not None and self.session.node is not None:
-            self.actions.remove_helper(self.session.node)
-
-    def _save(self) -> None:
-        if self._loading or self.session is None:
-            return
-        self.session.save(self.name.text(), self.value.text(), self.parameters.text(), self.code.body())
-        self._validate()
-        self.changed.emit(self.session.node)
-
-    def _validate(self) -> None:
-        from ..i18n import tr
-        if self.session is None:
-            return
-        try:
-            self.session.validate()
-        except (SyntaxError, ValueError) as exc:
-            self.error.setText(tr('ui.workbench.invalid_helper_definition_value', value_0=exc))
-        else:
-            self.error.clear()

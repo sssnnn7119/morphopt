@@ -7,14 +7,14 @@ import torch
 import morphopt
 
 from .modelparams import GeometryParams, MaterialsParams, Params
-from .modelparams.materialinterface.basematerialinterface import BaseMaterialInterface
-from .modelparams.partinterface.basepartinterface import BasePartInterface
+from .modelparams.materials.base_material import BaseMaterial
+from .modelparams.parts.base_part import BasePart
 from .protocal import ProtocalInitializable, ProtocalSavable
 
 UpdaterCollection: TypeAlias = GeometryParams | MaterialsParams
 """Collections from which :class:`Updaters` resolves a target."""
 
-UpdaterTarget: TypeAlias = BasePartInterface | BaseMaterialInterface
+UpdaterTarget: TypeAlias = BasePart | BaseMaterial
 """Objects that a :class:`BaseUpdater` can own after binding."""
 
 UpdaterTargetType: TypeAlias = type[UpdaterTarget] | tuple[type[UpdaterTarget], ...]
@@ -645,7 +645,7 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
 
         expected = updater.target_type
 
-        def is_accepted(interface: BasePartInterface | BaseMaterialInterface) -> bool:
+        def is_accepted(interface: BasePart | BaseMaterial) -> bool:
             return expected is None or isinstance(interface, expected)
 
         name = updater.interface_name

@@ -11,7 +11,7 @@ symmetries are attached to their surfaces; custom code becomes the Part-level
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, QObject, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,13 +34,22 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ..refresh import RefreshContext
 from ..application.updaters import distance_matrix, as_bool_list, UpdaterItems, updater_sections, editor_signature
 from ..model.problem import UpdaterNode, ProblemDefinition
 from .codeeditor import CodeEditor
-from ..presentation.navigation import UpdaterTreeNode
-from ..presentation.labels import surface_title_text
+from ..presentation.navigation import UpdaterItemTreeNode, UpdaterTreeNode
+from ..presentation.labels import (
+    node_title,
+    schema_label,
+    surface_title_text,
+    updater_item_title_text,
+    updater_section_title_text,
+)
 from .param_form import ParamForm
+from .collection_controls import CollectionHeader, ItemActions, set_card_selected
 from ..application.devices import detect_devices
+from ..application.editing import DefinitionCommands
 
 
 def _category_label(category: str) -> str:
@@ -53,7 +62,7 @@ def _category_label(category: str) -> str:
 
 class UpdaterEditor(QWidget):
     changed = Signal(object)
-    codeChanged = Signal()
+    activated = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,23 +93,32 @@ class UpdaterEditor(QWidget):
         self._focus_label = QLabel("")
         self._focus_label.setStyleSheet("color:#64b5f6;")
         outer.addWidget(self._focus_label)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
         body = QWidget()
         self._layout = QVBoxLayout(body)
-        scroll.setWidget(body)
-        outer.addWidget(scroll, 1)
+        self._layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.setSpacing(8)
+        self._scroll.setWidget(body)
+        outer.addWidget(self._scroll, 1)
         self._node: UpdaterNode | None = None
         self._problem: ProblemDefinition | None = None
+        self._focus: UpdaterTreeNode | None = None
+        self._selected_item: UpdaterItemTreeNode | None = None
+        self._item_lists: list[UpdaterItemList] = []
         self._loading = False
         self._structure = None
 
     # ------------------------------------------------------------------ api
     def edit_node(
-        self, node: UpdaterNode, problem: ProblemDefinition, focus: UpdaterTreeNode | None = None
+        self, node: UpdaterNode, problem: ProblemDefinition, focus: UpdaterTreeNode | None = None,
+        *, scroll_to_focus: bool = True,
     ) -> None:
         self._node = node
         self._problem = problem
+        self._focus = focus
+        if scroll_to_focus:
+            self._selected_item = focus if isinstance(focus, UpdaterItemTreeNode) else None
         focus_group = focus.section_group if focus is not None else None
         focus_category = focus.group if focus is not None else None
         self._focus_label.setText(self._focus_text(focus))
@@ -118,42 +136,70 @@ class UpdaterEditor(QWidget):
         sections = updater_sections(node, problem, focus_group, focus.config_index if focus else None)
         structure = editor_signature(problem, sections, focus_category)
         if structure == self._structure:
+            self._focus_item(scroll=scroll_to_focus)
             return
         self._structure = structure
+        self._item_lists.clear()
         while self._layout.count():
             widget = self._layout.takeAt(0).widget()
             if widget is not None:
                 widget.deleteLater()
         for section in sections:
-            key = "geometry_optimizer_updaterboundarypart" if section.group == "geometry" else "material_optimizer_updatersimpmaterial"
-            if section.target is not None and section.group == "geometry" and section.target.interface_type == "OffsetBoundaryPartInterface":
-                key = "offset_geometry_optimizer_updateroffsetboundarypart"
-            title = tr(f'ui.widgets.updater_editor.{key}')
-            if section.count > 1:
-                title += f" · {section.target.name if section.target else section.index}"
+            title = updater_section_title_text(problem, section.group, section.config)
             self._layout.addWidget(self._section_box(title, section.config, section.group, focus_category))
         if not sections:
             self._layout.addWidget(QLabel(tr('ui.widgets.updater_editor.this_scheme_has_no_editable_sub_optimizer')))
+        self._layout.addStretch(1)
+        self._focus_item(scroll=scroll_to_focus)
 
-    @staticmethod
-    def _focus_text(focus: UpdaterTreeNode | None) -> str:
-        """Describe the model-tree entry that opened this editor."""
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if context.problem.updater is not None:
+            self.edit_node(context.problem.updater, context.problem, self._focus, scroll_to_focus=False)
+
+    def _item_list(self, config: dict, group: str, category: str, n_surfaces: int = 0) -> UpdaterItemList:
+        editor = UpdaterItemList(
+            config, group, category, self._problem,
+            self._on_change, self._on_code_change, n_surfaces,
+        )
+        editor.activated.connect(lambda item: self._on_item_activated(editor, item))
+        self._item_lists.append(editor)
+        return editor
+
+    def _on_item_activated(self, editor: UpdaterItemList, item: dict | None) -> None:
+        configs = self._node.geometry if editor.model.group == "geometry" else self._node.materials
+        index = next(index for index, config in enumerate(configs) if config is editor.model.config)
+        suffix = {"objectives": "objectives", "geometry_symmetry": "symmetry", "constraints": "penalty"}[editor.model.category]
+        group = f"{editor.model.group}_{suffix}"
+        selection = (
+            UpdaterItemTreeNode(self._node, group, index, item) if item is not None
+            else UpdaterTreeNode(self._node, group, index)
+        )
+        self._selected_item = selection if isinstance(selection, UpdaterItemTreeNode) else None
+        if item is None and isinstance(self._focus, UpdaterItemTreeNode):
+            self._focus = selection
+        self._focus_item(scroll=False)
+        self.activated.emit(selection)
+
+    def _focus_item(self, *, scroll: bool) -> None:
+        for editor in self._item_lists:
+            for item_id, box in editor.item_boxes.items():
+                selected = self._selected_item is not None and item_id == id(self._selected_item.item)
+                set_card_selected(box, selected)
+        if scroll and self._selected_item is not None:
+            QTimer.singleShot(0, self, self._scroll_to_selected_item)
+
+    def _scroll_to_selected_item(self) -> None:
+        if self._selected_item is not None:
+            for editor in self._item_lists:
+                box = editor.item_boxes.get(id(self._selected_item.item))
+                if box is not None:
+                    self._scroll.ensureWidgetVisible(box, 10, 10)
+                    return
+
+    def _focus_text(self, focus: UpdaterTreeNode | None) -> str:
         if focus is None:
             return ""
-        group = focus.group
-        group_label_keys = {
-            "geometry": "ui.widgets.updater_editor.group.geometry",
-            "materials": "ui.widgets.updater_editor.group.materials",
-            "geometry_objectives": "ui.widgets.updater_editor.group.objectives",
-            "geometry_symmetry": "ui.widgets.updater_editor.group.geometry_symmetry",
-            "geometry_penalty": "ui.widgets.updater_editor.group.geometry_penalty",
-            "materials_objectives": "ui.widgets.updater_editor.group.objectives",
-            "materials_penalty": "ui.widgets.updater_editor.group.materials_penalty",
-        }
-        group_label = tr(
-            group_label_keys.get(group, "ui.widgets.updater_editor.group.constraints")
-        )
-        return tr('ui.widgets.updater_editor.selected_value', value_0=group_label)
+        return tr('ui.widgets.updater_editor.selected_value', value_0=node_title(self._problem, focus))
 
     def _save_device(self, text: str) -> None:
         """Persist the (Updater-only) device on the definition."""
@@ -216,36 +262,27 @@ class UpdaterEditor(QWidget):
             )
 
         if show_objectives:
-            form.addRow(UpdaterItemList(
+            form.addRow(self._item_list(
                 cfg,
                 group,
                 "objectives",
-                self._problem,
-                self._on_change,
-                self._on_code_change,
             ))
 
         n_surfaces = self._surface_count(cfg, group)
         if show_symmetry:
             form.addRow(
-                UpdaterItemList(
+                self._item_list(
                     cfg,
                     group,
                     "geometry_symmetry",
-                    self._problem,
-                    self._on_change,
-                    self._on_code_change,
                 )
             )
         if show_penalties:
             form.addRow(
-                UpdaterItemList(
+                self._item_list(
                     cfg,
                     group,
                     "constraints",
-                    self._problem,
-                    self._on_change,
-                    self._on_code_change,
                     n_surfaces,
                 )
             )
@@ -259,12 +296,14 @@ class UpdaterEditor(QWidget):
         re-binds the generated ``UpdaterBoundaryPart(interface_name=...)``.
         """
         combo = QComboBox()
-        if self._problem is not None:
-            for node in self._problem.boundary_part_nodes():
-                combo.addItem(node.name, node)
         target = self._problem.config_part_node(cfg) if self._problem else None
+        if self._problem is not None:
+            available = DefinitionCommands(self._problem).available_optimizer_targets()
+            for node in self._problem.boundary_part_nodes():
+                if node is target or node in available:
+                    combo.addItem(node_title(self._problem, node), node)
         index = combo.findData(target)
-        combo.setCurrentIndex(max(index, 0))
+        combo.setCurrentIndex(index)
         combo.currentIndexChanged.connect(
             lambda _i: self._set_geometry_target(cfg, combo.currentData())
         )
@@ -278,13 +317,14 @@ class UpdaterEditor(QWidget):
         ``UpdaterSIMPMaterial(interface_name=...)``.
         """
         combo = QComboBox()
-        if self._problem is not None:
-            for material in self._problem.material_nodes():
-                if material.name in self._problem.design_material_names():
-                    combo.addItem(material.name, material)
         target = self._problem.config_material_node(cfg) if self._problem else None
+        if self._problem is not None:
+            available = DefinitionCommands(self._problem).available_optimizer_targets()
+            for material in self._problem.material_nodes():
+                if material.is_updatable and (material is target or material in available):
+                    combo.addItem(node_title(self._problem, material), material)
         index = combo.findData(target)
-        combo.setCurrentIndex(max(index, 0))
+        combo.setCurrentIndex(index)
         combo.currentIndexChanged.connect(
             lambda _i: self._set_material_target(cfg, combo.currentData())
         )
@@ -349,8 +389,7 @@ class UpdaterEditor(QWidget):
             self.changed.emit(self._node)
 
     def _on_code_change(self) -> None:
-        """Refresh generated code without rebuilding the active editor."""
-        self.codeChanged.emit()
+        self._on_change()
 
 
 class _IfUpdateDropDown(QToolButton):
@@ -368,6 +407,8 @@ class _IfUpdateDropDown(QToolButton):
         self._checks: list[QCheckBox] = []
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.setProperty("menuButton", True)
+        self.setFixedHeight(30)
         menu = QMenu(self)
         self.setMenu(menu)
 
@@ -432,7 +473,7 @@ class _IfUpdateDropDown(QToolButton):
         self.setText(f"{len(names)}/{len(self._checks)}")
         self.setMinimumWidth(80)
         self.setToolTip(
-            tr('ui.widgets.updater_editor.surfaces_to_update_value', value_0=', '.join(names) or '无')
+            tr('ui.widgets.updater_editor.surfaces_to_update_value', value_0=', '.join(names) or tr('ui.widgets.updater_editor.none'))
         )
 
 
@@ -457,6 +498,7 @@ class _DistanceMatrixDropDown(QToolButton):
         self._helper_names = set(helper_names)
 
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.setProperty("menuButton", True)
         self.setMinimumWidth(110)
         self.setToolTip(
             tr('ui.widgets.updater_editor.edit_the_inter_surface_minimum_distance_matrix_min_distance_i_j')
@@ -516,7 +558,6 @@ class _DistanceMatrixDropDown(QToolButton):
                     self._table.setItem(i, j, QTableWidgetItem(value if isinstance(value, str) else f"{value:g}"))
         finally:
             self._loading = False
-        self._params["min_distance"] = mat
         self._update_text()
 
     def _on_cell(self, r: int, c: int) -> None:
@@ -555,7 +596,7 @@ class _DistanceMatrixDropDown(QToolButton):
 
     def _update_text(self) -> None:
         self.setText(f"{self._n}×{self._n}")
-        self.setFixedHeight(26)
+        self.setFixedHeight(30)
 
 
 def _distance_params_form(item: dict, n_surfaces: int, on_change, problem=None) -> QWidget:
@@ -563,7 +604,7 @@ def _distance_params_form(item: dict, n_surfaces: int, on_change, problem=None) 
     w = QWidget()
     form = QFormLayout(w)
     form.setContentsMargins(0, 0, 0, 0)
-    params = item.setdefault("params", {})
+    params = item["params"]
     helper_names = [node.name for node in problem.helper_variables] if problem else []
     dd = _DistanceMatrixDropDown(params, n_surfaces, on_change, helper_names=helper_names)
     form.addRow(
@@ -575,6 +616,8 @@ def _distance_params_form(item: dict, n_surfaces: int, on_change, problem=None) 
 
 class UpdaterItemList(QWidget):
     """One card manager for all three ordered updater item categories."""
+    activated = Signal(object)
+
     def __init__(
         self,
         config,
@@ -590,62 +633,51 @@ class UpdaterItemList(QWidget):
         self.model = UpdaterItems(config, group, category, problem)
         self.on_change, self.on_code_change = on_change, on_code_change
         self.n_surfaces = n_surfaces
+        self.item_boxes: dict[int, QGroupBox] = {}
+        self._items_by_widget: dict[QObject, dict] = {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        caption = QLabel(_category_label(category))
-        caption.setStyleSheet("color:#9aa4b2;")
-        layout.addWidget(caption)
-        for index, item in enumerate(self.model.items):
-            spec = self.model.spec(item)
-            title = item.get("custom_class") or (tr(spec["label_key"]) if spec else item["type"])
-            box = QGroupBox(title)
-            column = QVBoxLayout(box)
-            row = QHBoxLayout()
-            row.addWidget(QLabel(tr('ui.widgets.updater_editor.type_value', value_0=item["type"])))
-            row.addStretch(1)
-            if category == "geometry_symmetry":
-                for offset, text in ((-1, "↑"), (1, "↓")):
-                    button = QPushButton(text)
-                    button.setFixedWidth(30)
-                    button.setEnabled(0 <= index + offset < len(self.model.items))
-                    button.setToolTip(tr('ui.widgets.updater_editor.move_up' if offset < 0 else 'ui.widgets.updater_editor.move_down'))
-                    button.clicked.connect(lambda _checked=False, entry=item, offset=offset: self._move(
-                        entry,
-                        offset,
-                    ))
-                    row.addWidget(button)
-            delete = QPushButton(tr('ui.widgets.updater_editor.delete'))
-            delete.setFixedWidth(52)
-            delete.clicked.connect(lambda _checked=False, entry=item: self._remove(entry))
-            row.addWidget(delete)
-            column.addLayout(row)
-            self._item_editor(column, item, spec)
-            layout.addWidget(box)
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr('ui.widgets.updater_editor.add')))
-        self.add_combo = QComboBox()
-        for item_type, spec in self.model.specs().items():
-            self.add_combo.addItem(tr(spec["label_key"]), (item_type, ""))
+        layout.setSpacing(8)
+        self._add_menu = QMenu(self)
+        specs = self.model.specs()
+        for item_type, spec in specs.items():
+            self._add_menu.addAction(
+                schema_label(spec, item_type),
+                lambda _checked=False, kind=item_type: self._add(kind),
+            )
         if category != "geometry_symmetry":
+            custom_menu = self._add_menu.addMenu(tr('ui.widgets.model_tree.custom_class'))
             choices = self.model.custom_choices()
-            self.add_combo.insertSeparator(self.add_combo.count())
             for item_type, custom in choices:
-                self.add_combo.addItem(
-                    tr('ui.widgets.updater_editor.custom_class') + f"{custom.name} ({item_type})",
-                    (item_type, custom.name),
+                custom_menu.addAction(
+                    updater_item_title_text(
+                        {"type": item_type, "custom_class": custom.name},
+                        specs.get(item_type, {}),
+                    ),
+                    lambda _checked=False, kind=item_type, name=custom.name: self._add(kind, name),
                 )
             if not choices:
-                self.add_combo.addItem(
-                    tr('ui.widgets.updater_editor.custom_class_create_a_compatible_class_first'),
-                    None,
-                )
-        self.add_combo.setCurrentIndex(-1)
-        row.addWidget(self.add_combo, 1)
-        button = QPushButton("＋")
-        button.setFixedWidth(34)
-        button.clicked.connect(self._add)
-        row.addWidget(button)
-        layout.addLayout(row)
+                custom_menu.addAction(
+                    tr('ui.widgets.updater_editor.custom_class_create_a_compatible_class_first')
+                ).setEnabled(False)
+        header = CollectionHeader(_category_label(category), menu=self._add_menu)
+        self.add_button = header.add_button
+        layout.addWidget(header)
+        for index, item in enumerate(self.model.items):
+            spec = self.model.spec(item)
+            title = updater_item_title_text(item, spec)
+            box = QGroupBox(title)
+            self.item_boxes[id(item)] = box
+            column = QVBoxLayout(box)
+            column.addWidget(ItemActions(
+                index, len(self.model.items), lambda entry=item: self._remove(entry),
+                lambda offset, entry=item: self._move(entry, offset),
+            ))
+            self._item_editor(column, item, spec)
+            for widget in [box, *box.findChildren(QWidget)]:
+                widget.installEventFilter(self)
+                self._items_by_widget[widget] = item
+            layout.addWidget(box)
 
     def _item_editor(self, column, item, spec):
         problem = self.model.problem
@@ -663,6 +695,7 @@ class UpdaterItemList(QWidget):
                 if key == "related_surface_index" and not spec.get("related_surface"):
                     continue
                 combo = QComboBox()
+                combo.addItem("", None)
                 for index, surface in compatible:
                     combo.addItem(surface_title_text(surface, index), index)
                 combo.setCurrentIndex(combo.findData(item.get(key)))
@@ -677,35 +710,53 @@ class UpdaterItemList(QWidget):
                 references.addRow(tr(f'ui.widgets.updater_editor.{label}'), combo)
             column.addLayout(references)
         if item["type"] == "Distance" and self.n_surfaces:
-            column.addWidget(_distance_params_form(item, self.n_surfaces, self.on_change, problem))
+            column.addWidget(_distance_params_form(item, self.n_surfaces, lambda: self._notify(item), problem))
         elif spec.get("params"):
+            choices = {}
+            if item["type"] == "VolFrac":
+                from ..application.part_sets import PartSetCatalog
+
+                material = problem.config_material_node(self.model.config)
+                choices["elementname"] = list(PartSetCatalog(problem).for_part(
+                    material.part if material is not None else None,
+                ).elements)
             form = ParamForm(
                 item["params"],
                 spec["params"],
+                extra_choices=choices,
                 helper_names=[node.name for node in problem.helper_variables],
             )
-            form.changed.connect(lambda _key: self.on_change(item))
+            form.changed.connect(lambda _key: self._notify(item))
             column.addWidget(form)
 
     def _save_code(self, item, editor) -> None:
         item["params"]["code"] = editor.body()
+        self.activated.emit(item)
         self.on_code_change()
 
     def _save_reference(self, item, key, value) -> None:
-        if value is not None and value != item.get(key):
+        if value != item.get(key):
             item[key] = value
-            self.on_change(item)
+            self._notify(item)
 
-    def _add(self) -> None:
-        choice = self.add_combo.currentData()
-        if choice is not None and self.model.add(*choice):
-            self.add_combo.setCurrentIndex(-1)
-            self.on_change()
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.FocusIn:
+            self.activated.emit(self._items_by_widget[watched])
+        return super().eventFilter(watched, event)
+
+    def _notify(self, item: dict) -> None:
+        self.activated.emit(item)
+        self.on_change(item)
+
+    def _add(self, item_type: str, custom_class: str = "") -> None:
+        if self.model.add(item_type, custom_class):
+            self._notify(self.model.items[-1])
 
     def _remove(self, item) -> None:
         self.model.remove(item)
+        self.activated.emit(None)
         self.on_change()
 
     def _move(self, item, offset) -> None:
         if self.model.move(item, offset):
-            self.on_change()
+            self._notify(item)

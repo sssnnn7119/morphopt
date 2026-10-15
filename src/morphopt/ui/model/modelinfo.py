@@ -13,13 +13,14 @@ runnable source.
 """
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 from dataclasses import dataclass
 from functools import lru_cache
 
 import torchfea
 
-from ...optcore.modelparams.partinterface import resolve_model_path
+from ...optcore.modelparams.parts import resolve_model_path
 
 __all__ = [
     "InstanceSummary",
@@ -114,5 +115,5 @@ def _inspect_model_cached(path: str, _mtime_ns: int) -> TorchFEAModelSummary:
         for name, instance in assembly._instances.items()
     )
     if not parts:
-        raise ValueError(f"The TorchFEA model contains no Parts: {path}")
+        raise ValueError(localized_message("ui.errors.modelinfo.the_torchfea_model_contains_no_parts_value", value_0=path))
     return TorchFEAModelSummary(path, parts, instances)

@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..surfaceinterfaces import CPGEOSurfaceInterface
+from ..surfaces import CPGEOSurface
 from .basefuncs import BaseConstraints
 
 if TYPE_CHECKING:
-    from ..surfaceinterfaces import BaseSurfaceInterface
+    from ..surfaces import BaseSurface
 
 
 class VolumeMaximization(BaseConstraints):
@@ -19,12 +19,12 @@ class VolumeMaximization(BaseConstraints):
         super().__init__()
         self._weight = weight
         self._surf_idx = surf_idx
-        self.surfaces: list[BaseSurfaceInterface] = []
+        self.surfaces: list[BaseSurface] = []
 
     def initialize(
         self,
         *args: object,
-        surfaces: Sequence[BaseSurfaceInterface] | None = None,
+        surfaces: Sequence[BaseSurface] | None = None,
         **kwargs: object,
     ) -> None:
         """Bind the current Part's surfaces before evaluating volume."""
@@ -44,9 +44,9 @@ class VolumeMaximization(BaseConstraints):
         if not self.surfaces:
             raise ValueError("VolumeMaximization requires the updater's surfaces.")
         cpgeo_interface = self.surfaces[self._surf_idx]
-        if not isinstance(cpgeo_interface, CPGEOSurfaceInterface):
+        if not isinstance(cpgeo_interface, CPGEOSurface):
             raise ValueError(
-                "VolumeMaximization requires a CPGEOSurfaceInterface at surf_idx."
+                "VolumeMaximization requires a CPGEOSurface at surf_idx."
             )
         cpr = r[self._surf_idx]
         faces = cpgeo_interface._preload_data.faces

@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
     def open_morph(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, tr('ui.mainwindow.open_morph'), os.getcwd(),
-            "MorphOpt problem (*.morph);;All (*)")
+            tr("ui.files.morph_and_all"))
         if not path:
             return
         try:
@@ -82,24 +82,29 @@ class MainWindow(QMainWindow):
             tr('ui.mainwindow.opened_value_value', value_0=problem.label, value_1=scheme_label(problem.scheme)), 4000)
 
     def export_morph(self) -> None:
+        if self._workbench is not None:
+            self._workbench.flush_edits()
         problem = self.current_problem()
         if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, tr('ui.mainwindow.export_morph'), os.getcwd(),
-            f"{problem.label}{MORPH_SUFFIX}", "MorphOpt problem (*.morph)")
+            f"{problem.label}{MORPH_SUFFIX}", tr("ui.files.morph"))
         if path:
             out = ProblemLibrary.save(problem, path)
+            self._workbench.mark_saved()
             self.statusBar().showMessage(tr('ui.mainwindow.exported') + out, 3000)
 
     def export_run_py(self) -> None:
         """Generate the runnable job .py from the serialized .morph model."""
+        if self._workbench is not None:
+            self._workbench.flush_edits()
         problem = self.current_problem()
         if problem is None:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, tr('ui.mainwindow.export_runnable_py'),
-            problem.label + ".py", "Python (*.py)")
+            problem.label + ".py", tr("ui.files.python"))
         if path:
             ProblemLibrary.export_python(problem, path)
             self.statusBar().showMessage(

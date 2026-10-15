@@ -13,7 +13,7 @@
 | [04 载荷与 FEA](design/04_loads_and_fea.md) | 载荷、边界、接触、参考点、弹簧和载荷步 |
 | [05 几何](design/05_geometry.md) | Part、Instance、导入模型、装配体与几何持久化 |
 | [06 材料](design/06_materials.md) | 均质材料、材料模型与材料分配 |
-| [07 形状优化](design/07_shape_optimization.md) | `BoundaryPartInterface`、曲面、网格和形状更新器 |
+| [07 形状优化](design/07_shape_optimization.md) | `BoundaryPart`、曲面、网格和形状更新器 |
 | [08 SIMP 材料优化](design/08_simp.md) | 密度场材料、材料更新器和 SIMP 目标/约束 |
 | [09 协同设计扩展](design/09_codesign.md) | 偏置壳 Part、壳 FEA 和协同约束 |
 | [10 UI 领域模型](design/10_ui_domain.md) | `.morph`、类型化任务树、引用与不变量 |

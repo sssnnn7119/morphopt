@@ -1,6 +1,7 @@
 """Typed definition nodes, field serialization and node-local behavior."""
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 from collections.abc import Iterator
 from copy import deepcopy
@@ -16,9 +17,9 @@ from typing import Any
 # presentation node is transient and is not serialized::
 #
 #     problem
-#     ├── geometry   -- children: PartInterfaceNode* (each owns InstanceNode*
+#     ├── geometry   -- children: PartNode* (each owns InstanceNode*
 #     │                  and optional SurfaceNode*; 0 = outer, 1.. = cavities)
-#     ├── loads      -- children: InterfaceNode* (BC / RP / forces / contacts)
+#     ├── loads      -- children: FEAComponentNode* (BC / RP / forces / contacts)
 #     ├── steps      -- one StepsNode   (step count + per-interface amplitudes)
 #     ├── materials  -- children: MaterialNode* (Part + element assignments)
 #     ├── objective  -- one ObjectiveNode
@@ -148,14 +149,14 @@ class Node:
     def get_field(self, key: str, default: object = None) -> Any:
         """Read one parameter; ``default`` is returned when it is unset."""
         if key not in type(self)._FIELDS:
-            raise KeyError(f"{type(self).__name__} has no field {key!r}")
+            raise KeyError(localized_message("ui.errors.nodes.value_has_no_field_value", value_0=type(self).__name__, value_1=key))
         value = getattr(self, key, None)
         return default if value is None else value
 
     def set_field(self, key: str, value: object) -> Node:
         """Write one parameter onto its attribute (chainable)."""
         if key not in type(self)._FIELDS:
-            raise KeyError(f"{type(self).__name__} has no field {key!r}")
+            raise KeyError(localized_message("ui.errors.nodes.value_has_no_field_value", value_0=type(self).__name__, value_1=key))
         setattr(self, key, value)
         return self
 
@@ -221,12 +222,12 @@ class Node:
         """
         kind = data["kind"]
         if kind not in NODE_TYPES:
-            raise ValueError(f"Unknown model node kind: {kind}")
+            raise ValueError(localized_message("ui.errors.nodes.unknown_model_node_kind_value", value_0=kind))
         node_type = NODE_TYPES[kind]
         params = dict(data.get("params", {}))
         unknown = set(params) - set(node_type._FIELDS) - {"custom_class"}
         if unknown:
-            raise ValueError(f"Unknown fields for {kind}: {sorted(unknown)}")
+            raise ValueError(localized_message("ui.errors.nodes.unknown_fields_for_value_value", value_0=kind, value_1=sorted(unknown)))
         node = node_type(
             kind=kind,
             name=data.get("name", ""),
@@ -274,7 +275,7 @@ class ProblemNode(Node):
 class GeometryNode(Node):
     """Initial-geometry section: an ordered set of geometry interfaces.
 
-    Every :class:`PartInterfaceNode` owns one Part plus its Instances;
+    Every :class:`PartNode` owns one Part plus its Instances;
     parameterised interfaces additionally own their boundary surfaces as
     children (index 0 = outer boundary, 1.. = cavities).  The default
     Instance is ``<part>-1``; extra Instances are declared in the Part's
@@ -298,19 +299,19 @@ class GeometryNode(Node):
 
     # ----------------------------------------------------------- interfaces
     def add_interface(
-        self, interface: PartInterfaceNode, index: int | None = None
-    ) -> PartInterfaceNode:
+        self, interface: PartNode, index: int | None = None
+    ) -> PartNode:
         """Attach a geometry interface and return it (chainable)."""
         self.add_child(interface, index)
         return interface
 
-    def interfaces(self) -> list[PartInterfaceNode]:
+    def interfaces(self) -> list[PartNode]:
         return [c for c in self.children if c.kind == KIND_PART_INTERFACE]
 
     def interface_count(self) -> int:
         return len(self.interfaces())
 
-    def owner(self, surface: SurfaceNode) -> PartInterfaceNode | None:
+    def owner(self, surface: SurfaceNode) -> PartNode | None:
         """Interface holding ``surface`` (``None`` when it is detached)."""
         return next(
             (
@@ -418,7 +419,7 @@ class CADOperationNode(Node):
 
         spec = CAD_OPERATION_TYPES.get(operation_type)
         if spec is None:
-            raise ValueError(f"Unknown CAD operation type {operation_type!r}.")
+            raise ValueError(localized_message("ui.errors.nodes.unknown_cad_operation_type_value", value_0=operation_type))
         params = {"operation_type": operation_type}
         params.update(clone_defaults(spec["params"]))
         params["operation_id"] = str(operation_id).strip()
@@ -426,13 +427,13 @@ class CADOperationNode(Node):
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
-                f"Unknown {operation_type} field(s): {sorted(unknown)}"
+                localized_message("ui.errors.nodes.unknown_value_field_s_value", value_0=operation_type, value_1=sorted(unknown))
             )
         params.update(overrides)
         return cls(name=params["operation_id"], params=params)
 
 
-class PartInterfaceNode(Node):
+class PartNode(Node):
     """One geometry interface: a Part and (optional) boundary surfaces.
 
     Instance declarations belong to the generated Part class's
@@ -503,7 +504,7 @@ class PartInterfaceNode(Node):
     # ----------------------------------------------------------- properties
     @property
     def interface_type(self) -> str:
-        """Backend part-interface class name, e.g. ``"INPPartInterface"``."""
+        """Backend part-interface class name, e.g. ``"INPPart"``."""
         return self.type
 
     @property
@@ -516,6 +517,11 @@ class PartInterfaceNode(Node):
     def has_surfaces(self) -> bool:
         """Whether this interface type is described by boundary surfaces."""
         return bool(self.spec.get("surfaces", False))
+
+    @property
+    def is_updatable(self) -> bool:
+        """Whether this Part type supplies geometry design variables."""
+        return bool(self.spec.get("design", False))
 
     def resolved_part_name(self) -> str:
         """Part name used by generated code (falls back to the node name)."""
@@ -560,13 +566,13 @@ class PartInterfaceNode(Node):
         self, operation: CADOperationNode, index: int | None = None
     ) -> CADOperationNode:
         """Attach one ordered CAD feature to this CAD Part."""
-        if self.interface_type != "CADPartInterface":
-            raise TypeError("CAD operations can only belong to a CADPartInterface.")
+        if self.interface_type != "CADPart":
+            raise TypeError(localized_message("ui.errors.nodes.cad_operations_can_only_belong_to_a_cadpartinterface"))
         if any(
             item.operation_id == operation.operation_id
             for item in self.cad_operations()
         ):
-            raise ValueError(f"CAD operation id {operation.operation_id!r} already exists.")
+            raise ValueError(localized_message("ui.errors.nodes.cad_operation_id_value_already_exists", value_0=operation.operation_id))
         self.add_child(operation, index=index)
         return operation
 
@@ -575,9 +581,9 @@ class PartInterfaceNode(Node):
     ) -> InstanceNode:
         """Attach one Instance declaration to this Part."""
         if not instance.name.strip():
-            raise ValueError("Instance name cannot be empty")
+            raise ValueError(localized_message("ui.errors.nodes.instance_name_cannot_be_empty"))
         if any(existing.name == instance.name for existing in self.instances()):
-            raise ValueError(f"Instance {instance.name!r} already exists")
+            raise ValueError(localized_message("ui.errors.nodes.instance_value_already_exists", value_0=instance.name))
         self.add_child(instance, index=index)
         return instance
 
@@ -597,7 +603,7 @@ class PartInterfaceNode(Node):
     @classmethod
     def create(
         cls, interface_type: str, name: str = "", **overrides
-    ) -> PartInterfaceNode:
+    ) -> PartNode:
         """Build a geometry interface from schema defaults + overrides."""
         from .schemas import clone_defaults, part_interface_spec
 
@@ -606,8 +612,7 @@ class PartInterfaceNode(Node):
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
-                f"Unknown geometry-interface field(s) {sorted(unknown)} for "
-                f"{interface_type!r}; allowed: {sorted(allowed)}"
+                localized_message("ui.errors.nodes.unknown_geometry_interface_field_s_value_for_value_allowed_value", value_0=sorted(unknown), value_1=interface_type, value_2=sorted(allowed))
             )
         params = {"type": interface_type}
         params.update(clone_defaults(spec["params"]))
@@ -644,14 +649,14 @@ class InstanceNode(Node):
             return value
         values = [0.0, 0.0, 0.0] if value is None else [float(item) for item in value]
         if len(values) != 3:
-            raise ValueError(f"Instance {label} must have exactly 3 components")
+            raise ValueError(localized_message("ui.errors.nodes.instance_value_must_have_exactly_3_components", value_0=label))
         return values
 
     @property
     def pose(self) -> list[float]:
         """Return TorchFEA's six-component translation/rotation pose."""
         if isinstance(self.translation, str) or isinstance(self.rotation, str):
-            raise ValueError("A helper variable pose cannot be previewed before execution")
+            raise ValueError(localized_message("ui.errors.nodes.a_helper_variable_pose_cannot_be_previewed_before_execution"))
         return [*self.translation, *self.rotation]
 
 
@@ -735,8 +740,7 @@ class SurfaceNode(Node):
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
-                f"Unknown surface field(s) {sorted(unknown)} for "
-                f"{surface_type!r}; allowed: {sorted(allowed)}"
+                localized_message("ui.errors.nodes.unknown_surface_field_s_value_for_value_allowed_value", value_0=sorted(unknown), value_1=surface_type, value_2=sorted(allowed))
             )
         params = {"type": surface_type, "flip": index > 0}
         params.update(clone_defaults(spec["params"]))
@@ -751,17 +755,17 @@ class LoadsNode(Node):
     kind = KIND_LOADS
 
     def add_interface(
-        self, interface: InterfaceNode, index: int | None = None
-    ) -> InterfaceNode:
+        self, interface: FEAComponentNode, index: int | None = None
+    ) -> FEAComponentNode:
         """Attach an interface and return it (chainable)."""
         self.add_child(interface, index)
         return interface
 
-    def interfaces(self) -> list[InterfaceNode]:
+    def interfaces(self) -> list[FEAComponentNode]:
         return [c for c in self.children if c.kind == KIND_INTERFACE]
 
 
-class InterfaceNode(Node):
+class FEAComponentNode(Node):
     """One FEA load / boundary interface.
 
     ``name`` is the reference used by the load-step matrix and by generated
@@ -810,9 +814,9 @@ class InterfaceNode(Node):
         self.instance: InstanceNode | None = None
         self.instance1: InstanceNode | None = None
         self.instance2: InstanceNode | None = None
-        self.reference_point: InterfaceNode | None = None
-        self.reference_point1: InterfaceNode | None = None
-        self.reference_point2: InterfaceNode | None = None
+        self.reference_point: FEAComponentNode | None = None
+        self.reference_point1: FEAComponentNode | None = None
+        self.reference_point2: FEAComponentNode | None = None
         self.surface_name: str | None = data.get("surface_name")
         self.set_nodes_name: str | None = data.get("set_nodes_name")
         self.index_dof: list | None = data.get("index_dof")
@@ -833,7 +837,7 @@ class InterfaceNode(Node):
         """Display/serialized name of one node reference field."""
         attr = INSTANCE_REFERENCE_FIELDS.get(field) or REFERENCE_POINT_FIELDS.get(field)
         if attr is None:
-            raise KeyError(f"{field!r} is not a reference field")
+            raise KeyError(localized_message("ui.errors.nodes.value_is_not_a_reference_field", value_0=field))
         target = getattr(self, attr)
         return target.name if target is not None else self._reference_names[field]
 
@@ -841,7 +845,7 @@ class InterfaceNode(Node):
         """Bind one reference field to an in-memory target node."""
         attr = INSTANCE_REFERENCE_FIELDS.get(field) or REFERENCE_POINT_FIELDS.get(field)
         if attr is None:
-            raise KeyError(f"{field!r} is not a reference field")
+            raise KeyError(localized_message("ui.errors.nodes.value_is_not_a_reference_field", value_0=field))
         setattr(self, attr, target)
         self._reference_names[field] = ""
 
@@ -850,11 +854,11 @@ class InterfaceNode(Node):
         return self._reference_names[field]
 
     def _reference_property(field: str):
-        def getter(self: InterfaceNode) -> str | None:
+        def getter(self: FEAComponentNode) -> str | None:
             value = self.reference_name(field)
             return value or None
 
-        def setter(self: InterfaceNode, value: object) -> None:
+        def setter(self: FEAComponentNode, value: object) -> None:
             self.set_reference(field, None)
             self._reference_names[field] = str(value or "").strip()
 
@@ -870,7 +874,7 @@ class InterfaceNode(Node):
     @classmethod
     def create(
         cls, interface_type: str, name: str | None = None, **overrides
-    ) -> InterfaceNode:
+    ) -> FEAComponentNode:
         """Build an interface from its schema defaults, then apply overrides.
 
         Unknown field names raise immediately so typos never slip through.
@@ -882,8 +886,7 @@ class InterfaceNode(Node):
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
-                f"Unknown interface field(s) {sorted(unknown)} for "
-                f"{interface_type!r}; allowed: {sorted(allowed)}"
+                localized_message("ui.errors.nodes.unknown_interface_field_s_value_for_value_allowed_value", value_0=sorted(unknown), value_1=interface_type, value_2=sorted(allowed))
             )
         params = {"type": interface_type}
         params.update(clone_defaults(spec["params"]))
@@ -914,7 +917,7 @@ class StepsNode(Node):
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
         self.num_steps: int = int(data["num_steps"]) if "num_steps" in data else 1
-        self.step_values: list[dict[InterfaceNode | str, list]] = [
+        self.step_values: list[dict[FEAComponentNode | str, list]] = [
             dict(v) for v in (data.get("step_values") or [])
         ]
 
@@ -923,7 +926,7 @@ class StepsNode(Node):
         yield "num_steps", self.num_steps
         yield "step_values", [
             {
-                key.name if isinstance(key, InterfaceNode) else str(key): value
+                key.name if isinstance(key, FEAComponentNode) else str(key): value
                 for key, value in step.items()
             }
             for step in self.step_values
@@ -990,9 +993,7 @@ class MaterialNode(Node):
         # ---- explicit typed parameters (union of material schema fields) --
         self.type: str = str(data.get("type") or "")
         self._part_name = str(data.get("part_name") or "").strip()
-        self.part: PartInterfaceNode | None = None
-        if not self._part_name:
-            raise ValueError("MaterialNode.part_name cannot be empty.")
+        self.part: PartNode | None = None
         self.material_model: str = str(data.get("material_model") or "NeoHookeanLnJ")
         self.E: float | None = data.get("E")
         self.nu: float | None = data.get("nu")
@@ -1016,11 +1017,18 @@ class MaterialNode(Node):
         self.degree: int | None = data.get("degree")
         self.initial_ratio: float | None = data.get("initial_ratio")
         self.voidpenalfactor: float | None = data.get("voidpenalfactor")
-        self.materialpenalty: float | None = data.get("materialpenalty")
+        self.materialpenalty: int | None = data.get("materialpenalty")
 
     @property
     def material_type(self) -> str:
         return self.type
+
+    @property
+    def is_updatable(self) -> bool:
+        """Whether this material interface supplies design variables."""
+        from .schemas import MATERIAL_TYPES
+
+        return bool(MATERIAL_TYPES.get(self.material_type, {}).get("design", False))
 
     @property
     def part_name(self) -> str:
@@ -1034,7 +1042,7 @@ class MaterialNode(Node):
         self.part = None
         self._part_name = str(value or "").strip()
 
-    def set_part(self, part: PartInterfaceNode) -> None:
+    def set_part(self, part: PartNode) -> None:
         """Bind this material assignment to one geometry Part interface."""
         self.part = part
         self._part_name = ""
@@ -1043,11 +1051,6 @@ class MaterialNode(Node):
     def pending_part_name(self) -> str:
         """Part name read from persistence before the aggregate binds it."""
         return self._part_name
-
-    def set_field(self, key: str, value: object) -> Node:
-        if key == "part_name" and not str(value or "").strip():
-            raise ValueError("MaterialNode.part_name cannot be empty.")
-        return super().set_field(key, value)
 
     @classmethod
     def create(cls, material_type: str, name: str = "", **overrides) -> MaterialNode:
@@ -1058,8 +1061,7 @@ class MaterialNode(Node):
         unknown = set(overrides) - allowed
         if unknown:
             raise ValueError(
-                f"Unknown material field(s) {sorted(unknown)} for "
-                f"{material_type!r}; allowed: {sorted(allowed)}"
+                localized_message("ui.errors.nodes.unknown_material_field_s_value_for_value_allowed_value", value_0=sorted(unknown), value_1=material_type, value_2=sorted(allowed))
             )
         params = {"type": material_type}
         params.update(clone_defaults(spec["params"]))
@@ -1088,7 +1090,7 @@ class ObjectiveNode(Node):
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
-        self.jacobian_needed: list[InterfaceNode | str] = list(
+        self.jacobian_needed: list[FEAComponentNode | str] = list(
             data.get("jacobian_needed") or []
         )
         self._objective_function: str | None = data.get("_objective_function")
@@ -1113,7 +1115,7 @@ class ObjectiveNode(Node):
     def field_items(self) -> Iterator[tuple[str, object]]:
         """Serialize Jacobian load-object references as their names."""
         yield "jacobian_needed", [
-            item.name if isinstance(item, InterfaceNode) else str(item)
+            item.name if isinstance(item, FEAComponentNode) else str(item)
             for item in self.jacobian_needed
         ]
         if self._objective_function is not None:
@@ -1171,7 +1173,7 @@ class UpdaterNode(Node):
         self.geometry: list[dict] = list(data.get("geometry") or [])
         self.materials: list[dict] = list(data.get("materials") or [])
         if any("code" in config for config in self.geometry + self.materials):
-            raise ValueError("Raw updater code is unsupported; use method overrides")
+            raise ValueError(localized_message("ui.errors.nodes.raw_updater_code_is_unsupported_use_method_overrides"))
 
     def field_items(self) -> Iterator[tuple[str, object]]:
         """Serialize object targets without retaining name references in memory."""
@@ -1261,12 +1263,12 @@ NODE_TYPES: dict[str, type[Node]] = {
     HelperFunctionNode.kind: HelperFunctionNode,
     KIND_PROBLEM: ProblemNode,
     KIND_GEOMETRY: GeometryNode,
-    KIND_PART_INTERFACE: PartInterfaceNode,
+    KIND_PART_INTERFACE: PartNode,
     KIND_CAD_OPERATION: CADOperationNode,
     KIND_INSTANCE: InstanceNode,
     KIND_SURFACE: SurfaceNode,
     KIND_LOADS: LoadsNode,
-    KIND_INTERFACE: InterfaceNode,
+    KIND_INTERFACE: FEAComponentNode,
     KIND_STEPS: StepsNode,
     KIND_MATERIALS: MaterialsNode,
     KIND_MATERIAL: MaterialNode,

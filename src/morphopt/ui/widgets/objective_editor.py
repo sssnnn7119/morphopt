@@ -18,10 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from ..model.problem import ObjectiveNode, ProblemDefinition
+from ..presentation.labels import interface_title_text, node_title
 from ..schemes.base import get_template
 from .codeeditor import CodeEditor
 from .template_insert_dialog import TemplateInsertDialog
 from ..i18n import tr
+from ..refresh import RefreshContext
 
 
 class JacobianLoadSelector(QToolButton):
@@ -41,9 +43,11 @@ class JacobianLoadSelector(QToolButton):
         self._menu = QMenu(self)
         self.setMenu(self._menu)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.setProperty("menuButton", True)
+        self.setFixedHeight(30)
         self._update_summary()
 
-    def set_loads(self, load_names: list[str], selected_names: list[str]) -> None:
+    def set_loads(self, load_names: list[str], selected_names: list[str], titles: dict[str, str] | None = None) -> None:
         """Replace the available loads and mark the persisted selection."""
         self._load_names = list(dict.fromkeys(name for name in load_names if name))
         selected = set(selected_names)
@@ -51,7 +55,7 @@ class JacobianLoadSelector(QToolButton):
         self._checks.clear()
 
         for name in self._load_names:
-            check = QCheckBox(name, self._menu)
+            check = QCheckBox((titles or {}).get(name, name), self._menu)
             check.setChecked(name in selected)
             check.toggled.connect(self._selection_changed)
             action = QWidgetAction(self._menu)
@@ -85,7 +89,7 @@ class JacobianLoadSelector(QToolButton):
             value_0=len(selected),
             value_1=len(self._load_names),
         ))
-        self.setToolTip(", ".join(selected))
+        self.setToolTip("\n".join(self._checks[name].text() for name in selected))
 
 
 class ObjectiveEditor(QWidget):
@@ -96,9 +100,9 @@ class ObjectiveEditor(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        head = QLabel(tr('ui.widgets.objective_editor.objective_function_edit_in_ide_recommended'))
-        head.setStyleSheet("font-weight:600; color:#e0e0e0;")
-        lay.addWidget(head)
+        self._heading = QLabel()
+        self._heading.setProperty("textRole", "sectionHeading")
+        lay.addWidget(self._heading)
 
         form = QFormLayout()
         # composable FEA code-snippet chooser
@@ -143,6 +147,7 @@ class ObjectiveEditor(QWidget):
     def set_problem(self, problem: ProblemDefinition) -> None:
         self._problem = problem
         self._obj = problem.objective
+        self._heading.setText(node_title(problem, self._obj) if self._obj is not None else "")
         self.obj_editor.set_completion_context("_objective_function", problem)
         self.met_editor.set_completion_context("_get_metrics", problem)
         self._loading = True
@@ -156,6 +161,7 @@ class ObjectiveEditor(QWidget):
                 self.jacobian_loads.set_loads(
                     [interface.name for interface in problem.amplitude_interfaces()],
                     [interface.name for interface in self._obj.jacobian_needed],
+                    {interface.name: interface_title_text(interface) for interface in problem.amplitude_interfaces()},
                 )
                 self.obj_editor.set_body(str(self._obj.get_field("_objective_function", "")))
                 self.met_editor.set_body(str(self._obj.get_field("_get_metrics", "")))
@@ -165,6 +171,9 @@ class ObjectiveEditor(QWidget):
                 self.met_editor.set_body("")
         finally:
             self._loading = False
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        self.set_problem(context.problem)
 
     # ------------------------------------------------------------- handlers
 

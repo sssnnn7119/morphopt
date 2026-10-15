@@ -20,6 +20,7 @@ MorphOpt / TorchFEA core                             数值内核
 ```text
 ui/
 ├── app.py / mainwindow.py / workbench.py / observe_panel.py
+├── refresh.py               Refreshable 协议、刷新上下文和统一调度器
 ├── model/
 │   ├── nodes.py             节点字段、序列化和节点内部行为
 │   ├── problem.py           问题聚合：跨节点关联、增删排序、不变量
@@ -28,6 +29,7 @@ ui/
 │   └── modelinfo.py          导入存档摘要
 ├── application/
 │   ├── definitions.py       ProblemSession、模板和文件用例
+│   ├── edit_history.py      JSON 快照操作树、编辑合并、根节点裁剪与保存标记（无 Qt）
 │   ├── editing.py           节点/工况/任务分组、辅助代码、自定义类的编辑用例
 │   ├── fields.py            字段、动态选项、目标代码片段的模型参数校验
 │   ├── part_sets.py         各类 Part 的集合查询注册表
@@ -50,13 +52,18 @@ ui/
 ├── widgets/
 │   ├── definition_actions.py 树菜单和编辑页共用的 Qt 操作入口
 │   ├── editor_pages.py      页面加入编辑栈、绑定路由、连接 changed 信号
+│   ├── edit_history.py      左下角操作历史树、撤销/重做与节点选择（不修改模型）
+│   ├── collection_controls.py 集合标题、添加按钮、条目排序/删除与选中边框
 │   ├── preview_renderer.py  场景数据 → PyVista actor；管理 actor 生命周期
+│   ├── plot_style.py        定义与结果视口共用的光照、背景和透明渲染配置
 │   ├── viewer.py            Part / Assembly / 工况选择与视口组合
 │   ├── model_tree.py        导航投影 → QTreeWidget；菜单与选择信号
 │   ├── language_selector.py 语言选择与 Qt 设置持久化
 │   ├── param_form.py        节点与参数字典共用的 schema 表单
 │   ├── editor.py            节点编辑页的标题、动作和代码槽
-│   ├── codeeditor.py        代码控件与独立的 HelperCodeEditor
+│   ├── codeeditor.py        通用 Python 代码控件
+│   ├── helper_editor.py     自由代码与辅助变量/函数卡片中的编辑控件
+│   ├── source_view.py       同步后的问题定义 → 只读生成代码
 │   └── ...                  专用编辑器、结果页、对话框
 ├── i18n.py / locales/*.json  无 Qt 的本地化服务与语言资源
 ├── codegen/ / schemes/ / templates/
@@ -102,11 +109,12 @@ ui/
   → DefinitionCommands（创建默认值）/ ProblemDefinition（跨节点规则）
 用户字段编辑
   → editor 修改类型化 Node
-  → 发出一次 changed
-  → Workbench 合并短时间内的变化
+  → changed(node)，结构操作也携带发生变更的节点
+  → RefreshCoordinator 合并短时间内的变化
   → ProblemSession.synchronize()
-  → tree / active editor / generated source / preview 刷新
-  → 本轮 source(synchronize=False)，避免重复同步
+  → 生成一个 RefreshContext
+  → 按注册顺序调用组件的 refresh_ui(context)
+  → tree / active editor / generated source / preview 使用同一轮同步结果
 ```
 
 规则：
@@ -118,6 +126,96 @@ ui/
    禁止直接改 `children` 或手工修补关联引用。
 5. 一个用户动作只进入一次统一刷新，不在多个 signal slot 中重复生成代码或重画预览。
 
+结构操作和字段修改先进入 `Workbench` 的统一变更入口，由 `ProblemSession` 同步并记录快照。
+结构操作随后通过 `refresh_now(node)` 立即刷新；连续字段输入通过 `request(node)` 合并后刷新。
+组件使用已经同步的模型，不重复进行同一批编辑的同步。
+两者都进入同一个调度器。
+
+所有需要随定义变更刷新的组件实现 `Refreshable` 协议：
+
+```python
+def refresh_ui(self, context: RefreshContext) -> None:
+    ...
+```
+
+`RefreshContext` 包含问题定义、当前选中节点、变更节点列表和是否完整刷新。
+组件负责刷新自己的内容；`Workbench` 只负责同步准备与注册顺序，不判断当前组件的具体类型。
+`EditorPages` 将刷新委托给活动编辑页，静态页面不参与数据刷新。
+
+- 新增、删除、排序与字段修改共用 `changed(node)`，删除操作仍传递被删除的节点，
+  让预览明确知道发生的是载荷变更或几何变更。
+- 未知来源用 `None` 请求完整刷新。合并事件时保留该请求，不能被后来的局部修改覆盖。
+- 仅修改载荷或工况时更新载荷 actor；修改几何、材料包络或辅助表达式时重建几何及载荷。
+  完整刷新也保留当前工况和相机；更换问题、视图或部件时才重新设置视角。
+- 树刷新保留选中项、展开状态和滚动位置；编辑器原位刷新，避免重新导航造成跳动。
+- 组件刷新失败会记录完整异常并显示错误，其他独立组件仍完成刷新；成功状态不会覆盖本轮错误。
+
+新增需要刷新的组件时，实现上述方法，并在 `Workbench._register_refreshables()` 中按依赖顺序注册。
+新增编辑页时，将其传给 `EditorPages.register(..., refreshable=editor)`。
+
+### 文档撤销与重做
+
+`ProblemSession.history` 持有 `EditHistory`，每个状态保存与 `.morph` 相同结构的 UTF-8 JSON
+字节和轻量选择路径。快照不可变，不与模型共享列表或字典；不逐次写磁盘、不存网格和求解结果。
+默认整棵树保留至多 100 个节点，历史 JSON 总量上限为 64 MiB，当前状态始终保留。
+`EditHistoryNode` 存储快照、父节点 ID、有序子节点 ID 和首选重做子节点；使用 ID 关联，避免父子对象循环引用。
+超限时找出旧根通往当前状态的第一个子节点，将它提升为新根；删除旧根及其所有其他子树，逐根重复直到满足上限。
+
+- 所有模型定义通过 `changed(node)` 接入历史；新增组件沿现有编辑页注册即可参与。
+- 添加、删除、排序分别记录；同一输入框一次连续输入合并。焦点切换、点击其他操作或提交单行输入结束合并。
+- 相同 JSON 不增加记录，撤销后新增编辑创建子分支，已有分支保留。只有本轮输入创建的叶节点允许合并。
+  连续输入恢复成父状态时移除该叶节点，其他兄弟分支保持。预览失败不影响已保存的编辑历史。
+- 每个历史步骤带稳定 ID 和创建时间；合并输入保留原步骤 ID。`EditHistoryPanel` 在模型树下方展示整棵历史树，
+  通过 `jumpRequested(step_id)` 请求跳转，树标识当前与已保存状态。
+  `ProblemSession.restore_edit_step(step_id)` 直接解码目标快照，跨多步和跨分支也只刷新一次。
+  选取步骤后先提交输入，再按稳定 ID 查找，避免容量淘汰后恢复到错误节点。
+- 撤销返回父节点，重做访问当前节点的首选子节点；新建和访问分支会更新祖先链的首选子节点。
+- 历史区内的撤销/重做针对整个文档。`Ctrl+Z` / `Ctrl+Shift+Z` 在文本框内优先使用局部文本历史，
+  无局部历史时使用文档历史；代码控件的快捷键只作用于自身，避免多个编辑器抢占快捷键。
+- 撤销前提交仍在输入框或表格委托中的值，清除旧刷新请求，然后用 `from_dict()` 重建模型及引用。
+  断开并重建旧表单，所有组件统一重新绑定；保留相机、工况、树展开状态和同一编辑页的滚动位置。
+  延迟布局回调绑定到所属 QObject，表单销毁后不会再执行。
+- 选择路径由 `presentation.navigation` 生成，涵盖普通节点、辅助代码、自定义类和 Updater 临时节点，
+  不依赖恢复前的 Python `id()`，也不写入 `.morph` 文件。
+- 新建、Quickstart、打开文件建立新起点。保存文件保留历史，用 JSON 内容标记已保存状态；标题 `*` 表示有修改。
+  切换视角、语言和选择不记录，外部文件及优化过程和结果不回滚。
+
+自定义类由 `DefinitionNavigation` 投影为模型树顶层集合，不再持有独立树控件。
+`CustomClassOverview` 提供集合管理入口，`DefinitionActions` 统一负责添加/删除对话框与通知，
+`CustomClassEditor` 继续负责类名和方法体编辑。类和方法选择统一使用 `ModelTree`，历史区只导航状态。
+
+`RefreshContext.restoring` 区分历史恢复与普通模型切换：恢复不重新导入外部模型，也不重置预览相机与工况。
+恢复期间暂停工作台重绘，重建完成后统一恢复。编辑页创建时即属于编辑栈，旧页面移除前先隐藏；
+需要调用 `setVisible()` 的标签在构造时就指定父控件，避免 Qt 将未加入布局的控件临时显示为独立窗口。
+
+辅助变量和辅助函数分别使用 `DefinitionManagerEditor` 集合页：总节点显示该类全部条目，
+选择树中的具体条目只定位对应卡片；编辑卡片中的字段反向更新树选择，不重新打开页面。
+新增、删除和排序共用 `DefinitionActions`，列表顺序就是脚本中的定义顺序。
+字段修改时原位同步，保留焦点、代码撤销历史和页面滚动位置。
+
+集合编辑的控件共用 `widgets/collection_controls.py`：`CollectionHeader` 将标题放在左侧，
+添加入口放在右侧；多种类型用菜单直接添加，单一类型直接添加。
+`ItemActions` 将上移、下移、删除集中在条目右上角，Quickstart 表格的行操作也放在表格右上方。
+颜色、尺寸、悬停和禁用态由应用主题统一定义，删除使用 `actionRole="danger"`，
+主操作使用 `actionRole="primary"`。集合页不再各自编写按钮样式。
+选中卡片仅更新自身的 `collectionSelected` 属性，不向嵌套子框传播选中边框。
+
+Updater 的目标函数、几何对称约束和罚函数也投影为组节点下的具体树条目。
+`UpdaterItemTreeNode` 直接引用配置项字典，以字典身份保持排序后的选择，
+点击树条目定位集合页中的参数卡片；编辑卡片只更新树选择，不触发页面导航。
+新建几何 updater 默认包含 `ShapeDerivative` 目标项及 `Fairness`、`Distance`、`Cylinder` 三个罚函数，
+距离矩阵在绑定目标 Part 时按其曲面数量调整；显式传入空列表则保留为空。
+
+预览标注使用 `locales` 中的完整文本模板，作用对象写明实例与集合名。
+耦合同时显示参考点和目标节点集；边界条件显示目标与固定自由度；
+集中力/力矩显示参考点与三个分量；弹簧显示两个端点、刚度和原长。
+标注显示定义中的数值，不假设模型采用哪一套物理单位。
+渲染器按标注行数与相机投影计算纵向占位，避免同侧标注框相互覆盖。
+
+定义预览与结果观察通过 `configure_plotter()` 共用透明渲染设置：关闭多重采样、启用 alpha
+平面和深度剥离。清空视口后重新恢复光照与配置，避免半透明外表面消失。
+BoundaryPart 的每个曲面使用独立且稳定的 actor 名称，空心部件的外表面半透明、内表面不透明。
+
 ## 4. 类型化任务树
 
 持久化模型的顶层结构为：
@@ -125,11 +223,11 @@ ui/
 ```text
 ProblemNode
 ├── GeometryNode
-│   └── PartInterfaceNode*
+│   └── PartNode*
 │       ├── InstanceNode*
 │       └── SurfaceNode*       # 仅 BoundaryPart
 ├── LoadsNode
-│   └── InterfaceNode*
+│   └── FEAComponentNode*
 ├── StepsNode
 ├── MaterialsNode
 │   └── MaterialNode*
@@ -153,6 +251,28 @@ ProblemNode
   `.npz` archive，只允许改其 MorphOpt 几何接口名称。
 - `.morph` 是唯一可编辑定义格式；Python 只作为生成结果，不反向解析成定义。
 
+### 显示命名
+
+树节点、编辑卡片、添加菜单和对象选择框统一由 `presentation/labels.py` 命名：
+
+- 已定义对象使用 `名称 [ClassName]`，例如 `body [CADPart]`、
+  `pressure_1 [Pressure]`、`body-1 [Instance]`。
+- 添加菜单使用 `功能说明 [ClassName]`，例如 `长方体 [Box]`、
+  `BSP 镜面对称 [BspMirrorConstraint]`。类名由 schema 的 `class_name` 声明，
+  语言资源只保存功能说明；选择自定义类时显示实际选用的类。
+- 几何优化器同时标明目标部件和对应类；偏置部件显示 `UpdaterOffsetBoundaryPart`。
+- 边界 Part 与 SIMP 材料的 schema 显式声明 `design=True`，对应节点以只读
+  `is_updatable` 暴露能力。类型菜单、模型树和组件定义页明确显示“可更新”；
+  固定几何、均匀材料不提供创建几何/材料优化器的入口。
+- 创建优化器直接选择具体 Part 或材料接口，树右键与定义页共用
+  `DefinitionActions.add_updater(target)`。不再按“几何/材料”自动挑选第一个对象。
+  每个目标只能分配一个 updater，标题使用“目标名称的优化器 [UpdaterClass]”。
+- 分组不附加虚构的类名；辅助函数和重写方法使用 `name()`。
+  CAD 操作的输入特征保留在提示信息中。
+- 中文统一使用“部件 / 实例 / 装配体”和“工况”；CAD 的 STEP 导入写作“导入 STEP”。
+- 下拉框的展示标题与 `itemData` 分开，保存和代码生成仍使用原始名称或对象引用。
+  禁止从展示标题中解析名称，或把带类名的标题写回定义。
+
 ## 5. 模板体系
 
 启动时直接显示空白定义工作台；标准栏目存在，但不预填具体设计。用户可手动定义，或使用 Quickstart。
@@ -163,14 +283,15 @@ ProblemNode
 配置保存为辅助变量 `quickstart_settings`，生成物是普通 `ProblemDefinition`，
 不建立另一个模型格式。Quickstart 按参数组合创建节点，不克隆模板。
 几何工厂、网格构建及其参数化变换归内核；UI 不生成重写几何工厂的类，
-也不生成设计块或接触物体的建网格脚本。结构化设计块使用 `BoxPartInterface`；
-其他 CAD 几何由 `CADPartInterface` 交给 `torchfea.cad` 建模和网格化。
+也不生成设计块或接触物体的建网格脚本。结构化设计块使用 `BoxPart`；
+其他 CAD 几何由 `CADPart` 交给 `torchfea.cad` 建模和网格化。
 
 `ui/model/chamberlayout.py` 中的 `ChamberLayer` / `LayeredChambers` 只负责 Quickstart 的分层气腔配置、排布校验和初始预览；生成的形状优化定义仍使用内核现有的曲面与 Part 接口。
 工作空间驱动边界的高斯点、权重、切向和取向由 `optcore/quadrature.py` 生成；应用服务将
 边界点映射为载荷工况；用户选择的压力通道映射到驱动积分坐标，同通道气腔联动，未选通道固定零压。目标按所选通道汇总 Jacobian 列，并通过散度定理计算边界积分。
 普通目标不使用高斯点密度。
-预览从内核获取初始网格，在 widget 中仅执行正等轴测投影、着色和坐标轴绘制。
+初始预览使用轻量曲面；Box 预览由 UI 的 `BoxPreviewAdapter.mesh()` 生成，
+Quickstart 复用该方法。几何准备归 `visualization`，widget 只负责绘制。
 
 内腔偏置 Part 在统一 Part schema 中注册，代码生成器按目标 Part 类型选择
 `UpdaterOffsetBoundaryPart`；参数集合、FEA 和求解器仍使用公共接口。
@@ -201,15 +322,67 @@ ProblemNode
 - 载荷工况的矩阵数据操作由 `LoadCaseSession` 处理；求解任务的行/分组转换由 `SolverTasks` 处理。
 - 目标、罚函数、对称约束共用 `UpdaterItems` 和 `UpdaterItemList`；不得各写一套增删卡片。
 - 普通字段变更保留表单；只有 schema、目标或列表结构变化才重建。动态下拉选项单独刷新。
+- 编辑控件获得焦点时，模型树静默跟随对应节点，不向编辑页反向发送导航事件。
+  数据刷新原地更新已有表单与关联选项；只有用户主动选择树节点时滚动定位编辑卡片。
+  实例、部件或 CAD 输入变更后立即刷新关联下拉框，不等待重新选择模型树。
 - `DefinitionNavigation` 生成任务树投影；临时导航节点不加入可保存的问题树。
-- 所有可编辑 widget 统一发出 `changed`；结构树统一发出 `treeChanged`。
+- 字段编辑器和结构操作统一发出 `changed(node)`，交给 `RefreshCoordinator` 调度；
+  树控件不再通过独立的结构刷新信号触发第二轮刷新。
 - 编辑器收到 `ProblemDefinition` 是为了动态选项和上下文，不拥有它。
-- 标题和提示保存稳定 key，经 `tr(key, **values)` 查询 JSON 资源；业务名称不翻译。
+- 所有应用定义的显示文案都在 `locales/zh-CN.json`、`locales/en-US.json` 中维护，
+  包括标题、按钮、字段名、帮助文字、模板说明、文件筛选、可视化标签和校验错误。
+  Python 和模板元数据只保存稳定 key，不再保留中英文文案副本或按原文生成 key。
+- 展示层使用 `tr(key, **values)`。模型、应用服务和代码生成器的校验错误使用
+  `localized_message(key, **values)`；异常保存 key 与参数，在显示时才查询当前语言，
+  原有 `ValueError` / `KeyError` 等异常类型保留。
+- 类名、字段标识、用户名称、路径、数值、物理符号和代码内容是数据，保留原值；
+  第三方异常与 Python 语法错误的诊断细节也保留原文，由本地化提示说明上下文。
+- 动态句子通过资源中的占位符组合，禁止在代码里拼接中文或英文片段。
+- 每种语言的名称使用其资源中的 `locale.name`，模板说明使用 `template.label_key`。
 - 缺失翻译按默认语言回退；本地化管理器不依赖 Qt 或 QSettings。
 - 语言切换原地刷新文本，不重建 PyVista/OpenGL viewport。
 - 一个专用 editor 只在通用 schema 表单无法清楚表达交互时新增。
 
+### 参数与内核的对应
+
+新增接口的实例、部件、集合、参考点、CAD 输入对象和对称目标等引用默认留空，
+下拉框提供空选项，允许清空。未选择实例或部件时，不显示其他部件的集合。
+不因模型中只有一个部件而自动绑定材料；模板和 Quickstart 必须明确写出自己的引用。
+求解前检查必选引用。数值和算法枚举保留各自的有效初值。
+
+`model/schemas.py` 的字段 key 对应构造函数或工厂方法的关键字参数，表单提示显示该 key。
+`application/fields.py` 决定当前模型可编辑的字段，`codegen/generator.py` 负责将其写入任务脚本。
+材料模型选择映射到 `MaterialModels.<Model>Params`，求解设备 `gpus` 映射到
+`Solver.available_gpus`，实例平移和转动组合成 `add_instance` 的六维位姿。
+
+曲面参数中，下列字段通过几何优化器的 `Fairness` 罚函数生效。未添加 `Fairness` 时，
+这些阈值不参与优化；添加后，超过对应阈值的 80% 开始惩罚。
+
+| 工厂参数 | 内核属性 | 实际计算 |
+| --- | --- | --- |
+| BSP `maxC`、CPGEO 圆柱 `maxC`、CPGEO 球 `MaxC` | `MaxC` | 主曲率平方和 `κ₁² + κ₂² = 4H² − 2K`，量纲为长度的负二次方 |
+| BSP `maxFF` | `MaxFF` | 参数切向量的非正交程度 `F² / (E·G)` |
+| BSP `maxR` | `MaxR` | 第一基本形式 `E`、`G` 的相对导数平方，经 `rr_compensation` 补偿 |
+
+控制点步长由 `UpdaterBoundaryPart.max_step_length` 管理。这些 Fairness 阈值均不是
+每步控制点位移、半径变化的上限。`seed_size` 控制曲面初始控制网格及预采样，
+体有限元网格由 Part 的 `fea_seed_size` 或 `mesh_size` 单独控制。
+CPGEO 曲率罚函数只使用 `MaxC`，因此其表单不提供 BSP 的 `degree`、`maxR`、`maxFF`。
+
+SIMP 中 `initial_ratio` 是设计场控制点初值，材料比例由 sigmoid、RAMP 插值和
+`simp_ratio_min` 共同决定。`materialpenalty` 是整数 RAMP 参数，`MinValue` / `MaxValue`
+作用于设计场控制变量。Neo-Hookean 模型使用 `mumax` / `kappamax` 生成本构参数，
+该模型的表单只提供这一组模量。圆柱包络罚函数的 `height` 是全局 Z 上界，
+`bottom` 是全局 Z 下界。
+
+`tests/ui/test_parameter_contracts.py` 核对各类型的 schema、生成调用和内核签名，
+检查载荷幅值数量、所有材料模型的可见参数、CAD 预览与脚本参数、对称约束、
+辅助变量和 CPU/GPU 选择；同时直接构造 BSP 与 CPGEO 曲面以检查工厂内部的参数传递。
+
 ### 可视化的扩展协议
+
+载荷符号使用场景对角线和部件典型宽度共同确定尺寸；细长部件不能仅按长度放大箭头。
+直箭头统一长度、箭头和箭杆比例，力矩、弹簧和标记同步缩放，显示尺寸与载荷幅值分离。
 
 ```text
 ProblemDefinition → PreviewGeometry + PartPreviewVisitor → PreviewScene

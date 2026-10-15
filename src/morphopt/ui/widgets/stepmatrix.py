@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -17,6 +16,9 @@ from PySide6.QtWidgets import (
 from ..model.problem import StepsNode, ProblemDefinition
 from ..application.editing import LoadCaseSession
 from ..i18n import tr
+from ..refresh import RefreshContext
+from ..presentation.labels import interface_title_text
+from .collection_controls import ActionButton, AddButton
 
 
 class StepMatrix(QWidget):
@@ -33,14 +35,17 @@ class StepMatrix(QWidget):
         self._nspin.setRange(1, 200)
         self._nspin.valueChanged.connect(self._on_n_steps)
         bar.addWidget(self._nspin)
-        for key, fn in [
-                ("ui.widgets.stepmatrix.add_step", self._add_step),
-                ("ui.widgets.stepmatrix.copy_selected_row", self._copy_selected_row),
-                ("ui.widgets.stepmatrix.delete_selected_row", self._remove_selected_row)]:
-            b = QPushButton(tr(key))
-            b.clicked.connect(fn)
-            bar.addWidget(b)
         bar.addStretch(1)
+        self._copy_button = ActionButton(tr('ui.widgets.stepmatrix.copy_selected_row'), self._copy_selected_row)
+        bar.addWidget(self._copy_button)
+        self._delete_button = ActionButton(
+            tr('ui.common.delete'), self._remove_selected_row, danger=True,
+            tooltip=tr('ui.widgets.stepmatrix.delete_selected_row'),
+        )
+        bar.addWidget(self._delete_button)
+        self._add_button = AddButton(self._add_step)
+        self._add_button.setToolTip(tr('ui.widgets.stepmatrix.add_step'))
+        bar.addWidget(self._add_button)
         lay.addLayout(bar)
 
         hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_interfaces_rows_steps_empty_cells_keep_the_previous_value_zero'))
@@ -69,29 +74,48 @@ class StepMatrix(QWidget):
         self._nspin.blockSignals(False)
         self._rebuild()
 
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if context.problem.steps is not None:
+            self.edit_node(context.problem.steps, context.problem)
+
     # ------------------------------------------------------------- helpers
     def _rebuild(self) -> None:
         if self._node is None:
             return
         cols = self.session.columns()
         n = int(self._node.num_steps)
-        signature = (id(self._node), n, tuple((id(interface), component, caption) for interface, component, caption in cols))
-        if signature == self._structure:
-            return
+        signature = (
+            id(self._node), n,
+            tuple(
+                (id(interface), interface.interface_type, interface.custom_class, component, caption)
+                for interface, component, caption in cols
+            ),
+        )
+        rebuild = signature != self._structure
         self._structure = signature
         self._loading = True
         self._table.blockSignals(True)
-        self._table.clear()
-        self._table.setColumnCount(len(cols))
-        self._table.setHorizontalHeaderLabels([h for _, _, h in cols])
-        self._table.setRowCount(n)
+        if rebuild:
+            self._table.clear()
+            self._table.setColumnCount(len(cols))
+            self._table.setHorizontalHeaderLabels([h for _, _, h in cols])
+            for column, (interface, _component, _caption) in enumerate(cols):
+                self._table.horizontalHeaderItem(column).setToolTip(interface_title_text(interface))
+            self._table.setRowCount(n)
         for s in range(n):
             for ci, (interface, comp, _h) in enumerate(cols):
                 value = self.session.value(s, interface, comp)
-                item = QTableWidgetItem(value if isinstance(value, str) else f"{value:.6g}")
-                self._table.setItem(s, ci, item)
+                text = value if isinstance(value, str) else f"{value:.6g}"
+                item = self._table.item(s, ci)
+                if item is None:
+                    self._table.setItem(s, ci, QTableWidgetItem(text))
+                elif item.text() != text:
+                    item.setText(text)
         self._table.blockSignals(False)
         self._loading = False
+        self._delete_button.setEnabled(n > 1)
+        self._add_button.setEnabled(n < self._nspin.maximum())
+        self._copy_button.setEnabled(n < self._nspin.maximum())
 
     # ------------------------------------------------------------- actions
     def _on_n_steps(self, n: int) -> None:

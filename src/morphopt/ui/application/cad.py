@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torchfea
 
-from ...optcore.modelparams.partinterface import CADPartInterface
-from ..model.problem import CADOperationNode, PartInterfaceNode, ProblemDefinition
+from ...optcore.modelparams.parts import CADPart
+from ..model.problem import CADOperationNode, PartNode, ProblemDefinition
 from ..model.schemas import CAD_OPERATION_TYPES
 from .expressions import DefinitionValues
 
@@ -42,14 +42,14 @@ def cad_operation_from_node(
 
 
 def cad_part_from_node(
-    node: PartInterfaceNode, problem: ProblemDefinition | None = None
-) -> CADPartInterface:
+    node: PartNode, problem: ProblemDefinition | None = None
+) -> CADPart:
     """Create a preview Part from its structured, ordered CAD feature list."""
     operations = node.cad_operations()
     values = DefinitionValues(problem)
     namespace = values.namespace
 
-    class PreviewCADPart(CADPartInterface):
+    class PreviewCADPart(CADPart):
         def define_operations(self) -> None:
             for operation_node in operations:
                 self.add_operation(
@@ -67,7 +67,7 @@ def cad_part_from_node(
 
 
 def cad_brep_records_from_node(
-    node: PartInterfaceNode, problem: ProblemDefinition | None = None
+    node: PartNode, problem: ProblemDefinition | None = None
 ) -> list[dict]:
     """Return OCC face and edge geometry for the CAD viewport."""
     part = cad_part_from_node(node, problem)

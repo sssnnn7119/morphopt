@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Sequence
 
 from .model.problem import ProblemDefinition
-from .codegen.generator import generate_source
 
 #: where UI-launched runs are written by default (job cwd)
 UI_RUN_DIR = os.path.join(os.getcwd(), "ui_runs")
@@ -52,7 +51,9 @@ def _start_headless_process(command: Sequence[str], working_directory: str
 
 def export_to_py(problem: ProblemDefinition, path) -> str:
     """Write the problem definition to a runnable ``ThisController`` module."""
-    src = generate_source(problem)
+    from .application.definitions import ProblemSession
+
+    src = ProblemSession(problem).source()
     Path(path).write_text(src, encoding="utf-8")
     return path
 

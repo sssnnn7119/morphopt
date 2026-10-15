@@ -4,21 +4,22 @@ class), ready for ``morphopt.start_optimization`` / ``restart_optimization``.
 """
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 import ast
 import keyword
 from collections.abc import Callable
 from dataclasses import fields
 
-from ...optcore.modelparams.materialinterface import MaterialModels
+from ...optcore.modelparams.materials import MaterialModels
 from ..model.modelinfo import PartSummary, TorchFEAModelSummary
 from ..model.problem import (
     CADOperationNode,
     INSTANCE_REFERENCE_FIELDS,
-    InterfaceNode,
+    FEAComponentNode,
     Node,
     ObjectiveNode,
-    PartInterfaceNode,
+    PartNode,
     ProblemDefinition,
     SolverNode,
     StepsNode,
@@ -67,7 +68,7 @@ def _material_parameters_expression(
     parameter_class = getattr(MaterialModels, f"{model}Params")
     parameter_type = parameter_class.__name__
     values = ", ".join(f"{key}={_render_value(value, problem)}" for key, value in parameters.items())
-    return f"self.materialmodels.{parameter_type}({values})"
+    return f"self.models.{parameter_type}({values})"
 
 
 def indent_block(text: str, spaces: int) -> str:
@@ -146,7 +147,7 @@ def render_cad_operation_call(
 
 
 def render_interface_call(interface: Node, problem: ProblemDefinition | None = None) -> str:
-    cls = f"{interface.interface_type}Interface"
+    cls = INTERFACE_TYPES[interface.interface_type]["class_name"]
     kwargs = []
     for field in INTERFACE_TYPES[interface.interface_type]["params"]:
         key = field["key"]
@@ -164,7 +165,7 @@ def render_interface_call(interface: Node, problem: ProblemDefinition | None = N
 
 
 def generate_source(problem: ProblemDefinition) -> str:
-    """Generate the configured model and activate its custom subclasses."""
+    """Read a synchronized definition and activate its custom subclasses."""
     source = generate_base_source(problem)
     custom_items = problem.updater and any(
         item.get("custom_class")
@@ -180,13 +181,13 @@ def generate_source(problem: ProblemDefinition) -> str:
     seen: set[str] = set()
     for node in [*problem.helper_variables, *problem.helper_functions]:
         if not node.name.isidentifier() or keyword.iskeyword(node.name) or node.name in seen:
-            raise ValueError(f"Invalid or duplicate helper name: {node.name!r}")
+            raise ValueError(localized_message("ui.errors.generator.invalid_or_duplicate_helper_name_value", value_0=node.name))
         seen.add(node.name)
         if node.kind == "helper_variable":
             try:
                 ast.parse(node.value, mode="eval")
             except SyntaxError as exc:
-                raise ValueError(f"Invalid helper variable {node.name!r}: {exc}") from exc
+                raise ValueError(localized_message("ui.errors.generator.invalid_helper_variable_value_value", value_0=node.name, value_1=exc)) from exc
             helper_blocks.append(f"{node.name} = {node.value}")
         else:
             helper_blocks.append(
@@ -202,7 +203,7 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     try:
         compile(helper_source, "<helper code>", "exec")
     except SyntaxError as exc:
-        raise ValueError(f"辅助代码语法错误 / Invalid helper code: {exc}") from exc
+        raise ValueError(localized_message("ui.errors.generator.invalid_helper_code_value", value_0=exc)) from exc
 
     first_class = next(
         node.lineno - 1 for node in ast.parse(source).body
@@ -214,7 +215,7 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     try:
         compile(result, "<generated model>", "exec")
     except SyntaxError as exc:
-        raise ValueError(f"生成脚本语法错误 / Invalid generated script: {exc}") from exc
+        raise ValueError(localized_message("ui.errors.generator.invalid_generated_script_value", value_0=exc)) from exc
     return result
 
 
@@ -224,7 +225,6 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     Code-launched runs never open an observer window; results are watched by
     the MorphOpt UI's in-window observer (disk polling per iteration).
     """
-    problem.resolve_references()
     template = get_template(problem.scheme)
     L: list[str] = []
     a = L.append
@@ -314,9 +314,7 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     np_ = _render_value(solver.num_process, problem)
     gpus = list(solver.gpus)
     tasklist = list(solver.task_index_list)
-    args = ["params=params", f"num_process={np_}"]
-    if gpus:
-        args.append(f"available_gpus={gpus!r}")
+    args = ["params=params", f"num_process={np_}", f"available_gpus={gpus!r}"]
     if tasklist:
         args.append(f"task_index_list={tasklist!r}")
     a("")
@@ -346,7 +344,7 @@ _REQUIRED_GEOMETRY_FIELDS = {"model_directory", "mesh_file"}
 
 
 def _render_part_constructor(
-    interface: PartInterfaceNode, class_name: str | None = None,
+    interface: PartNode, class_name: str | None = None,
     problem: ProblemDefinition | None = None,
 ) -> str:
     """Render ``self.<ClassName>(...)`` for one part interface.
@@ -403,11 +401,11 @@ def _emit_part_classes(
     Returns the mapping interface name -> emitted class name.
     """
     fixed_bases = {
-        "BasePartInterface": "morphopt.BasePartInterface",
-        "CADPartInterface": "morphopt.CADPartInterface",
-        "BoxPartInterface": "morphopt.BoxPartInterface",
-        "INPPartInterface": "morphopt.INPPartInterface",
-        "TorchFEAPartInterface": "morphopt.TorchFEAPartInterface",
+        "BasePart": "morphopt.BasePart",
+        "CADPart": "morphopt.CADPart",
+        "BoxPart": "morphopt.BoxPart",
+        "INPPart": "morphopt.INPPart",
+        "TorchFEAPart": "morphopt.TorchFEAPart",
     }
     local_class: dict[str, str] = {}
     class_names = part_class_names(problem)
@@ -445,7 +443,7 @@ def _emit_part_classes(
                 a("")
                 a("                def apply_surface_constraints(self) -> None:")
                 a(indent_block(custom_code, 20))
-        elif interface.interface_type == "CADPartInterface":
+        elif interface.interface_type == "CADPart":
             a("                def define_operations(self) -> None:")
             operations = interface.cad_operations()
             if not operations:
@@ -534,7 +532,7 @@ def _validate_imported_interface_selections(
             target = getattr(interface, INSTANCE_REFERENCE_FIELDS[instance_key])
             if target is None:
                 raise ValueError(
-                    f"Interface {interface.name!r} must select {instance_key}."
+                    localized_message("ui.errors.generator.interface_value_must_select_value", value_0=interface.name, value_1=instance_key)
                 )
             selected = target.name
             if selected not in instances:
@@ -546,8 +544,7 @@ def _validate_imported_interface_selections(
                     boundary_instance = True
                     continue
                 raise ValueError(
-                    f"Interface {interface.name!r} references unknown TorchFEA "
-                    f"Instance {selected!r}."
+                    localized_message("ui.errors.generator.interface_value_references_unknown_torchfea_instance_value", value_0=interface.name, value_1=selected)
                 )
 
         if boundary_instance:
@@ -568,14 +565,13 @@ def _validate_imported_interface_selections(
             target = getattr(interface, INSTANCE_REFERENCE_FIELDS[instance_key])
             instance_name = target.name if target is not None else ""
             if not selected:
-                raise ValueError(f"Interface {interface.name!r} must select {key}.")
+                raise ValueError(localized_message("ui.errors.generator.interface_value_must_select_value", value_0=interface.name, value_1=key))
             instance = instances.get(instance_name)
             part = parts.get(instance.part_name) if instance is not None else None
             available = sets_of(part) if part is not None else ()
             if selected not in available:
                 raise ValueError(
-                    f"Interface {interface.name!r} references unknown {key} "
-                    f"{selected!r} on Instance {instance_name!r}."
+                    localized_message("ui.errors.generator.interface_value_references_unknown_value_value_on_instance_value", value_0=interface.name, value_1=key, value_2=selected, value_3=instance_name)
                 )
 
         if "element_name" in fields_for_type:
@@ -585,13 +581,12 @@ def _validate_imported_interface_selections(
             part = parts.get(instance.part_name) if instance is not None else None
             if part is None or element_name not in part.element_types:
                 raise ValueError(
-                    f"Interface {interface.name!r} references unknown element "
-                    f"{element_name!r} on Instance {instance_name!r}."
+                    localized_message("ui.errors.generator.interface_value_references_unknown_element_value_on_instance_value", value_0=interface.name, value_1=element_name, value_2=instance_name)
                 )
 
 
 def _geometry_config_for_part(
-    problem: ProblemDefinition, part: PartInterfaceNode
+    problem: ProblemDefinition, part: PartNode
 ) -> dict | None:
     """Return the geometry updater config bound to ``part``, if any."""
     updater = problem.updater
@@ -609,7 +604,7 @@ def _geometry_config_for_part(
 
 def _surface_constraints_for_part(
     config: dict | None,
-    part: PartInterfaceNode,
+    part: PartNode,
     problem: ProblemDefinition,
 ) -> tuple[list[str], str]:
     """Render surface-owned symmetry hooks and an optional Part code hook."""
@@ -621,11 +616,11 @@ def _surface_constraints_for_part(
     custom_bodies: list[str] = []
     for item in config.get("symmetry_constraints", []) or []:
         if not isinstance(item, dict):
-            raise ValueError(f"Invalid geometry symmetry constraint: {item}")
+            raise ValueError(localized_message("ui.errors.generator.invalid_geometry_symmetry_constraint_value", value_0=item))
         item_type = item.get("type")
         spec = SURFACE_SYMMETRY_CONSTRAINTS.get(item_type)
         if spec is None:
-            raise ValueError(f"Unknown geometry symmetry constraint: {item_type!r}")
+            raise ValueError(localized_message("ui.errors.generator.unknown_geometry_symmetry_constraint_value", value_0=item_type))
         params = item.get("params") or {}
         if item_type == "Custom":
             custom_bodies.append(str(params.get("code") or ""))
@@ -634,16 +629,13 @@ def _surface_constraints_for_part(
         surface_index = item.get("surface_index")
         if not isinstance(surface_index, int) or not 0 <= surface_index < len(surfaces):
             raise ValueError(
-                f"Geometry symmetry constraint {item_type!r} on Part "
-                f"{part.name!r} references invalid surface index {surface_index!r}."
+                localized_message("ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_surface", value_0=item_type, value_1=part.name, value_2=surface_index)
             )
         surface = surfaces[surface_index]
         surface_factory = surface_factory_for_type(surface.surface_type)
         if surface_factory != spec["factory"]:
             raise ValueError(
-                f"Geometry symmetry constraint {item_type!r} requires a "
-                f"{spec['factory']} surface; surface {surface_index} on Part "
-                f"{part.name!r} is {surface.surface_type!r}."
+                localized_message("ui.errors.generator.geometry_symmetry_constraint_value_requires_a_value_surface_surface_value", value_0=item_type, value_1=spec['factory'], value_2=surface_index, value_3=part.name, value_4=surface.surface_type)
             )
 
         method_args = []
@@ -651,16 +643,13 @@ def _surface_constraints_for_part(
             related_index = item.get("related_surface_index")
             if not isinstance(related_index, int) or not 0 <= related_index < len(surfaces):
                 raise ValueError(
-                    f"Geometry symmetry constraint {item_type!r} on Part "
-                    f"{part.name!r} references invalid related surface index "
-                    f"{related_index!r}."
+                    localized_message("ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_related", value_0=item_type, value_1=part.name, value_2=related_index)
                 )
             related = surfaces[related_index]
             related_factory = surface_factory_for_type(related.surface_type)
             if related_factory != spec["factory"]:
                 raise ValueError(
-                    f"Geometry symmetry constraint {item_type!r} requires both "
-                    f"surfaces to use {spec['factory']}."
+                    localized_message("ui.errors.generator.geometry_symmetry_constraint_value_requires_both_surfaces_to_use_value", value_0=item_type, value_1=spec['factory'])
                 )
             method_args.append(f"surface_{related_index}")
 
@@ -707,7 +696,7 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
     # every amplitude-bearing load interface must be set for every step, so a
     # load that was added but left unset in a step is written explicitly as a
     # zero amplitude (matching the step-matrix UI, where an empty cell is 0).
-    amps: dict[InterfaceNode, int] = {}
+    amps: dict[FEAComponentNode, int] = {}
     for it in problem.interfaces():
         nv = INTERFACE_TYPES.get(it.interface_type, {}).get("num_values", 0)
         if nv and it.name:
@@ -813,22 +802,19 @@ def _resolve_geometry_targets(
     boundary = problem.boundary_part_nodes()
     if not boundary:
         raise ValueError(
-            "A geometry optimizer needs a boundary part interface; INP / TorchFEA "
-            "parts have no design surfaces."
+            localized_message("ui.errors.generator.a_geometry_optimizer_needs_a_boundary_part_interface_inp_torchfea")
         )
     targets: list[str] = []
     for index, cfg in enumerate(geom_cfgs):
         target = problem.config_part_node(cfg)
         if target is None:
             raise ValueError(
-                f"Geometry optimizer {index + 1} has no target boundary Part; choose "
-                f"one of {[node.name for node in boundary]}."
+                localized_message("ui.errors.generator.geometry_optimizer_value_has_no_target_boundary_part_choose_one", value_0=index + 1, value_1=[node.name for node in boundary])
             )
         name = target.name
         if name in targets:
             raise ValueError(
-                f"Two geometry optimizers both target {name!r}; give each one its "
-                "own Part."
+                localized_message("ui.errors.generator.two_geometry_optimizers_both_target_value_give_each_one_its", value_0=name)
             )
         targets.append(name)
     return targets
@@ -851,22 +837,19 @@ def _resolve_material_targets(
     ]
     if not design:
         raise ValueError(
-            "A material optimizer needs a design-carrying material interface "
-            "(SIMP density field); homogeneous materials have no variables."
+            localized_message("ui.errors.generator.a_material_optimizer_needs_a_design_carrying_material_interface_simp")
         )
     targets: list[str] = []
     for index, cfg in enumerate(mat_cfgs):
         target = problem.config_material_node(cfg)
         if target is None or target not in design:
             raise ValueError(
-                f"Material optimizer {index + 1} has no target design material; "
-                f"choose one of {[material.name for material in design]}."
+                localized_message("ui.errors.generator.material_optimizer_value_has_no_target_design_material_choose_one", value_0=index + 1, value_1=[material.name for material in design])
             )
         name = target.name
         if name in targets:
             raise ValueError(
-                f"Two material optimizers both target {name!r}; give each one its "
-                "own interface."
+                localized_message("ui.errors.generator.two_material_optimizers_both_target_value_give_each_one_its", value_0=name)
             )
         targets.append(name)
     return targets
@@ -922,7 +905,7 @@ def _emit_updater(
         target = problem.config_part_node(config)
         base = (
             "morphopt.UpdaterOffsetBoundaryPart"
-            if target.interface_type == "OffsetBoundaryPartInterface"
+            if target.interface_type == "OffsetBoundaryPart"
             else GEOMETRY_UPDATER_BASE
         )
         _emit_nested_updater(a, class_name, base, config, problem)
@@ -935,16 +918,16 @@ def _emit_updater(
 def _render_updater_item(item: dict, category: str, problem: ProblemDefinition | None = None) -> str:
     """Render one valid structured objective/constraint item into source."""
     if not isinstance(item, dict):
-        raise ValueError(f"Invalid updater item: {item}")
+        raise ValueError(localized_message("ui.errors.generator.invalid_updater_item_value", value_0=item))
     if item.get("type") == "Custom" and item.get("custom_class"):
         return f"{item['custom_class']}()"
     cat = UPDATER_CATALOG.get(category, {})
     spec = cat.get(item.get("type", ""))
     if spec is None:
-        raise ValueError(f"Unknown updater {category} type: {item.get('type')}")
+        raise ValueError(localized_message("ui.errors.generator.unknown_updater_value_type_value", value_0=category, value_1=item.get('type')))
     gen = spec.get("gen", "")
     if not gen:
-        raise ValueError(f"Missing generator for updater item: {item['type']}")
+        raise ValueError(localized_message("ui.errors.generator.missing_generator_for_updater_item_value", value_0=item['type']))
     if item.get("custom_class"):
         gen = item["custom_class"] + gen[gen.index("("):]
     params = dict(item.get("params") or {})
@@ -954,12 +937,12 @@ def _render_updater_item(item: dict, category: str, problem: ProblemDefinition |
         item.get("type") == "VolFrac"
         and not str(params.get("elementname") or "").strip()
     ):
-        raise ValueError("VolFrac requires an explicit elems name.")
+        raise ValueError(localized_message("ui.errors.generator.volfrac_requires_an_explicit_elems_name"))
     fmt = {k: _render_value(v, problem) for k, v in params.items()}
     try:
         return gen.format(**fmt)
     except (KeyError, IndexError, ValueError) as exc:
-        raise ValueError(f"Invalid updater parameters: {item['type']}") from exc
+        raise ValueError(localized_message("ui.errors.generator.invalid_updater_parameters_value", value_0=item['type'])) from exc
 
 
 def _emit_nested_updater(
@@ -978,7 +961,7 @@ def _emit_nested_updater(
     """
     cfg = cfg or {}
     if "code" in cfg:
-        raise ValueError("Raw updater code is unsupported; use method overrides")
+        raise ValueError(localized_message("ui.errors.generator.raw_updater_code_is_unsupported_use_method_overrides"))
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")

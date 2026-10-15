@@ -3,17 +3,18 @@
 Concrete nodes live in ``nodes`` and are re-exported here as the model API.
 """
 from __future__ import annotations
+from ..i18n import localized_message
 from collections.abc import Iterator
 from .nodes import (
     Node,
     ProblemNode,
     GeometryNode,
     CADOperationNode,
-    PartInterfaceNode,
+    PartNode,
     InstanceNode,
     SurfaceNode,
     LoadsNode,
-    InterfaceNode,
+    FEAComponentNode,
     StepsNode,
     MaterialsNode,
     MaterialNode,
@@ -55,11 +56,11 @@ __all__ = [
     'ProblemNode',
     'GeometryNode',
     'CADOperationNode',
-    'PartInterfaceNode',
+    'PartNode',
     'InstanceNode',
     'SurfaceNode',
     'LoadsNode',
-    'InterfaceNode',
+    'FEAComponentNode',
     'StepsNode',
     'MaterialsNode',
     'MaterialNode',
@@ -118,7 +119,7 @@ class ProblemDefinition:
     ) -> None:
         scheme = str(scheme or "").strip()
         if not scheme:
-            raise ValueError("Problem template id cannot be empty")
+            raise ValueError(localized_message("ui.errors.problem.problem_template_id_cannot_be_empty"))
         self.scheme = scheme
         self.label = label
         self.result_folder = result_folder
@@ -146,12 +147,12 @@ class ProblemDefinition:
         geometry = self.geometry
         return geometry.surfaces() if geometry is not None else []
 
-    def part_interfaces(self) -> list[PartInterfaceNode]:
+    def part_interfaces(self) -> list[PartNode]:
         """All geometry interfaces (Parts) in their canonical tree order."""
         geometry = self.geometry
         return geometry.interfaces() if geometry is not None else []
 
-    def boundary_part_nodes(self) -> list[PartInterfaceNode]:
+    def boundary_part_nodes(self) -> list[PartNode]:
         """Geometry interfaces that own boundary surfaces."""
         return [
             interface for interface in self.part_interfaces() if interface.has_surfaces
@@ -163,20 +164,18 @@ class ProblemDefinition:
         A material optimizer owns one of these; a homogeneous material has no
         variables, so it cannot be a target.
         """
-        from .schemas import MATERIAL_TYPES
-
         return [
             material.name
             for material in self.material_nodes()
-            if MATERIAL_TYPES.get(material.material_type, {}).get("design")
+            if material.is_updatable
         ]
 
-    def owner_of_surface(self, surface: SurfaceNode) -> PartInterfaceNode | None:
+    def owner_of_surface(self, surface: SurfaceNode) -> PartNode | None:
         """Geometry interface holding ``surface``."""
         geometry = self.geometry
         return geometry.owner(surface) if geometry is not None else None
 
-    def owner_of_instance(self, instance: InstanceNode) -> PartInterfaceNode | None:
+    def owner_of_instance(self, instance: InstanceNode) -> PartNode | None:
         """Geometry interface holding ``instance``."""
         return next(
             (
@@ -189,7 +188,7 @@ class ProblemDefinition:
 
     def owner_of_cad_operation(
         self, operation: CADOperationNode
-    ) -> PartInterfaceNode | None:
+    ) -> PartNode | None:
         """CAD Part holding ``operation``."""
         return next(
             (
@@ -200,13 +199,13 @@ class ProblemDefinition:
             None,
         )
 
-    def imported_model_part_node(self) -> PartInterfaceNode | None:
+    def imported_model_part_node(self) -> PartNode | None:
         """First geometry interface that links an exported TorchFEA model."""
         return next(
             (
                 interface
                 for interface in self.part_interfaces()
-                if interface.interface_type == "TorchFEAPartInterface"
+                if interface.interface_type == "TorchFEAPart"
             ),
             None,
         )
@@ -227,7 +226,7 @@ class ProblemDefinition:
         linked = [
             interface
             for interface in self.part_interfaces()
-            if interface.interface_type == "TorchFEAPartInterface"
+            if interface.interface_type == "TorchFEAPart"
         ]
         if not linked:
             return False
@@ -256,8 +255,8 @@ class ProblemDefinition:
             if part.name in covered:
                 continue
             geometry.add_interface(
-                PartInterfaceNode.create(
-                    "TorchFEAPartInterface",
+                PartNode.create(
+                    "TorchFEAPart",
                     name=part.name,
                     model_directory=directory,
                     model_filename=filename,
@@ -326,12 +325,12 @@ class ProblemDefinition:
                 changed = True
         return changed
 
-    def interfaces(self) -> list[InterfaceNode]:
+    def interfaces(self) -> list[FEAComponentNode]:
         """All FEA interfaces in their canonical tree order."""
         loads = self.loads
         return loads.interfaces() if loads is not None else []
 
-    def amplitude_interfaces(self) -> list[InterfaceNode]:
+    def amplitude_interfaces(self) -> list[FEAComponentNode]:
         """Interfaces represented by columns in the load-step matrix.
 
         An interface is an amplitude-bearing load when its schema declares one
@@ -368,7 +367,7 @@ class ProblemDefinition:
 
     def part_interface_for_instance(
         self, instance: InstanceNode | str | None
-    ) -> PartInterfaceNode | None:
+    ) -> PartNode | None:
         """Return the geometry Part interface that owns one Instance."""
         if isinstance(instance, InstanceNode):
             return self.owner_of_instance(instance)
@@ -517,7 +516,7 @@ class ProblemDefinition:
             for instance in part.instances()
             if instance.name
         }
-        parts: dict[str, PartInterfaceNode] = {}
+        parts: dict[str, PartNode] = {}
         for part in self.part_interfaces():
             if part.name:
                 parts[part.name] = part
@@ -549,7 +548,7 @@ class ProblemDefinition:
                         field,
                         reference_points.get(
                             current.name
-                            if isinstance(current, InterfaceNode)
+                            if isinstance(current, FEAComponentNode)
                             else interface.pending_reference_name(field)
                         ),
                     )
@@ -558,7 +557,7 @@ class ProblemDefinition:
             if material.part not in self.part_interfaces():
                 target = parts.get(
                     material.part.resolved_part_name()
-                    if isinstance(material.part, PartInterfaceNode)
+                    if isinstance(material.part, PartNode)
                     else material.pending_part_name
                 )
                 if target is not None:
@@ -574,8 +573,8 @@ class ProblemDefinition:
                     for key, values in step.items()
                     if (
                         target := key
-                        if isinstance(key, InterfaceNode) and key in interfaces.values()
-                        else interfaces.get(key.name if isinstance(key, InterfaceNode) else str(key))
+                        if isinstance(key, FEAComponentNode) and key in interfaces.values()
+                        else interfaces.get(key.name if isinstance(key, FEAComponentNode) else str(key))
                     )
                     is not None
                 }
@@ -589,8 +588,8 @@ class ProblemDefinition:
                 for item in objective.jacobian_needed
                 if (
                     target := item
-                    if isinstance(item, InterfaceNode) and item in interfaces.values()
-                    else interfaces.get(item.name if isinstance(item, InterfaceNode) else str(item))
+                    if isinstance(item, FEAComponentNode) and item in interfaces.values()
+                    else interfaces.get(item.name if isinstance(item, FEAComponentNode) else str(item))
                 )
                 is not None
             ]
@@ -607,7 +606,7 @@ class ProblemDefinition:
                 current = config.get("target")
                 if current not in self.part_interfaces():
                     name = str(config.pop("part_name", "") or "").strip()
-                    target = parts.get(current.name if isinstance(current, PartInterfaceNode) else name)
+                    target = parts.get(current.name if isinstance(current, PartNode) else name)
                     if target is None and not name and len(boundary) == 1:
                         target = boundary[0]
                     if target is not None:
@@ -635,7 +634,7 @@ class ProblemDefinition:
                         config.pop("target", None)
 
     def set_interface_reference(
-        self, interface: InterfaceNode, field: str, value: Node | str | None
+        self, interface: FEAComponentNode, field: str, value: Node | str | None
     ) -> bool:
         """Set one load-to-Instance or load-to-reference-point link."""
         if interface not in self.interfaces():
@@ -653,7 +652,7 @@ class ProblemDefinition:
                 for item in self.interfaces()
                 if item.interface_type == "ReferencePoint"
             }
-            expected = InterfaceNode
+            expected = FEAComponentNode
         else:
             return False
 
@@ -666,7 +665,7 @@ class ProblemDefinition:
         if field in INSTANCE_REFERENCE_FIELDS and not isinstance(target, InstanceNode):
             return False
         if field in REFERENCE_POINT_FIELDS and (
-            not isinstance(target, InterfaceNode)
+            not isinstance(target, FEAComponentNode)
             or target.interface_type != "ReferencePoint"
         ):
             return False
@@ -674,15 +673,18 @@ class ProblemDefinition:
         return True
 
     def set_material_part(
-        self, material: MaterialNode, value: PartInterfaceNode | str | None
+        self, material: MaterialNode, value: PartNode | str | None
     ) -> bool:
         """Bind one material interface to a geometry Part object."""
         if material not in self.material_nodes():
             return False
-        if isinstance(value, PartInterfaceNode):
+        if isinstance(value, PartNode):
             target = value
         else:
             name = str(value or "").strip()
+            if not name:
+                material.part_name = ""
+                return True
             target = next(
                 (
                     part
@@ -697,12 +699,12 @@ class ProblemDefinition:
         return True
 
     def set_geometry_updater_target(
-        self, config: dict, value: PartInterfaceNode | str | None
+        self, config: dict, value: PartNode | str | None
     ) -> bool:
         """Bind a geometry optimizer config to one boundary Part object."""
         if self.updater is None or config not in self.updater.geometry:
             return False
-        target = value if isinstance(value, PartInterfaceNode) else self.part_interface_node(
+        target = value if isinstance(value, PartNode) else self.part_interface_node(
             str(value or "").strip()
         )
         if target is None or target not in self.boundary_part_nodes():
@@ -729,35 +731,36 @@ class ProblemDefinition:
         config.pop("interface_name", None)
         return True
 
-    def add_geometry_updater(self, target: PartInterfaceNode) -> dict:
+    def add_geometry_updater(self, target: PartNode) -> dict:
         """Create a geometry optimizer bound directly to one boundary Part."""
         if self.updater is None or target not in self.boundary_part_nodes():
-            raise ValueError("A geometry updater requires a boundary Part target")
+            raise ValueError(localized_message("ui.errors.problem.a_geometry_updater_requires_a_boundary_part_target"))
         config = self.updater.add_geometry_config()
         config.pop("part_name", None)
         config["target"] = target
+        self.align_surface_dependent_state()
         return config
 
     def add_material_updater(self, target: MaterialNode) -> dict:
         """Create a material optimizer bound directly to one design material."""
         if self.updater is None or target.name not in self.design_material_names():
-            raise ValueError("A material updater requires a design material target")
+            raise ValueError(localized_message("ui.errors.problem.a_material_updater_requires_a_design_material_target"))
         config = self.updater.add_materials_config()
         config.pop("interface_name", None)
         config["target"] = target
         return config
 
     def set_jacobian_interfaces(
-        self, values: list[InterfaceNode | str]
+        self, values: list[FEAComponentNode | str]
     ) -> None:
         """Bind the objective's Jacobian list to amplitude-load objects."""
         if self.objective is None:
             return
         available = {item.name: item for item in self.amplitude_interfaces()}
         self.objective.jacobian_needed = [
-            item if isinstance(item, InterfaceNode) else available[str(item)]
+            item if isinstance(item, FEAComponentNode) else available[str(item)]
             for item in values
-            if isinstance(item, InterfaceNode) or str(item) in available
+            if isinstance(item, FEAComponentNode) or str(item) in available
         ]
 
     # ------------------------------------------------------ tree mutations
@@ -797,7 +800,7 @@ class ProblemDefinition:
         self,
         surface: SurfaceNode,
         index: int | None = None,
-        interface: PartInterfaceNode | None = None,
+        interface: PartNode | None = None,
     ) -> SurfaceNode:
         """Insert ``surface`` and synchronise all surface-indexed state.
 
@@ -808,15 +811,15 @@ class ProblemDefinition:
         owner = interface or self.default_surface_part_node()
         if owner is None:
             raise ValueError(
-                "This problem has no geometry interface that holds surfaces"
+                localized_message("ui.errors.problem.this_problem_has_no_geometry_interface_that_holds_surfaces")
             )
         if owner not in geometry.interfaces():
-            raise ValueError("The target geometry interface is not in the tree")
+            raise ValueError(localized_message("ui.errors.problem.the_target_geometry_interface_is_not_in_the_tree"))
 
         surfaces = owner.surfaces()
         target_index = len(surfaces) if index is None else index
         if not 0 <= target_index <= len(surfaces):
-            raise IndexError(f"Surface insertion index out of range: {target_index}")
+            raise IndexError(localized_message("ui.errors.problem.surface_insertion_index_out_of_range_value", value_0=target_index))
 
         owner.add_surface(surface, index=target_index)
         self._insert_surface_state(owner, target_index)
@@ -824,7 +827,7 @@ class ProblemDefinition:
         self._refresh_surface_flags()
         return surface
 
-    def default_surface_part_node(self) -> PartInterfaceNode | None:
+    def default_surface_part_node(self) -> PartNode | None:
         """Last geometry interface able to hold boundary surfaces."""
         candidates = self.boundary_part_nodes()
         return candidates[-1] if candidates else None
@@ -834,11 +837,11 @@ class ProblemDefinition:
         geometry = self._require_geometry()
         owner = geometry.owner(surface)
         if owner is None:
-            raise ValueError("The surface is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_surface_is_not_part_of_this_problem"))
         position = owner.surfaces().index(surface)
         clone = surface.clone()
         if not isinstance(clone, SurfaceNode):  # defensive for custom nodes
-            raise TypeError("A surface clone must remain a SurfaceNode")
+            raise TypeError(localized_message("ui.errors.problem.a_surface_clone_must_remain_a_surfacenode"))
         return self.add_surface(clone, position + 1, interface=owner)
 
     def remove_surface(self, surface: SurfaceNode) -> None:
@@ -846,9 +849,9 @@ class ProblemDefinition:
         geometry = self._require_geometry()
         owner = geometry.owner(surface)
         if owner is None:
-            raise ValueError("The surface is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_surface_is_not_part_of_this_problem"))
         if len(geometry.surfaces()) <= 1:
-            raise ValueError("A problem must keep at least one surface")
+            raise ValueError(localized_message("ui.errors.problem.a_problem_must_keep_at_least_one_surface"))
         position = owner.surfaces().index(surface)
         self._remove_surface_state(owner, position)
         owner.remove_child(surface)
@@ -893,7 +896,7 @@ class ProblemDefinition:
         return f"{prefix}{index}"
 
     def suggest_instance_name(
-        self, interface: PartInterfaceNode, prefix: str | None = None
+        self, interface: PartNode, prefix: str | None = None
     ) -> str:
         """Return the first unused Instance name in the Assembly."""
         base = (prefix or interface.resolved_part_name() or "instance").strip()
@@ -910,20 +913,20 @@ class ProblemDefinition:
         return candidate
 
     def add_instance(
-        self, interface: PartInterfaceNode, instance: InstanceNode
+        self, interface: PartNode, instance: InstanceNode
     ) -> InstanceNode:
         """Add one uniquely named Instance to a geometry Part."""
         if interface not in self.part_interfaces():
-            raise ValueError("The target Part interface is not in the tree")
+            raise ValueError(localized_message("ui.errors.problem.the_target_part_interface_is_not_in_the_tree"))
         name = instance.name.strip()
         if not name:
-            raise ValueError("Instance name cannot be empty")
+            raise ValueError(localized_message("ui.errors.problem.instance_name_cannot_be_empty"))
         if any(
             declared.name == name
             for part in self.part_interfaces()
             for declared in part.instances()
         ):
-            raise ValueError(f"Instance {name!r} already exists in the Assembly")
+            raise ValueError(localized_message("ui.errors.problem.instance_value_already_exists_in_the_assembly", value_0=name))
         instance.name = name
         added = interface.add_instance(instance)
         self.resolve_references()
@@ -933,9 +936,9 @@ class ProblemDefinition:
         """Remove one Instance, keeping a Part's first identity Instance."""
         owner = self.owner_of_instance(instance)
         if owner is None:
-            raise ValueError("The Instance is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_instance_is_not_part_of_this_problem"))
         if len(owner.instances()) <= 1:
-            raise ValueError("A Part must keep at least one Instance")
+            raise ValueError(localized_message("ui.errors.problem.a_part_must_keep_at_least_one_instance"))
         owner.remove_child(instance)
         for interface in self.interfaces():
             for field, attr in INSTANCE_REFERENCE_FIELDS.items():
@@ -965,20 +968,20 @@ class ProblemDefinition:
         return True
 
     def add_cad_operation(
-        self, interface: PartInterfaceNode, operation: CADOperationNode
+        self, interface: PartNode, operation: CADOperationNode
     ) -> CADOperationNode:
         """Append one CAD operation to a CAD Part's feature history."""
         if interface not in self.part_interfaces():
-            raise ValueError("The target Part interface is not in the tree")
-        if interface.interface_type != "CADPartInterface":
-            raise TypeError("CAD operations can only belong to a CADPartInterface.")
+            raise ValueError(localized_message("ui.errors.problem.the_target_part_interface_is_not_in_the_tree"))
+        if interface.interface_type != "CADPart":
+            raise TypeError(localized_message("ui.errors.problem.cad_operations_can_only_belong_to_a_cadpartinterface"))
         return interface.add_cad_operation(operation)
 
     def remove_cad_operation(self, operation: CADOperationNode) -> None:
         """Remove one CAD feature from its owning Part."""
         owner = self.owner_of_cad_operation(operation)
         if owner is None:
-            raise ValueError("The CAD operation is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_cad_operation_is_not_part_of_this_problem"))
         dependents = [
             item
             for item in owner.cad_operations()
@@ -989,7 +992,7 @@ class ProblemDefinition:
         if dependents:
             names = ", ".join(item.operation_id for item in dependents)
             raise ValueError(
-                f"Cannot remove {operation.operation_id!r}; it is used by {names}."
+                localized_message("ui.errors.problem.cannot_remove_value_it_is_used_by_value", value_0=operation.operation_id, value_1=names)
             )
         owner.remove_child(operation)
 
@@ -1039,8 +1042,8 @@ class ProblemDefinition:
         return True
 
     def add_part_interface(
-        self, interface: PartInterfaceNode, index: int | None = None
-    ) -> PartInterfaceNode:
+        self, interface: PartNode, index: int | None = None
+    ) -> PartNode:
         """Insert one geometry interface (Part + Instances) into the tree."""
         geometry = self._require_geometry()
         unnamed = not interface.name
@@ -1054,7 +1057,7 @@ class ProblemDefinition:
             ):
                 instances[0].name = f"{interface.name}-1"
         if any(item.name == interface.name for item in geometry.interfaces()):
-            raise ValueError(f"Geometry interface {interface.name!r} already exists")
+            raise ValueError(localized_message("ui.errors.problem.geometry_interface_value_already_exists", value_0=interface.name))
 
         used_instances = {
             instance.name
@@ -1066,7 +1069,7 @@ class ProblemDefinition:
                 used_instances.add(instance.name)
                 continue
             if not unnamed:
-                raise ValueError(f"Instance {instance.name!r} already exists")
+                raise ValueError(localized_message("ui.errors.problem.instance_value_already_exists", value_0=instance.name))
             base = interface.resolved_part_name() or interface.name or "part"
             candidate = f"{base}-{instance_index}"
             suffix = instance_index
@@ -1080,25 +1083,25 @@ class ProblemDefinition:
         self.align_surface_dependent_state()
         return interface
 
-    def clone_part_interface(self, interface: PartInterfaceNode) -> PartInterfaceNode:
+    def clone_part_interface(self, interface: PartNode) -> PartNode:
         """Duplicate a geometry interface (and its surfaces) below itself."""
         geometry = self._require_geometry()
         if interface not in geometry.children:
-            raise ValueError("The geometry interface is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_geometry_interface_is_not_part_of_this_problem"))
         position = geometry.children.index(interface)
         clone = interface.clone()
-        if not isinstance(clone, PartInterfaceNode):
-            raise TypeError("A geometry clone must remain a PartInterfaceNode")
+        if not isinstance(clone, PartNode):
+            raise TypeError(localized_message("ui.errors.problem.a_geometry_clone_must_remain_a_partinterfacenode"))
         clone.name = ""
         return self.add_part_interface(clone, index=position + 1)
 
-    def remove_part_interface(self, interface: PartInterfaceNode) -> None:
+    def remove_part_interface(self, interface: PartNode) -> None:
         """Remove a geometry interface together with its surfaces."""
         geometry = self._require_geometry()
         if interface not in geometry.children:
-            raise ValueError("The geometry interface is not part of this problem")
+            raise ValueError(localized_message("ui.errors.problem.the_geometry_interface_is_not_part_of_this_problem"))
         if len(geometry.interfaces()) <= 1:
-            raise ValueError("A problem must keep at least one geometry interface")
+            raise ValueError(localized_message("ui.errors.problem.a_problem_must_keep_at_least_one_geometry_interface"))
         surfaces = interface.surfaces()
         for _ in surfaces:
             self._remove_surface_state(interface, 0)
@@ -1119,7 +1122,7 @@ class ProblemDefinition:
         self.align_surface_dependent_state()
         self._refresh_surface_flags()
 
-    def move_part_interface(self, interface: PartInterfaceNode, offset: int) -> bool:
+    def move_part_interface(self, interface: PartNode, offset: int) -> bool:
         """Move a geometry interface by ``offset`` positions."""
         geometry = self._require_geometry()
         source = geometry.children.index(interface)
@@ -1133,8 +1136,8 @@ class ProblemDefinition:
         return True
 
     def add_interface(
-        self, interface: InterfaceNode, index: int | None = None
-    ) -> InterfaceNode:
+        self, interface: FEAComponentNode, index: int | None = None
+    ) -> FEAComponentNode:
         """Insert an interface into the load section."""
         self._require_loads().add_interface(interface, index=index)
         self.resolve_references()
@@ -1158,18 +1161,16 @@ class ProblemDefinition:
             )
             root.add_section(section, index=insert_at)
         section.add_material(material, index=index)
-        if material.part is None and len(self.part_interfaces()) == 1:
-            material.set_part(self.part_interfaces()[0])
         self.resolve_references()
         return material
 
     def clone_material(self, material: MaterialNode) -> MaterialNode:
         section = self.materials
         if section is None or material not in section.materials():
-            raise ValueError("Material is not part of this problem.")
+            raise ValueError(localized_message("ui.errors.problem.material_is_not_part_of_this_problem"))
         clone = material.clone()
         if not isinstance(clone, MaterialNode):
-            raise TypeError("A material clone must remain a MaterialNode")
+            raise TypeError(localized_message("ui.errors.problem.a_material_clone_must_remain_a_materialnode"))
         clone.name = f"{material.name}_copy" if material.name else ""
         names = {item.name for item in self.material_nodes()}
         base = clone.name or "material"
@@ -1182,9 +1183,9 @@ class ProblemDefinition:
     def remove_material(self, material: MaterialNode) -> None:
         section = self.materials
         if section is None or material not in section.materials():
-            raise ValueError("Material is not part of this problem.")
+            raise ValueError(localized_message("ui.errors.problem.material_is_not_part_of_this_problem"))
         if len(section.materials()) <= 1:
-            raise ValueError("A problem must keep at least one material interface")
+            raise ValueError(localized_message("ui.errors.problem.a_problem_must_keep_at_least_one_material_interface"))
         section.remove_child(material)
         if self.updater is not None:
             for config in self.updater.materials:
@@ -1206,17 +1207,17 @@ class ProblemDefinition:
         return True
 
     def clone_interface(
-        self, interface: InterfaceNode, name_prefix: str
-    ) -> InterfaceNode:
+        self, interface: FEAComponentNode, name_prefix: str
+    ) -> FEAComponentNode:
         """Duplicate an interface below itself under a fresh reference name."""
         loads = self._require_loads()
         clone = interface.clone()
-        if not isinstance(clone, InterfaceNode):  # defensive for custom nodes
-            raise TypeError("An interface clone must remain an InterfaceNode")
+        if not isinstance(clone, FEAComponentNode):  # defensive for custom nodes
+            raise TypeError(localized_message("ui.errors.problem.an_interface_clone_must_remain_an_interfacenode"))
         clone.name = self.suggest_interface_name(name_prefix)
         return self.add_interface(clone, loads.children.index(interface) + 1)
 
-    def move_interface(self, interface: InterfaceNode, offset: int) -> bool:
+    def move_interface(self, interface: FEAComponentNode, offset: int) -> bool:
         """Move an interface by ``offset`` positions without changing its name."""
         loads = self._require_loads()
         source = loads.children.index(interface)
@@ -1229,7 +1230,7 @@ class ProblemDefinition:
         )
         return True
 
-    def remove_interface(self, interface: InterfaceNode) -> None:
+    def remove_interface(self, interface: FEAComponentNode) -> None:
         """Remove an interface and every reference to its name."""
         self._require_loads().remove_child(interface)
         if self.steps is not None:
@@ -1246,7 +1247,7 @@ class ProblemDefinition:
 
     def rename_interface(
         self,
-        interface: InterfaceNode | PartInterfaceNode | MaterialNode,
+        interface: FEAComponentNode | PartNode | MaterialNode,
         new_name: str,
     ) -> bool:
         """Rename one named model interface and cascade its references.
@@ -1258,15 +1259,15 @@ class ProblemDefinition:
         Existing object references follow their target automatically; only the
         persisted/UI name projection changes.
         """
-        if isinstance(interface, PartInterfaceNode):
+        if isinstance(interface, PartNode):
             return self._rename_part_interface(interface, new_name)
         if isinstance(interface, MaterialNode):
             return self._rename_material_interface(interface, new_name)
-        if isinstance(interface, InterfaceNode):
+        if isinstance(interface, FEAComponentNode):
             return self._rename_load_interface(interface, new_name)
         return False
 
-    def rename_part(self, interface: PartInterfaceNode, part_name: str) -> bool:
+    def rename_part(self, interface: PartNode, part_name: str) -> bool:
         """Rename a generated Assembly Part and its identity Instance.
 
         ``part_name`` may be empty, in which case the Part again follows the
@@ -1276,7 +1277,7 @@ class ProblemDefinition:
         """
         if interface not in self.part_interfaces():
             return False
-        if interface.interface_type == "TorchFEAPartInterface":
+        if interface.interface_type == "TorchFEAPart":
             # The archive owns the physical Part name.  Its UI interface may
             # still be renamed through ``rename_interface`` above.
             return False
@@ -1303,7 +1304,7 @@ class ProblemDefinition:
         return True
 
     def _rename_load_interface(
-        self, interface: InterfaceNode, new_name: str
+        self, interface: FEAComponentNode, new_name: str
     ) -> bool:
         """Rename one load interface; object references follow automatically."""
         if interface not in self.interfaces():
@@ -1322,7 +1323,7 @@ class ProblemDefinition:
         return True
 
     def _rename_part_interface(
-        self, interface: PartInterfaceNode, new_name: str
+        self, interface: PartNode, new_name: str
     ) -> bool:
         """Rename a geometry interface while its dependants retain the object."""
         if interface not in self.part_interfaces():
@@ -1342,7 +1343,7 @@ class ProblemDefinition:
         # actual Part and Instance names are owned by the imported archive;
         # treating it as a physical-Part rename would make load references
         # disagree with the archive on the next synchronization.
-        imported_part = interface.interface_type == "TorchFEAPartInterface"
+        imported_part = interface.interface_type == "TorchFEAPart"
         new_part_name = (
             old_part_name
             if imported_part
@@ -1383,7 +1384,7 @@ class ProblemDefinition:
 
     def _can_rename_default_instance(
         self,
-        interface: PartInterfaceNode,
+        interface: PartNode,
         old_part_name: str,
         new_part_name: str,
     ) -> bool:
@@ -1400,7 +1401,7 @@ class ProblemDefinition:
 
     @staticmethod
     def _default_instance(
-        interface: PartInterfaceNode, part_name: str
+        interface: PartNode, part_name: str
     ) -> InstanceNode | None:
         """Return the conventional identity Instance, if it still exists."""
         conventional = f"{part_name}-1"
@@ -1411,7 +1412,7 @@ class ProblemDefinition:
 
     def _rename_default_instance(
         self,
-        interface: PartInterfaceNode,
+        interface: PartNode,
         old_part_name: str,
         new_part_name: str,
     ) -> None:
@@ -1425,12 +1426,12 @@ class ProblemDefinition:
     # ---------------------------------------------------- mutation helpers
     def _require_geometry(self) -> GeometryNode:
         if self.geometry is None:
-            raise ValueError("This problem has no geometry section")
+            raise ValueError(localized_message("ui.errors.problem.this_problem_has_no_geometry_section"))
         return self.geometry
 
     def _require_loads(self) -> LoadsNode:
         if self.loads is None:
-            raise ValueError("This problem has no loads section")
+            raise ValueError(localized_message("ui.errors.problem.this_problem_has_no_loads_section"))
         return self.loads
 
     @staticmethod
@@ -1488,7 +1489,7 @@ class ProblemDefinition:
             ):
                 yield constraint["params"]
 
-    def part_interface_node(self, name: str) -> PartInterfaceNode | None:
+    def part_interface_node(self, name: str) -> PartNode | None:
         """Boundary part-interface node by name (``None`` when unknown)."""
         if not name:
             return None
@@ -1496,17 +1497,17 @@ class ProblemDefinition:
             (node for node in self.part_interfaces() if node.name == name), None
         )
 
-    def config_part_node(self, config: dict) -> PartInterfaceNode | None:
+    def config_part_node(self, config: dict) -> PartNode | None:
         """Boundary Part object bound to a geometry sub-optimizer config."""
         target = config.get("target") if config is not None else None
-        return target if isinstance(target, PartInterfaceNode) else None
+        return target if isinstance(target, PartNode) else None
 
     def config_material_node(self, config: dict) -> MaterialNode | None:
         """Design-material object bound to a material sub-optimizer config."""
         target = config.get("target") if config is not None else None
         return target if isinstance(target, MaterialNode) else None
 
-    def _geometry_config_for_part(self, part: PartInterfaceNode) -> dict | None:
+    def _geometry_config_for_part(self, part: PartNode) -> dict | None:
         """Return the geometry updater config targeting ``part``."""
         updater = self.updater
         if updater is None:
@@ -1516,7 +1517,7 @@ class ProblemDefinition:
                 return config
         return None
 
-    def _insert_surface_state(self, part: PartInterfaceNode, index: int) -> None:
+    def _insert_surface_state(self, part: PartNode, index: int) -> None:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
@@ -1541,7 +1542,7 @@ class ProblemDefinition:
                     row.insert(index, 2.5)
             parameters["min_distance"] = matrix
 
-    def _remove_surface_state(self, part: PartInterfaceNode, index: int) -> None:
+    def _remove_surface_state(self, part: PartNode, index: int) -> None:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
@@ -1578,7 +1579,7 @@ class ProblemDefinition:
             parameters["min_distance"] = matrix
 
     def _swap_surface_state(
-        self, part: PartInterfaceNode, first: int, second: int
+        self, part: PartNode, first: int, second: int
     ) -> None:
         config = self._geometry_config_for_part(part)
         if config is None:
@@ -1632,7 +1633,7 @@ class ProblemDefinition:
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
         if data.get("version") != 3:
-            raise ValueError(f"Unsupported .morph version: {data.get('version')}")
+            raise ValueError(localized_message("ui.errors.problem.unsupported_morph_version_value", value_0=data.get('version')))
         root = Node.from_dict(data["root"])
         problem = cls(
             scheme=data["scheme"],

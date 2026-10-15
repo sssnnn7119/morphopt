@@ -11,9 +11,8 @@ def symmetry_item(item_type: str, surfaces: list[SurfaceNode]) -> dict | None:
         compatible = [index for index, surface in enumerate(surfaces) if S.surface_factory_for_type(surface.surface_type) == spec["factory"]]
         if not compatible or (spec.get("related_surface") and len(compatible) < 2):
             return None
-        item["surface_index"] = compatible[0]
         if spec.get("related_surface"):
-            item["related_surface_index"] = compatible[1]
+            item["related_surface_index"] = None
     return item
 
 
@@ -173,10 +172,10 @@ class UpdaterItems:
 
 def editor_signature(problem: ProblemDefinition, sections: list[UpdaterSection], category: str | None) -> tuple:
     """Structural changes which require rebuilding an updater page, excluding values."""
-    from ..model.problem import PartInterfaceNode
+    from ..model.problem import PartNode
     records = []
     for section in sections:
-        surfaces = section.target.surfaces() if isinstance(section.target, PartInterfaceNode) else []
+        surfaces = section.target.surfaces() if isinstance(section.target, PartNode) else []
         item_order = tuple(
             tuple((id(item), item["type"], item.get("custom_class")) for item in section.config.get(key, []))
             for key in ("objective_functions", "constraints", "symmetry_constraints")

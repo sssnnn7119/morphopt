@@ -5,13 +5,13 @@
 interface owns that Part together with the Instances that place it.  This
 collection deliberately knows nothing about surfaces — boundary-parameterised
 geometry (the shape-optimization
-:class:`morphopt.shapeopt.BoundaryPartInterface`) adds that concept on top of
+:class:`morphopt.shapeopt.BoundaryPart`) adds that concept on top of
 the part interface, and the geometry updater binds to *it*.
 
 ```python
 class GeometryParams(morphopt.GeometryParams):
     def define_interface(self) -> None:
-        self.add_interface(self.INPPartInterface("rec.inp"), name="block")
+        self.add_interface(self.INPPart("rec.inp"), name="block")
 ```
 """
 
@@ -32,12 +32,12 @@ __all__ = ["GeometryParams"]
 class GeometryParams(BaseParams):
     """Ordered list of named Part interfaces (Parts plus their Instances)."""
 
-    from .partinterface import (
-        BasePartInterface,
-        CADPartInterface,
-        BoxPartInterface,
-        INPPartInterface,
-        TorchFEAPartInterface,
+    from .parts import (
+        BasePart,
+        CADPart,
+        BoxPart,
+        INPPart,
+        TorchFEAPart,
     )
 
     def instance_names(self) -> list[str]:

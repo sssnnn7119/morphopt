@@ -26,63 +26,64 @@
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `baseparam.py` | `BaseParams` | 命名接口字典、批量协议转发、设计变量拼接。 |
+| `baseparam.py` | `BaseParams` | 命名组件字典、批量协议转发、设计变量拼接。 |
+| `base_model_component.py` | `BaseModelComponent` | 单个几何、FEA、材料和曲面定义共享的初始化、持久化与可视化协议。 |
 | `params.py` | `Params` | Geometry、FEA、Materials 根组合与 FEA 建立。 |
 | `geometry.py` | `GeometryParams` | Part 接口集合到 Assembly。 |
 | `feaparams.py` | `FEAParams` | FEA 接口、载荷步和 FEAController 建立。 |
-| `materials.py` | `MaterialsParams` | 材料接口集合与材料分配。 |
+| `materialsparams.py` | `MaterialsParams` | 材料接口集合与材料分配。 |
 
-### `optcore/modelparams/partinterface/`
+### `optcore/modelparams/parts/`
 
 | 文件 | 主要类型/函数 | 责任 |
 |---|---|---|
-| `basepartinterface.py` | `BasePartInterface` | 一个 Part、多个 instance、位姿和 Assembly 添加。 |
-| `primitivepartinterface.py` | `BoxPartInterface` | 结构化长方体网格及坐标面节点/表面集合。 |
-| `cadpartinterface.py` | `CADPartInterface` | 调用 TorchFEA CAD 操作历史生成 Part 和网格。 |
-| `inppartinterface.py` | `INPPartInterface` | 从 Abaqus `.inp` 导入固定 Part。 |
-| `torchfeapartinterface.py` | `TorchFEAPartInterface`, `resolve_model_path`, `load_model_assembly` | 从 TorchFEA `.npz` 存档导入 Part/instances。 |
+| `base_part.py` | `BasePart` | 一个 Part、多个 instance、位姿和 Assembly 添加。 |
+| `box_part.py` | `BoxPart` | 结构化长方体网格及坐标面节点/表面集合。 |
+| `cad_part.py` | `CADPart` | 调用 TorchFEA CAD 操作历史生成 Part 和网格。 |
+| `inp_part.py` | `INPPart` | 从 Abaqus `.inp` 导入固定 Part。 |
+| `torch_fea_part.py` | `TorchFEAPart`, `resolve_model_path`, `load_model_assembly` | 从 TorchFEA `.npz` 存档导入 Part/instances。 |
 | `__init__.py` | Part API 导出 | 子包公共导入。 |
 
-### `optcore/modelparams/materialinterface/`
+### `optcore/modelparams/materials/`
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `basematerialinterface.py` | `BaseMaterialInterface` | Part/元素选择与材料接口公共状态。 |
-| `homogeneousmaterial.py` | `HomogeneousMaterial` | 均质材料分配。 |
-| `materialmodels.py` | `MaterialModels`、参数 dataclass | TorchFEA 本构模型的类型化参数。 |
+| `base_material.py` | `BaseMaterial` | Part/元素选择与材料接口公共状态。 |
+| `homogeneous_material.py` | `HomogeneousMaterial` | 均质材料分配。 |
+| `models.py` | `MaterialModels`、参数 dataclass | TorchFEA 本构模型的类型化参数。 |
 | `__init__.py` | 材料 API 导出 | 子包公共导入。 |
 
-### `optcore/modelparams/feainterface/`
+### `optcore/modelparams/fea/`
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `basefeainterface.py` | `BaseFEAInterface` | 所有 FEA 声明的名称、数值覆盖与协议基类。 |
-| `bodyforceinterface.py` | `BodyforceInterface` | 体力。 |
-| `pressureinterface.py` | `PressureInterface` | 表面压力。 |
-| `boundaryconditioninterface.py` | `BoundaryConditionInterface`, `BoundaryConditionRPInterface` | 节点/参考点自由度约束。 |
-| `referencepointinterface.py` | `ReferencePointInterface` | 参考点。 |
-| `pointinterface.py` | `ConcentratedForceInterface`, `ConcentratedMomentInterface` | 参考点集中力与力矩。 |
-| `coupleinterface.py` | `CoupleInterface` | 节点集合到参考点的耦合。 |
-| `contactinterface.py` | `ContactInterface`, `ContactSelfInterface` | 双面与自接触。 |
-| `springinterface.py` | `SpringToGroundInterface`, `SpringBetweenRPsInterface`, `PenaltyDoFInterface` | 弹簧和自由度惩罚。 |
+| `base_component.py` | `BaseFEAComponent` | 所有 FEA 声明的名称、数值覆盖与协议基类。 |
+| `body_force.py` | `BodyForce` | 体力。 |
+| `pressure.py` | `Pressure` | 表面压力。 |
+| `boundary_condition.py` | `BoundaryCondition`, `ReferencePointBoundaryCondition` | 节点/参考点自由度约束。 |
+| `reference_point.py` | `ReferencePoint` | 参考点。 |
+| `point_load.py` | `ConcentratedForce`, `ConcentratedMoment` | 参考点集中力与力矩。 |
+| `couple.py` | `Couple` | 节点集合到参考点的耦合。 |
+| `contact.py` | `Contact`, `SelfContact` | 双面与自接触。 |
+| `spring.py` | `SpringToGround`, `SpringBetweenRPs`, `PenaltyDoF` | 弹簧和自由度惩罚。 |
 | `__init__.py` | FEA 接口 API 导出 | 子包公共导入。 |
 
 ## `shapeopt/`
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `__init__.py` | `BoundaryPartInterface`, `UpdaterBoundaryPart` | 形状扩展公开 API。 |
-| `boundarypartinterface.py` | `BoundaryPartInterface` | 曲面边界、网格、Part 和形状设计变量。 |
+| `__init__.py` | `BoundaryPart`, `UpdaterBoundaryPart` | 形状扩展公开 API。 |
+| `boundary_part.py` | `BoundaryPart` | 曲面边界、网格、Part 和形状设计变量。 |
 | `meshgenerator.py` | `MeshGenerator` | 曲面文件到体网格/INP 的管线。 |
-| `update_boundarypart.py` | `UpdaterBoundaryPart` | 一个边界 Part 的局部 L-BFGS 更新。 |
+| `update_boundary_part.py` | `UpdaterBoundaryPart` | 一个边界 Part 的局部 L-BFGS 更新。 |
 
-### `shapeopt/surfaceinterfaces/`
+### `shapeopt/surfaces/`
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `basesurfaceinterface.py` | `BaseSurfaceInterface`, `CpBasedSurfaceInterface`, `FixedSurface` | 曲面通用映射、控制点层和固定三角面。 |
-| `bspsurfaceinterface.py` | `BspSurfaceInterface` | B-spline 曲面、STEP 与圆柱初始化。 |
-| `cpgeosurfaceinterface.py` | `CPGEOSurfaceInterface` | CPGEO 曲面、STL、圆柱/球初始化。 |
+| `base_surface.py` | `BaseSurface`, `ControlPointSurface`, `FixedSurface` | 曲面通用映射、控制点层和固定三角面。 |
+| `bsp_surface.py` | `BspSurface` | B-spline 曲面、STEP 与圆柱初始化。 |
+| `cpgeo_surface.py` | `CPGEOSurface` | CPGEO 曲面、STL、圆柱/球初始化。 |
 | `__init__.py` | 曲面 API 导出 | 子包公共导入。 |
 
 ### `shapeopt/objectivefuncs/`
@@ -120,8 +121,8 @@
 
 | 文件 | 主要类型 | 责任 |
 |---|---|---|
-| `offsetboundarypartinterface.py` | `OffsetBoundaryPartInterface` | 内腔偏置层构建、网格检查及可微节点更新。 |
-| `update_offsetboundarypart.py` | `UpdaterOffsetBoundaryPart` | 复用形状更新流程，仅绑定偏置 Part。 |
+| `offset_boundary_part.py` | `OffsetBoundaryPart` | 内腔偏置层构建、网格检查及可微节点更新。 |
+| `update_offset_boundary_part.py` | `UpdaterOffsetBoundaryPart` | 复用形状更新流程，仅绑定偏置 Part。 |
 | `constraints.py` | `InwardCurvatureRadius`, `OffsetSurfaceMinThickness` | 偏置层的曲率和间距约束。 |
 | `__init__.py` | 子包入口 | 只导出偏置专用组件。 |
 

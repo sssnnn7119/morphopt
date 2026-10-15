@@ -22,7 +22,11 @@ def test_domain_packages_expose_only_concrete_components() -> None:
     import morphopt.shapeopt as shapeopt
     import morphopt.simp as simp
 
-    assert shapeopt.__all__ == ["BoundaryPartInterface", "UpdaterBoundaryPart"]
+    assert shapeopt.__all__ == [
+        "BoundaryPart", "UpdaterBoundaryPart", "BaseSurfaceConstraints",
+        "SurfaceRelationConstraint", "BspSurfaceRelationConstraint",
+        "CPGEOSurfaceRelationConstraint",
+    ]
     assert simp.__all__ == ["SIMP_BSPFieldMaterials", "UpdaterSIMPMaterial"]
     assert not hasattr(shapeopt, "Params")
     assert not hasattr(shapeopt, "ObjectiveFunction")
@@ -56,7 +60,9 @@ def test_shape_starter_can_combine_a_simp_material_and_updater() -> None:
     density = get_template(problem.scheme).make_material("SIMP_BSPFieldMaterials")
     density.name = "density"
     problem.add_material(density)
-    assert density.part is part
+    assert density.part is None
+    assert density.part_name == ""
+    assert problem.set_material_part(density, part)
     problem.add_material_updater(density)
 
     source = ProblemSession(problem).source()

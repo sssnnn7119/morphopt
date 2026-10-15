@@ -4,24 +4,24 @@
 
 ## 能力组成
 
-形状优化由一个可更新的边界 Part、若干曲面接口、网格生成器和一个局部形状更新器组成。`BoundaryPartInterface` 把曲面控制变量映射为闭合边界、体网格和 TorchFEA Part；`UpdaterBoundaryPart` 在该 Part 的控制点空间内建立 L-BFGS 子问题。
+形状优化由一个可更新的边界 Part、若干曲面接口、网格生成器和一个局部形状更新器组成。`BoundaryPart` 把曲面控制变量映射为闭合边界、体网格和 TorchFEA Part；`UpdaterBoundaryPart` 在该 Part 的控制点空间内建立 L-BFGS 子问题。
 
 ```text
-BoundaryPartInterface : BasePartInterface + ProtocalUpdatable
- ├── BaseSurfaceInterface*
+BoundaryPart : BasePart + ProtocalUpdatable
+ ├── BaseSurface*
  ├── MeshGenerator → STEP/STL → Abaqus INP → torchfea.Part
  └── sensitivity / control points → UpdaterBoundaryPart
 ```
 
-## `BoundaryPartInterface`
+## `BoundaryPart`
 
-源码：`shapeopt/boundarypartinterface.py`；继承 `BasePartInterface`、`ProtocalUpdatable`。
+源码：`shapeopt/boundary_part.py`；继承 `BasePart`、`ProtocalUpdatable`。
 
 | 属性 | 可见性 | 说明 |
 |---|---|---|
 | `fea_seed_size` | 公开 | 目标体网格尺寸。 |
 | `mesh_order` | 公开 | 网格单元阶次。 |
-| `surfaceinterfaces` | 公开 | 该 Part 的曲面接口列表；索引定义曲面编号。 |
+| `surfaces` | 公开 | 该 Part 的曲面接口列表；索引定义曲面编号。 |
 | `_surfaces_defined` | 私有 | 曲面声明已完成标记。 |
 | `num_surface_interfaces` | 公开属性 | 当前曲面数量。 |
 | `num_variables` | 公开属性 | 所有可更新曲面的控制变量总数。 |
@@ -43,21 +43,21 @@ BoundaryPartInterface : BasePartInterface + ProtocalUpdatable
 | `save/load` | 保存/恢复每张曲面设计状态。 |
 | `get_meshes/plot` | 以曲面为单位提供可视化。 |
 
-曲面索引在每个 `BoundaryPartInterface` 内独立使用：`0` 通常是外表面，后续索引可表示腔体或其他边界。多个边界 Part 各自从零开始计数，形成清晰的 Part 局部编号空间。
+曲面索引在每个 `BoundaryPart` 内独立使用：`0` 通常是外表面，后续索引可表示腔体或其他边界。多个边界 Part 各自从零开始计数，形成清晰的 Part 局部编号空间。
 
 ## 曲面接口层
 
-源码目录：`shapeopt/surfaceinterfaces/`。
+源码目录：`shapeopt/surfaces/`。
 
 ```text
-BaseSurfaceInterface
-├── CpBasedSurfaceInterface
-│   ├── BspSurfaceInterface
-│   └── CPGEOSurfaceInterface
+BaseSurface
+├── ControlPointSurface
+│   ├── BspSurface
+│   └── CPGEOSurface
 └── FixedSurface
 ```
 
-### `BaseSurfaceInterface`
+### `BaseSurface`
 
 它继承初始化、保存和可视化协议，提供所有曲面的通用几何面：`map(uv)`、`get_normals(uv)`、`synchronize()`、`output_data()`、`get_surface_parameters()`、`set_surface_parameters()`、`get_geometry_values()`、`get_penalty_fairness()`、`get_points_weight()`、`get_mesh()`、`get_meshes()`、`plot()`。
 
@@ -70,7 +70,7 @@ BaseSurfaceInterface
 实现 `apply(surface)` 和 `reinitialize(surface)`。Part 更新或重建时自动调用对应钩子；
 所有约束均按列表顺序逐个执行。
 
-### `CpBasedSurfaceInterface`
+### `ControlPointSurface`
 
 控制点曲面的公共层，保存控制点、预加载投影数据和导数计算缓存。`control_points` 是公开属性；`get_surface_parameters()`、`set_surface_parameters()`、`update_variables()` 和 `num_variables` 使其参与 Part 的可更新变量块。`surface.relate(other, pose)` 创建后端专属的跨曲面关系约束，将源曲面的几何复制到目标曲面；两侧必须使用同一曲面类型（BSP 对 BSP、CPGEO 对 CPGEO），并通过 `add_constraint(...)` 登记。`pose` 与 Instance 一致，为 `[tx, ty, tz, rx, ry, rz]`，后三项是旋转向量（弧度）。`pre_load()`、`get_preloaddata()`、`get_r()`、`get_rdu()`、`get_rdu2()` 支持网格节点与参数面之间的快速映射。
 
@@ -78,11 +78,11 @@ BaseSurfaceInterface
 
 | 类 | 几何来源 | 公开构造/操作 |
 |---|---|---|
-| `BspSurfaceInterface` | `bspmap.BSP` 曲面 | `initialize_cylinder()`、xz/xy 平面 `mirror()`；映射、法线、STEP 输出、保存/恢复、预加载和控制点更新。 |
-| `CPGEOSurfaceInterface` | `cpgeo.CPGEO` 曲面 | `initialize_cylinder()`、`initialize_Sphere()`、`mirror()`、`rotate()`；重建检查、重初始化、STL 输出、保存/恢复。 |
+| `BspSurface` | `bspmap.BSP` 曲面 | `initialize_cylinder()`、xz/xy 平面 `mirror()`；映射、法线、STEP 输出、保存/恢复、预加载和控制点更新。 |
+| `CPGEOSurface` | `cpgeo.CPGEO` 曲面 | `initialize_cylinder()`、`initialize_Sphere()`、`mirror()`、`rotate()`；重建检查、重初始化、STL 输出、保存/恢复。 |
 | `FixedSurface` | 顶点与三角面 | `initialize_from_stl_file()`、`output_stl_file()`、`output_data()`、`get_mesh()`。 |
 
-`BspSurfaceInterface` 和 `CPGEOSurfaceInterface` 都给出曲面公平性数据及点权重；它们分别将控制点更新同步回 B-spline 或 CPGEO 后端。`FixedSurface` 的 `num_variables=0`，适合作为固定外形或边界的一部分。
+`BspSurface` 和 `CPGEOSurface` 都给出曲面公平性数据及点权重；它们分别将控制点更新同步回 B-spline 或 CPGEO 后端。`FixedSurface` 的 `num_variables=0`，适合作为固定外形或边界的一部分。
 
 ## `MeshGenerator`
 
@@ -98,15 +98,15 @@ BaseSurfaceInterface
 | `finalize()` | 释放 Gmsh/OCC 会话。 |
 | `run(...)` | 执行完整流程，并在完成或异常时收尾。 |
 
-每个 `BoundaryPartInterface` 使用 `workdir()` 获取独立缓存目录。曲面文件、STEP/STL、网格和 `TopOptRun.inp` 因而按 Part 隔离，适用于多实体并行网格生成。
+每个 `BoundaryPart` 使用 `workdir()` 获取独立缓存目录。曲面文件、STEP/STL、网格和 `TopOptRun.inp` 因而按 Part 隔离，适用于多实体并行网格生成。
 
 ## `UpdaterBoundaryPart`
 
-源码：`shapeopt/update_boundarypart.py`；继承 `BaseUpdater`。
+源码：`shapeopt/update_boundary_part.py`；继承 `BaseUpdater`。
 
 | 公开属性 | 说明 |
 |---|---|
-| `part` | 已绑定的 `BoundaryPartInterface`。 |
+| `part` | 已绑定的 `BoundaryPart`。 |
 | `surface_interfaces` | 目标 Part 的曲面列表。 |
 | `pathlog_required()` | 声明形状更新器状态目录。 |
 

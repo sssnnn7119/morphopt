@@ -6,8 +6,8 @@ import pyvista as pv
 import torch
 import torchfea
 
-from ..optcore.modelparams.materialinterface import (
-    BaseMaterialInterface,
+from ..optcore.modelparams.materials import (
+    BaseMaterial,
     MaterialModels,
 )
 from ..optcore.protocal import ProtocalUpdatable
@@ -504,7 +504,7 @@ def p_order_interpolation(rho: torch.Tensor, p: int) -> torch.Tensor:
     return rho**p
 
 
-class SIMP_BSPFieldMaterials(BaseMaterialInterface, ProtocalUpdatable):
+class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     """
     Class to handle the materials of the morphable model.
     """

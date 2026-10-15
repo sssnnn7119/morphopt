@@ -121,7 +121,7 @@ class ObserverPanel(QWidget):
         try:
             history = self._results.load_iteration(folder, iteration)
         except Exception as exc:
-            print(f"history load failed: {exc}")
+            print(tr("ui.messages.history_load_failed", error=exc))
             return
         self._metrics_page.update_from_history(history, iteration)
         self._discover_cases(folder)
@@ -174,7 +174,7 @@ class ObserverPanel(QWidget):
         self._updatable_structure_page.apply_language()
         for row, case in enumerate(list(self._case_pages.keys())):
             if self.options.count() > row + 2:
-                self.options.item(row + 2).setText(f"{tr('ui.observe_panel.case')} {case}")
+                self.options.item(row + 2).setText(tr("ui.observe_panel.case_value", case=case))
         row = self.options.currentRow()
         if row == 1:
             self._refresh_updatable_structure()
@@ -222,7 +222,7 @@ class ObserverPanel(QWidget):
         for case in sorted(found - existing):
             self._case_pages[case] = DeformationCasePage(case)
             self.stack.addWidget(self._case_pages[case])
-            self.options.addItem(f"{tr('ui.observe_panel.case')} {case}")
+            self.options.addItem(tr("ui.observe_panel.case_value", case=case))
             self.options.item(self.options.count() - 1).setData(Qt.ItemDataRole.UserRole, case)
 
 
@@ -250,10 +250,12 @@ class ObserverControls(QWidget):
         self.btn_open.clicked.connect(self._choose_source)
         bar.addWidget(self.btn_open)
         self.btn_start = QPushButton(tr('ui.observe_panel.1_start'))
+        self.btn_start.setProperty("actionRole", "primary")
         self.btn_start.setToolTip(tr('ui.observe_panel.enabled_after_choosing_a_source_via_0_the_source_is_reset_once_a_run_sta'))
         self.btn_start.clicked.connect(self._start)
         bar.addWidget(self.btn_start)
         self.btn_stop = QPushButton(tr('ui.observe_panel.2_stop'))
+        self.btn_stop.setProperty("actionRole", "danger")
         self.btn_stop.setToolTip(tr('ui.observe_panel.stop_the_running_task_keeping_the_current_visualization_continue_require'))
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
@@ -295,8 +297,7 @@ class ObserverControls(QWidget):
         foot.addStretch(1)
         self.btn_back = QPushButton(tr('ui.observe_panel.back_to_definition'))
         self.btn_back.setToolTip(tr('ui.observe_panel.return_to_the_definition_page_running_tasks_ask_for_confirmation'))
-        self.btn_back.setStyleSheet(
-            "background-color:#37474f; font-weight:600; padding:6px 18px;")
+        self.btn_back.setProperty("buttonLayout", "prominent")
         self.btn_back.clicked.connect(self._on_back)
         foot.addWidget(self.btn_back)
         outer.addLayout(foot)
@@ -376,7 +377,7 @@ class ObserverControls(QWidget):
             self,
             tr('ui.observe_panel.select_definition_script_py'),
             os.getcwd(),
-            "Python (*.py)",
+            tr("ui.files.python"),
         )
         if path:
             self._run.select_source(RunSource(RunSourceKind.PYTHON, path=path))

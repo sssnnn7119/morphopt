@@ -34,6 +34,7 @@ class PreviewScene:
 
     items: list[MeshItem | LabelItem | MessageItem] = field(default_factory=list)
     base_meshes: list[tuple[str, pv.DataSet, MeshItem]] = field(default_factory=list)
+    instance_legend: list[tuple[str, str]] = field(default_factory=list)
 
     def add_mesh(self, mesh: pv.DataSet, **options: Any) -> MeshItem:
         item = MeshItem(mesh, options)
@@ -63,6 +64,19 @@ class PreviewScene:
         hi = np.max([[b[1], b[3], b[5]] for b in bounds], axis=0)
         return float(np.linalg.norm(hi - lo)) or 10.0
 
+    @property
+    def glyph_scale(self) -> float:
+        """Size symbols by typical Part width, capped by the scene diagonal."""
+        widths = []
+        for _, mesh, _ in self.base_meshes:
+            if not mesh.n_points:
+                continue
+            extents = np.diff(np.asarray(mesh.bounds).reshape(3, 2), axis=1).ravel()
+            extents = extents[extents > 0]
+            if extents.size:
+                widths.append(float(np.median(extents)))
+        return min(self.diagonal, 4.0 * float(np.median(widths))) if widths else self.diagonal
+
 
 @dataclass
 class ArrowLoad:
@@ -91,9 +105,28 @@ class MarkerLoad:
     location: np.ndarray
     label: str
     color: str
+    is_reference_point: bool = False
+
+
+@dataclass
+class CouplingLoad:
+    reference_point: np.ndarray
+    node_set_center: np.ndarray
+    label: str
+    surface: pv.DataSet | None = None
+    surface_label: str = ""
 
 
 @dataclass
 class LoadScene:
     scale: float
-    items: list[MeshItem | MessageItem | ArrowLoad | MomentLoad | SpringLoad | MarkerLoad] = field(default_factory=list)
+    annotation_scale: float = 0.0
+    items: list[
+        MeshItem
+        | MessageItem
+        | ArrowLoad
+        | MomentLoad
+        | SpringLoad
+        | MarkerLoad
+        | CouplingLoad
+    ] = field(default_factory=list)

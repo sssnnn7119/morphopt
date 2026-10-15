@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 
 from ..model.problem import SolverNode, ProblemDefinition
 from ..i18n import tr
+from ..refresh import RefreshContext
+from ..presentation.labels import node_title
 from ..application.devices import detect_devices
 from ..application.editing import SolverTasks
 from ..application.values import parse_field
@@ -30,6 +32,9 @@ class SolverEditor(QWidget):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        self._heading = QLabel()
+        self._heading.setProperty("textRole", "sectionHeading")
+        lay.addWidget(self._heading)
 
         form = QFormLayout()
         hint = QLabel(tr('ui.widgets.solver_editor.devices_multi_select_gpus_checking_cpu_uses_cpu_only'))
@@ -74,6 +79,7 @@ class SolverEditor(QWidget):
     def edit_node(self, node: SolverNode, problem: ProblemDefinition) -> None:
         self._node = node
         self._problem = problem
+        self._heading.setText(node_title(problem, node))
         self.tasks = SolverTasks(node, problem)
         self._loading = True
         try:
@@ -90,6 +96,10 @@ class SolverEditor(QWidget):
             self._fill_task_table()
         finally:
             self._loading = False
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if context.problem.solver is not None:
+            self.edit_node(context.problem.solver, context.problem)
 
     # ------------------------------------------------------------- devices
     def _on_numproc(self) -> None:

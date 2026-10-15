@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from ..i18n import tr
 from ..application.imported_models import ImportedModelLibrary
-from ..model.problem import PartInterfaceNode, ProblemDefinition, resolve_model_directory
+from ..model.problem import PartNode, ProblemDefinition, resolve_model_directory
 
 
 class TorchFEAModelEditor(QWidget):
@@ -34,7 +34,7 @@ class TorchFEAModelEditor(QWidget):
     def __init__(self, parent=None, embedded: bool = False):
         super().__init__(parent)
         self._embedded = embedded
-        self._node: PartInterfaceNode | None = None
+        self._node: PartNode | None = None
         self._problem: ProblemDefinition | None = None
         self.library = ImportedModelLibrary()
         self._updating = False
@@ -106,14 +106,6 @@ class TorchFEAModelEditor(QWidget):
         )
         self.summary.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.summary.setColumnWidth(0, 240)
-        self.summary.setStyleSheet(
-            "QTreeWidget { background:#151a21; border:1px solid #30363d; "
-            "padding:4px; }"
-            "QTreeWidget::item { padding:3px 2px; }"
-            "QTreeWidget::item:selected { background:#1f6aa5; }"
-            "QHeaderView::section { background:#202938; color:#dbe4ee; "
-            "padding:4px; border:0; }"
-        )
         outer.addWidget(self.summary)
         self._show_empty_summary(
             tr('ui.widgets.torchfea_model_editor.no_torchfea_model_imported')
@@ -130,7 +122,7 @@ class TorchFEAModelEditor(QWidget):
             lambda: self._scan_directory(auto_import_new=True)
         )
 
-    def edit_node(self, node: PartInterfaceNode, problem: ProblemDefinition) -> None:
+    def edit_node(self, node: PartNode, problem: ProblemDefinition) -> None:
         self._node = node
         self._problem = problem
         self._updating = True

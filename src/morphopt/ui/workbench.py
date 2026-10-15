@@ -18,16 +18,20 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
+from PySide6.QtGui import QFont, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractScrollArea,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPlainTextEdit,
+    QTextEdit,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -51,22 +55,31 @@ from .model.problem import (
 from .schemes.base import scheme_label
 from .widgets.editor import PropertyEditor
 from .widgets.editor_pages import EditorPages
+from .widgets.edit_history import EditHistoryPanel
 from .application.fields import fields_for_node
 from .application.part_sets import PartSetCatalog
 from .widgets.definition_manager import DefinitionManagerEditor
 from .widgets.model_tree import ModelTree
 from .widgets.definition_actions import DefinitionActions
-from .presentation.labels import container_title
+from .presentation.labels import node_title
+from .presentation.navigation import node_at_path, node_path
 
 from .widgets.objective_editor import ObjectiveEditor
-from .widgets.custom_classes import CustomClassEditor, CustomClassTree, ModelClassSelector
-from .widgets.codeeditor import HelperCodeEditor
+from .widgets.custom_classes import (
+    CustomClassEditor,
+    CustomClassOverview,
+    ModelClassSelector,
+)
+from .widgets.helper_editor import HelperCodeEditor
+from .widgets.collection_controls import CollectionHeader
 from .widgets.solver_editor import SolverEditor
 from .application.devices import detect_devices
 from .widgets.stepmatrix import StepMatrix
 from .application.imported_models import ImportedModelLibrary
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
+from .widgets.source_view import GeneratedSourceView
+from .refresh import Refreshable, RefreshContext, RefreshCoordinator
 
 
 class Workbench(QWidget):
@@ -81,15 +94,26 @@ class Workbench(QWidget):
 
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
+        self._restoring = False
+        self._history_ready = False
+        self._geometry_normalized = False
+        self._synchronized_for_refresh = False
+        self._text_edit_key: int | None = None
         self.session = ProblemSession(problem)
         self.part_sets = PartSetCatalog(problem)
         self._last_selected: Node | None = None
-        self._rebuild_timer = QTimer(self)
-        self._rebuild_timer.setSingleShot(True)
-        self._rebuild_timer.setInterval(250)
-        self._rebuild_timer.timeout.connect(self._on_any_change)
+        self.refresh_coordinator = RefreshCoordinator(self._prepare_refresh, self)
+        self.refresh_coordinator.failed.connect(self._on_refresh_failed)
+        self.refresh_coordinator.finished.connect(
+            lambda context: self.notify.emit(context.problem.label)
+        )
         self._build_ui()
+        self._register_refreshables()
         self.reload()
+        self.session.reset_history()
+        self._history_ready = True
+        self._update_history_actions()
+        QApplication.instance().installEventFilter(self)
 
     @property
     def problem(self) -> ProblemDefinition:
@@ -107,33 +131,37 @@ class Workbench(QWidget):
         actions = [
             (
                 "quickstart",
-                tr('ui.workbench.quickstart'),
-                tr('ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal'),
+                tr("ui.workbench.quickstart"),
+                tr(
+                    "ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal"
+                ),
                 self.quickstartRequested.emit,
             ),
             (
                 "open",
-                tr('ui.workbench.open_morph'),
-                tr('ui.workbench.open_an_existing_morph_definition'),
+                tr("ui.workbench.open_morph"),
+                tr("ui.workbench.open_an_existing_morph_definition"),
                 self.openMorphRequested.emit,
             ),
             (
                 "export",
-                tr('ui.workbench.export_morph'),
-                tr('ui.workbench.save_the_current_definition_as_morph'),
+                tr("ui.workbench.export_morph"),
+                tr("ui.workbench.save_the_current_definition_as_morph"),
                 self.exportMorphRequested.emit,
             ),
             (
                 "runpy",
-                tr('ui.workbench.export_run_py'),
-                tr('ui.workbench.generate_a_headless_runnable_py_from_the_current_definition'),
+                tr("ui.workbench.export_run_py"),
+                tr(
+                    "ui.workbench.generate_a_headless_runnable_py_from_the_current_definition"
+                ),
                 self.exportRunPyRequested.emit,
             ),
         ]
         for key, text, tooltip, slot in actions:
             b = QPushButton(text)
+            b.setProperty("actionRole", "primary")
             b.setToolTip(tooltip)
-            b.setStyleSheet("padding:4px 14px;")
             b.clicked.connect(slot)
             actbar.addWidget(b)
             self._act_buttons[key] = b
@@ -142,22 +170,22 @@ class Workbench(QWidget):
 
         # header: optimization name + output path (editable) + scheme caption
         head = QHBoxLayout()
-        self._lbl_name = QLabel(tr('ui.workbench.optimization_name'))
+        self._lbl_name = QLabel(tr("ui.workbench.optimization_name"))
         head.addWidget(self._lbl_name)
         self._name_edit = QLineEdit()
         self._name_edit.setFixedWidth(180)
         self._name_edit.setToolTip(
-            tr('ui.workbench.problem_name_opt_label_used_when_exporting_running')
+            tr("ui.workbench.problem_name_opt_label_used_when_exporting_running")
         )
         self._name_edit.editingFinished.connect(self._apply_name)
         head.addWidget(self._name_edit)
         head.addSpacing(10)
-        self._lbl_path = QLabel(tr('ui.workbench.output_folder'))
+        self._lbl_path = QLabel(tr("ui.workbench.output_folder"))
         head.addWidget(self._lbl_path)
         self._path_edit = QLineEdit()
         self._path_edit.setMinimumWidth(120)
         self._path_edit.setToolTip(
-            tr('ui.workbench.result_output_directory_controller_path_result_folder')
+            tr("ui.workbench.result_output_directory_controller_path_result_folder")
         )
         self._path_edit.editingFinished.connect(self._apply_path)
         head.addWidget(self._path_edit, 1)
@@ -167,7 +195,7 @@ class Workbench(QWidget):
         head.addWidget(btn_dir)
         head.addSpacing(12)
         # global compute device (used by start_optimization and the Updater)
-        self._lbl_device = QLabel(tr('ui.workbench.device'))
+        self._lbl_device = QLabel(tr("ui.workbench.device"))
         head.addWidget(self._lbl_device)
         self._device = QComboBox()
         self._device.setEditable(True)
@@ -177,7 +205,9 @@ class Workbench(QWidget):
             if dev != "cpu":
                 self._device.addItem(dev)
         self._device.setToolTip(
-            tr('ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda')
+            tr(
+                "ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda"
+            )
         )
         self._device.currentTextChanged.connect(self._save_device)
         head.addWidget(self._device)
@@ -195,15 +225,19 @@ class Workbench(QWidget):
         self.tree = ModelTree(actions=self.actions)
         self.tree.nodeSelected.connect(self._on_node_selected)
         self.tree.itemClicked.connect(self._on_model_item_clicked)
-        self.tree.treeChanged.connect(self._schedule_rebuild)
-        self.custom_tree = CustomClassTree()
-        self.custom_tree.nodeSelected.connect(self._on_node_selected)
-        self.custom_tree.treeChanged.connect(self._schedule_rebuild)
-        self.custom_tree.overrideRequested.connect(self._override_method)
+        self.actions.changed.connect(self._on_structural_change)
+        self.actions.selectionRequested.connect(self._on_node_selected)
+        self.tree.overrideRequested.connect(self._override_method)
+        self.history_panel = EditHistoryPanel(self)
+        self.history_panel.jumpRequested.connect(self._jump_to_history_step)
+        self.history_panel.undoRequested.connect(self.undo)
+        self.history_panel.redoRequested.connect(self.redo)
+        self._undo_button = self.history_panel.undo_button
+        self._redo_button = self.history_panel.redo_button
         self._tree_split = QSplitter(Qt.Orientation.Vertical)
         self._tree_split.addWidget(self.tree)
-        self._tree_split.addWidget(self.custom_tree)
-        self._tree_split.setSizes([500, 220])
+        self._tree_split.addWidget(self.history_panel)
+        self._tree_split.setSizes([500, 260])
         self._tree_split.setChildrenCollapsible(False)
         split.addWidget(self._tree_split)
 
@@ -217,15 +251,15 @@ class Workbench(QWidget):
         edit_layout = QVBoxLayout(edit_page)
         edit_layout.setContentsMargins(0, 0, 0, 0)
         self.class_selector = ModelClassSelector()
-        self.class_selector.changed.connect(self._schedule_rebuild)
+        self.class_selector.changed.connect(self._on_model_change)
         edit_layout.addWidget(self.class_selector)
         edit_layout.addWidget(self._stack, 1)
-        center.addTab(edit_page, tr('ui.workbench.edit'))
+        center.addTab(edit_page, tr("ui.workbench.edit"))
 
-        self.code_view = QPlainTextEdit()
+        self.code_view = GeneratedSourceView()
         self.code_view.setReadOnly(True)
         self.code_view.setFont(QFont("DejaVu Sans Mono", 10))
-        center.addTab(self.code_view, tr('ui.workbench.code_read_only'))
+        center.addTab(self.code_view, tr("ui.workbench.code_read_only"))
         center.setMinimumWidth(440)
         split.addWidget(center)
 
@@ -244,13 +278,14 @@ class Workbench(QWidget):
         self._msg = QLabel("")
         self._msg.setStyleSheet("color:#9aa4b2;")
         foot.addWidget(self._msg, 1)
-        self._b_import = QPushButton(tr('ui.workbench.send_to_observer'))
+        self._b_import = QPushButton(tr("ui.workbench.send_to_observer"))
         self._b_import.setToolTip(
-            tr('ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue')
+            tr(
+                "ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue"
+            )
         )
-        self._b_import.setStyleSheet(
-            "background-color:#00695c; font-weight:600; padding:6px 18px;"
-        )
+        self._b_import.setProperty("actionRole", "primary")
+        self._b_import.setProperty("buttonLayout", "prominent")
         self._b_import.clicked.connect(self._submit_to_observer)
         foot.addWidget(self._b_import)
         outer.addLayout(foot)
@@ -265,93 +300,115 @@ class Workbench(QWidget):
         viewport and the tree are *not* rebuilt here.
         """
         stack = self._stack
+        if stack.count():
+            self.pages.disconnect_changes()
         while stack.count():
             w = stack.widget(0)
+            w.hide()
             stack.removeWidget(w)
             w.deleteLater()
 
-        self.prop_editor = PropertyEditor()
-        self.solver_editor = SolverEditor()
-        self.step_matrix = StepMatrix()
-        self.updater_editor = UpdaterEditor()
-        self.geometry_editor = DefinitionManagerEditor("geometry", self.actions, sets=self.part_sets)
-        self.loads_editor = DefinitionManagerEditor("loads", self.actions, sets=self.part_sets)
-        self.materials_editor = DefinitionManagerEditor("materials", self.actions, sets=self.part_sets)
-        self.objective_editor = ObjectiveEditor()
-        self.custom_class_editor = CustomClassEditor()
+        self.prop_editor = PropertyEditor(stack)
+        self.solver_editor = SolverEditor(stack)
+        self.step_matrix = StepMatrix(stack)
+        self.updater_editor = UpdaterEditor(stack)
+        self.updater_editor.activated.connect(self._on_editor_activated)
+        self.geometry_editor = DefinitionManagerEditor(
+            "geometry", self.actions, parent=stack, sets=self.part_sets
+        )
+        self.loads_editor = DefinitionManagerEditor(
+            "loads", self.actions, parent=stack, sets=self.part_sets
+        )
+        self.materials_editor = DefinitionManagerEditor(
+            "materials", self.actions, parent=stack, sets=self.part_sets
+        )
+        self.helper_variables_editor = DefinitionManagerEditor(
+            "helper_variables", self.actions, parent=stack
+        )
+        self.helper_functions_editor = DefinitionManagerEditor(
+            "helper_functions", self.actions, parent=stack
+        )
+        for editor in (
+            self.prop_editor,
+            self.geometry_editor,
+            self.loads_editor,
+            self.materials_editor,
+            self.helper_variables_editor,
+            self.helper_functions_editor,
+        ):
+            editor.activated.connect(self._on_editor_activated)
+        self.objective_editor = ObjectiveEditor(stack)
+        self.custom_class_editor = CustomClassEditor(stack)
+        self.custom_class_overview = CustomClassOverview(self.actions, stack)
+        self.custom_class_overview.nodeSelected.connect(self._on_node_selected)
         self.optimizer_overview = self._make_optimizer_overview()
-        self.helper_page = HelperCodeEditor(self.actions)
+        self.helper_page = HelperCodeEditor(self.actions, parent=stack)
         self.helper_page.edit_node(None, self.problem)
-        self.updater_editor.codeChanged.connect(self.refresh_code)
-        self.geometry_editor.changed.connect(self._sync_single_imported_part)
         self.custom_class_editor.nodeSelected.connect(self._on_node_selected)
         self._register_editor_pages()
 
     def _make_optimizer_overview(self) -> QWidget:
-        """Landing page with the two supported optimizer-add actions."""
-        overview = QWidget()
+        """Create an updater by choosing its concrete component target."""
+        overview = QWidget(self._stack)
         layout = QVBoxLayout(overview)
+        targets = QMenu(overview)
+        targets.aboutToShow.connect(lambda: self.actions.populate_updater_menu(targets))
+        header = CollectionHeader(
+            tr("ui.widgets.model_tree.container.updater"), menu=targets
+        )
+        header.add_button.setToolTip(tr("ui.component.add_updater"))
+        layout.addWidget(header)
         description = QLabel(
-            tr('ui.workbench.optimization_definition_this_section_contains_the_optimization_objective')
+            tr(
+                "ui.workbench.optimization_definition_this_section_contains_the_optimization_objective"
+            )
         )
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignmentFlag.AlignTop)
         description.setContentsMargins(16, 16, 16, 16)
         layout.addWidget(description)
-        buttons = QHBoxLayout()
-        add_geometry = QPushButton(tr('ui.workbench.geometry_optimizer'))
-        add_geometry.clicked.connect(
-            lambda _checked=False: self.actions.add_geometry_updater()
-        )
-        buttons.addWidget(add_geometry)
-        add_materials = QPushButton(tr('ui.workbench.material_optimizer'))
-        add_materials.clicked.connect(
-            lambda _checked=False: self.actions.add_materials_updater()
-        )
-        buttons.addWidget(add_materials)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
         layout.addStretch(1)
         return overview
 
     # ------------------------------------------------------------- reload
     def reload(self) -> None:
-        self.session.synchronize()
-        self._name_edit.setText(self.problem.label)
-        self._path_edit.setText(self.problem.result_folder)
-        # show the current compute device without re-triggering a save
-        self._device_block = True
-        try:
-            dev = self.problem.device or "cpu"
-            if self._device.findText(dev) < 0:
-                self._device.addItem(dev)
-            self._device.setCurrentText(dev)
-        finally:
-            self._device_block = False
-        self._update_caption()
-        imported = self.problem.imported_model_part_node()
-        self.tree.set_problem(self.problem)
-        self.custom_tree.set_problem(self.problem)
-        self.objective_editor.set_problem(self.problem)
+        self.actions.set_problem(self.problem)
         self._select_editor(self._last_selected)
+        self.refresh_coordinator.refresh_now()
+        imported = self.problem.imported_model_part_node()
         if imported is not None:
             issue = ImportedModelLibrary.validate_link(imported)
             if issue is not None:
                 QMessageBox.warning(
                     self,
-                    tr('ui.widgets.torchfea_model_editor.torchfea_model_link_cleared'),
+                    tr("ui.widgets.torchfea_model_editor.torchfea_model_link_cleared"),
                     issue,
                 )
-        self.refresh_code()
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if not self._name_edit.hasFocus():
+            self._name_edit.setText(context.problem.label)
+        if not self._path_edit.hasFocus():
+            self._path_edit.setText(context.problem.result_folder)
+        self._device_block = True
         try:
-            self.viewer.set_problem(self.problem)
-        except (TypeError, ValueError) as exc:
-            self.notify.emit(tr('ui.workbench.preview_unavailable_value', value_0=exc))
+            device = context.problem.device or "cpu"
+            if self._device.findText(device) < 0:
+                self._device.addItem(device)
+            self._device.setCurrentText(device)
+        finally:
+            self._device_block = False
+        self._update_caption()
 
     def _update_caption(self) -> None:
-        self.title.setText(
-            f"[{scheme_label(self.problem.scheme)}]  {self.problem.label}"
+        title = tr(
+            "ui.naming.problem_title",
+            name=self.problem.label,
+            scheme=scheme_label(self.problem.scheme),
         )
+        if self.session.history.is_modified:
+            title = tr("ui.history.modified", title=title)
+        self.title.setText(title)
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
@@ -362,22 +419,27 @@ class Workbench(QWidget):
         observer's GL pages).  The shell texts, the model-tree titles and the
         centre editors are all refreshed; the preview viewport keeps its state.
         """
+        self.flush_edits()
         act_text = {
             "quickstart": (
-                tr('ui.workbench.quickstart'),
-                tr('ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal'),
+                tr("ui.workbench.quickstart"),
+                tr(
+                    "ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal"
+                ),
             ),
             "open": (
-                tr('ui.workbench.open_morph'),
-                tr('ui.workbench.open_an_existing_morph_definition'),
+                tr("ui.workbench.open_morph"),
+                tr("ui.workbench.open_an_existing_morph_definition"),
             ),
             "export": (
-                tr('ui.workbench.export_morph'),
-                tr('ui.workbench.save_the_current_definition_as_morph'),
+                tr("ui.workbench.export_morph"),
+                tr("ui.workbench.save_the_current_definition_as_morph"),
             ),
             "runpy": (
-                tr('ui.workbench.export_run_py'),
-                tr('ui.workbench.generate_a_headless_runnable_py_from_the_current_definition'),
+                tr("ui.workbench.export_run_py"),
+                tr(
+                    "ui.workbench.generate_a_headless_runnable_py_from_the_current_definition"
+                ),
             ),
         }
         for key, (text, tip) in act_text.items():
@@ -385,38 +447,44 @@ class Workbench(QWidget):
             if b is not None:
                 b.setText(text)
                 b.setToolTip(tip)
-        self._lbl_name.setText(tr('ui.workbench.optimization_name'))
-        self._lbl_path.setText(tr('ui.workbench.output_folder'))
-        self._lbl_device.setText(tr('ui.workbench.device'))
+        self._lbl_name.setText(tr("ui.workbench.optimization_name"))
+        self._lbl_path.setText(tr("ui.workbench.output_folder"))
+        self._lbl_device.setText(tr("ui.workbench.device"))
         self._name_edit.setToolTip(
-            tr('ui.workbench.problem_name_opt_label_used_when_exporting_running')
+            tr("ui.workbench.problem_name_opt_label_used_when_exporting_running")
         )
         self._path_edit.setToolTip(
-            tr('ui.workbench.result_output_directory_controller_path_result_folder')
+            tr("ui.workbench.result_output_directory_controller_path_result_folder")
         )
         self._device.setToolTip(
-            tr('ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda')
+            tr(
+                "ui.workbench.global_compute_device_cpu_cuda_0_used_by_start_optimization_and_the_upda"
+            )
         )
         self._update_caption()
-        self._center.setTabText(0, tr('ui.workbench.edit'))
-        self._center.setTabText(1, tr('ui.workbench.code_read_only'))
-        self._b_import.setText(tr('ui.workbench.send_to_observer'))
+        self._center.setTabText(0, tr("ui.workbench.edit"))
+        self._center.setTabText(1, tr("ui.workbench.code_read_only"))
+        self._b_import.setText(tr("ui.workbench.send_to_observer"))
         self._b_import.setToolTip(
-            tr('ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue')
+            tr(
+                "ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue"
+            )
         )
 
         # Refresh the model-tree titles and the centre editors in the new
         # language.  Only the cheap form editors are re-created (data lives on
         # the model nodes); the PyVista preview viewport is left untouched.
         self.tree.apply_language()
-        self.custom_tree.apply_language()
         self.class_selector.apply_language()
         center_idx = self._center.currentIndex()
         self._repopulate_stack()
+        self._register_refreshables()
         self._select_editor(self._last_selected)
         self._center.setCurrentIndex(center_idx)
 
         self.viewer.apply_language()
+        self.history_panel.apply_language()
+        self._update_history_actions()
 
     # -------------------------------------------- name / output-path slots
 
@@ -424,15 +492,15 @@ class Workbench(QWidget):
         v = self._name_edit.text().strip()
         if self.session.set_label(v):
             self._update_caption()
-            self.refresh_code()
-            self.notify.emit(tr('ui.workbench.optimization_name_value', value_0=v))
+            self._on_model_change(self.problem.root)
+            self.notify.emit(tr("ui.workbench.optimization_name_value", value_0=v))
         else:
             self._name_edit.setText(self.problem.label)
 
     def _apply_path(self) -> None:
         v = self._path_edit.text().strip()
         if self.session.set_result_folder(v):
-            self.refresh_code()
+            self._on_model_change(self.problem.root)
 
     def _save_device(self, text: str) -> None:
         """Persist the global compute device on the definition."""
@@ -442,24 +510,18 @@ class Workbench(QWidget):
         if not text:
             return
         if self.session.set_device(text):
-            self.refresh_code()
-            self.notify.emit(tr('ui.workbench.device_value', value_0=text))
+            self._on_model_change(self.problem.root)
+            self.notify.emit(tr("ui.workbench.device_value", value_0=text))
 
     def _browse_path(self) -> None:
         start = self._path_edit.text() or os.getcwd()
         folder = QFileDialog.getExistingDirectory(
-            self, tr('ui.workbench.select_output_folder'), start
+            self, tr("ui.workbench.select_output_folder"), start
         )
         if folder:
             self._path_edit.setText(folder)
             if self.session.set_result_folder(folder):
-                self.refresh_code()
-
-    def refresh_code(self, *, synchronize: bool = True) -> None:
-        try:
-            self.code_view.setPlainText(self.session.source(synchronize=synchronize))
-        except Exception as exc:  # pragma: no cover
-            self.code_view.setPlainText(f"# code generation failed:\n{exc}")
+                self._on_model_change(self.problem.root)
 
     # ------------------------------------------------------ node selection
     def _on_model_item_clicked(self, item, _column: int) -> None:
@@ -469,26 +531,43 @@ class Workbench(QWidget):
             if node is not None:
                 self._on_node_selected(node)
 
-    def _on_node_selected(self, node: Node) -> None:
+    def _on_node_selected(self, node: Node | None) -> None:
+        if self._restoring:
+            return
         self._last_selected = node
+        if self.sender() is not self.actions:
+            self._remember_selection()
         if self._center.currentWidget() is self.code_view:
             self._center.setCurrentIndex(0)
         if node is not None and node.kind in {"custom_class", "method_override"}:
-            current = self.custom_tree.tree.currentItem()
-            if current is None or current.data(0, Qt.ItemDataRole.UserRole) is not node:
-                self.custom_tree.rebuild(select=node)
-        if (node is not None and node.kind == "method_override"
-                and self._stack.currentWidget() is self.custom_class_editor
-                and self.custom_class_editor.current_method is node):
+            self.tree.select_node(node)
+        if (
+            node is not None
+            and node.kind == "method_override"
+            and self._stack.currentWidget() is self.custom_class_editor
+            and self.custom_class_editor.current_method is node
+        ):
             return
         self._select_editor(node)
+
+    def _on_editor_activated(self, node: Node) -> None:
+        if self._restoring:
+            return
+        self._last_selected = node
+        self._remember_selection()
+        self.tree.select_node(node)
 
     def _override_method(self, node: Node) -> None:
         self._on_node_selected(node)
         self.custom_class_editor.add_override()
 
     def _register_editor_pages(self) -> None:
-        self.pages = EditorPages(self._stack, self._schedule_rebuild)
+        self.pages = EditorPages(self._stack, self._on_model_change)
+        self.pages.register(
+            EditorKind.CUSTOM_CLASSES, self.custom_class_overview,
+            lambda route, problem: self.custom_class_overview.set_problem(problem),
+            refreshable=self.custom_class_overview,
+        )
         for kind, editor in (
             (EditorKind.CUSTOM_CLASS, self.custom_class_editor),
             (EditorKind.SOLVER, self.solver_editor),
@@ -497,8 +576,11 @@ class Workbench(QWidget):
             self.pages.register(
                 kind,
                 editor,
-                lambda route, problem, editor=editor: editor.edit_node(route.node, problem),
+                lambda route, problem, editor=editor: editor.edit_node(
+                    route.node, problem
+                ),
                 changed=editor.changed,
+                refreshable=editor,
             )
         for kind, editor, section in (
             (EditorKind.GEOMETRY, self.geometry_editor, "geometry"),
@@ -514,31 +596,55 @@ class Workbench(QWidget):
                     focus=route.focus,
                 ),
                 changed=editor.changed,
+                refreshable=editor,
+            )
+        for kind, editor in (
+            (EditorKind.HELPER_VARIABLES, self.helper_variables_editor),
+            (EditorKind.HELPER_FUNCTIONS, self.helper_functions_editor),
+        ):
+            self.pages.register(
+                kind,
+                editor,
+                lambda route, problem, editor=editor: editor.edit_node(
+                    None, problem, focus=route.focus
+                ),
+                changed=editor.changed,
+                refreshable=editor,
             )
         self.pages.register(
             EditorKind.UPDATER,
             self.updater_editor,
-            lambda route, problem: self.updater_editor.edit_node(route.node, problem, focus=route.focus),
+            lambda route, problem: self.updater_editor.edit_node(
+                route.node, problem, focus=route.focus
+            ),
             changed=self.updater_editor.changed,
+            refreshable=self.updater_editor,
         )
         self.pages.register(
             EditorKind.OBJECTIVE,
             self.objective_editor,
             lambda route, problem: self.objective_editor.set_problem(problem),
             changed=self.objective_editor.changed,
+            refreshable=self.objective_editor,
         )
         self.pages.register(
             EditorKind.HELPER_CODE,
             self.helper_page,
             lambda route, problem: self.helper_page.edit_node(route.node, problem),
             changed=self.helper_page.changed,
+            refreshable=self.helper_page,
         )
-        self.pages.register(EditorKind.OPTIMIZER_OVERVIEW, self.optimizer_overview, lambda route, problem: None)
+        self.pages.register(
+            EditorKind.OPTIMIZER_OVERVIEW,
+            self.optimizer_overview,
+            lambda route, problem: None,
+        )
         self.pages.register(
             EditorKind.PROPERTIES,
             self.prop_editor,
             self._bind_properties,
             changed=self.prop_editor.changed,
+            refreshable=self.prop_editor,
         )
 
     def _select_editor(self, node: Node | None) -> None:
@@ -558,7 +664,7 @@ class Workbench(QWidget):
         if node is None:
             return
         fields, code_slots, extra = fields_for_node(node, problem, sets=self.part_sets)
-        title = container_title(node.kind) if node.kind in {"geometry", "problem", "params_class"} else None
+        title = node_title(problem, node)
         self.prop_editor.edit_node(
             node,
             fields=fields,
@@ -569,68 +675,353 @@ class Workbench(QWidget):
             completion_problem=problem,
         )
 
-    def _sync_single_imported_part(self, _node: Node) -> None:
-        """Select unambiguous imported material targets without name conventions."""
-        self.session.sync_imported_material_targets()
-
     @staticmethod
     def _subtitle(node: Node) -> str:
         if node.kind == "surface":
-            return tr('ui.workbench.surface_0_outer_within_each_part_surfaces_1_cavities_flip_the_preview_up')
+            return tr(
+                "ui.workbench.surface_0_outer_within_each_part_surfaces_1_cavities_flip_the_preview_up"
+            )
         if node.kind == "geometry":
-            return tr('ui.workbench.define_the_optimization_s_initial_configuration_here_every_geometry_inte')
+            return tr(
+                "ui.workbench.define_the_optimization_s_initial_configuration_here_every_geometry_inte"
+            )
         if node.kind == "part_interface":
-            if node.get_field("type") == "CADPartInterface":
-                return tr('ui.workbench.use_the_buttons_below_or_the_context_menu_to_add_features_boolean_and_tr')
-            return tr('ui.workbench.edit_the_geometry_interface_registration_name_here_it_owns_one_part_and')
+            if node.get_field("type") == "CADPart":
+                return tr(
+                    "ui.workbench.use_the_buttons_below_or_the_context_menu_to_add_features_boolean_and_tr"
+                )
+            return tr(
+                "ui.workbench.edit_the_geometry_interface_registration_name_here_it_owns_one_part_and"
+            )
         if node.kind == "instance":
-            return tr('ui.workbench.translation_and_rotation_use_torchfea_exponential_coordinates_rotation_i')
+            return tr(
+                "ui.workbench.translation_and_rotation_use_torchfea_exponential_coordinates_rotation_i"
+            )
         return ""
 
     # ------------------------------------------------------ change refresh
-    def _schedule_rebuild(self, *_args) -> None:
-        self._rebuild_timer.start()
+    def _register_refreshables(self) -> None:
+        self.refresh_coordinator.set_components(
+            [
+                self,
+                self.tree,
+                self.class_selector,
+                self.pages,
+                self.code_view,
+                self.viewer,
+            ]
+        )
 
-    def _on_any_change(self) -> None:
-        # Coalesce all editor signals into one refresh after re-binding the
-        # model's object-reference graph.  Tree labels, open forms, generated
-        # code, and the preview therefore observe the same model snapshot.
-        self.session.synchronize()
+    def _prepare_refresh(self, changes: tuple[Node | None, ...]) -> RefreshContext:
+        # Restored snapshots already contain their canonical geometry. In
+        # particular, do not re-import external files while replaying history.
+        geometry_normalized = self._geometry_normalized
+        self._geometry_normalized = False
+        if not self._restoring and not self._synchronized_for_refresh:
+            geometry_normalized = self.session.synchronize() or geometry_normalized
+        self._synchronized_for_refresh = False
         self.part_sets.invalidate()
-        self.refresh_code(synchronize=False)
-        try:
-            self.viewer.set_problem(self.problem)
-        except (TypeError, ValueError) as exc:
-            self.notify.emit(tr('ui.workbench.preview_unavailable_value', value_0=exc))
-        self.objective_editor.set_problem(self.problem)
-        # refresh tree summaries (e.g. load param rows) and the visible editor
-        self.tree.rebuild(select=self._last_selected, notify=False)
-        self.custom_tree.rebuild(select=self._last_selected)
-        if self._last_selected is not None:
-            self._select_editor(self._last_selected)
-        self.notify.emit(self.problem.label)
+        return RefreshContext(
+            self.problem,
+            selected=self._last_selected,
+            changed_nodes=tuple(node for node in changes if node is not None),
+            full=geometry_normalized or None in changes,
+            restoring=self._restoring,
+        )
+
+    def _on_refresh_failed(self, component: Refreshable, error: Exception) -> None:
+        self.notify.emit(
+            tr(
+                "ui.refresh.failed",
+                component=type(component).__name__,
+                error=error,
+            )
+        )
 
     def set_problem(self, problem: ProblemDefinition) -> None:
+        self._finish_text_edit()
+        self.refresh_coordinator.cancel()
+        self._geometry_normalized = False
+        self._synchronized_for_refresh = False
+        self._text_edit_key = None
+        self._history_ready = False
         self.session.replace(problem)
         self.part_sets.bind(problem)
         self._last_selected = None
+        self._repopulate_stack()
+        self._register_refreshables()
         self.reload()
+        self.session.reset_history()
+        self._history_ready = True
+        self._update_history_actions()
+
+    # ----------------------------------------------------- document history
+    @staticmethod
+    def _text_input(widget: QWidget | None) -> bool:
+        return (
+            isinstance(widget, (QLineEdit, QPlainTextEdit, QTextEdit))
+            and not widget.isReadOnly()
+        )
+
+    @staticmethod
+    def _local_undo_available(widget: QWidget | None, *, redo: bool) -> bool:
+        if isinstance(widget, QLineEdit) and not widget.isReadOnly():
+            return widget.isRedoAvailable() if redo else widget.isUndoAvailable()
+        if isinstance(widget, (QPlainTextEdit, QTextEdit)) and not widget.isReadOnly():
+            document = widget.document()
+            return document.isRedoAvailable() if redo else document.isUndoAvailable()
+        return False
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if not isinstance(watched, QWidget) or not self.isVisible():
+            return super().eventFilter(watched, event)
+        if (
+            watched is not self
+            and watched is not self.window()
+            and not self.isAncestorOf(watched)
+        ):
+            return super().eventFilter(watched, event)
+        if event.type() == QEvent.Type.FocusOut:
+            self.session.history.break_merge()
+            self._text_edit_key = None
+        if event.type() == QEvent.Type.FocusIn:
+            self._text_edit_key = id(watched) if self._text_input(watched) else None
+            if isinstance(watched, QLineEdit) and not watched.property(
+                "historyObserved"
+            ):
+                watched.setProperty("historyObserved", True)
+                watched.textEdited.connect(self._update_history_actions)
+                watched.editingFinished.connect(self._update_history_actions)
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # Tool buttons and popup menus can leave a code editor focused.
+            # Their changes must not merge with that editor's typing session.
+            text = watched if self._text_input(watched) else watched.parentWidget()
+            self._text_edit_key = id(text) if self._text_input(text) else None
+            if self._text_edit_key is None:
+                self.session.history.break_merge()
+        if isinstance(event, QKeyEvent):
+            if event.type() == QEvent.Type.KeyPress:
+                self._text_edit_key = id(watched) if self._text_input(watched) else None
+            # Native text undo stays local to the focused input. All other
+            # widgets use document history, without competing window shortcuts.
+            undo = event.matches(QKeySequence.StandardKey.Undo)
+            redo = event.matches(QKeySequence.StandardKey.Redo)
+            if (undo or redo) and not self._local_undo_available(
+                QApplication.focusWidget(), redo=redo
+            ):
+                if event.type() == QEvent.Type.ShortcutOverride:
+                    event.accept()
+                    return True
+                if event.type() == QEvent.Type.KeyPress:
+                    self.redo() if redo else self.undo()
+                    return True
+            if (
+                event.type() == QEvent.Type.KeyPress
+                and isinstance(watched, QLineEdit)
+                and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            ):
+                self.session.history.break_merge()
+            if event.type() == QEvent.Type.KeyRelease and self._text_input(watched):
+                self._update_history_actions()
+        return super().eventFilter(watched, event)
+
+    def _remember_selection(self) -> None:
+        if self._history_ready and not self._restoring:
+            self.session.history.remember_selection(
+                node_path(self.problem, self._last_selected)
+            )
+
+    def _on_structural_change(self, node: Node | None = None) -> None:
+        self._on_model_change(node, structural=True)
+
+    def _on_model_change(
+        self, node: Node | None = None, *, structural: bool = False
+    ) -> None:
+        if self._restoring:
+            return
+        if self._history_ready:
+            self._geometry_normalized = (
+                self.session.synchronize() or self._geometry_normalized
+            )
+            self._synchronized_for_refresh = True
+            focus = QApplication.focusWidget()
+            merge_key = (
+                self._text_edit_key
+                if not structural
+                and self._text_input(focus)
+                and self._text_edit_key == id(focus)
+                else None
+            )
+            target = node.name if node is not None else self.problem.label
+            self.session.record_edit(
+                target,
+                selection=node_path(self.problem, self._last_selected),
+                merge_key=merge_key,
+            )
+            self._update_history_actions()
+        if structural:
+            self.refresh_coordinator.refresh_now(node)
+        else:
+            self.refresh_coordinator.request(node)
+
+    def _update_history_actions(self) -> None:
+        history = self.session.history
+        self.history_panel.set_history(history)
+        focus = QApplication.focusWidget()
+        pending_input = (
+            isinstance(focus, QLineEdit)
+            and self.isAncestorOf(focus)
+            and not focus.isReadOnly()
+            and focus.isUndoAvailable()
+        )
+        undo_description = history.undo_description or tr("ui.history.current_input")
+        for button, key, enabled, description, shortcut in (
+            (
+                self._undo_button,
+                "undo",
+                history.can_undo or pending_input,
+                undo_description,
+                "Ctrl+Z",
+            ),
+            (
+                self._redo_button,
+                "redo",
+                history.can_redo,
+                history.redo_description,
+                "Ctrl+Shift+Z",
+            ),
+        ):
+            button.setText(tr(f"ui.history.{key}"))
+            button.setEnabled(enabled)
+            button.setToolTip(
+                tr(
+                    f"ui.history.{key}_detail",
+                    description=description,
+                    shortcut=shortcut,
+                )
+                if enabled
+                else tr(f"ui.history.{key}_empty")
+            )
+        self._update_caption()
+
+    def _finish_text_edit(self) -> None:
+        focus = QApplication.focusWidget()
+        if focus is not None and self.isAncestorOf(focus):
+            # QLineEdit writes many fields on editingFinished, including table
+            # delegates. Commit them before saving or choosing a history entry.
+            focus.clearFocus()
+        self.session.history.break_merge()
+
+    def flush_edits(self) -> None:
+        self._finish_text_edit()
+        self.refresh_coordinator.flush()
+
+    def mark_saved(self) -> None:
+        # File serialization can normalize references. Keep the saved marker
+        # attached to the exact state that was written, rather than an index.
+        self.session.record_edit(
+            self.problem.label,
+            selection=node_path(self.problem, self._last_selected),
+        )
+        self.session.history.mark_saved()
+        self._update_history_actions()
+
+    def undo(self) -> None:
+        self._restore_edit(-1)
+
+    def redo(self) -> None:
+        self._restore_edit(1)
+
+    def _restore_edit(self, offset: int) -> None:
+        self._finish_text_edit()
+        history = self.session.history
+        if not (history.can_undo if offset < 0 else history.can_redo):
+            return
+        self._restore_history_step(history.target(offset).step_id)
+
+    def _jump_to_history_step(self, step_id: int) -> None:
+        self._finish_text_edit()
+        # Input commits can prune the root. Resolve the stable ID afterwards.
+        if not self.session.history.contains(step_id):
+            self.notify.emit(tr("ui.history.unavailable"))
+            self._update_history_actions()
+            return
+        if step_id != self.session.history.current.step_id:
+            self._restore_history_step(step_id)
+
+    def _restore_history_step(self, step_id: int) -> None:
+        self.refresh_coordinator.cancel()
+        self._geometry_normalized = False
+        self._synchronized_for_refresh = False
+        self._text_edit_key = None
+        tree_state = self.tree.capture_view()
+        page = self._stack.currentWidget()
+        page_index = self._stack.currentIndex()
+        scroll = [
+            (area.verticalScrollBar().value(), area.horizontalScrollBar().value())
+            for area in page.findChildren(QAbstractScrollArea)
+        ]
+        tab = self._center.currentIndex()
+        self._restoring = True
+        updates_enabled = self.updatesEnabled()
+        self.setUpdatesEnabled(False)
+        try:
+            # Decode only the selected snapshot, even when skipping many steps.
+            snapshot = self.session.restore_edit_step(step_id)
+            self.part_sets.bind(self.problem)
+            self.actions.set_problem(self.problem)
+            self._last_selected = node_at_path(self.problem, snapshot.selection)
+            # Inactive pages also hold model objects. Recreate the form pages
+            # once on replay so none can later write to the previous document.
+            self._repopulate_stack()
+            self._register_refreshables()
+            self._select_editor(self._last_selected)
+            self.refresh_coordinator.refresh_now()
+            self.tree.restore_view(tree_state)
+            self._center.setCurrentIndex(tab)
+            page = self._stack.currentWidget()
+
+            def restore_scroll() -> None:
+                if (
+                    self._stack.currentWidget() is not page
+                    or self._stack.currentIndex() != page_index
+                ):
+                    return
+                for area, (vertical, horizontal) in zip(
+                    page.findChildren(QAbstractScrollArea), scroll
+                ):
+                    area.verticalScrollBar().setValue(vertical)
+                    area.horizontalScrollBar().setValue(horizontal)
+
+            # Collection editors schedule scrolling to a selected card. Restore
+            # the user's offsets after that layout, only while this page lives.
+            restore_scroll()
+            QTimer.singleShot(0, page, restore_scroll)
+        except Exception as error:
+            self.notify.emit(tr("ui.history.restore_failed", error=error))
+        finally:
+            self._restoring = False
+            self._update_history_actions()
+            self.setUpdatesEnabled(updates_enabled)
 
     # --------------------------------------------------------- footer slots
     def _submit_to_observer(self) -> None:
+        self.flush_edits()
         try:
             self.session.validate_for_run()
         except MissingImportedModelError:
             QMessageBox.warning(
                 self,
-                tr('ui.workbench.torchfea_model_required'),
-                tr('ui.workbench.select_a_model_directory_and_import_a_valid_npz_model_from_the_initial_g'),
+                tr("ui.workbench.torchfea_model_required"),
+                tr(
+                    "ui.workbench.select_a_model_directory_and_import_a_valid_npz_model_from_the_initial_g"
+                ),
             )
             return
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                tr('ui.workbench.incomplete_optimization_definition'),
+                tr("ui.workbench.incomplete_optimization_definition"),
                 str(exc),
             )
             return

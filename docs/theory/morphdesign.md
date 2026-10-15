@@ -60,11 +60,11 @@ B 样条的核心优势在于**局部支撑性**：调整一个控制点只会�
 
 #### 代码对应
 
-在 `src/morphopt/shapeopt/surfaceinterfaces/` 中，`BspSurfaceInterface`（别名 `BSP`）实现了 B 样条曲面的初始化与操作；曲面属于某个边界 Part：
+在 `src/morphopt/shapeopt/surfaces/` 中，`BspSurface`（别名 `BSP`）实现了 B 样条曲面的初始化与操作；曲面属于某个边界 Part：
 
 ```python
 class GeometryParams(morphopt.GeometryParams):
-    class BoundaryPart(morphopt.BoundaryPartInterface):
+    class BoundaryPart(morphopt.BoundaryPart):
         def define_surfaces(self):
             self.add_surface_interface(
                 self.BSP.initialize_cylinder(
@@ -122,7 +122,7 @@ $$
 \min_{\hat{\boldsymbol{\psi}}} \sum_{m=1}^{n'} \left[\left\|\mathbf{r}^{m}_\text{opt} - f(\mathbf{\Psi}^{m}; \hat{\mathbf{\Psi}}, \hat{\boldsymbol{\psi}})\right\|^2 + \alpha \left\|\mathbf{r}^m_\text{opt} - \boldsymbol{\psi}^{m}\right\|^2\right]
 $$
 
-**代码对应**：`src/morphopt/codesign/offsetboundarypartinterface.py` 中的 `CPGEOinterface` 类实现了曲面重建逻辑。
+**代码对应**：`src/morphopt/codesign/offset_boundary_part.py` 中的 `CPGEOinterface` 类实现了曲面重建逻辑。
 
 ---
 
@@ -768,8 +768,8 @@ while 未收敛:
 Controller                    → 优化主循环控制 (optcore/controller.py)
 ├── Params                    → 参数管理 (optcore/modelparams/params.py)
 │   ├── GeometryParams        → 一组 Part 接口（每个 Part = 一个 PartInterface）
-│   │   ├── BoundaryPartInterface (BSP/球面映射曲面，可优化)
-│   │   ├── INPPartInterface / TorchFEAPartInterface (固定几何)
+│   │   ├── BoundaryPart (BSP/球面映射曲面，可优化)
+│   │   ├── INPPart / TorchFEAPart (固定几何)
 │   │   └── 每个 Part 的 Instance 按 <part>-1, <part>-2, … 自动命名
 │   ├── FEAParams             → FEA 参数（加载步、BC、RP）
 │   └── Materials             → 材料参数（μ, κ, ρ）
@@ -788,7 +788,7 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
     │                          define_updater() 里用 add_geometry_updater() /
     │                          add_geometry_updater() / add_material_updater() 分类声明，
     │                          默认名 <类名>_<序号>
-    ├── UpdaterBoundaryPart[i]  → 每个边界 Part 一个 (shapeopt/update_boundarypart.py)
+    ├── UpdaterBoundaryPart[i]  → 每个边界 Part 一个 (shapeopt/update_boundary_part.py)
     │   ├── part_name         → 绑定的边界 Part（initialize 时解析；梯度按 Part 切片，
     │   │                       状态存 log/geometryupdater/<part_name>/）
     │   ├── ShapeDerivative   → 形状导数目标 (objectivefuncs/shapederivative.py)

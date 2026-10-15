@@ -6,17 +6,17 @@ The common optimization model lives directly in :mod:`morphopt`: compose
 interface and the updater that knows how to update it.
 """
 
-from .boundarypartinterface import BoundaryPartInterface
-from .update_boundarypart import UpdaterBoundaryPart
-from .surfaceinterfaces.basesurfaceconstraints import (
+from .boundary_part import BoundaryPart
+from .update_boundary_part import UpdaterBoundaryPart
+from .surfaces.base_constraints import (
     BaseSurfaceConstraints,
     SurfaceRelationConstraint,
 )
-from .surfaceinterfaces.bspsurfaceconstraints import BspSurfaceRelationConstraint
-from .surfaceinterfaces.cpgeosurfaceconstraints import CPGEOSurfaceRelationConstraint
+from .surfaces.bsp_constraints import BspSurfaceRelationConstraint
+from .surfaces.cpgeo_constraints import CPGEOSurfaceRelationConstraint
 
 __all__ = [
-    "BoundaryPartInterface",
+    "BoundaryPart",
     "UpdaterBoundaryPart",
     "BaseSurfaceConstraints",
     "SurfaceRelationConstraint",

@@ -18,6 +18,7 @@ from .scene import (
     MomentLoad,
     SpringLoad,
     MarkerLoad,
+    CouplingLoad,
 )
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     'MomentLoad',
     'SpringLoad',
     'MarkerLoad',
+    'CouplingLoad',
 ]

@@ -2,28 +2,43 @@
 from __future__ import annotations
 
 import os
+from colorsys import hsv_to_rgb
 from typing import Any, Callable
+
 import numpy as np
 import pyvista as pv
 import torchfea
 
-from ...optcore.modelparams.partinterface import (
-    BoxPartInterface,
-    INPPartInterface,
+from ...optcore.modelparams.parts import (
+    BoxPart,
+    INPPart,
     load_model_assembly,
     resolve_model_path,
 )
+from ..i18n import localized_message
 from ..application.cad import cad_brep_records_from_node
 from ..application.expressions import DefinitionValues
 from ..model.problem import (
-    InterfaceNode,
+    FEAComponentNode,
     InstanceNode,
-    PartInterfaceNode,
+    PartNode,
     ProblemDefinition,
     SurfaceNode,
     resolve_model_directory,
 )
 from .scene import PreviewScene
+
+
+_INSTANCE_COLORS = (
+    "#71899a",
+    "#a77b6d",
+    "#6f8e83",
+    "#887e9d",
+    "#aa905f",
+    "#82916a",
+    "#a47787",
+    "#718397",
+)
 
 
 def apply_instance_pose(
@@ -48,7 +63,7 @@ class PartPreviewAdapter:
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         raise NotImplementedError
@@ -56,12 +71,12 @@ class PartPreviewAdapter:
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         return None
 
-    def model_part(self, context: PreviewGeometry, part: PartInterfaceNode) -> torchfea.Part | None:
+    def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part | None:
         return None
 
 
@@ -72,16 +87,16 @@ class PartPreviewVisitor:
     def register(self, interface_type: str, adapter: PartPreviewAdapter) -> None:
         self._adapters[interface_type] = adapter
 
-    def adapter(self, part: PartInterfaceNode) -> PartPreviewAdapter:
+    def adapter(self, part: PartNode) -> PartPreviewAdapter:
         try:
             return self._adapters[part.interface_type]
         except KeyError:
-            raise NotImplementedError(f"No preview adapter registered for {part.interface_type}.") from None
+            raise NotImplementedError(localized_message("ui.errors.geometry.no_preview_adapter_registered_for_value", value_0=part.interface_type)) from None
 
     def visit(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         self.adapter(part).preview(context, part, instance)
@@ -91,10 +106,11 @@ class BoundaryPreviewAdapter(PartPreviewAdapter):
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
-        for index, surface in enumerate(part.surfaces()):
+        surfaces = part.surfaces()
+        for index, surface in enumerate(surfaces):
             mesh = context.surface_mesh(surface)
             if mesh is None:
                 continue
@@ -102,21 +118,36 @@ class BoundaryPreviewAdapter(PartPreviewAdapter):
                 mesh = apply_instance_pose(mesh, instance, context.values)
             name = instance.name if instance is not None else part.name
             options = dict(
-                color="#667fa8",
-                opacity=0.85,
-                show_edges=True,
-            ) if instance is None else dict(color="#2878b5", opacity=0.30)
+                color=(
+                    context.instance_color(instance.name)
+                    if instance is not None
+                    else "#77838c"
+                ),
+                # Both sides of the exterior shell cover the cavity. Keep
+                # their combined opacity low enough to see internal loads.
+                opacity=0.28 if len(surfaces) > 1 and index == 0 else 1.0,
+                show_edges=instance is None,
+                smooth_shading=True,
+            )
             context.scene.add_base(name, mesh, name=f"boundary:{name}:surface-{index}", **options)
 
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         index = _surface_index_from_name(name)
         surfaces = part.surfaces()
-        return context.surface_mesh(surfaces[index]) if 0 <= index < len(surfaces) else None
+        if not 0 <= index < len(surfaces):
+            return None
+        mesh = context.surface_mesh(surfaces[index])
+        if mesh is None:
+            return None
+        end = name.rsplit("_", 1)[-1]
+        if end in {"Head", "Bottom"}:
+            return _boundary_end_surface(mesh, end)
+        return mesh
 
 
 class BoxPreviewAdapter(PartPreviewAdapter):
@@ -128,7 +159,7 @@ class BoxPreviewAdapter(PartPreviewAdapter):
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         box = context.box_interface(part)
@@ -140,18 +171,18 @@ class BoxPreviewAdapter(PartPreviewAdapter):
             name,
             mesh,
             name=f"box:{name}",
-            color="#2878b5",
-            opacity=0.65 if instance else 1.0,
-            show_edges=True,
+            color=context.instance_color(instance.name) if instance else "#77838c",
+            opacity=1.0,
+            show_edges=instance is None,
         )
 
-    def model_part(self, context: PreviewGeometry, part: PartInterfaceNode) -> torchfea.Part:
+    def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part:
         return context.cached_part(part, lambda: context.box_interface(part).get_part())
 
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         node_faces = {f"nodes_{axis}{side}": f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")}
@@ -163,10 +194,10 @@ class BoxPreviewAdapter(PartPreviewAdapter):
 
 
 class INPPreviewAdapter(PartPreviewAdapter):
-    def model_part(self, context: PreviewGeometry, part: PartInterfaceNode) -> torchfea.Part:
+    def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part:
         return context.cached_part(
             part,
-            lambda: INPPartInterface(
+            lambda: INPPart(
                 mesh_file=part.mesh_file,
                 part_name=part.resolved_part_name(),
                 inp_part_name=part.inp_part_name or None,
@@ -177,7 +208,7 @@ class INPPreviewAdapter(PartPreviewAdapter):
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         return self.model_part(context, part).get_mesh(surf_name=name or None)
@@ -185,7 +216,7 @@ class INPPreviewAdapter(PartPreviewAdapter):
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         mesh = self.surface(context, part, part.exterior_surface or "")
@@ -193,14 +224,22 @@ class INPPreviewAdapter(PartPreviewAdapter):
             name = instance.name if instance is not None else part.name
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
-            context.scene.add_base(name, mesh, name=f"inp:{name}", color="#2878b5", opacity=1.0, show_edges=True)
+            context.scene.add_base(
+                name,
+                mesh,
+                name=f"inp:{name}",
+                color=context.instance_color(instance.name) if instance else "#77838c",
+                opacity=1.0,
+                show_edges=instance is None,
+                smooth_shading=True,
+            )
 
 
 class CADPreviewAdapter(PartPreviewAdapter):
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         records = context.cad_records(part)
@@ -219,7 +258,7 @@ class CADPreviewAdapter(PartPreviewAdapter):
             triangles = np.asarray(record["triangles"], dtype=np.int64).reshape(-1, 3)
             if not len(points) or not len(triangles):
                 raise ValueError(
-                    f"CAD face {face_index} has no display triangles."
+                    localized_message("ui.errors.geometry.cad_face_value_has_no_display_triangles", value_0=face_index)
                 )
             face_point_ids = np.unique(triangles)
             face_points = points[face_point_ids]
@@ -239,14 +278,14 @@ class CADPreviewAdapter(PartPreviewAdapter):
                 instance_name,
                 face,
                 name=f"cad-face:{instance_name}:{face_index}",
-                color="#667fa8",
-                opacity=0.96,
+                color=context.instance_color(instance.name) if instance else "#77838c",
+                opacity=1.0,
                 show_edges=False,
                 smooth_shading=True,
-                ambient=0.18,
-                diffuse=0.78,
-                specular=0.16,
-                specular_power=22,
+                ambient=0.20,
+                diffuse=0.72,
+                specular=0.22,
+                specular_power=28,
             )
             centers = face.cell_centers().points
             if len(centers):
@@ -296,7 +335,7 @@ class CADPreviewAdapter(PartPreviewAdapter):
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         face_name = _cad_face_name(name)
@@ -307,17 +346,17 @@ class CADPreviewAdapter(PartPreviewAdapter):
 
 
 class TorchFEAPreviewAdapter(PartPreviewAdapter):
-    def model_part(self, context: PreviewGeometry, part: PartInterfaceNode) -> torchfea.Part:
+    def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part:
         linked = context.problem.imported_model_part_node()
         if linked is None:
-            raise ValueError("No linked TorchFEA model.")
+            raise ValueError(localized_message("ui.errors.geometry.no_linked_torchfea_model"))
         assembly = context._ensure_torchfea_model(linked)
         return assembly.get_part(part.resolved_part_name())
 
     def surface(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         name: str,
     ) -> pv.DataSet | None:
         return self.model_part(context, part).get_mesh(surf_name=name or None)
@@ -325,7 +364,7 @@ class TorchFEAPreviewAdapter(PartPreviewAdapter):
     def preview(
         self,
         context: PreviewGeometry,
-        part: PartInterfaceNode,
+        part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
         mesh = self.surface(context, part, part.exterior_surface or "")
@@ -337,21 +376,22 @@ class TorchFEAPreviewAdapter(PartPreviewAdapter):
                 name,
                 mesh,
                 name=f"torchfea:{name}",
-                color="#2878b5",
+                color=context.instance_color(instance.name) if instance else "#77838c",
                 opacity=1.0,
-                show_edges=True,
+                show_edges=instance is None,
+                smooth_shading=True,
             )
 
 
 def default_part_visitor() -> PartPreviewVisitor:
     visitor = PartPreviewVisitor()
     for kind, adapter in {
-        "BoundaryPartInterface": BoundaryPreviewAdapter(),
-        "OffsetBoundaryPartInterface": BoundaryPreviewAdapter(),
-        "BoxPartInterface": BoxPreviewAdapter(),
-        "CADPartInterface": CADPreviewAdapter(),
-        "INPPartInterface": INPPreviewAdapter(),
-        "TorchFEAPartInterface": TorchFEAPreviewAdapter(),
+        "BoundaryPart": BoundaryPreviewAdapter(),
+        "OffsetBoundaryPart": BoundaryPreviewAdapter(),
+        "BoxPart": BoxPreviewAdapter(),
+        "CADPart": CADPreviewAdapter(),
+        "INPPart": INPPreviewAdapter(),
+        "TorchFEAPart": TorchFEAPreviewAdapter(),
     }.items():
         visitor.register(kind, adapter)
     return visitor
@@ -418,15 +458,16 @@ class PreviewGeometry:
         self._cad_face_meshes: dict[tuple[str, str], pv.DataSet] = {}
         self._local_cad_faces: dict[tuple[int, str], pv.DataSet] = {}
         self._part_cache: dict[int, torchfea.Part] = {}
-        self._box_cache: dict[int, BoxPartInterface] = {}
+        self._box_cache: dict[int, BoxPart] = {}
         self._cad_cache: dict[int, list[dict[str, Any]]] = {}
+        self._instance_colors: dict[str, str] = {}
         self.values = DefinitionValues(None)
 
     def build(
         self,
         problem: ProblemDefinition,
         mode: str,
-        selected: PartInterfaceNode | None = None,
+        selected: PartNode | None = None,
     ) -> PreviewScene:
         self.problem = problem
         self.scene = PreviewScene()
@@ -435,6 +476,7 @@ class PreviewGeometry:
         self._part_cache = {}
         self._box_cache = {}
         self._cad_cache = {}
+        self._instance_colors = {}
         self.values = DefinitionValues(problem)
         if problem.imported_model_part_node() is None:
             self._clear_model_preview()
@@ -442,8 +484,15 @@ class PreviewGeometry:
             parts = [selected] if selected is not None else []
         elif mode == "assembly":
             parts = problem.part_interfaces()
+            for part in parts:
+                for instance in part.instances():
+                    if instance.name not in self._instance_colors:
+                        color_index = len(self._instance_colors)
+                        self._instance_colors[instance.name] = _instance_color(
+                            color_index
+                        )
         else:
-            raise ValueError(f"Unknown preview mode: {mode}")
+            raise ValueError(localized_message("ui.errors.geometry.unknown_preview_mode_value", value_0=mode))
         for part in parts:
             instances = part.instances() if mode == "assembly" else [None]
             for instance in instances:
@@ -456,14 +505,23 @@ class PreviewGeometry:
                 self._draw_material_boxes()
             except (ValueError, TypeError, NameError, SyntaxError) as exc:
                 self._show_preview_message(str(exc))
+            legend: dict[str, str] = {}
+            for name, _mesh, item in self.scene.base_meshes:
+                if name in self._instance_colors:
+                    legend.setdefault(name, self._instance_colors[name])
+            self.scene.instance_legend = list(legend.items())
         return self.scene
+
+    def instance_color(self, instance_name: str) -> str:
+        """Return a stable assembly color for a named Instance."""
+        return self._instance_colors.get(instance_name, _INSTANCE_COLORS[0])
 
     def surface_mesh(self, surface: SurfaceNode) -> pv.DataSet | None:
         return self.surfaces.visit(surface, self.values)
 
     def cached_part(
         self,
-        part: PartInterfaceNode,
+        part: PartNode,
         factory: Callable[[], torchfea.Part],
     ) -> torchfea.Part:
         if id(part) not in self._part_cache:
@@ -472,9 +530,9 @@ class PreviewGeometry:
             self._part_cache[id(part)] = model_part
         return self._part_cache[id(part)]
 
-    def box_interface(self, part: PartInterfaceNode) -> BoxPartInterface:
+    def box_interface(self, part: PartNode) -> BoxPart:
         if id(part) not in self._box_cache:
-            self._box_cache[id(part)] = BoxPartInterface(
+            self._box_cache[id(part)] = BoxPart(
                 length=self.values.resolve(part.length),
                 height=self.values.resolve(part.height),
                 depth=self.values.resolve(part.depth),
@@ -485,12 +543,12 @@ class PreviewGeometry:
             )
         return self._box_cache[id(part)]
 
-    def cad_records(self, part: PartInterfaceNode) -> list[dict[str, Any]]:
+    def cad_records(self, part: PartNode) -> list[dict[str, Any]]:
         if id(part) not in self._cad_cache:
             self._cad_cache[id(part)] = cad_brep_records_from_node(part, self.problem)
         return self._cad_cache[id(part)]
 
-    def mesh_for_surface(self, interface: InterfaceNode, surface_name: str) -> pv.DataSet | None:
+    def mesh_for_surface(self, interface: FEAComponentNode, surface_name: str) -> pv.DataSet | None:
         instance = interface.instance
         name = instance.name if instance is not None else interface.instance_name or ""
         face = _cad_face_name(surface_name)
@@ -518,13 +576,24 @@ class PreviewGeometry:
         if part is None:
             return None
         try:
-            model = self.parts.adapter(part).model_part(self, part)
-            if model is None:
-                return None
-            ids = np.asarray(model.set_nodes.get(set_name, []), dtype=int)
-            if not len(ids):
-                return None
-            point = pv.PolyData(model.nodes.detach().cpu().numpy()[ids].mean(axis=0).reshape(1, 3))
+            adapter = self.parts.adapter(part)
+            model = adapter.model_part(self, part)
+            points = None
+            if model is not None:
+                ids = np.asarray(model.set_nodes.get(set_name, []), dtype=int)
+                if len(ids):
+                    points = model.nodes.detach().cpu().numpy()[ids]
+
+            if points is None:
+                mesh = adapter.surface(self, part, set_name)
+                if mesh is None or not mesh.n_points:
+                    return None
+                points = np.asarray(mesh.points, dtype=float)
+                points = _preview_node_set_points(part, set_name, points)
+                if not len(points):
+                    return None
+
+            point = pv.PolyData(points.mean(axis=0).reshape(1, 3))
             instance = next((i for i in part.instances() if i.name == instance_name), None)
             return apply_instance_pose(point, instance, self.values).points[0] if instance else point.points[0]
         except (KeyError, IndexError, ValueError, NotImplementedError):
@@ -566,10 +635,10 @@ class PreviewGeometry:
             message, position="upper_left", color="#e74c3c", font_size=10
         )
 
-    def _ensure_torchfea_model(self, geometry: PartInterfaceNode) -> torchfea.Assembly:
+    def _ensure_torchfea_model(self, geometry: PartNode) -> torchfea.Assembly:
         if not geometry.model_directory:
             self._clear_model_preview()
-            raise ValueError("No TorchFEA model is linked from Initial Geometry.")
+            raise ValueError(localized_message("ui.errors.geometry.no_torchfea_model_is_linked_from_initial_geometry"))
         model_directory = resolve_model_directory(geometry.model_directory)
         path = resolve_model_path(model_directory, geometry.model_filename or "")
         placement_key = tuple(
@@ -582,7 +651,7 @@ class PreviewGeometry:
                 ),
             )
             for interface in self.problem.part_interfaces()
-            if interface.interface_type == "TorchFEAPartInterface"
+            if interface.interface_type == "TorchFEAPart"
         )
         cache_key = (str(path), path.stat().st_mtime_ns, placement_key)
         if cache_key == self._model_cache_key and self._model_assembly is not None:
@@ -605,7 +674,7 @@ class PreviewGeometry:
         interfaces = [
             interface
             for interface in self.problem.part_interfaces()
-            if interface.interface_type == "TorchFEAPartInterface"
+            if interface.interface_type == "TorchFEAPart"
         ]
         if not interfaces:
             return source
@@ -676,12 +745,55 @@ def _cad_face_name(surface_name: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _instance_color(index: int) -> str:
+    if index < len(_INSTANCE_COLORS):
+        return _INSTANCE_COLORS[index]
+    hue = ((index - len(_INSTANCE_COLORS)) * 0.61803398875 + 0.11) % 1.0
+    red, green, blue = hsv_to_rgb(hue, 0.40, 0.76)
+    return (
+        f"#{round(red * 255):02x}"
+        f"{round(green * 255):02x}"
+        f"{round(blue * 255):02x}"
+    )
+
+
 def _surface_index_from_name(surface_name: str) -> int:
     """surface_1_All / surface_1_offset -> 1"""
     import re
 
     m = re.match(r"surface_(\d+)_", surface_name)
     return int(m.group(1)) if m else -1
+
+
+def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
+    """Extract the actual cap cells used by a boundary-part end node set."""
+    if not mesh.n_cells or not mesh.n_points:
+        return mesh
+    centers = mesh.cell_centers().points
+    bounds = mesh.bounds
+    target = bounds[5] if end == "Head" else bounds[4]
+    tolerance = max((bounds[5] - bounds[4]) * 1e-6, 1e-8)
+    cap_cells = np.abs(centers[:, 2] - target) <= tolerance
+    if not np.any(cap_cells):
+        return mesh
+    return mesh.extract_cells(cap_cells).extract_surface(
+        algorithm="dataset_surface"
+    )
+
+
+def _preview_node_set_points(
+    part: PartNode, set_name: str, points: np.ndarray
+) -> np.ndarray:
+    """Approximate a named boundary node set from its preview surface."""
+    if part.interface_type not in {"BoundaryPart", "OffsetBoundaryPart"}:
+        return points
+    suffix = set_name.rsplit("_", 1)[-1]
+    if suffix not in {"Head", "Bottom"}:
+        return points
+    z = points[:, 2]
+    target = float(z.max() if suffix == "Head" else z.min())
+    tolerance = max(float(np.ptp(points, axis=0).max()) * 1e-6, 1e-8)
+    return points[np.abs(z - target) <= tolerance]
 
 
 class InitialDesignGeometry:

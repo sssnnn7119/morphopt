@@ -26,6 +26,7 @@ from ..visualization.geometry import InitialDesignGeometry
 from ..application.definitions import ProblemSession
 from ..i18n import tr
 from ..presentation.labels import quickstart_summary
+from .collection_controls import ActionButton, CollectionHeader, ItemActions
 
 
 class ChamberLayersEditor(QWidget):
@@ -37,6 +38,12 @@ class ChamberLayersEditor(QWidget):
         self._loading = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        header = CollectionHeader("", self._add)
+        self.add_button = header.add_button
+        self.add_button.setToolTip(tr('ui.widgets.quickstart.add_layer'))
+        self.row_actions = ItemActions(-1, 0, self._remove, self._move)
+        header.actions.addWidget(self.row_actions)
+        layout.addWidget(header)
         hint = QLabel(tr('ui.widgets.quickstart.layers_run_from_base_to_tip_along_z_equal_channel_numbers_share_pressure'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -50,15 +57,8 @@ class ChamberLayersEditor(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setMinimumHeight(155)
         self.table.cellChanged.connect(self._cell_changed)
+        self.table.itemSelectionChanged.connect(self._update_actions)
         layout.addWidget(self.table)
-        buttons = QHBoxLayout()
-        for label, callback in [(tr('ui.widgets.quickstart.add_layer'), self._add), (tr('ui.widgets.quickstart.remove_layer'), self._remove),
-                                (tr('ui.widgets.quickstart.move_up'), lambda: self._move(-1)), (tr('ui.widgets.quickstart.move_down'), lambda: self._move(1))]:
-            button = QPushButton(label)
-            button.clicked.connect(callback)
-            buttons.addWidget(button)
-        buttons.addStretch()
-        layout.addLayout(buttons)
         self.set_layers(layers or [ChamberLayer()])
 
     def set_layers(self, layers):
@@ -84,6 +84,12 @@ class ChamberLayersEditor(QWidget):
                 else:
                     self.table.setItem(row, column, QTableWidgetItem(value))
         self._loading = False
+        self._update_actions()
+
+    def _update_actions(self) -> None:
+        count = self.table.rowCount()
+        self.row_actions.set_position(self.table.currentRow(), count, allow_remove=count > 1)
+        self.add_button.setEnabled(count < 8)
 
     def layers(self):
         layers = []
@@ -123,12 +129,14 @@ class ChamberLayersEditor(QWidget):
         if len(layers) < 8:
             layers.append(ChamberLayer(length=40.))
             self.set_layers(layers)
+            self.table.selectRow(len(layers) - 1)
             self.changed.emit()
 
     def _remove(self):
         if self.table.rowCount() > 1:
             row = self.table.currentRow()
             self.table.removeRow(row if row >= 0 else self.table.rowCount()-1)
+            self._update_actions()
             self.changed.emit()
 
     def _move(self, delta):
@@ -274,22 +282,20 @@ class ObjectiveListEditor(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        list_row = QHBoxLayout()
+        header = CollectionHeader("", self._add)
+        self.add_button = header.add_button
+        self.add_button.setToolTip(tr('ui.widgets.quickstart.add_objective'))
+        self.remove_button = ActionButton(
+            tr('ui.common.delete'), self._remove, danger=True,
+            tooltip=tr('ui.widgets.quickstart.remove_objective'),
+        )
+        header.actions.addWidget(self.remove_button)
+        outer.addWidget(header)
         self.list = QListWidget()
         self.list.setMinimumHeight(74)
         self.list.setMaximumHeight(125)
         self.list.currentRowChanged.connect(self._selection_changed)
-        list_row.addWidget(self.list, 1)
-        buttons = QVBoxLayout()
-        self.add_button = QPushButton(tr('ui.widgets.quickstart.add_objective'))
-        self.remove_button = QPushButton(tr('ui.widgets.quickstart.remove_objective'))
-        self.add_button.clicked.connect(self._add)
-        self.remove_button.clicked.connect(self._remove)
-        buttons.addWidget(self.add_button)
-        buttons.addWidget(self.remove_button)
-        buttons.addStretch()
-        list_row.addLayout(buttons)
-        outer.addLayout(list_row)
+        outer.addWidget(self.list)
 
         self.detail = QWidget()
         self.form = QFormLayout(self.detail)
@@ -369,7 +375,7 @@ class ObjectiveListEditor(QWidget):
         label = tr(GOALS[objective.kind][0])
         if self.draft.method == "simp" and objective.kind == "bend":
             label = tr('ui.widgets.quickstart.target_tip_deflection')
-        return f"{label} · w={objective.weight:g}"
+        return tr("ui.quickstart.objective_title", label=label, weight=objective.weight)
 
     def _update_list_item(self, row):
         if 0 <= row < len(self.draft.objectives) and self.list.item(row) is not None:
@@ -692,7 +698,8 @@ class QuickstartDialog(QDialog):
             QDialogButtonBox.ButtonRole.AcceptRole,
         )
         self.create_button.setDefault(True)
-        self.create_button.setStyleSheet("padding:8px 24px; font-weight:600;")
+        self.create_button.setProperty("actionRole", "primary")
+        self.create_button.setProperty("buttonLayout", "prominent")
         buttons.accepted.connect(self._create)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)

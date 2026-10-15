@@ -9,14 +9,14 @@
 通过顶层 `morphopt` 导出；材料定义和更新直接复用 `simp`。
 
 ```text
-OffsetBoundaryPartInterface ──extends──► BoundaryPartInterface
+OffsetBoundaryPart ──extends──► BoundaryPart
 UpdaterOffsetBoundaryPart   ──extends──► UpdaterBoundaryPart
 偏置约束                   ──extends──► shape BaseConstraints
 ```
 
-## `OffsetBoundaryPartInterface`
+## `OffsetBoundaryPart`
 
-源码：`codesign/offsetboundarypartinterface.py`。
+源码：`codesign/offset_boundary_part.py`。
 
 - 第 0 个曲面是外边界，第 1 个及之后的曲面是内腔。
 - `shell_thickness` 为正的偏置厚度，`num_layers` 为至少 1 的层数。
@@ -32,10 +32,10 @@ UpdaterOffsetBoundaryPart   ──extends──► UpdaterBoundaryPart
 
 ## `UpdaterOffsetBoundaryPart`
 
-源码：`codesign/update_offsetboundarypart.py`。
+源码：`codesign/update_offset_boundary_part.py`。
 
 复用 `UpdaterBoundaryPart` 的更新、步长和状态保存流程，`target_type` 限定为
-`OffsetBoundaryPartInterface`。更新器在构造时不持有模型，注册时通过名字指定
+`OffsetBoundaryPart`。更新器在构造时不持有模型，注册时通过名字指定
 目标，初始化时由 `morphopt.Updaters` 交接一个 Part。
 
 ```python

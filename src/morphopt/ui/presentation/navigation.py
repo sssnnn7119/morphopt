@@ -1,19 +1,10 @@
 """Transient navigation handles; they are never serialized in a definition."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from ..model.problem import Node, ProblemDefinition
+from ..model.problem import Node, ProblemDefinition, UpdaterNode
 from ..i18n import tr
-from .labels import (
-    container_title,
-    surface_title_text,
-    part_interface_title_text,
-    instance_title_text,
-    cad_operation_title_text,
-    interface_title_text,
-    material_title_text,
-    updater_title_text,
-    display_node_title,
-)
+from .labels import container_title, node_title, updater_group_title
+
 
 class ParamsTreeNode(Node):
     """Navigation parent for the persisted geometry, loads and materials."""
@@ -27,6 +18,13 @@ class HelperCodeTreeNode(Node):
 
     def __init__(self) -> None:
         super().__init__(kind="helper_code", name="Helper code")
+
+
+class CustomClassesTreeNode(Node):
+    """Root-level collection of reusable custom classes."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="custom_classes", name=container_title("custom_classes"))
 
 
 class HelperGroupTreeNode(Node):
@@ -60,23 +58,12 @@ class UpdaterTreeNode(Node):
     interface for geometry, a material interface for materials).
     """
 
-    def __init__(self, updater: Node, group: str, config_index: int = 0) -> None:
-        label = {
-            "geometry": tr('ui.widgets.model_tree.geometry_optimizer'),
-            "materials": tr('ui.widgets.model_tree.material_optimizer'),
-            "geometry_objectives": tr('ui.widgets.model_tree.sub_optimizer_objectives'),
-            "geometry_symmetry": tr('ui.widgets.model_tree.geometry_symmetry_constraints'),
-            "geometry_penalty": tr('ui.widgets.model_tree.geometry_penalty_constraints'),
-            "materials_objectives": tr('ui.widgets.model_tree.sub_optimizer_objectives'),
-            "materials_penalty": tr('ui.widgets.model_tree.material_penalty_constraints'),
-        }.get(group, group)
+    def __init__(self, updater: UpdaterNode, group: str, config_index: int = 0) -> None:
+        label = updater_group_title(group)
         super().__init__(kind=f"updater_{group}", name=label)
         self.updater_parent = updater
         self.group = group
         self.config_index = int(config_index)
-        self.code_reference = (
-            "UpdaterBoundaryPart" if group.startswith("geometry") else "UpdaterSIMPMaterial"
-        )
 
     @property
     def section_group(self) -> str:
@@ -93,14 +80,33 @@ class UpdaterTreeNode(Node):
         return configs[self.config_index] if self.config_index < len(configs) else None
 
 
+class UpdaterItemTreeNode(UpdaterTreeNode):
+    """Navigation handle for one ordered item, backed by its config dictionary."""
+
+    def __init__(self, updater: UpdaterNode, group: str, config_index: int, item: dict) -> None:
+        super().__init__(updater, group, config_index)
+        self.kind = "updater_item"
+        self.item = item
+
+    @property
+    def category(self) -> str:
+        if self.group.endswith("objectives"):
+            return "objectives"
+        if self.group.endswith("symmetry"):
+            return "geometry_symmetry"
+        return "constraints"
+
+
 def node_key(node: Node | None):
     """Stable identity for transient Params/updater entries across rebuilds."""
     if node is None:
         return None
     if node.kind == "params_class":
         return ("params_class",)
-    if node.kind in {"helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group"}:
+    if node.kind in {"loads_group", "helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group", "custom_classes"}:
         return (node.kind,)
+    if isinstance(node, UpdaterItemTreeNode):
+        return ("updater_item", id(node.updater_parent), node.group, node.config_index, id(node.item))
     if isinstance(node, UpdaterTreeNode):
         return (
             "updater",
@@ -133,30 +139,13 @@ class DefinitionNavigation:
     ) -> NavigationEntry:
         return NavigationEntry(
             node,
-            display_node_title(self.problem, title or self.title(node), node),
+            title or self.title(node),
             bold,
             list(children),
         )
 
     def title(self, node: Node) -> str:
-        if node.kind == "part_interface":
-            return part_interface_title_text(node)
-        if node.kind == "instance":
-            return instance_title_text(node)
-        if node.kind == "cad_operation":
-            return cad_operation_title_text(node)
-        if node.kind == "interface":
-            return interface_title_text(node)
-        if node.kind == "material":
-            return material_title_text(node)
-        if node.kind.startswith("updater_"):
-            return updater_title_text(self.problem, node)
-        if node.kind in {"helper_variable", "helper_function"}:
-            return node.name
-        if node.kind == "surface":
-            owner = self.problem.owner_of_surface(node)
-            return surface_title_text(node, owner.surfaces().index(node))
-        return container_title(node.kind)
+        return node_title(self.problem, node)
 
     def build(self) -> list[NavigationEntry]:
         problem = self.problem
@@ -175,10 +164,7 @@ class DefinitionNavigation:
             for part in problem.part_interfaces():
                 children = [self.entry(node) for node in part.instances()]
                 children.extend(self.entry(node) for node in part.cad_operations())
-                children.extend(self.entry(
-                    node,
-                    surface_title_text(node, index),
-                ) for index, node in enumerate(part.surfaces()))
+                children.extend(self.entry(node) for node in part.surfaces())
                 geometry.children.append(self.entry(part, children=children))
         loads = self.entry(LoadsTreeNode(), bold=True)
         params.children.append(loads)
@@ -208,10 +194,62 @@ class DefinitionNavigation:
                 ("materials", problem.updater.materials, ("materials_objectives", "materials_penalty")),
             ):
                 for index in range(len(configs)):
-                    children = [self.entry(UpdaterTreeNode(problem.updater, group, index)) for group in groups]
+                    children = []
+                    for group in groups:
+                        key = (
+                            "objective_functions" if group.endswith("objectives")
+                            else "symmetry_constraints" if group.endswith("symmetry")
+                            else "constraints"
+                        )
+                        children.append(self.entry(
+                            UpdaterTreeNode(problem.updater, group, index),
+                            children=[
+                                self.entry(UpdaterItemTreeNode(problem.updater, group, index, item))
+                                for item in configs[index].get(key, [])
+                            ],
+                        ))
                     updater.children.append(self.entry(
                         UpdaterTreeNode(problem.updater, kind, index),
                         bold=True,
                         children=children,
                     ))
-        return [helpers, controller]
+        custom_classes = self.entry(CustomClassesTreeNode(), bold=True, children=[
+            self.entry(custom, children=[self.entry(method) for method in custom.children])
+            for custom in problem.custom_classes
+        ])
+        return [helpers, custom_classes, controller]
+
+
+def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] | None:
+    """Locate a persisted or virtual node without retaining Python identities.
+
+    Paths are relative to one document snapshot, including helper and updater
+    groups. They are UI bookmarks, not part of the .morph file format.
+    """
+    key = node_key(node)
+    if key is None:
+        return None
+
+    def visit(entries: list[NavigationEntry], prefix: tuple[int, ...]) -> tuple[int, ...] | None:
+        for index, entry in enumerate(entries):
+            path = (*prefix, index)
+            if node_key(entry.node) == key:
+                return path
+            found = visit(entry.children, path)
+            if found is not None:
+                return found
+        return None
+
+    return visit(DefinitionNavigation(problem).build(), ())
+
+
+def node_at_path(problem: ProblemDefinition, path: tuple[int, ...] | None) -> Node | None:
+    """Resolve a snapshot bookmark, retaining its parent if a child is absent."""
+    entries = DefinitionNavigation(problem).build()
+    node = None
+    for index in path or ():
+        if not 0 <= index < len(entries):
+            break
+        entry = entries[index]
+        node, entries = entry.node, entry.children
+    return node

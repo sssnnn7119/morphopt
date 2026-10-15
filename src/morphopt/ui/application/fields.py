@@ -1,7 +1,7 @@
 """Field selection and model-backed choices, independent of Qt editors."""
 from __future__ import annotations
 
-from ..model.problem import CADOperationNode, InterfaceNode, Node, ProblemDefinition
+from ..model.problem import CADOperationNode, FEAComponentNode, Node, ProblemDefinition
 from ..model.schemas import (
     CAD_OPERATION_TYPES,
     INTERFACE_TYPES,
@@ -61,13 +61,17 @@ def fields_for_node(
         if mt in ("HomogeneousMaterial", "SIMP_BSPFieldMaterials"):
             common = {"part_name", "material_model", "density", "elementname"}
             if mt == "SIMP_BSPFieldMaterials":
+                common |= {
+                    "simp_ratio_min", "bounding_box", "simp_field_resolution",
+                    "degree", "initial_ratio", "voidpenalfactor", "materialpenalty",
+                }
                 # Neo-Hookean SIMP uses its maximum moduli as the model
                 # parameters.  Other models expose their own TorchFEA
                 # parameters; mumax/kappamax remain internal plotting
                 # defaults and are not shown as a second parameter set.
                 if model in ("NeoHookean", "NeoHookeanLnJ"):
                     common |= {"mumax", "kappamax"}
-                    model_parameters = {"mu", "kappa"}
+                    model_parameters = set()
                 else:
                     model_parameters = set(MATERIAL_MODEL_PARAMETERS.get(model, ()))
                 allowed = common | model_parameters
@@ -82,7 +86,8 @@ def fields_for_node(
         ):
             part_names = problem.part_names()
             choices["part_name"] = part_names
-            choices["elementname"] = problem.element_names(node.part_name)
+            catalog = sets or PartSetCatalog(problem)
+            choices["elementname"] = list(catalog.for_part(node.part).elements)
         return fields, code_slots, choices
     if kind == "geometry":
         # the Geometry section is a container: its Parts are separate nodes
@@ -100,18 +105,13 @@ def fields_for_node(
     if kind == "instance":
         return [
             fld(
-                "translation",
-                "Translation",
-                "vec3",
-                [0.0, 0.0, 0.0],
-                "Translation [tx, ty, tz] of this Instance.",
+                "translation", "ui.schema.fields.translation.label.translation", "vec3", [0.0, 0.0, 0.0],
+                doc_key="ui.schema.fields.translation.help.translation_tx_ty_tz_of_this_instance",
             ),
             fld(
-                "rotation",
-                "Rotation exponential coordinates",
-                "vec3",
-                [0.0, 0.0, 0.0],
-                "Rotation exponential coordinates [rx, ry, rz].",
+                "rotation", "ui.schema.fields.rotation.label.rotation_exponential_coordinates",
+                "vec3", [0.0, 0.0, 0.0],
+                doc_key="ui.schema.fields.rotation.help.rotation_exponential_coordinates_rx_ry_rz",
             ),
         ], {}, {}
     if kind == "solver":
@@ -126,7 +126,7 @@ def fields_for_node(
 def dynamic_choices(
     problem: ProblemDefinition,
     itype: str,
-    iface: InterfaceNode,
+    iface: FEAComponentNode,
     *,
     sets: PartSetCatalog | None = None,
 ) -> dict[str, list[str]]:

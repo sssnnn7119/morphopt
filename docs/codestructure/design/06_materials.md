@@ -8,15 +8,15 @@
 
 ```text
 MaterialsParams.interfaces
-  └── BaseMaterialInterface
+  └── BaseMaterial
        ├── target_elements(assembly)
        └── set_materials(fea)
               └── elements.set_materials(torchfea material)
 ```
 
-## `BaseMaterialInterface`
+## `BaseMaterial`
 
-源码：`optcore/modelparams/materialinterface/basematerialinterface.py`；继承 `BaseParams`。
+源码：`optcore/modelparams/materials/base_material.py`；继承 `BaseModelComponent`。
 
 | 属性 | 可见性 | 说明 |
 |---|---|---|
@@ -32,17 +32,17 @@ MaterialsParams.interfaces
 | `set_materials(fe)` | 子类将材料分配到目标元素的实现点。 |
 | `get_design_values()` | 可设计材料提供活跃设计值；均质材料返回空 Tensor。 |
 
-材料接口也继承 `BaseParams` 的标准持久化、可视化和接口容器行为。均质材料不注册子接口；SIMP 材料将其设计场状态保存在自身属性中，详见 [08 SIMP 材料优化](08_simp.md)。
+材料组件继承 `BaseModelComponent` 的初始化、持久化和可视化协议。`BaseMaterial` 不包含集合注册表；均质材料不注册子组件，SIMP 材料将其设计场状态保存在自身属性中，详见 [08 SIMP 材料优化](08_simp.md)。
 
 ## `HomogeneousMaterial`
 
-源码：`homogeneousmaterial.py`；继承 `BaseMaterialInterface`。
+源码：`homogeneous_material.py`；继承 `BaseMaterial`。
 
 `set_materials(fe)` 针对 `target_elements(fe.assembly)` 中的每个元素族执行以下操作：清除已有材料，调用 `MaterialModels.create_material(material_parameters)` 生成 TorchFEA 材料，并设置元素密度。`HomogeneousMaterial` 表达固定材料分配，设计变量数量为零；SIMP 材料在 [08 SIMP 材料优化](08_simp.md) 中提供可更新实现。
 
 ## `MaterialModels`
 
-源码：`materialmodels.py`。`MaterialModels` 是参数类型命名空间；嵌套的冻结 dataclass 把所需的本构参数与对应 TorchFEA 材料类绑定。
+源码：`models.py`。`MaterialModels` 是参数类型命名空间；嵌套的冻结 dataclass 把所需的本构参数与对应 TorchFEA 材料类绑定。
 
 | 参数类型 | 字段 | TorchFEA 材料 |
 |---|---|---|
@@ -71,7 +71,7 @@ Params.create_feamodel()
 
 ## 新材料接口的实现检查表
 
-1. 继承 `BaseMaterialInterface`，构造函数接收目标 Part、元素选择、材料参数和密度，并调用 `super().__init__()`。
+1. 继承 `BaseMaterial`，构造函数接收目标 Part、元素选择、材料参数和密度，并调用 `super().__init__()`。
 2. 实现 `set_materials(fe)`；以 `target_elements(fe.assembly)` 获取所有目标元素。
 3. 若材料可设计，同时实现 `ProtocalUpdatable`，使设计变量顺序、材料投影、灵敏度变量和保存状态保持一致。
 4. 在用户 `MaterialsParams.define_interface()` 中用 `add_interface()` 注册，供 UI 模型和运行时使用同一名称。

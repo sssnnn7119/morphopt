@@ -12,7 +12,7 @@ from ..protocal import (
 )
 from .feaparams import FEAParams
 from .geometry import GeometryParams
-from .materials import MaterialsParams
+from .materialsparams import MaterialsParams
 
 
 class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):

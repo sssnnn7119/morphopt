@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -20,32 +20,38 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from ..i18n import tr
+from ..refresh import RefreshContext
 from ..model.problem import Node
+from ..presentation.labels import node_title, reference_choice_title
 from .codeeditor import CodeEditor
+from .collection_controls import ActionButton
 from ..application.fields import fields_for_node
 from ..application.editing import set_node_field, rename_node
 from .param_form import ParamForm
+from .values import display_choice
 
 
 class PropertyEditor(QWidget):
     """Renders the field list of one node into editable widgets."""
 
     changed = Signal(object)  # Node that changed
+    activated = Signal(object)  # Node whose controls received keyboard focus
 
     def __init__(self, parent=None, compact: bool = False):
         super().__init__(parent)
         self._compact = compact
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self._title = QLabel("—")
-        self._title.setStyleSheet("font-size:14px; font-weight:600; color:#e0e0e0;")
+        # Visibility is set before insertion into the layout. Give the label
+        # its owner now so it can never appear as a temporary top-level window.
+        self._title = QLabel("—", self)
+        self._title.setProperty("textRole", "sectionHeading")
         self._title.setVisible(not compact)
         if not compact:
             outer.addWidget(self._title)
@@ -75,6 +81,7 @@ class PropertyEditor(QWidget):
         self._controls: dict[str, QWidget] = {}
         self._code_controls: dict[str, CodeEditor] = {}
         self._dof_groups: dict[str, list[QCheckBox]] = {}
+        self._name_edit: QLineEdit | None = None
 
     # ------------------------------------------------------------- content
     def edit_node(
@@ -89,28 +96,35 @@ class PropertyEditor(QWidget):
         actions: list[tuple[str, Callable[[], None], bool]] | None = None,
     ) -> None:
         self._completion_problem = completion_problem
+        title = title if title is not None else node_title(completion_problem, node)
         if fields is None:
             fields, code_slots, extra_choices = fields_for_node(node, completion_problem)
         code_slots, extra_choices = code_slots or {}, extra_choices or {}
         helper_names = [item.name for item in completion_problem.helper_variables] if completion_problem else []
         schema = tuple((field["key"], field["type"]) for field in fields), tuple(code_slots)
         if node is self._node and schema == self._schema and self._parameter_form is not None:
-            self._title.setText(title if title is not None else (node.name or node.kind))
+            self._title.setText(title)
             self._parameter_form.helper_names = set(helper_names)
             self._parameter_form.refresh_choices(extra_choices)
+            self._parameter_form.refresh_values()
+            if self._name_edit is not None and not self._name_edit.hasFocus():
+                if self._name_edit.text() != node.name:
+                    self._name_edit.setText(node.name)
             return
         self._schema = schema
         self._node = node
         self._controls.clear()
         self._code_controls.clear()
         self._dof_groups.clear()
+        self._name_edit = None
         # clear form (remove all rows)
         while self._form.rowCount():
             self._form.removeRow(0)
 
-        self._title.setText(title if title is not None else (node.name or node.kind))
+        self._title.setText(title)
         if node.kind in {"interface", "part_interface", "material", "instance"}:
             name_edit = QLineEdit(node.name or "")
+            self._name_edit = name_edit
             name_edit.setToolTip(
                 (tr('ui.widgets.editor.load_name_the_step_matrix_jacobian_needed_hold_object_references_and_fol') if node.kind == "interface" else (tr('ui.widgets.editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted') if node.kind == "part_interface" else tr('ui.widgets.editor.unique_assembly_name_of_this_part_instance')))
             )
@@ -153,20 +167,7 @@ class PropertyEditor(QWidget):
                 action_layout.setContentsMargins(0, 2, 0, 2)
                 action_layout.setSpacing(6)
             for index, (label, callback, danger) in enumerate(actions):
-                button = QPushButton(label)
-                button.setMinimumHeight(32)
-                button.setStyleSheet(
-                    "QPushButton { background:#9d3434; color:white; padding:5px 9px; "
-                    "border:1px solid #b45151; border-radius:4px; } "
-                    "QPushButton:hover { background:#b84646; }"
-                    if danger
-                    else "QPushButton { background:#27374c; color:#edf3fa; "
-                    "padding:5px 9px; border:1px solid #40536b; border-radius:4px; } "
-                    "QPushButton:hover { background:#354b65; }"
-                )
-                button.clicked.connect(
-                    lambda _checked=False, action=callback: action()
-                )
+                button = ActionButton(label, callback, danger=danger)
                 if len(actions) > 2:
                     action_layout.addWidget(button, index // 2, index % 2)
                 else:
@@ -177,7 +178,8 @@ class PropertyEditor(QWidget):
 
         form = ParamForm(None, fields, extra_choices, helper_names=helper_names,
                          read=node.get_field,
-                         write=lambda key, value: set_node_field(node, key, value, self._completion_problem))
+                         write=lambda key, value: set_node_field(node, key, value, self._completion_problem),
+                         choice_label=self._choice_label)
         form.changed.connect(lambda _key: self.changed.emit(node))
         self._parameter_form = form
         self._controls = form.controls
@@ -185,16 +187,35 @@ class PropertyEditor(QWidget):
         self._form.addRow(form)
         for key, caption in code_slots.items():
             self._add_code_slot(key, caption)
+        for widget in self.findChildren(QWidget):
+            widget.installEventFilter(self)
         if self._compact:
             self._body.adjustSize()
             self._scroll.setMinimumHeight(
                 self._body.layout().sizeHint().height() + 8
             )
 
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if self._node is not None:
+            self.edit_node(self._node, completion_problem=context.problem)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.FocusIn and self._node is not None:
+            self.activated.emit(self._node)
+        return super().eventFilter(watched, event)
+
+    def refresh_choices(self) -> None:
+        if self._node is not None and self._parameter_form is not None:
+            _, _, choices = fields_for_node(self._node, self._completion_problem)
+            self._parameter_form.refresh_choices(choices)
+
     def _rename_node(self, text: str) -> None:
         if self._node is not None and rename_node(self._node, text, self._completion_problem):
-            self._title.setText(self._node.name)
+            self._title.setText(node_title(self._completion_problem, self._node))
             self.changed.emit(self._node)
+
+    def _choice_label(self, key: str, value: object) -> str:
+        return reference_choice_title(self._completion_problem, key, value) or display_choice(key, value)
 
     def _add_code_slot(self, key: str, caption: str) -> None:
         node = self._node

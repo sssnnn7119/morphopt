@@ -8,8 +8,8 @@ Left-hand navigation + structure editing.  Context menus:
 * ``updater``: choose the global objective, geometry/material optimizer, or
   one of the optimizer's objective/symmetry/penalty sections.
 
-Any structural change emits :attr:`treeChanged` so the workbench can refresh
-the viewer and the read-only generated code.
+Structural actions publish their changed node to the workbench refresh
+coordinator; this widget only presents the current model and selection.
 """
 
 from __future__ import annotations
@@ -23,12 +23,15 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
+from ..refresh import RefreshContext
 from ..model.problem import (
     CADOperationNode,
+    CustomClassNode,
     InstanceNode,
     MaterialNode,
+    MethodOverrideNode,
     Node,
-    PartInterfaceNode,
+    PartNode,
     ProblemDefinition,
 )
 from ..model.schemas import (
@@ -43,25 +46,26 @@ from ..model.schemas import (
     available_surface_symmetry_types,
 )
 
-from ..presentation.labels import schema_label, cad_operation_title_text, display_node_title
+from ..presentation.labels import schema_label, cad_operation_summary_text
 from ..presentation.navigation import (
     UpdaterTreeNode,
+    UpdaterItemTreeNode,
     DefinitionNavigation,
     NavigationEntry,
     node_key,
+    node_path,
+    node_at_path,
 )
 from .definition_actions import DefinitionActions
 
 
 class ModelTree(QTreeWidget):
     nodeSelected = Signal(object)  # Node
-    treeChanged = Signal()  # structure edited
+    overrideRequested = Signal(object)
 
     def __init__(self, parent=None, *, actions: DefinitionActions | None = None):
         super().__init__(parent)
         self.actions = actions or DefinitionActions(self)
-        self.actions.selectionRequested.connect(lambda node: self.rebuild(select=node))
-        self.actions.changed.connect(self.treeChanged.emit)
         self.setColumnCount(1)
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -76,6 +80,57 @@ class ModelTree(QTreeWidget):
         self._problem = problem
         self.actions.set_problem(problem)
         self.rebuild()
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        expanded = {
+            node_key(node): item.isExpanded()
+            for item, node in self._item_node.items()
+        }
+        scroll = self.verticalScrollBar().value()
+        self._problem = context.problem
+        self.rebuild(select=context.selected, notify=False)
+        for item, node in self._item_node.items():
+            key = node_key(node)
+            if key in expanded:
+                item.setExpanded(expanded[key])
+        self.verticalScrollBar().setValue(scroll)
+
+    def select_node(self, node: Node) -> None:
+        """Follow editing focus without sending navigation back to the editor."""
+        item = self._node_item.get(node)
+        if item is None:
+            key = node_key(node)
+            item = next((item for candidate, item in self._node_item.items() if node_key(candidate) == key), None)
+        if item is None or item is self.currentItem():
+            return
+        blocked = self.blockSignals(True)
+        try:
+            self.setCurrentItem(item)
+            self.scrollToItem(item)
+        finally:
+            self.blockSignals(blocked)
+
+    def capture_view(self) -> tuple[dict[tuple[int, ...], bool], int]:
+        """Use snapshot-relative bookmarks when the model objects will change."""
+        expanded = {}
+        if self._problem is not None:
+            for item, node in self._item_node.items():
+                path = node_path(self._problem, node)
+                if path is not None:
+                    expanded[path] = item.isExpanded()
+        return expanded, self.verticalScrollBar().value()
+
+    def restore_view(self, state: tuple[dict[tuple[int, ...], bool], int]) -> None:
+        if self._problem is None:
+            return
+        expanded, scroll = state
+        by_key = {node_key(node): item for node, item in self._node_item.items()}
+        for path, value in expanded.items():
+            node = node_at_path(self._problem, path)
+            item = by_key.get(node_key(node))
+            if item is not None:
+                item.setExpanded(value)
+        self.verticalScrollBar().setValue(scroll)
 
     def rebuild(self, select: Node | None = None, *, notify: bool = True) -> None:
         selected_key = node_key(select)
@@ -109,12 +164,12 @@ class ModelTree(QTreeWidget):
             return
         projection = DefinitionNavigation(self._problem)
         for item, node in self._item_node.items():
-            item.setText(0, display_node_title(self._problem, projection.title(node), node))
+            item.setText(0, projection.title(node))
 
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])
-        if isinstance(node, PartInterfaceNode):
+        if isinstance(node, PartNode):
             item.setToolTip(
                 0,
                 tr(
@@ -133,7 +188,7 @@ class ModelTree(QTreeWidget):
                 ),
             )
         elif isinstance(node, CADOperationNode):
-            item.setToolTip(0, cad_operation_title_text(node))
+            item.setToolTip(0, cad_operation_summary_text(node))
         elif isinstance(node, MaterialNode):
             item.setToolTip(
                 0,
@@ -175,6 +230,15 @@ class ModelTree(QTreeWidget):
         kind = node.kind
         scheme = self._problem.scheme if self._problem else "shapeopt"
 
+        if kind in {"custom_classes", "custom_class", "method_override"}:
+            menu.addAction(tr('ui.widgets.custom_classes.add_custom_class'), self.actions.add_custom_class)
+        if isinstance(node, CustomClassNode):
+            menu.addAction(tr('ui.widgets.custom_classes.override_method'),
+                           lambda: self.overrideRequested.emit(node))
+        if isinstance(node, (CustomClassNode, MethodOverrideNode)):
+            menu.addAction(tr('ui.widgets.custom_classes.delete'),
+                           lambda: self.actions.remove_custom_class(node))
+
         if kind in {"helper_code", "helper_variables_group"}:
             menu.addAction(tr('ui.widgets.model_tree.add_helper_variable'),
                            lambda: self.actions.add_helper("helper_variable"))
@@ -182,6 +246,8 @@ class ModelTree(QTreeWidget):
             menu.addAction(tr('ui.widgets.model_tree.add_helper_function'),
                            lambda: self.actions.add_helper("helper_function"))
         if kind in {"helper_variable", "helper_function"}:
+            menu.addAction(tr('ui.widgets.model_tree.move_up'), lambda: self.actions.move_helper(node, -1))
+            menu.addAction(tr('ui.widgets.model_tree.move_down'), lambda: self.actions.move_helper(node, 1))
             menu.addAction(tr('ui.widgets.model_tree.delete'), lambda: self.actions.remove_helper(node))
 
         if kind == "geometry":
@@ -194,9 +260,9 @@ class ModelTree(QTreeWidget):
                 act.setData(itype)
                 sub.addAction(act)
                 act.triggered.connect(lambda _=False, kind=itype: self.actions.add_part_interface(kind))
-            candidates = {kind: "morphopt.BoundaryPartInterface" if PART_INTERFACE_TYPES[kind].get("surfaces")
+            candidates = {kind: "morphopt.BoundaryPart" if PART_INTERFACE_TYPES[kind].get("surfaces")
                           else f"morphopt.{kind}" for kind in get_template(scheme).available_geometry_types()}
-            candidates["BasePartInterface"] = "morphopt.BasePartInterface"
+            candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(sub, candidates, self.actions.add_part_interface)
 
         if kind == "part_interface":
@@ -214,7 +280,7 @@ class ModelTree(QTreeWidget):
                         kind,
                         owner,
                     ))
-                candidates = {kind: "morphopt.BoundaryPartInterface." + (spec["factory"].split(".")[0] if spec["factory"] else "FixedSurface")
+                candidates = {kind: "morphopt.BoundaryPart." + (spec["factory"].split(".")[0] if spec["factory"] else "FixedSurface")
                               for kind, spec in SURFACE_TYPES.items()}
                 self.actions.custom_add_menu(
                     sub,
@@ -222,7 +288,7 @@ class ModelTree(QTreeWidget):
                     lambda kind, custom: self.actions.add_surface(kind, node, custom),
                 )
                 menu.addSeparator()
-            elif isinstance(node, PartInterfaceNode) and node.interface_type == "CADPartInterface":
+            elif isinstance(node, PartNode) and node.interface_type == "CADPart":
                 for group, title in (
                     ("primitive", tr('ui.widgets.model_tree.add_primitive_494ebece')),
                     ("boolean", tr('ui.widgets.model_tree.add_boolean')),
@@ -233,7 +299,7 @@ class ModelTree(QTreeWidget):
                         if spec["group"] != group:
                             continue
                         action = QAction(
-                            tr(spec["label_key"]), sub
+                            schema_label(spec, operation_type), sub
                         )
                         sub.addAction(action)
                         action.triggered.connect(
@@ -336,14 +402,13 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "updater":
-            act = QAction(tr('ui.widgets.model_tree.add_geometry_optimizer'), menu)
-            act.triggered.connect(self.actions.add_geometry_updater)
-            menu.addAction(act)
+            sub = menu.addMenu(tr("ui.component.add_updater"))
+            self.actions.populate_updater_menu(sub)
 
-        if kind == "updater":
-            act = QAction(tr('ui.widgets.model_tree.add_material_optimizer'), menu)
-            act.triggered.connect(self.actions.add_materials_updater)
-            menu.addAction(act)
+        if isinstance(node, (PartNode, MaterialNode)) and node.is_updatable:
+            action = menu.addAction(tr("ui.component.create_updater"))
+            action.setEnabled(node in self.actions.commands.available_optimizer_targets())
+            action.triggered.connect(lambda _checked=False: self.actions.add_updater(node))
 
         if kind == "updater_geometry":
             act_del = QAction(
@@ -359,7 +424,12 @@ class ModelTree(QTreeWidget):
             act_del.triggered.connect(lambda: self.actions.remove_materials_updater(node))
             menu.addAction(act_del)
 
-        if isinstance(node, UpdaterTreeNode) and node.group in {
+        if isinstance(node, UpdaterItemTreeNode):
+            menu.addAction(tr('ui.widgets.model_tree.move_up'), lambda: self.actions.move_updater_item(node, -1))
+            menu.addAction(tr('ui.widgets.model_tree.move_down'), lambda: self.actions.move_updater_item(node, 1))
+            menu.addAction(tr('ui.widgets.model_tree.delete'), lambda: self.actions.remove_updater_item(node))
+
+        if isinstance(node, UpdaterTreeNode) and not isinstance(node, UpdaterItemTreeNode) and node.group in {
             "geometry_objectives",
             "geometry_penalty",
             "materials_objectives",
@@ -375,14 +445,14 @@ class ModelTree(QTreeWidget):
                 if spec.get("group") != section or spec.get("hidden", False):
                     continue
                 action = sub.addAction(
-                    tr(spec.get("label_key", item_type))
+                    schema_label(spec, item_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, entry=node, kind=item_type, cat=category:
                     self.actions.add_updater_item(entry, kind, cat)
                 )
 
-        if isinstance(node, UpdaterTreeNode) and node.group == "geometry_symmetry":
+        if isinstance(node, UpdaterTreeNode) and not isinstance(node, UpdaterItemTreeNode) and node.group == "geometry_symmetry":
             config = node.config()
             target = (
                 self._problem.config_part_node(config)
@@ -400,7 +470,7 @@ class ModelTree(QTreeWidget):
                 if item_type != "Custom" and item_type not in available:
                     continue
                 action = sub.addAction(
-                    tr(spec.get("label_key", item_type))
+                    schema_label(spec, item_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, entry=node, kind=item_type:
@@ -416,7 +486,10 @@ class ModelTree(QTreeWidget):
                 act.triggered.connect(lambda _=False, kind=itype: self.actions.add_interface(kind))
             self.actions.custom_add_menu(
                 sub,
-                {kind: f"morphopt.FEAParams.{kind}Interface" for kind in INTERFACE_TYPES},
+                {
+                    kind: f"morphopt.FEAParams.{spec['class_name']}"
+                    for kind, spec in INTERFACE_TYPES.items()
+                },
                 self.actions.add_interface,
             )
 
@@ -440,5 +513,5 @@ class ModelTree(QTreeWidget):
         if item is not None and self._problem is not None:
             item.setText(
                 0,
-                display_node_title(self._problem, DefinitionNavigation(self._problem).title(node), node),
+                DefinitionNavigation(self._problem).title(node),
             )

@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
 from ..i18n import tr
 from ..application.fields import SnippetInputs
 from ..model.problem import ProblemDefinition
+from ..presentation.labels import reference_choice_title
 from ..schemes.snippets import CodeSnippet, SnippetParameter
+from .values import combo_value
 
 
 class TemplateInsertDialog(QDialog):
@@ -23,7 +25,6 @@ class TemplateInsertDialog(QDialog):
         self.inputs = SnippetInputs(problem)
         self._snippet = snippet
         self._fields: dict[str, QComboBox] = {}
-        self._field_sources: dict[str, str] = {}
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(tr(snippet.name_key)))
@@ -37,7 +38,6 @@ class TemplateInsertDialog(QDialog):
         for parameter in snippet.parameters:
             combo = self._parameter_combo(parameter)
             self._fields[parameter.key] = combo
-            self._field_sources[parameter.key] = parameter.source
             form.addRow(tr(parameter.label_key), combo)
         layout.addLayout(form)
 
@@ -51,6 +51,13 @@ class TemplateInsertDialog(QDialog):
 
     def _accept(self) -> None:
         """Validate load/reference-point consistency before insertion."""
+        for parameter in self._snippet.parameters:
+            if parameter.source in self.inputs.editable and combo_value(self._fields[parameter.key]) == "":
+                self._show_validation_error(tr(
+                    "ui.widgets.template_insert_dialog.select_parameter",
+                    name=tr(parameter.label_key),
+                ))
+                return
         if (self._snippet.key.startswith("jacobian_")
                 and not self._validate_jacobian_reference_point()):
             return
@@ -66,34 +73,24 @@ class TemplateInsertDialog(QDialog):
 
     def parameter_values(self) -> dict[str, object]:
         """Return the values currently selected (or typed) by the user."""
-        values: dict[str, object] = {}
-        for key, combo in self._fields.items():
-            # Editable model-name combos may retain the previous item's data
-            # role after the user types a new name; always trust their text.
-            source = self._field_sources[key]
-            value = combo.currentData()
-            values[key] = (combo.currentText()
-                           if value is None or source in self.inputs.editable
-                           else value)
-        return values
+        return {key: combo_value(combo) for key, combo in self._fields.items()}
 
     def _parameter_combo(self, parameter: SnippetParameter) -> QComboBox:
         options = self._options(parameter.source)
         combo = QComboBox()
         is_customizable = parameter.source in self.inputs.editable
         combo.setEditable(is_customizable)
+        if is_customizable:
+            combo.addItem("", "")
         for label, value in options:
             combo.addItem(label, value)
 
         default = parameter.default
-        if combo.count():
-            # Model-dependent defaults such as ``final_model`` or
-            # ``RP_head`` are only examples and often do not exist in the
-            # current problem.  The first available model option is the
-            # reliable default for every objective template parameter.
+        if is_customizable:
             combo.setCurrentIndex(0)
-        elif is_customizable:
-            combo.setEditText(str(default))
+        elif combo.count():
+            index = combo.findData(default)
+            combo.setCurrentIndex(index if index >= 0 else 0)
         else:
             combo.addItem(str(default), default)
         return combo
@@ -113,5 +110,13 @@ class TemplateInsertDialog(QDialog):
             ),
             "six_component": lambda value: f"{tr(f'ui.snippet.component.{value}')} ({value})",
         }
-        caption = captions.get(source, str)
+        references = {
+            "instances": "instance_name",
+            "reference_points": "rp_name",
+            "force_loads": "force_load_name",
+            "moment_loads": "moment_load_name",
+        }
+        caption = captions.get(source) or (
+            lambda value: reference_choice_title(self.inputs.problem, references.get(source, ""), value) or str(value)
+        )
         return [(caption(value), value) for value in self.inputs.values(source)]

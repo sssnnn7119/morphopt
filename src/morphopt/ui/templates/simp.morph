@@ -23,7 +23,7 @@
             "kind": "part_interface",
             "name": "beam",
             "params": {
-              "type": "TorchFEAPartInterface",
+              "type": "TorchFEAPart",
               "part_name": "",
               "exterior_surface": "",
               "model_directory": "$MORPHOPT_TEMPLATE_DIR",
@@ -167,7 +167,7 @@
               "degree": 2,
               "initial_ratio": 0.5,
               "voidpenalfactor": 0.01,
-              "materialpenalty": 8.0
+              "materialpenalty": 8
             },
             "children": []
           }
@@ -253,12 +253,10 @@
   },
   "template": {
     "id": "simp",
-    "label": "SIMP 刚度优化（悬臂梁）",
-    "label_en": "SIMP stiffness optimization (cantilever beam)",
     "material_type": "SIMP_BSPFieldMaterials",
-    "geometry_title": "Initial cantilever beam (fixed mesh)",
     "body_name": "beam",
     "default_objective_slot": "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\nreturn sum(instance.potential_energy(RGC=RGC)\n           for instance in self.fe.assembly._instances.values())\n",
-    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n",
+    "label_key": "ui.templates.simp.label"
   }
 }

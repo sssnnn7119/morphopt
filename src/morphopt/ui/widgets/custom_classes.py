@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
-    QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QFormLayout, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..codegen.custom_classes import (
@@ -16,135 +18,61 @@ from ..codegen.custom_classes import (
     framework_class_catalog,
 )
 from ..i18n import tr
+from ..refresh import RefreshContext
+from ..presentation.labels import node_title, typed_title
 from ..application.editing import CustomClassSession
-from ..model.problem import CustomClassNode, MethodOverrideNode
+from ..model.problem import CustomClassNode, MethodOverrideNode, Node, ProblemDefinition
 from .codeeditor import CodeEditor
+from .collection_controls import ActionButton, AddButton, CollectionHeader
+
+if TYPE_CHECKING:
+    from .definition_actions import DefinitionActions
 
 
-class CustomClassTree(QWidget):
+class CustomClassOverview(QWidget):
+    """Manage reusable classes from their root model-tree collection."""
     nodeSelected = Signal(object)
-    treeChanged = Signal()
-    overrideRequested = Signal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, actions: DefinitionActions, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._problem = None
+        self.actions = actions
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        row = QHBoxLayout()
-        self.title = QLabel()
-        row.addWidget(self.title, 1)
-        self.add_button = QPushButton("+")
-        self.add_button.setFixedWidth(28)
-        self.add_button.setStyleSheet("padding:5px 0px;")
-        self.add_button.clicked.connect(self.add_class)
-        row.addWidget(self.add_button)
-        layout.addLayout(row)
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.currentItemChanged.connect(self._select)
-        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._menu)
-        layout.addWidget(self.tree)
-        self.apply_language()
-
-    def apply_language(self):
-        self.title.setText(tr('ui.widgets.custom_classes.custom_classes_advanced'))
-        self.add_button.setToolTip(tr('ui.widgets.custom_classes.add_custom_class'))
-        self.rebuild()
-
-    def set_problem(self, problem):
-        self._problem = problem
-        self.session = CustomClassSession(problem)
-        self.rebuild()
-
-    def rebuild(self, select=None):
-        if select is None and self.tree.currentItem() is not None:
-            select = self.tree.currentItem().data(0, Qt.ItemDataRole.UserRole)
-        self.tree.blockSignals(True)
-        self.tree.clear()
-        if self._problem:
-            for custom in self._problem.custom_classes:
-                item = QTreeWidgetItem([f"{custom.name} [{custom.base_class}]"])
-                item.setToolTip(0, custom.base_class)
-                item.setData(0, Qt.ItemDataRole.UserRole, custom)
-                self.tree.addTopLevelItem(item)
-                if select is custom:
-                    self.tree.setCurrentItem(item)
-                for method in custom.children:
-                    child = QTreeWidgetItem([f"{method.name}()"])
-                    child.setData(0, Qt.ItemDataRole.UserRole, method)
-                    item.addChild(child)
-                    if select is method:
-                        self.tree.setCurrentItem(child)
-                item.setExpanded(True)
-        self.tree.blockSignals(False)
-
-    def _select(self, current, previous):
-        if current:
-            self.nodeSelected.emit(current.data(0, Qt.ItemDataRole.UserRole))
-
-    def add_class(self):
-        if self._problem is None:
-            return
-        try:
-            catalog = self.session.catalog()
-        except Exception as exc:
-            QMessageBox.warning(self, tr('ui.widgets.custom_classes.cannot_read_base_classes'), str(exc))
-            return
-        available = sorted(catalog)
-        if not available:
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle(tr('ui.widgets.custom_classes.add_custom_class'))
-        layout = QFormLayout(dialog)
-        name = QLineEdit("CustomClass")
-        base = QComboBox()
-        base.addItems(available)
-        base.setMinimumWidth(400)
-        layout.addRow(tr('ui.widgets.custom_classes.class_name'), name)
-        layout.addRow(tr('ui.widgets.custom_classes.inherits_from'), base)
-        hint = QLabel(tr('ui.widgets.custom_classes.custom_classes_are_module_level_definitions_select_one_using_a_model_nod'))
+        header = CollectionHeader(tr('ui.widgets.model_tree.container.custom_classes'), actions.add_custom_class)
+        self.remove_button = ActionButton(tr('ui.common.delete'), self._remove)
+        header.actions.addWidget(self.remove_button)
+        layout.addWidget(header)
+        hint = QLabel(tr('ui.widgets.custom_classes.overview_hint'), self)
         hint.setWordWrap(True)
-        layout.addRow(hint)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        layout.addRow(buttons)
-        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(hint)
+        self.items = QListWidget(self)
+        self.items.currentItemChanged.connect(self._selection_changed)
+        self.items.itemActivated.connect(self._activate)
+        layout.addWidget(self.items)
+        self.remove_button.setEnabled(False)
 
-        def accept():
-            value = name.text().strip()
-            try:
-                self.session.validate_name(value)
-            except ValueError as exc:
-                QMessageBox.warning(dialog, tr('ui.widgets.custom_classes.invalid_class_name'), str(exc))
-                return
-            dialog.accept()
+    def set_problem(self, problem: ProblemDefinition) -> None:
+        selected = self.items.currentRow()
+        self.items.clear()
+        for custom in problem.custom_classes:
+            item = QListWidgetItem(node_title(problem, custom))
+            item.setData(Qt.ItemDataRole.UserRole, custom)
+            item.setToolTip(custom.base_class)
+            self.items.addItem(item)
+        self.items.setCurrentRow(min(selected, self.items.count() - 1))
 
-        buttons.accepted.connect(accept)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        custom = self.session.add_class(name.text().strip(), base.currentText())
-        self.rebuild(select=custom)
-        self.treeChanged.emit()
-        self.nodeSelected.emit(custom)
+    def refresh_ui(self, context: RefreshContext) -> None:
+        self.set_problem(context.problem)
 
-    def _menu(self, position):
-        item = self.tree.itemAt(position)
-        menu = QMenu(self)
-        menu.addAction(tr('ui.widgets.custom_classes.add_custom_class'), self.add_class)
-        if item:
-            node = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(node, CustomClassNode):
-                menu.addAction(tr('ui.widgets.custom_classes.override_method'),
-                               lambda: self.overrideRequested.emit(node))
-            menu.addAction(tr('ui.widgets.custom_classes.delete'), lambda: self._remove(node))
-        menu.exec(self.tree.viewport().mapToGlobal(position))
+    def _selection_changed(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        self.remove_button.setEnabled(current is not None)
 
-    def _remove(self, node):
-        selected = self.session.remove(node)
-        self.rebuild(select=selected)
-        self.treeChanged.emit()
-        self.nodeSelected.emit(selected)
+    def _activate(self, item: QListWidgetItem) -> None:
+        self.nodeSelected.emit(item.data(Qt.ItemDataRole.UserRole))
+
+    def _remove(self) -> None:
+        item = self.items.currentItem()
+        if item is not None:
+            self.actions.remove_custom_class(item.data(Qt.ItemDataRole.UserRole))
 
 
 class CustomClassEditor(QWidget):
@@ -176,13 +104,13 @@ class CustomClassEditor(QWidget):
         self.signature.setWordWrap(True)
         self.signature.setTextFormat(Qt.TextFormat.PlainText)
         row.addWidget(self.signature, 1)
-        self.add_button = QPushButton(tr('ui.widgets.custom_classes.override_method'))
-        self.add_button.setStyleSheet("padding:3px 10px;")
-        self.add_button.clicked.connect(self.add_override)
+        self.add_button = AddButton(self.add_override)
+        self.add_button.setToolTip(tr('ui.widgets.custom_classes.override_method'))
         row.addWidget(self.add_button)
-        self.remove_button = QPushButton(tr('ui.widgets.custom_classes.remove_override'))
-        self.remove_button.setStyleSheet("padding:3px 10px;")
-        self.remove_button.clicked.connect(self._remove_override)
+        self.remove_button = ActionButton(
+            tr('ui.common.delete'), self._remove_override, danger=True,
+            tooltip=tr('ui.widgets.custom_classes.remove_override'),
+        )
         row.addWidget(self.remove_button)
         layout.addLayout(row)
         self.code = CodeEditor(tr('ui.widgets.custom_classes.method_body'))
@@ -221,6 +149,11 @@ class CustomClassEditor(QWidget):
         self.current_method = focus if focus in custom.children else next(iter(custom.children), None)
         self._loading = False
         self._show_method()
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        node = self.current_method or self._custom
+        if node is not None:
+            self.edit_node(node, context.problem)
 
     def _show_method(self, *_):
         if self._loading:
@@ -336,12 +269,12 @@ class ModelClassSelector(QWidget):
             targets = class_catalog(problem) if self._path else {}
             target = targets.get(self._path)
             if target is not None:
-                self.combo.addItem(tr('ui.widgets.custom_classes.default') + target.base_expression, "")
+                self.combo.addItem(typed_title(tr("ui.naming.default"), target.base_expression.rsplit(".", 1)[-1]), "")
                 for custom in compatible_custom_classes(problem, target):
-                    self.combo.addItem(custom.name, custom.name)
+                    self.combo.addItem(typed_title(custom.name, custom.base_class.rsplit(".", 1)[-1]), custom.name)
                 selected = problem.class_bindings.get(self._path, "")
                 if selected and self.combo.findData(selected) < 0:
-                    self.combo.addItem(tr('ui.widgets.custom_classes.unavailable') + selected, selected)
+                    self.combo.addItem(typed_title(tr("ui.naming.unavailable"), selected), selected)
                 self.combo.setCurrentIndex(max(0, self.combo.findData(selected)))
                 self.show()
             else:
@@ -351,6 +284,9 @@ class ModelClassSelector(QWidget):
             self.show()
         finally:
             self.combo.blockSignals(False)
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        self.edit_node(context.selected, context.problem)
 
     def _save(self, *_):
         if self._problem is None or not self._path:

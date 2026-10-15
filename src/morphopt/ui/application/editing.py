@@ -1,9 +1,10 @@
 """Definition construction and editing policies shared by all UI entry points."""
 from __future__ import annotations
+from ..i18n import localized_message
 
 from ..model.problem import (
-    CADOperationNode, HelperFunctionNode, HelperVariableNode, InterfaceNode,
-    MaterialNode, Node, PartInterfaceNode, ProblemDefinition, SurfaceNode,
+    CADOperationNode, HelperFunctionNode, HelperVariableNode, FEAComponentNode,
+    MaterialNode, Node, PartNode, ProblemDefinition, SurfaceNode,
 )
 from ..model.schemas import (
     INTERFACE_TYPES, PART_INTERFACE_TYPES,
@@ -43,12 +44,21 @@ class DefinitionCommands:
         entries.remove(node)
         return "helper_variables_group" if node.kind == "helper_variable" else "helper_functions_group"
 
-    def add_part_interface(self, interface_type: str, custom_class: str = "") -> PartInterfaceNode:
+    def move_helper(self, node: Node, delta: int) -> bool:
+        entries = self.problem.helper_variables if node.kind == "helper_variable" else self.problem.helper_functions
+        index = entries.index(node)
+        target = index + delta
+        if not 0 <= target < len(entries):
+            return False
+        entries.insert(target, entries.pop(index))
+        return True
+
+    def add_part_interface(self, interface_type: str, custom_class: str = "") -> PartNode:
         name = self.problem.suggest_part_interface_name()
         if PART_INTERFACE_TYPES[interface_type].get("custom_only"):
             if not custom_class:
-                raise ValueError(f"{interface_type} requires a custom class.")
-            node = PartInterfaceNode.create(interface_type, name=name)
+                raise ValueError(localized_message("ui.errors.editing.value_requires_a_custom_class", value_0=interface_type))
+            node = PartNode.create(interface_type, name=name)
         else:
             node = get_template(self.problem.scheme).make_part_interface(interface_type, name=name)
         node.custom_class = custom_class
@@ -58,7 +68,7 @@ class DefinitionCommands:
     def add_surface(
         self,
         surface_type: str,
-        owner: PartInterfaceNode,
+        owner: PartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
         node = get_template(self.problem.scheme).make_surface(surface_type, len(owner.surfaces()))
@@ -66,7 +76,7 @@ class DefinitionCommands:
         self.problem.add_surface(node, interface=owner)
         return node
 
-    def add_interface(self, interface_type: str, custom_class: str = "") -> InterfaceNode:
+    def add_interface(self, interface_type: str, custom_class: str = "") -> FEAComponentNode:
         node = get_template(self.problem.scheme).make_interface(interface_type)
         node.custom_class = custom_class
         node.name = self.problem.suggest_interface_name(INTERFACE_TYPES[interface_type].get("name_hint", "load_"))
@@ -75,11 +85,16 @@ class DefinitionCommands:
 
     def add_material(self, material_type: str, custom_class: str = "") -> MaterialNode:
         node = get_template(self.problem.scheme).make_material(material_type=material_type)
+        names = {material.name for material in self.problem.material_nodes()}
+        index = 1
+        while f"material_{index}" in names:
+            index += 1
+        node.name = f"material_{index}"
         node.custom_class = custom_class
         self.problem.add_material(node)
         return node
 
-    def next_operation_id(self, owner: PartInterfaceNode, operation_type: str) -> str:
+    def next_operation_id(self, owner: PartNode, operation_type: str) -> str:
         used = {item.operation_id for item in owner.cad_operations()}
         index = 1
         while f"{operation_type}-{index}" in used:
@@ -88,7 +103,7 @@ class DefinitionCommands:
 
     def add_cad_operation(
         self,
-        owner: PartInterfaceNode,
+        owner: PartNode,
         operation_type: str,
         operation_id: str,
         **values,
@@ -97,19 +112,18 @@ class DefinitionCommands:
         self.problem.add_cad_operation(owner, node)
         return node
 
-    def available_optimizer_targets(self, kind: str) -> list[Node]:
-        if kind == "geometry":
-            candidates = self.problem.boundary_part_nodes()
-            configs = self.problem.updater.geometry
-            target_for = self.problem.config_part_node
-        elif kind == "materials":
-            design = set(self.problem.design_material_names())
-            candidates = [node for node in self.problem.material_nodes() if node.name in design]
-            configs = self.problem.updater.materials
-            target_for = self.problem.config_material_node
-        else:
-            raise ValueError(f"Unknown optimizer kind: {kind}")
-        taken = {target_for(config) for config in configs}
+    def available_optimizer_targets(self) -> list[PartNode | MaterialNode]:
+        """Actual components that can receive a new updater, in model order."""
+        if self.problem.updater is None:
+            return []
+        candidates = [
+            node for node in self.problem.part_interfaces() + self.problem.material_nodes()
+            if node.is_updatable
+        ]
+        taken = {
+            *(self.problem.config_part_node(config) for config in self.problem.updater.geometry),
+            *(self.problem.config_material_node(config) for config in self.problem.updater.materials),
+        }
         return [node for node in candidates if node not in taken]
 
     @staticmethod
@@ -131,11 +145,11 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
     """Apply fields through aggregate reference/rename rules, never through widgets."""
     from ..model.problem import INSTANCE_REFERENCE_FIELDS, REFERENCE_POINT_FIELDS
     if problem is not None:
-        if isinstance(node, InterfaceNode) and key in {*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS}:
+        if isinstance(node, FEAComponentNode) and key in {*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS}:
             return problem.set_interface_reference(node, key, value)
         if key == "part_name" and isinstance(node, MaterialNode):
             return problem.set_material_part(node, value)
-        if key == "part_name" and isinstance(node, PartInterfaceNode):
+        if key == "part_name" and isinstance(node, PartNode):
             return problem.rename_part(node, str(value or ""))
     node.set_field(key, value)
     return True
@@ -183,7 +197,7 @@ class HelperCodeSession:
             compile(self.problem.helper_code, "<helper code>", "exec")
         elif node.kind in {"helper_variable", "helper_function"}:
             if not node.name.isidentifier() or keyword.iskeyword(node.name):
-                raise ValueError("Helper names must be valid Python identifiers.")
+                raise ValueError(localized_message("ui.errors.editing.helper_names_must_be_valid_python_identifiers"))
             if node.kind == "helper_variable":
                 ast.parse(node.value, mode="eval")
             else:
@@ -207,7 +221,7 @@ class CustomClassSession:
         from ..codegen.custom_classes import validate_custom_name
         validate_custom_name(name, self.catalog())
         if any(node is not current and node.name == name for node in self.problem.custom_classes):
-            raise ValueError(f"Class name already exists: {name}")
+            raise ValueError(localized_message("ui.errors.editing.class_name_already_exists_value", value_0=name))
 
     def add_class(self, name: str, base: str) -> CustomClassNode:
         from ..model.problem import CustomClassNode
@@ -272,7 +286,7 @@ class LoadCaseSession:
     def __init__(self, steps: StepsNode, problem: ProblemDefinition):
         self.steps, self.problem = steps, problem
 
-    def columns(self) -> list[tuple[InterfaceNode, int, str]]:
+    def columns(self) -> list[tuple[FEAComponentNode, int, str]]:
         from ..model.schemas import INTERFACE_TYPES
         columns = []
         for interface in self.problem.amplitude_interfaces():
@@ -280,13 +294,13 @@ class LoadCaseSession:
             columns.extend((interface, index, interface.name if count == 1 else f"{interface.name}.{index}") for index in range(count))
         return columns
 
-    def value(self, row: int, interface: InterfaceNode, component: int):
+    def value(self, row: int, interface: FEAComponentNode, component: int):
         amplitudes = self.steps.step_values[row].get(interface, []) if row < len(self.steps.step_values) else []
         return amplitudes[component] if component < len(amplitudes) else 0.
 
     def resize(self, count: int) -> None:
         if count < 1:
-            raise ValueError("Keep at least one load case.")
+            raise ValueError(localized_message("ui.errors.editing.keep_at_least_one_load_case"))
         rows = self.steps.step_values[:count]
         rows.extend({} for _ in range(count - len(rows)))
         self.steps.num_steps, self.steps.step_values = count, rows
@@ -302,7 +316,7 @@ class LoadCaseSession:
 
     def remove(self, row: int) -> int:
         if self.steps.num_steps <= 1:
-            raise ValueError("Keep at least one load case.")
+            raise ValueError(localized_message("ui.errors.editing.keep_at_least_one_load_case"))
         self.resize(self.steps.num_steps)
         self.steps.step_values.pop(row)
         self.steps.num_steps -= 1

@@ -184,7 +184,7 @@ class ThisController(morphopt.Controller):
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
-            class GripperPart(morphopt.BasePartInterface):
+            class GripperPart(morphopt.BasePart):
                 cache_part = True
 
                 def define_instance(self):
@@ -193,7 +193,7 @@ class ThisController(morphopt.Controller):
                 def build_part(self, path_result=None, pools=None):
                     return _build_finger_part()
 
-            class CylinderPart(morphopt.BasePartInterface):
+            class CylinderPart(morphopt.BasePart):
                 cache_part = True
 
                 def __init__(self):
@@ -226,7 +226,7 @@ class ThisController(morphopt.Controller):
         class FEAParams(morphopt.FEAParams):
             def define_interface(self):
                 self.add_interface(
-                    self.BoundaryConditionInterface(
+                    self.BoundaryCondition(
                         instance_name="finger",
                         set_nodes_name="root",
                         index_dof=[0, 2],
@@ -234,7 +234,7 @@ class ThisController(morphopt.Controller):
                     name="Root",
                 )
                 self.add_interface(
-                    self.BoundaryConditionInterface(
+                    self.BoundaryCondition(
                         instance_name="finger",
                         set_nodes_name="all",
                         index_dof=[1],
@@ -242,7 +242,7 @@ class ThisController(morphopt.Controller):
                     name="BC_PlaneStrain",
                 )
                 self.add_interface(
-                    self.BoundaryConditionInterface(
+                    self.BoundaryCondition(
                         instance_name="finger",
                         set_nodes_name="symmetry",
                         index_dof=[2],
@@ -250,13 +250,13 @@ class ThisController(morphopt.Controller):
                     name="BC_SymmetryZ",
                 )
                 self.add_interface(
-                    self.ReferencePointInterface(
+                    self.ReferencePoint(
                         rp_location=[finger_depth + initial_gap / 2, 0, 0]
                     ),
                     name="RPCylinder",
                 )
                 self.add_interface(
-                    self.CoupleInterface(
+                    self.Couple(
                         rp_name="RPCylinder",
                         instance_name="cylinder",
                         set_nodes_name="all",
@@ -264,16 +264,16 @@ class ThisController(morphopt.Controller):
                     name="RigidCylinder",
                 )
                 self.add_interface(
-                    self.BoundaryConditionRPInterface(
+                    self.ReferencePointBoundaryCondition(
                         rp_name="RPCylinder", index_dof=[1, 2, 3, 4, 5]
                     ),
                     name="CylinderGuide",
                 )
                 self.add_interface(
-                    self.PenaltyDoFInterface(obj_name="RPCylinder", s=0), name="Drive"
+                    self.PenaltyDoF(obj_name="RPCylinder", s=0), name="Drive"
                 )
                 self.add_interface(
-                    self.ContactInterface(
+                    self.Contact(
                         instance_name1="finger",
                         surface_name1="contact",
                         instance_name2="cylinder",
@@ -294,7 +294,7 @@ class ThisController(morphopt.Controller):
 
         class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self):
-                material = self.materialmodels.NeoHookeanLnJParams(
+                material = self.models.NeoHookeanLnJParams(
                     mu=mu_material, kappa=kappa_material
                 )
                 self.add_interface(

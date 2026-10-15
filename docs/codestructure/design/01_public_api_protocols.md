@@ -10,9 +10,10 @@
 |---|---|---|
 | 运行时 | `Controller`, `History`, `Solver`, `ObjectiveFunction`, `Updaters` | `optcore` |
 | 参数集合 | `Params`, `GeometryParams`, `FEAParams`, `MaterialsParams` | `optcore.modelparams` |
-| 几何 | `BasePartInterface`, `INPPartInterface`, `TorchFEAPartInterface` | `optcore.modelparams.partinterface` |
-| 材料 | `HomogeneousMaterial` | `optcore.modelparams.materialinterface` |
-| 形状扩展 | `BoundaryPartInterface`, `UpdaterBoundaryPart` | `shapeopt` |
+| 单个模型组件基类 | `BaseModelComponent` | `optcore.modelparams.base_model_component` |
+| 几何 | `BasePart`, `INPPart`, `TorchFEAPart` | `optcore.modelparams.parts` |
+| 材料 | `HomogeneousMaterial` | `optcore.modelparams.materials` |
+| 形状扩展 | `BoundaryPart`, `UpdaterBoundaryPart` | `shapeopt` |
 | SIMP 扩展 | `SIMP_BSPFieldMaterials`, `UpdaterSIMPMaterial` | `simp` |
 | 运行工具 | `start_optimization`, `debug_optimization`, `check_gradients`, `get_controller` | runner / utils |
 | 路径工具 | `resolve_model_path`, `load_model_assembly` | Part 导入接口 |
@@ -22,16 +23,14 @@
 ## 协议继承图
 
 ```text
-ProtocalInitializable ─┬─ BaseParams ───────────┬─ GeometryParams / FEAParams / MaterialsParams
-                       │                         ├─ BasePartInterface
-                       │                         └─ BaseMaterialInterface
-                       ├─ BaseFEAInterface
+ProtocalInitializable ─┬─ BaseParams ─────────────── GeometryParams / FEAParams / MaterialsParams
+                       ├─ BaseModelComponent ─────── BasePart / BaseMaterial / BaseFEAComponent / BaseSurface
                        ├─ Solver / ObjectiveFunction / BaseUpdater / Updaters / History
                        └─ Controller orchestration (非协议子类)
 
 ProtocalSavable ───────┘
-ProtocalVisualizable ──► BaseParams / BaseFEAInterface / Surface 接口
-ProtocalUpdatable ─────► BoundaryPartInterface / SIMP_BSPFieldMaterials
+ProtocalVisualizable ──► BaseParams / BaseModelComponent
+ProtocalUpdatable ─────► BoundaryPart / SIMP_BSPFieldMaterials
 ```
 
 类名中的 `Protocal` 是当前公开拼写；新增代码沿用该拼写，使协议名称保持单一、稳定。
@@ -80,4 +79,6 @@ ProtocalUpdatable ─────► BoundaryPartInterface / SIMP_BSPFieldMateri
 | `obtain_design_sensitivity_vars(assembly)` | 提供灵敏度分析使用的活跃设计值。 |
 | `modify_assembly(design_sensitivity_vars, assembly)` | 把试探设计值投影到当前 Assembly。 |
 
-`BaseParams.design_interfaces()` 只选择实现此协议的接口。形状 Part 与 SIMP 材料共享这个抽象；载荷和均质材料不被误纳入设计变量拼接。
+`BaseParams.design_interfaces()` 只选择实现此协议的组件。形状 Part 与 SIMP 材料共享这个抽象；载荷和均质材料不被误纳入设计变量拼接。
+
+`BaseParams` 只管理 Geometry、FEA 和 Materials 三个有序集合。单个几何、载荷、材料和曲面对象继承 `BaseModelComponent`，由它统一提供初始化、持久化和可视化协议。

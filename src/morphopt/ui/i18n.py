@@ -6,13 +6,11 @@ import json
 import logging
 import weakref
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
-SUPPORTED_LOCALES = {
-    "zh-CN": "中文",
-    "en-US": "English",
-}
+SUPPORTED_LOCALES = ("zh-CN", "en-US")
 _FALLBACK_LOCALE = "en-US"
 _RESOURCE_DIR = Path(__file__).with_name("locales")
 
@@ -107,6 +105,26 @@ class LocalizationManager:
 
 
 localization = LocalizationManager()
+
+
+@dataclass(frozen=True)
+class LocalizedMessage:
+    """Keep validation messages as keys until a view requests their text."""
+
+    key: str
+    values: dict[str, object]
+
+    def __str__(self) -> str:
+        return localization.tr(self.key, **self.values)
+
+    def __repr__(self) -> str:
+        # KeyError renders its single argument with repr rather than str.
+        return repr(str(self))
+
+
+def localized_message(key: str, **values: object) -> LocalizedMessage:
+    return LocalizedMessage(key, values)
+
 
 def tr(key: str, **values: object) -> str:
     """Translate a stable message key and interpolate named values."""

@@ -113,7 +113,7 @@ def _objective_reference_items(problem: "ProblemDefinition | None") -> list[Comp
                 f"result[{result_index}].jacobian[{name!r}]",
                 f"self.fe_results[{result_index}].jacobian[{name!r}]",
             ))
-    items.extend(CompletionItem(f"load name: {name}", repr(name))
+    items.extend(CompletionItem(repr(name), repr(name))
                  for name in names)
     return items
 
@@ -128,7 +128,7 @@ def _objective_result_items(problem: "ProblemDefinition | None") -> list[Complet
             CompletionItem(f"{result}.GC", f"{result}.GC"),
             CompletionItem(f"{result}.GC[-2]", f"{result}.GC[-2]"),
             CompletionItem(f"{result}.jacobian", f"{result}.jacobian"),
-            CompletionItem(f"return result[{result_index}] displacement",
+            CompletionItem(f"return {result}.GC[-2]",
                            f"return {result}.GC[-2]"),
         ))
     return items

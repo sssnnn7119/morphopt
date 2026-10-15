@@ -10,11 +10,11 @@ cylinder_x = [80.0, 70.0, 60.0, 50.0]
 
 
 def _surface_at_coordinate(
-        part: torchfea.Part,
-        element_name: str,
-        axis: int,
-        coordinate: float,
-        tolerance: float = 1e-8,
+    part: torchfea.Part,
+    element_name: str,
+    axis: int,
+    coordinate: float,
+    tolerance: float = 1e-8,
 ) -> list[tuple[np.ndarray, int]]:
     """Return boundary faces whose nodes lie on one coordinate plane."""
     element = part.elems[element_name]
@@ -22,18 +22,18 @@ def _surface_at_coordinate(
     for element_ids, side in element.extract_boundary_surface_set():
         element_ids_array = np.asarray(element_ids, dtype=np.int64)
         element_ids_tensor = torch.as_tensor(
-            element_ids_array, dtype=torch.long, device=element._elems.device)
-        face_nodes = element._elems[
-            element_ids_tensor][:, element.surfaceid_map[int(side)]]
+            element_ids_array, dtype=torch.long, device=element._elems.device
+        )
+        face_nodes = element._elems[element_ids_tensor][
+            :, element.surfaceid_map[int(side)]
+        ]
         face_coordinates = part.nodes[face_nodes][..., axis]
         on_plane = (face_coordinates - float(coordinate)).abs().amax(dim=1)
-        matching_ids = element_ids_array[
-            (on_plane <= tolerance).detach().cpu().numpy()]
+        matching_ids = element_ids_array[(on_plane <= tolerance).detach().cpu().numpy()]
         if len(matching_ids):
             selected.append((matching_ids, int(side)))
     if not selected:
-        raise RuntimeError(
-            f"No boundary faces found on axis {axis}={coordinate}.")
+        raise RuntimeError(f"No boundary faces found on axis {axis}={coordinate}.")
     return selected
 
 
@@ -126,7 +126,7 @@ class ThisController(morphopt.Controller):
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
-            class GripperPart(morphopt.BasePartInterface):
+            class GripperPart(morphopt.BasePart):
                 """The fixed gripper body and its identity instance."""
 
                 cache_part = True
@@ -135,14 +135,18 @@ class ThisController(morphopt.Controller):
                     box_cad = torchfea.cad.CADModel()
                     box_history = box_cad.add_part(self.part_name)
                     box_history.add_box(
-                        x=0.0, y=-0.5, z=-30.0,
-                        dx=80.0, dy=1.0, dz=30.0,
+                        x=0.0,
+                        y=-0.5,
+                        z=-30.0,
+                        dx=80.0,
+                        dy=1.0,
+                        dz=30.0,
                     )
                     part = box_cad.mesh_part(self.part_name, mesh_size=0.5)
                     _add_gripper_sets(part)
                     return part
 
-            class CylinderPart(morphopt.BasePartInterface):
+            class CylinderPart(morphopt.BasePart):
                 """One rigid-cylinder Part placed at four x positions."""
 
                 cache_part = True
@@ -159,8 +163,11 @@ class ThisController(morphopt.Controller):
                     cylinder_cad = torchfea.cad.CADModel()
                     cylinder_history = cylinder_cad.add_part(self.part_name)
                     cylinder_history.add_cylinder(
-                        x=80.0, y=-10.0, z=15.0,
-                        dy=20.0, radius=15.0,
+                        x=80.0,
+                        y=-10.0,
+                        z=15.0,
+                        dy=20.0,
+                        radius=15.0,
                     )
                     part = cylinder_cad.mesh_part(self.part_name, mesh_size=1.5)
                     part.add_node_set("cylinder", part.set_nodes["all"])
@@ -180,30 +187,30 @@ class ThisController(morphopt.Controller):
             def define_interface(self) -> None:
                 # Boundary the xmin as base
                 self.add_interface(
-                    self.ReferencePointInterface(rp_location=[0.0, 0.0, 0.0]),
+                    self.ReferencePoint(rp_location=[0.0, 0.0, 0.0]),
                     name="RPBase",
                 )
                 self.add_interface(
-                    self.CoupleInterface(
+                    self.Couple(
                         rp_name="RPBase",
                         instance_name="final_model",
                         set_nodes_name="nodes_xmin",
                     )
                 )
                 self.add_interface(
-                    self.BoundaryConditionRPInterface(
+                    self.ReferencePointBoundaryCondition(
                         rp_name="RPBase", index_dof=[0, 1, 2, 3, 4, 5]
                     ),
                     name="BC_RPBase",
                 )
 
                 # Boundary the xmax as base
-                # self.add_interface(self.ReferencePointInterface(rp_location=[80., 0., -15.]), name='RPXmax')
-                # self.add_interface(self.CoupleInterface(rp_name='RPXmax', instance_name='final_model', set_nodes_name='nodes_xmax'))
+                # self.add_interface(self.ReferencePoint(rp_location=[80., 0., -15.]), name='RPXmax')
+                # self.add_interface(self.Couple(rp_name='RPXmax', instance_name='final_model', set_nodes_name='nodes_xmax'))
 
                 # Symmetry boundary condition at the middle plane (y=0)
                 self.add_interface(
-                    self.BoundaryConditionInterface(
+                    self.BoundaryCondition(
                         instance_name="final_model", set_nodes_name="all", index_dof=[1]
                     ),
                     name="BC_Symmetry",
@@ -212,35 +219,31 @@ class ThisController(morphopt.Controller):
                 # Rigid cylinder
                 for i in range(len(cylinder_x)):
                     self.add_interface(
-                        self.ReferencePointInterface(
-                            rp_location=[cylinder_x[i], 0.0, 15.0]
-                        ),
+                        self.ReferencePoint(rp_location=[cylinder_x[i], 0.0, 15.0]),
                         name=f"RPCylinder{cylinder_x[i]}",
                     )
                     self.add_interface(
-                        self.CoupleInterface(
+                        self.Couple(
                             rp_name=f"RPCylinder{cylinder_x[i]}",
                             instance_name=f"cylinder{cylinder_x[i]}",
                             set_nodes_name="cylinder",
                         )
                     )
                     self.add_interface(
-                        self.BoundaryConditionRPInterface(
+                        self.ReferencePointBoundaryCondition(
                             rp_name=f"RPCylinder{cylinder_x[i]}",
                             index_dof=[0, 1, 3, 4, 5],
                         ),
                         name=f"BC_RPCylinder{cylinder_x[i]}",
                     )
                     self.add_interface(
-                        self.PenaltyDoFInterface(
-                            obj_name=f"RPCylinder{cylinder_x[i]}", s=2
-                        ),
+                        self.PenaltyDoF(obj_name=f"RPCylinder{cylinder_x[i]}", s=2),
                         name=f"Penalty_RPCylinder{cylinder_x[i]}_Z",
                     )
 
                     # Contact between the cylinder and the gripper
                     self.add_interface(
-                        self.ContactInterface(
+                        self.Contact(
                             instance_name1="final_model",
                             surface_name1="surface_zmax",
                             instance_name2=f"cylinder{cylinder_x[i]}",
@@ -265,7 +268,7 @@ class ThisController(morphopt.Controller):
             def define_interface(self) -> None:
                 self.add_interface(
                     ThisController.Params.BodyMaterial(
-                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                        material_parameters=self.models.NeoHookeanLnJParams(
                             mu=mumax,
                             kappa=mumax * 10,
                         )

@@ -1,6 +1,7 @@
 """Pure routing from model-tree nodes to definition editor pages."""
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -21,7 +22,10 @@ class EditorKind(Enum):
     UPDATER = auto()
     OBJECTIVE = auto()
     CUSTOM_CLASS = auto()
+    CUSTOM_CLASSES = auto()
     HELPER_CODE = auto()
+    HELPER_VARIABLES = auto()
+    HELPER_FUNCTIONS = auto()
 
 
 @dataclass(frozen=True)
@@ -35,13 +39,16 @@ def route_editor(node: Node | None) -> EditorRoute:
     """Select an editor without touching Qt or mutating the definition."""
     if node is None:
         return EditorRoute(EditorKind.PROPERTIES)
+    if node.kind == "custom_classes":
+        return EditorRoute(EditorKind.CUSTOM_CLASSES, node)
     if node.kind in {"custom_class", "method_override"}:
         return EditorRoute(EditorKind.CUSTOM_CLASS, node)
-    if node.kind in {
-        "helper_code", "helper_code_block", "helper_variables_group", "helper_functions_group",
-        "helper_variable", "helper_function",
-    }:
+    if node.kind in {"helper_code", "helper_code_block"}:
         return EditorRoute(EditorKind.HELPER_CODE, node)
+    if node.kind in {"helper_variables_group", "helper_variable"}:
+        return EditorRoute(EditorKind.HELPER_VARIABLES, focus=node)
+    if node.kind in {"helper_functions_group", "helper_function"}:
+        return EditorRoute(EditorKind.HELPER_FUNCTIONS, focus=node)
     if node.kind == "solver":
         return EditorRoute(EditorKind.SOLVER, node)
     if node.kind == "geometry":
@@ -68,13 +75,19 @@ def route_editor(node: Node | None) -> EditorRoute:
 
 
 def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | None) -> list[Node]:
-    """Scope a definition page to one selected interface and its owned children."""
-    from ..model.problem import CADOperationNode, InstanceNode, InterfaceNode, MaterialNode, PartInterfaceNode, SurfaceNode
+    """Return the items owned by a definition page, in model order."""
+    from ..model.problem import (
+        CADOperationNode,
+        InstanceNode,
+        MaterialNode,
+        PartNode,
+        SurfaceNode,
+    )
 
     if problem is None:
         return []
     if mode == "geometry":
-        if isinstance(focus, PartInterfaceNode) and focus in problem.part_interfaces():
+        if isinstance(focus, PartNode) and focus in problem.part_interfaces():
             return [focus]
         owner = None
         if isinstance(focus, InstanceNode):
@@ -85,7 +98,13 @@ def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | No
             owner = problem.owner_of_cad_operation(focus)
         return [owner] if owner is not None else []
     if mode == "loads":
-        return [focus] if isinstance(focus, InterfaceNode) and focus in problem.interfaces() else []
+        # Load definitions belong to their collection editor. Selecting one in
+        # the tree only focuses its card; it must not hide the other loads.
+        return list(problem.interfaces())
+    if mode == "helper_variables":
+        return list(problem.helper_variables)
+    if mode == "helper_functions":
+        return list(problem.helper_functions)
     if mode == "materials":
         return [focus] if isinstance(focus, MaterialNode) and focus in problem.material_nodes() else []
-    raise ValueError(f"Unknown definition manager mode: {mode}")
+    raise ValueError(localized_message("ui.errors.editor_routing.unknown_definition_manager_mode_value", value_0=mode))

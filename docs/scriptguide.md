@@ -66,7 +66,7 @@ class ThisController(morphopt.Controller):
 |---|---|
 | 控制器模块 | `morphopt.ObjectiveFunction` / `Params` / `Solver` / `Updaters` |
 | 参数集合 | `morphopt.GeometryParams` / `FEAParams` / `MaterialsParams` |
-| 边界曲面 Part | `morphopt.BoundaryPartInterface` |
+| 边界曲面 Part | `morphopt.BoundaryPart` |
 | SIMP 密度场材料 | `morphopt.SIMP_BSPFieldMaterials` |
 | 几何更新器 | `morphopt.UpdaterBoundaryPart` |
 | 材料更新器 | `morphopt.UpdaterSIMPMaterial` |
@@ -117,7 +117,7 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
 ```python
 class Params(morphopt.Params):
     class GeometryParams(morphopt.GeometryParams):
-        class Body(morphopt.BoundaryPartInterface):
+        class Body(morphopt.BoundaryPart):
             def define_surfaces(self):
                 self.add_surface_interface(
                     self.BSP.initialize_cylinder(r0=10.0, length=50.0, seed_size=1.0, flip=False))
@@ -127,8 +127,8 @@ class Params(morphopt.Params):
 
     class FEAParams(morphopt.FEAParams):
         def define_interface(self):
-            self.add_interface(self.BoundaryConditionInterface(instance_name='body', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-            self.add_interface(self.PressureInterface(instance_name='body', surface_name='surface_0_All'), name='pressure_1')
+            self.add_interface(self.BoundaryCondition(instance_name='body', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
+            self.add_interface(self.Pressure(instance_name='body', surface_name='surface_0_All'), name='pressure_1')
 
         def define_steps(self):
             self.set_step_num(1)
@@ -153,11 +153,11 @@ class Params(morphopt.Params):
 几何是三层结构：
 
 1. `GeometryParams`：按名称保存的 **Part 接口字典**（`interfaces`），本身不关心曲面。
-2. `BasePartInterface`：一个 **Part + 若干 Instance**。子类
-   - `INPPartInterface`：直接读 Abaqus INP 网格；
-   - `TorchFEAPartInterface`：读 torchfea 导出的模型目录（`torchfea.load_model`）；
-   - `BoundaryPartInterface`（shapeopt/codesign）：由参数化曲面生成网格，**只有它有曲面**。
-3. `SurfaceInterface`：属于 `BoundaryPartInterface` 的单个曲面（BSP / CPGEO / …）。
+2. `BasePart`：一个 **Part + 若干 Instance**。子类
+   - `INPPart`：直接读 Abaqus INP 网格；
+   - `TorchFEAPart`：读 torchfea 导出的模型目录（`torchfea.load_model`）；
+   - `BoundaryPart`（shapeopt/codesign）：由参数化曲面生成网格，**只有它有曲面**。
+3. `SurfaceInterface`：属于 `BoundaryPart` 的单个曲面（BSP / CPGEO / …）。
 
 一个 Part 的 Instance 在 Part 内部定义，不再通过 GeometryParams 传一组平行
 配置。基类默认创建一个与 Part 同名、位姿不变的 Instance。需要多个 Instance
@@ -165,7 +165,7 @@ class Params(morphopt.Params):
 `[tx, ty, tz, rx, ry, rz]` 调用 `add_instance()`：
 
 ```python
-class Frame(morphopt.INPPartInterface):
+class Frame(morphopt.INPPart):
     def define_instance(self):
         self.add_instance(self.part_name, "frame_left", [0, 0, 0, 0, 0, 0])
         self.add_instance(self.part_name, "frame_right", [0, 40, 0, 0, 0, 1.5708])
@@ -176,17 +176,17 @@ class Frame(morphopt.INPPartInterface):
 
 **曲面写在哪里**：曲面的声明放在 Part 类里（`define_surfaces`），与其它模块的
 `define_interface()` 一致：Part 初始化时调用一次，顺序即曲面索引顺序。曲面工厂
-（`BSP` / `CPGEO` / `FixedSurface`）由 `BoundaryPartInterface`
+（`BSP` / `CPGEO` / `FixedSurface`）由 `BoundaryPart`
 自带，子类里 `self.BSP.…` 直接可用。Part 特有的辅助方法直接定义在对应的
 Part 子类中：
 
 ```python
 class GeometryParams(morphopt.GeometryParams):
 
-    class CPGEO_Symmetry(morphopt.BoundaryPartInterface.CPGEO):  # 模型级自定义曲面类
+    class CPGEO_Symmetry(morphopt.BoundaryPart.CPGEO):  # 模型级自定义曲面类
         ...
 
-    class BoundaryPart(morphopt.BoundaryPartInterface):
+    class BoundaryPart(morphopt.BoundaryPart):
         """可优化实体：曲面参数化，一个 Part 两个曲面（0 外表面、1 内腔）。"""
 
         def define_surfaces(self):
@@ -212,7 +212,7 @@ class GeometryParams(morphopt.GeometryParams):
 
 其他要点：
 
-- 每个 `BaseSurfaceInterface` 持有一个有序的约束列表。BSP 支持 `mirror("xz")`
+- 每个 `BaseSurface` 持有一个有序的约束列表。BSP 支持 `mirror("xz")`
   和 `mirror("xy", offset=h/2)`；其它 BSP 对称方式暂不支持。CPGEO 的
   `surface.mirror(...)` 和 `surface.rotate(...)` 创建曲面专属约束；跨曲面关系直接构造
   `surface.relate(other, pose=...)`。`relate` 是对应后端的约束类属性。用
@@ -248,13 +248,13 @@ class GeometryParams(morphopt.GeometryParams):
 
 常见接口：
 
-- 压力：`PressureInterface`
-- 接触：`ContactInterface`, `ContactSelfInterface`
-- 力/力矩：`ConcentratedForceInterface`, `ConcentratedMomentInterface`
-- 约束：`BoundaryConditionInterface`, `BoundaryConditionRPInterface`
-- 耦合：`CoupleInterface`
-- 参考点：`ReferencePointInterface`
-- 体力：`BodyforceInterface`
+- 压力：`Pressure`
+- 接触：`Contact`, `SelfContact`
+- 力/力矩：`ConcentratedForce`, `ConcentratedMoment`
+- 约束：`BoundaryCondition`, `ReferencePointBoundaryCondition`
+- 耦合：`Couple`
+- 参考点：`ReferencePoint`
+- 体力：`BodyForce`
 
 ### 3.3 MaterialsParams 定义要点
 
@@ -329,7 +329,7 @@ class Solver(morphopt.Solver):
 未显式传入 `U_guess` 时，模型中的 Part 接口都满足 `is_variable=False`，
 求解器才会通过 `StaticResult.load()` 读取最近一次已保存迭代的各工况坐标作为初值。
 首次求解或某个工况的结果文件不存在时，对应初值为 `None`。
-`BasePartInterface` 默认 `is_variable=False`，`BoundaryPartInterface` 默认 `True`；
+`BasePart` 默认 `is_variable=False`，`BoundaryPart` 默认 `True`；
 该标记也会传到装配中的 `torchfea.Part`。
 自定义 Part 的几何或网格会随优化变化时，在类中设置 `is_variable=True`。
 仅优化材料密度而保持网格不变的 SIMP Part 使用 `False`。
@@ -482,11 +482,11 @@ class Updater(morphopt.Updaters):
 `MaterialsParams`、`ObjectiveFunction`、`Solver` 和 `Updaters`。
 只有内腔偏置 Part 和对应的几何更新器使用专用实现：
 
-- Part：`morphopt.OffsetBoundaryPartInterface`。
+- Part：`morphopt.OffsetBoundaryPart`。
 - 几何更新器：`morphopt.UpdaterOffsetBoundaryPart`，注册到 `add_geometry_updater(..., name="body")`。
 - 材料更新器：`morphopt.UpdaterSIMPMaterial`，注册到 `add_material_updater(...)`。
 
-自定义 CPGEO 曲面类继承 `morphopt.OffsetBoundaryPartInterface.CPGEO`。
+自定义 CPGEO 曲面类继承 `morphopt.OffsetBoundaryPart.CPGEO`。
 壳网格由 Part 构建、转换为指定阶次并检查，不需要专用 FEAParams。
 
 SIMP 材料的空间映射属于内核实现，不在 UI 的材料节点中编辑。
@@ -531,4 +531,4 @@ SIMP 材料的空间映射属于内核实现，不在 UI 的材料节点中编�
 - simp 完整示例：`examples/gripper.py`
 - 协同设计任务（壳偏移 + SIMP 材料）：`myjobs/codesign/`（如 `stiffness_twist_largemat.py`、`energy_contraction.py`）
 - 目标函数与结果保存逻辑：`src/morphopt/optcore/objfunc.py`
-- 几何 / 材料更新核心：`src/morphopt/shapeopt/update_boundarypart.py`、`src/morphopt/simp/update_simpmaterial.py`
+- 几何 / 材料更新核心：`src/morphopt/shapeopt/update_boundary_part.py`、`src/morphopt/simp/update_simpmaterial.py`

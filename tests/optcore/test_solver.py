@@ -34,7 +34,7 @@ def test_core_solver_restores_previous_iteration_for_warm_start(monkeypatch) -> 
     )
     solver = Solver(
         params=SimpleNamespace(
-            geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePartInterface()}),
+            geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePart()}),
             feamodel=SimpleNamespace(num_load_steps=2),
         ),
     )
@@ -59,9 +59,9 @@ def test_previous_solution_is_empty_for_first_iteration_or_variable_geometry(
     monkeypatch.setattr(morphopt, "controller", SimpleNamespace(
         history=SimpleNamespace(iteration=iteration), path_result="/tmp/morphopt-run",
     ))
-    part = morphopt.BoundaryPartInterface() if variable else morphopt.BasePartInterface()
+    part = morphopt.BoundaryPart() if variable else morphopt.BasePart()
     solver = Solver(params=SimpleNamespace(
-        geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePartInterface(), "part": part}),
+        geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePart(), "part": part}),
         feamodel=SimpleNamespace(num_load_steps=2),
     ))
 
@@ -83,7 +83,7 @@ def test_previous_solution_loads_saved_result_and_leaves_missing_step_empty(
         history=SimpleNamespace(iteration=3), path_result=str(tmp_path),
     ))
     solver = Solver(params=SimpleNamespace(
-        geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePartInterface()}),
+        geometry=SimpleNamespace(interfaces={"fixed": morphopt.BasePart()}),
         feamodel=SimpleNamespace(num_load_steps=2),
     ))
 
@@ -102,7 +102,7 @@ def test_previous_solution_loads_saved_result_and_leaves_missing_step_empty(
 
 @pytest.mark.parametrize("variable", [False, True])
 def test_part_interface_transfers_variable_marker_to_assembly(variable) -> None:
-    class Part(morphopt.BasePartInterface):
+    class Part(morphopt.BasePart):
         def build_part(self, path_result=None, pools=None):
             return torchfea.Part(torch.zeros((1, 3)))
 

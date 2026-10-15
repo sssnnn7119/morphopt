@@ -6,6 +6,7 @@ classes inherit that selection and pass the UI constructor parameters to it.
 """
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 import ast
 import inspect
@@ -16,7 +17,12 @@ from dataclasses import dataclass, field
 import morphopt
 
 from ..model.problem import CustomClassNode, MethodOverrideNode, ProblemDefinition
-from ..model.schemas import PART_INTERFACE_TYPES, SURFACE_TYPES, UPDATER_CATALOG
+from ..model.schemas import (
+    INTERFACE_TYPES,
+    PART_INTERFACE_TYPES,
+    SURFACE_TYPES,
+    UPDATER_CATALOG,
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +53,7 @@ def _resolve(expression: str) -> type:
     value = morphopt
     parts = expression.split(".")
     if parts[0] != "morphopt":
-        raise ValueError(f"Unsupported base class: {expression}")
+        raise ValueError(localized_message("ui.errors.custom_classes.unsupported_base_class_value", value_0=expression))
     for name in parts[1:]:
         value = getattr(value, name)
     return value
@@ -159,7 +165,7 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
 
 def validate_class_name(name: str) -> None:
     if not name.isidentifier() or keyword.iskeyword(name) or name.startswith("__"):
-        raise ValueError("自定义类名必须是有效的 Python 标识符 / Invalid Python class name")
+        raise ValueError(localized_message("ui.errors.custom_classes.invalid_python_class_name"))
 
 
 def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[str, ClassSpec]:
@@ -177,7 +183,7 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
     # Surface factories remain reusable when the owning Part is changed to
     # an offset Part; their canonical parents do not depend on that owner.
     for name in ("BSP", "CPGEO", "FixedSurface"):
-        expression = f"morphopt.BoundaryPartInterface.{name}"
+        expression = f"morphopt.BoundaryPart.{name}"
         if expression not in parents:
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
@@ -243,7 +249,7 @@ def validate_custom_name(name: str, catalog: dict[str, ClassSpec]) -> None:
         reserved.update({spec.definition.name, spec.path.split(".")[-1]})
         reserved.update(spec.methods)
     if name in reserved:
-        raise ValueError(f"类名与模块成员冲突 / Class name conflicts with a module member: {name}")
+        raise ValueError(localized_message("ui.errors.custom_classes.class_name_conflicts_with_a_module_member_value", value_0=name))
 
 
 CONFIGURATION_CLASS_PATHS = {
@@ -278,22 +284,22 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     customs = {}
     for custom in problem.custom_classes:
         if not isinstance(custom, CustomClassNode):
-            raise ValueError("Invalid custom class definition")
+            raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_class_definition"))
         spec = parents.get(custom.base_class)
         if spec is None:
-            raise ValueError(f"{custom.name}: 父类已不存在 / Base class missing: {custom.base_class}")
+            raise ValueError(localized_message("ui.errors.custom_classes.base_class_missing_value", value_0=custom.name, value_1=custom.base_class))
         validate_custom_name(custom.name, parents)
         if custom.name in customs:
-            raise ValueError(f"重复的类名 / Duplicate class name: {custom.name}")
+            raise ValueError(localized_message("ui.errors.custom_classes.duplicate_class_name_value", value_0=custom.name))
         customs[custom.name] = (custom, spec)
         lines = [f"class {custom.name}({spec.base_expression}):"]
         seen = set()
         for override in custom.children:
             method = spec.methods.get(override.name)
             if not isinstance(override, MethodOverrideNode) or method is None:
-                raise ValueError(f"{custom.name}: 无效的重写方法 / Invalid override: {override.name}")
+                raise ValueError(localized_message("ui.errors.custom_classes.invalid_override_value", value_0=custom.name, value_1=override.name))
             if override.name in seen:
-                raise ValueError(f"Duplicate override: {custom.name}.{override.name}")
+                raise ValueError(localized_message("ui.errors.custom_classes.duplicate_override_value_value", value_0=custom.name, value_1=override.name))
             seen.add(override.name)
             if method.decorator:
                 lines.append(f"    @{method.decorator}")
@@ -310,14 +316,14 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     insertions = {}
     invalid_paths = set(problem.class_bindings) - set(CONFIGURATION_CLASS_PATHS.values())
     if invalid_paths:
-        raise ValueError(f"Invalid configuration class selection: {sorted(invalid_paths)}")
+        raise ValueError(localized_message("ui.errors.custom_classes.invalid_configuration_class_selection_value", value_0=sorted(invalid_paths)))
     bindings = dict(problem.class_bindings)
 
     def check_usage(name, expression):
         if name not in customs:
-            raise ValueError(f"自定义类已不存在 / Custom class missing: {name}")
+            raise ValueError(localized_message("ui.errors.custom_classes.custom_class_missing_value", value_0=name))
         if not issubclass(customs[name][1].backend, _resolve(expression)):
-            raise ValueError(f"{name} 不能用于 {expression} / Incompatible custom class")
+            raise ValueError(localized_message("ui.errors.custom_classes.incompatible_custom_class", value_0=name, value_1=expression))
 
     from .generator import part_class_names
 
@@ -331,14 +337,15 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
         elif node.kind == "objective":
             bindings["ThisController.ObjectiveFunction"] = node.custom_class
         elif node.kind == "interface":
-            check_usage(node.custom_class, "morphopt.FEAParams." + node.interface_type + "Interface")
+            class_name = INTERFACE_TYPES[node.interface_type]["class_name"]
+            check_usage(node.custom_class, "morphopt.FEAParams." + class_name)
         elif node.kind == "material":
             check_usage(node.custom_class, "morphopt." + node.material_type)
         elif node.kind == "surface":
             factory = SURFACE_TYPES[node.surface_type]["factory"]
-            check_usage(node.custom_class, "morphopt.BoundaryPartInterface." + (factory.split(".")[0] if factory else "FixedSurface"))
+            check_usage(node.custom_class, "morphopt.BoundaryPart." + (factory.split(".")[0] if factory else "FixedSurface"))
         else:
-            raise ValueError(f"Unsupported custom class on node: {node.kind}")
+            raise ValueError(localized_message("ui.errors.custom_classes.unsupported_custom_class_on_node_value", value_0=node.kind))
     if problem.updater:
         configurations = [("geometry", config) for config in problem.updater.geometry]
         configurations += [("materials", config) for config in problem.updater.materials]
@@ -348,18 +355,18 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
                     if item.get("custom_class"):
                         expression = updater_item_base(item.get("type"), category, group)
                         if expression is None:
-                            raise ValueError("Invalid custom objective/constraint type")
+                            raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_objective_constraint_type"))
                         check_usage(item["custom_class"], expression)
 
     for path, name in bindings.items():
         target = targets.get(path)
         if target is None:
-            raise ValueError(f"使用类的模型节点已不存在 / Class target missing: {path}")
+            raise ValueError(localized_message("ui.errors.custom_classes.class_target_missing_value", value_0=path))
         if name not in customs:
-            raise ValueError(f"自定义类已不存在 / Custom class missing: {name}")
+            raise ValueError(localized_message("ui.errors.custom_classes.custom_class_missing_value", value_0=name))
         custom, base = customs[name]
         if not issubclass(base.backend, target.backend):
-            raise ValueError(f"{name} 不能用于 {path} / Incompatible custom class")
+            raise ValueError(localized_message("ui.errors.custom_classes.incompatible_custom_class", value_0=name, value_1=path))
         node = target.definition
         lines[node.lineno - 1] = lines[node.lineno - 1].replace(
             f"({target.base_expression})", f"({name})")
@@ -386,5 +393,5 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     try:
         compile(result, "<custom classes>", "exec")
     except SyntaxError as exc:
-        raise ValueError(f"自定义方法语法错误 / Invalid custom method: {exc}") from exc
+        raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_method_value", value_0=exc)) from exc
     return result

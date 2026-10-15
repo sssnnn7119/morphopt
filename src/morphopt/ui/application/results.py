@@ -9,6 +9,8 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
+from ..i18n import localized_message
+
 
 @contextmanager
 def _cpu_torch_defaults():
@@ -48,7 +50,7 @@ def controller_class_from_folder(path_result: str):
                 spec.loader.exec_module(module)
         except Exception as exc:  # pragma: no cover - best-effort result browsing
             sys.modules.pop(module_name, None)
-            print(f"controller import failed for {path_result}: {exc}")
+            print(localized_message("ui.messages.controller_import_failed", folder=path_result, error=exc))
             return None
     return getattr(module, "ThisController", None)
 
@@ -98,7 +100,7 @@ class ResultSession:
                 self.params = self.controller.Params()
                 self.params.initialize()
         except Exception as exc:
-            print(f"params init failed: {exc}")
+            print(localized_message("ui.messages.parameters_init_failed", error=exc))
             self.params = None
         return True
 

@@ -61,7 +61,7 @@
 
 | 挑战 | 解决方案 | 代码位置 |
 |------|---------|---------|
-| 薄壁密封层需精确仿真 | **偏置壳单元**：CPGEO 曲面 + 法向偏置 → C3D6 楔形元 | `codesign/offsetboundarypartinterface.py` |
+| 薄壁密封层需精确仿真 | **偏置壳单元**：CPGEO 曲面 + 法向偏置 → C3D6 楔形元 | `codesign/offset_boundary_part.py` |
 | 外骨骼需大范围拓扑优化 | **SIMP + BSP 场参数化** + **RAMP 惩罚插值** | `simp/simpmaterial.py` |
 | 低密度区零能模式导致数值不稳定 | **Fskew 正则化**：惩罚位移二阶梯度反对称分量 + 逐高斯点自适应惩罚 | `simpmaterial.py` |
 | 壳结构在优化中可能自交或畸变 | **内凹曲率约束** + **偏移面最小距离约束** | `codesign/constraints.py` |
@@ -373,15 +373,15 @@ MorphOpt codesign 中的约束体系：
 morphopt/
 ├── codesign/
 │   ├── __init__.py
-│   ├── offsetboundarypartinterface.py ← 偏置壳构建、法向量、modify_assembly
-│   ├── update_offsetboundarypart.py ← 偏置 Part 更新器
+│   ├── offset_boundary_part.py ← 偏置壳构建、法向量、modify_assembly
+│   ├── update_offset_boundary_part.py ← 偏置 Part 更新器
 │   └── constraints.py     ← InwardCurvatureRadius / OffsetSurfaceMinThickness
 ├── optcore/
-│   ├── modelparams/materialinterface/
-│   │   ├── basematerialinterface.py
-│   │   ├── homogeneousmaterial.py
-│   │   └── materialmodels.py
-│   ├── modelparams/materials.py ← MaterialsParams 聚合
+│   ├── modelparams/materials/
+│   │   ├── base_material.py
+│   │   ├── homogeneous_material.py
+│   │   └── models.py
+│   ├── modelparams/materialsparams.py ← MaterialsParams 聚合
 │   ├── updaters/materials/
 │   │   └── objectivefuncs/  ← Sensitivity、DensityFieldMinimize
 │   └── solver.py           ← 伴随法灵敏度求解
@@ -422,9 +422,9 @@ FEA 求解 ──→ 目标函数 ──→ 伴随法 ──→ dJ/dΦ_G + dJ/d�
 
 ### 8.1 几何：偏置壳构建与计算图保持
 
-#### 8.1.1 壳网格生成（`codesign/offsetboundarypartinterface.py`）
+#### 8.1.1 壳网格生成（`codesign/offset_boundary_part.py`）
 
-`OffsetBoundaryPartInterface._build_shell_c3d6()` 在每次重建网格时执行，以 CPGEO 分界面为起点向气腔侧偏置并构建 C3D6 楔形单元（内腔曲面索引从 1 开始）：
+`OffsetBoundaryPart._build_shell_c3d6()` 在每次重建网格时执行，以 CPGEO 分界面为起点向气腔侧偏置并构建 C3D6 楔形单元（内腔曲面索引从 1 开始）：
 
 ```python
 def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
@@ -770,7 +770,7 @@ while 未收敛:
 ```
 Controller                         → 优化主循环 (optcore/controller.py)
 ├── Params                         → 参数组合 (optcore/modelparams/params.py)
-│   ├── Geometry (OffsetBoundaryPartInterface) → 气腔 CPGEO + 偏置壳 (codesign/offsetboundarypartinterface.py)
+│   ├── Geometry (OffsetBoundaryPart) → 气腔 CPGEO + 偏置壳 (codesign/offset_boundary_part.py)
 │   │   └── _build_shell_c3d6()    → C3D6 壳生成
 │   │   └── modify_assembly()      → 更新节点坐标
 │   ├── FEAParams (FEAParams) → FEA 参数 (optcore/modelparams/feaparams.py)
@@ -838,7 +838,7 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.GeometryParams):
             def define_interface(self):
                 # 一个边界 Part：内腔曲面带偏置壳
-                body = morphopt.OffsetBoundaryPartInterface(
+                body = morphopt.OffsetBoundaryPart(
                     fea_seed_size=2.5,
                     shell_thickness=2.5,   # 壳厚度 2.5mm
                     num_layers=1)          # 单层壳
@@ -848,7 +848,7 @@ class ThisController(morphopt.Controller):
 
         class FEAParams(morphopt.FEAParams):
             def define_interface(self):
-                self.add_interface(self.PressureInterface(
+                self.add_interface(self.Pressure(
                     instance_name='body',
                     surface_name='surface_1_offset'),  # 气压加载在偏移面
                     name='pressure_1')

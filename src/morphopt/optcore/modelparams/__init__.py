@@ -1,16 +1,33 @@
 """Model parameters: geometry, FEA (loads/constraints) and materials."""
 
+from .base_model_component import BaseModelComponent
 from .baseparam import BaseParams
 from .feaparams import FEAParams
 from .geometry import GeometryParams
-from .materials import MaterialsParams
+from .materialsparams import MaterialsParams
 from .params import Params
-from .partinterface import (
-    BasePartInterface,
-    CADPartInterface,
-    BoxPartInterface,
-    INPPartInterface,
-    TorchFEAPartInterface,
+from .parts import (
+    BasePart,
+    CADPart,
+    BoxPart,
+    INPPart,
+    TorchFEAPart,
     load_model_assembly,
     resolve_model_path,
 )
+
+__all__ = [
+    "BaseModelComponent",
+    "BaseParams",
+    "FEAParams",
+    "GeometryParams",
+    "MaterialsParams",
+    "Params",
+    "BasePart",
+    "CADPart",
+    "BoxPart",
+    "INPPart",
+    "TorchFEAPart",
+    "load_model_assembly",
+    "resolve_model_path",
+]

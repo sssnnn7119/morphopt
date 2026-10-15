@@ -1,4 +1,5 @@
 """Layered series/parallel chamber geometry for the Quickstart editor."""
+from ..i18n import localized_message
 
 from dataclasses import dataclass, field
 import math
@@ -52,13 +53,13 @@ class LayeredChambers:
 
     def validate(self):
         if not 1 <= len(self.layers) <= 8:
-            raise ValueError("请定义 1–8 层气腔 / Define 1–8 chamber layers.")
+            raise ValueError(localized_message("ui.errors.chamberlayout.define_1_8_chamber_layers"))
         if (
             not math.isfinite(self.body_radius)
             or not math.isfinite(self.wall)
             or min(self.body_radius, self.wall) <= 0
         ):
-            raise ValueError("外半径和壁厚必须为正 / Body radius and wall must be positive.")
+            raise ValueError(localized_message("ui.errors.chamberlayout.body_radius_and_wall_must_be_positive"))
         for index, layer in enumerate(self.layers, 1):
             if (
                 not all(
@@ -75,9 +76,7 @@ class LayeredChambers:
                 or layer.center_radius < 0
             ):
                 raise ValueError(
-                    f"第 {index} 层：长度需大于四倍壁厚，半径需为正 / "
-                    f"Layer {index}: length must exceed four wall thicknesses; "
-                    "radius must be positive."
+                    localized_message("ui.errors.chamberlayout.layer_value_length_must_exceed_four_wall_thicknesses_radius_must", value_0=index)
                 )
             if (
                 not isinstance(layer.chambers, int)
@@ -89,29 +88,24 @@ class LayeredChambers:
                 )
             ):
                 raise ValueError(
-                    f"第 {index} 层：每个气腔需指定正整数压力通道 / "
-                    f"Layer {index}: assign one positive integer pressure "
-                    "channel per cavity."
+                    localized_message("ui.errors.chamberlayout.layer_value_assign_one_positive_integer_pressure_channel_per_cavity", value_0=index)
                 )
             if layer.arrangement not in ("ring", "line") or layer.shape not in (
                 "cylinder",
                 "sphere",
             ):
                 raise ValueError(
-                    f"第 {index} 层：请选择截面排布和气腔形状 / "
-                    f"Layer {index}: select an arrangement and shape."
+                    localized_message("ui.errors.chamberlayout.layer_value_select_an_arrangement_and_shape", value_0=index)
                 )
             if layer.shape == "sphere" and 2 * layer.radius > layer.length - 2 * self.wall:
                 raise ValueError(
-                    f"第 {index} 层：球形气腔超出层长 / "
-                    f"Layer {index}: sphere exceeds the layer length."
+                    localized_message("ui.errors.chamberlayout.layer_value_sphere_exceeds_the_layer_length", value_0=index)
                 )
         cavities = self.cavity_specs()
         for cavity in cavities:
             if math.hypot(cavity.x, cavity.y) + cavity.radius + self.wall > self.body_radius + 1e-9:
                 raise ValueError(
-                    f"第 {cavity.layer + 1} 层：气腔与外壁距离不足 / "
-                    f"Layer {cavity.layer + 1}: insufficient outer wall."
+                    localized_message("ui.errors.chamberlayout.layer_value_insufficient_outer_wall", value_0=cavity.layer + 1)
                 )
         for index, cavity in enumerate(cavities):
             for other in cavities[index + 1 :]:
@@ -121,9 +115,7 @@ class LayeredChambers:
                     < cavity.radius + other.radius + self.wall - 1e-9
                 ):
                     raise ValueError(
-                        f"第 {cavity.layer + 1} 层：并联气腔之间壁厚不足 / "
-                        f"Layer {cavity.layer + 1}: insufficient wall between "
-                        "parallel cavities."
+                        localized_message("ui.errors.chamberlayout.layer_value_insufficient_wall_between_parallel_cavities", value_0=cavity.layer + 1)
                     )
 
     def cavity_specs(self):

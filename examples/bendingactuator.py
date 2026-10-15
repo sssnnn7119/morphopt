@@ -17,9 +17,7 @@ class ThisController(morphopt.Controller):
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
-
-            class BoundaryPart(morphopt.BoundaryPartInterface):
-
+            class BoundaryPart(morphopt.BoundaryPart):
                 def define_surfaces(self) -> None:
                     """
                     Register this Part's boundary surfaces in index order:
@@ -59,7 +57,7 @@ class ThisController(morphopt.Controller):
                         fea_seed_size=1.0,
                         mesh_order=1,
                     ),
-                    name='body',
+                    name="body",
                 )
 
         class FEAParams(morphopt.FEAParams):
@@ -69,18 +67,18 @@ class ThisController(morphopt.Controller):
             def define_interface(self) -> None:
                 # Common BC / RP / Couple
                 self.add_interface(
-                    self.BoundaryConditionInterface(
+                    self.BoundaryCondition(
                         instance_name="body",
                         set_nodes_name="surface_0_Bottom",
                         index_dof=[0, 1, 2],
                     )
                 )
                 self.add_interface(
-                    self.ReferencePointInterface(rp_location=[0.0, 0.0, 80.0]),
+                    self.ReferencePoint(rp_location=[0.0, 0.0, 80.0]),
                     name="RP_head",
                 )
                 self.add_interface(
-                    self.CoupleInterface(
+                    self.Couple(
                         rp_name="RP_head",
                         instance_name="body",
                         set_nodes_name="surface_0_Head",
@@ -88,9 +86,7 @@ class ThisController(morphopt.Controller):
                 )
 
                 self.add_interface(
-                    self.PressureInterface(
-                        instance_name="body", surface_name="surface_1_All"
-                    ),
+                    self.Pressure(instance_name="body", surface_name="surface_1_All"),
                     name="pressure_1",
                 )
 
@@ -102,7 +98,7 @@ class ThisController(morphopt.Controller):
             def define_interface(self) -> None:
                 self.add_interface(
                     self.HomogeneousMaterial(
-                        material_parameters=self.materialmodels.NeoHookeanLnJParams(
+                        material_parameters=self.models.NeoHookeanLnJParams(
                             mu=0.482, kappa=4.8
                         ),
                         density=1.08e-9,
@@ -135,8 +131,7 @@ class ThisController(morphopt.Controller):
         """
 
         def define_updater(self) -> None:
-            self.add_geometry_updater(self.UpdaterBoundaryPart(), name='body')
-
+            self.add_geometry_updater(self.UpdaterBoundaryPart(), name="body")
 
         class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
             """
@@ -151,9 +146,7 @@ class ThisController(morphopt.Controller):
             def define_objective(self) -> None:
                 shape_derivative = self.objectivefuncs.ShapeDerivative()
                 self.add_objective_function(shape_derivative)
-                self.add_constraints(
-                    self.objectivefuncs.Fairness()
-                )
+                self.add_constraints(self.objectivefuncs.Fairness())
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])
                 )
@@ -162,6 +155,7 @@ class ThisController(morphopt.Controller):
                         radius=10.0, height=80.0, bottom=0.0
                     )
                 )
+
 
 if __name__ == "__main__":
     morphopt.start_optimization(device="cuda", restart_per_iteration=10)

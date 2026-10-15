@@ -13,7 +13,7 @@ def test_unknown_node_kind_is_rejected():
 
 def test_unknown_node_fields_are_rejected():
     with pytest.raises(ValueError, match="Unknown fields"):
-        Node.from_dict({"kind": "part_interface", "params": {"shell_thickness": 2}})
+        Node.from_dict({"kind": "part_interface", "params": {"retired_field": 2}})
 
 
 def test_retired_updater_code_is_rejected():

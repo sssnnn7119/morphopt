@@ -1,6 +1,7 @@
 """Optimization-process lifecycle independent from observer widgets."""
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 import subprocess
 import time
@@ -68,7 +69,7 @@ class OptimizationRunSession:
         self._ensure_idle()
         if source.kind is RunSourceKind.CONTINUE:
             if not self.is_result_folder(source.path):
-                raise ValueError("Missing scripts/MAIN_SCRIPT_FOR_RESTART.py in the selected result folder.")
+                raise ValueError(localized_message("ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"))
             self.adopt(source.path)
         else:
             self.clear_result()
@@ -78,10 +79,10 @@ class OptimizationRunSession:
     def start_selected(self, target_iteration: int | None = None) -> subprocess.Popen:
         source = self.source
         if source is None:
-            raise ValueError("Select a task source first.")
+            raise ValueError(localized_message("ui.errors.runs.select_a_task_source_first"))
         if source.kind is RunSourceKind.DEFINITION:
             if self.definition is None:
-                raise ValueError("No definition is bound to this run.")
+                raise ValueError(localized_message("ui.errors.runs.no_definition_is_bound_to_this_run"))
             process = self.start_definition(self.definition)
         elif source.kind is RunSourceKind.PYTHON:
             process = self.start_python(source.path)
@@ -224,7 +225,7 @@ class OptimizationRunSession:
 
     def _ensure_idle(self) -> None:
         if self.active:
-            raise RuntimeError("An optimization process is already active")
+            raise RuntimeError(localized_message("ui.errors.runs.an_optimization_process_is_already_active"))
 
 
 @dataclass(frozen=True)

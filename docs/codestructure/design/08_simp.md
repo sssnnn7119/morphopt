@@ -7,7 +7,7 @@
 SIMP 模块将 B-spline 标量场投影到有限元节点或高斯点，得到元素材料比例与惩罚因子。`SIMP_BSPFieldMaterials` 同时是材料分配接口和可更新设计接口；`UpdaterSIMPMaterial` 以其控制点为局部 L-BFGS 变量。
 
 ```text
-SIMP_BSPFieldMaterials : BaseMaterialInterface + ProtocalUpdatable
+SIMP_BSPFieldMaterials : BaseMaterial + ProtocalUpdatable
  ├── B-spline design field (control points)
  ├── map field → element density / SIMP penalty
  └── set SIMP elements and materials on one Part
@@ -32,7 +32,7 @@ SIMP_BSPFieldMaterials : BaseMaterialInterface + ProtocalUpdatable
 
 ## `SIMP_BSPFieldMaterials`
 
-源码：`simp/simpmaterial.py`；继承 `BaseMaterialInterface`、`ProtocalUpdatable`。
+源码：`simp/simpmaterial.py`；继承 `BaseMaterial`、`ProtocalUpdatable`。
 
 | 状态 | 说明 |
 |---|---|

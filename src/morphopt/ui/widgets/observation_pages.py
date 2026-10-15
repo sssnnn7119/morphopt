@@ -25,6 +25,8 @@ from pyvistaqt import QtInteractor
 from ..i18n import tr
 from ..application.results import ResultSession
 from ..presentation.history import history_table
+from ..presentation.labels import typed_title
+from .plot_style import configure_plotter
 
 
 class PlotViewport(QWidget):
@@ -37,11 +39,12 @@ class PlotViewport(QWidget):
         layout.setSpacing(0)
         self.plotter = QtInteractor(self)
         layout.addWidget(self.plotter.interactor)
-        self.plotter.set_background("black")
+        configure_plotter(self.plotter)
 
     def rebuild(self, build_scene) -> None:
         """Clear the scene, call ``build_scene(plotter)``, then render it."""
         self.plotter.clear()
+        configure_plotter(self.plotter)
         build_scene(self.plotter)
         self.plotter.reset_camera()
         self.plotter.render()
@@ -148,11 +151,20 @@ class UpdatableStructurePage(QWidget):
     @staticmethod
     def _interface_label(category: str, interface) -> str:
         """Return an unambiguous label for one updateable interface."""
-        label = f"{category}: {interface.name}"
+        name = interface.name
         part_name = getattr(interface, "part_name", None)
         if part_name and part_name != interface.name:
-            label = f"{label} ({part_name})"
-        return label
+            name = tr("ui.observation.interface_name_with_part", name=name, part=part_name)
+        category_key = {
+            "Part": "ui.widgets.model_tree.container.geometry",
+            "FEA": "ui.widgets.model_tree.container.loads_group",
+            "Material": "ui.widgets.model_tree.container.materials",
+        }[category]
+        return tr(
+            "ui.observation.interface_title",
+            category=tr(category_key),
+            title=typed_title(name, type(interface).__name__),
+        )
 
     def _sync_interface_selector(self) -> None:
         interfaces = self._results.interfaces() if self._results else ()
@@ -189,7 +201,6 @@ class UpdatableStructurePage(QWidget):
             return
 
         def build_scene(plotter) -> None:
-            plotter.enable_lightkit()
             if selected is not None:
                 selected.plot(plotter=plotter)
             plotter.show_axes()
@@ -200,8 +211,7 @@ class UpdatableStructurePage(QWidget):
             self._last_rendered = marker
         except Exception as exc:  # pragma: no cover - best-effort rendering
             print(
-                f"Updatable structure preview failed at iteration "
-                f"{self._iteration}: {exc}"
+                tr("ui.messages.structure_preview_failed", iteration=self._iteration, error=exc)
             )
 
     def clear_view(self) -> None:
@@ -220,7 +230,7 @@ class UpdatableStructurePage(QWidget):
         try:
             self.viewport.rebuild(lambda _plotter: None)
         except Exception as exc:  # pragma: no cover - best-effort rendering
-            print(f"Updatable structure preview clear failed: {exc}")
+            print(tr("ui.messages.structure_preview_clear_failed", error=exc))
 
     def apply_language(self) -> None:
         """Refresh the interface selector without rebuilding the scene."""
@@ -246,7 +256,6 @@ class DeformationCasePage(QWidget):
             return
         mesh = results.deformation_mesh(self.case_index, iteration)
         def build_scene(plotter) -> None:
-            plotter.enable_lightkit()
             if mesh is not None:
                 plotter.add_mesh(mesh, color=(40 / 255, 120 / 255, 181 / 255), opacity=1.0, show_edges=True)
                 plotter.show_axes()

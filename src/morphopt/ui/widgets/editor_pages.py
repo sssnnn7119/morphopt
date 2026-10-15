@@ -7,12 +7,14 @@ from PySide6.QtWidgets import QStackedWidget, QWidget
 from PySide6.QtCore import SignalInstance
 from ..application.editor_routing import EditorKind, EditorRoute
 from ..model.problem import ProblemDefinition
+from ..refresh import Refreshable, RefreshContext
 
 
 @dataclass(frozen=True)
 class EditorPage:
     widget: QWidget
     bind: Callable[[EditorRoute, ProblemDefinition], None]
+    refreshable: Refreshable | None
 
 
 class EditorPages:
@@ -20,6 +22,7 @@ class EditorPages:
         self.stack = stack
         self.on_change = on_change
         self._pages: dict[EditorKind, EditorPage] = {}
+        self._change_signals: list[SignalInstance] = []
 
     def register(
         self,
@@ -27,13 +30,28 @@ class EditorPages:
         widget: QWidget,
         bind: Callable[[EditorRoute, ProblemDefinition], None],
         *, changed: SignalInstance | None = None,
+        refreshable: Refreshable | None = None,
     ) -> None:
-        self._pages[kind] = EditorPage(widget, bind)
+        self._pages[kind] = EditorPage(widget, bind, refreshable)
         self.stack.addWidget(widget)
         if changed is not None and self.on_change is not None:
             changed.connect(self.on_change)
+            self._change_signals.append(changed)
+
+    def disconnect_changes(self) -> None:
+        """Retire bindings before old forms are deleted or a document is restored."""
+        for signal in self._change_signals:
+            signal.disconnect(self.on_change)
+        self._change_signals.clear()
 
     def select(self, route: EditorRoute, problem: ProblemDefinition) -> None:
         page = self._pages[route.kind]
         page.bind(route, problem)
         self.stack.setCurrentWidget(page.widget)
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        """Refresh the active editor in place, retaining its focus and scroll."""
+        for page in self._pages.values():
+            if page.widget is self.stack.currentWidget() and page.refreshable is not None:
+                page.refreshable.refresh_ui(context)
+                break

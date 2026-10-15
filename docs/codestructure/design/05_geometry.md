@@ -8,16 +8,16 @@
 
 ```text
 GeometryParams.interfaces
-  └── BasePartInterface
+  └── BasePart
        ├── build_part() ──► torchfea.Part
        └── define_instance()
             └── (part_name, instance_name, [tx, ty, tz, rx, ry, rz])*
                     └── torchfea.Assembly.add_instance()
 ```
 
-## `BasePartInterface`
+## `BasePart`
 
-源码：`optcore/modelparams/partinterface/basepartinterface.py`；继承 `BaseParams`。子类只需实现 `build_part()`；它们可以覆写 `define_instance()` 声明多个独立位姿。
+源码：`optcore/modelparams/parts/base_part.py`；继承 `BaseModelComponent`。子类只需实现 `build_part()`；它们可以覆写 `define_instance()` 声明多个独立位姿。
 
 | 属性 | 可见性 | 说明 |
 |---|---|---|
@@ -46,7 +46,7 @@ GeometryParams.interfaces
 ## 多 Instance 位姿
 
 ```python
-class Bracket(morphopt.TorchFEAPartInterface):
+class Bracket(morphopt.TorchFEAPart):
     def define_instance(self) -> None:
         self.add_instance(self.part_name, "left", [0, 0, 0, 0, 0, 0])
         self.add_instance(self.part_name, "right", [80, 0, 0, 0, 0, 3.14159])
@@ -54,9 +54,9 @@ class Bracket(morphopt.TorchFEAPartInterface):
 
 几何接口名称、Part 名、instance 名是三个不同层级：接口名用于集合注册和保存路径，Part 名用于 `Assembly.get_part()` 与材料分配，instance 名用于载荷、接触和约束定位。UI 在内存中保存对象引用，生成脚本时将这些关系投影为上述名称。
 
-## 固定网格 Part：`INPPartInterface`
+## 固定网格 Part：`INPPart`
 
-源码：`inppartinterface.py`；继承 `BasePartInterface`，`cache_part=True`。
+源码：`inp_part.py`；继承 `BasePart`，`cache_part=True`。
 
 | 构造状态 | 说明 |
 |---|---|
@@ -66,9 +66,9 @@ class Bracket(morphopt.TorchFEAPartInterface):
 
 `build_part()` 通过 `torchfea.FEA_INP` 读取输入文件、选择文件内 Part，并将 `exterior_surface` 应用到导入结果。该类型适合固定网格几何和外部网格流程。
 
-## TorchFEA 存档 Part：`TorchFEAPartInterface`
+## TorchFEA 存档 Part：`TorchFEAPart`
 
-源码：`torchfeapartinterface.py`；继承 `BasePartInterface`，`cache_part=True`。
+源码：`torch_fea_part.py`；继承 `BasePart`，`cache_part=True`。
 
 | 构造状态 | 说明 |
 |---|---|

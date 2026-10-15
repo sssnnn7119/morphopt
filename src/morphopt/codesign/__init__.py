@@ -4,12 +4,12 @@ Compose parameters, objectives, solvers and updater collections using the
 common morphopt interfaces. SIMP materials use the simp interfaces.
 """
 
-from .offsetboundarypartinterface import OffsetBoundaryPartInterface
-from .update_offsetboundarypart import UpdaterOffsetBoundaryPart
+from .offset_boundary_part import OffsetBoundaryPart
+from .update_offset_boundary_part import UpdaterOffsetBoundaryPart
 from .constraints import InwardCurvatureRadius, OffsetSurfaceMinThickness
 
 __all__ = [
-    "OffsetBoundaryPartInterface",
+    "OffsetBoundaryPart",
     "UpdaterOffsetBoundaryPart",
     "InwardCurvatureRadius",
     "OffsetSurfaceMinThickness",

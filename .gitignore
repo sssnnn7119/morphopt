@@ -32,6 +32,8 @@ eggs/
 lib/
 lib64/
 parts/
+!/src/morphopt/optcore/modelparams/parts/
+!/src/morphopt/optcore/modelparams/parts/*.py
 sdist/
 var/
 wheels/

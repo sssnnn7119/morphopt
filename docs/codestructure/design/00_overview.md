@@ -19,7 +19,7 @@ Controller ─ Params ─ Solver ─ ObjectiveFunction ─ Updaters
               ▼                  ▼                    ▼
        Geometry / FEA / Materials  TorchFEA Assembly   目标 Part 或材料接口
               │
-              ├── shapeopt: BoundaryPartInterface / UpdaterBoundaryPart
+              ├── shapeopt: BoundaryPart / UpdaterBoundaryPart
               ├── simp: SIMP_BSPFieldMaterials / UpdaterSIMPMaterial
               └── codesign: 可选偏置壳扩展
 
@@ -38,9 +38,9 @@ UI: .morph ProblemDefinition → codegen → 用户脚本 → 同一运行时
 ```text
 Controller
 ├── Params
-│   ├── GeometryParams ──► BasePartInterface* ──► torchfea.Part + Instance*
-│   ├── FEAParams      ──► BaseFEAInterface*
-│   └── MaterialsParams──► BaseMaterialInterface*
+│   ├── GeometryParams ──► BasePart* ──► torchfea.Part + Instance*
+│   ├── FEAParams      ──► BaseFEAComponent*
+│   └── MaterialsParams──► BaseMaterial*
 ├── Solver             ──► torchfea.FEAController results
 ├── ObjectiveFunction  ──► objective / gradients
 ├── Updaters           ──► BaseUpdater* ──► one designable interface each

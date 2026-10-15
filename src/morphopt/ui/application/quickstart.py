@@ -1,5 +1,6 @@
 """Build editable optimization definitions from design intent, independently of Qt."""
 from __future__ import annotations
+from ..i18n import localized_message
 
 from ast import literal_eval
 from dataclasses import asdict, dataclass, field
@@ -11,8 +12,8 @@ from ..model.chamberlayout import ChamberLayer, LayeredChambers
 from ..model.problem import (
     CADOperationNode,
     GeometryNode, HelperFunctionNode, HelperVariableNode,
-    InterfaceNode, LoadsNode, MaterialNode, MaterialsNode,
-    ObjectiveNode, PartInterfaceNode, ProblemDefinition, SolverNode, StepsNode,
+    FEAComponentNode, LoadsNode, MaterialNode, MaterialsNode,
+    ObjectiveNode, PartNode, ProblemDefinition, SolverNode, StepsNode,
     SurfaceNode, UpdaterNode,
 )
 
@@ -86,12 +87,6 @@ class QuickstartOptions:
                 chamber_index += 1
         return members
 
-    @property
-    def geometry_summary(self):
-        if self.method == "shapeopt":
-            return f"{len(self.layers)} 层 / {self.chambers} 气腔"
-        return f"{self.length:g} × {self.height:g} × {self.depth:g} mm"
-
     @classmethod
     def for_method(cls, method):
         if method == "simp":
@@ -119,68 +114,66 @@ class QuickstartOptions:
 
     def validate(self):
         if self.method not in ("shapeopt", "simp"):
-            raise ValueError("请选择优化方式 / Select an optimization method.")
+            raise ValueError(localized_message("ui.errors.quickstart.select_an_optimization_method"))
         if not self.label.strip() or not self.result_folder.strip():
-            raise ValueError("请填写名称和输出目录 / Enter a name and output folder.")
+            raise ValueError(localized_message("ui.errors.quickstart.enter_a_name_and_output_folder"))
         if not 1 <= len(self.objectives) <= 8:
-            raise ValueError("请添加 1–8 个目标项 / Add 1–8 objective terms.")
+            raise ValueError(localized_message("ui.errors.quickstart.add_1_8_objective_terms"))
         if any(not math.isfinite(obj.weight) or obj.weight < 0 for obj in self.objectives):
-            raise ValueError("目标权重必须是非负有限数 / Objective weights must be finite and nonnegative.")
+            raise ValueError(localized_message("ui.errors.quickstart.objective_weights_must_be_finite_and_nonnegative"))
         if sum(obj.weight for obj in self.objectives) <= 0:
-            raise ValueError("至少一个目标权重必须大于零 / At least one objective weight must be positive.")
+            raise ValueError(localized_message("ui.errors.quickstart.at_least_one_objective_weight_must_be_positive"))
         allowed = (set(GOALS) - {"stiffness"}) if self.method == "shapeopt" else {"stiffness", "bend"}
         for objective in self.objectives:
             if objective.kind not in allowed:
-                raise ValueError(f"目标类型不适用于当前优化方式 / Objective {objective.kind!r} is unavailable for this method.")
+                raise ValueError(localized_message("ui.errors.quickstart.objective_value_is_unavailable_for_this_method", value_0=objective.kind))
             if not math.isfinite(objective.weight) or objective.weight < 0:
-                raise ValueError("目标权重必须是非负有限数 / Objective weights must be finite and nonnegative.")
+                raise ValueError(localized_message("ui.errors.quickstart.objective_weights_must_be_finite_and_nonnegative"))
             if (not objective.is_workspace and objective.kind != "stiffness"
                     and (not math.isfinite(objective.target) or objective.target <= 0)):
-                raise ValueError("目标值必须为正数 / Target values must be positive.")
+                raise ValueError(localized_message("ui.errors.quickstart.target_values_must_be_positive"))
 
         for name in ("length", "mesh_size", "mu", "kappa", "height", "depth"):
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} 必须为正数 / must be positive.")
+                raise ValueError(localized_message("ui.errors.quickstart.value_must_be_positive", value_0=name))
         if not 0 < self.volume_fraction < 1:
-            raise ValueError("材料占比应在 0 和 1 之间 / Material fraction must be between 0 and 1.")
+            raise ValueError(localized_message("ui.errors.quickstart.material_fraction_must_be_between_0_and_1"))
         if self.method == "simp":
             cells = math.ceil(self.length/self.mesh_size)*math.ceil(self.height/self.mesh_size)*math.ceil(self.depth/self.mesh_size)
             if cells > 100000:
-                raise ValueError("初始网格过密，请增大网格尺寸 / Increase the mesh size.")
+                raise ValueError(localized_message("ui.errors.quickstart.increase_the_mesh_size"))
             for objective in self.objectives:
                 if not math.isfinite(objective.force_n) or objective.force_n <= 0:
-                    raise ValueError("拓扑目标载荷必须为正数 / Topology load magnitudes must be positive.")
+                    raise ValueError(localized_message("ui.errors.quickstart.topology_load_magnitudes_must_be_positive"))
             return
 
         if not math.isfinite(self.radius) or self.radius <= 0 or not math.isfinite(self.wall) or self.wall <= 0:
-            raise ValueError("外半径和最小壁厚必须为正数 / Body radius and wall thickness must be positive.")
+            raise ValueError(localized_message("ui.errors.quickstart.body_radius_and_wall_thickness_must_be_positive"))
         self.geometry_layout()
         for objective in self.objectives:
             if objective.is_workspace:
                 dimensions = len(GOALS[objective.kind][1])
                 selected = objective.workspace_channels
                 if not math.isfinite(objective.workspace_pressure_kpa) or objective.workspace_pressure_kpa <= 0:
-                    raise ValueError("工作空间最大压力必须为正数 / Workspace pressure limits must be positive.")
+                    raise ValueError(localized_message("ui.errors.quickstart.workspace_pressure_limits_must_be_positive"))
                 if not isinstance(objective.gauss_order, int) or not 1 <= objective.gauss_order <= 8:
-                    raise ValueError("每个驱动边界坐标方向请选择 1–8 个高斯点 / Select 1–8 Gaussian points per free boundary coordinate.")
+                    raise ValueError(localized_message("ui.errors.quickstart.select_1_8_gaussian_points_per_free_boundary_coordinate"))
                 if len(self.channel_ids) < dimensions:
                     raise ValueError(
-                        f"该工作空间需要 {dimensions} 路独立压力，当前结构只有 {len(self.channel_ids)} 路 / "
-                        f"This workspace needs {dimensions} independent inputs, but the design has {len(self.channel_ids)}."
+                        localized_message("ui.errors.quickstart.this_workspace_needs_value_independent_inputs_but_the_design_has", value_0=dimensions, value_1=len(self.channel_ids))
                     )
                 if (len(selected) != dimensions or len(set(selected)) != dimensions
                         or not set(selected).issubset(self.channel_ids)):
                     raise ValueError(
-                        f"请选择 {dimensions} 个有效且互不相同的压力通道；同一通道下的气腔会联动 / "
-                        f"Select {dimensions} valid, distinct pressure channels; chambers on one channel move together."
+                        localized_message("ui.errors.quickstart.select_value_valid_distinct_pressure_channels_chambers_on_one_channel", value_0=dimensions)
                     )
             else:
                 for channel, pressure in objective.pressures_kpa.items():
                     if channel not in self.channel_ids:
-                        raise ValueError(f"压力工况引用了不存在的通道 {channel} / Load case references unknown channel {channel}.")
+                        raise ValueError(localized_message("ui.errors.quickstart.load_case_references_unknown_channel_value", value_0=channel))
                     if not math.isfinite(pressure) or pressure < 0:
-                        raise ValueError("工况压力必须为非负有限数 / Load pressures must be finite and nonnegative.")
+                        raise ValueError(localized_message("ui.errors.quickstart.load_pressures_must_be_finite_and_nonnegative"))
 
 
 def _function(problem, name, parameters, body):
@@ -238,19 +231,19 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
 
 
 def _common_loads(loads, length, fixed="surface_0_Bottom", tip="surface_0_Head", location=None):
-    loads.add_interface(InterfaceNode.create(
+    loads.add_interface(FEAComponentNode.create(
         "BoundaryCondition",
         name="base_fixed",
         instance_name="body-1",
         set_nodes_name=fixed,
         index_dof=[0, 1, 2],
     ))
-    loads.add_interface(InterfaceNode.create(
+    loads.add_interface(FEAComponentNode.create(
         "ReferencePoint",
         name="RP_tip",
         rp_location=location or [0., 0., length],
     ))
-    loads.add_interface(InterfaceNode.create(
+    loads.add_interface(FEAComponentNode.create(
         "Couple",
         name="tip_coupling",
         instance_name="body-1",
@@ -260,8 +253,8 @@ def _common_loads(loads, length, fixed="surface_0_Bottom", tip="surface_0_Head",
 
 
 def _shape_geometry(options, geometry, loads, materials):
-    part = PartInterfaceNode.create(
-        "BoundaryPartInterface", name="body",
+    part = PartNode.create(
+        "BoundaryPart", name="body",
         fea_seed_size=options.mesh_size, mesh_order=2,
     )
     geometry.add_interface(part)
@@ -283,7 +276,7 @@ def _shape_geometry(options, geometry, loads, materials):
                 seed_size=seed, init_location=[cavity.x, cavity.y, cavity.z], perturbation_L=-1.,
             )
         part.add_surface(surface)
-        loads.add_interface(InterfaceNode.create(
+        loads.add_interface(FEAComponentNode.create(
             "Pressure", name=f"pressure_{index}", instance_name="body-1",
             surface_name=f"surface_{index}_All",
         ))
@@ -428,7 +421,7 @@ def _shape_objective_expression(objective, index, options, motion, step):
         )
         metric = f"contact_force(self, {step})"
     else:
-        raise ValueError(f"Unsupported shape objective: {objective.kind}")
+        raise ValueError(localized_message("ui.errors.quickstart.unsupported_shape_objective_value", value_0=objective.kind))
     return loss, metric
 
 
@@ -464,8 +457,8 @@ def _workspace_function(problem, function_name, names):
 
 
 def _contact_setup(problem, options, geometry, loads, materials):
-    object_part = PartInterfaceNode.create(
-        "CADPartInterface", name="object", exterior_surface="extern",
+    object_part = PartNode.create(
+        "CADPart", name="object", exterior_surface="extern",
         mesh_size=options.mesh_size,
     )
     object_part.add_cad_operation(
@@ -480,11 +473,11 @@ def _contact_setup(problem, options, geometry, loads, materials):
         )
     )
     geometry.add_interface(object_part)
-    loads.add_interface(InterfaceNode.create(
+    loads.add_interface(FEAComponentNode.create(
         "BoundaryCondition", name="object_fixed", instance_name="object-1",
         set_nodes_name="all", index_dof=[0, 1, 2],
     ))
-    loads.add_interface(InterfaceNode.create(
+    loads.add_interface(FEAComponentNode.create(
         "Contact", name="object_contact", instance_name1="body-1", surface_name1="surface_0_All",
         instance_name2="object-1", surface_name2="extern",
         penalty_threshold_h=min(options.wall/2, options.mesh_size),
@@ -505,15 +498,15 @@ def _contact_setup(problem, options, geometry, loads, materials):
 
 
 def _topology(options, geometry, loads, materials):
-    part = PartInterfaceNode.create(
-        "BoxPartInterface", name="body", exterior_surface="extern",
+    part = PartNode.create(
+        "BoxPart", name="body", exterior_surface="extern",
         length=options.total_length, height=options.height, depth=options.depth,
         mesh_size=options.mesh_size, mesh_order=2,
     )
     geometry.add_interface(part)
     _common_loads(loads, options.total_length, fixed="nodes_xmin", tip="nodes_xmax",
                   location=[options.total_length, options.height/2, options.depth/2])
-    loads.add_interface(InterfaceNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
+    loads.add_interface(FEAComponentNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
     materials.add_material(MaterialNode.create(
         "SIMP_BSPFieldMaterials", name="density", part_name="body",
         elementname="design", material_model="NeoHookeanLnJ", mu=options.mu,
@@ -595,7 +588,7 @@ class ObjectiveDraft:
 
     def add(self) -> int:
         if len(self.objectives) >= 8:
-            raise ValueError("Quickstart supports at most eight objective terms.")
+            raise ValueError(localized_message("ui.errors.quickstart.quickstart_supports_at_most_eight_objective_terms"))
         channels = sorted(self.members)
         self.objectives.append(QuickstartObjective(
             kind="bend" if self.method == "shapeopt" else "stiffness",
@@ -606,7 +599,7 @@ class ObjectiveDraft:
 
     def remove(self, index: int) -> None:
         if len(self.objectives) <= 1:
-            raise ValueError("Keep at least one objective term.")
+            raise ValueError(localized_message("ui.errors.quickstart.keep_at_least_one_objective_term"))
         self.objectives.pop(index)
 
     def set_method(self, method: str) -> None:

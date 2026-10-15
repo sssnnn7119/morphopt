@@ -5,7 +5,6 @@
   "helper_functions": [],
   "scheme": "shapeopt",
   "label": "形状优化",
-  "label_en": "Shape optimization",
   "result_folder": ".results/",
   "device": "cpu",
   "updater_device": null,
@@ -24,7 +23,7 @@
             "kind": "part_interface",
             "name": "body",
             "params": {
-              "type": "BoundaryPartInterface",
+              "type": "BoundaryPart",
               "fea_seed_size": 1.0,
               "mesh_order": 1,
               "exterior_surface": "surface_0_All"
@@ -194,12 +193,10 @@
   },
   "template": {
     "id": "shapeopt",
-    "label": "形状优化",
-    "label_en": "Shape optimization",
     "material_type": "HomogeneousMaterial",
-    "geometry_title": "Geometry",
     "body_name": "body",
     "default_objective_slot": "return self.fe_results[0].GC[-2]\n",
-    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n",
+    "label_key": "ui.templates.shapeopt.label"
   }
 }

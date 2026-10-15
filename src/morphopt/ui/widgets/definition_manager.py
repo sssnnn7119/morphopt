@@ -1,49 +1,50 @@
-"""List-oriented editors for geometry, load, and material interfaces."""
+"""Collection editors for geometry, loads, materials and helper definitions."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMenu,
-    QPushButton,
     QScrollArea,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ..i18n import tr
+from ..refresh import RefreshContext
 from ..model.problem import (
     CADOperationNode,
     InstanceNode,
-    InterfaceNode,
+    FEAComponentNode,
     MaterialNode,
     Node,
-    PartInterfaceNode,
+    PartNode,
     ProblemDefinition,
     SurfaceNode,
 )
 from ..model.schemas import (
-    CAD_OPERATION_TYPES,
     INTERFACE_TYPES,
     MATERIAL_TYPES,
     PART_INTERFACE_TYPES,
     SURFACE_TYPES,
 )
 from .editor import PropertyEditor
+from .helper_editor import HelperCodeEditor
+from .collection_controls import ActionButton, CollectionHeader, ItemActions, set_card_selected
 from ..application.fields import fields_for_node
 from ..application.part_sets import PartSetCatalog
 from ..application.editor_routing import managed_nodes
 from ..presentation.labels import (
-    cad_operation_title_text,
+    cad_operation_summary_text,
+    node_title,
+    schema_label,
     instance_title_text,
-    part_interface_title_text,
-    surface_title_text,
+    component_update_description,
 )
 
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ class DefinitionManagerEditor(QWidget):
     """Edit collection members as cards within their owning definition page."""
 
     changed = Signal(object)
+    activated = Signal(object)
 
     def __init__(self, mode: str, actions: DefinitionActions, parent: QWidget | None = None, *, sets: PartSetCatalog | None = None):
         super().__init__(parent)
@@ -63,29 +65,20 @@ class DefinitionManagerEditor(QWidget):
         self._problem: ProblemDefinition | None = None
         self._structure: tuple[Any, ...] | None = None
         self._focus: Node | None = None
-        self._focus_widgets: dict[Node, QWidget] = {}
+        self._focus_widgets: dict[Node, QGroupBox] = {}
         self._item_groups: dict[Node, QGroupBox] = {}
         self._child_groups: dict[Node, QGroupBox] = {}
+        self._node_editors: dict[Node, tuple[PropertyEditor, set[str] | None]] = {}
+        self._helper_editors: dict[Node, HelperCodeEditor] = {}
+        self._updater_buttons: dict[Node, ActionButton] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        head = QHBoxLayout()
-        self._heading = QLabel()
-        self._heading.setStyleSheet("font-size:14px; font-weight:600; color:#e0e0e0;")
-        head.addWidget(self._heading)
-        head.addStretch(1)
-        self._add_button = QToolButton()
-        self._add_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._add_button.setText(tr('ui.widgets.definition_manager.add'))
-        self._add_button.setStyleSheet(
-            "QToolButton { background:#27374c; color:#edf3fa; padding:6px 12px; "
-            "border:1px solid #40536b; border-radius:4px; } "
-            "QToolButton:hover { background:#354b65; }"
-        )
-        self._add_menu = QMenu(self._add_button)
-        self._add_button.setMenu(self._add_menu)
-        head.addWidget(self._add_button)
-        outer.addLayout(head)
+        self._add_menu = QMenu(self)
+        header = CollectionHeader("", menu=self._add_menu)
+        self._heading = header.title
+        self._add_button = header.add_button
+        outer.addWidget(header)
 
         self._hint = QLabel()
         self._hint.setWordWrap(True)
@@ -107,6 +100,7 @@ class DefinitionManagerEditor(QWidget):
         manager: Node | None,
         problem: ProblemDefinition,
         focus: Node | None = None,
+        *, scroll_to_focus: bool = True,
     ) -> None:
         self._problem = problem
         self._focus = focus if focus is not manager else None
@@ -115,13 +109,17 @@ class DefinitionManagerEditor(QWidget):
                 "geometry": tr('ui.widgets.definition_manager.geometry_interfaces'),
                 "loads": tr('ui.widgets.definition_manager.load_interfaces'),
                 "materials": tr('ui.widgets.definition_manager.material_interfaces'),
+                "helper_variables": tr('ui.widgets.model_tree.container.helper_variables_group'),
+                "helper_functions": tr('ui.widgets.model_tree.container.helper_functions_group'),
             }[self.mode]
         )
         self._hint.setText(
             {
                 "geometry": tr('ui.widgets.definition_manager.select_a_part_in_the_model_tree_to_edit_it_edit_instance_placement_bound'),
-                "loads": tr('ui.widgets.definition_manager.select_one_load_boundary_condition_reference_point_or_contact_in_the_mod'),
+                "loads": tr('ui.widgets.definition_manager.edit_load_definitions_add_and_configure_loads_boundary_conditions_reference_points'),
                 "materials": tr('ui.widgets.definition_manager.select_a_material_interface_in_the_model_tree_to_edit_its_properties_and'),
+                "helper_variables": tr('ui.widgets.helper_editor.variables_hint'),
+                "helper_functions": tr('ui.widgets.helper_editor.functions_hint'),
             }[self.mode]
         )
         self._refresh_add_menu()
@@ -129,8 +127,30 @@ class DefinitionManagerEditor(QWidget):
         if structure != self._structure:
             self._structure = structure
             self._rebuild_cards()
+        else:
+            for node, (editor, excluded) in self._node_editors.items():
+                self._bind_node_editor(editor, node, excluded)
+            for node, editor in self._helper_editors.items():
+                editor.edit_node(node, problem)
         self._update_titles()
-        self._focus_selection()
+        self._focus_selection(scroll=scroll_to_focus)
+
+    def refresh_ui(self, context: RefreshContext) -> None:
+        self.edit_node(None, context.problem, self._focus, scroll_to_focus=False)
+
+    def _on_editor_activated(self, node: Node) -> None:
+        if self._focus is not node:
+            self._focus = node
+            self._focus_selection(scroll=False)
+        self.activated.emit(node)
+
+    def _on_node_changed(self, node: Node) -> None:
+        self._on_editor_activated(node)
+        if self.sets is not None:
+            self.sets.invalidate()
+        for editor, _ in self._node_editors.values():
+            editor.refresh_choices()
+        self.changed.emit(node)
 
     def invalidate(self) -> None:
         """Refresh node forms the next time this manager page is selected."""
@@ -143,19 +163,22 @@ class DefinitionManagerEditor(QWidget):
             return list(self._problem.part_interfaces())
         if self.mode == "loads":
             return list(self._problem.interfaces())
+        if self.mode == "helper_variables":
+            return list(self._problem.helper_variables)
+        if self.mode == "helper_functions":
+            return list(self._problem.helper_functions)
         return list(self._problem.material_nodes())
 
     def _structure_signature(self) -> tuple[Any, ...]:
         items = managed_nodes(self._problem, self.mode, self._focus)
         if self.mode == "geometry":
             return (
-                id(self._focus),
                 tuple(
                     (id(item), tuple(id(child) for child in item.children))
                     for item in items
                 ),
             )
-        return id(self._focus), tuple(id(item) for item in items)
+        return tuple(id(item) for item in items)
 
     def _refresh_add_menu(self) -> None:
         self._add_menu.clear()
@@ -168,7 +191,7 @@ class DefinitionManagerEditor(QWidget):
             for interface_type in template.available_geometry_types():
                 spec = PART_INTERFACE_TYPES.get(interface_type, {})
                 action = self._add_menu.addAction(
-                    tr(spec.get("label_key", interface_type))
+                    schema_label(spec, interface_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, kind=interface_type:
@@ -176,21 +199,21 @@ class DefinitionManagerEditor(QWidget):
                 )
             candidates = {
                 kind: (
-                    "morphopt.BoundaryPartInterface"
+                    "morphopt.BoundaryPart"
                     if spec.get("surfaces")
                     else f"morphopt.{kind}"
                 )
                 for kind, spec in PART_INTERFACE_TYPES.items()
                 if kind in template.available_geometry_types()
             }
-            candidates["BasePartInterface"] = "morphopt.BasePartInterface"
+            candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(
                 self._add_menu, candidates, self.actions.add_part_interface
             )
         elif self.mode == "loads":
             for interface_type, spec in INTERFACE_TYPES.items():
                 action = self._add_menu.addAction(
-                    tr(spec.get("label_key", interface_type))
+                    schema_label(spec, interface_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, kind=interface_type:
@@ -199,15 +222,21 @@ class DefinitionManagerEditor(QWidget):
             self.actions.custom_add_menu(
                 self._add_menu,
                 {
-                    kind: f"morphopt.FEAParams.{kind}Interface"
-                    for kind in INTERFACE_TYPES
+                    kind: f"morphopt.FEAParams.{spec['class_name']}"
+                    for kind, spec in INTERFACE_TYPES.items()
                 },
                 self.actions.add_interface,
+            )
+        elif self.mode in {"helper_variables", "helper_functions"}:
+            kind = "helper_variable" if self.mode == "helper_variables" else "helper_function"
+            self._add_menu.addAction(
+                tr('ui.workbench.add_helper_variable' if kind == "helper_variable" else 'ui.workbench.add_helper_function'),
+                lambda: self.actions.add_helper(kind),
             )
         else:
             for material_type, spec in MATERIAL_TYPES.items():
                 action = self._add_menu.addAction(
-                    tr(spec.get("label_key", material_type))
+                    schema_label(spec, material_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, kind=material_type:
@@ -228,6 +257,9 @@ class DefinitionManagerEditor(QWidget):
         self._focus_widgets.clear()
         self._item_groups.clear()
         self._child_groups.clear()
+        self._node_editors.clear()
+        self._helper_editors.clear()
+        self._updater_buttons.clear()
         items = managed_nodes(self._problem, self.mode, self._focus)
         all_items = self._all_items()
         for node in items:
@@ -249,11 +281,12 @@ class DefinitionManagerEditor(QWidget):
         self._layout.addStretch(1)
 
     def _part_card(self, node: Node, index: int, count: int) -> QGroupBox:
-        assert isinstance(node, PartInterfaceNode)
-        group = QGroupBox(part_interface_title_text(node))
+        assert isinstance(node, PartNode)
+        group = QGroupBox(self._item_title(node))
         self._item_groups[node] = group
         self._focus_widgets[node] = group
         col = QVBoxLayout(group)
+        self._add_component_update_controls(col, node)
         self._add_order_controls(
             col,
             node,
@@ -263,7 +296,7 @@ class DefinitionManagerEditor(QWidget):
             lambda item=node, delta=-1: self.actions.move_part_interface(item, delta),
             tr('ui.widgets.definition_manager.delete_geometry_interface'),
         )
-        if node.interface_type == "TorchFEAPartInterface":
+        if node.interface_type == "TorchFEAPart":
             from .torchfea_model_editor import TorchFEAModelEditor
 
             col.addWidget(
@@ -297,13 +330,11 @@ class DefinitionManagerEditor(QWidget):
                     add_menu=self._surface_add_menu(node),
                     remove=lambda child: self.actions.remove_surface(child),
                     move=lambda child, delta: self.actions.move_surface(child, delta),
-                    title_fn=lambda child: surface_title_text(
-                        child, node.surfaces().index(child)
-                    ),
+                    title_fn=self._item_title,
                     edit_all=True,
                 )
             )
-        if node.interface_type == "CADPartInterface":
+        if node.interface_type == "CADPart":
             self._add_cad_collection(col, node)
         return group
 
@@ -312,7 +343,23 @@ class DefinitionManagerEditor(QWidget):
         self._item_groups[node] = group
         self._focus_widgets[node] = group
         col = QVBoxLayout(group)
-        if isinstance(node, InterfaceNode):
+        if node.kind in {"helper_variable", "helper_function"}:
+            self._add_order_controls(
+                col, node, index, count,
+                lambda: self.actions.remove_helper(node),
+                lambda item=node, delta=-1: self.actions.move_helper(item, delta),
+                tr('ui.workbench.delete_item'),
+            )
+            editor = HelperCodeEditor(self.actions, embedded=True)
+            editor.edit_node(node, self._problem)
+            editor.changed.connect(self._on_node_changed)
+            editor.activated.connect(self._on_editor_activated)
+            self._helper_editors[node] = editor
+            col.addWidget(editor)
+            return group
+        if isinstance(node, MaterialNode):
+            self._add_component_update_controls(col, node)
+        if isinstance(node, FEAComponentNode):
             remove = lambda item=node: self.actions.remove_interface(item)
             move = lambda item=node, delta=-1: self.actions.move_interface(item, delta)
             delete_title = tr('ui.widgets.definition_manager.delete_load_interface')
@@ -323,6 +370,19 @@ class DefinitionManagerEditor(QWidget):
         self._add_order_controls(col, node, index, count, remove, move, delete_title)
         col.addWidget(self._node_editor(node))
         return group
+
+    def _add_component_update_controls(
+        self, layout: QVBoxLayout, node: PartNode | MaterialNode,
+    ) -> None:
+        row = QHBoxLayout()
+        description = QLabel(component_update_description(node))
+        description.setWordWrap(True)
+        row.addWidget(description, 1)
+        if node.is_updatable:
+            button = ActionButton(tr("ui.component.create_updater"), lambda: self.actions.add_updater(node))
+            self._updater_buttons[node] = button
+            row.addWidget(button)
+        layout.addLayout(row)
 
     def _child_collection(
         self,
@@ -336,18 +396,12 @@ class DefinitionManagerEditor(QWidget):
         add_menu: QMenu | None = None,
         edit_all: bool = False,
     ) -> QGroupBox:
-        group = QGroupBox(title)
+        group = QGroupBox()
         col = QVBoxLayout(group)
         if add is not None or add_menu is not None:
-            add_button = QPushButton(tr('ui.widgets.definition_manager.add'))
-            add_button.setMaximumWidth(112)
-            if add_menu is not None:
-                add_button.setMenu(add_menu)
-            else:
-                add_button.clicked.connect(
-                    lambda _checked=False, callback=add: callback()
-                )
-            col.addWidget(add_button, 0, Qt.AlignmentFlag.AlignLeft)
+            col.addWidget(CollectionHeader(title, add, menu=add_menu))
+        else:
+            group.setTitle(title)
         for index, child in enumerate(children):
             card = QGroupBox(title_fn(child))
             self._child_groups[child] = card
@@ -372,18 +426,18 @@ class DefinitionManagerEditor(QWidget):
             col.addWidget(card)
         return group
 
-    def _surface_add_menu(self, owner: PartInterfaceNode) -> QMenu:
+    def _surface_add_menu(self, owner: PartNode) -> QMenu:
         menu = QMenu(self)
         for surface_type, spec in SURFACE_TYPES.items():
             action = menu.addAction(
-                tr(spec.get("label_key", surface_type))
+                schema_label(spec, surface_type)
             )
             action.triggered.connect(
                 lambda _checked=False, kind=surface_type, part=owner:
                 self.actions.add_surface(kind, part)
             )
         candidates = {
-            kind: "morphopt.BoundaryPartInterface."
+            kind: "morphopt.BoundaryPart."
             + (spec["factory"].split(".")[0] if spec["factory"] else "FixedSurface")
             for kind, spec in SURFACE_TYPES.items()
         }
@@ -395,29 +449,27 @@ class DefinitionManagerEditor(QWidget):
         return menu
 
     def _add_cad_collection(
-        self, parent_layout: QVBoxLayout, owner: PartInterfaceNode
+        self, parent_layout: QVBoxLayout, owner: PartNode
     ) -> None:
-        group = QGroupBox(tr('ui.widgets.definition_manager.cad_feature_history'))
+        group = QGroupBox()
         col = QVBoxLayout(group)
-        add_row = QHBoxLayout()
+        menu = QMenu(group)
         for feature_group, label in (
             ("primitive", tr('ui.widgets.definition_manager.primitive')),
             ("boolean", tr('ui.widgets.definition_manager.boolean')),
             ("transform", tr('ui.widgets.definition_manager.transform')),
             ("import", tr('ui.widgets.definition_manager.step')),
         ):
-            button = QPushButton(label)
-            button.clicked.connect(
-                lambda _checked=False, kind=feature_group, part=owner:
+            menu.addAction(
+                label, lambda _checked=False, kind=feature_group, part=owner:
                 self.actions.add_cad_operation_group(kind, part)
             )
-            add_row.addWidget(button)
-        add_row.addStretch(1)
-        col.addLayout(add_row)
+        col.addWidget(CollectionHeader(tr('ui.widgets.definition_manager.cad_feature_history'), menu=menu))
 
         operations = owner.cad_operations()
         for index, operation in enumerate(operations):
-            card = QGroupBox(cad_operation_title_text(operation))
+            card = QGroupBox(self._item_title(operation))
+            card.setToolTip(cad_operation_summary_text(operation))
             self._child_groups[operation] = card
             self._focus_widgets[operation] = card
             item_col = QVBoxLayout(card)
@@ -438,10 +490,19 @@ class DefinitionManagerEditor(QWidget):
     def _node_editor(
         self, node: Node, *, exclude_fields: set[str] | None = None
     ) -> PropertyEditor:
+        editor = PropertyEditor(compact=True)
+        self._bind_node_editor(editor, node, exclude_fields)
+        self._node_editors[node] = editor, exclude_fields
+        editor.activated.connect(self._on_editor_activated)
+        editor.changed.connect(self._on_node_changed)
+        return editor
+
+    def _bind_node_editor(
+        self, editor: PropertyEditor, node: Node, exclude_fields: set[str] | None,
+    ) -> None:
         fields, code_slots, choices = fields_for_node(node, self._problem, sets=self.sets)
         if exclude_fields:
             fields = [field for field in fields if field["key"] not in exclude_fields]
-        editor = PropertyEditor(compact=True)
         title = self._item_title(node)
         editor.edit_node(
             node,
@@ -451,8 +512,6 @@ class DefinitionManagerEditor(QWidget):
             title=title,
             completion_problem=self._problem,
         )
-        editor.changed.connect(self.changed.emit)
-        return editor
 
     def _add_order_controls(
         self,
@@ -466,86 +525,42 @@ class DefinitionManagerEditor(QWidget):
         *,
         allow_move: bool = True,
     ) -> None:
-        bar = QHBoxLayout()
-        if allow_move:
-            up = self._tool_button("↑", tr('ui.widgets.definition_manager.move_up'), lambda: move(node, -1))
-            down = self._tool_button("↓", tr('ui.widgets.definition_manager.move_down'), lambda: move(node, 1))
-            up.setEnabled(index > 0)
-            down.setEnabled(index + 1 < count)
-            bar.addWidget(up)
-            bar.addWidget(down)
-        bar.addStretch(1)
-        delete = self._tool_button(
-            tr('ui.widgets.definition_manager.delete'), remove_title, remove, danger=True
-        )
         cannot_remove_last = isinstance(
-            node, (PartInterfaceNode, MaterialNode, InstanceNode)
+            node, (PartNode, MaterialNode, InstanceNode)
         ) and count <= 1
         if isinstance(node, SurfaceNode) and self._problem is not None:
             cannot_remove_last = len(self._problem.surfaces()) <= 1
-        if cannot_remove_last:
-            delete.setEnabled(False)
-        bar.addWidget(delete)
-        layout.addLayout(bar)
+        layout.addWidget(ItemActions(
+            index, count, remove,
+            (lambda offset: move(node, offset)) if allow_move else None,
+            allow_remove=not cannot_remove_last, remove_tooltip=remove_title,
+        ))
 
-    @staticmethod
-    def _tool_button(label: str, tooltip: str, callback, *, danger=False) -> QToolButton:
-        button = QToolButton()
-        button.setText(label)
-        button.setToolTip(tooltip)
-        button.setStyleSheet(
-            "QToolButton { color:#f5f7fa; background:#8e3434; padding:3px 7px; "
-            "border-radius:3px; } QToolButton:hover { background:#b44242; }"
-            if danger
-            else "QToolButton { color:#d4deea; background:#27374c; padding:3px 7px; "
-            "border-radius:3px; } QToolButton:hover { background:#354b65; }"
-        )
-        button.clicked.connect(lambda _checked=False, action=callback: action())
-        return button
-
-    @staticmethod
-    def _item_title(node: Node) -> str:
-        if isinstance(node, PartInterfaceNode):
-            return part_interface_title_text(node)
-        if isinstance(node, InterfaceNode):
-            interface_type = node.interface_type
-            spec = INTERFACE_TYPES.get(interface_type, {})
-            return f"{node.name} · {tr(spec.get('label_key', interface_type))}"
-        if isinstance(node, MaterialNode):
-            material_type = node.material_type
-            spec = MATERIAL_TYPES.get(material_type, {})
-            return f"{node.name} · {tr(spec.get('label_key', material_type))}"
-        if isinstance(node, InstanceNode):
-            return instance_title_text(node)
-        if isinstance(node, SurfaceNode):
-            return surface_title_text(node, 0)
-        if isinstance(node, CADOperationNode):
-            return cad_operation_title_text(node)
-        return node.name or node.kind
+    def _item_title(self, node: Node) -> str:
+        return node_title(self._problem, node)
 
     def _update_titles(self) -> None:
-        for node, group in self._item_groups.items():
-            group.setTitle(self._item_title(node))
-        for node, group in self._child_groups.items():
-            if isinstance(node, SurfaceNode) and self._problem is not None:
-                owner = self._problem.owner_of_surface(node)
-                index = owner.surfaces().index(node) if owner is not None else 0
-                group.setTitle(surface_title_text(node, index))
-            else:
+        available = self.actions.commands.available_optimizer_targets()
+        for node, button in self._updater_buttons.items():
+            free = node in available
+            button.setEnabled(free)
+            button.setText(tr("ui.component.create_updater" if free else "ui.component.updater_created"))
+        for groups in (self._item_groups, self._child_groups):
+            for node, group in groups.items():
                 group.setTitle(self._item_title(node))
+                if isinstance(node, CADOperationNode):
+                    group.setToolTip(cad_operation_summary_text(node))
 
-    def _focus_selection(self) -> None:
+    def _focus_selection(self, *, scroll: bool = True) -> None:
         for node, widget in self._focus_widgets.items():
             focused = node is self._focus
-            widget.setStyleSheet(
-                "QGroupBox { border:1px solid #397ac2; margin-top:8px; }"
-                if focused
-                else ""
-            )
+            set_card_selected(widget, focused)
         target = self._focus_widgets.get(self._focus) if self._focus is not None else None
-        if target is not None:
+        if scroll and target is not None:
             QTimer.singleShot(
                 0,
-                lambda item=target: self._scroll.ensureWidgetVisible(item, 10, 10),
+                self,
+                lambda item=target, node=self._focus:
+                self._scroll.ensureWidgetVisible(item, 10, 10) if self._focus is node else None,
             )
 

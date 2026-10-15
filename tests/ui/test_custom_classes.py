@@ -42,7 +42,7 @@ def customize(problem, base, name, method=None, body=None, bind=True):
         elif spec.inherited:
             if ".FEAParams." in base:
                 for node in problem.interfaces():
-                    if node.interface_type + "Interface" == base.rsplit(".", 1)[-1]:
+                    if node.interface_type == base.rsplit(".", 1)[-1]:
                         node.custom_class = name
             elif ".MaterialsParams." in base:
                 for node in problem.material_nodes():
@@ -198,7 +198,7 @@ def test_missing_or_incompatible_class_selection_is_rejected(bindings):
 def test_part_class_names_use_interface_types_and_old_paths_are_rejected():
     problem = ProblemLibrary.create("shapeopt")
     catalog = class_catalog(problem)
-    assert "ThisController.Params.GeometryParams.BoundaryPartInterface" in catalog
+    assert "ThisController.Params.GeometryParams.BoundaryPart" in catalog
     assert "ThisController.Params.GeometryParams.BoundaryPart0" not in catalog
     problem.custom_classes.append(
         CustomClassNode(
@@ -206,7 +206,7 @@ def test_part_class_names_use_interface_types_and_old_paths_are_rejected():
             params={"base_class": "ThisController.Params.GeometryParams.BoundaryPart0"},
         )
     )
-    with pytest.raises(ValueError, match="Base class missing"):
+    with pytest.raises(ValueError, match="(?i)base class missing"):
         ProblemSession(problem).source()
     for template in ProblemLibrary.templates():
         catalog = class_catalog(ProblemLibrary.create(template.scheme))
@@ -216,7 +216,7 @@ def test_part_class_names_use_interface_types_and_old_paths_are_rejected():
             if not spec.inherited
             and spec.path.rpartition(".")[0] == "ThisController.Params.GeometryParams"
         ]
-        assert all("PartInterface" in spec.path.split(".")[-1] for spec in parts)
+        assert all("Part" in spec.path.split(".")[-1] for spec in parts)
 
 
 def test_nested_subclasses_replace_classes_and_retain_generated_configuration():
@@ -226,7 +226,7 @@ def test_nested_subclasses_replace_classes_and_retain_generated_configuration():
     customize(problem, "ThisController.Params.FEAParams", "MyLoads")
     customize(
         problem,
-        "ThisController.Params.FEAParams.PressureInterface",
+        "ThisController.Params.FEAParams.Pressure",
         "MyPressure",
         "initialize",
         "return 'pressure override'",
@@ -278,7 +278,7 @@ def test_super_calls_generated_method_and_classmethod_uses_custom_type(monkeypat
 
     problem = ProblemLibrary.create("shapeopt")
     customize(problem, "ThisController.ObjectiveFunction", "MyObjective", "__init__")
-    path = "ThisController.Params.GeometryParams.BoundaryPartInterface.BSP"
+    path = "ThisController.Params.GeometryParams.BoundaryPart.BSP"
     customize(problem, path, "MySurface", "initialize_cylinder")
 
     def factory(cls, *args, **kwargs):
@@ -286,18 +286,18 @@ def test_super_calls_generated_method_and_classmethod_uses_custom_type(monkeypat
 
     factory.__signature__ = inspect.signature(
         inspect.getattr_static(
-            morphopt.BoundaryPartInterface.BSP, "initialize_cylinder"
+            morphopt.BoundaryPart.BSP, "initialize_cylinder"
         ).__func__
     )
     monkeypatch.setattr(
-        morphopt.BoundaryPartInterface.BSP, "initialize_cylinder", classmethod(factory)
+        morphopt.BoundaryPart.BSP, "initialize_cylinder", classmethod(factory)
     )
     controller = load_classes(problem)
     objective = controller.ObjectiveFunction()
     assert objective.jacobian_needed == [
         node.name for node in problem.objective.jacobian_needed
     ]
-    surface = controller.Params.GeometryParams.BoundaryPartInterface.BSP
+    surface = controller.Params.GeometryParams.BoundaryPart.BSP
     assert surface.initialize_cylinder(1, 2, 3, False) is surface
 
 
@@ -334,6 +334,9 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     app = QApplication.instance() or QApplication([])
 
     class Viewer(QWidget):
+        def refresh_ui(self, context):
+            self.set_problem(context.problem)
+
         def set_problem(self, problem):
             pass
 
@@ -355,9 +358,9 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     customize(problem, "morphopt.Controller", "CustomController", bind=False)
     customize(problem, "morphopt.Params", "CustomParams", bind=False)
     window = workbench.Workbench(problem)
-    assert window.tree.topLevelItemCount() == 2
+    assert window.tree.topLevelItemCount() == 3
     helper_item = window.tree.topLevelItem(0)
-    root_item = window.tree.topLevelItem(1)
+    root_item = window.tree.topLevelItem(2)
     assert window.tree._item_node[root_item] is problem.root
     assert window.tree._item_node[helper_item].kind == "helper_code"
     assert [
@@ -377,15 +380,15 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     assert window.class_selector._path == "ThisController.Params"
     assert window.class_selector.combo.findData("CustomParams") >= 0
     before = problem.root.to_dict()
-    window._on_any_change()
+    window.refresh_coordinator.refresh_now()
     assert window.tree._item_node[window.tree.currentItem()].kind == "params_class"
     assert problem.root.to_dict() == before
     window._on_node_selected(problem.objective)
     assert window.class_selector.isHidden()
-    window.tree._set_objective_class(other.name)
+    window.tree.actions.set_objective_class(other.name)
     assert problem.objective.custom_class == other.name
     assert load_classes(problem).ObjectiveFunction().get_metrics() == {"other": 1}
-    window.tree._set_objective_class(custom.name)
+    window.tree.actions.set_objective_class(custom.name)
     window._on_node_selected(problem.solver)
     assert window.class_selector.combo.findData("CustomSolver") >= 0
     assert window.class_selector.combo.findData(other.name) == -1
@@ -415,9 +418,9 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     method = custom.children[0]
     editor.code.set_body("return {'from_ui': 42}")
     assert method.body == "return {'from_ui': 42}"
-    window._on_any_change()
+    window.refresh_coordinator.refresh_now()
     assert editor.code.body() == method.body
-    assert window.custom_tree.tree.topLevelItem(0).childCount() == 1
+    assert window.tree._node_item[custom].childCount() == 1
     assert route_editor(method).kind is EditorKind.CUSTOM_CLASS
     assert load_classes(problem).ObjectiveFunction().get_metrics() == {"from_ui": 42}
     monkeypatch.setattr(
@@ -431,27 +434,25 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
         ),
     )
     editor.add_override()
-    window.custom_tree.rebuild()
-    window.custom_tree.tree.setCurrentItem(
-        window.custom_tree.tree.topLevelItem(0).child(0)
-    )
-    window._on_any_change()
+    window.refresh_coordinator.flush()
+    window.tree.setCurrentItem(window.tree._node_item[method])
+    window.refresh_coordinator.refresh_now()
     assert editor.current_method is method
     editor.code.set_body("return (")
     assert editor.error.text()
     editor.code.set_body("return {'from_ui': 42}")
     assert not editor.error.text()
     editor._remove_override()
-    window._on_any_change()
+    window.refresh_coordinator.refresh_now()
     editor._remove_override()
     assert not custom.children
     editor.name.setText("RenamedObjective")
     editor._rename()
     assert problem.objective.custom_class == "RenamedObjective"
-    window.custom_tree._remove(custom)
+    window.actions.remove_custom_class(custom)
     assert "ThisController.ObjectiveFunction" not in problem.class_bindings
     assert not problem.objective.custom_class
-    assert window._stack.currentWidget() is window.prop_editor
+    assert window._stack.currentWidget() is window.custom_class_overview
     window.close()
     app.processEvents()
 
@@ -464,6 +465,9 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     app = QApplication.instance() or QApplication([])
 
     class Viewer(QWidget):
+        def refresh_ui(self, context):
+            self.set_problem(context.problem)
+
         def set_problem(self, problem):
             pass
 
@@ -485,6 +489,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.helper_page
     variable = window.actions.add_helper("helper_variable")
+    window.refresh_coordinator.flush()
     assert window.tree._item_node[window.tree.currentItem()] is variable
     window.helper_page.name.setText("target_force")
     window.helper_page.value.setText("3.0")
@@ -497,17 +502,17 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     window.helper_page._save()
     assert function.name == "target"
     assert function.body == "return target_force"
-    window._on_any_change()
+    window.refresh_coordinator.refresh_now()
     assert window.tree._item_node[window.tree.currentItem()] is function
     assert window._stack.currentWidget() is window.helper_page
-    window.refresh_code()
+    window.refresh_coordinator.refresh_now()
     assert "def target():" in window.code_view.toPlainText()
     window.apply_language()
     assert window.helper_page.code.body() == function.body
     assert window._stack.currentWidget() is window.helper_page
 
     window._center.setCurrentWidget(window.code_view)
-    window.tree.setCurrentItem(window.tree.topLevelItem(1))
+    window.tree.setCurrentItem(window.tree.topLevelItem(2))
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.prop_editor
     window._center.setCurrentWidget(window.code_view)
@@ -523,7 +528,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     window.helper_page.parameters.setText("(")
     window.helper_page._save()
     assert window.helper_page.error.text()
-    window.refresh_code()
+    window.refresh_coordinator.refresh_now()
     assert "code generation failed" in window.code_view.toPlainText()
     window.actions.remove_helper(loaded_function)
     assert not window.problem.helper_functions
@@ -540,7 +545,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     customize(
         problem,
-        "morphopt.FEAParams.PressureInterface",
+        "morphopt.FEAParams.Pressure",
         "MyPressure",
         "initialize",
         "return 'custom pressure'",
@@ -556,13 +561,13 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     )
     customize(
         problem,
-        "morphopt.BoundaryPartInterface",
+        "morphopt.BoundaryPart",
         "MyPart",
         "define_instance",
         "return 'custom part'",
         bind=False,
     )
-    customize(problem, "morphopt.BoundaryPartInterface.BSP", "MySurface", bind=False)
+    customize(problem, "morphopt.BoundaryPart.BSP", "MySurface", bind=False)
     tree = ModelTree()
     tree.set_problem(problem)
 
@@ -594,6 +599,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     assert not default_pressure.custom_class
     trigger_custom(problem.materials, "MyMaterial")
     custom_material = problem.material_nodes()[-1]
+    assert problem.set_material_part(custom_material, problem.part_interfaces()[0])
     trigger_custom(problem.geometry, "MyPart")
     custom_part = problem.part_interfaces()[-1]
     trigger_custom(custom_part, "MySurface")
@@ -607,7 +613,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     loads = controller.Params.FEAParams()
     loads.define_interface()
     assert loads.interfaces[custom_pressure.name].initialize() == "custom pressure"
-    assert type(loads.interfaces[default_pressure.name]).__name__ == "PressureInterface"
+    assert type(loads.interfaces[default_pressure.name]).__name__ == "Pressure"
     materials = controller.Params.MaterialsParams()
     materials.define_interface()
     assert (
@@ -624,7 +630,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
     )
     assert (
         object.__new__(
-            controller.Params.GeometryParams.BoundaryPartInterface2
+            controller.Params.GeometryParams.BoundaryPart2
         ).define_instance()
         == "custom part"
     )
@@ -636,7 +642,7 @@ def test_add_menus_attach_custom_classes_to_individual_interfaces(tmp_path):
 def test_custom_objective_and_constraint_choices_use_existing_parameter_forms():
     from PySide6.QtWidgets import QApplication, QComboBox, QPushButton
 
-    from morphopt.ui.widgets.updater_editor import _item_list
+    from morphopt.ui.widgets.updater_editor import UpdaterItemList
 
     app = QApplication.instance() or QApplication([])
     problem = ProblemLibrary.create("shapeopt")
@@ -669,7 +675,10 @@ def test_custom_objective_and_constraint_choices_use_existing_parameter_forms():
         ("constraints", "MyFairness", "constraints"),
         ("objectives", "MyGenericObjective", "objective_functions"),
     ]:
-        widget = _item_list(config, "geometry", category, lambda: None, problem=problem)
+        widget = UpdaterItemList(
+            config, "geometry", category, problem,
+            on_change=lambda *_: None, on_code_change=lambda *_: None,
+        )
         widgets.append(widget)
         combo = widget.findChildren(QComboBox)[-1]
         index = next(
@@ -716,8 +725,8 @@ def test_missing_bindings_do_not_implicitly_replace_classes():
 
 def test_deep_class_bindings_are_rejected():
     problem = ProblemLibrary.create("shapeopt")
-    customize(problem, "morphopt.FEAParams.PressureInterface", "MyPressure", bind=False)
-    problem.class_bindings["ThisController.Params.FEAParams.PressureInterface"] = (
+    customize(problem, "morphopt.FEAParams.Pressure", "MyPressure", bind=False)
+    problem.class_bindings["ThisController.Params.FEAParams.Pressure"] = (
         "MyPressure"
     )
     with pytest.raises(ValueError, match="Invalid configuration class selection"):
@@ -732,18 +741,18 @@ def test_custom_parts_are_added_only_through_defined_classes():
 
     app = QApplication.instance() or QApplication([])
     problem = ProblemLibrary.create("shapeopt")
-    customize(problem, "morphopt.BasePartInterface", "CustomPart", bind=False)
+    customize(problem, "morphopt.BasePart", "CustomPart", bind=False)
     tree = ModelTree()
     tree.set_problem(problem)
     assert (
-        "BasePartInterface"
+        "BasePart"
         not in get_template(problem.scheme).available_geometry_types()
     )
     menu = QMenu()
     tree._build_node_menu(menu, problem.geometry)
     geometry_menu = menu.actions()[0].menu()
     assert not any(
-        action.data() == "BasePartInterface" for action in geometry_menu.actions()
+        action.data() == "BasePart" for action in geometry_menu.actions()
     )
     custom_menu = next(
         action.menu() for action in geometry_menu.actions() if action.menu()
@@ -751,15 +760,17 @@ def test_custom_parts_are_added_only_through_defined_classes():
     action = next(
         action
         for action in custom_menu.actions()
-        if action.text() == "CustomPart [BasePartInterface]"
+        if action.text() == "CustomPart [BasePart]"
     )
     previous = len(problem.part_interfaces())
-    tree.actions.add_part_interface("BasePartInterface")
+    tree.actions.add_part_interface("BasePart")
     assert len(problem.part_interfaces()) == previous
     action.trigger()
     added = problem.part_interfaces()[-1]
     assert added.custom_class == "CustomPart"
     title = f"{added.name} [CustomPart]"
+    from morphopt.ui.refresh import RefreshContext
+    tree.refresh_ui(RefreshContext(problem, selected=added))
     assert tree._node_item[added].text(0) == title
     tree.apply_language()
     tree.apply_language()

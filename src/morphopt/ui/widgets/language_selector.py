@@ -16,8 +16,8 @@ class LanguageSelector(QComboBox):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        for code, label in SUPPORTED_LOCALES.items():
-            self.addItem(label, code)
+        for code in SUPPORTED_LOCALES:
+            self.addItem(localization.load_locale(code)["locale.name"], code)
         self.setFixedWidth(110)
         self.set_locale(localization.locale)
         self._unsubscribe_locale = localization.subscribe(self._locale_changed)

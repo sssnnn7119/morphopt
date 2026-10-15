@@ -1,7 +1,7 @@
 import torch
 
 from ..shapeopt.objectivefuncs.basefuncs import BaseConstraints
-from .offsetboundarypartinterface import OffsetBoundaryPartInterface
+from .offset_boundary_part import OffsetBoundaryPart
 
 
 class InwardCurvatureRadius(BaseConstraints):
@@ -96,11 +96,11 @@ class InwardCurvatureRadius(BaseConstraints):
         """Take the Part this constraint is evaluated for.
 
         The geometry updater hands over the Part it evaluates; only a
-        :class:`~morphopt.codesign.OffsetBoundaryPartInterface` carries a
+        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a
         shell, so anything else is rejected here.
         """
         super().initialize(r0=r0, rdu0=rdu0, *args, **kwargs)
-        if not isinstance(part_interface, OffsetBoundaryPartInterface):
+        if not isinstance(part_interface, OffsetBoundaryPart):
             raise TypeError(
                 f"{type(self).__name__} is evaluated for one co-design Part "
                 f"(got {type(part_interface).__name__})."
@@ -255,11 +255,11 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         """Take the Part this constraint is evaluated for and pair its points.
 
         The geometry updater hands over the Part it evaluates; only a
-        :class:`~morphopt.codesign.OffsetBoundaryPartInterface` carries a
+        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a
         shell, so anything else is rejected here.
         """
         super().initialize(r0=r0, rdu0=rdu0, *args, **kwargs)
-        if not isinstance(part_interface, OffsetBoundaryPartInterface):
+        if not isinstance(part_interface, OffsetBoundaryPart):
             raise TypeError(
                 f"{type(self).__name__} is evaluated for one co-design Part "
                 f"(got {type(part_interface).__name__})."

@@ -10,7 +10,7 @@ from scipy import interpolate
 from .basefuncs import BaseObjective
 
 if TYPE_CHECKING:
-    from ..surfaceinterfaces import BaseSurfaceInterface
+    from ..surfaces import BaseSurface
 
 
 class ShapeDerivative(BaseObjective):
@@ -35,7 +35,7 @@ class ShapeDerivative(BaseObjective):
         """A factor to scale the shape derivative, can be set in the initialize function.
         """
 
-        self.surfaces: list[BaseSurfaceInterface] = []
+        self.surfaces: list[BaseSurface] = []
         """Surfaces bound by the owning geometry updater."""
 
     def initialize(
@@ -43,7 +43,7 @@ class ShapeDerivative(BaseObjective):
         gradient: torch.Tensor,
         r0: list[torch.Tensor],
         *args,
-        surfaces: Sequence[BaseSurfaceInterface] | None = None,
+        surfaces: Sequence[BaseSurface] | None = None,
         **kwargs,
     ):
         """Map the structural gradient onto the control points of this Part.

@@ -1,21 +1,22 @@
 """File-backed optimization templates and their registry."""
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 import json
 from pathlib import Path
 
-from ..i18n import localization
+from ..i18n import localization, tr
 from ..model import schemas as S
 from ..model.problem import (
     GeometryNode,
-    InterfaceNode,
+    FEAComponentNode,
     LoadsNode,
     MaterialNode,
     MaterialsNode,
     Node,
     ObjectiveNode,
-    PartInterfaceNode,
+    PartNode,
     ProblemDefinition,
     SolverNode,
     StepsNode,
@@ -36,11 +37,10 @@ class SchemeTemplate:
     """
 
     scheme: str = ""
-    label: str = ""
-    label_en: str = ""
+    label_key: str = ""
     #: material implementation chosen by this scheme's default tree.
     MATERIAL_TYPE: str = ""
-    #: display title of the Geometry section (used by the model tree)
+    #: Internal section name; presentation supplies the localized title.
     geometry_title: str = "Geometry"
     #: registration (Part) name of the scheme's default geometry
     BODY_NAME: str = "body"
@@ -67,9 +67,9 @@ class SchemeTemplate:
 
     def make_interface(
         self, interface_type: str, name: str | None = None, **overrides
-    ) -> InterfaceNode:
+    ) -> FEAComponentNode:
         """Build a fresh load interface from schema defaults."""
-        return InterfaceNode.create(interface_type, name=name, **overrides)
+        return FEAComponentNode.create(interface_type, name=name, **overrides)
 
     def make_material(
         self, material_type: str | None = None, **overrides
@@ -78,7 +78,7 @@ class SchemeTemplate:
         selected_type = material_type or self.material_type
         if selected_type not in self.available_material_types():
             raise ValueError(
-                f"Unknown material interface type {selected_type!r}."
+                localized_message("ui.errors.base.unknown_material_interface_type_value", value_0=selected_type)
             )
         mat = MaterialNode.create(selected_type, **overrides)
         return mat
@@ -99,7 +99,7 @@ class SchemeTemplate:
         """Concrete material class used by this scheme."""
         if not self.MATERIAL_TYPE:
             raise NotImplementedError(
-                f"{type(self).__name__} must declare MATERIAL_TYPE"
+                localized_message("ui.errors.base.value_must_declare_material_type", value_0=type(self).__name__)
             )
         return self.MATERIAL_TYPE
 
@@ -113,14 +113,14 @@ class SchemeTemplate:
 
     def make_part_interface(
         self, interface_type: str | None = None, name: str | None = None, **overrides
-    ) -> PartInterfaceNode:
+    ) -> PartNode:
         """Build one part interface (Part + Instances) of this scheme."""
         selected = interface_type or self.default_part_interface_type()
         if selected not in self.available_geometry_types():
             raise ValueError(
-                f"Unknown geometry interface type {selected!r}."
+                localized_message("ui.errors.base.unknown_geometry_interface_type_value", value_0=selected)
             )
-        return PartInterfaceNode.create(selected, name=name or "", **overrides)
+        return PartNode.create(selected, name=name or "", **overrides)
 
     def available_geometry_types(self) -> tuple[str, ...]:
         """Return every UI-enabled Part interface.
@@ -139,7 +139,7 @@ class SchemeTemplate:
         types = self.available_geometry_types()
         if not types:
             raise NotImplementedError(
-                f"{type(self).__name__} declares no geometry interfaces"
+                localized_message("ui.errors.base.value_declares_no_geometry_interfaces", value_0=type(self).__name__)
             )
         return types[0]
 
@@ -258,10 +258,8 @@ class MorphTemplate(SchemeTemplate):
         meta = dict(data.get("template") or {})
         self.path = path
         self.scheme = str(data.get("scheme") or meta.get("id") or path.stem)
-        self.label = str(meta.get("label") or self.scheme)
-        self.label_en = str(meta.get("label_en") or self.label)
+        self.label_key = str(meta["label_key"])
         self.MATERIAL_TYPE = str(meta.get("material_type") or "")
-        self.geometry_title = str(meta.get("geometry_title") or "Geometry")
         self.BODY_NAME = str(meta.get("body_name") or "body")
         self._blank_interface_fields = tuple(
             meta.get("blank_interface_fields")
@@ -292,7 +290,7 @@ class MorphTemplate(SchemeTemplate):
 
     def make_interface(
         self, interface_type: str, name: str | None = None, **overrides
-    ) -> InterfaceNode:
+    ) -> FEAComponentNode:
         spec = S.INTERFACE_TYPES.get(interface_type, {})
         for field in spec.get("params", []):
             if field["key"] in self._blank_interface_fields:
@@ -317,18 +315,18 @@ def _build_registry() -> None:
         return
     if not TEMPLATE_DIRECTORY.is_dir():
         raise FileNotFoundError(
-            f"MorphOpt template directory does not exist: {TEMPLATE_DIRECTORY}"
+            localized_message("ui.errors.base.morphopt_template_directory_does_not_exist_value", value_0=TEMPLATE_DIRECTORY)
         )
     for path in sorted(TEMPLATE_DIRECTORY.glob("*.morph")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Invalid MorphOpt template file: {path}") from exc
+            raise ValueError(localized_message("ui.errors.base.invalid_morphopt_template_file_value", value_0=path)) from exc
         template = MorphTemplate(path, data)
         if template.scheme in HIDDEN_TEMPLATE_IDS:
             continue
         if template.scheme in SCHEME_REGISTRY:
-            raise ValueError(f"Duplicate MorphOpt template id: {template.scheme!r}")
+            raise ValueError(localized_message("ui.errors.base.duplicate_morphopt_template_id_value", value_0=template.scheme))
         SCHEME_REGISTRY[template.scheme] = template
 
 
@@ -341,7 +339,7 @@ def available_templates() -> tuple[SchemeTemplate, ...]:
 def get_template(scheme: str) -> SchemeTemplate:
     _build_registry()
     if scheme not in SCHEME_REGISTRY:
-        raise KeyError(f"No scheme template registered for {scheme!r}")
+        raise KeyError(localized_message("ui.errors.base.no_scheme_template_registered_for_value", value_0=scheme))
     return SCHEME_REGISTRY[scheme]
 
 
@@ -352,5 +350,5 @@ def scheme_label(scheme: str, *, english: bool | None = None) -> str:
     except KeyError:
         return scheme
     if english is None:
-        english = localization.locale == "en-US"
-    return template.label_en if english else template.label
+        return tr(template.label_key)
+    return localization.load_locale("en-US" if english else "zh-CN")[template.label_key]

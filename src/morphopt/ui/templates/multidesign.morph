@@ -23,7 +23,7 @@
             "kind": "part_interface",
             "name": "body",
             "params": {
-              "type": "BoundaryPartInterface",
+              "type": "BoundaryPart",
               "part_name": "",
               "fea_seed_size": 2.0,
               "mesh_order": 1,
@@ -101,7 +101,7 @@
             "kind": "part_interface",
             "name": "beam",
             "params": {
-              "type": "TorchFEAPartInterface",
+              "type": "TorchFEAPart",
               "part_name": "",
               "model_directory": "$MORPHOPT_TEMPLATE_DIR",
               "model_filename": "cantilever_beam.npz",
@@ -298,7 +298,7 @@
               "degree": 2,
               "initial_ratio": 0.5,
               "voidpenalfactor": 0.01,
-              "materialpenalty": 8.0
+              "materialpenalty": 8
             },
             "children": []
           }
@@ -429,11 +429,9 @@
   },
   "template": {
     "id": "multidesign",
-    "label": "多实体联合优化（形状 + SIMP）",
-    "label_en": "Multi-entity co-optimization (shape + SIMP)",
-    "geometry_title": "Geometry (shape + fixed mesh)",
     "body_name": "body",
     "default_objective_slot": "return self.fe_results[0].GC[-2]\n",
-    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n"
+    "default_metrics_slot": "return [self.fe_results[0].GC[-2]]\n",
+    "label_key": "ui.templates.multidesign.label"
   }
 }

@@ -9,20 +9,20 @@ class FEAParams(BaseParams):
     Class to handle the loads in the model.
     """
 
-    from .feainterface import (
-        BodyforceInterface,
-        BoundaryConditionInterface,
-        BoundaryConditionRPInterface,
-        ConcentratedForceInterface,
-        ConcentratedMomentInterface,
-        ContactInterface,
-        ContactSelfInterface,
-        CoupleInterface,
-        PenaltyDoFInterface,
-        PressureInterface,
-        ReferencePointInterface,
-        SpringBetweenRPsInterface,
-        SpringToGroundInterface,
+    from .fea import (
+        BodyForce,
+        BoundaryCondition,
+        ReferencePointBoundaryCondition,
+        ConcentratedForce,
+        ConcentratedMoment,
+        Contact,
+        SelfContact,
+        Couple,
+        PenaltyDoF,
+        Pressure,
+        ReferencePoint,
+        SpringBetweenRPs,
+        SpringToGround,
     )
 
     def __init__(self):

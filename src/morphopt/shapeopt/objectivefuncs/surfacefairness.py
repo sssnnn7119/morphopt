@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -8,7 +8,7 @@ import torch
 from .basefuncs import BaseConstraints
 
 if TYPE_CHECKING:
-    from ..surfaceinterfaces import BaseSurfaceInterface
+    from ..surfaces import BaseSurface
 
 
 class Fairness(BaseConstraints):
@@ -21,13 +21,13 @@ class Fairness(BaseConstraints):
     def __init__(self) -> None:
         """Initialize an unbound fairness constraint."""
         super().__init__()
-        self.surfaces: list[BaseSurfaceInterface] = []
+        self.surfaces: list[BaseSurface] = []
         """Surfaces bound by the owning geometry updater."""
 
     def initialize(
         self,
         *args: object,
-        surfaces: Sequence[BaseSurfaceInterface] | None = None,
+        surfaces: Sequence[BaseSurface] | None = None,
         **kwargs: object,
     ) -> None:
         """Bind the current Part's surfaces before evaluating fairness."""

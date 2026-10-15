@@ -1,13 +1,16 @@
 """Qt controls for Part/Assembly preview; geometry and rendering are delegated."""
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSignalBlocker, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
 from ..i18n import tr
-from ..model.problem import PartInterfaceNode, ProblemDefinition
+from ..refresh import RefreshContext
+from ..presentation.labels import part_interface_title_text
+from ..model.problem import PartNode, ProblemDefinition
 from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
+from ..visualization.scene import LoadScene
 from .preview_renderer import PreviewRenderer
 
 
@@ -18,10 +21,6 @@ class _PlotHost(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.plotter = QtInteractor(self)
         lay.addWidget(self.plotter.interactor)
-        # Keep the preview consistent with the deformation pages used by the
-        # optimization monitor: a dark canvas plus PyVista's soft light kit.
-        self.plotter.set_background("#0e131c")
-        self.plotter.enable_lightkit()
 
 
 class PreviewViewer(QWidget):
@@ -57,7 +56,7 @@ class PreviewViewer(QWidget):
         self._lbl_step = QLabel(tr('ui.widgets.viewer.step'))
         bar.addWidget(self._lbl_step)
         self.step_combo = QComboBox()
-        self.step_combo.currentIndexChanged.connect(self._redraw_loads)
+        self.step_combo.currentIndexChanged.connect(self._on_step_changed)
         bar.addWidget(self.step_combo)
         bar.addStretch(1)
         self._btn_reset = QPushButton(tr('ui.widgets.viewer.reset_view'))
@@ -68,18 +67,30 @@ class PreviewViewer(QWidget):
         self.host = _PlotHost(self)
         outer.addWidget(self.host, 1)
 
+        self._selected_step: int | None = None
         self._problem: ProblemDefinition | None = None
+        self._language_pending = False
         self.geometry = geometry or PreviewGeometry()
         self.loads = loads or LoadPreviewVisitor()
         self.renderer = PreviewRenderer(self.host.plotter)
         self._sync_view_controls()
 
     def set_problem(self, problem: ProblemDefinition) -> None:
+        reset_camera = problem is not self._problem
+        if reset_camera:
+            self._selected_step = None
         self._problem = problem
-        self.refresh()
+        self._rebuild_all(reset_camera=reset_camera)
 
-    def refresh(self) -> None:
-        self._rebuild_all()
+    def refresh_ui(self, context: RefreshContext) -> None:
+        if context.restoring:
+            self._problem = context.problem
+            self._rebuild_all(reset_camera=False)
+        elif context.problem is not self._problem or context.geometry_changed:
+            self.set_problem(context.problem)
+        elif context.loads_changed:
+            self._sync_step_combo()
+            self._redraw_loads()
 
     def apply_language(self) -> None:
         """Re-apply the viewer's static texts in place (keeps the viewport)."""
@@ -92,7 +103,6 @@ class PreviewViewer(QWidget):
         # (rendering a backgrounded viewport is what used to blacken the
         # observer's GL pages during a language switch).
         current_part = self.part_combo.currentData()
-        current_step = self.step_combo.currentData()
         self._sync_part_combo(current_part)
         current_view = self.view_combo.currentData()
         self.view_combo.blockSignals(True)
@@ -102,16 +112,31 @@ class PreviewViewer(QWidget):
         self._select_combo_data(self.view_combo, current_view)
         self.view_combo.blockSignals(False)
         self._sync_step_combo()
-        self._select_combo_data(self.step_combo, current_step)
         self._sync_view_controls()
+        self._language_pending = True
+        self._refresh_load_language()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._language_pending:
+            QTimer.singleShot(0, self._refresh_load_language)
+
+    def _refresh_load_language(self) -> None:
+        if self._language_pending and self.isVisible():
+            self._redraw_loads()
+            self._language_pending = False
 
     def _on_view_changed(self, *_args) -> None:
         self._sync_view_controls()
-        self._rebuild_all()
+        self._rebuild_all(reset_camera=True)
 
     def _on_part_changed(self, *_args) -> None:
         if self.view_combo.currentData() == "part":
-            self._rebuild_all()
+            self._rebuild_all(reset_camera=True)
+
+    def _on_step_changed(self, *_args) -> None:
+        self._selected_step = self.step_combo.currentData()
+        self._redraw_loads()
 
     def _sync_view_controls(self) -> None:
         part_view = self.view_combo.currentData() == "part"
@@ -121,14 +146,14 @@ class PreviewViewer(QWidget):
         self.step_combo.setVisible(not part_view)
 
     def _sync_part_combo(
-        self, selected: PartInterfaceNode | None = None
+        self, selected: PartNode | None = None
     ) -> None:
         self.part_combo.blockSignals(True)
         self.part_combo.clear()
         if self._problem is not None:
             parts = self._problem.part_interfaces()
             for part in parts:
-                self.part_combo.addItem(part.name or part.resolved_part_name(), part)
+                self.part_combo.addItem(part_interface_title_text(part), part)
             if selected is not None:
                 index = next(
                     (
@@ -145,25 +170,19 @@ class PreviewViewer(QWidget):
 
     def _sync_step_combo(self) -> None:
         steps = self._problem.steps if self._problem is not None else None
-        current = self.step_combo.currentData()
         n = (
             max(int(steps.num_steps), len(steps.step_values))
             if steps is not None
             else 0
         )
-        self.step_combo.blockSignals(True)
-        self.step_combo.clear()
-        self.step_combo.addItem(tr('ui.widgets.viewer.no_load_step'), -1)
-        for s in range(n):
-            self.step_combo.addItem(tr('ui.widgets.viewer.step_value', value_0=s), s)
-        selected = self.step_combo.findData(current)
-        if selected >= 0:
-            self.step_combo.setCurrentIndex(selected)
-        elif n:
-            self.step_combo.setCurrentIndex(1)
-        else:
-            self.step_combo.setCurrentIndex(0)
-        self.step_combo.blockSignals(False)
+        with QSignalBlocker(self.step_combo):
+            self.step_combo.clear()
+            self.step_combo.addItem(tr('ui.widgets.viewer.no_load_step'), -1)
+            for step in range(n):
+                self.step_combo.addItem(tr('ui.widgets.viewer.step_value', value_0=step), step)
+            selected = self.step_combo.findData(self._selected_step)
+            self.step_combo.setCurrentIndex(selected if selected >= 0 else (1 if n else 0))
+            self._selected_step = self.step_combo.currentData()
 
     @staticmethod
     def _select_combo_data(combo: QComboBox, value: object) -> None:
@@ -175,24 +194,35 @@ class PreviewViewer(QWidget):
 
     def _reset_view(self) -> None:
         self.host.plotter.reset_camera()
+        self._redraw_loads()
 
-    def _rebuild_all(self) -> None:
+    def _rebuild_all(self, *, reset_camera: bool = False) -> None:
         self._sync_part_combo(self.part_combo.currentData())
         self._sync_step_combo()
         if self._problem is None:
             return
+        camera = self.host.plotter.camera_position
         scene = self.geometry.build(self._problem, self.view_combo.currentData(), self.part_combo.currentData())
+        # Prepare geometry and loads before replacing any actors. Incomplete
+        # definitions must not erase a working viewport during data preparation.
+        loads = self._load_scene()
         self.renderer.draw_scene(scene)
         self.host.plotter.show_axes()
-        self.host.plotter.view_isometric()
-        self.host.plotter.reset_camera()
-        self._redraw_loads()
+        if reset_camera:
+            self.host.plotter.view_isometric()
+        else:
+            self.host.plotter.camera_position = camera
+        self.renderer.draw_loads(loads)
+        if reset_camera:
+            self.host.plotter.reset_camera()
+            # Callout spacing is measured in screen pixels. Reflow against
+            # the fitted camera after including load glyphs in the bounds.
+            self.renderer.draw_loads(loads)
+
+    def _load_scene(self) -> LoadScene | None:
+        if self._problem is not None and self.view_combo.currentData() == "assembly":
+            return self.loads.build(self.geometry, self._selected_step)
+        return None
 
     def _redraw_loads(self, *_args) -> None:
-        scene = None
-        if self._problem is not None and self.view_combo.currentData() == "assembly":
-            scene = self.loads.build(self.geometry, self.step_combo.currentData())
-        self.renderer.draw_loads(
-            scene,
-            tr('ui.widgets.viewer.pressure_teal_force_red_moment_yellow_body_force_orange_spring_purple_do'),
-        )
+        self.renderer.draw_loads(self._load_scene())

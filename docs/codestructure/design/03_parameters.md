@@ -4,7 +4,7 @@
 
 ## 统一注册模型
 
-源码目录：`optcore/modelparams/`。参数集合以 `interfaces: dict[str, object]` 保存自己拥有的接口。字典键是接口的公开名称，同时给出稳定注册顺序；接口对象保存业务状态，集合对象负责批量生命周期、持久化和设计变量拼接。
+源码目录：`optcore/modelparams/`。参数集合以命名对象字典保存自己拥有的几何 Part、FEA 组件和材料。字典键是对象的公开名称，同时给出稳定注册顺序；对象保存具体定义，集合对象负责批量生命周期、持久化和设计变量拼接。
 
 ```text
 Params
@@ -15,7 +15,7 @@ Params
 
 ## `BaseParams`
 
-源码：`baseparam.py`；继承 `ProtocalInitializable`、`ProtocalSavable`、`ProtocalVisualizable`。
+源码：`baseparam.py`；仅供 `GeometryParams`、`FEAParams` 和 `MaterialsParams` 继承，负责集合注册和批量转发。
 
 | 属性 | 可见性 | 说明 |
 |---|---|---|
@@ -59,6 +59,8 @@ Params
 
 `create_feamodel()` 是从声明参数进入数值后端的唯一组装点：先由 Geometry 生成 Assembly，再由 FEAParams 加载 FEA 定义，最后由 MaterialsParams 把材料赋给元素。
 
+具体的 Part、载荷/约束、材料和曲面定义继承 `BaseModelComponent`；它只组合初始化、持久化和可视化三个协议，不提供集合注册表。
+
 ## `GeometryParams`
 
 源码：`geometry.py`；继承 `BaseParams`。
@@ -90,7 +92,7 @@ Params
 
 ## `MaterialsParams`
 
-源码：`materials.py`；继承 `BaseParams`。
+源码：`materialsparams.py`；继承 `BaseParams`。
 
 `set_materials(fe)` 按注册顺序调用每个材料接口的材料分配逻辑；`pathlog_required()` 为材料设计状态声明独立日志目录。材料类型与每种材料的参数模型见 [06 材料](06_materials.md)。
 

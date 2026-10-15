@@ -2,263 +2,49 @@
 
 A schema is an ordered list of field specs::
 
-    {"key": "r0", "label": "Outer radius", "type": "float",
-     "default": 4.0, "doc": "..."}
+    {"key": "r0", "label_key": "ui.schema.fields.r0.label.radius_r0", "type": "float",
+     "default": 4.0, "doc_key": "ui.schema.fields.r0.help.text"}
 
 Field ``type`` values understood by the schema-driven editors:
     int, float, str, bool, vec3, vec6, vecN, text (multiline),
     file (path picker), combo (fixed ``choices``), code (python slot).
 
-The dictionaries below are the single source of truth for field defaults and
-forms rendered in the property editor.  They do *not* choose an optimization
-scheme's default problem tree, generated backend classes, display label, or
-code snippets; those belong to :mod:`morphopt.ui.schemes`.
+The dictionaries below declare field defaults, backend class names and
+localization keys for the property editor and type menus. ``class_name`` is
+the Python class identifier, kept separate from its translated description.
+Scheme-specific initial definitions and code snippets belong to
+:mod:`morphopt.ui.schemes`.
 """
 
 from __future__ import annotations
+from ..i18n import localized_message
 
 from dataclasses import fields
-import re
 
-from ...optcore.modelparams.materialinterface import MaterialModels
+from ...optcore.modelparams.materials import MaterialModels
 
 # --------------------------------------------------------------------------
 # small builders
 # --------------------------------------------------------------------------
 
 
-_FIELD_LABELS_ZH = {
-    "r0": "半径 r0",
-    "length": "长度",
-    "seed_size": "网格种子尺寸",
-    "num_U_ratio": "U 方向控制网格比例",
-    "num_V_ratio": "V 方向控制网格比例",
-    "degree": "B 样条阶次",
-    "init_location": "初始位置",
-    "maxR": "最大半径变化",
-    "maxC": "最大控制点变化",
-    "MaxC": "最大控制点变化",
-    "maxFF": "最大形状因子变化",
-    "perturbation_L": "初始扰动波长",
-    "path_stl": "STL 文件",
-    "instance_name": "实体",
-    "instance_name1": "实体 1",
-    "instance_name2": "实体 2",
-    "surface_name": "表面",
-    "surface_name1": "表面 1",
-    "surface_name2": "表面 2",
-    "set_nodes_name": "节点集",
-    "rp_name": "参考点",
-    "rp_name1": "参考点 1",
-    "rp_name2": "参考点 2",
-    "rp_location": "参考点位置",
-    "element_name": "单元类型",
-    "elementname": "Elems 名称",
-    "obj_name": "对象",
-    "s": "自由度",
-    "obj_type": "对象类型",
-    "penalty_threshold_h": "罚函数阈值 h",
-    "mu": "剪切模量 μ",
-    "kappa": "体积模量 κ",
-    "material_model": "材料模型",
-    "E": "杨氏模量 E",
-    "nu": "泊松比 ν",
-    "c10": "Mooney-Rivlin c10",
-    "c01": "Mooney-Rivlin c01",
-    "c1": "Yeoh c1",
-    "c2": "Yeoh c2",
-    "c3": "Yeoh c3",
-    "Jm": "Gent Jm",
-    "N": "Arruda-Boyce N",
-    "alpha": "Ogden alpha",
-    "density": "密度",
-    "mumax": "最大剪切模量",
-    "kappamax": "最大体积模量",
-    "simp_ratio_min": "最小密度比例",
-    "bounding_box": "设计域边界框",
-    "simp_field_resolution": "密度场分辨率",
-    "initial_ratio": "初始密度比例",
-    "voidpenalfactor": "空域惩罚因子",
-    "materialpenalty": "材料惩罚指数",
-    "fea_seed_size": "FEA 网格种子尺寸",
-    "mesh_order": "网格阶次",
-    "thickness": "壳层厚度",
-    "part_name": "装配体 Part 名称",
-    "translation": "平移 [tx, ty, tz]",
-    "rotation": "旋转指数坐标 [rx, ry, rz]",
-    "instance_name": "对应实体",
-    "exterior_surface": "外表面集合",
-    "mesh_file": "INP 网格文件",
-    "inp_part_name": "INP 中的 Part",
-    "model_part_name": "模型中的 Part",
-    "model_directory": "TorchFEA 模型目录",
-    "model_filename": "TorchFEA 模型文件",
-    "num_process": "进程数",
-    "gpus": "GPU 设备",
-    "task_index_list": "工况任务分组",
-    "normalize_gradient": "梯度归一化",
-    "scale": "缩放系数",
-    "min_distance": "表面间最小距离矩阵",
-    "radius": "半径",
-    "height": "高度",
-    "bottom": "底部位置",
-    "surf_idx": "表面索引",
-    "weight": "权重",
-    "margin": "边界余量",
-    "margin_ratio": "边界余量比例",
-    "p": "惩罚指数 p",
-    "penalty_scale": "惩罚缩放系数",
-    "volfrac_min": "最小体积分数",
-    "volfrac_max": "最大体积分数",
-    "penalty": "惩罚系数",
-    "xmin": "最小值",
-    "xmax": "最大值",
-    "threshold": "阈值",
-    "code": "自定义代码",
-}
-
-_FIELD_DOCS_ZH = {
-    "r0": "初始构型的内/外半径。",
-    "length": "圆柱沿 Z 轴的长度。",
-    "seed_size": "该表面的网格种子尺寸。",
-    "num_U_ratio": "U 方向控制网格比例。",
-    "num_V_ratio": "V 方向控制网格比例。",
-    "degree": "B 样条阶次。",
-    "init_location": "表面的初始偏移位置。",
-    "maxR": "每次迭代允许的最大半径变化。",
-    "maxC": "每次迭代允许的最大控制点变化。",
-    "MaxC": "每次迭代允许的最大控制点变化。",
-    "maxFF": "每次迭代允许的最大形状因子变化。",
-    "perturbation_L": "初始缺陷波长；小于等于 0 表示不添加缺陷。",
-    "path_stl": "STL 曲面文件路径。",
-    "instance_name": "载荷作用的实体名称。",
-    "instance_name1": "第一个实体名称。",
-    "instance_name2": "第二个实体名称。",
-    "surface_name": "实体上的表面集名称。",
-    "surface_name1": "第一个实体上的表面集名称。",
-    "surface_name2": "第二个实体上的表面集名称。",
-    "set_nodes_name": "实体上的节点集名称。",
-    "rp_name": "由参考点接口创建的参考点名称。",
-    "rp_name1": "第一个参考点名称。",
-    "rp_name2": "第二个参考点名称。",
-    "rp_location": "参考点坐标。",
-    "element_name": "单元类型名称。",
-    "elementname": "材料要赋予的 Part.elems 名称；为空时选择全部 elems。",
-    "translation": "Instance 的平移向量 [tx, ty, tz]。",
-    "rotation": "Instance 的旋转指数坐标 [rx, ry, rz]。",
-    "obj_name": "被约束对象的名称。",
-    "s": "自由度编号。",
-    "obj_type": "被约束对象的类型。",
-    "penalty_threshold_h": "罚函数阈值。",
-    "mu": "剪切模量。",
-    "kappa": "体积模量。",
-    "density": "质量密度。",
-    "mumax": "最大剪切模量。",
-    "kappamax": "最大体积模量。",
-    "simp_ratio_min": "密度场允许的最小比例。",
-    "bounding_box": "设计域边界框 [xmin, xmax, ymin, ymax, zmin, zmax]。",
-    "simp_field_resolution": "密度场分辨率。",
-    "initial_ratio": "密度场初始比例。",
-    "voidpenalfactor": "空域惩罚因子。",
-    "materialpenalty": "材料惩罚指数。",
-    "fea_seed_size": "全局 Gmsh 网格种子尺寸。",
-    "mesh_order": "网格阶次。",
-    "thickness": "内表面的偏置壳层厚度。",
-    "part_name": "生成的 Part 名称；留空时使用接口注册名。",
-    "instance_name": "对应的 TorchFEA Instance 名称。",
-    "exterior_surface": "作为 Part 外表面的表面集合名称。",
-    "mesh_file": "包含网格的 Abaqus .inp 文件。",
-    "inp_part_name": "INP 文件内的 Part 名称；留空时取唯一 Part。",
-    "model_part_name": "从 TorchFEA 模型中导入的 Part 名称；留空时取唯一 Part。",
-    "model_directory": "监视 torchfea-ui 模型导出的目录。",
-    "model_filename": "目录中当前链接的 TorchFEA .npz 模型。",
-    "num_process": "FEA 求解进程数。",
-    "gpus": "GPU 编号列表；为空时使用 CPU。",
-    "task_index_list": "将载荷工况分配到进程的分组；为空时自动分配。",
-    "normalize_gradient": "是否对材料梯度进行归一化。",
-    "scale": "目标项的缩放系数。",
-    "min_distance": "表面两两之间的最小距离矩阵。",
-    "radius": "圆柱或半径约束的半径。",
-    "height": "圆柱包络高度。",
-    "bottom": "圆柱包络底部位置。",
-    "surf_idx": "参与目标或约束的表面索引。",
-    "weight": "目标项权重。",
-    "margin": "曲率约束边界余量。",
-    "margin_ratio": "曲率约束边界余量比例。",
-    "p": "惩罚指数。",
-    "penalty_scale": "惩罚项缩放系数。",
-    "volfrac_min": "允许的最小体积分数。",
-    "volfrac_max": "允许的最大体积分数。",
-    "penalty": "体积分数偏差的惩罚系数。",
-    "xmin": "允许的最小密度值。",
-    "xmax": "允许的最大密度值。",
-    "threshold": "密度阈值。",
-    "code": "在几何更新时执行的自定义代码。",
-}
-
-
-def _contains_chinese(text: str) -> bool:
-    return any("\u4e00" <= char <= "\u9fff" for char in text)
-
-
-def _key_component(text: str) -> str:
-    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", text.lower())).strip("_") or "text"
-
-
-def _field_text_key(field_key: str, kind: str, english_text: str) -> str:
-    return (
-        f"ui.schema.fields.{_key_component(field_key)}.{kind}."
-        f"{_key_component(english_text)}"
-    )
-
-
-def _catalog_label_key(category: str, item_type: str) -> str:
-    return f"ui.schema.catalog.{category}.{_key_component(item_type)}.label"
-
-
 def fld(
     key: str,
-    label: str,
+    label_key: str,
     typ: str,
     default: object = "",
-    doc: str = "",
+    doc_key: str = "",
     choices: list | None = None,
     size: int | None = None,
     minimum: float | None = None,
     maximum: float | None = None,
     ints: bool | None = None,
-    label_en: str | None = None,
-    doc_en: str | None = None,
 ) -> dict:
-    """Build a field spec dict (see module docstring for types).
-
-    ``label_en`` / ``doc_en`` identify the English message used to construct
-    stable localization keys for the field label and help text.
-    ``ints=True`` marks index-like list fields (kept as int on parse).
-    """
-    # Most schemas are keyed by backend names.  Keep those names as the
-    # English text, but provide a centralized Chinese label/tooltip whenever
-    # a field declaration did not already supply localized text.
-    label_zh = label if _contains_chinese(label) else _FIELD_LABELS_ZH.get(key, label)
-    label_en_value = (
-        label_en if label_en is not None else (label if label_zh != label else None)
-    )
-    doc_zh = doc if _contains_chinese(doc) else _FIELD_DOCS_ZH.get(key, doc)
-    doc_en_value = doc_en if doc_en is not None else (doc if doc_zh != doc else None)
-    label_text_en = label_en_value or label_zh
-    doc_text_en = doc_en_value or doc_zh
+    """Declare field metadata using explicit label and help resource keys."""
     spec = {
-        "key": key,
-        "label_key": _field_text_key(key, "label", label_text_en),
-        "type": typ,
-        "default": default,
-        "doc_key": (
-            _field_text_key(key, "help", doc_text_en) if doc_zh else ""
-        ),
-        "choices": choices,
-        "size": size,
-        "min": minimum,
-        "max": maximum,
+        "key": key, "label_key": label_key, "type": typ, "default": default,
+        "doc_key": doc_key, "choices": choices, "size": size,
+        "min": minimum, "max": maximum,
     }
     if ints is not None:
         spec["ints"] = ints
@@ -297,203 +83,196 @@ def v3(x: float = 0.0, y: float = 0.0, z: float = 0.0) -> list[float]:
 # CAD feature operations
 # --------------------------------------------------------------------------
 
-def _cad_number(key: str, label: str, default: float) -> dict:
-    return fld(key, label, "float", default, label_en=key.replace("_", " ").title())
-
-
-def _cad_reference(key: str, label: str) -> dict:
-    return fld(key, label, "combo", "", label_en=key.replace("_", " ").title())
-
-
 def _cad_position() -> list[dict]:
     return [
-        _cad_number("x", "X", 0.0),
-        _cad_number("y", "Y", 0.0),
-        _cad_number("z", "Z", 0.0),
+        fld("x", "ui.schema.fields.x.label.x", "float", 0.0),
+        fld("y", "ui.schema.fields.y.label.y", "float", 0.0),
+        fld("z", "ui.schema.fields.z.label.z", "float", 0.0),
     ]
 
 
 CAD_OPERATION_TYPES: dict[str, dict] = {
     "Box": {
+        "class_name": "Box",
         "group": "primitive",
         "kind": "box",
-        "label": "长方体",
-        "label_en": "Box",
+        "label_key": "ui.schema.catalog.cad_operation.box.label",
         "params": [
             *_cad_position(),
-            _cad_number("dx", "长度 X", 20.0),
-            _cad_number("dy", "长度 Y", 10.0),
-            _cad_number("dz", "长度 Z", 5.0),
+            fld("dx", "ui.schema.fields.dx.label.dx", "float", 20.0),
+            fld("dy", "ui.schema.fields.dy.label.dy", "float", 10.0),
+            fld("dz", "ui.schema.fields.dz.label.dz", "float", 5.0),
         ],
     },
     "Wedge": {
+        "class_name": "Wedge",
         "group": "primitive",
         "kind": "wedge",
-        "label": "楔体",
-        "label_en": "Wedge",
+        "label_key": "ui.schema.catalog.cad_operation.wedge.label",
         "params": [
             *_cad_position(),
-            _cad_number("dx", "长度 X", 20.0),
-            _cad_number("dy", "长度 Y", 10.0),
-            _cad_number("dz", "长度 Z", 5.0),
-            _cad_number("ltx", "顶部偏移 X", 0.0),
+            fld("dx", "ui.schema.fields.dx.label.dx", "float", 20.0),
+            fld("dy", "ui.schema.fields.dy.label.dy", "float", 10.0),
+            fld("dz", "ui.schema.fields.dz.label.dz", "float", 5.0),
+            fld("ltx", "ui.schema.fields.ltx.label.ltx", "float", 0.0),
         ],
     },
     "Cylinder": {
+        "class_name": "Cylinder",
         "group": "primitive",
         "kind": "cylinder",
-        "label": "圆柱",
-        "label_en": "Cylinder",
+        "label_key": "ui.schema.catalog.cad_operation.cylinder.label",
         "params": [
             *_cad_position(),
-            _cad_number("dx", "轴向 X", 0.0),
-            _cad_number("dy", "轴向 Y", 0.0),
-            _cad_number("dz", "轴向 Z", 20.0),
-            _cad_number("radius", "半径", 5.0),
+            fld("dx", "ui.schema.fields.dx.label.dx", "float", 0.0),
+            fld("dy", "ui.schema.fields.dy.label.dy", "float", 0.0),
+            fld("dz", "ui.schema.fields.dz.label.dz", "float", 20.0),
+            fld(
+                "radius", "ui.schema.fields.radius.label.radius", "float", 5.0,
+                doc_key="ui.schema.fields.radius.help.text",
+            ),
         ],
     },
     "Sphere": {
+        "class_name": "Sphere",
         "group": "primitive",
         "kind": "sphere",
-        "label": "球体",
-        "label_en": "Sphere",
-        "params": [*_cad_position(), _cad_number("radius", "半径", 5.0)],
+        "label_key": "ui.schema.catalog.cad_operation.sphere.label",
+        "params": [*_cad_position(), fld(
+            "radius", "ui.schema.fields.radius.label.radius", "float", 5.0,
+            doc_key="ui.schema.fields.radius.help.text",
+        )],
     },
     "Cone": {
+        "class_name": "Cone",
         "group": "primitive",
         "kind": "cone",
-        "label": "圆锥",
-        "label_en": "Cone",
+        "label_key": "ui.schema.catalog.cad_operation.cone.label",
         "params": [
             *_cad_position(),
-            _cad_number("dx", "轴向 X", 0.0),
-            _cad_number("dy", "轴向 Y", 0.0),
-            _cad_number("dz", "轴向 Z", 20.0),
-            _cad_number("radius1", "底部半径", 5.0),
-            _cad_number("radius2", "顶部半径", 1.0),
+            fld("dx", "ui.schema.fields.dx.label.dx", "float", 0.0),
+            fld("dy", "ui.schema.fields.dy.label.dy", "float", 0.0),
+            fld("dz", "ui.schema.fields.dz.label.dz", "float", 20.0),
+            fld("radius1", "ui.schema.fields.radius1.label.radius1", "float", 5.0),
+            fld("radius2", "ui.schema.fields.radius2.label.radius2", "float", 1.0),
         ],
     },
     "Torus": {
+        "class_name": "Torus",
         "group": "primitive",
         "kind": "torus",
-        "label": "圆环体",
-        "label_en": "Torus",
+        "label_key": "ui.schema.catalog.cad_operation.torus.label",
         "params": [
             *_cad_position(),
-            _cad_number("major_radius", "主半径", 8.0),
-            _cad_number("minor_radius", "管半径", 2.0),
+            fld("major_radius", "ui.schema.fields.major_radius.label.major_radius", "float", 8.0),
+            fld("minor_radius", "ui.schema.fields.minor_radius.label.minor_radius", "float", 2.0),
         ],
     },
     "StepImport": {
+        "class_name": "StepImport",
         "group": "import",
         "kind": "step_import",
-        "label": "导入 STEP",
-        "label_en": "Import STEP",
+        "label_key": "ui.schema.catalog.cad_operation.stepimport.label",
         "params": [
             fld(
-                "filename",
-                "STEP 文件",
-                "str",
-                "",
-                "STEP 几何以文件内容嵌入模型。",
-                label_en="STEP file",
-                doc_en="The STEP geometry is embedded in the model.",
+                "filename", "ui.schema.fields.filename.label.step_file", "str", "",
+                doc_key="ui.schema.fields.filename.help.the_step_geometry_is_embedded_in_the_model",
             )
             | {"read_only": True},
-            fld("data", "STEP 几何数据", "str", "", label_en="STEP data")
+            fld("data", "ui.schema.fields.data.label.step_data", "str", "")
             | {"hidden": True},
         ],
     },
     "Fuse": {
+        "class_name": "Fuse",
         "group": "boolean",
         "kind": "fuse",
-        "label": "融合",
-        "label_en": "Fuse",
+        "label_key": "ui.schema.catalog.cad_operation.fuse.label",
         "params": [
-            _cad_reference("object_id", "对象 ID"),
-            _cad_reference("tool_id", "工具 ID"),
+            fld("object_id", "ui.schema.fields.object_id.label.object_id", "combo", ""),
+            fld("tool_id", "ui.schema.fields.tool_id.label.tool_id", "combo", ""),
         ],
     },
     "Cut": {
+        "class_name": "Cut",
         "group": "boolean",
         "kind": "cut",
-        "label": "切除",
-        "label_en": "Cut",
+        "label_key": "ui.schema.catalog.cad_operation.cut.label",
         "params": [
-            _cad_reference("object_id", "对象 ID"),
-            _cad_reference("tool_id", "工具 ID"),
+            fld("object_id", "ui.schema.fields.object_id.label.object_id", "combo", ""),
+            fld("tool_id", "ui.schema.fields.tool_id.label.tool_id", "combo", ""),
         ],
     },
     "Intersect": {
+        "class_name": "Intersect",
         "group": "boolean",
         "kind": "intersect",
-        "label": "相交",
-        "label_en": "Intersect",
+        "label_key": "ui.schema.catalog.cad_operation.intersect.label",
         "params": [
-            _cad_reference("object_id", "对象 ID"),
-            _cad_reference("tool_id", "工具 ID"),
+            fld("object_id", "ui.schema.fields.object_id.label.object_id", "combo", ""),
+            fld("tool_id", "ui.schema.fields.tool_id.label.tool_id", "combo", ""),
         ],
     },
     "Fragment": {
+        "class_name": "Fragment",
         "group": "boolean",
         "kind": "fragment",
-        "label": "碎片分割",
-        "label_en": "Fragment",
+        "label_key": "ui.schema.catalog.cad_operation.fragment.label",
         "params": [
-            _cad_reference("object_id", "对象 ID"),
-            _cad_reference("tool_id", "工具 ID"),
+            fld("object_id", "ui.schema.fields.object_id.label.object_id", "combo", ""),
+            fld("tool_id", "ui.schema.fields.tool_id.label.tool_id", "combo", ""),
         ],
     },
     "Translate": {
+        "class_name": "Translate",
         "group": "transform",
         "kind": "translate",
-        "label": "平移",
-        "label_en": "Translate",
+        "label_key": "ui.schema.catalog.cad_operation.translate.label",
         "params": [
-            _cad_reference("input_id", "输入 ID"),
-            _cad_number("dx", "平移 X", 5.0),
-            _cad_number("dy", "平移 Y", 0.0),
-            _cad_number("dz", "平移 Z", 0.0),
+            fld("input_id", "ui.schema.fields.input_id.label.input_id", "combo", ""),
+            fld("dx", "ui.schema.fields.dx.label.dx", "float", 5.0),
+            fld("dy", "ui.schema.fields.dy.label.dy", "float", 0.0),
+            fld("dz", "ui.schema.fields.dz.label.dz", "float", 0.0),
         ],
     },
     "Rotate": {
+        "class_name": "Rotate",
         "group": "transform",
         "kind": "rotate",
-        "label": "旋转",
-        "label_en": "Rotate",
+        "label_key": "ui.schema.catalog.cad_operation.rotate.label",
         "params": [
-            _cad_reference("input_id", "输入 ID"),
+            fld("input_id", "ui.schema.fields.input_id.label.input_id", "combo", ""),
             *_cad_position(),
-            _cad_number("ax", "轴向 X", 0.0),
-            _cad_number("ay", "轴向 Y", 0.0),
-            _cad_number("az", "轴向 Z", 1.0),
-            _cad_number("angle", "角度（弧度）", 1.5707963267948966),
+            fld("ax", "ui.schema.fields.ax.label.ax", "float", 0.0),
+            fld("ay", "ui.schema.fields.ay.label.ay", "float", 0.0),
+            fld("az", "ui.schema.fields.az.label.az", "float", 1.0),
+            fld("angle", "ui.schema.fields.angle.label.angle", "float", 1.5707963267948966),
         ],
     },
     "Dilate": {
+        "class_name": "Dilate",
         "group": "transform",
         "kind": "dilate",
-        "label": "缩放",
-        "label_en": "Scale",
+        "label_key": "ui.schema.catalog.cad_operation.dilate.label",
         "params": [
-            _cad_reference("input_id", "输入 ID"),
+            fld("input_id", "ui.schema.fields.input_id.label.input_id", "combo", ""),
             *_cad_position(),
-            _cad_number("sx", "缩放 X", 1.0),
-            _cad_number("sy", "缩放 Y", 1.0),
-            _cad_number("sz", "缩放 Z", 1.0),
+            fld("sx", "ui.schema.fields.sx.label.sx", "float", 1.0),
+            fld("sy", "ui.schema.fields.sy.label.sy", "float", 1.0),
+            fld("sz", "ui.schema.fields.sz.label.sz", "float", 1.0),
         ],
     },
     "Mirror": {
+        "class_name": "Mirror",
         "group": "transform",
         "kind": "mirror",
-        "label": "镜像",
-        "label_en": "Mirror",
+        "label_key": "ui.schema.catalog.cad_operation.mirror.label",
         "params": [
-            _cad_reference("input_id", "输入 ID"),
-            _cad_number("a", "平面法向 X", 1.0),
-            _cad_number("b", "平面法向 Y", 0.0),
-            _cad_number("c", "平面法向 Z", 0.0),
-            _cad_number("d", "平面偏移", 0.0),
+            fld("input_id", "ui.schema.fields.input_id.label.input_id", "combo", ""),
+            fld("a", "ui.schema.fields.a.label.a", "float", 1.0),
+            fld("b", "ui.schema.fields.b.label.b", "float", 0.0),
+            fld("c", "ui.schema.fields.c.label.c", "float", 0.0),
+            fld("d", "ui.schema.fields.d.label.d", "float", 0.0),
         ],
     },
 }
@@ -507,183 +286,152 @@ CAD_OPERATION_TYPES: dict[str, dict] = {
 #: name -> (display label, import factory string, field specs)
 SURFACE_TYPES: dict[str, dict] = {
     "bsp_cylinder": {
-        "label": "初始构型：B样条圆柱面",
-        "label_en": "Initial configuration: B-spline cylinder",
+        "class_name": "BspSurface",
+        "label_key": "ui.schema.catalog.surface.bsp_cylinder.label",
         "factory": "BSP.initialize_cylinder",
         "params": fields_from_specs(
             [
                 fld(
-                    "r0",
-                    "Radius r0",
-                    "float",
-                    4.0,
-                    "Initial outer/inner radius.",
+                    "r0", "ui.schema.fields.r0.label.radius_r0", "float", 4.0,
+                    doc_key="ui.schema.fields.r0.help.initial_outer_inner_radius",
                     minimum=0.0,
                 ),
                 fld(
-                    "length",
-                    "Length",
-                    "float",
-                    74.0,
-                    "Cylinder length along z.",
+                    "length", "ui.schema.fields.length.label.length", "float", 74.0,
+                    doc_key="ui.schema.fields.length.help.cylinder_length_along_z",
                     minimum=0.0,
                 ),
                 fld(
-                    "seed_size",
-                    "Seed size",
-                    "float",
-                    1.0,
-                    "Mesh seed size of this surface.",
-                    minimum=1e-4,
+                    "seed_size", "ui.schema.fields.seed_size.label.seed_size", "float", 1.0,
+                    doc_key="ui.schema.fields.seed_size.help.mesh_seed_size_of_this_surface",
+                    minimum=0.0001,
                 ),
                 fld(
-                    "num_U_ratio",
-                    "num_U_ratio",
-                    "int",
-                    1,
-                    "Control grid U ratio.",
+                    "num_U_ratio", "ui.schema.fields.num_u_ratio.label.num_u_ratio", "int", 1,
+                    doc_key="ui.schema.fields.num_u_ratio.help.control_grid_u_ratio",
                     minimum=1,
                 ),
                 fld(
-                    "num_V_ratio",
-                    "num_V_ratio",
-                    "int",
-                    1,
-                    "Control grid V ratio.",
+                    "num_V_ratio", "ui.schema.fields.num_v_ratio.label.num_v_ratio", "int", 1,
+                    doc_key="ui.schema.fields.num_v_ratio.help.control_grid_v_ratio",
                     minimum=1,
                 ),
-                fld("degree", "Degree", "int", 3, "B-spline degree.", minimum=1),
                 fld(
-                    "init_location",
-                    "init_location",
-                    "vec3",
-                    v3(),
-                    "Offset of the surface.",
+                    "degree", "ui.schema.fields.degree.label.degree", "int", 3,
+                    doc_key="ui.schema.fields.degree.help.b_spline_degree",
+                    minimum=1,
                 ),
                 fld(
-                    "maxR", "maxR", "float", 0.2, "Max radius change step.", minimum=0.0
+                    "init_location", "ui.schema.fields.init_location.label.init_location", "vec3", v3(),
+                    doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
                 ),
-                fld("maxC", "maxC", "float", 1.0, "Max control change.", minimum=0.0),
                 fld(
-                    "maxFF",
-                    "maxFF",
-                    "float",
-                    0.2,
-                    "Max form-factor change.",
+                    "maxR", "ui.schema.fields.maxr.label.maxr", "float", 0.2,
+                    doc_key="ui.schema.fields.maxr.help.metric_variation_penalty",
                     minimum=0.0,
                 ),
                 fld(
-                    "perturbation_L",
-                    "perturbation_L",
-                    "float",
-                    -1.0,
-                    "Wavelength of initial imperfection (<=0 none).",
+                    "maxC", "ui.schema.fields.maxc.label.maxc", "float", 1.0,
+                    doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
+                    minimum=0.0,
+                ),
+                fld(
+                    "maxFF", "ui.schema.fields.maxff.label.maxff", "float", 0.2,
+                    doc_key="ui.schema.fields.maxff.help.nonorthogonality_penalty",
+                    minimum=0.0,
+                ),
+                fld(
+                    "perturbation_L", "ui.schema.fields.perturbation_l.label.perturbation_l", "float", -1.0,
+                    doc_key="ui.schema.fields.perturbation_l.help.wavelength_of_initial_imperfection_0_none",
                 ),
             ]
         ),
     },
     "cpgeo_cylinder": {
-        "label": "初始构型参数化圆柱面（控制点模型）",
-        "label_en": "Initial parametric cylinder (control-point model)",
+        "class_name": "CPGEOSurface",
+        "label_key": "ui.schema.catalog.surface.cpgeo_cylinder.label",
         "factory": "CPGEO.initialize_cylinder",
         "params": fields_from_specs(
             [
-                fld("r0", "Radius r0", "float", 4.0, "Initial radius.", minimum=0.0),
                 fld(
-                    "length",
-                    "Length",
-                    "float",
-                    74.0,
-                    "Cylinder length along z.",
+                    "r0", "ui.schema.fields.r0.label.radius_r0", "float", 4.0,
+                    doc_key="ui.schema.fields.r0.help.initial_radius",
                     minimum=0.0,
                 ),
                 fld(
-                    "seed_size",
-                    "Seed size",
-                    "float",
-                    1.0,
-                    "Mesh seed size.",
-                    minimum=1e-4,
-                ),
-                fld(
-                    "num_U_ratio",
-                    "num_U_ratio",
-                    "int",
-                    1,
-                    "Control grid U ratio.",
-                    minimum=1,
-                ),
-                fld(
-                    "num_V_ratio",
-                    "num_V_ratio",
-                    "int",
-                    1,
-                    "Control grid V ratio.",
-                    minimum=1,
-                ),
-                fld("degree", "Degree", "int", 3, "B-spline degree.", minimum=1),
-                fld(
-                    "init_location",
-                    "init_location",
-                    "vec3",
-                    v3(),
-                    "Offset of the surface.",
-                ),
-                fld(
-                    "maxR", "maxR", "float", 0.2, "Max radius change step.", minimum=0.0
-                ),
-                fld("MaxC", "MaxC", "float", 1.0, "Max control change.", minimum=0.0),
-                fld(
-                    "maxFF",
-                    "maxFF",
-                    "float",
-                    0.2,
-                    "Max form-factor change.",
+                    "length", "ui.schema.fields.length.label.length", "float", 74.0,
+                    doc_key="ui.schema.fields.length.help.cylinder_length_along_z",
                     minimum=0.0,
                 ),
                 fld(
-                    "perturbation_L",
-                    "perturbation_L",
-                    "float",
-                    -1.0,
-                    "Wavelength of initial imperfection (<=0 none).",
+                    "seed_size", "ui.schema.fields.seed_size.label.seed_size", "float", 1.0,
+                    doc_key="ui.schema.fields.seed_size.help.mesh_seed_size",
+                    minimum=0.0001,
+                ),
+                fld(
+                    "num_U_ratio", "ui.schema.fields.num_u_ratio.label.num_u_ratio", "int", 1,
+                    doc_key="ui.schema.fields.num_u_ratio.help.control_grid_u_ratio",
+                    minimum=1,
+                ),
+                fld(
+                    "num_V_ratio", "ui.schema.fields.num_v_ratio.label.num_v_ratio", "int", 1,
+                    doc_key="ui.schema.fields.num_v_ratio.help.control_grid_v_ratio",
+                    minimum=1,
+                ),
+                fld(
+                    "init_location", "ui.schema.fields.init_location.label.init_location", "vec3", v3(),
+                    doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
+                ),
+                fld(
+                    "maxC", "ui.schema.fields.maxc.label.maxc", "float", 1.0,
+                    doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
+                    minimum=0.0,
+                ),
+                fld(
+                    "perturbation_L", "ui.schema.fields.perturbation_l.label.perturbation_l", "float", -1.0,
+                    doc_key="ui.schema.fields.perturbation_l.help.wavelength_of_initial_imperfection_0_none",
                 ),
             ]
         ),
     },
     "cpgeo_sphere": {
-        "label": "初始构型参数化球面（控制点模型）",
-        "label_en": "Initial parametric sphere (control-point model)",
+        "class_name": "CPGEOSurface",
+        "label_key": "ui.schema.catalog.surface.cpgeo_sphere.label",
         "factory": "CPGEO.initialize_Sphere",
         "params": fields_from_specs(
             [
-                fld("r0", "Radius r0", "float", 7.0, "Initial radius.", minimum=0.0),
                 fld(
-                    "seed_size",
-                    "Seed size",
-                    "float",
-                    1.5,
-                    "Mesh seed size.",
-                    minimum=1e-4,
+                    "r0", "ui.schema.fields.r0.label.radius_r0", "float", 7.0,
+                    doc_key="ui.schema.fields.r0.help.initial_radius",
+                    minimum=0.0,
                 ),
                 fld(
-                    "init_location",
-                    "init_location",
-                    "vec3",
-                    v3(),
-                    "Center of the sphere.",
+                    "seed_size", "ui.schema.fields.seed_size.label.seed_size", "float", 1.5,
+                    doc_key="ui.schema.fields.seed_size.help.mesh_seed_size",
+                    minimum=0.0001,
                 ),
-                fld("MaxC", "MaxC", "float", 1.0, "Max control change.", minimum=0.0),
+                fld(
+                    "init_location", "ui.schema.fields.init_location.label.init_location", "vec3", v3(),
+                    doc_key="ui.schema.fields.init_location.help.center_of_the_sphere",
+                ),
+                fld(
+                    "MaxC", "ui.schema.fields.maxc.label.maxc", "float", 1.0,
+                    doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
+                    minimum=0.0,
+                ),
             ]
         ),
     },
     "fixed_stl": {
-        "label": "初始构型：固定 STL 曲面",
-        "label_en": "Initial configuration: fixed STL surface",
+        "class_name": "FixedSurface",
+        "label_key": "ui.schema.catalog.surface.fixed_stl.label",
         "factory": None,  # FixedSurface.initialize_from_stl_file(path_stl)
         "params": fields_from_specs(
             [
-                fld("path_stl", "STL file", "file", "", "Path to an STL surface."),
+                fld(
+                    "path_stl", "ui.schema.fields.path_stl.label.stl_file", "file", "",
+                    doc_key="ui.schema.fields.path_stl.help.path_to_an_stl_surface",
+                ),
             ]
         ),
     },
@@ -695,224 +443,241 @@ SURFACE_TYPES: dict[str, dict] = {
 # --------------------------------------------------------------------------
 
 
-def _surf_interfacedoc() -> str:
-    return "Surface set on the instance (auto: surface_0_All, surface_1_All, ...)."
-
-
 INTERFACE_TYPES: dict[str, dict] = {
     "Pressure": {
-        "label": "气压 (Pressure)",
-        "label_en": "Surface pressure (Pressure)",
+        "class_name": "Pressure",
+        "label_key": "ui.schema.catalog.interface.pressure.label",
         "num_values": 1,
         "name_hint": "pressure_",
         "params": [
-            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld(
-                "surface_name",
-                "Surface",
-                "combo",
-                "surface_1_All",
-                _surf_interfacedoc(),
+                "instance_name", "ui.schema.fields.instance_name.label.instance", "combo", "",
+                doc_key="ui.schema.fields.instance_name.help.torchfea_instance",
+                choices=[],
+            ),
+            fld(
+                "surface_name", "ui.schema.fields.surface_name.label.surface", "combo", "",
+                doc_key="ui.schema.fields.surface_name.help.surface_set_on_the_instance_auto_surface_0_all_surface_1_all",
                 choices=[],
             ),  # choices filled dynamically by UI
         ],
     },
     "ConcentratedForce": {
-        "label": "参考点集中力 (ConcentratedForce)",
-        "label_en": "Concentrated force at RP (ConcentratedForce)",
+        "class_name": "ConcentratedForce",
+        "label_key": "ui.schema.catalog.interface.concentratedforce.label",
         "num_values": 3,
         "name_hint": "force_",
         "params": [
             fld(
-                "rp_name",
-                "Reference point",
-                "combo",
-                "",
-                "RP created by a ReferencePoint interface.",
+                "rp_name", "ui.schema.fields.rp_name.label.reference_point", "combo", "",
+                doc_key="ui.schema.fields.rp_name.help.rp_created_by_a_referencepoint_interface",
                 choices=[],
             )
         ],
     },
     "ConcentratedMoment": {
-        "label": "参考点集中力矩 (ConcentratedMoment)",
-        "label_en": "Concentrated moment at RP (ConcentratedMoment)",
+        "class_name": "ConcentratedMoment",
+        "label_key": "ui.schema.catalog.interface.concentratedmoment.label",
         "num_values": 3,
         "name_hint": "moment_",
         "params": [
             fld(
-                "rp_name",
-                "Reference point",
-                "combo",
-                "",
-                "RP created by a ReferencePoint interface.",
+                "rp_name", "ui.schema.fields.rp_name.label.reference_point", "combo", "",
+                doc_key="ui.schema.fields.rp_name.help.rp_created_by_a_referencepoint_interface",
                 choices=[],
             )
         ],
     },
     "Bodyforce": {
-        "label": "体力 (Bodyforce)",
-        "label_en": "Body force (Bodyforce)",
+        "class_name": "BodyForce",
+        "label_key": "ui.schema.catalog.interface.bodyforce.label",
         "num_values": 3,
         "name_hint": "body_",
         "params": [
             fld(
-                "element_name",
-                "Element",
-                "combo",
-                "C3D4",
-                "",
-                choices=["C3D4", "C3D8", "C3D10", "C3D6", "C3D20"],
+                "element_name", "ui.schema.fields.element_name.label.element", "combo", "",
+                doc_key="ui.schema.fields.element_name.help.text",
+                choices=[],
             ),
-            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
+            fld(
+                "instance_name", "ui.schema.fields.instance_name.label.instance", "combo", "",
+                doc_key="ui.schema.fields.instance_name.help.torchfea_instance",
+                choices=[],
+            ),
         ],
     },
     "SpringToGround": {
-        "label": "接地弹簧 (SpringToGround)",
-        "label_en": "Spring to ground (SpringToGround)",
+        "class_name": "SpringToGround",
+        "label_key": "ui.schema.catalog.interface.springtoground.label",
         "num_values": 5,
         "name_hint": "spring_",
-        "params": [fld("rp_name", "Reference point", "combo", "", "", choices=[])],
+        "params": [fld(
+            "rp_name", "ui.schema.fields.rp_name.label.reference_point", "combo", "",
+            doc_key="ui.schema.fields.rp_name.help.text",
+            choices=[],
+        )],
     },
     "SpringBetweenRPs": {
-        "label": "参考点间弹簧 (SpringBetweenRPs)",
-        "label_en": "Spring between RPs (SpringBetweenRPs)",
+        "class_name": "SpringBetweenRPs",
+        "label_key": "ui.schema.catalog.interface.springbetweenrps.label",
         "num_values": 2,
         "name_hint": "spring_",
         "params": [
-            fld("rp_name1", "RP 1", "combo", "", "", choices=[]),
-            fld("rp_name2", "RP 2", "combo", "", "", choices=[]),
+            fld(
+                "rp_name1", "ui.schema.fields.rp_name1.label.rp_1", "combo", "",
+                doc_key="ui.schema.fields.rp_name1.help.text",
+                choices=[],
+            ),
+            fld(
+                "rp_name2", "ui.schema.fields.rp_name2.label.rp_2", "combo", "",
+                doc_key="ui.schema.fields.rp_name2.help.text",
+                choices=[],
+            ),
         ],
     },
     "PenaltyDoF": {
-        "label": "自由度罚约束 (PenaltyDoF)",
-        "label_en": "Penalty DOF constraint (PenaltyDoF)",
+        "class_name": "PenaltyDoF",
+        "label_key": "ui.schema.catalog.interface.penaltydof.label",
         "num_values": 2,
         "name_hint": "lock_",
         "params": [
-            fld("obj_name", "Object", "str", ""),
-            fld("s", "DoF", "int", 0),
             fld(
-                "obj_type",
-                "obj_type",
-                "combo",
-                "auto",
-                "",
-                choices=["auto", "node", "element", "part"],
+                "obj_name", "ui.schema.fields.obj_name.label.object", "str", "",
+                doc_key="ui.schema.fields.obj_name.help.text",
+            ),
+            fld("s", "ui.schema.fields.s.label.dof", "int", 0, doc_key="ui.schema.fields.s.help.text"),
+            fld(
+                "obj_type", "ui.schema.fields.obj_type.label.obj_type", "combo", "auto",
+                doc_key="ui.schema.fields.obj_type.help.text",
+                choices=['auto', 'instance', 'rp', 'load', 'constraint', 'boundary'],
             ),
         ],
     },
     "BoundaryCondition": {
-        "label": "位移边界条件 (BoundaryCondition)",
-        "label_en": "Displacement boundary condition (BoundaryCondition)",
+        "class_name": "BoundaryCondition",
+        "label_key": "ui.schema.catalog.interface.boundarycondition.label",
         "num_values": 0,
         "name_hint": "bc_",
         "params": [
-            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld(
-                "set_nodes_name",
-                "Node set",
-                "combo",
-                "surface_0_Bottom",
-                "",
+                "instance_name", "ui.schema.fields.instance_name.label.instance", "combo", "",
+                doc_key="ui.schema.fields.instance_name.help.torchfea_instance",
                 choices=[],
             ),
             fld(
-                "index_dof",
-                "固定自由度 index_dof",
-                "dofs",
-                [0, 1, 2],
-                "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).",
+                "set_nodes_name", "ui.schema.fields.set_nodes_name.label.node_set",
+                "combo", "",
+                doc_key="ui.schema.fields.set_nodes_name.help.text",
+                choices=[],
+            ),
+            fld(
+                "index_dof", "ui.schema.fields.index_dof.label.fixed_dofs_index_dof", "dofs", [0, 1, 2],
+                doc_key="ui.schema.fields.index_dof.help.check_dofs_to_fix_x_y_z_rx_ry_rz",
                 size=6,
-                label_en="Fixed DOFs (index_dof)",
-                doc_en="Check DOFs to fix (X, Y, Z, Rx, Ry, Rz).",
             ),
         ],
     },
     "BoundaryConditionRP": {
-        "label": "参考点边界条件 (BoundaryConditionRP)",
-        "label_en": "Boundary condition at RP (BoundaryConditionRP)",
+        "class_name": "ReferencePointBoundaryCondition",
+        "label_key": "ui.schema.catalog.interface.boundaryconditionrp.label",
         "num_values": 0,
         "name_hint": "bc_rp_",
         "params": [
-            fld("rp_name", "Reference point", "combo", "", "", choices=[]),
             fld(
-                "index_dof",
-                "固定自由度 index_dof",
-                "dofs",
-                [0, 1, 2],
-                "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz).",
+                "rp_name", "ui.schema.fields.rp_name.label.reference_point", "combo", "",
+                doc_key="ui.schema.fields.rp_name.help.text",
+                choices=[],
+            ),
+            fld(
+                "index_dof", "ui.schema.fields.index_dof.label.fixed_dofs_index_dof", "dofs", [0, 1, 2],
+                doc_key="ui.schema.fields.index_dof.help.check_dofs_to_fix_x_y_z_rx_ry_rz",
                 size=6,
-                label_en="Fixed DOFs (index_dof)",
-                doc_en="Check DOFs to fix (X, Y, Z, Rx, Ry, Rz).",
             ),
         ],
     },
     "Couple": {
-        "label": "参考点-表面耦合 (Couple)",
-        "label_en": "RP-surface coupling (Couple)",
+        "class_name": "Couple",
+        "label_key": "ui.schema.catalog.interface.couple.label",
         "num_values": 0,
         "name_hint": "couple_",
         "params": [
-            fld("rp_name", "Reference point", "combo", "", "", choices=[]),
-            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld(
-                "set_nodes_name", "Node set", "combo", "surface_0_Head", "", choices=[]
+                "rp_name", "ui.schema.fields.rp_name.label.reference_point", "combo", "",
+                doc_key="ui.schema.fields.rp_name.help.text",
+                choices=[],
+            ),
+            fld(
+                "instance_name", "ui.schema.fields.instance_name.label.instance", "combo", "",
+                doc_key="ui.schema.fields.instance_name.help.torchfea_instance",
+                choices=[],
+            ),
+            fld(
+                "set_nodes_name", "ui.schema.fields.set_nodes_name.label.node_set", "combo", "",
+                doc_key="ui.schema.fields.set_nodes_name.help.text",
+                choices=[],
             ),
         ],
     },
     "ReferencePoint": {
-        "label": "参考点 (ReferencePoint)",
-        "label_en": "Reference point (ReferencePoint)",
+        "class_name": "ReferencePoint",
+        "label_key": "ui.schema.catalog.interface.referencepoint.label",
         "num_values": 0,
         "name_hint": "RP_",
         "params": [
-            fld("rp_location", "RP location", "vec3", v3(), "Reference point position.")
+            fld(
+                "rp_location", "ui.schema.fields.rp_location.label.rp_location", "vec3", v3(),
+                doc_key="ui.schema.fields.rp_location.help.reference_point_position",
+            )
         ],
     },
     "Contact": {
-        "label": "接触对 (Contact)",
-        "label_en": "Contact pair (Contact)",
+        "class_name": "Contact",
+        "label_key": "ui.schema.catalog.interface.contact.label",
         "num_values": 0,
         "name_hint": "contact_",
         "params": [
-            fld("instance_name1", "Instance 1", "combo", "final_model", choices=[]),
             fld(
-                "surface_name1",
-                "Surface 1",
-                "combo",
-                "",
-                "可下拉选择或手输另一部件的表面集。",
+                "instance_name1", "ui.schema.fields.instance_name1.label.instance_1", "combo", "",
+                doc_key="ui.schema.fields.instance_name1.help.text",
                 choices=[],
-                doc_en="Select or type a surface set of another part.",
             ),
-            fld("instance_name2", "Instance 2", "combo", "", choices=[]),
             fld(
-                "surface_name2",
-                "Surface 2",
-                "combo",
-                "",
-                "可下拉选择或手输表面集。",
+                "surface_name1", "ui.schema.fields.surface_name1.label.surface_1", "combo", "",
+                doc_key="ui.schema.fields.surface_name1.help.select_or_type_a_surface_set_of_another_part",
                 choices=[],
-                doc_en="Select or type a surface set.",
             ),
-            fld("penalty_threshold_h", "penalty_threshold_h", "float", 3.0),
+            fld(
+                "instance_name2", "ui.schema.fields.instance_name2.label.instance_2", "combo", "",
+                doc_key="ui.schema.fields.instance_name2.help.text",
+                choices=[],
+            ),
+            fld(
+                "surface_name2", "ui.schema.fields.surface_name2.label.surface_2", "combo", "",
+                doc_key="ui.schema.fields.surface_name2.help.select_or_type_a_surface_set",
+                choices=[],
+            ),
+            fld(
+                "penalty_threshold_h", "ui.schema.fields.penalty_threshold_h.label.penalty_threshold_h",
+                "float", 3.0,
+                doc_key="ui.schema.fields.penalty_threshold_h.help.text",
+            ),
         ],
     },
     "ContactSelf": {
-        "label": "自接触 (ContactSelf)",
-        "label_en": "Self contact (ContactSelf)",
+        "class_name": "SelfContact",
+        "label_key": "ui.schema.catalog.interface.contactself.label",
         "num_values": 0,
         "name_hint": "contact_self_",
         "params": [
-            fld("instance_name", "Instance", "combo", "final_model", choices=[]),
             fld(
-                "surface_name",
-                "Surface",
-                "combo",
-                "",
-                "可下拉选择或手输表面集。",
+                "instance_name", "ui.schema.fields.instance_name.label.instance", "combo", "",
+                doc_key="ui.schema.fields.instance_name.help.torchfea_instance",
                 choices=[],
-                doc_en="Select or type a surface set.",
+            ),
+            fld(
+                "surface_name", "ui.schema.fields.surface_name.label.surface", "combo", "",
+                doc_key="ui.schema.fields.surface_name.help.select_or_type_a_surface_set",
+                choices=[],
             ),
         ],
     },
@@ -949,18 +714,24 @@ MATERIAL_MODEL_DEFAULTS: dict[str, object] = {
 }
 
 _MATERIAL_PARAMETER_FIELDS: dict[str, dict[str, object]] = {
-    "E": fld("E", "E", "float", MATERIAL_MODEL_DEFAULTS["E"]),
-    "nu": fld("nu", "nu", "float", MATERIAL_MODEL_DEFAULTS["nu"]),
-    "mu": fld("mu", "mu", "float", MATERIAL_MODEL_DEFAULTS["mu"]),
-    "kappa": fld("kappa", "kappa", "float", MATERIAL_MODEL_DEFAULTS["kappa"]),
-    "c10": fld("c10", "c10", "float", MATERIAL_MODEL_DEFAULTS["c10"]),
-    "c01": fld("c01", "c01", "float", MATERIAL_MODEL_DEFAULTS["c01"]),
-    "c1": fld("c1", "c1", "float", MATERIAL_MODEL_DEFAULTS["c1"]),
-    "c2": fld("c2", "c2", "float", MATERIAL_MODEL_DEFAULTS["c2"]),
-    "c3": fld("c3", "c3", "float", MATERIAL_MODEL_DEFAULTS["c3"]),
-    "Jm": fld("Jm", "Jm", "float", MATERIAL_MODEL_DEFAULTS["Jm"]),
-    "N": fld("N", "N", "float", MATERIAL_MODEL_DEFAULTS["N"]),
-    "alpha": fld("alpha", "alpha", "vecN", MATERIAL_MODEL_DEFAULTS["alpha"]),
+    "E": fld("E", "ui.schema.fields.e.label.e", "float", MATERIAL_MODEL_DEFAULTS['E']),
+    "nu": fld("nu", "ui.schema.fields.nu.label.nu", "float", MATERIAL_MODEL_DEFAULTS['nu']),
+    "mu": fld(
+        "mu", "ui.schema.fields.mu.label.mu", "float", MATERIAL_MODEL_DEFAULTS['mu'],
+        doc_key="ui.schema.fields.mu.help.text",
+    ),
+    "kappa": fld(
+        "kappa", "ui.schema.fields.kappa.label.kappa", "float", MATERIAL_MODEL_DEFAULTS['kappa'],
+        doc_key="ui.schema.fields.kappa.help.text",
+    ),
+    "c10": fld("c10", "ui.schema.fields.c10.label.c10", "float", MATERIAL_MODEL_DEFAULTS['c10']),
+    "c01": fld("c01", "ui.schema.fields.c01.label.c01", "float", MATERIAL_MODEL_DEFAULTS['c01']),
+    "c1": fld("c1", "ui.schema.fields.c1.label.c1", "float", MATERIAL_MODEL_DEFAULTS['c1']),
+    "c2": fld("c2", "ui.schema.fields.c2.label.c2", "float", MATERIAL_MODEL_DEFAULTS['c2']),
+    "c3": fld("c3", "ui.schema.fields.c3.label.c3", "float", MATERIAL_MODEL_DEFAULTS['c3']),
+    "Jm": fld("Jm", "ui.schema.fields.jm.label.jm", "float", MATERIAL_MODEL_DEFAULTS['Jm']),
+    "N": fld("N", "ui.schema.fields.n.label.n", "float", MATERIAL_MODEL_DEFAULTS['N']),
+    "alpha": fld("alpha", "ui.schema.fields.alpha.label.alpha", "vecN", MATERIAL_MODEL_DEFAULTS['alpha']),
 }
 
 _ALL_MATERIAL_PARAMETER_FIELDS: list[dict] = [
@@ -983,82 +754,95 @@ _ALL_MATERIAL_PARAMETER_FIELDS: list[dict] = [
 
 MATERIAL_TYPES: dict[str, dict] = {
     "HomogeneousMaterial": {
-        "label": "均质材料 (HomogeneousMaterial)",
-        "label_en": "Homogeneous material (HomogeneousMaterial)",
+        "class_name": "HomogeneousMaterial",
+        "label_key": "ui.schema.catalog.material.homogeneousmaterial.label",
         "params": [
             fld(
-                "part_name",
-                "Part",
-                "combo",
-                "final_model",
-                "Material assignment Part.",
+                "part_name", "ui.schema.fields.part_name.label.part", "combo", "",
+                doc_key="ui.schema.fields.part_name.help.material_assignment_part",
                 choices=[],
             ),
             fld(
-                "material_model",
-                "Material model",
-                "combo",
-                "NeoHookeanLnJ",
-                "TorchFEA constitutive model.",
+                "material_model", "ui.schema.fields.material_model.label.material_model",
+                "combo", "NeoHookeanLnJ",
+                doc_key="ui.schema.fields.material_model.help.torchfea_constitutive_model",
                 choices=MATERIAL_MODEL_CHOICES,
             ),
             *_ALL_MATERIAL_PARAMETER_FIELDS,
-            fld("density", "density", "float", 1.08e-9, "Mass density."),
             fld(
-                "elementname",
-                "Elems name (empty = all)",
-                "combo",
-                "",
-                "Name under Part.elems; empty assigns all elems.",
-                choices=[""],
+                "density", "ui.schema.fields.density.label.density", "float", 1.08e-09,
+                doc_key="ui.schema.fields.density.help.mass_density",
+            ),
+            fld(
+                "elementname", "ui.schema.fields.elementname.label.elems_name_empty_all", "combo", "",
+                doc_key="ui.schema.fields.elementname.help.name_under_part_elems_empty_assigns_all_elems",
+                choices=[''],
             ),
         ],
     },
     "SIMP_BSPFieldMaterials": {
-        "label": "SIMP B样条密度场材料 (SIMP_BSPFieldMaterials)",
-        "label_en": "SIMP B-spline density-field material (SIMP_BSPFieldMaterials)",
+        "class_name": "SIMP_BSPFieldMaterials",
+        "label_key": "ui.schema.catalog.material.simp_bspfieldmaterials.label",
         "design": True,
         "params": [
             fld(
-                "part_name",
-                "Design Part",
-                "combo",
-                "final_model",
-                "Part carrying the SIMP design field.",
+                "part_name", "ui.schema.fields.part_name.label.design_part", "combo", "",
+                doc_key="ui.schema.fields.part_name.help.part_carrying_the_simp_design_field",
                 choices=[],
             ),
             fld(
-                "material_model",
-                "Material model",
-                "combo",
-                "NeoHookeanLnJ",
-                "TorchFEA constitutive model.",
+                "material_model", "ui.schema.fields.material_model.label.material_model",
+                "combo", "NeoHookeanLnJ",
+                doc_key="ui.schema.fields.material_model.help.torchfea_constitutive_model",
                 choices=MATERIAL_MODEL_CHOICES,
             ),
-            fld("mumax", "mu max", "float", 10.0),
-            fld("kappamax", "kappa max", "float", 100.0),
-            *_ALL_MATERIAL_PARAMETER_FIELDS,
-            fld("simp_ratio_min", "ratio min", "float", 1e-7),
             fld(
-                "bounding_box",
-                "bounding_box",
-                "vec6",
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                "Field bounding box [xmin,xmax,ymin,ymax,zmin,zmax].",
+                "mumax", "ui.schema.fields.mumax.label.mu_max", "float", 10.0,
+                doc_key="ui.schema.fields.mumax.help.text",
             ),
-            fld("simp_field_resolution", "field resolution", "float", 0.5),
-            fld("degree", "degree", "int", 2),
-            fld("density", "density", "float", 1.08e-9),
-            fld("initial_ratio", "initial_ratio", "float", 0.5),
-            fld("voidpenalfactor", "void penal", "float", 1e-2),
-            fld("materialpenalty", "material penalty", "float", 8.0),
             fld(
-                "elementname",
-                "Elems name (empty = all)",
-                "combo",
-                "",
-                "Name under Part.elems; empty assigns all elems.",
-                choices=[""],
+                "kappamax", "ui.schema.fields.kappamax.label.kappa_max", "float", 100.0,
+                doc_key="ui.schema.fields.kappamax.help.text",
+            ),
+            *_ALL_MATERIAL_PARAMETER_FIELDS,
+            fld(
+                "simp_ratio_min", "ui.schema.fields.simp_ratio_min.label.ratio_min", "float", 1e-07,
+                doc_key="ui.schema.fields.simp_ratio_min.help.text",
+            ),
+            fld(
+                "bounding_box", "ui.schema.fields.bounding_box.label.bounding_box",
+                "vec6", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                doc_key="ui.schema.fields.bounding_box.help.field_bounding_box_xmin_xmax_ymin_ymax_zmin_zmax",
+            ),
+            fld(
+                "simp_field_resolution", "ui.schema.fields.simp_field_resolution.label.field_resolution",
+                "float", 0.5,
+                doc_key="ui.schema.fields.simp_field_resolution.help.text",
+            ),
+            fld(
+                "degree", "ui.schema.fields.degree.label.degree", "int", 2,
+                doc_key="ui.schema.fields.degree.help.b",
+            ),
+            fld(
+                "density", "ui.schema.fields.density.label.density", "float", 1.08e-09,
+                doc_key="ui.schema.fields.density.help.text",
+            ),
+            fld(
+                "initial_ratio", "ui.schema.fields.initial_ratio.label.initial_ratio", "float", 0.5,
+                doc_key="ui.schema.fields.initial_ratio.help.text",
+            ),
+            fld(
+                "voidpenalfactor", "ui.schema.fields.voidpenalfactor.label.void_penal", "float", 0.01,
+                doc_key="ui.schema.fields.voidpenalfactor.help.text",
+            ),
+            fld(
+                "materialpenalty", "ui.schema.fields.materialpenalty.label.material_penalty", "int", 8,
+                doc_key="ui.schema.fields.materialpenalty.help.text",
+            ),
+            fld(
+                "elementname", "ui.schema.fields.elementname.label.elems_name_empty_all", "combo", "",
+                doc_key="ui.schema.fields.elementname.help.name_under_part_elems_empty_assigns_all_elems",
+                choices=[''],
             ),
         ],
     },
@@ -1076,46 +860,35 @@ MATERIAL_TYPES: dict[str, dict] = {
 
 _COMMON_PART_FIELDS: list[dict] = [
     fld(
-        "part_name",
-        "Assembly Part name",
-        "str",
-        "",
-        "Part name inside the Assembly; empty uses the interface name.",
+        "part_name", "ui.schema.fields.part_name.label.assembly_part_name", "str", "",
+        doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_interface_name",
     ),
 ]
 
 
 def _exterior_surface_field(default: str) -> dict:
     return fld(
-        "exterior_surface",
-        "Exterior surface",
-        "str",
-        default,
-        "Surface set used as the Part exterior surface (empty = none).",
+        "exterior_surface", "ui.schema.fields.exterior_surface.label.exterior_surface", "str", default,
+        doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
     )
 
 
 PART_INTERFACE_TYPES: dict[str, dict] = {
-    "BoundaryPartInterface": {
-        "label": "边界曲面 Part (BoundaryPartInterface)",
-        "label_en": "Boundary-surface Part (BoundaryPartInterface)",
+    "BoundaryPart": {
+        "class_name": "BoundaryPart",
+        "design": True,
+        "label_key": "ui.schema.catalog.part_interface.boundarypartinterface.label",
         "surfaces": True,
         "params": fields_from_specs(
             [
                 fld(
-                    "fea_seed_size",
-                    "FEA seed size",
-                    "float",
-                    2.5,
-                    "Gmsh volume-mesh seed size.",
-                    minimum=1e-3,
+                    "fea_seed_size", "ui.schema.fields.fea_seed_size.label.fea_seed_size", "float", 2.5,
+                    doc_key="ui.schema.fields.fea_seed_size.help.gmsh_volume_mesh_seed_size",
+                    minimum=0.001,
                 ),
                 fld(
-                    "mesh_order",
-                    "Mesh order",
-                    "combo",
-                    1,
-                    "Element order of the generated mesh.",
+                    "mesh_order", "ui.schema.fields.mesh_order.label.mesh_order", "combo", 1,
+                    doc_key="ui.schema.fields.mesh_order.help.element_order_of_the_generated_mesh",
                     choices=[1, 2],
                 ),
                 _exterior_surface_field("surface_0_All"),
@@ -1123,66 +896,51 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
             ]
         ),
     },
-    "INPPartInterface": {
-        "label": "INP 网格 Part (INPPartInterface)",
-        "label_en": "INP mesh Part (INPPartInterface)",
+    "INPPart": {
+        "class_name": "INPPart",
+        "label_key": "ui.schema.catalog.part_interface.inppartinterface.label",
         "surfaces": False,
         "params": fields_from_specs(
             [
                 fld(
-                    "mesh_file",
-                    "INP file",
-                    "file",
-                    "",
-                    "Abaqus .inp mesh file holding the Part.",
+                    "mesh_file", "ui.schema.fields.mesh_file.label.inp_file", "file", "",
+                    doc_key="ui.schema.fields.mesh_file.help.abaqus_inp_mesh_file_holding_the_part",
                 ),
                 fld(
-                    "inp_part_name",
-                    "Part in file",
-                    "str",
-                    "",
-                    "Part name inside the .inp; empty selects the only Part.",
+                    "inp_part_name", "ui.schema.fields.inp_part_name.label.part_in_file", "str", "",
+                    doc_key="ui.schema.fields.inp_part_name.help.part_name_inside_the_inp_empty_selects_the_only_part",
                 ),
                 _exterior_surface_field(""),
                 *_COMMON_PART_FIELDS,
             ]
         ),
     },
-    "TorchFEAPartInterface": {
-        "label": "TorchFEA 模型 Part (TorchFEAPartInterface)",
-        "label_en": "TorchFEA model Part (TorchFEAPartInterface)",
+    "TorchFEAPart": {
+        "class_name": "TorchFEAPart",
+        "label_key": "ui.schema.catalog.part_interface.torchfeapartinterface.label",
         "surfaces": False,
         "params": fields_from_specs(
             [
                 fld(
-                    "model_directory",
-                    "Model directory",
-                    "dir",
-                    "",
-                    "Folder containing the exported .npz model.",
+                    "model_directory", "ui.schema.fields.model_directory.label.model_directory", "dir", "",
+                    doc_key="ui.schema.fields.model_directory.help.folder_containing_the_exported_npz_model",
                 ),
                 fld(
-                    "model_filename",
-                    "Model file",
-                    "str",
-                    "",
-                    "Exported .npz name; empty uses the newest file in the folder.",
+                    "model_filename", "ui.schema.fields.model_filename.label.model_file", "str", "",
+                    doc_key="ui.schema.fields.model_filename.help.exported_npz_name_empty_uses_the_newest_file_in_the_folder",
                 ),
                 fld(
-                    "model_part_name",
-                    "Part in model",
-                    "str",
-                    "",
-                    "Part to import from the archive; empty selects the only Part.",
+                    "model_part_name", "ui.schema.fields.model_part_name.label.part_in_model", "str", "",
+                    doc_key="ui.schema.fields.model_part_name.help.part_to_import_from_the_archive_empty_selects_the_only_part",
                 ),
                 _exterior_surface_field(""),
                 *_COMMON_PART_FIELDS,
             ]
         ),
     },
-    "BasePartInterface": {
-        "label": "自定义建模 Part (BasePartInterface)",
-        "label_en": "Custom-built Part (BasePartInterface)",
+    "BasePart": {
+        "class_name": "BasePart",
+        "label_key": "ui.schema.catalog.part_interface.basepartinterface.label",
         "surfaces": False,
         "custom_only": True,
         "params": fields_from_specs(
@@ -1192,35 +950,62 @@ PART_INTERFACE_TYPES: dict[str, dict] = {
 }
 
 
-PART_INTERFACE_TYPES["BoxPartInterface"] = {
-    "label": "长方体设计域", "label_en": "Box design domain", "surfaces": False,
+PART_INTERFACE_TYPES["BoxPart"] = {
+    "class_name": "BoxPart",
+    "label_key": "ui.schema.catalog.part_interface.boxpartinterface.label",
+    "surfaces": False,
     "params": [
-        fld("length", "长度", "float", 40., minimum=1e-3),
-        fld("height", "高度", "float", 16., minimum=1e-3),
-        fld("depth", "厚度", "float", 8., minimum=1e-3),
-        fld("mesh_size", "网格尺寸", "float", 2., minimum=1e-3),
-        fld("mesh_order", "Mesh order", "combo", 2, choices=[1, 2]),
+        fld(
+            "length", "ui.schema.fields.length.label.text", "float", 40.0,
+            doc_key="ui.schema.fields.length.help.z",
+            minimum=0.001,
+        ),
+        fld(
+            "height", "ui.schema.fields.height.label.text", "float", 16.0,
+            doc_key="ui.schema.fields.height.help.text",
+            minimum=0.001,
+        ),
+        fld(
+            "depth", "ui.schema.fields.depth.label.text", "float", 8.0,
+            doc_key="ui.schema.fields.depth.help.text", minimum=0.001,
+        ),
+        fld("mesh_size", "ui.schema.fields.mesh_size.label.text", "float", 2.0, minimum=0.001),
+        fld(
+            "mesh_order", "ui.schema.fields.mesh_order.label.mesh_order", "combo", 2,
+            doc_key="ui.schema.fields.mesh_order.help.text",
+            choices=[1, 2],
+        ),
         _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
     ],
 }
-PART_INTERFACE_TYPES["CADPartInterface"] = {
-    "label": "CAD Part", "label_en": "CAD Part", "surfaces": False,
+PART_INTERFACE_TYPES["CADPart"] = {
+    "class_name": "CADPart",
+    "label_key": "ui.schema.catalog.part_interface.cadpartinterface.label",
+    "surfaces": False,
     "params": [
-        fld("mesh_size", "网格尺寸", "float", 2., minimum=1e-3),
-        fld("mesh_order", "Mesh order", "combo", 1, choices=[1, 2]),
+        fld("mesh_size", "ui.schema.fields.mesh_size.label.text", "float", 2.0, minimum=0.001),
+        fld(
+            "mesh_order", "ui.schema.fields.mesh_order.label.mesh_order", "combo", 1,
+            doc_key="ui.schema.fields.mesh_order.help.text",
+            choices=[1, 2],
+        ),
         _exterior_surface_field("extern"), *_COMMON_PART_FIELDS,
     ],
 }
 
 
-PART_INTERFACE_TYPES["OffsetBoundaryPartInterface"] = {
-    "label": "内腔偏置 Part",
-    "label_en": "Cavity offset Part",
+PART_INTERFACE_TYPES["OffsetBoundaryPart"] = {
+    "class_name": "OffsetBoundaryPart",
+    "design": True,
+    "label_key": "ui.schema.catalog.part_interface.offsetboundarypartinterface.label",
     "surfaces": True,
     "params": [
-        *PART_INTERFACE_TYPES["BoundaryPartInterface"]["params"],
-        fld("shell_thickness", "偏置层厚度", "float", 0.5, minimum=1e-3, label_en="Offset thickness"),
-        fld("num_layers", "偏置层数", "int", 1, minimum=1, label_en="Offset layers"),
+        *PART_INTERFACE_TYPES["BoundaryPart"]["params"],
+        fld(
+            "shell_thickness", "ui.schema.fields.shell_thickness.label.offset_thickness", "float", 0.5,
+            minimum=0.001,
+        ),
+        fld("num_layers", "ui.schema.fields.num_layers.label.offset_layers", "int", 1, minimum=1),
     ],
 }
 
@@ -1230,7 +1015,7 @@ def part_interface_spec(interface_type: str) -> dict:
     try:
         return PART_INTERFACE_TYPES[interface_type]
     except KeyError as exc:
-        raise KeyError(f"Unknown geometry interface type {interface_type!r}") from exc
+        raise KeyError(localized_message("ui.errors.schemas.unknown_geometry_interface_type_value", value_0=interface_type)) from exc
 
 
 # --------------------------------------------------------------------------
@@ -1240,26 +1025,17 @@ def part_interface_spec(interface_type: str) -> dict:
 SOLVER_FIELDS: list[dict] = fields_from_specs(
     [
         fld(
-            "num_process",
-            "Processes",
-            "int",
-            4,
-            "Number of FEA solver processes.",
+            "num_process", "ui.schema.fields.num_process.label.processes", "int", 4,
+            doc_key="ui.schema.fields.num_process.help.number_of_fea_solver_processes",
             minimum=1,
         ),
         fld(
-            "gpus",
-            "GPU devices",
-            "vecN",
-            [],
-            "List of gpu ids, e.g. ['cuda:0'] or empty for cpu.",
+            "gpus", "ui.schema.fields.gpus.label.gpu_devices", "vecN", [],
+            doc_key="ui.schema.fields.gpus.help.list_of_gpu_ids_e_g_cuda_0_or_empty_for_cpu",
         ),
         fld(
-            "task_index_list",
-            "task_index_list",
-            "vecN",
-            [],
-            "Partition of load steps over processes (empty = auto).",
+            "task_index_list", "ui.schema.fields.task_index_list.label.task_index_list", "vecN", [],
+            doc_key="ui.schema.fields.task_index_list.help.partition_of_load_steps_over_processes_empty_auto",
         ),
     ]
 )
@@ -1276,106 +1052,106 @@ CODE_SLOT_KEYS = ("objective_function", "get_metrics")
 
 UPDATER_OBJECTIVES: dict[str, dict] = {
     "ShapeDerivative": {
-        "label": "结构灵敏度 (ShapeDerivative)",
-        "label_en": "Structural sensitivity (ShapeDerivative)",
+        "class_name": "ShapeDerivative",
+        "label_key": "ui.schema.catalog.updater_objective.shapederivative.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.ShapeDerivative()",
         "params": [],
     },
     "Sensitivity": {
-        "label": "材料灵敏度 (Sensitivity)",
-        "label_en": "Sensitivity (linear material-sensitivity term)",
+        "class_name": "Sensitivity",
+        "label_key": "ui.schema.catalog.updater_objective.sensitivity.label",
         "group": "materials",
         "gen": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
-        "params": [fld("normalize_gradient", "normalize_gradient", "bool", False)],
+        "params": [fld(
+            "normalize_gradient", "ui.schema.fields.normalize_gradient.label.normalize_gradient",
+            "bool", False,
+            doc_key="ui.schema.fields.normalize_gradient.help.text",
+        )],
     },
     "DensityFieldMinimize": {
-        "label": "密度场正则化 (DensityFieldMinimize)",
-        "label_en": "Density field regularization (DensityFieldMinimize)",
+        "class_name": "DensityFieldMinimize",
+        "label_key": "ui.schema.catalog.updater_objective.densityfieldminimize.label",
         "group": "materials",
         "gen": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
-        "params": [fld("scale", "scale", "float", 1e-7)],
+        "params": [fld(
+            "scale", "ui.schema.fields.scale.label.scale", "float", 1e-07,
+            doc_key="ui.schema.fields.scale.help.text",
+        )],
     },
 }
 
 _CUSTOM_SYMMETRY_CODE_FIELD = fld(
-    "code",
-    "约束函数体",
-    "code",
-    "",
-    "在 apply_surface_constraints 中执行的自定义代码。",
-    label_en="Constraint function body",
-    doc_en="Custom code executed by apply_surface_constraints.",
+    "code", "ui.schema.fields.code.label.constraint_function_body", "code", "",
+    doc_key="ui.schema.fields.code.help.custom_code_executed_by_apply_surface_constraints",
 )
 
 SURFACE_SYMMETRY_CONSTRAINTS: dict[str, dict] = {
     "BspMirror": {
-        "label": "BSP 镜面对称",
-        "label_en": "BSP mirror symmetry",
+        "class_name": "BspMirrorConstraint",
+        "label_key": "ui.schema.catalog.symmetry_constraint.bspmirror.label",
         "factory": "BSP",
         "method": "mirror",
         "params": [
             fld(
-                "plane", "对称面", "combo", "xz",
-                "支持 xz（y=0）和 xy（z=offset）。",
-                choices=["xz", "xy"],
+                "plane", "ui.schema.fields.plane.label.text", "combo", "xz",
+                doc_key="ui.schema.fields.plane.help.xz_y_0_xy_z_offset",
+                choices=['xz', 'xy'],
             ),
             fld(
-                "offset", "平面对称位置", "float", 0.0,
-                "仅 xy 对称面使用；xz 对称面的偏移必须为 0。",
+                "offset", "ui.schema.fields.offset.label.text", "float", 0.0,
+                doc_key="ui.schema.fields.offset.help.xy_xz_0",
             ),
         ],
     },
     "CPGEOMirror": {
-        "label": "CPGEO 镜面对称",
-        "label_en": "CPGEO mirror symmetry",
+        "class_name": "CPGEOMirrorConstraint",
+        "label_key": "ui.schema.catalog.symmetry_constraint.cpgeomirror.label",
         "factory": "CPGEO",
         "method": "mirror",
         "params": [
             fld(
-                "plane",
-                "对称面",
-                "combo",
-                "xz",
-                "镜像平面沿法向坐标为 offset。",
-                choices=["xy", "xz", "yz"],
+                "plane", "ui.schema.fields.plane.label.text", "combo", "xz",
+                doc_key="ui.schema.fields.plane.help.offset",
+                choices=['xy', 'xz', 'yz'],
             ),
-            fld("offset", "平面对称位置", "float", 0.0),
+            fld("offset", "ui.schema.fields.offset.label.text", "float", 0.0),
         ],
     },
     "CPGEORotation": {
-        "label": "CPGEO 旋转对称",
-        "label_en": "CPGEO rotational symmetry",
+        "class_name": "CPGEORotationalSymmetryConstraint",
+        "label_key": "ui.schema.catalog.symmetry_constraint.cpgeorotation.label",
         "factory": "CPGEO",
         "method": "rotate",
         "params": [
             fld(
-                "axis", "旋转轴", "combo", "z", "对称轴方向。",
-                choices=["x", "y", "z"],
+                "axis", "ui.schema.fields.axis.label.text", "combo", "z",
+                doc_key="ui.schema.fields.axis.help.text",
+                choices=['x', 'y', 'z'],
             ),
-            fld("order", "对称阶数", "int", 2, minimum=2),
-            fld("center", "旋转中心", "vec3", v3()),
+            fld("order", "ui.schema.fields.order.label.text", "int", 2, minimum=2),
+            fld("center", "ui.schema.fields.center.label.text", "vec3", v3()),
         ],
     },
     "BspRelation": {
-        "label": "BSP 曲面关系",
-        "label_en": "BSP surface relation",
+        "class_name": "BspSurfaceRelationConstraint",
+        "label_key": "ui.schema.catalog.symmetry_constraint.bsprelation.label",
         "factory": "BSP",
         "method": "relate",
         "related_surface": True,
-        "params": [fld("pose", "位姿 [tx, ty, tz, rx, ry, rz]", "vec6", [0.0] * 6)],
+        "params": [fld("pose", "ui.schema.fields.pose.label.tx_ty_tz_rx_ry_rz", "vec6", [0.0] * 6)],
     },
     "CPGEORelation": {
-        "label": "CPGEO 曲面关系",
-        "label_en": "CPGEO surface relation",
+        "class_name": "CPGEOSurfaceRelationConstraint",
+        "label_key": "ui.schema.catalog.symmetry_constraint.cpgeorelation.label",
         "factory": "CPGEO",
         "method": "relate",
         "related_surface": True,
-        "params": [fld("pose", "位姿 [tx, ty, tz, rx, ry, rz]", "vec6", [0.0] * 6)],
+        "params": [fld("pose", "ui.schema.fields.pose.label.tx_ty_tz_rx_ry_rz", "vec6", [0.0] * 6)],
     },
     "Custom": {
-        "label": "自定义约束",
-        "label_en": "Custom constraint",
+        "class_name": "",
+        "label_key": "ui.schema.catalog.symmetry_constraint.custom.label",
         "factory": None,
         "method": None,
         "params": [_CUSTOM_SYMMETRY_CODE_FIELD],
@@ -1384,54 +1160,75 @@ SURFACE_SYMMETRY_CONSTRAINTS: dict[str, dict] = {
 
 UPDATER_CONSTRAINTS: dict[str, dict] = {
     "Fairness": {
-        "label": "表面曲率正则化 (Fairness)",
-        "label_en": "surface-curvature regularization (Fairness)",
+        "class_name": "Fairness",
+        "label_key": "ui.schema.catalog.updater_constraint.fairness.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.Fairness()",
         "params": [],
     },
     "Distance": {
-        "label": "表面间最小距离约束 (Distance)",
-        "label_en": "minimum inter-surface distance constraint (Distance)",
+        "class_name": "Distance",
+        "label_key": "ui.schema.catalog.updater_constraint.distance.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.Distance(min_distance={min_distance})",
         "params": [
             fld(
-                "min_distance", "min_distance [[i][j]]", "mat", [[2.5, 2.5], [2.5, 2.5]]
+                "min_distance", "ui.schema.fields.min_distance.label.min_distance_i_j",
+                "mat", [[2.5, 2.5], [2.5, 2.5]],
+                doc_key="ui.schema.fields.min_distance.help.text",
             )
         ],
     },
     "Cylinder": {
-        "label": "最大圆柱包络约束 (Cylinder)",
-        "label_en": "maximum cylindrical envelope constraint (Cylinder)",
+        "class_name": "Cylinder",
+        "label_key": "ui.schema.catalog.updater_constraint.cylinder.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.boundarys.Cylinder(radius={radius}, height={height}, bottom={bottom})",
         "params": [
-            fld("radius", "radius", "float", 10.0),
-            fld("height", "height", "float", 80.0),
-            fld("bottom", "bottom", "float", 0.0),
+            fld(
+                "radius", "ui.schema.fields.radius.label.radius", "float", 10.0,
+                doc_key="ui.schema.fields.radius.help.text",
+            ),
+            fld(
+                "height", "ui.schema.fields.height.label.height", "float", 80.0,
+                doc_key="ui.schema.fields.height.help.envelope_top_z",
+            ),
+            fld(
+                "bottom", "ui.schema.fields.bottom.label.bottom", "float", 0.0,
+                doc_key="ui.schema.fields.bottom.help.text",
+            ),
         ],
     },
     "MinRadius": {
-        "label": "最小半径约束 (MinRadius)",
-        "label_en": "minimum-radius constraint (MinRadius)",
+        "class_name": "MinRadius",
+        "label_key": "ui.schema.catalog.updater_constraint.minradius.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.boundarys.MinRadius(radius={radius})",
-        "params": [fld("radius", "radius", "float", 2.0)],
+        "params": [fld(
+            "radius", "ui.schema.fields.radius.label.radius", "float", 2.0,
+            doc_key="ui.schema.fields.radius.help.text",
+        )],
     },
     "VolumeMaximization": {
-        "label": "腔体体积最大化 (VolumeMaximization)",
-        "label_en": "cavity-volume maximization (VolumeMaximization)",
+        "class_name": "VolumeMaximization",
+        "label_key": "ui.schema.catalog.updater_constraint.volumemaximization.label",
         "group": "geometry",
         "gen": "self.objectivefuncs.VolumeMaximization(surf_idx={surf_idx}, weight={weight})",
         "params": [
-            fld("surf_idx", "surf_idx", "int", 1, minimum=1),
-            fld("weight", "weight", "float", 1e-2),
+            fld(
+                "surf_idx", "ui.schema.fields.surf_idx.label.surf_idx", "int", 1,
+                doc_key="ui.schema.fields.surf_idx.help.text",
+                minimum=1,
+            ),
+            fld(
+                "weight", "ui.schema.fields.weight.label.weight", "float", 0.01,
+                doc_key="ui.schema.fields.weight.help.text",
+            ),
         ],
     },
     "InwardCurvatureRadius": {
-        "label": "内曲率半径约束 (InwardCurvatureRadius)",
-        "label_en": "inward curvature radius constraint (InwardCurvatureRadius)",
+        "class_name": "InwardCurvatureRadius",
+        "label_key": "ui.schema.catalog.updater_constraint.inwardcurvatureradius.label",
         "group": "geometry",
         "hidden": True,
         "gen": (
@@ -1439,88 +1236,109 @@ UPDATER_CONSTRAINTS: dict[str, dict] = {
             "margin={margin}, margin_ratio={margin_ratio}, p={p}, penalty_scale={penalty_scale})"
         ),
         "params": [
-            fld("margin", "margin", "float", 0.4),
-            fld("margin_ratio", "margin_ratio", "float", 0.45),
-            fld("p", "p", "int", 8, minimum=1),
-            fld("penalty_scale", "penalty_scale", "float", 1e3),
+            fld(
+                "margin", "ui.schema.fields.margin.label.margin", "float", 0.4,
+                doc_key="ui.schema.fields.margin.help.text",
+            ),
+            fld(
+                "margin_ratio", "ui.schema.fields.margin_ratio.label.margin_ratio", "float", 0.45,
+                doc_key="ui.schema.fields.margin_ratio.help.text",
+            ),
+            fld(
+                "p", "ui.schema.fields.p.label.p", "int", 8,
+                doc_key="ui.schema.fields.p.help.text",
+                minimum=1,
+            ),
+            fld(
+                "penalty_scale", "ui.schema.fields.penalty_scale.label.penalty_scale", "float", 1000.0,
+                doc_key="ui.schema.fields.penalty_scale.help.text",
+            ),
         ],
     },
     "OffsetSurfaceMinThickness": {
-        "label": "偏置后表面最小厚度约束 (OffsetSurfaceMinThickness)",
-        "label_en": "minimum thickness constraint for offset surfaces (OffsetSurfaceMinThickness)",
+        "class_name": "OffsetSurfaceMinThickness",
+        "label_key": "ui.schema.catalog.updater_constraint.offsetsurfaceminthickness.label",
         "group": "geometry",
         "hidden": True,
         "gen": "morphopt.codesign.OffsetSurfaceMinThickness(min_distance={min_distance})",
-        "params": [fld("min_distance", "min_distance", "float", 2.0)],
+        "params": [fld(
+            "min_distance", "ui.schema.fields.min_distance.label.min_distance", "float", 2.0,
+            doc_key="ui.schema.fields.min_distance.help.text",
+        )],
     },
     "VolFrac": {
-        "label": "体积分数约束 (VolFrac)",
-        "label_en": "volume-fraction band constraint (VolFrac)",
+        "class_name": "VolFrac",
+        "label_key": "ui.schema.catalog.updater_constraint.volfrac.label",
         "group": "materials",
         "gen": (
             "self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, "
             "penalty={penalty}, elementname={elementname})"
         ),
         "params": [
-            fld("volfrac_min", "volfrac_min", "float", 0.0),
-            fld("volfrac_max", "volfrac_max", "float", 0.6),
-            fld("penalty", "penalty", "float", 1e4),
             fld(
-                "elementname",
-                "Elems name",
-                "combo",
-                "",
-                "必须明确选择目标 Part.elems 名称。",
-                choices=["C3D4", "C3D8", "C3D10", "C3D6"],
+                "volfrac_min", "ui.schema.fields.volfrac_min.label.volfrac_min", "float", 0.0,
+                doc_key="ui.schema.fields.volfrac_min.help.text",
+            ),
+            fld(
+                "volfrac_max", "ui.schema.fields.volfrac_max.label.volfrac_max", "float", 0.6,
+                doc_key="ui.schema.fields.volfrac_max.help.text",
+            ),
+            fld(
+                "penalty", "ui.schema.fields.penalty.label.penalty", "float", 10000.0,
+                doc_key="ui.schema.fields.penalty.help.text",
+            ),
+            fld(
+                "elementname", "ui.schema.fields.elementname.label.elems_name", "combo", "",
+                doc_key="ui.schema.fields.elementname.help.part_elems",
+                choices=[],
             ),
         ],
     },
     "MinValue": {
-        "label": "最小密度约束 (MinValue)",
-        "label_en": "minimum density constraint (MinValue)",
+        "class_name": "MinValue",
+        "label_key": "ui.schema.catalog.updater_constraint.minvalue.label",
         "group": "materials",
         "gen": "self.objectivefuncs.boundarys.MinValue(xmin={xmin}, threshold={threshold}, p={p})",
         "params": [
-            fld("xmin", "xmin", "float", -15.0),
-            fld("threshold", "threshold", "float", 0.0),
-            fld("p", "p", "int", 2, minimum=1),
+            fld(
+                "xmin", "ui.schema.fields.xmin.label.xmin", "float", -15.0,
+                doc_key="ui.schema.fields.xmin.help.text",
+            ),
+            fld(
+                "threshold", "ui.schema.fields.threshold.label.threshold", "float", 0.0,
+                doc_key="ui.schema.fields.threshold.help.text",
+            ),
+            fld(
+                "p", "ui.schema.fields.p.label.p", "int", 2,
+                doc_key="ui.schema.fields.p.help.text",
+                minimum=1,
+            ),
         ],
     },
     "MaxValue": {
-        "label": "最大密度约束 (MaxValue)",
-        "label_en": "maximum density constraint (MaxValue)",
+        "class_name": "MaxValue",
+        "label_key": "ui.schema.catalog.updater_constraint.maxvalue.label",
         "group": "materials",
         "gen": "self.objectivefuncs.boundarys.MaxValue(xmax={xmax}, threshold={threshold}, p={p})",
         "params": [
-            fld("xmax", "xmax", "float", 15.0),
-            fld("threshold", "threshold", "float", 0.0),
-            fld("p", "p", "int", 2, minimum=1),
+            fld(
+                "xmax", "ui.schema.fields.xmax.label.xmax", "float", 15.0,
+                doc_key="ui.schema.fields.xmax.help.text",
+            ),
+            fld(
+                "threshold", "ui.schema.fields.threshold.label.threshold", "float", 0.0,
+                doc_key="ui.schema.fields.threshold.help.text",
+            ),
+            fld(
+                "p", "ui.schema.fields.p.label.p", "int", 2,
+                doc_key="ui.schema.fields.p.help.text",
+                minimum=1,
+            ),
         ],
     },
 }
 
 UPDATER_CATALOG = {"objectives": UPDATER_OBJECTIVES, "constraints": UPDATER_CONSTRAINTS}
-
-
-def _keyify_catalog_labels() -> None:
-    catalogs = {
-        "cad_operation": CAD_OPERATION_TYPES,
-        "surface": SURFACE_TYPES,
-        "interface": INTERFACE_TYPES,
-        "material": MATERIAL_TYPES,
-        "part_interface": PART_INTERFACE_TYPES,
-        "symmetry_constraint": SURFACE_SYMMETRY_CONSTRAINTS,
-        "updater_objective": UPDATER_OBJECTIVES,
-        "updater_constraint": UPDATER_CONSTRAINTS,
-    }
-    for category, catalog in catalogs.items():
-        for item_type, spec in catalog.items():
-            spec["label_key"] = _catalog_label_key(category, item_type)
-            spec.pop("label", None)
-            spec.pop("label_en", None)
-
-
-_keyify_catalog_labels()
 
 
 def symmetry_constraint_defaults(item_type: str) -> dict:
@@ -1537,7 +1355,7 @@ def symmetry_constraint(item_type: str, **overrides) -> dict:
     params.update(overrides)
     item = {"type": item_type, "params": params}
     if item_type != "Custom":
-        item["surface_index"] = 0
+        item["surface_index"] = None
     return item
 
 
@@ -1598,21 +1416,29 @@ def geometry_updater_config(
     part_name: str = "",
     max_step_iter: int = 50,
     if_update: list | None = None,
-    objective_functions: tuple = (),
-    constraints: tuple = (),
+    objective_functions: tuple | None = None,
+    constraints: tuple | None = None,
     symmetry_constraints: tuple = (),
 ) -> dict:
     """Config of one geometry sub-optimizer.
 
     ``part_name`` is the boundary part interface it updates; an empty name
     means "the only boundary part of the model".
+    New configs include ShapeDerivative and Fairness, Distance, Cylinder
+    penalties. Explicitly empty collections remain empty.
     """
     return {
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
         "if_update": list(if_update) if if_update is not None else [],
-        "objective_functions": list(objective_functions),
-        "constraints": list(constraints),
+        "objective_functions": list(objective_functions) if objective_functions is not None else [
+            updater_objective("ShapeDerivative"),
+        ],
+        "constraints": list(constraints) if constraints is not None else [
+            updater_constraint("Fairness"),
+            updater_constraint("Distance"),
+            updater_constraint("Cylinder"),
+        ],
         "symmetry_constraints": list(symmetry_constraints),
     }
 

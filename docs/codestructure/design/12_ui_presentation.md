@@ -25,7 +25,7 @@ MainWindow
 | 类 | 关键公开面 | 责任 |
 |---|---|---|
 | `MainWindow` | `current_problem`、`quickstart()`、`open_morph()`、`export_morph()`、`export_run_py()`、`set_problem()`、`goto_observer()`、`show_definition()` | 应用入口，切换定义与观察页面。 |
-| `Workbench` | `problem`、`reload()`、`refresh_code()`、`set_problem()`、`set_message()` | 编辑单个问题树、同步预览和生成代码。 |
+| `Workbench` | `problem`、`reload()`、`refresh_ui()`、`refresh_coordinator`、`set_problem()`、`set_message()` | 组合编辑页和刷新组件，准备同步后的模型上下文。 |
 | `ObserverPanel` | `ensure_loaded()`、`show_iteration()`、`reset()` | 在结果目录中切换迭代与结果视图。 |
 | `ObserverControls` | `set_definition()`、`is_running()` | 选择运行源、启动/继续/停止子进程、采集输出。 |
 
@@ -36,8 +36,9 @@ MainWindow
 | 组件 | 责任 |
 |---|---|
 | `ModelTree` | 渲染 `DefinitionNavigation` 投影；上下文菜单调用共用 `DefinitionActions`。 |
-| `DefinitionManagerEditor` | 显示被选中接口及其子项；与树共用操作入口。 |
-| `EditorPages` | 注册并绑定 `EditorRoute` 对应的 Qt 编辑页。 |
+| `DefinitionManagerEditor` | 显示被选中部件及其子项，或载荷、辅助变量、辅助函数集合的全部卡片；与树共用增删排序入口。 |
+| `CollectionHeader` / `ItemActions` | 共用集合顶部添加入口与条目右上角排序、删除控件；按钮颜色和状态来自应用主题。 |
+| `EditorPages` | 注册并绑定 `EditorRoute` 对应的 Qt 编辑页，将刷新委托给活动页。 |
 | `PropertyEditor` | 节点标题、名称与动作；字段交给共用 `ParamForm`。 |
 | `ParamForm` | 节点和参数字典共用的 schema 表单；直接绑定来源，按结构变化重建。 |
 | `TorchFEAModelEditor` | 选择/监控 `.npz` 目录，读取 `TorchFEAModelSummary`，编辑导入 Part。 |
@@ -46,10 +47,16 @@ MainWindow
 | `UpdaterEditor` | 渲染 `UpdaterSection`；目标、罚函数、对称约束共用有序项管理器。 |
 | `ObjectiveEditor` | 编辑 Jacobian 接口选择、目标代码、指标代码和模板片段。 |
 | `CodeEditor` | Python 高亮、缩进、完成和片段插入。 |
-| `HelperCodeEditor` | 独立辅助代码编辑页；通过 `HelperCodeSession` 保存与校验。 |
+| `HelperCodeEditor` | 自由代码编辑页及嵌入集合卡片的变量/函数编辑控件；通过 `HelperCodeSession` 保存与校验。 |
+| `GeneratedSourceView` | 从同步后的问题定义生成只读代码，保留滚动位置。 |
 | `TemplateInsertDialog` | 填充并验证一个 `CodeSnippet` 的参数。 |
 
-`PropertyEditor` 与专用编辑器都通过领域对象的公开变换方法执行重命名和引用修改；`Workbench._on_any_change()` 负责一次变更后的树、预览、代码与标题刷新。
+`PropertyEditor` 与专用编辑器都通过领域对象的公开变换方法执行重命名和引用修改。
+所有需要刷新的组件实现 `ui/refresh.py` 中的 `Refreshable.refresh_ui(context)`。
+`RefreshCoordinator` 合并携带变更节点的通知，先同步一次领域模型，再按注册顺序调用组件；
+各组件接收同一个 `RefreshContext`，并保留自己的选中项、滚动位置和编辑状态。
+新增、删除和排序也走这条路径；删除通知保留被删除节点，用于识别载荷或几何更新范围。
+组件异常会记录完整堆栈并显示错误，其他组件仍继续刷新。
 
 ## 定义预览：`PreviewViewer`
 
