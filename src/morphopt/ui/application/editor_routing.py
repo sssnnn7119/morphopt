@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from ..model.problem import Node, ProblemDefinition
+from ..presentation.navigation import ObjectiveItemTreeNode
 
 
 class EditorKind(Enum):
@@ -72,6 +73,8 @@ def route_editor(node: Node | None) -> EditorRoute:
         return EditorRoute(EditorKind.OPTIMIZER_OVERVIEW, node)
     if node.kind.startswith("updater_"):
         return EditorRoute(EditorKind.UPDATER, node.updater_parent, node)
+    if isinstance(node, ObjectiveItemTreeNode):
+        return EditorRoute(EditorKind.OBJECTIVE, node.objective_parent, node)
     if node.kind == "objective":
         return EditorRoute(EditorKind.OBJECTIVE, node)
     return EditorRoute(EditorKind.PROPERTIES, node)

@@ -17,16 +17,33 @@
         "params": {},
         "children": [
           {
-            "kind": "part_interface",
+            "kind": "part",
             "name": "part1",
             "params": {
               "type": "BoundaryPart",
-              "part_name": "",
               "fea_seed_size": 1.0,
               "mesh_order": 1,
-              "exterior_surface": "surface_0_All"
+              "exterior_surface": "surface_0_All",
+              "part_name": ""
             },
             "children": [
+              {
+                "kind": "instance",
+                "name": "part1-1",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              },
               {
                 "kind": "surface",
                 "name": "",
@@ -74,23 +91,6 @@
                   "perturbation_L": 10.0
                 },
                 "children": []
-              },
-              {
-                "kind": "instance",
-                "name": "part1-1",
-                "params": {
-                  "translation": [
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "rotation": [
-                    0.0,
-                    0.0,
-                    0.0
-                  ]
-                },
-                "children": []
               }
             ]
           }
@@ -102,7 +102,7 @@
         "params": {},
         "children": [
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "pressure_1",
             "params": {
               "type": "Pressure",
@@ -112,22 +112,7 @@
             "children": []
           },
           {
-            "kind": "interface",
-            "name": "bc_1",
-            "params": {
-              "type": "BoundaryCondition",
-              "instance_name": "part1-1",
-              "set_nodes_name": "surface_0_Bottom",
-              "index_dof": [
-                0,
-                1,
-                2
-              ]
-            },
-            "children": []
-          },
-          {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "RP_1",
             "params": {
               "type": "ReferencePoint",
@@ -140,13 +125,28 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "couple_1",
             "params": {
               "type": "Couple",
+              "rp_name": "RP_1",
               "instance_name": "part1-1",
-              "set_nodes_name": "surface_0_Head",
-              "rp_name": "RP_1"
+              "set_nodes_name": "surface_0_Head"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "bc_1",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "part1-1",
+              "set_nodes_name": "surface_0_Bottom",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
             },
             "children": []
           }
@@ -204,8 +204,26 @@
         "kind": "objective",
         "name": "Objective Function",
         "params": {
-          "jacobian_needed": [],
-          "_objective_function": "return self.fe_results[0].GC[-2]"
+          "objective_terms": [
+            {
+              "type": "displacement",
+              "weight": 1.0,
+              "reference_point_name": "RP_1",
+              "step_index": 0,
+              "component": "ry",
+              "direction": "maximize",
+              "target": 0.0
+            }
+          ],
+          "metrics_terms": [
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_1",
+              "step_index": 0,
+              "component": "ry"
+            }
+          ],
+          "jacobian_needed": []
         },
         "children": []
       },

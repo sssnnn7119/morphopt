@@ -120,7 +120,7 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
     if source is None:
         from .generator import generate_base_source
 
-        source = generate_base_source(problem)
+        source = generate_base_source(problem, for_class_catalog=True)
     catalog = {}
 
     def visit(body, prefix=""):

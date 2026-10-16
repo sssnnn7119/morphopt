@@ -312,9 +312,9 @@ class CodeEditor(QWidget):
     """Body-of-a-method Python editor with contextual basic completion.
 
     Completion is activated with ``Ctrl+Space`` or automatically after member
-    access / a three-character identifier.  ``completion_context`` is a model
-    slot key such as ``"_objective_function"`` or
-    ``"apply_surface_constraints"`` (the optional Part-level geometry hook).
+    access / a three-character identifier.  ``completion_context`` is a code
+    context such as ``"_objective_function"`` for a custom objective term or
+    ``"apply_surface_constraints"`` for a Part-level geometry hook.
     """
 
     focusReceived = Signal()

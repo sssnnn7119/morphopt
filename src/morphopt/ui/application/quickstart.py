@@ -229,11 +229,11 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
         return state[assembly.get_reference_point("RP_tip")._RGC_index].reshape(-1)
     ''')
     if options.method == "shapeopt":
-        step_values, objective_code, metrics_code, jacobians, updater = _shape(
+        step_values, objective_terms, metrics_code, jacobians, updater = _shape(
             problem, options, geometry, loads, materials
         )
     else:
-        step_values, objective_code, metrics_code, jacobians, updater = _topology(
+        step_values, objective_terms, metrics_code, jacobians, updater = _topology(
             options, geometry, loads, materials
         )
     problem.root.add_section(StepsNode(
@@ -242,8 +242,11 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
     ))
     problem.root.add_section(materials)
     problem.root.add_section(ObjectiveNode(name="Objective Function", params={
-        "_objective_function": objective_code,
-        "_get_metrics": metrics_code,
+        "objective_terms": objective_terms,
+        "metrics_terms": [{
+            "type": CONSTANT.UI.METRIC.TYPE_CUSTOM,
+            "body": metrics_code,
+        }],
         "jacobian_needed": jacobians,
     }))
     problem.root.add_section(SolverNode(name="Solver", params={
@@ -410,25 +413,72 @@ def _shape(p, options, geometry, loads, materials):
         step = add_pressure_case(channel_values)
         objective_records.append({"objective": objective, "step": step})
 
-    objective_lines, weighted, metrics = [], [], []
+    objective_terms, metrics = [], []
     for index, record in enumerate(objective_records):
         objective = record["objective"]
         if objective.is_workspace:
             measure = record["workspace_measure"]
-            objective_lines.append(f"workspace_value_{index} = {measure}")
-            objective_lines.append(f"loss_{index} = -workspace_value_{index}/{record['scale']!r}")
             metrics.append(record["metric"])
+            objective_terms.append({
+                "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
+                "body": f"return -{measure}/{record['scale']!r}",
+                "weight": objective.weight,
+            })
         else:
-            motion_name = f"motion_{index}"
             step = record["step"]
-            objective_lines.append(f"{motion_name} = tip_motion(self, {step})")
-            loss, metric = _shape_objective_expression(objective, index, options, motion_name, step)
-            objective_lines.append(loss)
+            motion_name = f"motion_{index}"
+            _loss, metric = _shape_objective_expression(
+                objective, index, options, motion_name, step
+            )
             metrics.append(metric.replace(motion_name, f"tip_motion(self, {step})"))
-        weighted.append(f"({objective.weight!r})*loss_{index}")
-    objective_code = "\n".join(objective_lines+["return "+" + ".join(weighted)])+"\n"
+            target = objective.target
+            if objective.kind == "bend":
+                target = math.radians(target)
+                objective_terms.append(_quickstart_displacement_term(
+                    step, "ux", target, objective.weight / target**2
+                ))
+            elif objective.kind == "extend":
+                scale = target**2
+                for component in ("ux", "uy"):
+                    objective_terms.append(_quickstart_displacement_term(
+                        step, component, 0.0, objective.weight / scale
+                    ))
+                objective_terms.append(_quickstart_displacement_term(
+                    step, "uz", target, objective.weight / scale
+                ))
+            elif objective.kind == "twist":
+                target = math.radians(target)
+                objective_terms.append(_quickstart_displacement_term(
+                    step, "rz", target, objective.weight / target**2
+                ))
+            elif objective.kind == "contact":
+                objective_terms.append({
+                    "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
+                    "body": (
+                        f"return (contact_force(self, {step}) "
+                        f"- {objective.target!r}) ** 2"
+                    ),
+                    "weight": objective.weight / objective.target**2,
+                })
+                reach = 4 * options.wall
+                objective_terms.append(_quickstart_displacement_term(
+                    step, "ux", reach,
+                    0.1 * objective.weight / reach**2,
+                ))
     metrics_code = "return ["+", ".join(metrics)+"]\n"
-    return step_values, objective_code, metrics_code, list(dict.fromkeys(jacobian_names)), updater
+    return step_values, objective_terms, metrics_code, list(dict.fromkeys(jacobian_names)), updater
+
+
+def _quickstart_displacement_term(step: int, component: str, target: float, weight: float):
+    return {
+        "type": CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT,
+        "step_index": step,
+        "reference_point_name": "RP_tip",
+        "component": component,
+        "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
+        "target": target,
+        "weight": weight,
+    }
 
 
 def _shape_objective_expression(objective, index, options, motion, step):
@@ -586,19 +636,26 @@ def _topology(options, geometry, loads, materials):
             signatures[signature] = len(steps)
             steps.append({"tip_force": [0., 0., -signature]})
         objective_steps.append(signatures[signature])
-    terms, metrics, objective_lines = [], [], []
-    for index, (objective, step) in enumerate(zip(options.objectives, objective_steps)):
-        motion = f"motion_{index}"
-        terms.append(f"({objective.weight!r})*loss_{index}")
+    objective_terms, metrics = [], []
+    for objective, step in zip(options.objectives, objective_steps):
         metrics.append(f"tip_motion(self, {step})[2]")
         if objective.kind == "stiffness":
-            lines = [f"{motion} = tip_motion(self, {step})", f"loss_{index} = -{motion}[2]/{options.total_length!r}"]
+            body = (
+                f"motion = tip_motion(self, {step})\n"
+                f"return -motion[2]/{options.total_length!r}"
+            )
+            objective_terms.append({
+                "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
+                "body": body,
+                "weight": objective.weight,
+            })
         else:
-            lines = [f"{motion} = tip_motion(self, {step})", f"loss_{index} = (({motion}[2]+{objective.target!r})/{objective.target!r}).square()"]
-        objective_lines.extend(lines)
-    objective_code = "\n".join(objective_lines+["return "+" + ".join(terms)])+"\n"
+            objective_terms.append(_quickstart_displacement_term(
+                step, "uz", -objective.target,
+                objective.weight / objective.target**2,
+            ))
     metrics_code = "return ["+", ".join(metrics)+"]\n"
-    return steps, objective_code, metrics_code, [], updater
+    return steps, objective_terms, metrics_code, [], updater
 
 
 def available_objectives(method: str) -> list[str]:

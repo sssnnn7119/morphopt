@@ -6,6 +6,7 @@ from ..i18n import localized_message
 import json
 from pathlib import Path
 
+from ...constants import CONSTANT
 from ..i18n import localization, tr
 from ..model import registry as R
 from ..model.problem import (
@@ -183,17 +184,24 @@ class SchemeTemplate:
         metrics: str | None = None,
         jacobian_needed: list | None = None,
     ) -> ObjectiveNode:
-        """Objective section: code slots + requested load Jacobian names."""
+        """Objective section with editable objective and metric terms."""
         return ObjectiveNode(
             name="Objective Function",
             params={
+                "objective_terms": [{
+                    "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
+                    "body": objective or self.default_objective_slot(),
+                    "weight": CONSTANT.UI.OBJECTIVE.DEFAULT_WEIGHT,
+                }],
+                "metrics_terms": [{
+                    "type": CONSTANT.UI.METRIC.TYPE_CUSTOM,
+                    "body": metrics or self.default_metrics_slot(),
+                }],
                 "jacobian_needed": (
                     list(jacobian_needed)
                     if jacobian_needed is not None
                     else self.default_jacobian_needed()
                 ),
-                "_objective_function": objective or self.default_objective_slot(),
-                "_get_metrics": metrics or self.default_metrics_slot(),
             },
         )
 

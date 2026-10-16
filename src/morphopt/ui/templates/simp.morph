@@ -178,8 +178,8 @@
         "name": "Objective Function",
         "params": {
           "jacobian_needed": [],
-          "_objective_function": "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\nreturn sum(instance.potential_energy(RGC=RGC)\n           for instance in self.fe.assembly._instances.values())\n",
-          "_get_metrics": "return [self.fe_results[0].GC[-2]]\n"
+          "objective_terms": [{"type": "custom_loss", "body": "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\nreturn sum(instance.potential_energy(RGC=RGC)\n           for instance in self.fe.assembly._instances.values())\n", "weight": 1.0}],
+          "metrics_terms": [{"type": "custom", "body": "return [self.fe_results[0].GC[-2]]\n"}]
         },
         "children": []
       },

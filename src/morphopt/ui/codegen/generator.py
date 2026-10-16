@@ -10,9 +10,11 @@ from ..i18n import localized_message
 
 import ast
 import keyword
+import math
 from collections.abc import Callable
 from dataclasses import fields
 
+from ...constants import CONSTANT
 from ...optcore.modelparams.materials import MaterialModels
 from ..model.modelinfo import PartSummary, TorchFEAModelSummary
 from ..model.problem import (
@@ -221,11 +223,224 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     return result
 
 
-def generate_base_source(problem: ProblemDefinition) -> str:
+def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
+    """Generate one local measurement function per ordered objective term."""
+    terms = objective.objective_terms
+    if not terms:
+        return "return 0.0"
+
+    reference_points = {
+        component.name
+        for component in problem.fea_components()
+        if component.type == "ReferencePoint" and component.name
+    }
+    steps = problem.steps
+    step_count = (
+        max(int(steps.num_steps), len(steps.step_values)) if steps is not None else 0
+    )
+    component_indices = dict(CONSTANT.UI.OBJECTIVE.DISPLACEMENT_COMPONENTS)
+    functions: list[str] = []
+    weighted_terms: list[str] = []
+    positive_weight = False
+
+    for index, term in enumerate(terms):
+        term_type = str(term.get("type") or "")
+        try:
+            weight = float(term["weight"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values")) from exc
+        if not math.isfinite(weight) or weight < 0:
+            raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values"))
+        positive_weight = positive_weight or weight > 0
+
+        function_name = f"objective_term_{index + 1}"
+        if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT:
+            direction = str(
+                term.get("direction", CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION)
+            )
+            if direction not in {
+                CONSTANT.UI.OBJECTIVE.DIRECTION_TARGET,
+                CONSTANT.UI.OBJECTIVE.DIRECTION_MAXIMIZE,
+                CONSTANT.UI.OBJECTIVE.DIRECTION_MINIMIZE,
+            }:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.objective_has_unknown_direction_value",
+                    value_0=direction,
+                ))
+            target = CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET
+            if direction == CONSTANT.UI.OBJECTIVE.DIRECTION_TARGET:
+                try:
+                    target = float(
+                        term.get("target", CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET)
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(localized_message(
+                        "ui.errors.generator.objective_term_has_invalid_values"
+                    )) from exc
+                if not math.isfinite(target):
+                    raise ValueError(localized_message(
+                        "ui.errors.generator.objective_term_has_invalid_values"
+                    ))
+            reference_point = str(term.get("reference_point_name") or "").strip()
+            component = str(term.get("component") or "")
+            try:
+                step_index = int(term["step_index"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values")) from exc
+            if reference_point not in reference_points:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.objective_references_unknown_point_value",
+                    value_0=reference_point,
+                ))
+            if not 0 <= step_index < step_count:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.objective_references_unknown_step_value",
+                    value_0=step_index,
+                ))
+            if component not in component_indices:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.objective_has_unknown_component_value",
+                    value_0=component,
+                ))
+            functions.extend([
+                f"def {function_name}() -> Any:",
+                f"    self.set_step({step_index})",
+                "    assembly = self.fe.assembly",
+                "    state = assembly._GC2RGC(",
+                f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                "    )",
+                f"    reference_point = assembly.get_reference_point({reference_point!r})",
+                "    return state[reference_point._RGC_index].reshape(-1)["
+                f"{component_indices[component]}]",
+            ])
+            if direction == CONSTANT.UI.OBJECTIVE.DIRECTION_TARGET:
+                weighted_terms.append(
+                    f"({weight!r}) * ({function_name}() - {target!r}) ** 2"
+                )
+            elif direction == CONSTANT.UI.OBJECTIVE.DIRECTION_MAXIMIZE:
+                weighted_terms.append(f"-({weight!r}) * {function_name}()")
+            else:
+                weighted_terms.append(f"({weight!r}) * {function_name}()")
+        elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
+            body = str(term.get("body") or "").strip()
+            if not body:
+                raise ValueError(localized_message("ui.errors.generator.objective_term_needs_code"))
+            try:
+                ast.parse("def _objective_term():\n" + indent_block(body, 4) + "\n")
+            except SyntaxError as exc:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.objective_term_has_invalid_code_value",
+                    value_0=exc,
+                )) from exc
+            functions.extend([
+                f"def {function_name}() -> Any:",
+                indent_block(body, 4),
+            ])
+            weighted_terms.append(f"({weight!r}) * {function_name}()")
+        else:
+            raise ValueError(localized_message(
+                "ui.errors.generator.objective_has_unknown_term_type_value",
+                value_0=term_type,
+            ))
+
+    if not positive_weight:
+        raise ValueError(localized_message("ui.errors.generator.objective_needs_positive_weight"))
+    return "\n".join([*functions, "return " + " + ".join(weighted_terms)])
+
+
+def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
+    """Generate an ordered list of displacement and custom metric functions."""
+    terms = objective.metrics_terms
+    reference_points = {
+        component.name
+        for component in problem.fea_components()
+        if component.type == "ReferencePoint" and component.name
+    }
+    steps = problem.steps
+    step_count = (
+        max(int(steps.num_steps), len(steps.step_values)) if steps is not None else 0
+    )
+    component_indices = dict(CONSTANT.UI.OBJECTIVE.DISPLACEMENT_COMPONENTS)
+    functions: list[str] = []
+    values: list[str] = []
+
+    for index, term in enumerate(terms):
+        metric_type = str(term.get("type") or "")
+        function_name = f"metric_term_{index + 1}"
+        if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
+            reference_point = str(term.get("reference_point_name") or "").strip()
+            component = str(term.get("component") or "")
+            try:
+                step_index = int(term.get("step_index"))
+            except (TypeError, ValueError):
+                continue
+            if (
+                reference_point not in reference_points
+                or not 0 <= step_index < step_count
+                or component not in component_indices
+            ):
+                # Metrics are optional. Ignore incomplete selections while the
+                # user is still configuring the objective editor.
+                continue
+            functions.extend([
+                f"def {function_name}() -> Any:",
+                f"    self.set_step({step_index})",
+                "    assembly = self.fe.assembly",
+                "    state = assembly._GC2RGC(",
+                f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                "    )",
+                f"    reference_point = assembly.get_reference_point({reference_point!r})",
+                "    return state[reference_point._RGC_index].reshape(-1)["
+                f"{component_indices[component]}]",
+            ])
+        elif metric_type == CONSTANT.UI.METRIC.TYPE_CUSTOM:
+            body = str(term.get("body") or "").strip()
+            if not body:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.metric_term_needs_code"
+                ))
+            try:
+                ast.parse("def _metric_term():\n" + indent_block(body, 4) + "\n")
+            except SyntaxError as exc:
+                raise ValueError(localized_message(
+                    "ui.errors.generator.metric_term_has_invalid_code_value",
+                    value_0=exc,
+                )) from exc
+            functions.extend([
+                f"def {function_name}() -> Any:",
+                indent_block(body, 4),
+            ])
+        else:
+            raise ValueError(localized_message(
+                "ui.errors.generator.metric_has_unknown_term_type_value",
+                value_0=metric_type,
+            ))
+        value_name = f"metric_value_{index + 1}"
+        values.extend([
+            f"{value_name} = {function_name}()",
+            f"if isinstance({value_name}, (list, tuple)):",
+            f"    metrics.extend({value_name})",
+            "else:",
+            f"    metrics.append({value_name})",
+        ])
+
+    return "\n".join([
+        *functions,
+        "metrics = []",
+        *values,
+        "return metrics",
+    ])
+
+
+def generate_base_source(
+    problem: ProblemDefinition, *, for_class_catalog: bool = False
+) -> str:
     """Return the full source of a runnable problem module (always headless).
 
     Code-launched runs never open an observer window; results are watched by
     the MorphOpt UI's in-window observer (disk polling per iteration).
+    ``for_class_catalog`` emits inert objective methods so editor class discovery
+    also works while the user is still defining objective and metric terms.
     """
     template = get_template(problem.scheme)
     L: list[str] = []
@@ -257,8 +472,12 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     # -------- ObjectiveFunction ------------------------------------------
     objective = problem.objective or ObjectiveNode()
     jac = [item.name for item in objective.jacobian_needed]
-    obj_body = objective._objective_function or template.default_objective_slot()
-    met_body = objective._get_metrics or template.default_metrics_slot()
+    if for_class_catalog:
+        obj_body = "return 0.0"
+        met_body = "return []"
+    else:
+        obj_body = _objective_function_body(objective, problem)
+        met_body = _metrics_function_body(objective, problem)
 
     a(f"    class ObjectiveFunction({CORE_BASES['objective']}):")
     a("")
@@ -267,6 +486,7 @@ def generate_base_source(problem: ProblemDefinition) -> str:
     if jac:
         a(f"            self.jacobian_needed = {jac!r}")
     a("")
+
     a("        def objective_function(self) -> Any:")
     a(indent_block(obj_body, 12))
     a("")

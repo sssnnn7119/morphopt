@@ -444,17 +444,16 @@ class MaterialsNode(Node):
 
 
 class ObjectiveNode(Node):
-    """Objective function: body code slots + requested load Jacobian names.
-
-    The code-slot bodies are stored as explicit (private) attributes
-    ``_objective_function`` / ``_get_metrics`` and exposed through the public
-    ``objective_body`` / ``metrics_body`` properties.
-    """
+    """Ordered objective and metric terms plus requested load Jacobians."""
 
     kind = KIND_OBJECTIVE
     label_key: ClassVar[str] = "ui.widgets.model_tree.container.objective"
     backend_class: ClassVar[str] = "ObjectiveFunction"
-    _FIELDS = ("jacobian_needed", "_objective_function", "_get_metrics")
+    _FIELDS = (
+        "objective_terms",
+        "metrics_terms",
+        "jacobian_needed",
+    )
 
     def __init__(
         self,
@@ -465,31 +464,20 @@ class ObjectiveNode(Node):
     ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
-        # ---- explicit typed parameters ----------------------------------
+        self.objective_terms: list[dict[str, Any]] = [
+            dict(item) for item in data.get("objective_terms", ())
+        ]
+        self.metrics_terms: list[dict[str, Any]] = [
+            dict(item) for item in data.get("metrics_terms", ())
+        ]
         self.jacobian_needed: list[FEAComponentNode | str] = list(
             data.get("jacobian_needed") or []
         )
-        self._objective_function: str | None = data.get("_objective_function")
-        self._get_metrics: str | None = data.get("_get_metrics")
-
-    @property
-    def objective_body(self) -> str:
-        return self._objective_function or ""
-
-    @objective_body.setter
-    def objective_body(self, body: str) -> None:
-        self._objective_function = str(body or "")
-
-    @property
-    def metrics_body(self) -> str:
-        return self._get_metrics or ""
-
-    @metrics_body.setter
-    def metrics_body(self, body: str) -> None:
-        self._get_metrics = str(body or "")
 
     def field_items(self) -> Iterator[tuple[str, object]]:
-        """Serialize Jacobian load-object references as their names."""
+        """Serialize objective, metric, and Jacobian selections."""
+        yield "objective_terms", self.objective_terms
+        yield "metrics_terms", self.metrics_terms
         yield (
             "jacobian_needed",
             [
@@ -497,10 +485,6 @@ class ObjectiveNode(Node):
                 for item in self.jacobian_needed
             ],
         )
-        if self._objective_function is not None:
-            yield "_objective_function", self._objective_function
-        if self._get_metrics is not None:
-            yield "_get_metrics", self._get_metrics
 
 
 class SolverNode(Node):

@@ -27,7 +27,22 @@ class _Constants:
                 DESCRIPTION_MARGINS = (16, 16, 16, 16)
 
             class HISTORY:
-                TREE_INDENTATION = 14
+                ROW_HEIGHT = 28
+                GRAPH_LEFT_MARGIN = 12
+                GRAPH_RIGHT_MARGIN = 14
+                GRAPH_TEXT_GAP = 6
+                GRAPH_LANE_SPACING = 18
+                GRAPH_LINE_WIDTH = 2
+                GRAPH_NODE_RADIUS = 4
+                GRAPH_CURRENT_NODE_RADIUS = 5
+                GRAPH_BRANCH_COLORS = (
+                    "#48a9e8",
+                    "#d08bda",
+                    "#e3a44b",
+                    "#63bd91",
+                    "#dd7373",
+                    "#8e9ee8",
+                )
 
             LANGUAGE_SELECTOR_WIDTH = 110
 
@@ -1337,6 +1352,35 @@ class _Constants:
                 MINIMUM_PROJECTED_SPAN = 1.0
                 HORIZONTAL_MARGIN = 80
                 VERTICAL_MARGIN = 110
+
+        class OBJECTIVE:
+            TYPE_DISPLACEMENT = "displacement"
+            TYPE_CUSTOM_LOSS = "custom_loss"
+            DEFAULT_TYPE = TYPE_DISPLACEMENT
+            DIRECTION_TARGET = "target"
+            DIRECTION_MAXIMIZE = "maximize"
+            DIRECTION_MINIMIZE = "minimize"
+            DEFAULT_DIRECTION = DIRECTION_TARGET
+            DISPLACEMENT_COMPONENTS = (
+                ("ux", 0),
+                ("uy", 1),
+                ("uz", 2),
+                ("rx", 3),
+                ("ry", 4),
+                ("rz", 5),
+            )
+            DEFAULT_TARGET = 0.0
+            DEFAULT_WEIGHT = 1.0
+            TARGET_MINIMUM = -1000000.0
+            TARGET_MAXIMUM = 1000000.0
+            WEIGHT_MINIMUM = 0.0
+            WEIGHT_MAXIMUM = 1000000.0
+            FIELD_DECIMALS = 6
+
+        class METRIC:
+            TYPE_DISPLACEMENT = "displacement"
+            TYPE_CUSTOM = "custom"
+            DEFAULT_TYPE = TYPE_DISPLACEMENT
 
     class KERNEL:
         class CONTROLLER:

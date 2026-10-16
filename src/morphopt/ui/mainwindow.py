@@ -4,8 +4,17 @@ from __future__ import annotations
 from copy import deepcopy
 
 import os
+from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QStackedWidget
+from PySide6.QtCore import QDir, QSize, QTimer, Qt
+from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QStackedWidget,
+    QToolButton,
+)
 
 from .model.problem import ProblemDefinition
 from .application import ProblemLibrary
@@ -75,9 +84,9 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, tr('ui.mainwindow.open_morph'), os.getcwd(),
-            tr("ui.files.morph_and_all"))
+        path = self._choose_file_path(
+            tr("ui.mainwindow.open_morph"), MORPH_SUFFIX, save=False
+        )
         if not path:
             return
         try:
@@ -92,17 +101,20 @@ class MainWindow(QMainWindow):
         )
 
     def export_morph(self) -> None:
-        if self._workbench is not None:
-            self._workbench.flush_edits()
-        problem = self.current_problem()
-        if problem is None:
+        workbench = self._workbench
+        if workbench is None:
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, tr('ui.mainwindow.export_morph'), os.getcwd(),
-            f"{problem.label}{MORPH_SUFFIX}", tr("ui.files.morph"))
+        workbench.flush_edits()
+        problem = workbench.problem
+        path = self._choose_file_path(
+            tr("ui.mainwindow.export_morph"),
+            MORPH_SUFFIX,
+            save=True,
+            label=problem.label,
+        )
         if path:
             out = ProblemLibrary.save(problem, path)
-            self._workbench.mark_saved()
+            workbench.mark_saved()
             self.statusBar().showMessage(
                 tr('ui.mainwindow.exported') + out,
                 CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
@@ -110,20 +122,166 @@ class MainWindow(QMainWindow):
 
     def export_run_py(self) -> None:
         """Generate the runnable job .py from the serialized .morph model."""
-        if self._workbench is not None:
-            self._workbench.flush_edits()
-        problem = self.current_problem()
-        if problem is None:
+        workbench = self._workbench
+        if workbench is None:
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, tr('ui.mainwindow.export_runnable_py'),
-            problem.label + ".py", tr("ui.files.python"))
+        workbench.flush_edits()
+        problem = workbench.problem
+        path = self._choose_file_path(
+            tr("ui.mainwindow.export_runnable_py"),
+            ".py",
+            save=True,
+            label=problem.label,
+        )
         if path:
             ProblemLibrary.export_python(problem, path)
             self.statusBar().showMessage(
                 tr('ui.mainwindow.exported_runnable_script') + path,
                 CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
             )
+
+    def _choose_file_path(
+        self, title: str, suffix: str, *, save: bool, label: str = ""
+    ) -> str:
+        """Show a consistently styled open or save dialog for one file type."""
+        dialog = QFileDialog(self, title, os.getcwd())
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, save)
+        dialog.setAcceptMode(
+            QFileDialog.AcceptMode.AcceptSave
+            if save
+            else QFileDialog.AcceptMode.AcceptOpen
+        )
+        dialog.setFileMode(
+            QFileDialog.FileMode.AnyFile
+            if save
+            else QFileDialog.FileMode.ExistingFile
+        )
+        dialog.setFilter(
+            QDir.Filter.AllDirs | QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
+        )
+        file_filter = (
+            tr("ui.files.morph")
+            if suffix.lower() == MORPH_SUFFIX.lower()
+            else tr("ui.files.python")
+        )
+        dialog.setNameFilter(file_filter)
+        if save:
+            dialog.setDefaultSuffix(suffix.lstrip("."))
+            dialog.selectFile(self._export_filename(label, suffix))
+        QTimer.singleShot(0, lambda: self._set_file_dialog_icons(dialog))
+        if dialog.exec() != QFileDialog.DialogCode.Accepted:
+            return ""
+
+        selected = dialog.selectedFiles()
+        if not selected:
+            return ""
+        path = Path(selected[0])
+        if save and not path.name.lower().endswith(suffix.lower()):
+            path = path.with_name(path.name + suffix)
+        if save and path.exists() and not self._confirm_overwrite(path):
+            return ""
+        return str(path)
+
+    def _confirm_overwrite(self, path: Path) -> bool:
+        """Ask for overwrite confirmation using the active UI language."""
+        message_box = QMessageBox(self)
+        message_box.setIcon(QMessageBox.Icon.Warning)
+        message_box.setWindowTitle(tr("ui.mainwindow.overwrite_confirmation"))
+        message_box.setText(
+            tr("ui.mainwindow.overwrite_existing_file_value", value_0=path.name)
+        )
+        replace_button = message_box.addButton(
+            tr("ui.mainwindow.overwrite_yes"), QMessageBox.ButtonRole.YesRole
+        )
+        cancel_button = message_box.addButton(
+            tr("ui.mainwindow.overwrite_no"), QMessageBox.ButtonRole.NoRole
+        )
+        message_box.setDefaultButton(cancel_button)
+        message_box.setEscapeButton(cancel_button)
+        message_box.exec()
+        return message_box.clickedButton() is replace_button
+
+    @staticmethod
+    def _set_file_dialog_icons(dialog: QFileDialog) -> None:
+        """Draw visible navigation icons instead of relying on the desktop theme."""
+        icons = {
+            "backButton": "back",
+            "forwardButton": "forward",
+            "toParentButton": "up",
+            "newFolderButton": "new_folder",
+            "listModeButton": "list",
+            "detailModeButton": "details",
+        }
+        for button in dialog.findChildren(QToolButton):
+            name = icons.get(button.objectName())
+            if name is None:
+                continue
+
+            pixmap = QPixmap(24, 24)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(
+                QPen(
+                    Qt.GlobalColor.white,
+                    2.0,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
+            )
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            if name == "back":
+                painter.drawLine(15, 5, 8, 12)
+                painter.drawLine(8, 12, 15, 19)
+                painter.drawLine(8, 12, 21, 12)
+            elif name == "forward":
+                painter.drawLine(9, 5, 16, 12)
+                painter.drawLine(16, 12, 9, 19)
+                painter.drawLine(3, 12, 16, 12)
+            elif name == "up":
+                painter.drawLine(12, 20, 12, 7)
+                painter.drawLine(7, 12, 12, 7)
+                painter.drawLine(12, 7, 17, 12)
+            elif name in {"new_folder", "list", "details"}:
+                if name == "new_folder":
+                    painter.drawLine(3, 7, 9, 7)
+                    painter.drawLine(9, 7, 11, 10)
+                    painter.drawLine(11, 10, 21, 10)
+                    painter.drawLine(21, 10, 21, 19)
+                    painter.drawLine(21, 19, 3, 19)
+                    painter.drawLine(3, 19, 3, 7)
+                    painter.drawLine(12, 12, 12, 17)
+                    painter.drawLine(9, 14, 15, 14)
+                elif name == "list":
+                    for y in (6, 12, 18):
+                        painter.drawEllipse(3, y - 1, 2, 2)
+                        painter.drawLine(9, y, 21, y)
+                else:
+                    painter.drawRect(3, 4, 18, 16)
+                    painter.drawLine(3, 10, 21, 10)
+                    painter.drawLine(3, 15, 21, 15)
+                    painter.drawLine(9, 4, 9, 20)
+            painter.end()
+            button.setIcon(QIcon(pixmap))
+            button.setIconSize(QSize(20, 20))
+            button.setStyleSheet(
+                "QToolButton { padding: 2px; min-width: 30px; min-height: 30px; }"
+            )
+
+    @staticmethod
+    def _export_filename(label: str, suffix: str) -> str:
+        """Create the suggested basename used by the save dialog."""
+        stem = (label or "").strip()
+        if stem.lower().endswith(suffix.lower()):
+            stem = stem[: -len(suffix)]
+        invalid = '<>:/\\|?*'
+        stem = "".join(
+            "_" if character in invalid or ord(character) < 32 else character
+            for character in stem
+        ).strip(" .")
+        return f"{stem or 'Untitled'}{suffix}"
 
     # ------------------------------------------------------------- problem
     def set_problem(self, problem: ProblemDefinition) -> None:

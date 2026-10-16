@@ -57,7 +57,7 @@ from .model.problem import (
 )
 from .presentation.edit_history import edit_description
 from .presentation.labels import node_title
-from .presentation.navigation import node_at_path, node_path
+from .presentation.navigation import ObjectiveItemTreeNode, node_at_path, node_path
 from .refresh import Refreshable, RefreshContext, RefreshCoordinator
 from .schemes.base import scheme_label
 from .widgets.collection_controls import CollectionHeader
@@ -297,6 +297,7 @@ class Workbench(QWidget):
         ):
             editor.activated.connect(self._on_editor_activated)
         self.objective_editor = ObjectiveEditor(stack)
+        self.objective_editor.activated.connect(self._on_editor_activated)
         self.custom_class_editor = CustomClassEditor(stack)
         self.custom_class_overview = CustomClassOverview(self.actions, stack)
         self.custom_class_overview.nodeSelected.connect(self._on_node_selected)
@@ -559,7 +560,14 @@ class Workbench(QWidget):
         self.pages.register(
             EditorKind.OBJECTIVE,
             self.objective_editor,
-            lambda route, problem: self.objective_editor.set_problem(problem),
+            lambda route, problem: self.objective_editor.set_problem(
+                problem,
+                (
+                    route.focus
+                    if isinstance(route.focus, ObjectiveItemTreeNode)
+                    else None
+                ),
+            ),
             changed=self.objective_editor.changed,
             refreshable=self.objective_editor,
         )
@@ -794,7 +802,11 @@ class Workbench(QWidget):
                 and self._text_edit_key == id(focus)
                 else None
             )
-            target = node.name if node is not None else self.problem.label
+            target = (
+                (node.name or node_title(self.problem, node))
+                if node is not None
+                else self.problem.label
+            )
             self.session.record_edit(
                 target,
                 selection=node_path(self.problem, self._last_selected),

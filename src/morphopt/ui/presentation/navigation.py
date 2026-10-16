@@ -1,9 +1,11 @@
 """Transient navigation handles; they are never serialized in a definition."""
 from __future__ import annotations
 
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from dataclasses import dataclass, field
-from ..model.problem import Node, ProblemDefinition, UpdaterNode
+from typing import Literal
+
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
+from ..model.problem import Node, ObjectiveNode, ProblemDefinition, UpdaterNode
 from ..i18n import tr
 from .labels import container_title, node_title, updater_group_title
 
@@ -117,6 +119,24 @@ class UpdaterItemTreeNode(UpdaterTreeNode):
         return "constraints"
 
 
+class ObjectiveItemTreeNode(Node):
+    """Navigation handle for one objective term or optimizer metric."""
+
+    def __init__(
+        self,
+        objective: ObjectiveNode,
+        category: Literal["objective", "metric"],
+        index: int,
+        item: dict,
+    ) -> None:
+        kind = "objective_term" if category == "objective" else "metric_term"
+        super().__init__(kind=kind, name="")
+        self.objective_parent: ObjectiveNode = objective
+        self.category = category
+        self.index = index
+        self.item = item
+
+
 def node_key(node: Node | None):
     """Stable identity for transient Params/updater entries across rebuilds."""
     if node is None:
@@ -129,6 +149,8 @@ def node_key(node: Node | None):
         "new_classes_group", "override_classes_group",
     }:
         return (node.kind,)
+    if isinstance(node, ObjectiveItemTreeNode):
+        return (node.kind, id(node.objective_parent), node.index)
     if isinstance(node, UpdaterItemTreeNode):
         return ("updater_item", id(node.updater_parent), node.group, node.config_index, id(node.item))
     if isinstance(node, UpdaterTreeNode):
@@ -222,7 +244,25 @@ class DefinitionNavigation:
             updater = self.entry(problem.updater, bold=True)
             controller.children.append(updater)
             if problem.objective is not None:
-                updater.children.append(self.entry(problem.objective, bold=True))
+                objective_children = [
+                    self.entry(
+                        ObjectiveItemTreeNode(
+                            problem.objective, "objective", index, item
+                        )
+                    )
+                    for index, item in enumerate(problem.objective.objective_terms)
+                ]
+                objective_children.extend(
+                    self.entry(
+                        ObjectiveItemTreeNode(
+                            problem.objective, "metric", index, item
+                        )
+                    )
+                    for index, item in enumerate(problem.objective.metrics_terms)
+                )
+                updater.children.append(
+                    self.entry(problem.objective, bold=True, children=objective_children)
+                )
             for kind, configs, groups in (
                 ("geometry", problem.updater.geometry, ("geometry_objectives", "geometry_symmetry", "geometry_penalty")),
                 ("materials", problem.updater.materials, ("materials_objectives", "materials_penalty")),

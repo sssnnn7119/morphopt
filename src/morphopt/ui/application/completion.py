@@ -71,9 +71,10 @@ def completion_items(slot_key: str,
                      ) -> list[CompletionItem]:
     """Return completions appropriate for one hand-written code slot.
 
-    ``slot_key`` intentionally accepts both model storage names (for example
-    ``"_objective_function"``) and generated method names.  Candidate labels
-    remain deterministic; model-derived entries are appended in tree order.
+    ``slot_key`` intentionally accepts editor contexts (for example
+    ``"_objective_function"`` for custom objective code) and generated method
+    names. Candidate labels remain deterministic; model-derived entries are
+    appended in tree order.
     """
     key = slot_key.lstrip("_")
     items = list(_PYTHON_ITEMS)

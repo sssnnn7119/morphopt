@@ -27,7 +27,7 @@ from ..model.registry import (
 )
 
 if TYPE_CHECKING:
-    from .navigation import UpdaterItemTreeNode, UpdaterTreeNode
+    from .navigation import ObjectiveItemTreeNode, UpdaterItemTreeNode, UpdaterTreeNode
 
 
 CONTAINER_TITLE_KEYS = {
@@ -193,6 +193,29 @@ def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
 
 def node_title(problem: ProblemDefinition | None, node: Node) -> str:
     """Canonical object title, including the selected custom class."""
+    if node.kind == "objective_term":
+        objective_item = cast("ObjectiveItemTreeNode", node)
+        term_type = objective_item.item.get("type")
+        label_key = {
+            "displacement": "displacement_term",
+            "custom_loss": "custom_loss_term",
+        }.get(term_type, "objective_term")
+        return tr(
+            "ui.widgets.objective_editor.tree_objective_entry",
+            value_0=objective_item.index + 1,
+            value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
+        )
+    if node.kind == "metric_term":
+        objective_item = cast("ObjectiveItemTreeNode", node)
+        label_key = {
+            "displacement": "displacement_metric",
+            "custom": "custom_metric",
+        }.get(objective_item.item.get("type"), "metric_term")
+        return tr(
+            "ui.widgets.objective_editor.tree_metric_entry",
+            value_0=objective_item.index + 1,
+            value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
+        )
     if isinstance(node, PartNode):
         return part_title_text(node)
     if isinstance(node, InstanceNode):
