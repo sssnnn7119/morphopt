@@ -43,4 +43,7 @@ addopts = "-ra"
 extend-select = ["RUF022"]
 
 [tool.setuptools.package-data]
-"morphopt.ui" = ["templates/*.morph", "templates/*.npz", "locales/*.json"]
+"morphopt.ui" = [
+    "locales/*.json",
+    "theme/styles/*.qss",
+]

@@ -1,13 +1,9 @@
-"""File-backed optimization templates and their registry."""
+"""Python-defined optimization scheme policies."""
 
 from __future__ import annotations
-from ..i18n import localized_message
-
-import json
-from pathlib import Path
 
 from ...constants import CONSTANT
-from ..i18n import localization, tr
+from ..i18n import localized_message, localization, tr
 from ..model import registry as R
 from ..model.problem import (
     GeometryNode,
@@ -28,13 +24,10 @@ from .snippets import CodeSnippet, shared_fea_snippets
 
 
 class SchemeTemplate:
-    """Describes one optimization scheme for the UI.
+    """Describes shared factories and policies for one optimization scheme.
 
-    A template is the single source of truth for *one* task-tree shape: it
-    declares starter data (geometry title, default material type and code-slot
-    defaults) and builds a
-    fully-populated :class:`ProblemDefinition` out of the typed task-tree
-    nodes via the shared ``make_*`` section builders below.
+    Built-in schemes keep policy in Python and use typed task-tree nodes with
+    the shared ``make_*`` factories.
     """
 
     scheme: str = ""
@@ -106,7 +99,7 @@ class SchemeTemplate:
 
     # ------------------------------------------------------ section builders
     # Each ``make_*`` constructs ONE explicit top-level section of the task
-    # tree.  Scheme templates only *assemble* these (never hand-roll dicts),
+    # tree.  Scheme policies only *assemble* these (never hand-roll dicts),
     # so all schemes share identical structure and default population.
     def make_geometry(self, name: str | None = None) -> GeometryNode:
         """Geometry section: an empty container for Part definitions."""
@@ -126,7 +119,7 @@ class SchemeTemplate:
     def available_geometry_types(self) -> tuple[str, ...]:
         """Return every Part type enabled in the UI.
 
-        Templates choose an initial model only.  The Part types that can be
+        Quickstart chooses an initial model only. The Part types that can be
         combined into that model are independent of the starter template.
         """
         return tuple(
@@ -253,55 +246,70 @@ class SchemeTemplate:
         return "pass\n"
 
 
-class MorphTemplate(SchemeTemplate):
-    """Optimization template loaded from one ``ui/templates/*.morph`` file.
+class BuiltinSchemeTemplate(SchemeTemplate):
+    """Python-defined scheme policy for an optimization method.
 
-    The file is an ordinary problem definition plus a small top-level
-    ``template`` mapping.  This keeps the starter tree editable in the same
-    format as user projects while making new templates discoverable without
-    adding Python registration code.
+    Quickstart now owns starter-model construction. These built-ins provide
+    the scheme-specific defaults still needed by editors and code generation.
     """
 
-    def __init__(self, path: Path, data: dict) -> None:
-        meta = dict(data.get("template") or {})
-        self.path = path
-        self.scheme = str(data.get("scheme") or meta.get("id") or path.stem)
-        self.label_key = str(meta["label_key"])
-        self.MATERIAL_TYPE = str(meta.get("material_type") or "")
-        self.BODY_NAME = str(meta.get("body_name") or "body")
-        self._blank_component_fields = tuple(
-            meta.get("blank_component_fields")
-            or (
-                "instance_name",
-                "instance_name1",
-                "instance_name2",
-                "surface_name",
-                "surface_name1",
-                "surface_name2",
-                "set_nodes_name",
-            )
-        )
-        self._objective_slot = meta.get("default_objective_slot")
-        self._metrics_slot = meta.get("default_metrics_slot")
-        self._problem = ProblemDefinition.from_dict(data)
+    def __init__(
+        self,
+        scheme: str,
+        label_key: str,
+        material_type: str,
+        body_name: str = "body",
+        quickstart_method: str | None = "shapeopt",
+        objective_slot: str | None = None,
+        metrics_slot: str | None = None,
+    ) -> None:
+        self.scheme = scheme
+        self.label_key = label_key
+        self.MATERIAL_TYPE = material_type
+        self.BODY_NAME = body_name
+        self._quickstart_method = quickstart_method
+        self._objective_slot = objective_slot
+        self._metrics_slot = metrics_slot
+
+    @property
+    def has_starter(self) -> bool:
+        return self._quickstart_method is not None
 
     def create_problem(self, label: str) -> ProblemDefinition:
-        """Clone the file tree so each newly selected template is isolated."""
-        problem = ProblemDefinition.from_dict(self._problem.to_dict())
+        """Create a starter definition through the current Quickstart builder."""
+        if self._quickstart_method is None:
+            raise ValueError(
+                localized_message(
+                    "ui.errors.base.no_builtin_starter_for_scheme_value",
+                    value_0=self.scheme,
+                )
+            )
+        from ..application.quickstart import QuickstartOptions, build_quickstart
+
+        options = QuickstartOptions.for_method(self._quickstart_method)
+        options.label = label
+        problem = build_quickstart(options)
         problem.scheme = self.scheme
-        problem.label = label
-        problem.root.name = label
         return problem
 
     def build_root(self) -> Node:
-        return Node.from_dict(self._problem.root.to_dict())
+        return self.create_problem(f"{self.scheme}_untitled").root
 
     def make_component(
         self, component_type: str, name: str | None = None, **overrides
     ) -> FEAComponentNode:
-        spec = R.LOAD_TYPES[component_type]
-        for field in spec.fields:
-            if field.key in self._blank_component_fields:
+        """Keep target references empty until the user chooses a target."""
+        blank_fields = {
+            "instance_name",
+            "instance_name1",
+            "instance_name2",
+            "surface_name",
+            "surface_name1",
+            "surface_name2",
+            "set_nodes_name",
+        }
+        for field in R.LOAD_TYPES[component_type].fields:
+            if field.key in blank_fields:
                 overrides.setdefault(field.key, "")
         return super().make_component(component_type, name=name, **overrides)
 
@@ -311,41 +319,62 @@ class MorphTemplate(SchemeTemplate):
     def default_metrics_slot(self) -> str:
         return self._metrics_slot or super().default_metrics_slot()
 
-#: Registry name -> template instance.  It is built lazily so importing the
-#: data model never scans the package filesystem unnecessarily.
-SCHEME_REGISTRY: dict[str, SchemeTemplate] = {}
-TEMPLATE_DIRECTORY = Path(__file__).resolve().parents[1] / "templates"
-HIDDEN_TEMPLATE_IDS = {"codesign"}
 
+BUILTIN_SCHEMES = (
+    BuiltinSchemeTemplate(
+        scheme="shapeopt",
+        label_key="ui.templates.shapeopt.label",
+        material_type="HomogeneousMaterial",
+        body_name="body",
+        quickstart_method="shapeopt",
+        objective_slot="return self.fe_results[0].GC[-2]\n",
+        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+    ),
+    BuiltinSchemeTemplate(
+        scheme="simp",
+        label_key="ui.templates.simp.label",
+        material_type="SIMP_BSPFieldMaterials",
+        body_name="body",
+        quickstart_method="simp",
+        objective_slot=(
+            "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\n"
+            "return sum(instance.potential_energy(RGC=RGC)\n"
+            "           for instance in self.fe.assembly._instances.values())\n"
+        ),
+        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+    ),
+)
 
-def _build_registry() -> None:
-    if SCHEME_REGISTRY:
-        return
-    if not TEMPLATE_DIRECTORY.is_dir():
-        raise FileNotFoundError(
-            localized_message("ui.errors.base.morphopt_template_directory_does_not_exist_value", value_0=TEMPLATE_DIRECTORY)
-        )
-    for path in sorted(TEMPLATE_DIRECTORY.glob("*.morph")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(localized_message("ui.errors.base.invalid_morphopt_template_file_value", value_0=path)) from exc
-        template = MorphTemplate(path, data)
-        if template.scheme in HIDDEN_TEMPLATE_IDS:
-            continue
-        if template.scheme in SCHEME_REGISTRY:
-            raise ValueError(localized_message("ui.errors.base.duplicate_morphopt_template_id_value", value_0=template.scheme))
-        SCHEME_REGISTRY[template.scheme] = template
+LEGACY_SCHEME_POLICIES = (
+    BuiltinSchemeTemplate(
+        scheme="multidesign",
+        label_key="ui.templates.multidesign.label",
+        material_type="HomogeneousMaterial",
+        body_name="body",
+        quickstart_method=None,
+        objective_slot="return self.fe_results[0].GC[-2]\n",
+        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+    ),
+)
+
+# The registry is static Python data. User ``.morph`` files are problem
+# definitions opened through the regular file workflow.
+SCHEME_REGISTRY: dict[str, SchemeTemplate] = {
+    template.scheme: template
+    for template in (*BUILTIN_SCHEMES, *LEGACY_SCHEME_POLICIES)
+}
 
 
 def available_templates() -> tuple[SchemeTemplate, ...]:
-    """Return the visible file-backed templates in filename order."""
-    _build_registry()
-    return tuple(SCHEME_REGISTRY.values())
+    """Return built-in schemes that can create a starter definition."""
+    return tuple(
+        template
+        for template in SCHEME_REGISTRY.values()
+        if not isinstance(template, BuiltinSchemeTemplate) or template.has_starter
+    )
 
 
 def get_template(scheme: str) -> SchemeTemplate:
-    _build_registry()
     if scheme not in SCHEME_REGISTRY:
         raise KeyError(localized_message("ui.errors.base.no_scheme_template_registered_for_value", value_0=scheme))
     return SCHEME_REGISTRY[scheme]

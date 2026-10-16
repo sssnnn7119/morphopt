@@ -15,7 +15,6 @@ Editing behaviour (via the internal :class:`_CodeEdit`):
 from __future__ import annotations
 
 import re
-from ...constants import CONSTANT
 from PySide6.QtCore import Qt, QStringListModel, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QShortcut, QKeySequence,
@@ -23,6 +22,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QWidget, QVBoxLayout, QLabel
 
+from ..theme import theme_manager
 from ..application.completion import CompletionItem, completion_items
 from ..i18n import tr
 
@@ -36,24 +36,37 @@ class _PythonHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document):
         super().__init__(document)
-
-        def fmt(color: str, bold: bool = False) -> QTextCharFormat:
-            f = QTextCharFormat()
-            f.setForeground(QColor(color))
-            if bold:
-                f.setFontWeight(QFont.Weight.Bold)
-            return f
-
-        self._rules = [
-            (re.compile(r"\b(%s)\b" % self.KEYWORDS), fmt("#c678dd", True)),
-            (re.compile(r"\b(?:self|super)\b"), fmt("#e5c07b")),
-            (re.compile(r"\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b"), fmt("#d19a66")),
-        ]
         self._string_re = re.compile(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')')
         self._comment_re = re.compile(r"#[^\n]*")
-        self._f_string = fmt("#98c379")
-        self._f_comment = fmt("#5c6370")
-        self._f_decorator = fmt("#e06c75")
+        self._apply_theme(theme_manager.name)
+        unsubscribe = theme_manager.subscribe(self._apply_theme)
+        self.destroyed.connect(lambda *_args: unsubscribe())
+
+    @staticmethod
+    def _format(color: str, bold: bool = False) -> QTextCharFormat:
+        result = QTextCharFormat()
+        result.setForeground(QColor(color))
+        if bold:
+            result.setFontWeight(QFont.Weight.Bold)
+        return result
+
+    def _apply_theme(self, _name: str) -> None:
+        colors = theme_manager.palette.code_editor
+        keyword = colors.keyword
+        self_name = colors.self_name
+        number = colors.number
+        string = colors.string
+        comment = colors.comment
+        decorator = colors.decorator
+        self._rules = [
+            (re.compile(r"\b(%s)\b" % self.KEYWORDS), self._format(keyword, True)),
+            (re.compile(r"\b(?:self|super)\b"), self._format(self_name)),
+            (re.compile(r"\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b"), self._format(number)),
+        ]
+        self._f_string = self._format(string)
+        self._f_comment = self._format(comment)
+        self._f_decorator = self._format(decorator)
+        self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
         # comments first (but not inside strings): naive, good enough
@@ -133,7 +146,7 @@ class _CodeEdit(QPlainTextEdit):
         )
         popup_rect = self.cursorRect()
         popup_rect.setWidth(
-            max(CONSTANT.UI.WIDGETS.CODE_COMPLETION_MINIMUM_WIDTH, popup_width)
+            max(theme_manager.palette.layout.widgets.code_completion_minimum_width, popup_width)
         )
         self._completer.complete(popup_rect)
 
@@ -323,21 +336,27 @@ class CodeEditor(QWidget):
                  completion_context: str = "", completion_problem=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(2)
+        lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        lay.setSpacing(theme_manager.palette.layout.widgets.code_editor_toolbar_spacing)
         cap = QLabel(title if title is not None else tr("ui.common.code"))
-        cap.setStyleSheet("color:#7f8c8d; font-size:11px;")
+        cap.setProperty("textRole", "muted")
         lay.addWidget(cap)
         self._edit = _CodeEdit(self)
         self._edit.focusReceived.connect(self.focusReceived)
-        self._edit.setMinimumHeight(CONSTANT.UI.WIDGETS.CODE_EDITOR_MINIMUM_HEIGHT)
-        mono = QFont("DejaVu Sans Mono", 10)
-        self._edit.setFont(mono)
-        metrics = QFontMetrics(mono)
-        self._edit.setTabStopDistance(4 * metrics.horizontalAdvance(" "))
+        self._edit.setMinimumHeight(theme_manager.palette.layout.widgets.code_editor_minimum_height)
+        self._apply_theme(theme_manager.name)
+        unsubscribe = theme_manager.subscribe(self._apply_theme)
+        self.destroyed.connect(lambda *_args: unsubscribe())
         self._edit.set_completion_context(completion_context, completion_problem)
         lay.addWidget(self._edit)
         self.highlighter = _PythonHighlighter(self._edit.document())
+
+    def _apply_theme(self, _name: str) -> None:
+        font_style = theme_manager.palette.code_editor
+        mono = QFont(font_style.font_family, font_style.font_size)
+        self._edit.setFont(mono)
+        metrics = QFontMetrics(mono)
+        self._edit.setTabStopDistance(4 * metrics.horizontalAdvance(" "))
 
     # ------------------------------------------------------------- public
     def set_body(self, text: str) -> None:

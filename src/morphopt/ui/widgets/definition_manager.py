@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..theme import theme_manager
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from copy import deepcopy
 
@@ -19,7 +20,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
-from ...constants import CONSTANT
 from ..refresh import RefreshContext
 from ..model.problem import (
     CADOperationNode,
@@ -76,7 +76,7 @@ class DefinitionManagerEditor(QWidget):
         self._updater_buttons: dict[Node, ActionButton] = {}
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self._add_menu = QMenu(self)
         header = CollectionHeader("", menu=self._add_menu)
         self._heading = header.title
@@ -85,7 +85,7 @@ class DefinitionManagerEditor(QWidget):
 
         self._hint = QLabel()
         self._hint.setWordWrap(True)
-        self._hint.setStyleSheet("color:#9aa4b2; font-size:11px;")
+        self._hint.setProperty("textRole", "muted")
         outer.addWidget(self._hint)
 
         self._scroll = QScrollArea()
@@ -93,9 +93,9 @@ class DefinitionManagerEditor(QWidget):
         body = QWidget()
         self._layout = QVBoxLayout(body)
         self._layout.setContentsMargins(
-            *deepcopy(CONSTANT.UI.WIDGETS.COLLECTION_CONTENTS_MARGINS)
+            *deepcopy(theme_manager.palette.layout.widgets.collection_contents_margins)
         )
-        self._layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
+        self._layout.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
         self._layout.addStretch(1)
         self._scroll.setWidget(body)
         outer.addWidget(self._scroll, 1)

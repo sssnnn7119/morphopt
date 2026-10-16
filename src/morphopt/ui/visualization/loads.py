@@ -1,14 +1,29 @@
 """Load visitors turn definition values into glyph data, without drawing actors."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
+
 import numpy as np
 import pyvista as pv
-from ...constants import CONSTANT
-from ..model.problem import FEAComponentNode
-from ..model.node_types.loads import PressureNode, ConcentratedForceNode, ConcentratedMomentNode, BodyForceNode, SpringToGroundNode, SpringBetweenRPsNode, PenaltyDoFNode, BoundaryConditionNode, BoundaryConditionRPNode, ReferencePointNode, CoupleNode
+
 from ..i18n import tr
+from ..model.node_types.loads import (
+    BodyForceNode,
+    BoundaryConditionNode,
+    BoundaryConditionRPNode,
+    ConcentratedForceNode,
+    ConcentratedMomentNode,
+    CoupleNode,
+    PenaltyDoFNode,
+    PressureNode,
+    ReferencePointNode,
+    SpringBetweenRPsNode,
+    SpringToGroundNode,
+)
+from ..model.problem import FEAComponentNode
+from ..theme import theme_manager
 from .geometry import PreviewGeometry
 from .scene import (
     ArrowLoad,
@@ -52,7 +67,9 @@ class LoadPreviewVisitor:
         *,
         boundary: bool = False,
     ) -> None:
-        (self._always_visible_handlers if boundary else self._handlers)[node_type] = handler
+        (self._always_visible_handlers if boundary else self._handlers)[node_type] = (
+            handler
+        )
 
     def build(self, geometry: PreviewGeometry, step_index: int | None) -> LoadScene:
         scene = LoadScene(
@@ -63,11 +80,21 @@ class LoadPreviewVisitor:
         for component in problem.fea_components():
             self.visit(geometry, scene, component, [], boundary=True)
         steps = problem.steps
-        if steps is None or not isinstance(step_index, int) or not 0 <= step_index < len(steps.step_values):
+        if (
+            steps is None
+            or not isinstance(step_index, int)
+            or not 0 <= step_index < len(steps.step_values)
+        ):
             return scene
-        components = {component.name: component for component in problem.fea_components()}
+        components = {
+            component.name: component for component in problem.fea_components()
+        }
         for reference, raw_values in (steps.step_values[step_index] or {}).items():
-            component = reference if isinstance(reference, FEAComponentNode) else components.get(str(reference))
+            component = (
+                reference
+                if isinstance(reference, FEAComponentNode)
+                else components.get(str(reference))
+            )
             if component is None:
                 continue
             self.visit(geometry, scene, component, raw_values or [])
@@ -83,7 +110,9 @@ class LoadPreviewVisitor:
         boundary: bool = False,
     ) -> None:
         handlers = self._always_visible_handlers if boundary else self._handlers
-        handler = next((handlers[cls] for cls in type(component).__mro__ if cls in handlers), None)
+        handler = next(
+            (handlers[cls] for cls in type(component).__mro__ if cls in handlers), None
+        )
         if handler is None:
             return
         try:
@@ -103,14 +132,16 @@ class LoadPreviewVisitor:
         ) as exc:
             # Preview errors describe the incomplete definition; other loads
             # still render, and the definition is never silently changed.
-            scene.items.append(MessageItem(
-                tr("ui.visualization.load.error", name=component.name, error=exc),
-                dict(
-                    position="upper_left",
-                    color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_ANNOTATION_ERROR,
-                    font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
-                ),
-            ))
+            scene.items.append(
+                MessageItem(
+                    tr("ui.visualization.load.error", name=component.name, error=exc),
+                    dict(
+                        position="upper_left",
+                        color=theme_manager.palette.viewer.render.marker_color_annotation_error,
+                        font_size=theme_manager.palette.viewer.render.label_font_size,
+                    ),
+                )
+            )
 
     @staticmethod
     def rp_location(
@@ -119,7 +150,10 @@ class LoadPreviewVisitor:
     ) -> np.ndarray | None:
         if reference is None:
             return None
-        return np.asarray(geometry.values.resolve(reference.rp_location or [0., 0., 0.]), dtype=float)
+        return np.asarray(
+            geometry.values.resolve(reference.rp_location or [0.0, 0.0, 0.0]),
+            dtype=float,
+        )
 
     @staticmethod
     def pressure(
@@ -128,8 +162,8 @@ class LoadPreviewVisitor:
         component: PressureNode,
         values: list[float],
     ) -> None:
-        pressure = values[0] if values else 0.
-        if abs(pressure) <= CONSTANT.UI.VIEWER.LOADS.PRESSURE_ZERO_TOLERANCE:
+        pressure = values[0] if values else 0.0
+        if abs(pressure) <= theme_manager.palette.viewer.loads.pressure_zero_tolerance:
             return
         mesh = geometry.mesh_for_surface(component, str(component.surface_name or ""))
         if mesh is None:
@@ -138,16 +172,16 @@ class LoadPreviewVisitor:
             MeshItem(
                 mesh,
                 dict(
-                    color=CONSTANT.UI.VIEWER.LOADS.PRESSURE_SURFACE_COLOR,
-                    opacity=CONSTANT.UI.VIEWER.LOADS.PRESSURE_OPACITY,
+                    color=theme_manager.palette.viewer.loads.pressure_surface_color,
+                    opacity=theme_manager.palette.viewer.loads.pressure_opacity,
                     show_edges=False,
                     smooth_shading=True,
-                    ambient=CONSTANT.UI.VIEWER.LOADS.PRESSURE_AMBIENT,
-                    diffuse=CONSTANT.UI.VIEWER.LOADS.PRESSURE_DIFFUSE,
-                    specular=CONSTANT.UI.VIEWER.LOADS.PRESSURE_SPECULAR,
+                    ambient=theme_manager.palette.viewer.loads.pressure_ambient,
+                    diffuse=theme_manager.palette.viewer.loads.pressure_diffuse,
+                    specular=theme_manager.palette.viewer.loads.pressure_specular,
                     preview_offset=(
                         geometry.scene.diagonal
-                        * CONSTANT.UI.VIEWER.LOADS.PRESSURE_PREVIEW_OFFSET_RATIO
+                        * theme_manager.palette.viewer.loads.pressure_preview_offset_ratio
                     ),
                 ),
             )
@@ -158,7 +192,9 @@ class LoadPreviewVisitor:
             else mesh.extract_surface(algorithm="dataset_surface")
         )
         try:
-            normalized = surface.compute_normals(cell_normals=True, point_normals=False, inplace=False)
+            normalized = surface.compute_normals(
+                cell_normals=True, point_normals=False, inplace=False
+            )
             centers = normalized.cell_centers().points
             normals = np.asarray(normalized.cell_data["Normals"], dtype=float)
         except (KeyError, ValueError, AttributeError):
@@ -169,20 +205,30 @@ class LoadPreviewVisitor:
             np.linspace(
                 0,
                 len(centers) - 1,
-                min(CONSTANT.UI.VIEWER.LOADS.PRESSURE_SURFACE_SAMPLES, len(centers)),
+                min(
+                    theme_manager.palette.viewer.loads.pressure_surface_samples,
+                    len(centers),
+                ),
                 dtype=int,
             )
         )
         for sample, index in enumerate(indices):
-            scene.items.append(ArrowLoad(
-                centers[index],
-                normals[index] * np.sign(pressure),
-                CONSTANT.UI.VIEWER.LOADS.PRESSURE_ARROW_COLOR,
-                tr(
-                    "ui.visualization.load.pressure", name=component.name, value=pressure,
-                    instance=component.instance_name, surface=component.surface_name,
-                ) if sample == 0 else "",
-            ))
+            scene.items.append(
+                ArrowLoad(
+                    centers[index],
+                    normals[index] * np.sign(pressure),
+                    theme_manager.palette.viewer.loads.pressure_arrow_color,
+                    tr(
+                        "ui.visualization.load.pressure",
+                        name=component.name,
+                        value=pressure,
+                        instance=component.instance_name,
+                        surface=component.surface_name,
+                    )
+                    if sample == 0
+                    else "",
+                )
+            )
 
     @classmethod
     def force(
@@ -195,13 +241,19 @@ class LoadPreviewVisitor:
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
-            scene.items.append(ArrowLoad(
-                point,
-                vector,
-                CONSTANT.UI.VIEWER.LOADS.FORCE_COLOR,
-                tr("ui.visualization.load.force", name=component.name,
-                   rp=component.rp_name, vector=vector_text(vector)),
-            ))
+            scene.items.append(
+                ArrowLoad(
+                    point,
+                    vector,
+                    theme_manager.palette.viewer.loads.force_color,
+                    tr(
+                        "ui.visualization.load.force",
+                        name=component.name,
+                        rp=component.rp_name,
+                        vector=vector_text(vector),
+                    ),
+                )
+            )
 
     @classmethod
     def moment(
@@ -214,10 +266,18 @@ class LoadPreviewVisitor:
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
-            scene.items.append(MomentLoad(
-                point, vector, tr("ui.visualization.load.moment", name=component.name,
-                                  rp=component.rp_name, vector=vector_text(vector)),
-            ))
+            scene.items.append(
+                MomentLoad(
+                    point,
+                    vector,
+                    tr(
+                        "ui.visualization.load.moment",
+                        name=component.name,
+                        rp=component.rp_name,
+                        vector=vector_text(vector),
+                    ),
+                )
+            )
 
     @staticmethod
     def bodyforce(
@@ -229,14 +289,20 @@ class LoadPreviewVisitor:
         center = geometry.instance_center(component.instance_name or "")
         if center is not None:
             vector = vector3(values)
-            scene.items.append(ArrowLoad(
-                center,
-                vector,
-                CONSTANT.UI.VIEWER.LOADS.BODY_FORCE_COLOR,
-                tr("ui.visualization.load.bodyforce", name=component.name,
-                   instance=component.instance_name, elements=component.element_name,
-                   vector=vector_text(vector)),
-            ))
+            scene.items.append(
+                ArrowLoad(
+                    center,
+                    vector,
+                    theme_manager.palette.viewer.loads.body_force_color,
+                    tr(
+                        "ui.visualization.load.bodyforce",
+                        name=component.name,
+                        instance=component.instance_name,
+                        elements=component.element_name,
+                        vector=vector_text(vector),
+                    ),
+                )
+            )
 
     @classmethod
     def spring_to_ground(
@@ -250,14 +316,22 @@ class LoadPreviewVisitor:
         if (
             point is not None
             and len(values) >= 5
-            and abs(values[0]) > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE
+            and abs(values[0]) > theme_manager.palette.viewer.loads.glyph_zero_tolerance
         ):
-            scene.items.append(SpringLoad(
-                point, np.asarray(values[2:5]),
-                tr("ui.visualization.load.spring_to_ground", name=component.name,
-                   rp=component.rp_name, ground=vector_text(values[2:5]),
-                   stiffness=values[0], rest_length=values[1]),
-            ))
+            scene.items.append(
+                SpringLoad(
+                    point,
+                    np.asarray(values[2:5]),
+                    tr(
+                        "ui.visualization.load.spring_to_ground",
+                        name=component.name,
+                        rp=component.rp_name,
+                        ground=vector_text(values[2:5]),
+                        stiffness=values[0],
+                        rest_length=values[1],
+                    ),
+                )
+            )
 
     @classmethod
     def spring_between(
@@ -273,13 +347,22 @@ class LoadPreviewVisitor:
             first is not None
             and second is not None
             and len(values) >= 2
-            and abs(values[0]) > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE
+            and abs(values[0]) > theme_manager.palette.viewer.loads.glyph_zero_tolerance
         ):
-            scene.items.append(SpringLoad(
-                first, second, tr("ui.visualization.load.spring_between", name=component.name,
-                                  rp1=component.rp_name1, rp2=component.rp_name2,
-                                  stiffness=values[0], rest_length=values[1]),
-            ))
+            scene.items.append(
+                SpringLoad(
+                    first,
+                    second,
+                    tr(
+                        "ui.visualization.load.spring_between",
+                        name=component.name,
+                        rp1=component.rp_name1,
+                        rp2=component.rp_name2,
+                        stiffness=values[0],
+                        rest_length=values[1],
+                    ),
+                )
+            )
 
     @staticmethod
     def penalty(
@@ -290,12 +373,21 @@ class LoadPreviewVisitor:
     ) -> None:
         center = geometry.object_center(str(component.obj_name or ""))
         if center is not None and len(values) >= 2:
-            scene.items.append(MarkerLoad(
-                center, tr("ui.visualization.load.penalty", name=component.name,
-                           object=component.obj_name, object_type=component.obj_type,
-                           dof=component.s, stiffness=values[0], target=values[1]),
-                CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_PENALTY,
-            ))
+            scene.items.append(
+                MarkerLoad(
+                    center,
+                    tr(
+                        "ui.visualization.load.penalty",
+                        name=component.name,
+                        object=component.obj_name,
+                        object_type=component.obj_type,
+                        dof=component.s,
+                        stiffness=values[0],
+                        target=values[1],
+                    ),
+                    theme_manager.palette.viewer.render.marker_color_penalty,
+                )
+            )
 
     @staticmethod
     def boundary_condition(
@@ -311,13 +403,13 @@ class LoadPreviewVisitor:
                 MeshItem(
                     mesh,
                     dict(
-                        color=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_COLOR,
-                        opacity=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OPACITY,
+                        color=theme_manager.palette.viewer.loads.boundary_color,
+                        opacity=theme_manager.palette.viewer.loads.boundary_opacity,
                         show_edges=False,
                         lighting=False,
                         preview_offset=(
                             geometry.scene.diagonal
-                            * CONSTANT.UI.VIEWER.LOADS.BOUNDARY_PREVIEW_OFFSET_RATIO
+                            * theme_manager.palette.viewer.loads.boundary_preview_offset_ratio
                         ),
                     ),
                 )
@@ -333,22 +425,29 @@ class LoadPreviewVisitor:
                     MeshItem(
                         outline.tube(
                             radius=geometry.scene.glyph_scale
-                            * CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OUTLINE_WIDTH_RATIO
+                            * theme_manager.palette.viewer.loads.boundary_outline_width_ratio
                         ),
                         dict(
-                            color=CONSTANT.UI.VIEWER.LOADS.BOUNDARY_OUTLINE_COLOR,
+                            color=theme_manager.palette.viewer.loads.boundary_outline_color,
                             lighting=False,
                         ),
                     )
                 )
         center = geometry.node_set_center(component.instance_name or "", name)
         if center is not None:
-            scene.items.append(MarkerLoad(
-                center, tr("ui.visualization.load.boundary", name=component.name,
-                           instance=component.instance_name, nodeset=name,
-                           dofs=fixed_dofs_text(geometry, component)),
-                CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
-            ))
+            scene.items.append(
+                MarkerLoad(
+                    center,
+                    tr(
+                        "ui.visualization.load.boundary",
+                        name=component.name,
+                        instance=component.instance_name,
+                        nodeset=name,
+                        dofs=fixed_dofs_text(geometry, component),
+                    ),
+                    theme_manager.palette.viewer.loads.boundary_marker_color,
+                )
+            )
 
     @classmethod
     def boundary_condition_rp(
@@ -360,11 +459,18 @@ class LoadPreviewVisitor:
     ) -> None:
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
-            scene.items.append(MarkerLoad(
-                point, tr("ui.visualization.load.boundary_rp", name=component.name,
-                          rp=component.rp_name, dofs=fixed_dofs_text(geometry, component)),
-                CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
-            ))
+            scene.items.append(
+                MarkerLoad(
+                    point,
+                    tr(
+                        "ui.visualization.load.boundary_rp",
+                        name=component.name,
+                        rp=component.rp_name,
+                        dofs=fixed_dofs_text(geometry, component),
+                    ),
+                    theme_manager.palette.viewer.loads.boundary_marker_color,
+                )
+            )
 
     @classmethod
     def reference_point(
@@ -386,7 +492,7 @@ class LoadPreviewVisitor:
                         y=point[1],
                         z=point[2],
                     ),
-                    "#f5a623",
+                    theme_manager.palette.viewer.render.marker_color_reference_point,
                     is_reference_point=True,
                 )
             )
@@ -409,8 +515,10 @@ class LoadPreviewVisitor:
             component, str(component.set_nodes_name or "")
         )
         label = tr(
-            "ui.visualization.load.coupling", name=component.name,
-            rp=component.rp_name, instance=component.instance_name,
+            "ui.visualization.load.coupling",
+            name=component.name,
+            rp=component.rp_name,
+            instance=component.instance_name,
             nodeset=component.set_nodes_name,
         )
         scene.items.append(
@@ -426,7 +534,7 @@ class LoadPreviewVisitor:
 
 def vector3(values: list[float]) -> np.ndarray:
     vector = np.zeros(3, dtype=float)
-    vector[:min(3, len(values))] = values[:3]
+    vector[: min(3, len(values))] = values[:3]
     return vector
 
 
@@ -437,4 +545,10 @@ def vector_text(values: Sequence[float] | np.ndarray) -> str:
 
 def fixed_dofs_text(geometry: PreviewGeometry, component: FEAComponentNode) -> str:
     names = ("X", "Y", "Z", "Rx", "Ry", "Rz")
-    return "[" + ", ".join(names[index] for index in geometry.values.resolve(component.index_dof or [])) + "]"
+    return (
+        "["
+        + ", ".join(
+            names[index] for index in geometry.values.resolve(component.index_dof or [])
+        )
+        + "]"
+    )

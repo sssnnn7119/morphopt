@@ -27,7 +27,6 @@ from ..model.problem import (
     ProblemDefinition,
     SolverNode,
     StepsNode,
-    TEMPLATE_MODEL_DIRECTORY,
     UpdaterNode,
 )
 from ..model.registry import (
@@ -584,14 +583,7 @@ def _render_part_constructor(
             value is None or value == "" or value == []
         ):
             continue
-        if key == "model_directory" and value == TEMPLATE_MODEL_DIRECTORY:
-            value_source = (
-                'os.path.join(os.path.dirname(morphopt.__file__), '
-                '"ui", "templates")'
-            )
-            kwargs.append(f"{key}={value_source}")
-        else:
-            kwargs.append(f"{key}={_render_value(value if value is not None else '', problem)}")
+        kwargs.append(f"{key}={_render_value(value if value is not None else '', problem)}")
     if not kwargs:
         return f"self.{type_name}()"
     inner = ",\n".join("    " + option for option in kwargs)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from ..theme import theme_manager
 from ..model.problem import StepsNode, ProblemDefinition
 from ..application.editing import LoadCaseSession
 from ..i18n import tr
@@ -28,7 +29,7 @@ class StepMatrix(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         bar = QHBoxLayout()
         bar.addWidget(QLabel(tr('ui.widgets.stepmatrix.load_steps')))
@@ -53,11 +54,11 @@ class StepMatrix(QWidget):
         lay.addLayout(bar)
 
         hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_components_rows_steps_empty_cells_keep_the_previous_value_zero'))
-        hint.setStyleSheet("color:#7f8c8d; font-size:11px;")
+        hint.setProperty("textRole", "muted")
         lay.addWidget(hint)
 
         self._table = QTableWidget()
-        self._table.setMinimumHeight(CONSTANT.UI.WIDGETS.LOAD_STEP_TABLE_MINIMUM_HEIGHT)
+        self._table.setMinimumHeight(theme_manager.palette.layout.widgets.load_step_table_minimum_height)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.cellChanged.connect(self._on_cell_changed)

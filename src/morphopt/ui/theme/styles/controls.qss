@@ -1,0 +1,83 @@
+/* Buttons, tabs, labels, group boxes, and menu items. */
+QTabWidget::pane { border: 1px solid @border@; }
+QTabBar::tab {
+    background: @panel@;
+    color: @muted_text@;
+    padding: 6px 12px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected { background: @accent@; color: @selection_text@; }
+QPushButton, QToolButton {
+    background-color: @button@;
+    color: @text@;
+    border: 1px solid @border@;
+    padding: 5px 12px;
+    border-radius: 4px;
+    min-height: 18px;
+}
+QPushButton:hover, QToolButton:hover { background-color: @button_hover@; }
+QPushButton:pressed, QToolButton:pressed { background-color: @button_pressed@; }
+QPushButton:checked { background-color: @selection@; border-color: @accent@; }
+QPushButton[actionRole="primary"], QToolButton[actionRole="primary"] {
+    background-color: @accent@;
+    border-color: @accent@;
+    color: @on_accent@;
+}
+QPushButton[actionRole="primary"]:hover, QToolButton[actionRole="primary"]:hover {
+    background-color: @accent_hover@;
+}
+QPushButton[actionRole="danger"], QToolButton[actionRole="danger"] {
+    background-color: @danger@;
+    border-color: @danger@;
+    color: @on_accent@;
+}
+QPushButton[actionRole="danger"]:hover, QToolButton[actionRole="danger"]:hover {
+    background-color: @danger_hover@;
+}
+QPushButton:disabled, QToolButton:disabled {
+    background-color: @disabled@;
+    border-color: @border@;
+    color: @disabled_text@;
+}
+QPushButton[buttonLayout="prominent"] { padding: 6px 18px; font-weight: 600; }
+QPushButton[buttonLayout="choice"] { text-align: left; padding: 8px 12px; }
+QToolButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    right: 4px;
+}
+QToolButton[menuButton="true"] { padding-right: 20px; }
+QLabel[textRole="sectionHeading"] {
+    font-size: @section_heading_size@px;
+    font-weight: 700;
+    color: @heading_text@;
+}
+QLabel[textRole="muted"] { color: @muted_text@; }
+QLabel[textRole="accent"] { color: @accent_hover@; }
+QLabel[textRole="dialogTitle"] { font-size: @dialog_title_size@px; font-weight: 700; }
+QLabel[textRole="warning"] { color: @warning@; }
+QLabel[textRole="error"] { color: @error@; }
+QToolButton[buttonLayout="navigation"] { padding: 2px; min-width: 30px; min-height: 30px; }
+QGroupBox {
+    border: 1px solid @border@;
+    border-radius: 4px;
+    margin-top: 10px;
+    padding-top: 8px;
+    font-weight: 700;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0px 4px;
+    color: @heading_text@;
+}
+QGroupBox[collectionSelected="true"] { border-color: @accent@; }
+QMenu::item { padding: 6px 20px; }
+QMenu::item:selected {
+    background-color: @selection@;
+    color: @selection_text@;
+}
+QMenu::item:disabled { color: @disabled_text@; }
+QMenu::separator { height: 1px; background: @border@; margin: 4px 8px; }

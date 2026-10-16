@@ -35,14 +35,13 @@
 
 源码：`application/editor_routing.py`。`EditorKind` 枚举规定节点应由属性表单、代码编辑器、载荷步矩阵、求解器编辑器、更新器编辑器或 TorchFEA 模型编辑器处理；不可变 `EditorRoute` 将一个节点种类映射到对应编辑器。Workbench 只依据这份路由选择组件。
 
-## 模板系统
+## 优化方案策略
 
-源码：`ui/schemes/base.py` 与 `ui/templates/*.morph`。
+源码：`ui/schemes/base.py`。方案元数据由 Python 类注册，Quickstart 负责创建起始问题。
 
 ```text
 SchemeTemplate
-└── MorphTemplate(path, data)
-      └── ProblemDefinition
+└── BuiltinSchemeTemplate (Python policy + Quickstart builder)
 ```
 
 | `SchemeTemplate` 方法/属性 | 责任 |
@@ -54,7 +53,8 @@ SchemeTemplate
 | `available_*_types`、`default_*` | 为 UI 菜单和默认编辑器提供类型与选项。 |
 | `objective_code_snippets()` | 提供可参数化的目标函数片段。 |
 
-`MorphTemplate` 从 `.morph` 文件读取模板数据。当前发行模板包含 `shapeopt.morph`、`simp.morph` 与多实体组合例 `multidesign.morph`；`cantilever_beam.npz` 是 SIMP 模板引用的 TorchFEA 模型资产。新增模板只需作为包数据放进 `ui/templates/` 并满足 `.morph` 结构。
+内置 `shapeopt`、`simp` 等方案通过 Python 类注册；Quickstart 生成其起始问题。
+`.morph` 文件只保存用户的问题定义；方案注册由 Python 代码完成，网格从用户指定的路径加载。
 
 ## 代码生成
 

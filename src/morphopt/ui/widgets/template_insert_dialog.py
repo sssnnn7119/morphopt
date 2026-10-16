@@ -31,7 +31,7 @@ class TemplateInsertDialog(QDialog):
         if snippet.key.startswith("jacobian_"):
             hint = QLabel(tr('ui.widgets.template_insert_dialog.before_using_this_template_make_sure_the_concentrated_force_and_moment_a'))
             hint.setWordWrap(True)
-            hint.setStyleSheet("color:#d6a85f;")
+            hint.setProperty("textRole", "warning")
             layout.addWidget(hint)
         form = QFormLayout()
 

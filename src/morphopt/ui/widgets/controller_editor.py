@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...constants import CONSTANT
+from ..theme import theme_manager
 from ..application.devices import detect_devices
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
@@ -44,7 +44,7 @@ class ControllerSettingsEditor(QWidget):
 
         self.name_label = QLabel()
         self.name = QLineEdit(self.group)
-        self.name.setFixedWidth(CONSTANT.UI.LAYOUT.WORKBENCH.OUTPUT_NAME_WIDTH)
+        self.name.setFixedWidth(theme_manager.palette.layout.workbench.output_name_width)
         self.name.editingFinished.connect(
             lambda: self.labelChanged.emit(self.name.text().strip())
         )
@@ -52,17 +52,17 @@ class ControllerSettingsEditor(QWidget):
 
         self.path_label = QLabel()
         self.path = QLineEdit(self.group)
-        self.path.setMinimumWidth(CONSTANT.UI.LAYOUT.WORKBENCH.PATH_MINIMUM_WIDTH)
+        self.path.setMinimumWidth(theme_manager.palette.layout.workbench.path_minimum_width)
         self.path.editingFinished.connect(
             lambda: self.resultFolderChanged.emit(self.path.text().strip())
         )
         path_row = QWidget(self.group)
         path_layout = QHBoxLayout(path_row)
-        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         path_layout.addWidget(self.path, 1)
         self.browse_button = QPushButton("…", path_row)
         self.browse_button.setFixedWidth(
-            CONSTANT.UI.LAYOUT.WORKBENCH.DIRECTORY_BUTTON_WIDTH
+            theme_manager.palette.layout.workbench.directory_button_width
         )
         self.browse_button.clicked.connect(self._browse_path)
         path_layout.addWidget(self.browse_button)
@@ -72,7 +72,7 @@ class ControllerSettingsEditor(QWidget):
         self.device = QComboBox(self.group)
         self.device.setEditable(True)
         self.device.setFixedWidth(
-            CONSTANT.UI.LAYOUT.WORKBENCH.DEVICE_SELECTOR_WIDTH
+            theme_manager.palette.layout.workbench.device_selector_width
         )
         self.device.addItem("cpu")
         self.device.addItems(

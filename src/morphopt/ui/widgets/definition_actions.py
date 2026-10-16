@@ -4,6 +4,7 @@ Dialog/selection policy belongs here. Model operations remain on the definition
 and construction defaults are supplied by the application editing service.
 """
 from __future__ import annotations
+from ..theme import theme_manager
 from ..i18n import localized_message
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
@@ -11,7 +12,6 @@ from PySide6.QtWidgets import (
     QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
 )
 from ..i18n import tr
-from ...constants import CONSTANT
 from ..codegen.custom_classes import custom_options
 from ..application.edit_history import EditOperation
 from ..application.editing import CustomClassSession, DefinitionCommands
@@ -82,7 +82,7 @@ class DefinitionActions(QObject):
         if class_type == "override":
             base = QComboBox()
             base.addItems(available)
-            base.setMinimumWidth(CONSTANT.UI.WIDGETS.CUSTOM_CLASS_BASE_MINIMUM_WIDTH)
+            base.setMinimumWidth(theme_manager.palette.layout.widgets.custom_class_base_minimum_width)
             layout.addRow(tr('ui.widgets.custom_classes.inherits_from'), base)
         else:
             base = None

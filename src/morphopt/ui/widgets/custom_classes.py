@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QVBoxLayout, QWidget,
 )
 
+from ..theme import theme_manager
 from ..codegen.custom_classes import (
     class_catalog,
     class_path_for_node,
@@ -152,14 +153,14 @@ class CustomClassEditor(QWidget):
         self.method_scroll.setWidgetResizable(True)
         self.method_container = QWidget(self.method_scroll)
         self.method_list = QVBoxLayout(self.method_container)
-        self.method_list.setContentsMargins(0, 0, 0, 0)
-        self.method_list.setSpacing(8)
+        self.method_list.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        self.method_list.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
         self.method_list.addStretch(1)
         self.method_scroll.setWidget(self.method_container)
         layout.addWidget(self.method_scroll, 1)
         self.error = QLabel()
         self.error.setWordWrap(True)
-        self.error.setStyleSheet("color:#e57373;")
+        self.error.setProperty("textRole", "error")
         layout.addWidget(self.error)
 
     def edit_node(self, node, problem):
@@ -416,7 +417,7 @@ class ModelClassSelector(QWidget):
         self._problem = None
         self._path = None
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.label = QLabel()
         self.combo = QComboBox()
         self.combo.currentIndexChanged.connect(self._save)

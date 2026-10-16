@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from copy import deepcopy
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 from ..i18n import localized_message
@@ -68,18 +67,10 @@ REFERENCE_POINT_FIELDS = {
     "rp_name2": "reference_point2",
 }
 
-# A file-backed template may point at an asset shipped next to that template.
-# The marker stays portable in ``*.morph`` files; UI previews and generated
-# headless jobs resolve it to the installed package directory.
-TEMPLATE_MODEL_DIRECTORY = "$MORPHOPT_TEMPLATE_DIR"
-
 
 def resolve_model_directory(directory: str | None) -> str:
-    """Resolve a template asset marker or return the user path unchanged."""
-    value = str(directory or "")
-    if value == TEMPLATE_MODEL_DIRECTORY:
-        return str(Path(__file__).resolve().parents[1] / "templates")
-    return value
+    """Normalize a user-provided model directory without package fallbacks."""
+    return str(directory or "")
 
 
 #: canonical order of the top-level sections inside a problem tree.

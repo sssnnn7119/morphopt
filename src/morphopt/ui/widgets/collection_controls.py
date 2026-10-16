@@ -6,8 +6,8 @@ from functools import partial
 
 from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
+from ..theme import theme_manager
 from ..i18n import tr
-from ...constants import CONSTANT
 def set_card_selected(card: QGroupBox, selected: bool) -> None:
     """Update only this card's selection border, without restyling its children."""
     if card.property("collectionSelected") != selected:
@@ -28,7 +28,7 @@ class ActionButton(QToolButton):
         self.setText(text)
         self.setToolTip(tooltip or text)
         self.setProperty("actionRole", "danger" if danger else "secondary")
-        self.setFixedHeight(CONSTANT.UI.WIDGETS.ACTION_BUTTON_HEIGHT)
+        self.setFixedHeight(theme_manager.palette.layout.widgets.action_button_height)
         if callback is not None:
             self.clicked.connect(lambda _checked=False: callback())
 
@@ -56,14 +56,14 @@ class CollectionHeader(QWidget):
     ) -> None:
         super().__init__(parent)
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        row.setSpacing(theme_manager.palette.layout.widgets.action_grid_spacing)
         self.title = QLabel(title)
         self.title.setProperty("textRole", "sectionHeading")
         row.addWidget(self.title)
         row.addStretch(1)
         self.actions = QHBoxLayout()
-        self.actions.setSpacing(6)
+        self.actions.setSpacing(theme_manager.palette.layout.widgets.action_grid_spacing)
         row.addLayout(self.actions)
         self.add_button = AddButton(add, menu=menu)
         row.addWidget(self.add_button)
@@ -79,14 +79,14 @@ class ItemActions(QWidget):
     ) -> None:
         super().__init__(parent)
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        row.setSpacing(theme_manager.palette.layout.widgets.action_grid_spacing)
         row.addStretch(1)
         self.up_button = ActionButton("↑", partial(move, -1), tooltip=tr("ui.common.move_up")) if move is not None else None
         self.down_button = ActionButton("↓", partial(move, 1), tooltip=tr("ui.common.move_down")) if move is not None else None
         for button in (self.up_button, self.down_button):
             if button is not None:
-                button.setFixedWidth(CONSTANT.UI.WIDGETS.ITEM_ACTION_BUTTON_WIDTH)
+                button.setFixedWidth(theme_manager.palette.layout.widgets.item_action_button_width)
                 row.addWidget(button)
         self.delete_button = ActionButton(
             tr("ui.common.delete"), remove, danger=True, tooltip=remove_tooltip,

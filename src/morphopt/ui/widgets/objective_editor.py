@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from ..theme import theme_manager
 from ...constants import CONSTANT
 from ..i18n import localization, tr
 from ..model.node_types.loads import ReferencePointNode
@@ -50,7 +51,7 @@ class JacobianLoadSelector(QToolButton):
         self.setMenu(self._menu)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setProperty("menuButton", True)
-        self.setFixedHeight(CONSTANT.UI.WIDGETS.OBJECTIVE_SELECTOR_HEIGHT)
+        self.setFixedHeight(theme_manager.palette.layout.widgets.objective_selector_height)
         self._update_summary()
 
     def set_loads(
@@ -106,7 +107,7 @@ class ObjectiveEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self._page_scroll = QScrollArea(self)
         self._page_scroll.setWidgetResizable(True)
         self._page_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -115,7 +116,7 @@ class ObjectiveEditor(QWidget):
         )
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         outer_layout.addWidget(self._page_scroll)
 
         self._heading = QLabel()
@@ -149,16 +150,16 @@ class ObjectiveEditor(QWidget):
 
         self._hint = QLabel()
         self._hint.setWordWrap(True)
-        self._hint.setStyleSheet("color:#9aa4b2;")
+        self._hint.setProperty("textRole", "muted")
         layout.addWidget(self._hint)
 
         body = QWidget()
         body.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._term_layout = QVBoxLayout(body)
         self._term_layout.setContentsMargins(
-            *CONSTANT.UI.WIDGETS.COLLECTION_CONTENTS_MARGINS
+            *theme_manager.palette.layout.widgets.collection_contents_margins
         )
-        self._term_layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
+        self._term_layout.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
         self._term_layout.addStretch(1)
         layout.addWidget(body)
 
@@ -184,7 +185,7 @@ class ObjectiveEditor(QWidget):
         metrics_layout.addWidget(self._metric_header)
         self._metric_hint = QLabel()
         self._metric_hint.setWordWrap(True)
-        self._metric_hint.setStyleSheet("color:#9aa4b2;")
+        self._metric_hint.setProperty("textRole", "muted")
         metrics_layout.addWidget(self._metric_hint)
 
         metric_body = QWidget()
@@ -193,9 +194,9 @@ class ObjectiveEditor(QWidget):
         )
         self._metric_layout = QVBoxLayout(metric_body)
         self._metric_layout.setContentsMargins(
-            *CONSTANT.UI.WIDGETS.COLLECTION_CONTENTS_MARGINS
+            *theme_manager.palette.layout.widgets.collection_contents_margins
         )
-        self._metric_layout.setSpacing(CONSTANT.UI.WIDGETS.COLLECTION_SPACING)
+        self._metric_layout.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
         self._metric_layout.addStretch(1)
         metrics_layout.addWidget(metric_body)
         layout.addWidget(self.metrics_group)
@@ -734,7 +735,7 @@ class ObjectiveEditor(QWidget):
     def _snippet_controls(self, editor: CodeEditor) -> QWidget:
         controls = QWidget()
         row = QHBoxLayout(controls)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         combo = QComboBox()
         for snippet in self._snippets:
             combo.addItem(tr(snippet.name_key), snippet)

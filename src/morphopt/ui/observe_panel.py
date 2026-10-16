@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QDialog, QCheckBox, QPlainTextEdit,
 )
 
+from .theme import theme_manager
 from .application import (
     OptimizationRunSession,
     ResultSession,
@@ -58,21 +59,21 @@ class ObserverPanel(QWidget):
         self._case_pages: dict[int, DeformationCasePage] = {}
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         top = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
-        self.btn_prev.setFixedWidth(CONSTANT.UI.OBSERVER.STEP_BUTTON_WIDTH)
+        self.btn_prev.setFixedWidth(theme_manager.palette.layout.observer.step_button_width)
         self.btn_prev.clicked.connect(lambda: self._nudge(-1))
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setMinimum(1)
         self.slider.setMaximum(1)
         self.slider.valueChanged.connect(self._on_slider)
         self.btn_next = QPushButton("▶")
-        self.btn_next.setFixedWidth(CONSTANT.UI.OBSERVER.STEP_BUTTON_WIDTH)
+        self.btn_next.setFixedWidth(theme_manager.palette.layout.observer.step_button_width)
         self.btn_next.clicked.connect(lambda: self._nudge(1))
         self.iter_label = QLabel("0 / 0")
-        self.iter_label.setMinimumWidth(CONSTANT.UI.OBSERVER.ITERATION_LABEL_MINIMUM_WIDTH)
+        self.iter_label.setMinimumWidth(theme_manager.palette.layout.observer.iteration_label_minimum_width)
         self.chk_follow = QCheckBox(tr('ui.observe_panel.follow_latest'))
         self.chk_follow.setChecked(True)
         self.chk_follow.toggled.connect(self._on_follow)
@@ -85,7 +86,7 @@ class ObserverPanel(QWidget):
 
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
-        self.options.setFixedWidth(CONSTANT.UI.OBSERVER.OPTION_PANEL_WIDTH)
+        self.options.setFixedWidth(theme_manager.palette.layout.observer.option_panel_width)
         self.options.addItem(tr('ui.observe_panel.metrics'))
         self.options.addItem(tr('ui.observe_panel.updatable_structures'))
         self.options.currentRowChanged.connect(self._on_option)
@@ -99,7 +100,7 @@ class ObserverPanel(QWidget):
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes(list(CONSTANT.UI.OBSERVER.OPTION_SPLIT_SIZES))
+        split.setSizes(list(theme_manager.palette.layout.observer.option_split_sizes))
         outer.addWidget(split, 1)
         self.options.setCurrentRow(0)
 
@@ -181,6 +182,13 @@ class ObserverPanel(QWidget):
         if row == 1:
             self._refresh_updatable_structure()
 
+    def apply_theme(self) -> None:
+        """Refresh chart and viewport palettes while retaining loaded results."""
+        self._metrics_page.apply_theme()
+        self._updatable_structure_page.apply_theme()
+        for page in self._case_pages.values():
+            page.apply_theme()
+
     # -------------------------------------------------------------- options
     def _on_option(self, row: int) -> None:
         if row < 0 or row >= self.stack.count():
@@ -243,7 +251,7 @@ class ObserverControls(QWidget):
         self._run = OptimizationRunSession()
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         # top control bar ---------------------------------------------------
         bar = QHBoxLayout()
@@ -262,7 +270,7 @@ class ObserverControls(QWidget):
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
         self.status = QLabel("")
-        self.status.setStyleSheet("color:#9aa4b2;")
+        self.status.setProperty("textRole", "muted")
         bar.addWidget(self.status, 1)
         outer.addLayout(bar)
 
@@ -272,7 +280,7 @@ class ObserverControls(QWidget):
 
         output_area = QWidget()
         output_layout = QVBoxLayout(output_area)
-        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         output_header = QHBoxLayout()
         self.output_label = QLabel(tr('ui.observe_panel.run_output'))
         output_header.addWidget(self.output_label)
@@ -290,10 +298,10 @@ class ObserverControls(QWidget):
         self.output_view.setPlaceholderText(tr('ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here'))
         output_layout.addWidget(self.output_view, 1)
         content.addWidget(output_area)
-        stretch = deepcopy(CONSTANT.UI.OBSERVER.CONTENT_STRETCH_FACTORS)
+        stretch = deepcopy(theme_manager.palette.layout.observer.content_stretch_factors)
         content.setStretchFactor(0, stretch[0])
         content.setStretchFactor(1, stretch[1])
-        content.setSizes(list(CONSTANT.UI.OBSERVER.CONTENT_SPLIT_SIZES))
+        content.setSizes(list(theme_manager.palette.layout.observer.content_split_sizes))
         outer.addWidget(content, 1)
 
         # bottom-right: back to the definition page (mirrors the definition
@@ -542,6 +550,9 @@ class ObserverControls(QWidget):
             self.status.setText(tr('ui.observe_panel.optimization_running'))
         else:
             self._refresh_status()
+
+    def apply_theme(self) -> None:
+        self.panel.apply_theme()
 
     def close_cleanup(self) -> None:
         self._stop_job()

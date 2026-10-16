@@ -1,26 +1,40 @@
 """Per-Part preview visitors and cached model queries. No Qt or VTK actors."""
+
 from __future__ import annotations
 
-from typing import Any, Callable, Generic, TypeVar, cast
-from copy import deepcopy
-
 import os
+from collections.abc import Callable
 from colorsys import hsv_to_rgb
+from copy import deepcopy
+from typing import Any, Generic, TypeVar, cast
 
 import numpy as np
 import pyvista as pv
 import torchfea
 
-from ...constants import CONSTANT
 from ...optcore.modelparams.parts import (
     BoxPart,
     INPPart,
     load_model_assembly,
     resolve_model_path,
 )
-from ..i18n import localized_message
 from ..application.cad import cad_brep_records_from_node
 from ..application.expressions import DefinitionValues
+from ..i18n import localized_message
+from ..model.node_types.materials import SIMPFieldMaterialNode
+from ..model.node_types.parts import (
+    BoundaryPartNode,
+    BoxPartNode,
+    CADPartNode,
+    INPPartNode,
+    TorchFEAPartNode,
+)
+from ..model.node_types.surfaces import (
+    BspCylinderSurfaceNode,
+    CPGEOCylinderSurfaceNode,
+    CPGEOSphereSurfaceNode,
+    FixedSTLSurfaceNode,
+)
 from ..model.problem import (
     FEAComponentNode,
     InstanceNode,
@@ -29,14 +43,8 @@ from ..model.problem import (
     SurfaceNode,
     resolve_model_directory,
 )
-from ..model.node_types.parts import BoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, TorchFEAPartNode
-from ..model.node_types.surfaces import BspCylinderSurfaceNode, CPGEOCylinderSurfaceNode, CPGEOSphereSurfaceNode, FixedSTLSurfaceNode
-from ..model.node_types.materials import SIMPFieldMaterialNode
+from ..theme import theme_manager
 from .scene import PreviewScene
-
-
-_INSTANCE_COLORS = tuple(deepcopy(CONSTANT.UI.VIEWER.GEOMETRY.INSTANCE_COLORS))
-_UNINSTANCED_COLOR = CONSTANT.UI.VIEWER.GEOMETRY.BASE_UNINSTANCED_COLOR
 
 
 def apply_instance_pose(
@@ -45,12 +53,19 @@ def apply_instance_pose(
     values: DefinitionValues | None = None,
 ) -> pv.DataSet:
     transformed = mesh.copy()
-    rotation = np.asarray(values.resolve(instance.rotation) if values else instance.rotation, dtype=float)
+    rotation = np.asarray(
+        values.resolve(instance.rotation) if values else instance.rotation, dtype=float
+    )
     angle = float(np.linalg.norm(rotation))
-    if angle > CONSTANT.UI.VIEWER.GEOMETRY.ROTATION_ZERO_TOLERANCE:
-        transformed.rotate_vector(rotation / angle, np.degrees(angle), point=(0, 0, 0), inplace=True)
+    if angle > theme_manager.palette.viewer.geometry.rotation_zero_tolerance:
+        transformed.rotate_vector(
+            rotation / angle, np.degrees(angle), point=(0, 0, 0), inplace=True
+        )
     transformed.translate(
-        np.asarray(values.resolve(instance.translation) if values else instance.translation, dtype=float),
+        np.asarray(
+            values.resolve(instance.translation) if values else instance.translation,
+            dtype=float,
+        ),
         inplace=True,
     )
     return transformed
@@ -61,6 +76,7 @@ PartT = TypeVar("PartT", bound=PartNode)
 
 class PartPreviewAdapter(Generic[PartT]):
     """Extension point for geometry, surface selections and node-set queries."""
+
     def preview(
         self,
         context: PreviewGeometry,
@@ -85,17 +101,21 @@ class PartPreviewVisitor:
     def __init__(self) -> None:
         self._adapters: dict[type[PartNode], PartPreviewAdapter[Any]] = {}
 
-    def register(self, node_type: type[PartT], adapter: PartPreviewAdapter[PartT]) -> None:
+    def register(
+        self, node_type: type[PartT], adapter: PartPreviewAdapter[PartT]
+    ) -> None:
         self._adapters[node_type] = adapter
 
     def adapter(self, part: PartT) -> PartPreviewAdapter[PartT]:
         for node_type in type(part).__mro__:
             if node_type in self._adapters:
                 return cast(PartPreviewAdapter[PartT], self._adapters[node_type])
-        raise NotImplementedError(localized_message(
-            "ui.errors.geometry.no_preview_adapter_registered_for_value",
-            value_0=part.type,
-        ))
+        raise NotImplementedError(
+            localized_message(
+                "ui.errors.geometry.no_preview_adapter_registered_for_value",
+                value_0=part.type,
+            )
+        )
 
     def visit(
         self,
@@ -125,19 +145,21 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                 color=(
                     context.instance_color(instance.name)
                     if instance is not None
-                    else _UNINSTANCED_COLOR
+                    else theme_manager.palette.viewer.geometry.uninstanced_color
                 ),
                 # Both sides of the exterior shell cover the cavity. Keep
                 # their combined opacity low enough to see internal loads.
                 opacity=(
-                    CONSTANT.UI.VIEWER.BOUNDARY_SHELL_OPACITY
+                    theme_manager.palette.viewer.geometry.boundary_shell_opacity
                     if len(surfaces) > 1 and index == 0
                     else 1.0
                 ),
                 show_edges=instance is None,
                 smooth_shading=True,
             )
-            context.scene.add_base(name, mesh, name=f"boundary:{name}:surface-{index}", **options)
+            context.scene.add_base(
+                name, mesh, name=f"boundary:{name}:surface-{index}", **options
+            )
 
     def surface(
         self,
@@ -179,7 +201,9 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
             name,
             mesh,
             name=f"box:{name}",
-            color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
+            color=context.instance_color(instance.name)
+            if instance
+            else theme_manager.palette.viewer.geometry.uninstanced_color,
             opacity=1.0,
             show_edges=instance is None,
         )
@@ -193,7 +217,11 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
         part: BoxPartNode,
         name: str,
     ) -> pv.DataSet | None:
-        node_faces = {f"nodes_{axis}{side}": f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")}
+        node_faces = {
+            f"nodes_{axis}{side}": f"surface_{axis}{side}"
+            for axis in "xyz"
+            for side in ("min", "max")
+        }
         name = node_faces.get(name, name)
         if name in {"", "extern", part.exterior_surface or "extern"}:
             box = context.box_part(part)
@@ -236,7 +264,9 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
                 name,
                 mesh,
                 name=f"inp:{name}",
-                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
+                color=context.instance_color(instance.name)
+                if instance
+                else theme_manager.palette.viewer.geometry.uninstanced_color,
                 opacity=1.0,
                 show_edges=instance is None,
                 smooth_shading=True,
@@ -252,11 +282,7 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
     ) -> None:
         records = context.cad_records(part)
         scene = context.scene
-        instance_name = (
-            instance.name
-            if instance is not None
-            else part.name or "part"
-        )
+        instance_name = instance.name if instance is not None else part.name or "part"
         face_centers = []
         face_labels = []
         seen_edges: set[int] = set()
@@ -266,7 +292,10 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
             triangles = np.asarray(record["triangles"], dtype=np.int64).reshape(-1, 3)
             if not len(points) or not len(triangles):
                 raise ValueError(
-                    localized_message("ui.errors.geometry.cad_face_value_has_no_display_triangles", value_0=face_index)
+                    localized_message(
+                        "ui.errors.geometry.cad_face_value_has_no_display_triangles",
+                        value_0=face_index,
+                    )
                 )
             face_point_ids = np.unique(triangles)
             face_points = points[face_point_ids]
@@ -286,14 +315,16 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
                 instance_name,
                 face,
                 name=f"cad-face:{instance_name}:{face_index}",
-                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
+                color=context.instance_color(instance.name)
+                if instance
+                else theme_manager.palette.viewer.geometry.uninstanced_color,
                 opacity=1.0,
                 show_edges=False,
                 smooth_shading=True,
-                ambient=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_AMBIENT,
-                diffuse=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_DIFFUSE,
-                specular=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_SPECULAR,
-                specular_power=CONSTANT.UI.VIEWER.GEOMETRY.CAD_FACE_SPECULAR_POWER,
+                ambient=theme_manager.palette.viewer.geometry.cad_face_ambient,
+                diffuse=theme_manager.palette.viewer.geometry.cad_face_diffuse,
+                specular=theme_manager.palette.viewer.geometry.cad_face_specular,
+                specular_power=theme_manager.palette.viewer.geometry.cad_face_specular_power,
             )
             centers = face.cell_centers().points
             if len(centers):
@@ -320,8 +351,8 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
                 scene.add_mesh(
                     edge_mesh,
                     name=f"cad-edge:{instance_name}:{edge_tag}",
-                    color=CONSTANT.UI.VIEWER.GEOMETRY.CAD_EDGE_COLOR,
-                    line_width=CONSTANT.UI.VIEWER.GEOMETRY.CAD_EDGE_WIDTH,
+                    color=theme_manager.palette.viewer.geometry.cad_edge_color,
+                    line_width=theme_manager.palette.viewer.geometry.cad_edge_width,
                     render_lines_as_tubes=True,
                     lighting=False,
                 )
@@ -330,11 +361,11 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
             scene.add_point_labels(
                 np.asarray(face_centers),
                 face_labels,
-                font_size=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_FONT_SIZE,
-                text_color="#ffffff",
+                font_size=theme_manager.palette.viewer.geometry.cad_label_font_size,
+                text_color=theme_manager.palette.text,
                 shape="rounded_rect",
-                shape_color=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_SHAPE_COLOR,
-                shape_opacity=CONSTANT.UI.VIEWER.GEOMETRY.CAD_LABEL_SHAPE_OPACITY,
+                shape_color=theme_manager.palette.viewer.geometry.cad_label_shape_color,
+                shape_opacity=theme_manager.palette.viewer.geometry.cad_label_shape_opacity,
                 show_points=False,
                 always_visible=True,
                 name=f"cad-face-labels:{instance_name}",
@@ -354,10 +385,14 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
 
 
 class TorchFEAPreviewAdapter(PartPreviewAdapter[TorchFEAPartNode]):
-    def model_part(self, context: PreviewGeometry, part: TorchFEAPartNode) -> torchfea.Part:
+    def model_part(
+        self, context: PreviewGeometry, part: TorchFEAPartNode
+    ) -> torchfea.Part:
         linked = context.problem.imported_model_part_node()
         if linked is None:
-            raise ValueError(localized_message("ui.errors.geometry.no_linked_torchfea_model"))
+            raise ValueError(
+                localized_message("ui.errors.geometry.no_linked_torchfea_model")
+            )
         assembly = context._ensure_torchfea_model(linked)
         return assembly.get_part(part.assembly_name)
 
@@ -384,7 +419,9 @@ class TorchFEAPreviewAdapter(PartPreviewAdapter[TorchFEAPartNode]):
                 name,
                 mesh,
                 name=f"torchfea:{name}",
-                color=context.instance_color(instance.name) if instance else _UNINSTANCED_COLOR,
+                color=context.instance_color(instance.name)
+                if instance
+                else theme_manager.palette.viewer.geometry.uninstanced_color,
                 opacity=1.0,
                 show_edges=instance is None,
                 smooth_shading=True,
@@ -406,7 +443,9 @@ SurfaceT = TypeVar("SurfaceT", bound=SurfaceNode)
 
 class SurfacePreviewVisitor:
     def __init__(self) -> None:
-        self._builders: dict[type[SurfaceNode], Callable[[Any, DefinitionValues], pv.DataSet | None]] = {}
+        self._builders: dict[
+            type[SurfaceNode], Callable[[Any, DefinitionValues], pv.DataSet | None]
+        ] = {}
         self.register(BspCylinderSurfaceNode, self.cylinder)
         self.register(CPGEOCylinderSurfaceNode, self.cylinder)
         self.register(CPGEOSphereSurfaceNode, self.sphere)
@@ -419,35 +458,57 @@ class SurfacePreviewVisitor:
     ) -> None:
         self._builders[node_type] = builder
 
-    def visit(self, surface: SurfaceNode, values: DefinitionValues) -> pv.DataSet | None:
-        builder = next((self._builders[cls] for cls in type(surface).__mro__ if cls in self._builders), None)
+    def visit(
+        self, surface: SurfaceNode, values: DefinitionValues
+    ) -> pv.DataSet | None:
+        builder = next(
+            (
+                self._builders[cls]
+                for cls in type(surface).__mro__
+                if cls in self._builders
+            ),
+            None,
+        )
         return builder(surface, values) if builder else None
 
     @staticmethod
-    def cylinder(surface: BspCylinderSurfaceNode | CPGEOCylinderSurfaceNode, values: DefinitionValues) -> pv.PolyData:
-        location = np.asarray(values.resolve(surface.init_location or [0., 0., 0.]), dtype=float)
+    def cylinder(
+        surface: BspCylinderSurfaceNode | CPGEOCylinderSurfaceNode,
+        values: DefinitionValues,
+    ) -> pv.PolyData:
+        location = np.asarray(
+            values.resolve(surface.init_location or [0.0, 0.0, 0.0]), dtype=float
+        )
         length = float(values.resolve(surface.length))
-        center = location + [0., 0., length / 2]
+        center = location + [0.0, 0.0, length / 2]
         return pv.Cylinder(
             center=center,
-            direction=(0., 0., 1.),
+            direction=(0.0, 0.0, 1.0),
             radius=float(values.resolve(surface.r0)),
             height=length,
-            resolution=CONSTANT.UI.VIEWER.GEOMETRY.CYLINDER_RESOLUTION,
+            resolution=theme_manager.palette.viewer.geometry.cylinder_resolution,
         )
 
     @staticmethod
-    def sphere(surface: CPGEOSphereSurfaceNode, values: DefinitionValues) -> pv.PolyData:
+    def sphere(
+        surface: CPGEOSphereSurfaceNode, values: DefinitionValues
+    ) -> pv.PolyData:
         return pv.Sphere(
-            center=values.resolve(surface.init_location or [0., 0., 0.]),
+            center=values.resolve(surface.init_location or [0.0, 0.0, 0.0]),
             radius=float(values.resolve(surface.r0)),
-            theta_resolution=CONSTANT.UI.VIEWER.GEOMETRY.SPHERE_THETA_RESOLUTION,
-            phi_resolution=CONSTANT.UI.VIEWER.GEOMETRY.SPHERE_PHI_RESOLUTION,
+            theta_resolution=theme_manager.palette.viewer.geometry.sphere_theta_resolution,
+            phi_resolution=theme_manager.palette.viewer.geometry.sphere_phi_resolution,
         )
 
     @staticmethod
-    def stl(surface: FixedSTLSurfaceNode, values: DefinitionValues) -> pv.DataSet | None:
-        return pv.read(surface.path_stl) if surface.path_stl and os.path.exists(surface.path_stl) else None
+    def stl(
+        surface: FixedSTLSurfaceNode, values: DefinitionValues
+    ) -> pv.DataSet | None:
+        return (
+            pv.read(surface.path_stl)
+            if surface.path_stl and os.path.exists(surface.path_stl)
+            else None
+        )
 
 
 class PreviewGeometry:
@@ -499,13 +560,26 @@ class PreviewGeometry:
                             color_index
                         )
         else:
-            raise ValueError(localized_message("ui.errors.geometry.unknown_preview_mode_value", value_0=mode))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.geometry.unknown_preview_mode_value", value_0=mode
+                )
+            )
         for part in parts:
             instances = part.instances if mode == "assembly" else [None]
             for instance in instances:
                 try:
                     self.parts.visit(self, part, instance)
-                except (ValueError, TypeError, KeyError, OSError, RuntimeError, NotImplementedError, NameError, SyntaxError) as exc:
+                except (
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    OSError,
+                    RuntimeError,
+                    NotImplementedError,
+                    NameError,
+                    SyntaxError,
+                ) as exc:
                     self._show_preview_message(str(exc))
         if mode == "assembly":
             try:
@@ -521,7 +595,9 @@ class PreviewGeometry:
 
     def instance_color(self, instance_name: str) -> str:
         """Return a stable assembly color for a named Instance."""
-        return self._instance_colors.get(instance_name, _INSTANCE_COLORS[0])
+        return self._instance_colors.get(
+            instance_name, theme_manager.palette.viewer.geometry.instance_colors[0]
+        )
 
     def surface_mesh(self, surface: SurfaceNode) -> pv.DataSet | None:
         return self.surfaces.visit(surface, self.values)
@@ -555,7 +631,9 @@ class PreviewGeometry:
             self._cad_cache[id(part)] = cad_brep_records_from_node(part, self.problem)
         return self._cad_cache[id(part)]
 
-    def mesh_for_surface(self, component: FEAComponentNode, surface_name: str) -> pv.DataSet | None:
+    def mesh_for_surface(
+        self, component: FEAComponentNode, surface_name: str
+    ) -> pv.DataSet | None:
         instance = component.instance
         name = instance.name if instance is not None else component.instance_name or ""
         face = _cad_face_name(surface_name)
@@ -563,18 +641,26 @@ class PreviewGeometry:
             return self._cad_face_meshes[(name, face)]
         part = self.problem.part_for_instance(instance or name)
         if part is None:
-            part = next((p for p in self.problem.parts() if p.assembly_name == name), None)
+            part = next(
+                (p for p in self.problem.parts() if p.assembly_name == name), None
+            )
         if part is None:
             return None
         try:
             mesh = self.parts.adapter(part).surface(self, part, surface_name)
             if instance is None:
-                instance = next((item for item in part.instances if item.name == name), None)
-            return apply_instance_pose(
-                mesh,
-                instance,
-                self.values,
-            ) if mesh is not None and instance is not None else mesh
+                instance = next(
+                    (item for item in part.instances if item.name == name), None
+                )
+            return (
+                apply_instance_pose(
+                    mesh,
+                    instance,
+                    self.values,
+                )
+                if mesh is not None and instance is not None
+                else mesh
+            )
         except (KeyError, ValueError, NotImplementedError):
             return None
 
@@ -601,8 +687,14 @@ class PreviewGeometry:
                     return None
 
             point = pv.PolyData(points.mean(axis=0).reshape(1, 3))
-            instance = next((i for i in part.instances if i.name == instance_name), None)
-            return apply_instance_pose(point, instance, self.values).points[0] if instance else point.points[0]
+            instance = next(
+                (i for i in part.instances if i.name == instance_name), None
+            )
+            return (
+                apply_instance_pose(point, instance, self.values).points[0]
+                if instance
+                else point.points[0]
+            )
         except (KeyError, IndexError, ValueError, NotImplementedError):
             return None
 
@@ -629,28 +721,32 @@ class PreviewGeometry:
                     box,
                     name=name,
                     style="wireframe",
-                    color=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_COLOR,
-                    opacity=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_OPACITY,
+                    color=theme_manager.palette.viewer.geometry.material_region_color,
+                    opacity=theme_manager.palette.viewer.geometry.material_region_opacity,
                 )
                 scene.add_mesh(
                     box,
                     name=f"{name}:fill",
-                    color=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_COLOR,
-                    opacity=CONSTANT.UI.VIEWER.GEOMETRY.MATERIAL_REGION_FILL_OPACITY,
+                    color=theme_manager.palette.viewer.geometry.material_region_color,
+                    opacity=theme_manager.palette.viewer.geometry.material_region_fill_opacity,
                 )
 
     def _show_preview_message(self, message: str) -> None:
         self.scene.add_text(
             message,
             position="upper_left",
-            color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_ANNOTATION_ERROR,
-            font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
+            color=theme_manager.palette.viewer.render.marker_color_annotation_error,
+            font_size=theme_manager.palette.viewer.render.label_font_size,
         )
 
     def _ensure_torchfea_model(self, geometry: TorchFEAPartNode) -> torchfea.Assembly:
         if not geometry.model_directory:
             self._clear_model_preview()
-            raise ValueError(localized_message("ui.errors.geometry.no_torchfea_model_is_linked_from_initial_geometry"))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.geometry.no_torchfea_model_is_linked_from_initial_geometry"
+                )
+            )
         model_directory = resolve_model_directory(geometry.model_directory)
         path = resolve_model_path(model_directory, geometry.model_filename or "")
         placement_key = tuple(
@@ -658,7 +754,11 @@ class PreviewGeometry:
                 part.assembly_name,
                 part.model_part_name,
                 tuple(
-                    (instance.name, *self.values.resolve(instance.translation), *self.values.resolve(instance.rotation))
+                    (
+                        instance.name,
+                        *self.values.resolve(instance.translation),
+                        *self.values.resolve(instance.rotation),
+                    )
                     for instance in part.instances
                 ),
             )
@@ -683,11 +783,7 @@ class PreviewGeometry:
     def _assembly_for_problem(self, source: torchfea.Assembly) -> torchfea.Assembly:
         """Build a preview Assembly from the UI's Part/Instance definitions."""
         assembly = torchfea.Assembly()
-        parts = [
-            part
-            for part in self.problem.parts()
-            if part.type == "TorchFEAPart"
-        ]
+        parts = [part for part in self.problem.parts() if part.type == "TorchFEAPart"]
         if not parts:
             return source
 
@@ -734,17 +830,13 @@ class PreviewGeometry:
             (
                 item
                 for item in self.problem.parts()
-                if item.name == object_name
-                or item.assembly_name == object_name
+                if item.name == object_name or item.assembly_name == object_name
             ),
             None,
         )
         if part is None:
             return None
-        centers = [
-            self.instance_center(instance.name)
-            for instance in part.instances
-        ]
+        centers = [self.instance_center(instance.name) for instance in part.instances]
         centers = [item for item in centers if item is not None]
         return np.mean(centers, axis=0) if centers else None
 
@@ -758,23 +850,19 @@ def _cad_face_name(surface_name: str) -> str | None:
 
 
 def _instance_color(index: int) -> str:
-    if index < len(_INSTANCE_COLORS):
-        return _INSTANCE_COLORS[index]
+    if index < len(theme_manager.palette.viewer.geometry.instance_colors):
+        return theme_manager.palette.viewer.geometry.instance_colors[index]
     hue = (
-        (index - len(_INSTANCE_COLORS))
-        * CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_HUE_STEP
-        + CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_HUE_OFFSET
+        (index - len(theme_manager.palette.viewer.geometry.instance_colors))
+        * theme_manager.palette.viewer.geometry.extra_instance_hue_step
+        + theme_manager.palette.viewer.geometry.extra_instance_hue_offset
     ) % 1.0
     red, green, blue = hsv_to_rgb(
         hue,
-        CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_SATURATION,
-        CONSTANT.UI.VIEWER.GEOMETRY.EXTRA_INSTANCE_VALUE,
+        theme_manager.palette.viewer.geometry.extra_instance_saturation,
+        theme_manager.palette.viewer.geometry.extra_instance_value,
     )
-    return (
-        f"#{round(red * 255):02x}"
-        f"{round(green * 255):02x}"
-        f"{round(blue * 255):02x}"
-    )
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
 
 
 def _surface_index_from_name(surface_name: str) -> int:
@@ -794,15 +882,13 @@ def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
     target = bounds[5] if end == "Head" else bounds[4]
     tolerance = max(
         (bounds[5] - bounds[4])
-        * CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_RELATIVE_TOLERANCE,
-        CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_ABSOLUTE_TOLERANCE,
+        * theme_manager.palette.viewer.geometry.boundary_relative_tolerance,
+        theme_manager.palette.viewer.geometry.boundary_absolute_tolerance,
     )
     cap_cells = np.abs(centers[:, 2] - target) <= tolerance
     if not np.any(cap_cells):
         return mesh
-    return mesh.extract_cells(cap_cells).extract_surface(
-        algorithm="dataset_surface"
-    )
+    return mesh.extract_cells(cap_cells).extract_surface(algorithm="dataset_surface")
 
 
 def _preview_node_set_points(
@@ -818,27 +904,31 @@ def _preview_node_set_points(
     target = float(z.max() if suffix == "Head" else z.min())
     tolerance = max(
         float(np.ptp(points, axis=0).max())
-        * CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_RELATIVE_TOLERANCE,
-        CONSTANT.UI.VIEWER.GEOMETRY.BOUNDARY_ABSOLUTE_TOLERANCE,
+        * theme_manager.palette.viewer.geometry.boundary_relative_tolerance,
+        theme_manager.palette.viewer.geometry.boundary_absolute_tolerance,
     )
     return points[np.abs(z - target) <= tolerance]
 
 
 class InitialDesignGeometry:
     """Prepared isometric triangles and outlines; painting contains no geometry work."""
-    horizontal = np.array([1., -1., 0.]) / np.sqrt(2)
-    vertical = np.array([1., 1., -2.]) / np.sqrt(6)
-    depth = np.array([1., 1., 1.]) / np.sqrt(3)
+
+    horizontal = np.array([1.0, -1.0, 0.0]) / np.sqrt(2)
+    vertical = np.array([1.0, 1.0, -2.0]) / np.sqrt(6)
+    depth = np.array([1.0, 1.0, 1.0]) / np.sqrt(3)
 
     def __init__(self, options):
-        meshes = options.geometry_layout().get_initial_meshes() if options.method == "shapeopt" else {
-            "body": BoxPreviewAdapter.mesh(
-                length=options.length,
-                height=options.height,
-                depth=options.depth,
-            )
-        }
-        palette = CONSTANT.UI.QUICKSTART.PREVIEW.CAVITY_COLORS
+        if options.method == "shapeopt":
+            meshes = _layered_chamber_preview_meshes(options.geometry_layout())
+        else:
+            meshes = {
+                "body": BoxPreviewAdapter.mesh(
+                    length=options.length,
+                    height=options.height,
+                    depth=options.depth,
+                )
+            }
+        palette = theme_manager.palette.quickstart_preview.cavities
         self.triangles = []
         self.lines = []
         for name, mesh in meshes.items():
@@ -846,51 +936,73 @@ class InitialDesignGeometry:
             xyz = mesh.points[mesh.faces.reshape(-1, 4)[:, 1:]]
             normals = np.cross(xyz[:, 1] - xyz[:, 0], xyz[:, 2] - xyz[:, 0])
             light_direction = np.asarray(
-                deepcopy(CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_DIRECTION), dtype=float
+                deepcopy(theme_manager.palette.quickstart_preview.light_direction),
+                dtype=float,
             )
             normal_length = np.maximum(
                 np.linalg.norm(normals, axis=1),
-                CONSTANT.UI.VIEWER.GEOMETRY.SURFACE_NORMAL_TOLERANCE,
+                theme_manager.palette.quickstart_preview.surface_normal_tolerance,
             )
-            light = CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_AMBIENT + (
-                CONSTANT.UI.VIEWER.GEOMETRY.MESH_LIGHT_CONTRAST
+            light = theme_manager.palette.quickstart_preview.light_ambient + (
+                theme_manager.palette.quickstart_preview.light_contrast
                 * np.abs(normals @ light_direction)
                 / (normal_length * np.linalg.norm(light_direction))
             )
             color = (
-                CONSTANT.UI.QUICKSTART.PREVIEW.BODY_COLOR
+                theme_manager.palette.quickstart_preview.body
                 if name == "body"
                 else palette[int(name.split(":")[0].split("-")[1]) % len(palette)]
             )
             alpha = (
-                CONSTANT.UI.QUICKSTART.PREVIEW.BODY_TRANSPARENCY_ALPHA
+                theme_manager.palette.quickstart_preview.body_transparency_alpha
                 if name == "body" and options.method == "shapeopt"
-                else CONSTANT.UI.QUICKSTART.PREVIEW.OPAQUE_ALPHA
+                else theme_manager.palette.quickstart_preview.opaque_alpha
             )
             for points, brightness in zip(xyz, light):
-                self.triangles.append((
-                    float(points.mean(axis=0) @ self.depth),
-                    self.coordinates(points),
-                    color,
-                    int(CONSTANT.UI.QUICKSTART.PREVIEW.LIGHT_INTENSITY_SCALE * brightness),
-                    alpha,
-                ))
+                self.triangles.append(
+                    (
+                        float(points.mean(axis=0) @ self.depth),
+                        self.coordinates(points),
+                        color,
+                        int(
+                            theme_manager.palette.quickstart_preview.light_intensity
+                            * brightness
+                        ),
+                        alpha,
+                    )
+                )
         self.triangles.sort(key=lambda item: item[0])
         vertices = np.concatenate([mesh.points for mesh in meshes.values()])
         projected = self.coordinates(vertices)
         self.lower, self.upper = projected.min(axis=0), projected.max(axis=0)
         if options.method == "shapeopt":
-            for sign in (-1., 1.):
+            for sign in (-1.0, 1.0):
                 xy = sign * options.radius * self.horizontal[:2]
-                self.lines.append(self.coordinates(np.array([[*xy, 0.], [*xy, options.total_length]])))
+                self.lines.append(
+                    self.coordinates(
+                        np.array([[*xy, 0.0], [*xy, options.total_length]])
+                    )
+                )
             angles = np.linspace(
-                0.0, 2 * np.pi, CONSTANT.UI.QUICKSTART.PREVIEW.OUTLINE_CIRCLE_SAMPLES
+                0.0,
+                2 * np.pi,
+                theme_manager.palette.quickstart_preview.outline_circle_samples,
             )
-            for z in (0., options.total_length):
-                self.lines.append(self.coordinates(np.column_stack((options.radius * np.cos(angles), options.radius * np.sin(angles), np.full_like(
-                    angles,
-                    z,
-                )))))
+            for z in (0.0, options.total_length):
+                self.lines.append(
+                    self.coordinates(
+                        np.column_stack(
+                            (
+                                options.radius * np.cos(angles),
+                                options.radius * np.sin(angles),
+                                np.full_like(
+                                    angles,
+                                    z,
+                                ),
+                            )
+                        )
+                    )
+                )
 
     @classmethod
     def coordinates(cls, points: np.ndarray) -> np.ndarray:
@@ -898,10 +1010,48 @@ class InitialDesignGeometry:
 
     def transform(self, width: int, height: int) -> tuple[float, np.ndarray]:
         span = np.maximum(
-            self.upper - self.lower, CONSTANT.UI.QUICKSTART.PREVIEW.MINIMUM_PROJECTED_SPAN
+            self.upper - self.lower,
+            theme_manager.palette.quickstart_preview.minimum_projected_span,
         )
         scale = min(
-            (width - CONSTANT.UI.QUICKSTART.PREVIEW.HORIZONTAL_MARGIN) / span[0],
-            (height - CONSTANT.UI.QUICKSTART.PREVIEW.VERTICAL_MARGIN) / span[1],
+            (width - theme_manager.palette.quickstart_preview.horizontal_margin)
+            / span[0],
+            (height - theme_manager.palette.quickstart_preview.vertical_margin)
+            / span[1],
         )
-        return scale, np.array([width / 2, height / 2]) - scale * (self.lower + self.upper) / 2
+        return scale, np.array([width / 2, height / 2]) - scale * (
+            self.lower + self.upper
+        ) / 2
+
+
+def _layered_chamber_preview_meshes(layout) -> dict[str, pv.PolyData]:
+    """Build Quickstart-only preview meshes using the active theme's quality."""
+    style = theme_manager.palette.quickstart_preview
+    meshes = {
+        "body": pv.Cylinder(
+            center=[0.0, 0.0, layout.length / 2],
+            direction=[0.0, 0.0, 1.0],
+            radius=layout.body_radius,
+            height=layout.length,
+            resolution=style.body_resolution,
+        )
+    }
+    for index, cavity in enumerate(layout.cavity_specs()):
+        center = [cavity.x, cavity.y, cavity.z + cavity.length / 2]
+        meshes[f"layer-{cavity.layer}:cavity-{index}"] = (
+            pv.Sphere(
+                center=center,
+                radius=cavity.radius,
+                theta_resolution=style.sphere_theta_resolution,
+                phi_resolution=style.sphere_phi_resolution,
+            )
+            if cavity.shape == "sphere"
+            else pv.Cylinder(
+                center=center,
+                direction=[0.0, 0.0, 1.0],
+                radius=cavity.radius,
+                height=cavity.length,
+                resolution=style.cavity_cylinder_resolution,
+            )
+        )
+    return meshes

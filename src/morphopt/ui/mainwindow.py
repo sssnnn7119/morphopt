@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QDir, QSize, QTimer, Qt
-from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
+from .theme import theme_manager
 from .model.problem import ProblemDefinition
 from .application import ProblemLibrary
 from ..constants import CONSTANT
@@ -23,6 +24,7 @@ from .model.loaders import MORPH_SUFFIX
 from .schemes.base import scheme_label
 from .i18n import localization, tr
 from .widgets.language_selector import LanguageSelector
+from .widgets.theme_selector import ThemeSelector
 from .workbench import Workbench
 from .observe_panel import ObserverControls
 from .widgets.quickstart import QuickstartDialog
@@ -33,11 +35,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._workbench: Workbench | None = None
         self._observer: ObserverControls | None = None
+        self._unsubscribe_theme = theme_manager.subscribe(self._apply_theme)
+        self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
         self._add_language_switch()
-        self.resize(*deepcopy(CONSTANT.UI.APPLICATION.MAIN_WINDOW_SIZE))
+        self.resize(*deepcopy(theme_manager.palette.layout.main_window_size))
         self.set_problem(ProblemLibrary.create_blank())
 
     # ------------------------------------------------------------------ api
@@ -46,9 +50,18 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ language
     def _add_language_switch(self) -> None:
+        self._theme_switch = ThemeSelector()
         self._lang_switch = LanguageSelector()
         self._unsubscribe_locale = localization.subscribe(self._apply_language)
+        self.statusBar().addPermanentWidget(self._theme_switch)
         self.statusBar().addPermanentWidget(self._lang_switch)
+
+    def _apply_theme(self, _theme: str | None = None) -> None:
+        """Refresh theme-aware drawing without replacing either page."""
+        if self._workbench is not None:
+            self._workbench.apply_theme()
+        if self._observer is not None:
+            self._observer.apply_theme()
 
     def _apply_language(self, _locale: str | None = None) -> None:
         # Directly re-apply the current language to both parts in place: no
@@ -224,7 +237,7 @@ class MainWindow(QMainWindow):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setPen(
                 QPen(
-                    Qt.GlobalColor.white,
+                    QColor(theme_manager.palette.text),
                     2.0,
                     Qt.PenStyle.SolidLine,
                     Qt.PenCapStyle.RoundCap,
@@ -265,10 +278,10 @@ class MainWindow(QMainWindow):
                     painter.drawLine(9, 4, 9, 20)
             painter.end()
             button.setIcon(QIcon(pixmap))
-            button.setIconSize(QSize(20, 20))
-            button.setStyleSheet(
-                "QToolButton { padding: 2px; min-width: 30px; min-height: 30px; }"
-            )
+            button.setIconSize(QSize(*theme_manager.palette.layout.toolbar_icon_size))
+            button.setProperty("buttonLayout", "navigation")
+            button.style().unpolish(button)
+            button.style().polish(button)
 
     @staticmethod
     def _export_filename(label: str, suffix: str) -> str:

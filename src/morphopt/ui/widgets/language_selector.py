@@ -1,7 +1,7 @@
 """Qt selector and persistence adapter for the pure localization service."""
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QComboBox
-from ...constants import CONSTANT
+from ..theme import theme_manager
 from ..i18n import LocalizationManager, SUPPORTED_LOCALES, localization
 
 _SETTINGS = QSettings("MorphOptUI", "ui")
@@ -19,7 +19,7 @@ class LanguageSelector(QComboBox):
         super().__init__(parent)
         for code in SUPPORTED_LOCALES:
             self.addItem(localization.load_locale(code)["locale.name"], code)
-        self.setFixedWidth(CONSTANT.UI.LAYOUT.LANGUAGE_SELECTOR_WIDTH)
+        self.setFixedWidth(theme_manager.palette.layout.language_selector_width)
         self.set_locale(localization.locale)
         self._unsubscribe_locale = localization.subscribe(self._locale_changed)
         unsubscribe = self._unsubscribe_locale

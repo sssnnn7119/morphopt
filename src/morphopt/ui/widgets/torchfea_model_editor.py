@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..theme import theme_manager
 from ..i18n import tr
 from ...constants import CONSTANT
 from ..application.imported_models import ImportedModelLibrary
@@ -45,14 +46,14 @@ class TorchFEAModelEditor(QWidget):
             title = QLabel(
                 tr('ui.widgets.torchfea_model_editor.simp_initial_geometry_torchfea_assembly')
             )
-            title.setStyleSheet("font-size:14px; font-weight:600;")
+            title.setProperty("textRole", "sectionHeading")
             outer.addWidget(title)
 
         note = QLabel(
             tr('ui.widgets.torchfea_model_editor.create_cad_import_step_mesh_and_define_parts_instances_and_sets_in_torch')
         )
         note.setWordWrap(True)
-        note.setStyleSheet("color:#9aa4b2;")
+        note.setProperty("textRole", "muted")
         outer.addWidget(note)
 
         self.name = QLineEdit()
@@ -99,14 +100,14 @@ class TorchFEAModelEditor(QWidget):
         )
         self.summary.setRootIsDecorated(True)
         self.summary.setAlternatingRowColors(True)
-        self.summary.setIndentation(CONSTANT.UI.WIDGETS.MODEL_SUMMARY_INDENTATION)
+        self.summary.setIndentation(theme_manager.palette.layout.widgets.model_summary_indentation)
         self.summary.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.summary.header().setStretchLastSection(False)
         self.summary.header().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Interactive
         )
         self.summary.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.summary.setColumnWidth(0, CONSTANT.UI.WIDGETS.MODEL_SUMMARY_NAME_COLUMN_WIDTH)
+        self.summary.setColumnWidth(0, theme_manager.palette.layout.widgets.model_summary_name_column_width)
         outer.addWidget(self.summary)
         self._show_empty_summary(
             tr('ui.widgets.torchfea_model_editor.no_torchfea_model_imported')

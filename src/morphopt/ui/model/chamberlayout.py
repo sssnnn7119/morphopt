@@ -1,9 +1,9 @@
 """Layered series/parallel chamber geometry for the Quickstart editor."""
-from copy import deepcopy
-from ..i18n import localized_message
-from ...constants import CONSTANT
 from dataclasses import dataclass, field
 import math
+
+from ...constants import CONSTANT
+from ..i18n import localized_message
 
 
 @dataclass
@@ -162,36 +162,3 @@ class LayeredChambers:
                 )
             bottom += layer.length
         return cavities
-
-    def get_initial_meshes(self):
-        """Create primitive preview meshes, separate from FEA mesh generation."""
-        import pyvista as pv
-
-        meshes = {
-            "body": pv.Cylinder(
-                center=[0., 0., self.length / 2],
-                direction=[0., 0., 1.],
-                radius=self.body_radius,
-                height=self.length,
-                resolution=CONSTANT.UI.QUICKSTART.PREVIEW.BODY_RESOLUTION,
-            )
-        }
-        for index, cavity in enumerate(self.cavity_specs()):
-            center = [cavity.x, cavity.y, cavity.z + cavity.length / 2]
-            meshes[f"layer-{cavity.layer}:cavity-{index}"] = (
-                pv.Sphere(
-                    center=center,
-                    radius=cavity.radius,
-                    theta_resolution=CONSTANT.UI.QUICKSTART.PREVIEW.SPHERE_THETA_RESOLUTION,
-                    phi_resolution=CONSTANT.UI.QUICKSTART.PREVIEW.SPHERE_PHI_RESOLUTION,
-                )
-                if cavity.shape == "sphere"
-                else pv.Cylinder(
-                    center=center,
-                    direction=[0., 0., 1.],
-                    radius=cavity.radius,
-                    height=cavity.length,
-                    resolution=CONSTANT.UI.QUICKSTART.PREVIEW.CAVITY_CYLINDER_RESOLUTION,
-                )
-            )
-        return meshes

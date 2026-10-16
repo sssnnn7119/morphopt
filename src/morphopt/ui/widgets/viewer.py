@@ -4,6 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSignalBlocker, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from pyvistaqt import QtInteractor
+from ..theme import theme_manager
 from ..i18n import tr
 from ..refresh import RefreshContext
 from ..presentation.labels import part_title_text
@@ -12,13 +13,14 @@ from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
 from ..visualization.scene import LoadScene
 from .preview_renderer import PreviewRenderer
+from .plot_style import apply_plotter_theme
 
 
 class _PlotHost(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.plotter = QtInteractor(self)
         lay.addWidget(self.plotter.interactor)
 
@@ -35,7 +37,7 @@ class PreviewViewer(QWidget):
     ):
         super().__init__(parent)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         bar = QHBoxLayout()
         self._lbl_view = QLabel(tr('ui.widgets.viewer.view'))
@@ -70,6 +72,7 @@ class PreviewViewer(QWidget):
         self._selected_step: int | None = None
         self._problem: ProblemDefinition | None = None
         self._language_pending = False
+        self._theme_pending = False
         self._render_pending = False
         self._pending_reset_camera = False
         self.geometry = geometry or PreviewGeometry()
@@ -118,21 +121,47 @@ class PreviewViewer(QWidget):
         self._language_pending = True
         self._refresh_load_language()
 
+    def apply_theme(self) -> None:
+        """Rebuild theme-colored actors while preserving the current camera."""
+        if not self.isVisible():
+            self._theme_pending = True
+            return
+        self._theme_pending = False
+        if self._problem is None:
+            apply_plotter_theme(self.host.plotter)
+            self.host.plotter.render()
+            return
+        self._rebuild_all(reset_camera=False)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if self._render_pending or self._language_pending:
+        if self._render_pending or self._language_pending or self._theme_pending:
             QTimer.singleShot(0, self._render_pending_view)
 
     def _render_pending_view(self) -> None:
         if not self.isVisible():
             return
+        rebuilt = False
         if self._render_pending:
             reset_camera = self._pending_reset_camera
             self._render_pending = False
             self._pending_reset_camera = False
             self._rebuild_all(reset_camera=reset_camera)
+            rebuilt = True
+            if self._problem is None:
+                apply_plotter_theme(self.host.plotter)
+                self.host.plotter.render()
         if self._language_pending:
             self._refresh_load_language()
+        if self._theme_pending:
+            self._theme_pending = False
+            if rebuilt:
+                return
+            if self._problem is None:
+                apply_plotter_theme(self.host.plotter)
+                self.host.plotter.render()
+            else:
+                self._rebuild_all(reset_camera=False)
 
     def _refresh_load_language(self) -> None:
         if self._language_pending and self.isVisible():

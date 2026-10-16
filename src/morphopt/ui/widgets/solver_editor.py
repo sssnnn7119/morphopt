@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTableWidget, QTableWidgetItem,
 )
 
+from ..theme import theme_manager
 from ..model.problem import SolverNode, ProblemDefinition
 from ..i18n import tr
 from ..refresh import RefreshContext
@@ -31,14 +32,14 @@ class SolverEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self._heading = QLabel()
         self._heading.setProperty("textRole", "sectionHeading")
         lay.addWidget(self._heading)
 
         form = QFormLayout()
         hint = QLabel(tr('ui.widgets.solver_editor.devices_multi_select_gpus_checking_cpu_uses_cpu_only'))
-        hint.setStyleSheet("color:#7f8c8d;")
+        hint.setProperty("textRole", "muted")
         form.addRow(hint)
         self._device_box = QHBoxLayout()
         self._device_checks: dict[str, QCheckBox] = {}
@@ -58,10 +59,10 @@ class SolverEditor(QWidget):
         lay.addLayout(form)
 
         grp_title = QLabel(tr('ui.widgets.solver_editor.load_steps_process_task_groups'))
-        grp_title.setStyleSheet("font-weight:600;")
+        grp_title.setProperty("textRole", "sectionHeading")
         lay.addWidget(grp_title)
         help = QLabel(tr('ui.widgets.solver_editor.load_steps_in_the_same_group_are_solved_sequentially_in_one_process_warm'))
-        help.setStyleSheet("color:#7f8c8d;")
+        help.setProperty("textRole", "muted")
         help.setWordWrap(True)
         lay.addWidget(help)
         self._table = QTableWidget()

@@ -51,6 +51,10 @@ ui/
 │   ├── scene.py             场景、标签、载荷图元的数据结构
 │   ├── geometry.py          Part / Surface visitor、预览资源缓存
 │   └── loads.py             工况与边界条件 → 载荷场景
+├── theme/
+│   ├── palette.py           Qt、代码、图表、预览、PyVista 和布局外观类型
+│   ├── themes/              深色、浅色及可注册的主题定义
+│   └── styles/*.qss         Qt 控件样式表片段
 ├── widgets/
 │   ├── definition_actions.py 树菜单和编辑页共用的 Qt 操作入口
 │   ├── editor_pages.py      页面加入编辑栈、绑定路由、连接 changed 信号
@@ -61,6 +65,7 @@ ui/
 │   ├── viewer.py            Part / Assembly / 工况选择与视口组合
 │   ├── model_tree.py        导航投影 → QTreeWidget；菜单与选择信号
 │   ├── language_selector.py 语言选择与 Qt 设置持久化
+│   ├── theme_selector.py    主题选择与应用
 │   ├── param_form.py        节点与参数字典共用的 schema 表单
 │   ├── editor.py            节点编辑页的标题、动作和代码槽
 │   ├── codeeditor.py        通用 Python 代码控件
@@ -68,7 +73,7 @@ ui/
 │   ├── source_view.py       同步后的问题定义 → 只读生成代码
 │   └── ...                  专用编辑器、结果页、对话框
 ├── i18n.py / locales/*.json  无 Qt 的本地化服务与语言资源
-├── codegen/ / schemes/ / templates/
+├── codegen/ / schemes/ (Python-defined scheme policies)
 └── launcher.py              无 Qt 的 subprocess 基础设施
 ```
 
@@ -218,6 +223,18 @@ Updater 的目标函数、几何对称约束和罚函数也投影为组节点下
 平面和深度剥离。清空视口后重新恢复光照与配置，避免半透明外表面消失。
 BoundaryPart 的每个曲面使用独立且稳定的 actor 名称，空心部件的外表面半透明、内表面不透明。
 
+### 主题与外观
+
+`ui/theme` 是外观配置入口。`ThemePalette` 组合 Qt 颜色令牌、字体与代码高亮、图表、Quickstart
+预览、变形网格、PyVista 的 `ViewerStyle`，以及 `LayoutStyle` 中的窗口尺寸、控件尺寸、间距和
+分栏比例。深色、浅色分别在 `themes/` 中配置；新增主题时注册一个完整的不可变 `ThemePalette`。
+
+`styles/*.qss` 统一管理 Qt 控件的状态、边框、通用间距和文字样式。PyVista 和 Matplotlib
+通过同一 `theme_manager.palette` 读取对应的渲染与布局配置，不在视图模块中维护外观常量。
+主题切换时，工作台重建主题相关的预览 actor 并保留相机位置；图表、代码高亮、Quickstart
+预览和结果网格也会刷新。`constants.py` 只保留业务默认值、运行限制、刷新/轮询时序和几何
+算法精度；窗口及控件布局尺寸统一保存在 `LayoutStyle`。
+
 ## 4. 类型化任务树
 
 持久化模型的顶层结构为：
@@ -298,17 +315,16 @@ Quickstart 复用该方法。几何准备归 `visualization`，widget 只负责�
 内腔偏置 Part 在统一 Part schema 中注册，代码生成器按目标 Part 类型选择
 `UpdaterOffsetBoundaryPart`；参数集合、FEA 和求解器仍使用公共接口。
 
-模板是 `ui/templates/*.morph`，由 `schemes/base.py` 自动发现。新增模板不增加新的
-“优化方法”类：
+内置方案策略由 `schemes/base.py` 中的 Python 类注册，默认问题由 Quickstart 构建。
+`.morph` 文件只作为用户问题定义，由打开/导入流程读取；它不参与方案注册，内置网格
+资源改由用户提供的模型路径加载。
+新增方案策略时：
 
-1. 复制或创建一个合法 `.morph`。
-2. 在顶层 `template` 元数据中给出唯一 id、中英文名称、可用几何/材料类型等。
-3. 放入 `ui/templates/`；打包规则会包含 `.morph` 和模板引用的 `.npz`。
-4. `codesign` id 目前由 `HIDDEN_TEMPLATE_IDS` 隐藏，未完成前不得显示。
-5. 运行全部模板代码生成测试。
+1. 继承 `SchemeTemplate`，显式定义方案 id、显示名称、默认材料和代码槽。
+2. 将实例加入 `BUILTIN_SCHEMES`。
 
-`SchemeTemplate` 提供 schema 驱动的共享工厂；`MorphTemplate` 克隆文件中的问题树。
-模板只决定初始问题，不形成另一套运行时类型系统。
+`SchemeTemplate` 提供 schema 驱动的共享工厂；`BuiltinSchemeTemplate` 以 Python 策略
+配合 Quickstart 生成起始问题。方案策略不依赖起始文件目录。
 
 ## 6. 编辑器规范
 

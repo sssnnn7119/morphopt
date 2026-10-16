@@ -138,7 +138,7 @@
 | `presentation/` | 无 Qt 的导航、标题与结果表格投影。 |
 | `visualization/` | Part/Surface/载荷 visitor 与场景数据。 |
 | `codegen/` | 问题树到 Python 的确定性生成。 |
-| `schemes/` 与 `templates/` | 模板描述、代码片段和内置 `.morph/.npz` 资产。 |
+| `schemes/` | Python 定义的方案策略与代码片段。 |
 | `widgets/` | 树、表单、专用编辑器、预览、结果页和运行对话框。 |
 | `mainwindow.py` | `MainWindow`，应用页面编排。 |
 | `workbench.py` | `Workbench`，优化定义编辑页。 |

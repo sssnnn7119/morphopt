@@ -1,0 +1,24 @@
+/* Application surfaces and navigation views. */
+QMainWindow, QDialog, QWidget { background-color: @window@; color: @text@; }
+QMenuBar, QToolBar, QMenu, QStatusBar { background-color: @panel@; color: @text@; }
+QTreeWidget, QTreeView, QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {
+    background-color: @panel@;
+    color: @text@;
+    border: 1px solid @border@;
+}
+QTreeWidget::item, QListWidget::item { padding: 3px 2px; }
+QTreeWidget::item:selected, QTableWidget::item:selected, QListWidget::item:selected {
+    background-color: @selection@;
+    color: @selection_text@;
+}
+QHeaderView::section {
+    background-color: @panel@;
+    color: @text@;
+    border: 1px solid @border@;
+    padding: 4px;
+}
+QToolTip {
+    background: @panel@;
+    color: @text@;
+    border: 1px solid @border@;
+}

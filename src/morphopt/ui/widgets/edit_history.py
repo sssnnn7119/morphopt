@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...constants import CONSTANT
+from ..theme import theme_manager
 from ..application.edit_history import EditHistory
 from ..i18n import tr
 from ..presentation.edit_history import edit_description
@@ -39,12 +39,12 @@ class _HistoryGraphList(QListWidget):
         self._segments_by_row: dict[int, list[_GraphSegment]] = {}
 
     def set_graph(self, max_lane: int, edges: list[_GraphEdge]) -> None:
-        graph = CONSTANT.UI.LAYOUT.HISTORY
+        graph = theme_manager.palette.layout.history
         self.graph_width = (
-            graph.GRAPH_LEFT_MARGIN
-            + max_lane * graph.GRAPH_LANE_SPACING
-            + graph.GRAPH_LANE_SPACING
-            + graph.GRAPH_RIGHT_MARGIN
+            graph.graph_left_margin
+            + max_lane * graph.graph_lane_spacing
+            + graph.graph_lane_spacing
+            + graph.graph_right_margin
         )
         segments_by_row: dict[int, list[_GraphSegment]] = defaultdict(list)
         for parent_row, child_row, parent_lane, child_lane in edges:
@@ -90,7 +90,7 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
             painter.restore()
             return
 
-        graph = CONSTANT.UI.LAYOUT.HISTORY
+        graph = theme_manager.palette.layout.history
         row = index.row()
         top = option.rect.top()
         bottom = option.rect.bottom()
@@ -101,7 +101,7 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
             graph_list._segments_by_row.get(row, ())
         ):
             color = self._lane_color(child_lane)
-            pen = QPen(color, graph.GRAPH_LINE_WIDTH)
+            pen = QPen(color, graph.graph_line_width)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             parent_x = self._lane_x(option.rect.left(), parent_lane)
@@ -118,12 +118,12 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         node_x = self._lane_x(option.rect.left(), lane)
         current = view_option.font.bold()
         radius = (
-            graph.GRAPH_CURRENT_NODE_RADIUS
+            graph.graph_current_node_radius
             if current
-            else graph.GRAPH_NODE_RADIUS
+            else graph.graph_node_radius
         )
         node_color = self._lane_color(lane)
-        painter.setPen(QPen(node_color, graph.GRAPH_LINE_WIDTH))
+        painter.setPen(QPen(node_color, graph.graph_line_width))
         painter.setBrush(node_color)
         painter.drawEllipse(
             int(node_x - radius),
@@ -141,9 +141,9 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         painter.setPen(view_option.palette.color(text_color_role))
         painter.setFont(view_option.font)
         text_rect = option.rect.adjusted(
-            graph_list.graph_width + graph.GRAPH_TEXT_GAP,
+            graph_list.graph_width + graph.graph_text_gap,
             0,
-            -graph.GRAPH_TEXT_GAP,
+            -graph.graph_text_gap,
             0,
         )
         label = QFontMetrics(view_option.font).elidedText(
@@ -160,17 +160,17 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         size = super().sizeHint(option, index)
-        size.setHeight(CONSTANT.UI.LAYOUT.HISTORY.ROW_HEIGHT)
+        size.setHeight(theme_manager.palette.layout.history.row_height)
         return size
 
     @staticmethod
     def _lane_x(left: int, lane: int) -> int:
-        graph = CONSTANT.UI.LAYOUT.HISTORY
-        return left + graph.GRAPH_LEFT_MARGIN + lane * graph.GRAPH_LANE_SPACING
+        graph = theme_manager.palette.layout.history
+        return left + graph.graph_left_margin + lane * graph.graph_lane_spacing
 
     @staticmethod
     def _lane_color(lane: int) -> QColor:
-        colors = CONSTANT.UI.LAYOUT.HISTORY.GRAPH_BRANCH_COLORS
+        colors = theme_manager.palette.history_branch_colors
         return QColor(colors[lane % len(colors)])
 
 
@@ -186,7 +186,7 @@ class EditHistoryPanel(QWidget):
         self._current_id: int | None = None
         self._request_id = 0
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         header = QHBoxLayout()
         self.title = QLabel(self)
         self.title.setProperty("textRole", "sectionHeading")
@@ -213,6 +213,11 @@ class EditHistoryPanel(QWidget):
         self.title.setText(tr("ui.history.panel"))
         self.history_list.setToolTip(tr("ui.history.tree_hint"))
         self._version = None
+
+    def apply_theme(self) -> None:
+        current = self.history_list.currentItem()
+        if current is not None:
+            current.setForeground(QColor(theme_manager.palette.accent_hover))
 
     def set_history(self, history: EditHistory) -> None:
         version = (id(history), history.revision)
@@ -281,7 +286,7 @@ class EditHistoryPanel(QWidget):
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-                    item.setForeground(QColor("#8ac5ff"))
+                    item.setForeground(QColor(theme_manager.palette.accent_hover))
                 self.history_list.addItem(item)
                 self._items[step_id] = item
 

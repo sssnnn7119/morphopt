@@ -525,7 +525,11 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
 
     path = ProblemLibrary.save(problem, tmp_path / "helpers.morph")
     window.set_problem(ProblemLibrary.load(path))
-    loaded_function = window.problem.helper_functions[0]
+    loaded_function = next(
+        function
+        for function in window.problem.helper_functions
+        if function.name == "target"
+    )
     window.tree.setCurrentItem(window.tree._node_item[loaded_function])
     assert window._stack.currentWidget() is window.helper_functions_editor
     function_editor = window.helper_functions_editor._helper_editors[loaded_function]
@@ -535,7 +539,10 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     window.refresh_coordinator.refresh_now()
     assert "code generation failed" in window.code_view.toPlainText()
     window.actions.remove_helper(loaded_function)
-    assert not window.problem.helper_functions
+    assert loaded_function not in window.problem.helper_functions
+    assert [function.name for function in window.problem.helper_functions] == [
+        "tip_motion"
+    ]
     window.close()
     app.processEvents()
 

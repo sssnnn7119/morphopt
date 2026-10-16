@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..constants import CONSTANT
+from .theme import theme_manager
 from .application import (
     EditorKind,
     EditorRoute,
@@ -123,7 +123,7 @@ class Workbench(QWidget):
     # ------------------------------------------------------------- layout
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         # definition actions (definition-page content, not a global toolbar) --
         actbar = QHBoxLayout()
@@ -167,7 +167,7 @@ class Workbench(QWidget):
             self._act_buttons[key] = b
         actbar.addStretch(1)
         self.title = QLabel("")
-        self.title.setStyleSheet("color:#7f8c8d;")
+        self.title.setProperty("textRole", "muted")
         actbar.addWidget(self.title)
         outer.addLayout(actbar)
 
@@ -190,7 +190,7 @@ class Workbench(QWidget):
         self._tree_split = QSplitter(Qt.Orientation.Vertical)
         self._tree_split.addWidget(self.tree)
         self._tree_split.addWidget(self.history_panel)
-        self._tree_split.setSizes(list(CONSTANT.UI.LAYOUT.WORKBENCH.LEFT_SPLIT_SIZES))
+        self._tree_split.setSizes(list(theme_manager.palette.layout.workbench.left_split_sizes))
         self._tree_split.setChildrenCollapsible(False)
         split.addWidget(self._tree_split)
 
@@ -202,7 +202,7 @@ class Workbench(QWidget):
         self._repopulate_stack()
         edit_page = QWidget()
         edit_layout = QVBoxLayout(edit_page)
-        edit_layout.setContentsMargins(0, 0, 0, 0)
+        edit_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.class_selector = ModelClassSelector()
         self.class_selector.changed.connect(self._on_model_change)
         edit_layout.addWidget(self.class_selector)
@@ -212,10 +212,13 @@ class Workbench(QWidget):
         self.code_view = GeneratedSourceView()
         self.code_view.setReadOnly(True)
         self.code_view.setFont(
-            QFont("DejaVu Sans Mono", CONSTANT.UI.EDITOR.CODE_FONT_SIZE)
+            QFont(
+                theme_manager.palette.code_editor.font_family,
+                theme_manager.palette.code_editor.font_size,
+            )
         )
         center.addTab(self.code_view, tr("ui.workbench.code_read_only"))
-        center.setMinimumWidth(CONSTANT.UI.LAYOUT.WORKBENCH.EDITOR_MINIMUM_WIDTH)
+        center.setMinimumWidth(theme_manager.palette.layout.workbench.editor_minimum_width)
         split.addWidget(center)
 
         # ---- right preview
@@ -225,13 +228,13 @@ class Workbench(QWidget):
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 1)
-        split.setSizes(list(CONSTANT.UI.LAYOUT.WORKBENCH.MAIN_SPLIT_SIZES))
+        split.setSizes(list(theme_manager.palette.layout.workbench.main_split_sizes))
         outer.addWidget(split, 1)
 
         # ---- footer: hand the finished definition over to the observer page
         foot = QHBoxLayout()
         self._msg = QLabel("")
-        self._msg.setStyleSheet("color:#9aa4b2;")
+        self._msg.setProperty("textRole", "muted")
         foot.addWidget(self._msg, 1)
         self._b_import = QPushButton(tr("ui.workbench.send_to_observer"))
         self._b_import.setToolTip(
@@ -326,7 +329,7 @@ class Workbench(QWidget):
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignmentFlag.AlignTop)
         description.setContentsMargins(
-            *deepcopy(CONSTANT.UI.LAYOUT.WORKBENCH.DESCRIPTION_MARGINS)
+            *deepcopy(theme_manager.palette.layout.workbench.description_margins)
         )
         layout.addWidget(description)
         layout.addStretch(1)
@@ -421,6 +424,17 @@ class Workbench(QWidget):
         self.viewer.apply_language()
         self.history_panel.apply_language()
         self._update_history_actions()
+
+    def apply_theme(self) -> None:
+        """Refresh theme-aware rendering and history visuals."""
+        self.code_view.setFont(
+            QFont(
+                theme_manager.palette.code_editor.font_family,
+                theme_manager.palette.code_editor.font_size,
+            )
+        )
+        self.viewer.apply_theme()
+        self.history_panel.apply_theme()
 
     # -------------------------------------------- name / output-path slots
 

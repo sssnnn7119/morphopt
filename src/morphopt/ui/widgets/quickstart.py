@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem,
 )
 
+from ..theme import theme_manager
 from ..application.quickstart import (
     GOALS,
     QuickstartOptions,
@@ -41,7 +42,7 @@ class ChamberLayersEditor(QWidget):
         super().__init__(parent)
         self._loading = False
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         header = CollectionHeader("", self._add)
         self.add_button = header.add_button
         self.add_button.setToolTip(tr('ui.widgets.quickstart.add_layer'))
@@ -59,7 +60,7 @@ class ChamberLayersEditor(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(CONSTANT.UI.QUICKSTART.WIDGET.LAYER_TABLE_MINIMUM_HEIGHT)
+        self.table.setMinimumHeight(theme_manager.palette.layout.quickstart.layer_table_minimum_height)
         self.table.cellChanged.connect(self._cell_changed)
         self.table.itemSelectionChanged.connect(self._update_actions)
         layout.addWidget(self.table)
@@ -174,13 +175,13 @@ class WorkspaceChannelSelector(QWidget):
         self._required = None
         self._channels = []
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
         self.list = QListWidget()
         self.list.setMaximumHeight(
-            CONSTANT.UI.QUICKSTART.WIDGET.WORKSPACE_CHANNEL_LIST_MAXIMUM_HEIGHT
+            theme_manager.palette.layout.quickstart.workspace_channel_list_maximum_height
         )
         self.list.itemChanged.connect(self._item_changed)
         layout.addWidget(self.list)
@@ -244,7 +245,7 @@ class ChannelPressureEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.form = QFormLayout(self)
-        self.form.setContentsMargins(0, 0, 0, 0)
+        self.form.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.fields = {}
         self._updating = False
 
@@ -295,7 +296,7 @@ class ObjectiveListEditor(QWidget):
         self._updating = False
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         header = CollectionHeader("", self._add)
         self.add_button = header.add_button
         self.add_button.setToolTip(tr('ui.widgets.quickstart.add_objective'))
@@ -306,8 +307,8 @@ class ObjectiveListEditor(QWidget):
         header.actions.addWidget(self.remove_button)
         outer.addWidget(header)
         self.list = QListWidget()
-        self.list.setMinimumHeight(CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_LIST_MINIMUM_HEIGHT)
-        self.list.setMaximumHeight(CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_LIST_MAXIMUM_HEIGHT)
+        self.list.setMinimumHeight(theme_manager.palette.layout.quickstart.objective_list_minimum_height)
+        self.list.setMaximumHeight(theme_manager.palette.layout.quickstart.objective_list_maximum_height)
         self.list.currentRowChanged.connect(self._selection_changed)
         outer.addWidget(self.list)
 
@@ -552,9 +553,11 @@ class InitialDesignPreview(QWidget):
     """Orthographic isometric rendering of initial meshes supplied by the kernel."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(*deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_MINIMUM_SIZE))
+        self.setMinimumSize(*deepcopy(theme_manager.palette.quickstart_preview.minimum_size))
         self.options = QuickstartOptions()
         self.geometry = None
+        unsubscribe = theme_manager.subscribe(self._apply_theme)
+        self.destroyed.connect(lambda *_args: unsubscribe())
 
     def set_options(self, options):
         self.options = options
@@ -564,13 +567,20 @@ class InitialDesignPreview(QWidget):
             self.geometry = None
         self.update()
 
+    def _apply_theme(self, _name: str) -> None:
+        self.setMinimumSize(*theme_manager.palette.quickstart_preview.minimum_size)
+        if self.geometry is not None:
+            self.set_options(self.options)
+        else:
+            self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_BACKGROUND))
-        painter.setPen(QColor(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_TEXT_COLOR))
+        painter.fillRect(self.rect(), QColor(theme_manager.palette.quickstart_preview.background))
+        painter.setPen(QColor(theme_manager.palette.quickstart_preview.heading))
         painter.drawText(
-            *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_HEADING_POSITION),
+            *deepcopy(theme_manager.palette.quickstart_preview.heading_position),
             tr('ui.widgets.quickstart.initial_design_isometric_projection'),
         )
         if self.geometry is not None:
@@ -584,31 +594,31 @@ class InitialDesignPreview(QWidget):
                 painter.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in uv]))
             painter.setPen(
                 QPen(
-                    QColor(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_EDGE_COLOR),
-                    CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_EDGE_LINE_WIDTH,
+                    QColor(theme_manager.palette.quickstart_preview.edge),
+                    theme_manager.palette.quickstart_preview.edge_width,
                 )
             )
             painter.setBrush(Qt.BrushStyle.NoBrush)
             for line in self.geometry.lines:
                 painter.drawPolyline(QPolygonF([QPointF(float(x), float(y)) for x, y in scale * line + shift]))
-        origin_x, origin_bottom = deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_ORIGIN)
+        origin_x, origin_bottom = deepcopy(theme_manager.palette.quickstart_preview.axis_origin)
         origin = QPointF(origin_x, self.height() - origin_bottom)
-        axis_colors = deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_COLORS)
-        axis_labels = deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_LABELS)
+        axis_colors = deepcopy(theme_manager.palette.quickstart_preview.axis_colors)
+        axis_labels = deepcopy(theme_manager.palette.quickstart_preview.axis_labels)
         for vector, label, color in zip(
             (np.eye(3)[0], np.eye(3)[1], np.eye(3)[2]), axis_labels, axis_colors
         ):
             delta = QPointF(
-                float(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_LENGTH * vector @ InitialDesignGeometry.horizontal),
-                float(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_LENGTH * vector @ InitialDesignGeometry.vertical),
+                float(theme_manager.palette.quickstart_preview.axis_length * vector @ InitialDesignGeometry.horizontal),
+                float(theme_manager.palette.quickstart_preview.axis_length * vector @ InitialDesignGeometry.vertical),
             )
             end = origin+delta
             painter.setPen(
-                QPen(QColor(color), CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_AXIS_LINE_WIDTH)
+                QPen(QColor(color), theme_manager.palette.quickstart_preview.axis_width)
             )
             painter.drawLine(origin, end)
             painter.drawText(end+QPointF(3, -3), label)
-        painter.setPen(QColor("#b4c5db"))
+        painter.setPen(QColor(theme_manager.palette.quickstart_preview.text))
         caption = tr('ui.widgets.quickstart.length_value_mm', value_0=self.options.total_length)
         if self.options.method == "shapeopt":
             caption += tr(
@@ -616,7 +626,7 @@ class InitialDesignPreview(QWidget):
                 value_0=len(self.options.layers),
                 value_1=self.options.chambers,
             )
-        caption_inset = deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.PREVIEW_CAPTION_INSET)
+        caption_inset = deepcopy(theme_manager.palette.quickstart_preview.caption_inset)
         painter.drawText(
             QRectF(
                 caption_inset[0],
@@ -633,7 +643,7 @@ class QuickstartDialog(QDialog):
     def __init__(self, problem=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('ui.widgets.quickstart.quickstart'))
-        self.resize(*deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.DIALOG_SIZE))
+        self.resize(*deepcopy(theme_manager.palette.layout.quickstart.dialog_size))
         self.problem = None
         initial = QuickstartOptions.from_problem(problem) if problem else QuickstartOptions()
         if problem:
@@ -644,9 +654,7 @@ class QuickstartDialog(QDialog):
         self._rows = []
         outer = QVBoxLayout(self)
         title = QLabel(tr('ui.widgets.quickstart.start_with_the_motion_you_want'))
-        title.setStyleSheet(
-            f"font-size:{CONSTANT.UI.QUICKSTART.WIDGET.TITLE_FONT_SIZE}px; font-weight:600;"
-        )
+        title.setProperty("textRole", "dialogTitle")
         outer.addWidget(title)
         description = QLabel(tr('ui.widgets.quickstart.describe_the_starting_structure_and_goal_to_create_an_editable_optimizat'))
         description.setWordWrap(True)
@@ -655,7 +663,7 @@ class QuickstartDialog(QDialog):
         content = QWidget()
         left = QVBoxLayout(content)
         left.setContentsMargins(
-            0, 0, CONSTANT.UI.QUICKSTART.WIDGET.LEFT_COLUMN_RIGHT_MARGIN, 0
+            0, 0, theme_manager.palette.layout.quickstart.left_column_right_margin, 0
         )
         task = self._group(left, tr('ui.widgets.quickstart.1_choose_a_design_task'))
         self._combo(
@@ -747,7 +755,7 @@ class QuickstartDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
-        scroll.setMinimumWidth(CONSTANT.UI.QUICKSTART.WIDGET.SCROLL_MINIMUM_WIDTH)
+        scroll.setMinimumWidth(theme_manager.palette.layout.quickstart.scroll_minimum_width)
         columns.addWidget(scroll, 3)
         right = QVBoxLayout()
         self.preview = InitialDesignPreview()
@@ -758,7 +766,7 @@ class QuickstartDialog(QDialog):
         right.addWidget(self.summary)
         self.error = QLabel()
         self.error.setWordWrap(True)
-        self.error.setStyleSheet("color:#ef8f82;")
+        self.error.setProperty("textRole", "error")
         right.addWidget(self.error)
         right.addStretch()
         columns.addLayout(right, 2)

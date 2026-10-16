@@ -14,6 +14,7 @@ from morphopt.ui.application import (
 )
 from morphopt.ui import launcher
 from morphopt.ui.model.problem import InstanceNode
+from morphopt.ui.model.node_types import TorchFEAPartNode
 from morphopt.ui.schemes.base import get_template
 from morphopt.ui.application.fields import fields_for_node
 
@@ -156,9 +157,22 @@ def test_renaming_a_material_definition_retargets_its_material_updater() -> None
 
 def test_renaming_a_torchfea_part_definition_preserves_archive_part_and_instances() -> None:
     problem = ProblemLibrary.create("simp")
-    part = problem.parts()[0]
-    physical_part_name = part.assembly_name
-    instance_names = part.instance_names
+    original_part = problem.parts()[0]
+    physical_part_name = original_part.assembly_name
+    instance_names = original_part.instance_names
+    part = TorchFEAPartNode(
+        name=original_part.name,
+        params={
+            "model_directory": "",
+            "model_filename": "",
+            "model_part_name": "archive_body",
+            "exterior_surface": "",
+            "part_name": physical_part_name,
+        },
+    )
+    part.instances[0].name = instance_names[0]
+    problem.geometry.parts[0] = part
+    problem.resolve_references()
 
     assert problem.rename_definition(part, "beam_geometry")
 

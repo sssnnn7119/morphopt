@@ -19,8 +19,7 @@ ui/application/      definition, result and process application services
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source
 ui/widgets/          modeltree / editor / stepmatrix / codeeditor / viewer
-ui/templates/        file-backed optimization templates (*.morph)
-ui/schemes/          template loader + reusable code snippets
+ui/schemes/          code-defined scheme policies + snippets
 ui/launcher.py       headless job launch / continue / result helpers
 
 The maintainability contract lives in

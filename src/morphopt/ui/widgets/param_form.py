@@ -1,7 +1,7 @@
 """Shared schema form for live node fields and updater parameter dictionaries."""
 from __future__ import annotations
+from ..theme import theme_manager
 from ..i18n import localized_message
-from ...constants import CONSTANT
 from collections.abc import Callable
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
@@ -39,7 +39,7 @@ class ParamForm(QWidget):
         self.controls: dict[str, QWidget] = {}
         self.dof_groups: dict[str, list[QCheckBox]] = {}
         self._form = QFormLayout(self)
-        self._form.setContentsMargins(0, 0, 0, 0)
+        self._form.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._form.setVerticalSpacing(6)
         builders = {
@@ -169,7 +169,7 @@ class ParamForm(QWidget):
     def _text(self, spec, value, choices):
         key = spec.key
         edit = QPlainTextEdit(str(value or ""))
-        edit.setMinimumHeight(CONSTANT.UI.WIDGETS.MULTILINE_FIELD_MINIMUM_HEIGHT)
+        edit.setMinimumHeight(theme_manager.palette.layout.widgets.multiline_field_minimum_height)
         edit.setReadOnly(bool(spec.read_only))
         edit.textChanged.connect(lambda: self._commit(key, edit.toPlainText()))
         self.controls[key] = edit
@@ -179,11 +179,11 @@ class ParamForm(QWidget):
         key = spec.key
         host = QWidget()
         layout = QHBoxLayout(host)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         edit = QLineEdit(str(value or ""))
         edit.setReadOnly(bool(spec.read_only))
         button = QPushButton("…")
-        button.setFixedWidth(CONSTANT.UI.WIDGETS.PATH_BUTTON_WIDTH)
+        button.setFixedWidth(theme_manager.palette.layout.widgets.path_button_width)
         button.clicked.connect(lambda: self._browse(key, spec.type, edit))
         edit.editingFinished.connect(lambda: self._commit(key, edit.text()))
         layout.addWidget(edit, 1)
@@ -210,7 +210,7 @@ class ParamForm(QWidget):
         key = spec.key
         host = QWidget()
         layout = QHBoxLayout(host)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         current = set(int(index) for index in (value or []))
         boxes = []
         for index in range(int(spec.size)):

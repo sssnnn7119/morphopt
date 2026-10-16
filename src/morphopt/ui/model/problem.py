@@ -28,7 +28,6 @@ from .base_nodes import (
     KIND_UPDATER,
     REFERENCE_POINT_FIELDS,
     SECTION_ORDER,
-    TEMPLATE_MODEL_DIRECTORY,
     CADOperationNode,
     FEAComponentNode,
     MaterialNode,
@@ -80,7 +79,6 @@ __all__ = [
     "NODE_TYPES",
     "REFERENCE_POINT_FIELDS",
     "SECTION_ORDER",
-    "TEMPLATE_MODEL_DIRECTORY",
     "CADOperationNode",
     "CustomClassNode",
     "CustomFunctionNode",
@@ -416,7 +414,7 @@ class ProblemDefinition:
             from .modelinfo import inspect_model
 
             return inspect_model(
-                resolve_model_directory(geometry.model_directory),
+                geometry.model_directory,
                 geometry.model_filename or "",
             )
         except Exception:

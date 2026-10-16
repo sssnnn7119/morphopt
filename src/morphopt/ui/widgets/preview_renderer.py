@@ -8,9 +8,9 @@ from pathlib import Path
 
 import numpy as np
 import pyvista as pv
-from ...constants import CONSTANT
 from .plot_style import configure_plotter
 from ..i18n import localized_message
+from ..theme import theme_manager
 from ..visualization.scene import (
     PreviewScene,
     LoadScene,
@@ -42,8 +42,8 @@ class PreviewRenderer:
         self.plotter = plotter
         configure_plotter(self.plotter)
         self._overlay_actors: list = []
-        self._scale = CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
-        self._annotation_scale = CONSTANT.UI.VIEWER.SCENE_FALLBACK_DIAGONAL
+        self._scale = theme_manager.palette.viewer.scene_fallback_diagonal
+        self._annotation_scale = theme_manager.palette.viewer.scene_fallback_diagonal
         self._callout_ranges: dict[float, list[tuple[float, float]]] = {}
         self._geometry_bounds: tuple[np.ndarray, np.ndarray] | None = None
 
@@ -86,32 +86,32 @@ class PreviewRenderer:
             return
         labels = [[name, color, "rectangle"] for name, color in entries]
         width = min(
-            CONSTANT.UI.VIEWER.RENDER.LEGEND_MAX_WIDTH,
+            theme_manager.palette.viewer.render.legend_max_width,
             max(
-                CONSTANT.UI.VIEWER.RENDER.LEGEND_MIN_WIDTH,
-                CONSTANT.UI.VIEWER.RENDER.LEGEND_BASE_WIDTH
-                + CONSTANT.UI.VIEWER.RENDER.LEGEND_NAME_WIDTH_RATIO
+                theme_manager.palette.viewer.render.legend_min_width,
+                theme_manager.palette.viewer.render.legend_base_width
+                + theme_manager.palette.viewer.render.legend_name_width_ratio
                 * max(len(name) for name, _ in entries),
             ),
         )
         height = min(
-            CONSTANT.UI.VIEWER.RENDER.LEGEND_MAX_HEIGHT,
-            CONSTANT.UI.VIEWER.RENDER.LEGEND_ROW_HEIGHT * len(labels),
+            theme_manager.palette.viewer.render.legend_max_height,
+            theme_manager.palette.viewer.render.legend_row_height * len(labels),
         )
         legend = self.plotter.add_legend(
             labels,
-            bcolor=CONSTANT.UI.VIEWER.RENDER.LEGEND_BACKGROUND,
+            bcolor=theme_manager.palette.viewer.render.legend_background,
             border=False,
             size=(width, height),
             name="instance-legend",
             loc="upper left",
-            font_family="arial",
-            background_opacity=CONSTANT.UI.VIEWER.RENDER.LEGEND_BACKGROUND_OPACITY,
+            font_family=theme_manager.palette.viewer.render.legend_font_family,
+            background_opacity=theme_manager.palette.viewer.render.legend_background_opacity,
         )
-        legend.SetPadding(CONSTANT.UI.VIEWER.RENDER.LEGEND_PADDING)
+        legend.SetPadding(theme_manager.palette.viewer.render.legend_padding)
         text = legend.GetEntryTextProperty()
-        text.SetColor(*deepcopy(CONSTANT.UI.VIEWER.RENDER.LEGEND_TEXT_COLOR))
-        text.SetFontSize(CONSTANT.UI.VIEWER.RENDER.LEGEND_FONT_SIZE)
+        text.SetColor(*deepcopy(theme_manager.palette.viewer.render.legend_text_color))
+        text.SetFontSize(theme_manager.palette.viewer.render.legend_font_size)
         text.SetShadow(False)
         font_file = _cjk_font_file()
         if font_file:
@@ -125,10 +125,10 @@ class PreviewRenderer:
     @draw.register
     def _(self, item: MeshItem):
         options = {
-            "ambient": CONSTANT.UI.VIEWER.RENDER.MESH_AMBIENT,
-            "diffuse": CONSTANT.UI.VIEWER.RENDER.MESH_DIFFUSE,
-            "specular": CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR,
-            "specular_power": CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR_POWER,
+            "ambient": theme_manager.palette.viewer.render.mesh_ambient,
+            "diffuse": theme_manager.palette.viewer.render.mesh_diffuse,
+            "specular": theme_manager.palette.viewer.render.mesh_specular,
+            "specular_power": theme_manager.palette.viewer.render.mesh_specular_power,
             **item.options,
         }
         preview_offset = float(options.pop("preview_offset", 0.0))
@@ -194,18 +194,18 @@ class PreviewRenderer:
             )
             highlighted_surface = self._offset_toward_camera(
                 surface,
-                scale_len * CONSTANT.UI.VIEWER.RENDER.COUPLING_NORMAL_OFFSET_RATIO,
+                scale_len * theme_manager.palette.viewer.render.coupling_normal_offset_ratio,
             )
             self._overlay_actors.append(
                 self.plotter.add_mesh(
                     highlighted_surface,
-                    color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SURFACE_COLOR,
-                    opacity=CONSTANT.UI.VIEWER.RENDER.COUPLING_SURFACE_OPACITY,
+                    color=theme_manager.palette.viewer.render.coupling_surface_color,
+                    opacity=theme_manager.palette.viewer.render.coupling_surface_opacity,
                     smooth_shading=True,
-                    ambient=CONSTANT.UI.VIEWER.RENDER.MESH_AMBIENT,
-                    diffuse=CONSTANT.UI.VIEWER.RENDER.MESH_DIFFUSE,
-                    specular=CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR,
-                    specular_power=CONSTANT.UI.VIEWER.RENDER.MESH_SPECULAR_POWER,
+                    ambient=theme_manager.palette.viewer.render.mesh_ambient,
+                    diffuse=theme_manager.palette.viewer.render.mesh_diffuse,
+                    specular=theme_manager.palette.viewer.render.mesh_specular,
+                    specular_power=theme_manager.palette.viewer.render.mesh_specular_power,
                     show_edges=False,
                 )
             )
@@ -220,22 +220,22 @@ class PreviewRenderer:
                     self.plotter.add_mesh(
                         boundary.tube(
                             radius=scale_len
-                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_BOUNDARY_WIDTH_RATIO
+                            * theme_manager.palette.viewer.render.coupling_boundary_width_ratio
                         ),
-                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_EDGE_COLOR,
+                        color=theme_manager.palette.viewer.render.coupling_edge_color,
                         lighting=False,
                     )
                 )
             self._add_label(
                 end,
                 surface_label,
-                CONSTANT.UI.VIEWER.RENDER.COUPLING_LABEL_COLOR,
-                side=CONSTANT.UI.VIEWER.RENDER.COUPLING_LABEL_SIDE,
+                theme_manager.palette.viewer.render.coupling_label_color,
+                side=theme_manager.palette.viewer.render.coupling_label_side,
             )
             spoke_targets = _spread_surface_points(
                 surface.points,
                 end,
-                count=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COUNT,
+                count=theme_manager.palette.viewer.render.coupling_spoke_count,
             )
             if len(spoke_targets):
                 spoke_points = np.vstack((start, spoke_targets))
@@ -250,16 +250,16 @@ class PreviewRenderer:
                     self.plotter.add_mesh(
                         lines.tube(
                             radius=scale_len
-                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_WIDTH_RATIO
+                            * theme_manager.palette.viewer.render.coupling_spoke_width_ratio
                         ),
-                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
-                        opacity=CONSTANT.UI.VIEWER.RENDER.COUPLING_LINE_OPACITY,
+                        color=theme_manager.palette.viewer.render.coupling_spoke_color,
+                        opacity=theme_manager.palette.viewer.render.coupling_line_opacity,
                         lighting=False,
                     )
                 )
         else:
             distance = float(np.linalg.norm(end - start))
-            if distance > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
+            if distance > theme_manager.palette.viewer.loads.glyph_zero_tolerance:
                 line = pv.PolyData()
                 line.points = np.vstack((start, end))
                 line.lines = np.array([2, 0, 1], dtype=np.int64)
@@ -267,23 +267,23 @@ class PreviewRenderer:
                     self.plotter.add_mesh(
                         line.tube(
                             radius=scale_len
-                            * CONSTANT.UI.VIEWER.RENDER.COUPLING_LINE_WIDTH_RATIO
+                            * theme_manager.palette.viewer.render.coupling_line_width_ratio
                         ),
-                        color=CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
+                        color=theme_manager.palette.viewer.render.coupling_spoke_color,
                         lighting=False,
                     )
                 )
             self._add_label(
                 (start + end) / 2.0,
                 label,
-                CONSTANT.UI.VIEWER.RENDER.COUPLING_SPOKE_COLOR,
+                theme_manager.palette.viewer.render.coupling_spoke_color,
             )
         if surface is None or not surface.n_points:
             self._add_marker(
                 end,
                 "",
-                CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_REFERENCE_POINT,
-                scale_len * CONSTANT.UI.VIEWER.RENDER.COUPLING_MARKER_SCALE_RATIO,
+                theme_manager.palette.viewer.render.marker_color_reference_point,
+                scale_len * theme_manager.palette.viewer.render.coupling_marker_scale_ratio,
             )
 
     def _add_load_arrow(
@@ -296,7 +296,7 @@ class PreviewRenderer:
     ) -> None:
         vector = np.asarray(vector, dtype=float).reshape(3)
         magnitude = float(np.linalg.norm(vector))
-        if magnitude <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
+        if magnitude <= theme_manager.palette.viewer.loads.glyph_zero_tolerance:
             return
         direction = vector / magnitude
         length = _load_arrow_length(scale_len)
@@ -304,15 +304,15 @@ class PreviewRenderer:
             start=np.asarray(start, dtype=float),
             direction=direction,
             scale=length,
-            tip_length=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_TIP_LENGTH_RATIO,
-            tip_radius=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_TIP_RADIUS_RATIO,
-            shaft_radius=CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_SHAFT_RADIUS_RATIO,
+            tip_length=theme_manager.palette.viewer.loads.load_arrow_tip_length_ratio,
+            tip_radius=theme_manager.palette.viewer.loads.load_arrow_tip_radius_ratio,
+            shaft_radius=theme_manager.palette.viewer.loads.load_arrow_shaft_radius_ratio,
         )
         self._overlay_actors.append(self.plotter.add_mesh(arrow, color=color, lighting=False))
         if label:
             label_position = (
                 np.asarray(start, dtype=float)
-                + direction * length * CONSTANT.UI.VIEWER.RENDER.LOAD_ARROW_LABEL_OFFSET_RATIO
+                + direction * length * theme_manager.palette.viewer.render.load_arrow_label_offset_ratio
             )
             self._add_label(label_position, label, color)
 
@@ -321,20 +321,20 @@ class PreviewRenderer:
     ) -> None:
         axis = np.asarray(moment, dtype=float).reshape(3)
         magnitude = float(np.linalg.norm(axis))
-        if magnitude <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
+        if magnitude <= theme_manager.palette.viewer.loads.glyph_zero_tolerance:
             return
         axis /= magnitude
         reference = np.array([1.0, 0.0, 0.0])
-        if abs(float(axis @ reference)) > CONSTANT.UI.VIEWER.RENDER.DIRECTION_ALIGNMENT_THRESHOLD:
+        if abs(float(axis @ reference)) > theme_manager.palette.viewer.render.direction_alignment_threshold:
             reference = np.array([0.0, 1.0, 0.0])
         first = np.cross(axis, reference)
         first /= np.linalg.norm(first)
         second = np.cross(axis, first)
-        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_RADIUS_RATIO
+        radius = scale_len * theme_manager.palette.viewer.render.moment_radius_ratio
         angles = np.linspace(
             0.0,
-            CONSTANT.UI.VIEWER.RENDER.MOMENT_ARC_END_RADIANS,
-            CONSTANT.UI.VIEWER.RENDER.MOMENT_ARC_SAMPLES,
+            theme_manager.palette.viewer.render.moment_arc_end_radians,
+            theme_manager.palette.viewer.render.moment_arc_samples,
         )
         points = np.asarray(center, dtype=float) + radius * (
             np.cos(angles)[:, None] * first + np.sin(angles)[:, None] * second
@@ -345,24 +345,24 @@ class PreviewRenderer:
         self._overlay_actors.append(
             self.plotter.add_mesh(
                 arc.tube(
-                    radius=scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_TUBE_RADIUS_RATIO
+                    radius=scale_len * theme_manager.palette.viewer.render.moment_tube_radius_ratio
                 ),
-                color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
+                color=theme_manager.palette.viewer.render.marker_color_moment,
             )
         )
         tangent = -np.sin(angles[-1]) * first + np.cos(angles[-1]) * second
         self._add_load_arrow(
             points[-1],
             tangent,
-            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
+            theme_manager.palette.viewer.render.marker_color_moment,
             "",
-            scale_len * CONSTANT.UI.VIEWER.RENDER.MOMENT_ARROW_LENGTH_RATIO,
+            scale_len * theme_manager.palette.viewer.render.moment_arrow_length_ratio,
         )
         self._add_label(
             np.asarray(center)
-            + radius * CONSTANT.UI.VIEWER.RENDER.MOMENT_LABEL_OFFSET_RATIO * first,
+            + radius * theme_manager.palette.viewer.render.moment_label_offset_ratio * first,
             label,
-            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_MOMENT,
+            theme_manager.palette.viewer.render.marker_color_moment,
         )
 
     def _add_spring_glyph(self, start, end, scale_len: float, label: str) -> None:
@@ -370,27 +370,27 @@ class PreviewRenderer:
         end = np.asarray(end, dtype=float).reshape(3)
         axis = end - start
         length = float(np.linalg.norm(axis))
-        if length <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
+        if length <= theme_manager.palette.viewer.loads.glyph_zero_tolerance:
             return
         direction = axis / length
         reference = np.array([0.0, 0.0, 1.0])
-        if abs(float(direction @ reference)) > CONSTANT.UI.VIEWER.RENDER.DIRECTION_ALIGNMENT_THRESHOLD:
+        if abs(float(direction @ reference)) > theme_manager.palette.viewer.render.direction_alignment_threshold:
             reference = np.array([0.0, 1.0, 0.0])
         side = np.cross(direction, reference)
         side /= np.linalg.norm(side)
         parameter = np.linspace(
-            0.0, 1.0, CONSTANT.UI.VIEWER.RENDER.SPRING_SAMPLES
+            0.0, 1.0, theme_manager.palette.viewer.render.spring_samples
         )
         points = start + parameter[:, None] * axis
         points += (
             np.sin(
                 parameter
-                * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_CYCLES
+                * theme_manager.palette.viewer.render.spring_wave_cycles
                 * np.pi
             )[:, None]
             * min(
-                scale_len * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_AMPLITUDE_RATIO,
-                length * CONSTANT.UI.VIEWER.RENDER.SPRING_WAVE_LENGTH_RATIO,
+                scale_len * theme_manager.palette.viewer.render.spring_wave_amplitude_ratio,
+                length * theme_manager.palette.viewer.render.spring_wave_length_ratio,
             )
             * side
         )
@@ -400,21 +400,21 @@ class PreviewRenderer:
         actor = self.plotter.add_mesh(
             line.tube(
                 radius=min(
-                    scale_len * CONSTANT.UI.VIEWER.RENDER.SPRING_WIDTH_RATIO,
-                    length * CONSTANT.UI.VIEWER.RENDER.SPRING_WIDTH_LENGTH_RATIO,
+                    scale_len * theme_manager.palette.viewer.render.spring_width_ratio,
+                    length * theme_manager.palette.viewer.render.spring_width_length_ratio,
                 )
             ),
-            color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_SPRING,
+            color=theme_manager.palette.viewer.render.marker_color_spring,
         )
         self._overlay_actors.append(actor)
         self._add_label(
             (start + end) / 2.0,
             label,
-            CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_SPRING,
+            theme_manager.palette.viewer.render.marker_color_spring,
         )
 
     def _add_marker(self, location, label: str, color: str, scale_len: float) -> None:
-        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.MARKER_RADIUS_RATIO
+        radius = scale_len * theme_manager.palette.viewer.render.marker_radius_ratio
         sphere = pv.Sphere(center=np.asarray(location, dtype=float), radius=radius)
         self._overlay_actors.append(self.plotter.add_mesh(sphere, color=color))
         self._add_label(location, label, color)
@@ -423,31 +423,31 @@ class PreviewRenderer:
         self, location, label: str, color: str, scale_len: float
     ) -> None:
         location = np.asarray(location, dtype=float).reshape(3)
-        radius = scale_len * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_RADIUS_RATIO
+        radius = scale_len * theme_manager.palette.viewer.render.reference_point_radius_ratio
         sphere = pv.Sphere(
             center=location,
             radius=radius,
-            theta_resolution=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_THETA_RESOLUTION,
-            phi_resolution=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_PHI_RESOLUTION,
+            theta_resolution=theme_manager.palette.viewer.render.reference_point_theta_resolution,
+            phi_resolution=theme_manager.palette.viewer.render.reference_point_phi_resolution,
         )
         self._overlay_actors.append(
             self.plotter.add_mesh(
                 sphere,
                 color=color,
                 smooth_shading=True,
-                specular=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_SPECULAR,
+                specular=theme_manager.palette.viewer.render.reference_point_specular,
             )
         )
-        half_axis = scale_len * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_AXIS_LENGTH_RATIO
+        half_axis = scale_len * theme_manager.palette.viewer.render.reference_point_axis_length_ratio
         for axis in np.eye(3):
             line = pv.Line(location - half_axis * axis, location + half_axis * axis)
             self._overlay_actors.append(
                 self.plotter.add_mesh(
                     line.tube(
                         radius=scale_len
-                        * CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_AXIS_WIDTH_RATIO
+                        * theme_manager.palette.viewer.render.reference_point_axis_width_ratio
                     ),
-                    color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_REFERENCE_AXIS,
+                    color=theme_manager.palette.viewer.render.marker_color_reference_axis,
                     lighting=False,
                 )
             )
@@ -455,7 +455,7 @@ class PreviewRenderer:
             location,
             label,
             color,
-            side=CONSTANT.UI.VIEWER.RENDER.REFERENCE_POINT_LABEL_SIDE,
+            side=theme_manager.palette.viewer.render.reference_point_label_side,
         )
 
     def _add_label(
@@ -470,24 +470,24 @@ class PreviewRenderer:
             self.plotter.add_mesh(
                 leader.tube(
                     radius=self._scale
-                    * CONSTANT.UI.VIEWER.RENDER.ANNOTATION_LEADER_WIDTH_RATIO
+                    * theme_manager.palette.viewer.render.annotation_leader_width_ratio
                 ),
                 color=color,
-                opacity=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_LEADER_OPACITY,
+                opacity=theme_manager.palette.viewer.render.annotation_leader_opacity,
                 lighting=False,
             )
         )
         actor = self.plotter.add_point_labels(
             label_position.reshape(1, 3),
             [label],
-            font_size=CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE,
-            text_color=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_TEXT_COLOR,
+            font_size=theme_manager.palette.viewer.render.label_font_size,
+            text_color=theme_manager.palette.viewer.render.annotation_text_color,
             font_family="courier",
             bold=False,
             shape="rounded_rect",
-            shape_color=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_BACKGROUND_COLOR,
-            shape_opacity=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_BACKGROUND_OPACITY,
-            margin=CONSTANT.UI.VIEWER.RENDER.ANNOTATION_MARGIN,
+            shape_color=theme_manager.palette.viewer.render.annotation_background_color,
+            shape_opacity=theme_manager.palette.viewer.render.annotation_background_opacity,
+            margin=theme_manager.palette.viewer.render.annotation_margin,
             show_points=False,
             always_visible=True,
             font_file=_cjk_font_file(),
@@ -540,7 +540,7 @@ class PreviewRenderer:
                 sum(
                     1.0
                     if char.isascii()
-                    else CONSTANT.UI.VIEWER.RENDER.NON_ASCII_CHARACTER_WIDTH_RATIO
+                    else theme_manager.palette.viewer.render.non_ascii_character_width_ratio
                     for char in line
                 )
                 for line in label.splitlines()
@@ -548,14 +548,14 @@ class PreviewRenderer:
             default=1.0,
         )
         half_card_width = self._annotation_scale * min(
-            CONSTANT.UI.VIEWER.RENDER.CALLOUT_MAX_WIDTH_RATIO,
-            CONSTANT.UI.VIEWER.RENDER.CALLOUT_MIN_WIDTH_RATIO
-            + text_width * CONSTANT.UI.VIEWER.RENDER.CALLOUT_TEXT_WIDTH_RATIO,
+            theme_manager.palette.viewer.render.callout_max_width_ratio,
+            theme_manager.palette.viewer.render.callout_min_width_ratio
+            + text_width * theme_manager.palette.viewer.render.callout_text_width_ratio,
         )
         horizontal_offset = (
             edge_distance
             + half_card_width
-            + self._annotation_scale * CONSTANT.UI.VIEWER.RENDER.CALLOUT_GAP_RATIO
+            + self._annotation_scale * theme_manager.palette.viewer.render.callout_gap_ratio
         )
         camera = self.plotter.camera
         if camera.GetParallelProjection():
@@ -565,10 +565,10 @@ class PreviewRenderer:
             view_height = 2.0 * depth * np.tan(np.deg2rad(camera.GetViewAngle()) / 2.0)
         world_per_pixel = view_height / self.plotter.window_size[1]
         half_height = (
-            len(label.splitlines()) * CONSTANT.UI.VIEWER.RENDER.CALLOUT_LINE_HEIGHT_PX
-            + CONSTANT.UI.VIEWER.RENDER.CALLOUT_VERTICAL_PADDING_PX
+            len(label.splitlines()) * theme_manager.palette.viewer.render.callout_line_height_px
+            + theme_manager.palette.viewer.render.callout_vertical_padding_px
         ) * world_per_pixel / 2.0
-        gap = CONSTANT.UI.VIEWER.RENDER.CALLOUT_GAP_PX * world_per_pixel
+        gap = theme_manager.palette.viewer.render.callout_gap_px * world_per_pixel
         vertical = float(np.dot(anchor, up))
         occupied = self._callout_ranges.setdefault(side, [])
         candidates = [vertical]
@@ -579,7 +579,7 @@ class PreviewRenderer:
             if all(
                 abs(value - other)
                 >= half_height + height + gap
-                - CONSTANT.UI.VIEWER.RENDER.CALLOUT_MIN_SEPARATION_TOLERANCE
+                - theme_manager.palette.viewer.render.callout_min_separation_tolerance
                 for other, height in occupied
             )
         )
@@ -597,7 +597,7 @@ class PreviewRenderer:
         )
         direction = camera_position - focal_point
         norm = float(np.linalg.norm(direction))
-        if norm <= CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE:
+        if norm <= theme_manager.palette.viewer.loads.glyph_zero_tolerance:
             return mesh
         offset_mesh = mesh.copy()
         offset_mesh.translate(direction * (distance / norm), inplace=True)
@@ -625,4 +625,4 @@ def _spread_surface_points(
 
 
 def _load_arrow_length(characteristic_length: float) -> float:
-    return float(characteristic_length) * CONSTANT.UI.VIEWER.LOADS.LOAD_ARROW_LENGTH_RATIO
+    return float(characteristic_length) * theme_manager.palette.viewer.loads.load_arrow_length_ratio

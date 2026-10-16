@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..theme import theme_manager
 from ..i18n import tr
-from ...constants import CONSTANT
 from ..refresh import RefreshContext
 from ..model.problem import Node
 from ..presentation.labels import node_title, reference_choice_title
@@ -49,7 +49,7 @@ class PropertyEditor(QWidget):
         super().__init__(parent)
         self._compact = compact
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         # Visibility is set before insertion into the layout. Give the label
         # its owner now so it can never appear as a temporary top-level window.
         self._title = QLabel("—", self)
@@ -71,8 +71,8 @@ class PropertyEditor(QWidget):
         self._body = QWidget()
         self._form = QFormLayout(self._body)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._form.setContentsMargins(*deepcopy(CONSTANT.UI.WIDGETS.FORM_CONTENTS_MARGINS))
-        self._form.setVerticalSpacing(CONSTANT.UI.WIDGETS.STANDARD_FORM_SPACING)
+        self._form.setContentsMargins(*deepcopy(theme_manager.palette.layout.widgets.form_contents_margins))
+        self._form.setVerticalSpacing(theme_manager.palette.layout.widgets.standard_form_spacing)
         self._scroll.setWidget(self._body)
         outer.addWidget(self._scroll, 0 if compact else 1)
 
@@ -152,41 +152,41 @@ class PropertyEditor(QWidget):
         if subtitle:
             lbl = QLabel(subtitle)
             lbl.setWordWrap(True)
-            lbl.setStyleSheet("color:#7f8c8d; font-size:11px;")
+            lbl.setProperty("textRole", "muted")
             self._form.addRow(lbl)
 
         if actions:
             action_row = QWidget()
-            action_grid_columns = CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS
+            action_grid_columns = theme_manager.palette.layout.widgets.action_grid_columns
             if len(actions) > action_grid_columns:
                 action_layout = QGridLayout(action_row)
                 action_layout.setContentsMargins(
-                    0, CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN, 0,
-                    CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN,
+                    0, theme_manager.palette.layout.widgets.action_row_vertical_margin, 0,
+                    theme_manager.palette.layout.widgets.action_row_vertical_margin,
                 )
                 action_layout.setHorizontalSpacing(
-                    CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING
+                    theme_manager.palette.layout.widgets.action_grid_spacing
                 )
                 action_layout.setVerticalSpacing(
-                    CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING
+                    theme_manager.palette.layout.widgets.action_grid_spacing
                 )
-                for column in range(CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS):
+                for column in range(theme_manager.palette.layout.widgets.action_grid_columns):
                     action_layout.setColumnStretch(column, 1)
             else:
                 action_layout = QHBoxLayout(action_row)
                 action_layout.setContentsMargins(
-                    0, CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN, 0,
-                    CONSTANT.UI.WIDGETS.ACTION_ROW_VERTICAL_MARGIN,
+                    0, theme_manager.palette.layout.widgets.action_row_vertical_margin, 0,
+                    theme_manager.palette.layout.widgets.action_row_vertical_margin,
                 )
-                action_layout.setSpacing(CONSTANT.UI.WIDGETS.ACTION_GRID_SPACING)
+                action_layout.setSpacing(theme_manager.palette.layout.widgets.action_grid_spacing)
             for index, (label, callback, danger) in enumerate(actions):
                 button = ActionButton(label, callback, danger=danger)
-                if len(actions) > CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS:
-                    columns = CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS
+                if len(actions) > theme_manager.palette.layout.widgets.action_grid_columns:
+                    columns = theme_manager.palette.layout.widgets.action_grid_columns
                     action_layout.addWidget(button, index // columns, index % columns)
                 else:
                     action_layout.addWidget(button)
-            if len(actions) <= CONSTANT.UI.WIDGETS.ACTION_GRID_COLUMNS:
+            if len(actions) <= theme_manager.palette.layout.widgets.action_grid_columns:
                 action_layout.addStretch(1)
             self._form.addRow(action_row)
 

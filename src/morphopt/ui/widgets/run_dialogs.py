@@ -12,16 +12,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..theme import theme_manager
 from ..application import RunSourceKind
 from ..i18n import tr
-from ...constants import CONSTANT
 class ContinueDialog(QDialog):
     """Choose the persisted iteration from which a result should resume."""
 
     def __init__(self, max_step: int, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('ui.widgets.run_dialogs.continue_optimization'))
-        self.setMinimumWidth(CONSTANT.UI.WIDGETS.CONTINUE_DIALOG_MINIMUM_WIDTH)
+        self.setMinimumWidth(theme_manager.palette.layout.widgets.continue_dialog_minimum_width)
         layout = QVBoxLayout(self)
         layout.addWidget(
             QLabel(
@@ -69,13 +69,13 @@ class SourceDialog(QDialog):
     def __init__(self, has_definition: bool, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('ui.widgets.run_dialogs.choose_task_source'))
-        self.setMinimumWidth(CONSTANT.UI.WIDGETS.SOURCE_DIALOG_MINIMUM_WIDTH)
+        self.setMinimumWidth(theme_manager.palette.layout.widgets.source_dialog_minimum_width)
         self._chosen: RunSourceKind | None = None
         layout = QVBoxLayout(self)
         caption = QLabel(
             tr('ui.widgets.run_dialogs.choose_the_task_source_for_this_run')
         )
-        caption.setStyleSheet("color:#9aa4b2;")
+        caption.setProperty("textRole", "muted")
         layout.addWidget(caption)
 
         options = (
@@ -110,7 +110,7 @@ class SourceDialog(QDialog):
             note = QLabel(
                 tr('ui.widgets.run_dialogs.note_no_definition_received_so_the_current_definition_option_is_unavaila')
             )
-            note.setStyleSheet("color:#7f8c8d;")
+            note.setProperty("textRole", "muted")
             layout.addWidget(note)
 
         cancel = QPushButton(tr('ui.widgets.run_dialogs.cancel'))

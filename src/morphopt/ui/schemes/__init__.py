@@ -1,7 +1,9 @@
-"""File-backed templates for the MorphOpt definition workbench."""
+"""Optimization scheme policies and starter snippets for the definition UI."""
 
 from .base import (
-    MorphTemplate,
+    BUILTIN_SCHEMES,
+    BuiltinSchemeTemplate,
+    LEGACY_SCHEME_POLICIES,
     SchemeTemplate,
     SCHEME_REGISTRY,
     available_templates,
@@ -11,6 +13,14 @@ from .base import (
 from .snippets import CodeSnippet, SnippetParameter
 
 __all__ = [
-    "CodeSnippet", "SnippetParameter", "SchemeTemplate", "MorphTemplate",
-    "get_template", "available_templates", "scheme_label", "SCHEME_REGISTRY",
+    "BUILTIN_SCHEMES",
+    "BuiltinSchemeTemplate",
+    "CodeSnippet",
+    "LEGACY_SCHEME_POLICIES",
+    "SCHEME_REGISTRY",
+    "SchemeTemplate",
+    "SnippetParameter",
+    "available_templates",
+    "get_template",
+    "scheme_label",
 ]
