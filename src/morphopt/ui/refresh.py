@@ -26,7 +26,7 @@ class RefreshContext:
     @property
     def geometry_changed(self) -> bool:
         unrelated = {
-            "interface", "loads", "loads_group", "steps", "solver",
+            "fea_component", "loads", "loads_group", "steps", "solver",
             "objective", "updater", "problem", "params_class",
         }
         return self.full or any(
@@ -37,7 +37,7 @@ class RefreshContext:
     @property
     def loads_changed(self) -> bool:
         return self.geometry_changed or any(
-            node.kind in {"interface", "loads", "loads_group", "steps"}
+            node.kind in {"fea_component", "loads", "loads_group", "steps"}
             for node in self.changed_nodes
         )
 

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 import numpy as np
 import pyvista as pv
 from ...constants import CONSTANT
 from ..model.problem import FEAComponentNode
+from ..model.node_types.loads import PressureNode, ConcentratedForceNode, ConcentratedMomentNode, BodyForceNode, SpringToGroundNode, SpringBetweenRPsNode, PenaltyDoFNode, BoundaryConditionNode, BoundaryConditionRPNode, ReferencePointNode, CoupleNode
 from ..i18n import tr
 from .geometry import PreviewGeometry
 from .scene import (
@@ -19,37 +21,38 @@ from .scene import (
     SpringLoad,
 )
 
-LoadHandler = Callable[[PreviewGeometry, LoadScene, FEAComponentNode, list[float]], None]
+LoadT = TypeVar("LoadT", bound=FEAComponentNode)
+LoadHandler = Callable[[PreviewGeometry, LoadScene, Any, list[float]], None]
 
 
 class LoadPreviewVisitor:
-    """Register handlers by interface type; new loads do not change the viewport."""
+    """Register handlers by component type; new loads do not change the viewport."""
 
     def __init__(self) -> None:
-        self._handlers: dict[str, LoadHandler] = {
-            "Pressure": self.pressure,
-            "ConcentratedForce": self.force,
-            "ConcentratedMoment": self.moment,
-            "Bodyforce": self.bodyforce,
-            "SpringToGround": self.spring_to_ground,
-            "SpringBetweenRPs": self.spring_between,
-            "PenaltyDoF": self.penalty,
+        self._handlers: dict[type[FEAComponentNode], LoadHandler] = {
+            PressureNode: self.pressure,
+            ConcentratedForceNode: self.force,
+            ConcentratedMomentNode: self.moment,
+            BodyForceNode: self.bodyforce,
+            SpringToGroundNode: self.spring_to_ground,
+            SpringBetweenRPsNode: self.spring_between,
+            PenaltyDoFNode: self.penalty,
         }
-        self._always_visible_handlers: dict[str, LoadHandler] = {
-            "BoundaryCondition": self.boundary_condition,
-            "BoundaryConditionRP": self.boundary_condition_rp,
-            "ReferencePoint": self.reference_point,
-            "Couple": self.couple,
+        self._always_visible_handlers: dict[type[FEAComponentNode], LoadHandler] = {
+            BoundaryConditionNode: self.boundary_condition,
+            BoundaryConditionRPNode: self.boundary_condition_rp,
+            ReferencePointNode: self.reference_point,
+            CoupleNode: self.couple,
         }
 
     def register(
         self,
-        interface_type: str,
-        handler: LoadHandler,
+        node_type: type[LoadT],
+        handler: Callable[[PreviewGeometry, LoadScene, LoadT, list[float]], None],
         *,
         boundary: bool = False,
     ) -> None:
-        (self._always_visible_handlers if boundary else self._handlers)[interface_type] = handler
+        (self._always_visible_handlers if boundary else self._handlers)[node_type] = handler
 
     def build(self, geometry: PreviewGeometry, step_index: int | None) -> LoadScene:
         scene = LoadScene(
@@ -57,35 +60,35 @@ class LoadPreviewVisitor:
             annotation_scale=geometry.scene.diagonal,
         )
         problem = geometry.problem
-        for interface in problem.interfaces():
-            self.visit(geometry, scene, interface, [], boundary=True)
+        for component in problem.fea_components():
+            self.visit(geometry, scene, component, [], boundary=True)
         steps = problem.steps
         if steps is None or not isinstance(step_index, int) or not 0 <= step_index < len(steps.step_values):
             return scene
-        interfaces = {interface.name: interface for interface in problem.interfaces()}
+        components = {component.name: component for component in problem.fea_components()}
         for reference, raw_values in (steps.step_values[step_index] or {}).items():
-            interface = reference if isinstance(reference, FEAComponentNode) else interfaces.get(str(reference))
-            if interface is None:
+            component = reference if isinstance(reference, FEAComponentNode) else components.get(str(reference))
+            if component is None:
                 continue
-            self.visit(geometry, scene, interface, raw_values or [])
+            self.visit(geometry, scene, component, raw_values or [])
         return scene
 
     def visit(
         self,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: FEAComponentNode,
         raw_values: list,
         *,
         boundary: bool = False,
     ) -> None:
         handlers = self._always_visible_handlers if boundary else self._handlers
-        handler = handlers.get(interface.interface_type)
+        handler = next((handlers[cls] for cls in type(component).__mro__ if cls in handlers), None)
         if handler is None:
             return
         try:
             values = [float(geometry.values.resolve(value)) for value in raw_values]
-            handler(geometry, scene, interface, values)
+            handler(geometry, scene, component, values)
         except (
             NameError,
             SyntaxError,
@@ -101,7 +104,7 @@ class LoadPreviewVisitor:
             # Preview errors describe the incomplete definition; other loads
             # still render, and the definition is never silently changed.
             scene.items.append(MessageItem(
-                tr("ui.visualization.load.error", name=interface.name, error=exc),
+                tr("ui.visualization.load.error", name=component.name, error=exc),
                 dict(
                     position="upper_left",
                     color=CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_ANNOTATION_ERROR,
@@ -112,7 +115,7 @@ class LoadPreviewVisitor:
     @staticmethod
     def rp_location(
         geometry: PreviewGeometry,
-        reference: FEAComponentNode | None,
+        reference: ReferencePointNode | None,
     ) -> np.ndarray | None:
         if reference is None:
             return None
@@ -122,13 +125,13 @@ class LoadPreviewVisitor:
     def pressure(
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: PressureNode,
         values: list[float],
     ) -> None:
         pressure = values[0] if values else 0.
         if abs(pressure) <= CONSTANT.UI.VIEWER.LOADS.PRESSURE_ZERO_TOLERANCE:
             return
-        mesh = geometry.mesh_for_surface(interface, str(interface.surface_name or ""))
+        mesh = geometry.mesh_for_surface(component, str(component.surface_name or ""))
         if mesh is None:
             return
         scene.items.append(
@@ -176,8 +179,8 @@ class LoadPreviewVisitor:
                 normals[index] * np.sign(pressure),
                 CONSTANT.UI.VIEWER.LOADS.PRESSURE_ARROW_COLOR,
                 tr(
-                    "ui.visualization.load.pressure", name=interface.name, value=pressure,
-                    instance=interface.instance_name, surface=interface.surface_name,
+                    "ui.visualization.load.pressure", name=component.name, value=pressure,
+                    instance=component.instance_name, surface=component.surface_name,
                 ) if sample == 0 else "",
             ))
 
@@ -186,18 +189,18 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: ConcentratedForceNode,
         values: list[float],
     ) -> None:
-        point = cls.rp_location(geometry, interface.reference_point)
+        point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
             scene.items.append(ArrowLoad(
                 point,
                 vector,
                 CONSTANT.UI.VIEWER.LOADS.FORCE_COLOR,
-                tr("ui.visualization.load.force", name=interface.name,
-                   rp=interface.rp_name, vector=vector_text(vector)),
+                tr("ui.visualization.load.force", name=component.name,
+                   rp=component.rp_name, vector=vector_text(vector)),
             ))
 
     @classmethod
@@ -205,33 +208,33 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: ConcentratedMomentNode,
         values: list[float],
     ) -> None:
-        point = cls.rp_location(geometry, interface.reference_point)
+        point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
             scene.items.append(MomentLoad(
-                point, vector, tr("ui.visualization.load.moment", name=interface.name,
-                                  rp=interface.rp_name, vector=vector_text(vector)),
+                point, vector, tr("ui.visualization.load.moment", name=component.name,
+                                  rp=component.rp_name, vector=vector_text(vector)),
             ))
 
     @staticmethod
     def bodyforce(
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: BodyForceNode,
         values: list[float],
     ) -> None:
-        center = geometry.instance_center(interface.instance_name or "")
+        center = geometry.instance_center(component.instance_name or "")
         if center is not None:
             vector = vector3(values)
             scene.items.append(ArrowLoad(
                 center,
                 vector,
                 CONSTANT.UI.VIEWER.LOADS.BODY_FORCE_COLOR,
-                tr("ui.visualization.load.bodyforce", name=interface.name,
-                   instance=interface.instance_name, elements=interface.element_name,
+                tr("ui.visualization.load.bodyforce", name=component.name,
+                   instance=component.instance_name, elements=component.element_name,
                    vector=vector_text(vector)),
             ))
 
@@ -240,10 +243,10 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: SpringToGroundNode,
         values: list[float],
     ) -> None:
-        point = cls.rp_location(geometry, interface.reference_point)
+        point = cls.rp_location(geometry, component.reference_point)
         if (
             point is not None
             and len(values) >= 5
@@ -251,8 +254,8 @@ class LoadPreviewVisitor:
         ):
             scene.items.append(SpringLoad(
                 point, np.asarray(values[2:5]),
-                tr("ui.visualization.load.spring_to_ground", name=interface.name,
-                   rp=interface.rp_name, ground=vector_text(values[2:5]),
+                tr("ui.visualization.load.spring_to_ground", name=component.name,
+                   rp=component.rp_name, ground=vector_text(values[2:5]),
                    stiffness=values[0], rest_length=values[1]),
             ))
 
@@ -261,11 +264,11 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: SpringBetweenRPsNode,
         values: list[float],
     ) -> None:
-        first = cls.rp_location(geometry, interface.reference_point1)
-        second = cls.rp_location(geometry, interface.reference_point2)
+        first = cls.rp_location(geometry, component.reference_point1)
+        second = cls.rp_location(geometry, component.reference_point2)
         if (
             first is not None
             and second is not None
@@ -273,8 +276,8 @@ class LoadPreviewVisitor:
             and abs(values[0]) > CONSTANT.UI.VIEWER.LOADS.GLYPH_ZERO_TOLERANCE
         ):
             scene.items.append(SpringLoad(
-                first, second, tr("ui.visualization.load.spring_between", name=interface.name,
-                                  rp1=interface.rp_name1, rp2=interface.rp_name2,
+                first, second, tr("ui.visualization.load.spring_between", name=component.name,
+                                  rp1=component.rp_name1, rp2=component.rp_name2,
                                   stiffness=values[0], rest_length=values[1]),
             ))
 
@@ -282,15 +285,15 @@ class LoadPreviewVisitor:
     def penalty(
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: PenaltyDoFNode,
         values: list[float],
     ) -> None:
-        center = geometry.object_center(str(interface.obj_name or ""))
+        center = geometry.object_center(str(component.obj_name or ""))
         if center is not None and len(values) >= 2:
             scene.items.append(MarkerLoad(
-                center, tr("ui.visualization.load.penalty", name=interface.name,
-                           object=interface.obj_name, object_type=interface.obj_type,
-                           dof=interface.s, stiffness=values[0], target=values[1]),
+                center, tr("ui.visualization.load.penalty", name=component.name,
+                           object=component.obj_name, object_type=component.obj_type,
+                           dof=component.s, stiffness=values[0], target=values[1]),
                 CONSTANT.UI.VIEWER.RENDER.MARKER_COLOR_PENALTY,
             ))
 
@@ -298,11 +301,11 @@ class LoadPreviewVisitor:
     def boundary_condition(
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: BoundaryConditionNode,
         values: list[float],
     ) -> None:
-        name = str(interface.set_nodes_name or "")
-        mesh = geometry.mesh_for_surface(interface, name)
+        name = str(component.set_nodes_name or "")
+        mesh = geometry.mesh_for_surface(component, name)
         if mesh is not None:
             scene.items.append(
                 MeshItem(
@@ -338,12 +341,12 @@ class LoadPreviewVisitor:
                         ),
                     )
                 )
-        center = geometry.node_set_center(interface.instance_name or "", name)
+        center = geometry.node_set_center(component.instance_name or "", name)
         if center is not None:
             scene.items.append(MarkerLoad(
-                center, tr("ui.visualization.load.boundary", name=interface.name,
-                           instance=interface.instance_name, nodeset=name,
-                           dofs=fixed_dofs_text(geometry, interface)),
+                center, tr("ui.visualization.load.boundary", name=component.name,
+                           instance=component.instance_name, nodeset=name,
+                           dofs=fixed_dofs_text(geometry, component)),
                 CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
             ))
 
@@ -352,14 +355,14 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: BoundaryConditionRPNode,
         values: list[float],
     ) -> None:
-        point = cls.rp_location(geometry, interface.reference_point)
+        point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             scene.items.append(MarkerLoad(
-                point, tr("ui.visualization.load.boundary_rp", name=interface.name,
-                          rp=interface.rp_name, dofs=fixed_dofs_text(geometry, interface)),
+                point, tr("ui.visualization.load.boundary_rp", name=component.name,
+                          rp=component.rp_name, dofs=fixed_dofs_text(geometry, component)),
                 CONSTANT.UI.VIEWER.LOADS.BOUNDARY_MARKER_COLOR,
             ))
 
@@ -368,17 +371,17 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: ReferencePointNode,
         values: list[float],
     ) -> None:
-        point = cls.rp_location(geometry, interface)
+        point = cls.rp_location(geometry, component)
         if point is not None:
             scene.items.append(
                 MarkerLoad(
                     point,
                     tr(
                         "ui.visualization.load.reference_point",
-                        name=interface.name,
+                        name=component.name,
                         x=point[0],
                         y=point[1],
                         z=point[2],
@@ -393,22 +396,22 @@ class LoadPreviewVisitor:
         cls,
         geometry: PreviewGeometry,
         scene: LoadScene,
-        interface: FEAComponentNode,
+        component: CoupleNode,
         values: list[float],
     ) -> None:
-        reference_point = cls.rp_location(geometry, interface.reference_point)
+        reference_point = cls.rp_location(geometry, component.reference_point)
         node_set_center = geometry.node_set_center(
-            interface.instance_name or "", interface.set_nodes_name or ""
+            component.instance_name or "", component.set_nodes_name or ""
         )
         if reference_point is None or node_set_center is None:
             return
         surface = geometry.mesh_for_surface(
-            interface, str(interface.set_nodes_name or "")
+            component, str(component.set_nodes_name or "")
         )
         label = tr(
-            "ui.visualization.load.coupling", name=interface.name,
-            rp=interface.rp_name, instance=interface.instance_name,
-            nodeset=interface.set_nodes_name,
+            "ui.visualization.load.coupling", name=component.name,
+            rp=component.rp_name, instance=component.instance_name,
+            nodeset=component.set_nodes_name,
         )
         scene.items.append(
             CouplingLoad(
@@ -432,6 +435,6 @@ def vector_text(values: Sequence[float] | np.ndarray) -> str:
     return "[" + ", ".join(f"{value:.6g}" for value in values) + "]"
 
 
-def fixed_dofs_text(geometry: PreviewGeometry, interface: FEAComponentNode) -> str:
+def fixed_dofs_text(geometry: PreviewGeometry, component: FEAComponentNode) -> str:
     names = ("X", "Y", "Z", "Rx", "Ry", "Rz")
-    return "[" + ", ".join(names[index] for index in geometry.values.resolve(interface.index_dof or [])) + "]"
+    return "[" + ", ".join(names[index] for index in geometry.values.resolve(component.index_dof or [])) + "]"

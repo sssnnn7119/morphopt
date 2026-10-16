@@ -6,8 +6,10 @@ from ..model.problem import (
     CADOperationNode, HelperFunctionNode, HelperVariableNode, FEAComponentNode,
     MaterialNode, Node, PartNode, ProblemDefinition, SurfaceNode,
 )
-from ..model.schemas import (
-    INTERFACE_TYPES, PART_INTERFACE_TYPES,
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
+from ..model.registry import (
+    LOAD_TYPES,
+    PART_TYPES,
 )
 from ..model.problem import (
     CustomClassNode, CustomFunctionNode, MethodOverrideNode, StepsNode, SolverNode,
@@ -55,34 +57,34 @@ class DefinitionCommands:
         entries.insert(target, entries.pop(index))
         return True
 
-    def add_part_interface(self, interface_type: str, custom_class: str = "") -> PartNode:
-        name = self.problem.suggest_part_interface_name()
-        if PART_INTERFACE_TYPES[interface_type].get("custom_only"):
+    def add_part(self, part_type: str, custom_class: str = "") -> PartNode:
+        name = self.problem.suggest_part_name()
+        if PART_TYPES[part_type].custom_only:
             if not custom_class:
-                raise ValueError(localized_message("ui.errors.editing.value_requires_a_custom_class", value_0=interface_type))
-            node = PartNode.create(interface_type, name=name)
+                raise ValueError(localized_message("ui.errors.editing.value_requires_a_custom_class", value_0=part_type))
+            node = PartNode.create(part_type, name=name)
         else:
-            node = get_template(self.problem.scheme).make_part_interface(interface_type, name=name)
+            node = get_template(self.problem.scheme).make_part(part_type, name=name)
         node.custom_class = custom_class
-        self.problem.add_part_interface(node)
+        self.problem.add_part(node)
         return node
 
     def add_surface(
         self,
         surface_type: str,
-        owner: PartNode,
+        owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
-        node = get_template(self.problem.scheme).make_surface(surface_type, len(owner.surfaces()))
+        node = get_template(self.problem.scheme).make_surface(surface_type, len(owner.surfaces))
         node.custom_class = custom_class
-        self.problem.add_surface(node, interface=owner)
+        self.problem.add_surface(node, part=owner)
         return node
 
-    def add_interface(self, interface_type: str, custom_class: str = "") -> FEAComponentNode:
-        node = get_template(self.problem.scheme).make_interface(interface_type)
+    def add_component(self, component_type: str, custom_class: str = "") -> FEAComponentNode:
+        node = get_template(self.problem.scheme).make_component(component_type)
         node.custom_class = custom_class
-        node.name = self.problem.suggest_interface_name(INTERFACE_TYPES[interface_type].get("name_hint", "load_"))
-        self.problem.add_interface(node)
+        node.name = self.problem.suggest_component_name(node.name_hint)
+        self.problem.add_component(node)
         return node
 
     def add_material(self, material_type: str, custom_class: str = "") -> MaterialNode:
@@ -96,8 +98,8 @@ class DefinitionCommands:
         self.problem.add_material(node)
         return node
 
-    def next_operation_id(self, owner: PartNode, operation_type: str) -> str:
-        used = {item.operation_id for item in owner.cad_operations()}
+    def next_operation_id(self, owner: CADPartNode, operation_type: str) -> str:
+        used = {item.operation_id for item in owner.operations}
         index = 1
         while f"{operation_type}-{index}" in used:
             index += 1
@@ -105,7 +107,7 @@ class DefinitionCommands:
 
     def add_cad_operation(
         self,
-        owner: PartNode,
+        owner: CADPartNode,
         operation_type: str,
         operation_id: str,
         **values,
@@ -119,7 +121,7 @@ class DefinitionCommands:
         if self.problem.updater is None:
             return []
         candidates = [
-            node for node in self.problem.part_interfaces() + self.problem.material_nodes()
+            node for node in self.problem.parts() + self.problem.material_nodes()
             if node.is_updatable
         ]
         taken = {
@@ -135,7 +137,7 @@ class DefinitionCommands:
 
     def add_symmetry_constraint(self, config: dict, item_type: str) -> bool:
         target = self.problem.config_part_node(config)
-        surfaces = target.surfaces() if target is not None else []
+        surfaces = target.surfaces if target is not None else []
         item = symmetry_item(item_type, surfaces)
         if item is None:
             return False
@@ -148,7 +150,7 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
     from ..model.problem import INSTANCE_REFERENCE_FIELDS, REFERENCE_POINT_FIELDS
     if problem is not None:
         if isinstance(node, FEAComponentNode) and key in {*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS}:
-            return problem.set_interface_reference(node, key, value)
+            return problem.set_component_reference(node, key, value)
         if key == "part_name" and isinstance(node, MaterialNode):
             return problem.set_material_part(node, value)
         if key == "part_name" and isinstance(node, PartNode):
@@ -164,7 +166,7 @@ def rename_node(node: Node, name: str, problem: ProblemDefinition | None = None)
     if problem is not None:
         if node.kind == "instance":
             return problem.rename_instance(node, name)
-        return problem.rename_interface(node, name)
+        return problem.rename_definition(node, name)
     node.name = name
     return True
 
@@ -269,7 +271,7 @@ class CustomClassSession:
             self.problem.custom_classes.remove(node)
             self._replace_uses(node.name, "")
             return None
-        owner = next(custom for custom in self.problem.custom_classes if node in custom.children)
+        owner = next(custom for custom in self.problem.custom_classes if node in custom.members)
         owner.remove_child(node)
         return owner
 
@@ -293,11 +295,11 @@ class CustomClassSession:
 
     @staticmethod
     def move_member(custom: CustomClassNode, node: Node, delta: int) -> bool:
-        index = custom.children.index(node)
+        index = custom.members.index(node)
         target = index + delta
-        if not 0 <= target < len(custom.children):
+        if not 0 <= target < len(custom.members):
             return False
-        custom.children.insert(target, custom.children.pop(index))
+        custom.members.insert(target, custom.members.pop(index))
         return True
 
     @staticmethod
@@ -331,16 +333,17 @@ class LoadCaseSession:
         self.steps, self.problem = steps, problem
 
     def columns(self) -> list[tuple[FEAComponentNode, int, str]]:
-        from ..model.schemas import INTERFACE_TYPES
         columns = []
-        for interface in self.problem.amplitude_interfaces():
-            count = INTERFACE_TYPES[interface.interface_type]["num_values"]
-            columns.extend((interface, index, interface.name if count == 1 else f"{interface.name}.{index}") for index in range(count))
+        for component in self.problem.amplitude_components():
+            count = component.num_values
+            columns.extend((component, index, component.name if count == 1 else f"{component.name}.{index}") for index in range(count))
         return columns
 
-    def value(self, row: int, interface: FEAComponentNode, component: int):
-        amplitudes = self.steps.step_values[row].get(interface, []) if row < len(self.steps.step_values) else []
-        return amplitudes[component] if component < len(amplitudes) else 0.
+    def value(
+        self, row: int, component: FEAComponentNode, component_index: int
+    ):
+        amplitudes = self.steps.step_values[row].get(component, []) if row < len(self.steps.step_values) else []
+        return amplitudes[component_index] if component_index < len(amplitudes) else 0.
 
     def resize(self, count: int) -> None:
         if count < 1:
@@ -353,7 +356,7 @@ class LoadCaseSession:
         self.resize(self.steps.num_steps)
         self.steps.step_values.insert(
             row + 1,
-            {interface: list(values) for interface, values in self.steps.step_values[row].items()},
+            {component: list(values) for component, values in self.steps.step_values[row].items()},
         )
         self.steps.num_steps += 1
         return row + 1
@@ -373,11 +376,11 @@ class LoadCaseSession:
             value = text.strip()
             if value not in {node.name for node in self.problem.helper_variables}:
                 return False
-        interface, component, _caption = self.columns()[column]
+        component, component_index, _caption = self.columns()[column]
         self.resize(self.steps.num_steps)
-        values = self.steps.step_values[row].setdefault(interface, [])
-        values.extend(0. for _ in range(component + 1 - len(values)))
-        values[component] = value
+        values = self.steps.step_values[row].setdefault(component, [])
+        values.extend(0. for _ in range(component_index + 1 - len(values)))
+        values[component_index] = value
         return True
 
 

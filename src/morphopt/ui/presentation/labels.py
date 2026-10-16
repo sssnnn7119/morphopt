@@ -16,9 +16,10 @@ from ..model.problem import (
     ProblemDefinition,
     SurfaceNode,
 )
-from ..model.schemas import (
+from ..model.registry import (
+    NODE_TYPES,
     CAD_OPERATION_TYPES,
-    INTERFACE_TYPES,
+    LOAD_TYPES,
     MATERIAL_TYPES,
     SURFACE_TYPES,
     UPDATER_CATALOG,
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
 
 
 CONTAINER_TITLE_KEYS = {
-    "problem": "ui.widgets.model_tree.container.problem",
     "helper_code": "ui.widgets.model_tree.container.helper_code",
     "helper_code_block": "ui.widgets.model_tree.container.helper_code_block",
     "helper_variables_group": "ui.widgets.model_tree.container.helper_variables_group",
@@ -39,25 +39,12 @@ CONTAINER_TITLE_KEYS = {
     "new_classes_group": "ui.widgets.model_tree.container.new_classes_group",
     "override_classes_group": "ui.widgets.model_tree.container.override_classes_group",
     "params_class": "ui.widgets.model_tree.container.params_class",
-    "geometry": "ui.widgets.model_tree.container.geometry",
     "loads_group": "ui.widgets.model_tree.container.loads_group",
-    "loads": "ui.widgets.model_tree.container.loads",
-    "steps": "ui.widgets.model_tree.container.steps",
-    "materials": "ui.widgets.model_tree.container.materials",
-    "objective": "ui.widgets.model_tree.container.objective",
-    "solver": "ui.widgets.model_tree.container.solver",
-    "updater": "ui.widgets.model_tree.container.updater",
 }
 
 CONTAINER_CLASSES = {
-    "problem": "Controller",
     "params_class": "Params",
-    "geometry": "GeometryParams",
     "loads_group": "FEAParams",
-    "materials": "MaterialsParams",
-    "objective": "ObjectiveFunction",
-    "solver": "Solver",
-    "updater": "Updaters",
 }
 
 UPDATER_TITLE_KEYS = {
@@ -77,30 +64,32 @@ def typed_title(name: str, class_name: str | None) -> str:
 
 
 def container_title(kind: str, class_name: str | None = None) -> str:
-    key = CONTAINER_TITLE_KEYS.get(kind)
+    node_type = NODE_TYPES.get(kind)
+    key = node_type.label_key if node_type is not None else CONTAINER_TITLE_KEYS.get(kind)
+    backend = node_type.backend_class if node_type is not None else CONTAINER_CLASSES.get(kind)
     label = tr(key) if key else kind
-    return typed_title(label, class_name or CONTAINER_CLASSES.get(kind))
+    return typed_title(label, class_name or backend)
 
 
-def schema_label(spec: dict, key: str) -> str:
+def node_type_title(spec: type[Node], key: str) -> str:
     """Localized type description with the catalog's Python class name."""
-    label = tr(spec["label_key"]) if spec.get("label_key") else key
-    title = typed_title(label, spec.get("class_name"))
-    return tr("ui.naming.updatable_title", title=title) if spec.get("design") else title
+    label = tr(spec.label_key) if spec.label_key else key
+    title = typed_title(label, spec.backend_class)
+    return tr("ui.naming.updatable_title", title=title) if spec.is_updatable else title
 
 
 def surface_title_text(surface: SurfaceNode, index: int) -> str:
-    spec = SURFACE_TYPES.get(surface.surface_type, {})
+    spec = type(surface)
     return typed_title(
         surface.name or f"surface_{index}",
-        surface.custom_class or spec.get("class_name"),
+        surface.custom_class or spec.backend_class,
     )
 
 
-def part_interface_title_text(part: PartNode) -> str:
+def part_title_text(part: PartNode) -> str:
     title = typed_title(
-        part.name or part.resolved_part_name(),
-        part.custom_class or part.interface_type,
+        part.name or part.assembly_name,
+        part.custom_class or part.type,
     )
     return tr("ui.naming.updatable_title", title=title) if part.is_updatable else title
 
@@ -112,13 +101,13 @@ def instance_title_text(instance: InstanceNode) -> str:
 def cad_operation_title_text(operation: CADOperationNode) -> str:
     return typed_title(
         operation.operation_id,
-        CAD_OPERATION_TYPES[operation.operation_type]["class_name"],
+        type(operation).backend_class,
     )
 
 
 def cad_operation_summary_text(operation: CADOperationNode) -> str:
     """Keep CAD dependencies available without extending every tree title."""
-    title = schema_label(CAD_OPERATION_TYPES[operation.operation_type], operation.operation_type)
+    title = node_type_title(type(operation), operation.operation_type)
     inputs = [
         value for value in (operation.object_id, operation.tool_id, operation.input_id)
         if value
@@ -130,22 +119,22 @@ def cad_operation_summary_text(operation: CADOperationNode) -> str:
 
 def surface_index(problem: ProblemDefinition | None, surface: SurfaceNode) -> int | None:
     owner = problem.owner_of_surface(surface) if problem is not None else None
-    return owner.surfaces().index(surface) if owner is not None else None
+    return owner.surfaces.index(surface) if owner is not None else None
 
 
-def interface_title_text(interface: FEAComponentNode) -> str:
-    spec = INTERFACE_TYPES.get(interface.interface_type, {})
+def component_title_text(component: FEAComponentNode) -> str:
+    spec = type(component)
     return typed_title(
-        interface.name or interface.interface_type,
-        interface.custom_class or spec.get("class_name"),
+        component.name or component.type,
+        component.custom_class or spec.backend_class,
     )
 
 
 def material_title_text(material: MaterialNode) -> str:
-    spec = MATERIAL_TYPES.get(material.material_type, {})
+    spec = type(material)
     title = typed_title(
         material.name or material.material_type,
-        material.custom_class or spec.get("class_name"),
+        material.custom_class or spec.backend_class,
     )
     return tr("ui.naming.updatable_title", title=title) if material.is_updatable else title
 
@@ -169,7 +158,7 @@ def updater_section_title_text(problem: ProblemDefinition, group: str, config: d
         target = problem.config_part_node(config)
         class_name = (
             "UpdaterOffsetBoundaryPart"
-            if target is not None and target.interface_type == "OffsetBoundaryPart"
+            if target is not None and target.type == "OffsetBoundaryPart"
             else "UpdaterBoundaryPart"
         )
     else:
@@ -186,7 +175,7 @@ def updater_title_text(problem: ProblemDefinition | None, node: UpdaterTreeNode)
         item = cast("UpdaterItemTreeNode", node).item
         category = "objectives" if node.group.endswith("objectives") else "constraints"
         catalog = SURFACE_SYMMETRY_CONSTRAINTS if node.group.endswith("symmetry") else UPDATER_CATALOG[category]
-        return updater_item_title_text(item, catalog.get(item["type"], {}))
+        return updater_item_title_text(item, catalog.get(item["type"]))
     if node.group in {"geometry", "materials"} and problem is not None:
         config = node.config()
         if config is not None:
@@ -194,24 +183,24 @@ def updater_title_text(problem: ProblemDefinition | None, node: UpdaterTreeNode)
     return updater_group_title(node.group)
 
 
-def updater_item_title_text(item: dict, spec: dict) -> str:
+def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
     if spec:
-        label = tr(spec["label_key"])
+        label = tr(spec.label_key)
     else:
         label = tr("ui.naming.custom") if item["type"] == "Custom" else item["type"]
-    return typed_title(label, item.get("custom_class") or spec.get("class_name"))
+    return typed_title(label, item.get("custom_class") or (spec.backend_class if spec else None))
 
 
 def node_title(problem: ProblemDefinition | None, node: Node) -> str:
     """Canonical object title, including the selected custom class."""
     if isinstance(node, PartNode):
-        return part_interface_title_text(node)
+        return part_title_text(node)
     if isinstance(node, InstanceNode):
         return instance_title_text(node)
     if isinstance(node, CADOperationNode):
         return cad_operation_title_text(node)
     if isinstance(node, FEAComponentNode):
-        return interface_title_text(node)
+        return component_title_text(node)
     if isinstance(node, MaterialNode):
         return material_title_text(node)
     if isinstance(node, SurfaceNode):
@@ -244,15 +233,15 @@ def reference_choice_title(problem: ProblemDefinition | None, key: str, name: ob
         "rp_name", "rp_name1", "rp_name2",
         "force_load_name", "moment_load_name", "reference_point_name",
     }:
-        interface = next((node for node in problem.interfaces() if node.name == name), None)
-        return interface_title_text(interface) if interface is not None else None
+        component = next((node for node in problem.fea_components() if node.name == name), None)
+        return component_title_text(component) if component is not None else None
     if key == "part_name":
         part = next(
-            (node for node in problem.part_interfaces() if node.resolved_part_name() == name),
+            (node for node in problem.parts() if node.assembly_name == name),
             None,
         )
         if part is not None:
-            return typed_title(str(name), part.custom_class or part.interface_type)
+            return typed_title(str(name), part.custom_class or part.type)
     return None
 
 

@@ -22,9 +22,11 @@ ui/
 ├── app.py / mainwindow.py / workbench.py / observe_panel.py
 ├── refresh.py               Refreshable 协议、刷新上下文和统一调度器
 ├── model/
-│   ├── nodes.py             节点字段、序列化和节点内部行为
+│   ├── base_nodes.py        通用节点基类与共享节点家族
+│   ├── node_types/          可持久化的具体节点类型
+│   ├── registry.py          节点类型与多态家族注册
 │   ├── problem.py           问题聚合：跨节点关联、增删排序、不变量
-│   ├── schemas.py           字段、后端类型和 updater 目录（保存文本 key）
+│   ├── fields.py             字段元数据
 │   ├── loaders.py           .morph JSON 边界
 │   └── modelinfo.py          导入存档摘要
 ├── application/

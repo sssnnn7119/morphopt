@@ -7,8 +7,12 @@ import torchfea
 from ...constants import CONSTANT
 from ...optcore.modelparams.parts import CADPart
 from ..model.problem import CADOperationNode, PartNode, ProblemDefinition
-from ..model.schemas import CAD_OPERATION_TYPES
+from ..model.registry import (
+    CAD_OPERATION_TYPES,
+)
 from .expressions import DefinitionValues
+from ..model.node_types.parts import CADPartNode
+from ..model.node_types.cad import StepImportOperationNode
 
 
 def cad_operation_from_node(
@@ -19,7 +23,7 @@ def cad_operation_from_node(
     operation_type = operation.operation_type
     spec = CAD_OPERATION_TYPES[operation_type]
 
-    if operation_type == "StepImport":
+    if isinstance(operation, StepImportOperationNode):
         return torchfea.cad.StepImport(
             operation.operation_id,
             filename=operation.filename or "import.step",
@@ -28,11 +32,11 @@ def cad_operation_from_node(
 
     operation_class = getattr(torchfea.cad, operation_type)
     kwargs: dict[str, object] = {"id": operation.operation_id}
-    for field in spec["params"]:
-        key = field["key"]
+    for field in spec.fields:
+        key = field.key
         value = operation.get_field(key)
         if (
-            field["type"] == "float"
+            field.type == "float"
             and isinstance(value, str)
             and namespace is not None
         ):
@@ -43,10 +47,10 @@ def cad_operation_from_node(
 
 
 def cad_part_from_node(
-    node: PartNode, problem: ProblemDefinition | None = None
+    node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> CADPart:
     """Create a preview Part from its structured, ordered CAD feature list."""
-    operations = node.cad_operations()
+    operations = node.operations
     values = DefinitionValues(problem)
     namespace = values.namespace
 
@@ -65,14 +69,14 @@ def cad_part_from_node(
         ),
         mesh_order=values.resolve(node.mesh_order) if node.mesh_order is not None else 1,
         exterior_surface=node.exterior_surface or "extern",
-        part_name=node.resolved_part_name() or "CADPreview",
+        part_name=node.assembly_name or "CADPreview",
     )
     part.initialize()
     return part
 
 
 def cad_brep_records_from_node(
-    node: PartNode, problem: ProblemDefinition | None = None
+    node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> list[dict]:
     """Return OCC face and edge geometry for the CAD viewport."""
     part = cad_part_from_node(node, problem)

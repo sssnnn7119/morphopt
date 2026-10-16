@@ -258,19 +258,19 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
 
 
 def _common_loads(loads, length, fixed="surface_0_Bottom", tip="surface_0_Head", location=None):
-    loads.add_interface(FEAComponentNode.create(
+    loads.add_component(FEAComponentNode.create(
         "BoundaryCondition",
         name="base_fixed",
         instance_name="body-1",
         set_nodes_name=fixed,
         index_dof=[0, 1, 2],
     ))
-    loads.add_interface(FEAComponentNode.create(
+    loads.add_component(FEAComponentNode.create(
         "ReferencePoint",
         name="RP_tip",
         rp_location=location or [0., 0., length],
     ))
-    loads.add_interface(FEAComponentNode.create(
+    loads.add_component(FEAComponentNode.create(
         "Couple",
         name="tip_coupling",
         instance_name="body-1",
@@ -284,7 +284,7 @@ def _shape_geometry(options, geometry, loads, materials):
         "BoundaryPart", name="body",
         fea_seed_size=options.mesh_size, mesh_order=2,
     )
-    geometry.add_interface(part)
+    geometry.add_part(part)
     seed = min(
         min(layer.radius for layer in options.layers)
         / CONSTANT.UI.QUICKSTART.GENERATION.SHAPE_SEED_RADIUS_DIVISOR,
@@ -307,7 +307,7 @@ def _shape_geometry(options, geometry, loads, materials):
                 seed_size=seed, init_location=[cavity.x, cavity.y, cavity.z], perturbation_L=-1.,
             )
         part.add_surface(surface)
-        loads.add_interface(FEAComponentNode.create(
+        loads.add_component(FEAComponentNode.create(
             "Pressure", name=f"pressure_{index}", instance_name="body-1",
             surface_name=f"surface_{index}_All",
         ))
@@ -507,12 +507,12 @@ def _contact_setup(problem, options, geometry, loads, materials):
             radius=options.radius,
         )
     )
-    geometry.add_interface(object_part)
-    loads.add_interface(FEAComponentNode.create(
+    geometry.add_part(object_part)
+    loads.add_component(FEAComponentNode.create(
         "BoundaryCondition", name="object_fixed", instance_name="object-1",
         set_nodes_name="all", index_dof=[0, 1, 2],
     ))
-    loads.add_interface(FEAComponentNode.create(
+    loads.add_component(FEAComponentNode.create(
         "Contact", name="object_contact", instance_name1="body-1", surface_name1="surface_0_All",
         instance_name2="object-1", surface_name2="extern",
         penalty_threshold_h=min(
@@ -542,10 +542,10 @@ def _topology(options, geometry, loads, materials):
         length=options.total_length, height=options.height, depth=options.depth,
         mesh_size=options.mesh_size, mesh_order=2,
     )
-    geometry.add_interface(part)
+    geometry.add_part(part)
     _common_loads(loads, options.total_length, fixed="nodes_xmin", tip="nodes_xmax",
                   location=[options.total_length, options.height/2, options.depth/2])
-    loads.add_interface(FEAComponentNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
+    loads.add_component(FEAComponentNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
     materials.add_material(MaterialNode.create(
         "SIMP_BSPFieldMaterials", name="density", part_name="body",
         elementname="design", material_model="NeoHookeanLnJ", mu=options.mu,
@@ -563,7 +563,7 @@ def _topology(options, geometry, loads, materials):
     updater = UpdaterNode(name="Updater", params={
         "geometry": [],
         "materials": [{
-            "interface_name": "density",
+            "material_name": "density",
             "max_step_iter": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
             "if_update": True,
             "objective_functions": [{"type": "Sensitivity", "params": {"normalize_gradient": False}}],

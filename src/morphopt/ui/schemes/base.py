@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from ..i18n import localization, tr
-from ..model import schemas as S
+from ..model import registry as R
 from ..model.problem import (
     GeometryNode,
     FEAComponentNode,
@@ -65,30 +65,30 @@ class SchemeTemplate:
         """Build a fresh surface; name stays empty, index 0 = outer."""
         return SurfaceNode.create(surface_type, index=index, **overrides)
 
-    def make_interface(
-        self, interface_type: str, name: str | None = None, **overrides
+    def make_component(
+        self, component_type: str, name: str | None = None, **overrides
     ) -> FEAComponentNode:
-        """Build a fresh load interface from schema defaults."""
-        return FEAComponentNode.create(interface_type, name=name, **overrides)
+        """Build a fresh FEA component from schema defaults."""
+        return FEAComponentNode.create(component_type, name=name, **overrides)
 
     def make_material(
         self, material_type: str | None = None, **overrides
     ) -> MaterialNode:
-        """Build a fresh material interface."""
+        """Build a fresh material definition."""
         selected_type = material_type or self.material_type
         if selected_type not in self.available_material_types():
             raise ValueError(
-                localized_message("ui.errors.base.unknown_material_interface_type_value", value_0=selected_type)
+                localized_message("ui.errors.base.unknown_material_type_value", value_0=selected_type)
             )
         mat = MaterialNode.create(selected_type, **overrides)
         return mat
 
     def available_material_types(self) -> tuple[str, ...]:
-        """Return every material interface supported by the unified kernel."""
-        return tuple(S.MATERIAL_TYPES)
+        """Return every material type supported by the kernel."""
+        return tuple(R.MATERIAL_TYPES)
 
     def make_materials(self, *materials: MaterialNode) -> MaterialsNode:
-        """Build the material-interface collection for the problem tree."""
+        """Build the material collection for the problem tree."""
         section = MaterialsNode(name="Materials")
         for material in materials:
             section.add_material(material)
@@ -108,47 +108,47 @@ class SchemeTemplate:
     # tree.  Scheme templates only *assemble* these (never hand-roll dicts),
     # so all schemes share identical structure and default population.
     def make_geometry(self, name: str | None = None) -> GeometryNode:
-        """Geometry section: an empty container for geometry interfaces."""
+        """Geometry section: an empty container for Part definitions."""
         return GeometryNode(name=name or self.geometry_title)
 
-    def make_part_interface(
-        self, interface_type: str | None = None, name: str | None = None, **overrides
+    def make_part(
+        self, part_type: str | None = None, name: str | None = None, **overrides
     ) -> PartNode:
-        """Build one part interface (Part + Instances) of this scheme."""
-        selected = interface_type or self.default_part_interface_type()
+        """Build one Part (and its Instances) for this scheme."""
+        selected = part_type or self.default_part_type()
         if selected not in self.available_geometry_types():
             raise ValueError(
-                localized_message("ui.errors.base.unknown_geometry_interface_type_value", value_0=selected)
+                localized_message("ui.errors.base.unknown_part_type_value", value_0=selected)
             )
         return PartNode.create(selected, name=name or "", **overrides)
 
     def available_geometry_types(self) -> tuple[str, ...]:
-        """Return every UI-enabled Part interface.
+        """Return every Part type enabled in the UI.
 
         Templates choose an initial model only.  The Part types that can be
         combined into that model are independent of the starter template.
         """
         return tuple(
             name
-            for name, spec in S.PART_INTERFACE_TYPES.items()
-            if not spec.get("hidden", False) and not spec.get("custom_only", False)
+            for name, spec in R.PART_TYPES.items()
+            if not spec.hidden and not spec.custom_only
         )
 
-    def default_part_interface_type(self) -> str:
-        """Part-interface type used by this scheme's default geometry."""
+    def default_part_type(self) -> str:
+        """Part type used by this scheme's default geometry."""
         types = self.available_geometry_types()
         if not types:
             raise NotImplementedError(
-                localized_message("ui.errors.base.value_declares_no_geometry_interfaces", value_0=type(self).__name__)
+                localized_message("ui.errors.base.value_declares_no_geometry_parts", value_0=type(self).__name__)
             )
         return types[0]
 
     def make_geometry_with_body(self, **overrides):
         """Default geometry section holding one empty boundary part."""
         geometry = self.make_geometry()
-        geometry.add_interface(
-            self.make_part_interface(
-                self.default_part_interface_type(), name=self.body_name, **overrides
+        geometry.add_part(
+            self.make_part(
+                self.default_part_type(), name=self.body_name, **overrides
             )
         )
         return geometry
@@ -164,11 +164,11 @@ class SchemeTemplate:
         return f"{self.body_name}-1"
 
     def make_loads(self) -> LoadsNode:
-        """Loads section (empty container; add interfaces afterwards)."""
+        """Loads section (empty container; add components afterwards)."""
         return LoadsNode(name="Loads")
 
     def make_steps(self, num_steps: int, step_values: list) -> StepsNode:
-        """Steps section: total count + per-interface amplitudes per step."""
+        """Steps section: total count + per-component amplitudes per step."""
         return StepsNode(
             name="Load steps",
             params={
@@ -261,8 +261,8 @@ class MorphTemplate(SchemeTemplate):
         self.label_key = str(meta["label_key"])
         self.MATERIAL_TYPE = str(meta.get("material_type") or "")
         self.BODY_NAME = str(meta.get("body_name") or "body")
-        self._blank_interface_fields = tuple(
-            meta.get("blank_interface_fields")
+        self._blank_component_fields = tuple(
+            meta.get("blank_component_fields")
             or (
                 "instance_name",
                 "instance_name1",
@@ -288,14 +288,14 @@ class MorphTemplate(SchemeTemplate):
     def build_root(self) -> Node:
         return Node.from_dict(self._problem.root.to_dict())
 
-    def make_interface(
-        self, interface_type: str, name: str | None = None, **overrides
+    def make_component(
+        self, component_type: str, name: str | None = None, **overrides
     ) -> FEAComponentNode:
-        spec = S.INTERFACE_TYPES.get(interface_type, {})
-        for field in spec.get("params", []):
-            if field["key"] in self._blank_interface_fields:
-                overrides.setdefault(field["key"], "")
-        return super().make_interface(interface_type, name=name, **overrides)
+        spec = R.LOAD_TYPES[component_type]
+        for field in spec.fields:
+            if field.key in self._blank_component_fields:
+                overrides.setdefault(field.key, "")
+        return super().make_component(component_type, name=name, **overrides)
 
     def default_objective_slot(self) -> str:
         return self._objective_slot or super().default_objective_slot()

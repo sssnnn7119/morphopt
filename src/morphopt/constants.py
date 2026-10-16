@@ -17,12 +17,9 @@ class _Constants:
         class LAYOUT:
             class WORKBENCH:
                 OUTPUT_NAME_WIDTH = 180
-                FIRST_HEADER_SPACING = 10
                 PATH_MINIMUM_WIDTH = 120
                 DIRECTORY_BUTTON_WIDTH = 30
-                SECOND_HEADER_SPACING = 12
                 DEVICE_SELECTOR_WIDTH = 150
-                DEVICE_TITLE_SPACING = 8
                 LEFT_MINIMUM_WIDTH = 230
                 EDITOR_MINIMUM_WIDTH = 440
                 LEFT_SPLIT_SIZES = (500, 260)
@@ -519,7 +516,7 @@ class _Constants:
                     class D:
                         DEFAULT = 0.0
 
-            class INTERFACES:
+            class FEA_COMPONENTS:
 
                 class PRESSURE:
 

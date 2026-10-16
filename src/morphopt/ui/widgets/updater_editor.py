@@ -43,7 +43,7 @@ from .codeeditor import CodeEditor
 from ..presentation.navigation import UpdaterItemTreeNode, UpdaterTreeNode
 from ..presentation.labels import (
     node_title,
-    schema_label,
+    node_type_title,
     surface_title_text,
     updater_item_title_text,
     updater_section_title_text,
@@ -241,7 +241,7 @@ class UpdaterEditor(QWidget):
                 )
             elif group == "materials":
                 form.addRow(
-                    tr('ui.widgets.updater_editor.target_material_interface'),
+                    tr('ui.widgets.updater_editor.target_material'),
                     self._material_target_control(cfg),
                 )
 
@@ -305,7 +305,7 @@ class UpdaterEditor(QWidget):
         """Combo box selecting the boundary Part this sub-optimizer updates.
 
         Every boundary part has its own geometry optimizer; changing this entry
-        re-binds the generated ``UpdaterBoundaryPart(interface_name=...)``.
+        selects the Part registered for this optimizer.
         """
         combo = QComboBox()
         target = self._problem.config_part_node(cfg) if self._problem else None
@@ -322,11 +322,9 @@ class UpdaterEditor(QWidget):
         return combo
 
     def _material_target_control(self, cfg: dict) -> QWidget:
-        """Combo box selecting the material interface this sub-optimizer updates.
+        """Combo box selecting the material definition this optimizer updates.
 
-        Only design-carrying interfaces (SIMP density fields) can be updated;
-        changing this entry re-binds the generated
-        ``UpdaterSIMPMaterial(interface_name=...)``.
+        Only design-carrying materials (SIMP density fields) can be updated.
         """
         combo = QComboBox()
         target = self._problem.config_material_node(cfg) if self._problem else None
@@ -355,7 +353,7 @@ class UpdaterEditor(QWidget):
         node = self._problem.config_part_node(cfg)
         if node is None:
             return len(self._problem.surfaces())
-        return len(node.surfaces())
+        return len(node.surfaces)
 
     def _if_update_control(self, cfg: dict, cur, group: str) -> QWidget:
         """Checkbox widget for ``if_update``.
@@ -368,7 +366,7 @@ class UpdaterEditor(QWidget):
             surfaces = []
             if self._problem is not None:
                 node = self._problem.config_part_node(cfg)
-                surfaces = node.surfaces() if node is not None else self._problem.surfaces()
+                surfaces = node.surfaces if node is not None else self._problem.surfaces()
             if surfaces:
                 return _IfUpdateDropDown(cfg, cur, surfaces, self._on_change)
         chk = QCheckBox()
@@ -667,7 +665,7 @@ class UpdaterItemList(QWidget):
         specs = self.model.specs()
         for item_type, spec in specs.items():
             self._add_menu.addAction(
-                schema_label(spec, item_type),
+                node_type_title(spec, item_type),
                 lambda _checked=False, kind=item_type: self._add(kind),
             )
         if category != "geometry_symmetry":
@@ -677,7 +675,7 @@ class UpdaterItemList(QWidget):
                 custom_menu.addAction(
                     updater_item_title_text(
                         {"type": item_type, "custom_class": custom.name},
-                        specs.get(item_type, {}),
+                        specs.get(item_type),
                     ),
                     lambda _checked=False, kind=item_type, name=custom.name: self._add(kind, name),
                 )
@@ -717,7 +715,7 @@ class UpdaterItemList(QWidget):
             references = QFormLayout()
             compatible = self.model.compatible_surfaces(spec)
             for key, label in (("surface_index", 'surface'), ("related_surface_index", 'related_surface')):
-                if key == "related_surface_index" and not spec.get("related_surface"):
+                if key == "related_surface_index" and not spec.related_surface:
                     continue
                 combo = QComboBox()
                 combo.addItem("", None)
@@ -736,7 +734,7 @@ class UpdaterItemList(QWidget):
             column.addLayout(references)
         if item["type"] == "Distance" and self.n_surfaces:
             column.addWidget(_distance_params_form(item, self.n_surfaces, lambda: self._notify(item), problem))
-        elif spec.get("params"):
+        elif spec is not None and spec.fields:
             choices = {}
             if item["type"] == "VolFrac":
                 from ..application.part_sets import PartSetCatalog
@@ -747,7 +745,7 @@ class UpdaterItemList(QWidget):
                 ).elements)
             form = ParamForm(
                 item["params"],
-                spec["params"],
+                spec.fields,
                 extra_choices=choices,
                 helper_names=[node.name for node in problem.helper_variables],
             )

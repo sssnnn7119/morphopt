@@ -39,5 +39,8 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra"
 
+[tool.ruff.lint]
+extend-select = ["RUF022"]
+
 [tool.setuptools.package-data]
 "morphopt.ui" = ["templates/*.morph", "templates/*.npz", "locales/*.json"]

@@ -1,5 +1,7 @@
 """Transient navigation handles; they are never serialized in a definition."""
 from __future__ import annotations
+
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from dataclasses import dataclass, field
 from ..model.problem import Node, ProblemDefinition, UpdaterNode
 from ..i18n import tr
@@ -28,7 +30,7 @@ class CustomClassGroupTreeNode(Node):
 
 
 class HelperGroupTreeNode(Node):
-    """Navigation group under Helper code."""
+    """Navigation group for helper variables or functions."""
 
     def __init__(self, kind: str) -> None:
         super().__init__(kind=kind, name=container_title(kind))
@@ -39,6 +41,13 @@ class HelperCodeBlockTreeNode(Node):
 
     def __init__(self) -> None:
         super().__init__(kind="helper_code_block", name=container_title("helper_code_block"))
+
+
+class HelperCodeTreeNode(Node):
+    """Root collection for free code, helper variables and functions."""
+
+    def __init__(self) -> None:
+        super().__init__(kind="helper_code", name=container_title("helper_code"))
 
 
 class LoadsTreeNode(Node):
@@ -54,13 +63,21 @@ class UpdaterTreeNode(Node):
     Updater configuration remains owned by :class:`UpdaterNode`; these nodes
     are navigation handles only and are intentionally not inserted into the
     persisted problem tree.  Both sections carry ``config_index``: the model may
-    run several sub-optimizers side by side, one per target (a boundary part
-    interface for geometry, a material interface for materials).
+    run several sub-optimizers side by side, one per target (a boundary Part
+    for geometry, a design material for materials).
     """
 
     def __init__(self, updater: UpdaterNode, group: str, config_index: int = 0) -> None:
         label = updater_group_title(group)
-        super().__init__(kind=f"updater_{group}", name=label)
+        configs = (
+            updater.geometry if group.startswith("geometry") else updater.materials
+        )
+        config = configs[config_index] if 0 <= config_index < len(configs) else None
+        target = config.get("target") if config is not None else None
+        target_name = getattr(target, "name", "") if target is not None else ""
+        if config is not None and not target_name:
+            target_name = config.get("part_name") or config.get("material_name") or ""
+        super().__init__(kind=f"updater_{group}", name=str(target_name or label))
         self.updater_parent = updater
         self.group = group
         self.config_index = int(config_index)
@@ -83,10 +100,13 @@ class UpdaterTreeNode(Node):
 class UpdaterItemTreeNode(UpdaterTreeNode):
     """Navigation handle for one ordered item, backed by its config dictionary."""
 
-    def __init__(self, updater: UpdaterNode, group: str, config_index: int, item: dict) -> None:
+    def __init__(
+        self, updater: UpdaterNode, group: str, config_index: int, item: dict
+    ) -> None:
         super().__init__(updater, group, config_index)
         self.kind = "updater_item"
         self.item = item
+        self.name = str(item.get("custom_class") or item.get("type") or self.name)
 
     @property
     def category(self) -> str:
@@ -104,7 +124,7 @@ def node_key(node: Node | None):
     if node.kind == "params_class":
         return ("params_class",)
     if node.kind in {
-        "loads_group", "helper_code_block",
+        "loads_group", "helper_code", "helper_code_block",
         "helper_variables_group", "helper_functions_group", "custom_classes",
         "new_classes_group", "override_classes_group",
     }:
@@ -165,15 +185,20 @@ class DefinitionNavigation:
                 ("helper_functions_group", problem.helper_functions),
             )
         ]
+        helper_code = self.entry(
+            HelperCodeTreeNode(), bold=True, children=[free_code, *helper_groups]
+        )
         params = self.entry(ParamsTreeNode(), bold=True)
         controller = self.entry(problem.root, bold=True, children=[params])
         if problem.geometry is not None:
             geometry = self.entry(problem.geometry, bold=True)
             params.children.append(geometry)
-            for part in problem.part_interfaces():
-                children = [self.entry(node) for node in part.instances()]
-                children.extend(self.entry(node) for node in part.cad_operations())
-                children.extend(self.entry(node) for node in part.surfaces())
+            for part in problem.parts():
+                children = [self.entry(node) for node in part.instances]
+                if isinstance(part, CADPartNode):
+                    children.extend(self.entry(node) for node in part.operations)
+                if isinstance(part, BoundaryPartNode):
+                    children.extend(self.entry(node) for node in part.surfaces)
                 geometry.children.append(self.entry(part, children=children))
         loads = self.entry(LoadsTreeNode(), bold=True)
         params.children.append(loads)
@@ -181,7 +206,7 @@ class DefinitionNavigation:
             loads.children.append(self.entry(
                 problem.loads,
                 bold=True,
-                children=[self.entry(node) for node in problem.interfaces()],
+                children=[self.entry(node) for node in problem.fea_components()],
             ))
         if problem.steps is not None:
             loads.children.append(self.entry(problem.steps, bold=True))
@@ -228,12 +253,13 @@ class DefinitionNavigation:
                 CustomClassGroupTreeNode(kind),
                 bold=True,
                 children=[
-                    self.entry(custom, children=[self.entry(method) for method in custom.children])
+                    self.entry(custom, children=[self.entry(method) for method in custom.members])
                     for custom in problem.custom_classes
                     if custom.class_type == class_type
                 ],
             ))
-        return [free_code, *helper_groups, custom_classes, controller]
+        helper_code.children.append(custom_classes)
+        return [helper_code, controller]
 
 
 def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] | None:

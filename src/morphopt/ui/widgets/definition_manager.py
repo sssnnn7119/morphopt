@@ -1,6 +1,8 @@
 """Collection editors for geometry, loads, materials and helper definitions."""
 
 from __future__ import annotations
+
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from copy import deepcopy
 
 from typing import TYPE_CHECKING, Any
@@ -28,10 +30,10 @@ from ..model.problem import (
     PartNode,
     ProblemDefinition,
 )
-from ..model.schemas import (
-    INTERFACE_TYPES,
+from ..model.registry import (
+    LOAD_TYPES,
     MATERIAL_TYPES,
-    PART_INTERFACE_TYPES,
+    PART_TYPES,
     SURFACE_TYPES,
 )
 from .editor import PropertyEditor
@@ -43,7 +45,7 @@ from ..application.editor_routing import managed_nodes
 from ..presentation.labels import (
     cad_operation_summary_text,
     node_title,
-    schema_label,
+    node_type_title,
     instance_title_text,
     component_update_description,
 )
@@ -109,9 +111,9 @@ class DefinitionManagerEditor(QWidget):
         self._focus = focus if focus is not manager else None
         self._heading.setText(
             {
-                "geometry": tr('ui.widgets.definition_manager.geometry_interfaces'),
-                "loads": tr('ui.widgets.definition_manager.load_interfaces'),
-                "materials": tr('ui.widgets.definition_manager.material_interfaces'),
+                "geometry": tr('ui.widgets.definition_manager.parts'),
+                "loads": tr('ui.widgets.definition_manager.components'),
+                "materials": tr('ui.widgets.definition_manager.materials'),
                 "helper_variables": tr('ui.widgets.model_tree.container.helper_variables_group'),
                 "helper_functions": tr('ui.widgets.model_tree.container.helper_functions_group'),
             }[self.mode]
@@ -120,7 +122,7 @@ class DefinitionManagerEditor(QWidget):
             {
                 "geometry": tr('ui.widgets.definition_manager.select_a_part_in_the_model_tree_to_edit_it_edit_instance_placement_bound'),
                 "loads": tr('ui.widgets.definition_manager.edit_load_definitions_add_and_configure_loads_boundary_conditions_reference_points'),
-                "materials": tr('ui.widgets.definition_manager.select_a_material_interface_in_the_model_tree_to_edit_its_properties_and'),
+                "materials": tr('ui.widgets.definition_manager.select_a_material_in_the_model_tree_to_edit_its_properties_and'),
                 "helper_variables": tr('ui.widgets.helper_editor.variables_hint'),
                 "helper_functions": tr('ui.widgets.helper_editor.functions_hint'),
             }[self.mode]
@@ -163,9 +165,9 @@ class DefinitionManagerEditor(QWidget):
         if self._problem is None:
             return []
         if self.mode == "geometry":
-            return list(self._problem.part_interfaces())
+            return list(self._problem.parts())
         if self.mode == "loads":
-            return list(self._problem.interfaces())
+            return list(self._problem.fea_components())
         if self.mode == "helper_variables":
             return list(self._problem.helper_variables)
         if self.mode == "helper_functions":
@@ -191,44 +193,44 @@ class DefinitionManagerEditor(QWidget):
 
         template = get_template(self._problem.scheme)
         if self.mode == "geometry":
-            for interface_type in template.available_geometry_types():
-                spec = PART_INTERFACE_TYPES.get(interface_type, {})
+            for part_type in template.available_geometry_types():
+                spec = PART_TYPES[part_type]
                 action = self._add_menu.addAction(
-                    schema_label(spec, interface_type)
+                    node_type_title(spec, part_type)
                 )
                 action.triggered.connect(
-                    lambda _checked=False, kind=interface_type:
-                    self.actions.add_part_interface(kind)
+                    lambda _checked=False, kind=part_type:
+                    self.actions.add_part(kind)
                 )
             candidates = {
                 kind: (
                     "morphopt.BoundaryPart"
-                    if spec.get("surfaces")
+                    if spec.has_surfaces
                     else f"morphopt.{kind}"
                 )
-                for kind, spec in PART_INTERFACE_TYPES.items()
+                for kind, spec in PART_TYPES.items()
                 if kind in template.available_geometry_types()
             }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(
-                self._add_menu, candidates, self.actions.add_part_interface
+                self._add_menu, candidates, self.actions.add_part
             )
         elif self.mode == "loads":
-            for interface_type, spec in INTERFACE_TYPES.items():
+            for component_type, spec in LOAD_TYPES.items():
                 action = self._add_menu.addAction(
-                    schema_label(spec, interface_type)
+                    node_type_title(spec, component_type)
                 )
                 action.triggered.connect(
-                    lambda _checked=False, kind=interface_type:
-                    self.actions.add_interface(kind)
+                    lambda _checked=False, kind=component_type:
+                    self.actions.add_component(kind)
                 )
             self.actions.custom_add_menu(
                 self._add_menu,
                 {
-                    kind: f"morphopt.FEAParams.{spec['class_name']}"
-                    for kind, spec in INTERFACE_TYPES.items()
+                    kind: f"morphopt.FEAParams.{spec.backend_class}"
+                    for kind, spec in LOAD_TYPES.items()
                 },
-                self.actions.add_interface,
+                self.actions.add_component,
             )
         elif self.mode in {"helper_variables", "helper_functions"}:
             kind = "helper_variable" if self.mode == "helper_variables" else "helper_function"
@@ -239,7 +241,7 @@ class DefinitionManagerEditor(QWidget):
         else:
             for material_type, spec in MATERIAL_TYPES.items():
                 action = self._add_menu.addAction(
-                    schema_label(spec, material_type)
+                    node_type_title(spec, material_type)
                 )
                 action.triggered.connect(
                     lambda _checked=False, kind=material_type:
@@ -295,11 +297,11 @@ class DefinitionManagerEditor(QWidget):
             node,
             index,
             count,
-            lambda item=node: self.actions.remove_part_interface(item),
-            lambda item=node, delta=-1: self.actions.move_part_interface(item, delta),
-            tr('ui.widgets.definition_manager.delete_geometry_interface'),
+            lambda item=node: self.actions.remove_part(item),
+            lambda item=node, delta=-1: self.actions.move_part(item, delta),
+            tr('ui.widgets.definition_manager.delete_part'),
         )
-        if node.interface_type == "TorchFEAPart":
+        if node.type == "TorchFEAPart":
             from .torchfea_model_editor import TorchFEAModelEditor
 
             col.addWidget(
@@ -317,7 +319,7 @@ class DefinitionManagerEditor(QWidget):
         col.addWidget(
             self._child_collection(
                 tr('ui.widgets.definition_manager.instances'),
-                node.instances(),
+                node.instances,
                 add=lambda owner=node: self.actions.add_instance(owner),
                 remove=lambda child: self.actions.remove_instance(child),
                 move=lambda child, delta: self.actions.move_instance(child, delta),
@@ -325,11 +327,11 @@ class DefinitionManagerEditor(QWidget):
                 edit_all=True,
             )
         )
-        if node.has_surfaces:
+        if isinstance(node, BoundaryPartNode):
             col.addWidget(
                 self._child_collection(
                     tr('ui.widgets.definition_manager.boundary_surfaces'),
-                    node.surfaces(),
+                    node.surfaces,
                     add_menu=self._surface_add_menu(node),
                     remove=lambda child: self.actions.remove_surface(child),
                     move=lambda child, delta: self.actions.move_surface(child, delta),
@@ -337,7 +339,7 @@ class DefinitionManagerEditor(QWidget):
                     edit_all=True,
                 )
             )
-        if node.interface_type == "CADPart":
+        if isinstance(node, CADPartNode):
             self._add_cad_collection(col, node)
         return group
 
@@ -363,9 +365,9 @@ class DefinitionManagerEditor(QWidget):
         if isinstance(node, MaterialNode):
             self._add_component_update_controls(col, node)
         if isinstance(node, FEAComponentNode):
-            remove = lambda item=node: self.actions.remove_interface(item)
-            move = lambda item=node, delta=-1: self.actions.move_interface(item, delta)
-            delete_title = tr('ui.widgets.definition_manager.delete_load_interface')
+            remove = lambda item=node: self.actions.remove_component(item)
+            move = lambda item=node, delta=-1: self.actions.move_component(item, delta)
+            delete_title = tr('ui.widgets.definition_manager.delete_component')
         else:
             remove = lambda item=node: self.actions.remove_material(item)
             move = lambda item=node, delta=-1: self.actions.move_material(item, delta)
@@ -429,11 +431,11 @@ class DefinitionManagerEditor(QWidget):
             col.addWidget(card)
         return group
 
-    def _surface_add_menu(self, owner: PartNode) -> QMenu:
+    def _surface_add_menu(self, owner: BoundaryPartNode) -> QMenu:
         menu = QMenu(self)
         for surface_type, spec in SURFACE_TYPES.items():
             action = menu.addAction(
-                schema_label(spec, surface_type)
+                node_type_title(spec, surface_type)
             )
             action.triggered.connect(
                 lambda _checked=False, kind=surface_type, part=owner:
@@ -441,7 +443,7 @@ class DefinitionManagerEditor(QWidget):
             )
         candidates = {
             kind: "morphopt.BoundaryPart."
-            + (spec["factory"].split(".")[0] if spec["factory"] else "FixedSurface")
+            + (spec.factory.split(".")[0] if spec.factory else "FixedSurface")
             for kind, spec in SURFACE_TYPES.items()
         }
         self.actions.custom_add_menu(
@@ -452,7 +454,7 @@ class DefinitionManagerEditor(QWidget):
         return menu
 
     def _add_cad_collection(
-        self, parent_layout: QVBoxLayout, owner: PartNode
+        self, parent_layout: QVBoxLayout, owner: CADPartNode
     ) -> None:
         group = QGroupBox()
         col = QVBoxLayout(group)
@@ -469,7 +471,7 @@ class DefinitionManagerEditor(QWidget):
             )
         col.addWidget(CollectionHeader(tr('ui.widgets.definition_manager.cad_feature_history'), menu=menu))
 
-        operations = owner.cad_operations()
+        operations = owner.operations
         for index, operation in enumerate(operations):
             card = QGroupBox(self._item_title(operation))
             card.setToolTip(cad_operation_summary_text(operation))
@@ -505,7 +507,7 @@ class DefinitionManagerEditor(QWidget):
     ) -> None:
         fields, code_slots, choices = fields_for_node(node, self._problem, sets=self.sets)
         if exclude_fields:
-            fields = [field for field in fields if field["key"] not in exclude_fields]
+            fields = [field for field in fields if field.key not in exclude_fields]
         title = self._item_title(node)
         editor.edit_node(
             node,

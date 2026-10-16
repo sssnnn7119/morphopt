@@ -113,8 +113,8 @@ def workbench_with_vtk(app, monkeypatch):
 def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vtk, monkeypatch):
     window, failures = workbench_with_vtk
     problem, viewer = window.problem, window.viewer
-    pressure = next(n for n in problem.interfaces() if n.interface_type == "Pressure")
-    couple = next(n for n in problem.interfaces() if n.interface_type == "Couple")
+    pressure = next(n for n in problem.fea_components() if n.type == "Pressure")
+    couple = next(n for n in problem.fea_components() if n.type == "Couple")
     problem.steps.num_steps = 2
     problem.steps.step_values.append({pressure: [0.04]})
     window.refresh_coordinator.refresh_now(problem.steps)
@@ -136,11 +136,11 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
 
     monkeypatch.setattr(viewer.renderer, "draw_loads", record_loads)
     window._on_node_selected(couple)
-    window.actions.remove_interface(couple)
+    window.actions.remove_component(couple)
     window.refresh_coordinator.flush()
 
     assert not failures
-    assert couple not in problem.interfaces()
+    assert couple not in problem.fea_components()
     assert pressure in problem.steps.step_values[0]
     assert pressure in problem.steps.step_values[1]
     assert viewer.step_combo.currentData() == 1
@@ -151,7 +151,7 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
     assert any(isinstance(item, ArrowLoad) and pressure.name in item.label for item in items)
     assert any(isinstance(item, MarkerLoad) and item.is_reference_point for item in items)
     assert all(actor in viewer.host.plotter.renderer.actors.values() for actor in viewer.renderer._overlay_actors)
-    assert set(window.loads_editor._node_editors) == set(problem.interfaces())
+    assert set(window.loads_editor._node_editors) == set(problem.fea_components())
 
     # Exercise a full scene rebuild too: a bad legend location used to raise
     # after drawing geometry and prevent every load from being drawn.
@@ -167,7 +167,7 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
 def test_load_edit_preserves_editor_and_tree_state(workbench_with_vtk):
     window, failures = workbench_with_vtk
     problem = window.problem
-    pressure = next(n for n in problem.interfaces() if n.interface_type == "Pressure")
+    pressure = next(n for n in problem.fea_components() if n.type == "Pressure")
     window._on_node_selected(problem.loads)
     editor = window.loads_editor._node_editors[pressure][0]
     geometry_item = window.tree._node_item[problem.geometry]
@@ -179,13 +179,13 @@ def test_load_edit_preserves_editor_and_tree_state(workbench_with_vtk):
     assert window.loads_editor._node_editors[pressure][0] is editor
     assert window.tree._item_node[window.tree.currentItem()] is pressure
     assert not window.tree._node_item[problem.geometry].isExpanded()
-    assert set(window.loads_editor._node_editors) == set(problem.interfaces())
+    assert set(window.loads_editor._node_editors) == set(problem.fea_components())
 
     # A canonical reference can change while the list of choices stays the
     # same. Refresh the selection too, without writing it back to the model.
     changed = QSignalSpy(window.loads_editor.changed)
     control = editor._controls["instance_name"]
-    assert problem.set_interface_reference(pressure, "instance_name", None)
+    assert problem.set_component_reference(pressure, "instance_name", None)
     window.refresh_coordinator.refresh_now(pressure)
     assert control.currentData() == ""
     assert changed.count() == 0

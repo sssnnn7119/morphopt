@@ -17,20 +17,19 @@
 
 ## 基础节点：`Node`
 
-源码：`ui/model/problem.py`。
+源码：`ui/model/base_nodes.py`、`ui/model/node_types/`。
 
 | 状态 | 说明 |
 |---|---|
 | `kind` | 节点稳定种类，用于路由、序列化和 schema。 |
 | `name` | 用户可见的注册名称。 |
-| `fields` | schema 驱动的普通字段字典。 |
-| `children` | 有序子节点列表。 |
-| `parent` | 父节点引用。 |
+| `fields` | `tuple[FieldSpec, ...]`：不可变的编辑元数据；参数值存储在节点的类型化属性中。 |
+| `children` | 只读的子节点遍历元组，由各容器的显式成员集合组成。 |
 
 | 公开方法 | 职责 |
 |---|---|
 | `field_names/has_field/get_field/set_field/field_items` | 访问和更新字段。 |
-| `add_child/remove_child/child/children_of` | 管理树结构。 |
+| `add_child/remove_child` | 管理树结构。 |
 | `iter_nodes/find` | 遍历或查询子树。 |
 | `to_dict/from_dict/clone` | 将业务树转换为持久化数据或副本。 |
 
@@ -41,9 +40,9 @@
 ```text
 ProblemNode
 ├── GeometryNode
-│   └── PartNode
-│        ├── InstanceNode*
-│        └── SurfaceNode*
+│   ├── PartNode.instances: InstanceNode*
+│   ├── BoundaryPartNode.surfaces: SurfaceNode*（并拥有 instances）
+│   └── CADPartNode.operations: CADOperationNode*（并拥有 instances）
 ├── LoadsNode
 │   └── FEAComponentNode*
 ├── StepsNode
@@ -59,14 +58,16 @@ ProblemNode
 | 节点 | 关键状态与公开方法 |
 |---|---|
 | `ProblemNode` | 根节点；`add_section()`、`section()`、`sections()` 管理唯一章节。 |
-| `GeometryNode` | `add_interface()`、`interfaces()`、`owner(surface)`、`surfaces()`；拥有所有 Part 接口。 |
-| `PartNode` | `interface_type`、`spec`、`has_surfaces`、`resolved_part_name()`、`resolved_instance_names()`；`add_instance()`、`add_surface()`。 |
+| `GeometryNode` | `parts: list[PartNode]`；`add_interface()`、`owner(surface)`、`surfaces()`。 |
+| `PartNode` | `instances: list[InstanceNode]`、`assembly_name`、`instance_names`；`add_instance()`。 |
+| `BoundaryPartNode` | `surfaces: list[SurfaceNode]`；`add_surface()`。 |
+| `CADPartNode` | `operations: list[CADOperationNode]`；`add_cad_operation()`、`live_cad_operations()`。 |
 | `InstanceNode` | `translation`、`rotation` 字段与 `pose` 属性，规范为六维位姿。 |
 | `SurfaceNode` | `surface_type`、`is_inner`；`create()` 从曲面 schema 创建。 |
-| `LoadsNode` | `add_interface()`、`interfaces()`；拥有全部 FEA 接口。 |
+| `LoadsNode` | `components: list[FEAComponentNode]`；`add_interface()`。 |
 | `FEAComponentNode` | `interface_type`；`set_reference()`、`reference_name()`、`pending_reference_name()` 维护载荷目标引用。 |
 | `StepsNode` | 载荷步数量与步值矩阵；`field_items()` 提供序列化字段。 |
-| `MaterialsNode` | `add_material()`、`materials()`。 |
+| `MaterialsNode` | `assignments: list[MaterialNode]`；`add_material()`。 |
 | `MaterialNode` | `material_type`、`part_name`；`set_part()` 与 `pending_part_name` 管理目标 Part 引用。 |
 | `ObjectiveNode` | `jacobian_needed`、`objective_body`、`metrics_body` 三类用户代码/选择。 |
 | `SolverNode` | 求解器、进程和任务分配字段。 |
@@ -92,11 +93,18 @@ ProblemNode
 
 | 文件 | 责任 |
 |---|---|
-| `schemas.py` | 所有节点/接口/材料/曲面类型的字段定义、默认值、编辑控件元数据与可选项。 |
+| `base_nodes.py` | `Node`、共享字段行为和 Part/Surface/Load 等节点家族基类；不声明具体持久化类型。 |
+| `node_types/` | 所有具体、可持久化节点的类声明，按结构、几何、载荷、材料和优化器分组。 |
+| `fields.py` | 不可变的 `FieldSpec`，供节点声明和动态编辑器共同使用。 |
+| `registry.py` | 显式注册具体 kind 与多态家族，供 `.morph` 恢复和编辑器菜单使用。 |
+| `configuration.py` | 从节点默认值创建优化器配置。 |
+| `material_models.py` | 枚举后端材料模型及其参数。 |
 | `loaders.py` | `.morph` 文件读写，负责调用 `ProblemDefinition.to_dict/from_dict`。 |
 | `modelinfo.py` | 读取 TorchFEA `.npz`，生成 `TorchFEAModelSummary`、`PartSummary`、`InstanceSummary`，供 UI 选择集合与引用。 |
 
-Schema 是新增可编辑类型的单一描述位置。每个新接口类型先定义 schema，再让领域节点、代码生成器和编辑器按照同一类型 ID 工作。
+具体节点类是字段与后端类型的唯一声明位置。例如 `CADPartNode` 继承 `PartNode`，额外声明 `operations`；`BoundaryPartNode` 额外声明 `surfaces`。容器直接管理这些类型化集合，`children` 只用于统一遍历和 JSON 保存。叶节点拒绝添加子节点，根节点显式保存唯一的 geometry、loads、steps 等章节。
+
+新增类型时在 `node_types/` 对应领域文件中继承节点家族基类，声明类型化属性、`fields` 元组和后端类名，再将类加入 `registry.py` 的对应目录。唯一 kind 的节点登记在 `NODE_TYPES`；共用 kind 的节点登记在相应 `NODE_FAMILIES`。预览适配器按节点类注册，继承类型可以复用父类适配器。
 
 ## 领域不变量
 

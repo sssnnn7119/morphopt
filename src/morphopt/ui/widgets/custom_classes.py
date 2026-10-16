@@ -164,7 +164,7 @@ class CustomClassEditor(QWidget):
 
     def edit_node(self, node, problem):
         custom = node if isinstance(node, CustomClassNode) else next(
-            (custom for custom in problem.custom_classes if node in custom.children), None)
+            (custom for custom in problem.custom_classes if node in custom.members), None)
         if custom is None:
             return
         previous = self.current_method if custom is self._custom else None
@@ -201,7 +201,7 @@ class CustomClassEditor(QWidget):
             self.add_button.setText(tr('ui.common.add'))
             self.add_button.setEnabled(True)
         focus = node if isinstance(node, (MethodOverrideNode, CustomFunctionNode)) else previous
-        self.current_method = focus if focus in custom.children else next(iter(custom.children), None)
+        self.current_method = focus if focus in custom.members else next(iter(custom.members), None)
         self._loading = False
         self._render_methods()
 
@@ -221,7 +221,7 @@ class CustomClassEditor(QWidget):
                 widget.deleteLater()
         if self._custom is None:
             return
-        members = list(self._custom.children)
+        members = list(self._custom.members)
         self._member_cards = {}
         for index, member in enumerate(members):
             spec = self._methods.get(member.name) if isinstance(member, MethodOverrideNode) else None
@@ -272,7 +272,7 @@ class CustomClassEditor(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle(tr('ui.widgets.custom_classes.add_function'))
         layout = QFormLayout(dialog)
-        taken = {member.name for member in self._custom.children}
+        taken = {member.name for member in self._custom.members}
         index = 1
         while f"method_{index}" in taken:
             index += 1
@@ -294,7 +294,7 @@ class CustomClassEditor(QWidget):
             params={"parameters": parameters.text().strip(), "body": "pass"},
         )
         try:
-            if any(member.name == temporary.name for member in self._custom.children):
+            if any(member.name == temporary.name for member in self._custom.members):
                 raise ValueError(tr('ui.widgets.custom_classes.duplicate_function_name'))
             self.session.validate_function(temporary)
         except (SyntaxError, ValueError) as exc:
@@ -312,7 +312,7 @@ class CustomClassEditor(QWidget):
         self._add_member()
 
     def add_override(self):
-        taken = {method.name for method in self._custom.children}
+        taken = {method.name for method in self._custom.members}
         methods = [method for name, method in sorted(self._methods.items()) if name not in taken]
         if not methods:
             return
@@ -332,7 +332,7 @@ class CustomClassEditor(QWidget):
         if self._custom is None:
             return
         self.session.remove(member)
-        self.current_method = next(iter(self._custom.children), None)
+        self.current_method = next(iter(self._custom.members), None)
         self.error.clear()
         self._render_methods()
         self.changed.emit(self._custom)
@@ -375,7 +375,7 @@ class CustomClassEditor(QWidget):
         if parameters_field is not None:
             member.parameters = parameters_field.text().strip()
         try:
-            if any(other is not member and other.name == member.name for other in self._custom.children):
+            if any(other is not member and other.name == member.name for other in self._custom.members):
                 raise ValueError(tr('ui.widgets.custom_classes.duplicate_function_name'))
             self.session.validate_function(member)
         except (SyntaxError, ValueError) as exc:

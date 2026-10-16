@@ -18,9 +18,9 @@ import morphopt
 from ..model.problem import (
     CustomClassNode, CustomFunctionNode, MethodOverrideNode, ProblemDefinition,
 )
-from ..model.schemas import (
-    INTERFACE_TYPES,
-    PART_INTERFACE_TYPES,
+from ..model.registry import (
+    LOAD_TYPES,
+    PART_TYPES,
     SURFACE_TYPES,
     UPDATER_CATALOG,
 )
@@ -140,7 +140,7 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
                         documentation=ast.get_docstring(method) or "")
             catalog[path] = spec
             visit(node.body, path)
-            # Include inherited interface/factory classes exposed by this class.
+            # Include inherited component/factory classes exposed by this class.
             for name in dir(backend):
                 nested = inspect.getattr_static(backend, name)
                 nested_path = f"{path}.{name}"
@@ -190,8 +190,8 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
             spec = ClassSpec(expression, expression, definition, backend)
             spec.methods = _backend_methods(backend, expression)
             parents[expression] = spec
-    for interface_type in PART_INTERFACE_TYPES:
-        expression = f"morphopt.{interface_type}"
+    for part_type in PART_TYPES:
+        expression = f"morphopt.{part_type}"
         if expression not in parents:
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
@@ -219,13 +219,15 @@ def updater_item_base(item_type, category, group=None):
     if item_type == "Custom" and group is not None:
         updater = "morphopt.UpdaterBoundaryPart" if group == "geometry" else "morphopt.UpdaterSIMPMaterial"
         return updater + ".objectivefuncs." + ("BaseObjective" if category == "objectives" else "BaseConstraints")
-    spec = UPDATER_CATALOG.get(category, {}).get(item_type, {})
-    match = re.match(r"([\w.]+)\(", spec.get("gen", ""))
+    spec = UPDATER_CATALOG[category].get(item_type)
+    if spec is None:
+        return None
+    match = re.match(r"([\w.]+)\(", spec.gen)
     if not match:
         return None
     expression = match[1]
     if expression.startswith("self."):
-        updater = "morphopt.UpdaterBoundaryPart" if spec["group"] == "geometry" else "morphopt.UpdaterSIMPMaterial"
+        updater = "morphopt.UpdaterBoundaryPart" if spec.group == "geometry" else "morphopt.UpdaterSIMPMaterial"
         expression = updater + expression[4:]
     return expression
 
@@ -301,7 +303,7 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
         if custom.class_type == "new":
             lines = [f"class {custom.name}:"]
             seen = set()
-            for function in custom.children:
+            for function in custom.members:
                 if not isinstance(function, CustomFunctionNode):
                     raise ValueError(localized_message("ui.errors.custom_classes.invalid_custom_function_value", value_0=custom.name))
                 if function.name in seen:
@@ -327,7 +329,7 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
 
         lines = [f"class {custom.name}({spec.base_expression}):"]
         seen = set()
-        for override in custom.children:
+        for override in custom.members:
             method = spec.methods.get(override.name)
             if not isinstance(override, MethodOverrideNode) or method is None:
                 raise ValueError(localized_message("ui.errors.custom_classes.invalid_override_value", value_0=custom.name, value_1=override.name))
@@ -365,18 +367,18 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     for node in problem.root.iter_nodes():
         if not node.custom_class:
             continue
-        if node.kind == "part_interface":
+        if node.kind == "part":
             path = "ThisController.Params.GeometryParams." + part_names[node.name]
             bindings[path] = node.custom_class
         elif node.kind == "objective":
             bindings["ThisController.ObjectiveFunction"] = node.custom_class
-        elif node.kind == "interface":
-            class_name = INTERFACE_TYPES[node.interface_type]["class_name"]
+        elif node.kind == "fea_component":
+            class_name = LOAD_TYPES[node.type].backend_class
             check_usage(node.custom_class, "morphopt.FEAParams." + class_name)
         elif node.kind == "material":
             check_usage(node.custom_class, "morphopt." + node.material_type)
         elif node.kind == "surface":
-            factory = SURFACE_TYPES[node.surface_type]["factory"]
+            factory = SURFACE_TYPES[node.surface_type].factory
             check_usage(node.custom_class, "morphopt.BoundaryPart." + (factory.split(".")[0] if factory else "FixedSurface"))
         else:
             raise ValueError(localized_message("ui.errors.custom_classes.unsupported_custom_class_on_node_value", value_0=node.kind))
@@ -404,7 +406,7 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
         node = target.definition
         lines[node.lineno - 1] = lines[node.lineno - 1].replace(
             f"({target.base_expression})", f"({name})")
-        overridden = {method.name for method in custom.children}
+        overridden = {method.name for method in custom.members}
         for method in node.body:
             # The UI constructor forwards its configured options through
             # the selected custom __init__. Explicit declaration hooks

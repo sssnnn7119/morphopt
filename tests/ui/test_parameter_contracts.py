@@ -1,5 +1,8 @@
 """Every structured UI field must reach a real backend parameter."""
 from __future__ import annotations
+from morphopt.ui.model.fields import field_defaults
+from morphopt.ui.model.material_models import MATERIAL_MODEL_CHOICES
+from morphopt.ui.model.configuration import symmetry_constraint
 
 import ast
 import inspect
@@ -19,11 +22,11 @@ from morphopt.ui.codegen.generator import (
     _render_updater_item,
     _surface_constraints_for_part,
     render_cad_operation_call,
-    render_interface_call,
+    render_component_call,
     render_surface_call,
 )
 from morphopt.ui.i18n import LocalizationManager
-from morphopt.ui.model import schemas as S
+from morphopt.ui.model import registry as R
 from morphopt.ui.model.problem import (
     CADOperationNode, HelperVariableNode, FEAComponentNode,
     PartNode, SurfaceNode,
@@ -41,25 +44,25 @@ def literal_call(expression):
 
 
 def backend_surface_factory(spec):
-    if spec["factory"] is None:
+    if spec.factory is None:
         return morphopt.BoundaryPart.FixedSurface.initialize_from_stl_file
-    family, method = spec["factory"].split(".")
+    family, method = spec.factory.split(".")
     return getattr(getattr(morphopt.BoundaryPart, family), method)
 
 
-@pytest.mark.parametrize("kind,spec", S.SURFACE_TYPES.items())
+@pytest.mark.parametrize("kind,spec", R.SURFACE_TYPES.items())
 def test_surface_fields_reach_factory(kind, spec):
     surface = SurfaceNode.create(kind)
     args, kwargs = literal_call(render_surface_call(surface))
     bound = inspect.signature(backend_surface_factory(spec)).bind(*args, **kwargs)
-    for field in spec["params"]:
-        assert bound.arguments[field["key"]] == surface.get_field(field["key"])
+    for field in spec.fields:
+        assert bound.arguments[field.key] == surface.get_field(field.key)
 
 
 @pytest.mark.parametrize("kind", ["bsp_cylinder", "cpgeo_cylinder", "cpgeo_sphere"])
 def test_surface_factories_construct_with_ui_parameters(kind):
-    spec = S.SURFACE_TYPES[kind]
-    params = S.clone_defaults(spec["params"])
+    spec = R.SURFACE_TYPES[kind]
+    params = field_defaults(spec.fields)
     params.update(r0=2.0, seed_size=1.5, init_location=[1.0, 2.0, 3.0])
     if kind.endswith("cylinder"):
         params.update(length=12.0, maxC=0.6)
@@ -78,9 +81,9 @@ def test_surface_factories_construct_with_ui_parameters(kind):
 
 @pytest.mark.parametrize("key,index", [("maxC", 0), ("maxFF", 1), ("maxR", 2)])
 def test_bsp_fairness_thresholds_control_penalties(key, index, monkeypatch):
-    params = S.clone_defaults(S.SURFACE_TYPES["bsp_cylinder"]["params"])
+    params = field_defaults(R.SURFACE_TYPES["bsp_cylinder"].fields)
     params.update(r0=2.0, length=12.0, seed_size=1.5, maxC=1.0, maxR=1.0, maxFF=1.0)
-    surface = backend_surface_factory(S.SURFACE_TYPES["bsp_cylinder"])(**params, flip=False)
+    surface = backend_surface_factory(R.SURFACE_TYPES["bsp_cylinder"])(**params, flip=False)
     measures = [torch.zeros(1) for _ in range(6)]
     measures[index] = torch.tensor([0.9])
     surface.rr_compensation = torch.ones((4, 1))
@@ -93,14 +96,14 @@ def test_bsp_fairness_thresholds_control_penalties(key, index, monkeypatch):
     assert torch.equal(surface.control_points, points)
 
 
-@pytest.mark.parametrize("kind,spec", S.PART_INTERFACE_TYPES.items())
+@pytest.mark.parametrize("kind,spec", R.PART_TYPES.items())
 def test_part_fields_reach_constructor_or_explicit_base_parameter(kind, spec):
     part = PartNode.create(kind, name="body")
     # Empty import paths are deliberate unfinished definitions, so use actual
     # values to check every field rather than have codegen omit optional ones.
-    for field in spec["params"]:
-        if part.get_field(field["key"]) == "":
-            part.set_field(field["key"], "selected")
+    for field in spec.fields:
+        if part.get_field(field.key) == "":
+            part.set_field(field.key, "selected")
     args, kwargs = literal_call(_render_part_constructor(part))
     cls = getattr(morphopt, kind)
     inspect.signature(cls).bind(*args, **kwargs)
@@ -109,29 +112,29 @@ def test_part_fields_reach_constructor_or_explicit_base_parameter(kind, spec):
         in inspect.signature(base.__init__).parameters.items()
         if parameter.kind not in (parameter.VAR_KEYWORD, parameter.VAR_POSITIONAL)
     }
-    for field in spec["params"]:
-        key = field["key"]
+    for field in spec.fields:
+        key = field.key
         assert key in declared, (kind, key)
         assert kwargs[key] == part.get_field(key)
 
 
-@pytest.mark.parametrize("kind,spec", S.INTERFACE_TYPES.items())
+@pytest.mark.parametrize("kind,spec", R.LOAD_TYPES.items())
 def test_load_fields_and_amplitude_counts_match_backend(kind, spec):
-    interface = FEAComponentNode.create(kind)
-    for field in spec["params"]:
-        if field["type"] == "combo" and interface.get_field(field["key"]) in (None, ""):
-            interface.set_field(field["key"], "selected")
-    args, kwargs = literal_call(render_interface_call(interface))
-    cls = getattr(morphopt.FEAParams, spec["class_name"])
+    component = FEAComponentNode.create(kind)
+    for field in spec.fields:
+        if field.type == "combo" and component.get_field(field.key) in (None, ""):
+            component.set_field(field.key, "selected")
+    args, kwargs = literal_call(render_component_call(component))
+    cls = getattr(morphopt.FEAParams, spec.backend_class)
     inspect.signature(cls).bind(*args, **kwargs)
-    assert set(kwargs) == {field["key"] for field in spec["params"]}
-    assert kwargs == {field["key"]: interface.get_field(field["key"]) for field in spec["params"]}
-    assert cls(*args, **kwargs).num_values == spec["num_values"]
+    assert set(kwargs) == {field.key for field in spec.fields}
+    assert kwargs == {field.key: component.get_field(field.key) for field in spec.fields}
+    assert cls(*args, **kwargs).num_values == spec.num_values
 
 
 @pytest.mark.parametrize("kind", next(
-    field["choices"] for field in S.INTERFACE_TYPES["PenaltyDoF"]["params"]
-    if field["key"] == "obj_type"
+    field.choices for field in R.LOAD_TYPES["PenaltyDoF"].fields
+    if field.key == "obj_type"
 ))
 def test_penalty_object_type_choices_are_supported_by_assembly(kind):
     assembly = torchfea.Assembly()
@@ -145,20 +148,20 @@ def test_penalty_object_type_choices_are_supported_by_assembly(kind):
     assert assembly.get_object("selected", kind) is marker
 
 
-@pytest.mark.parametrize("kind,spec", S.CAD_OPERATION_TYPES.items())
+@pytest.mark.parametrize("kind,spec", R.CAD_OPERATION_TYPES.items())
 def test_cad_fields_reach_native_operation(kind, spec):
     from morphopt.ui.application.cad import cad_operation_from_node
 
     operation = CADOperationNode.create(kind, operation_id="feature")
-    for field in spec["params"]:
-        if field["type"] in {"combo", "str"}:
-            operation.set_field(field["key"], f"selected_{field['key']}")
+    for field in spec.fields:
+        if field.type in {"combo", "str"}:
+            operation.set_field(field.key, f"selected_{field.key}")
     args, kwargs = literal_call(render_cad_operation_call(operation))
     cls = getattr(torchfea.cad, kind)
     bound = inspect.signature(cls).bind(*args, **kwargs)
     assert bound.arguments["id"] == "feature"
-    for field in spec["params"]:
-        assert bound.arguments[field["key"]] == operation.get_field(field["key"])
+    for field in spec.fields:
+        assert bound.arguments[field.key] == operation.get_field(field.key)
     # Preview and exported scripts must construct the same native CAD data.
     preview = cad_operation_from_node(operation)
     exported = cls(*args, **kwargs)
@@ -168,18 +171,18 @@ def test_cad_fields_reach_native_operation(kind, spec):
 
 UPDATER_ITEMS = [
     (category, kind, spec)
-    for category, catalog in S.UPDATER_CATALOG.items()
+    for category, catalog in R.UPDATER_CATALOG.items()
     for kind, spec in catalog.items()
 ]
 
 
 @pytest.mark.parametrize("category,kind,spec", UPDATER_ITEMS)
 def test_updater_term_fields_reach_backend(category, kind, spec):
-    params = S.clone_defaults(spec["params"])
+    params = field_defaults(spec.fields)
     if kind == "VolFrac":
         params["elementname"] = "design"
     expression = _render_updater_item({"type": kind, "params": params}, category)
-    root = (morphopt.UpdaterBoundaryPart if spec["group"] == "geometry"
+    root = (morphopt.UpdaterBoundaryPart if spec.group == "geometry"
             else morphopt.UpdaterSIMPMaterial)
     target = eval(expression.split("(", 1)[0], {"self": root, "morphopt": morphopt})
     args, kwargs = literal_call(expression)
@@ -188,19 +191,19 @@ def test_updater_term_fields_reach_backend(category, kind, spec):
 
 
 @pytest.mark.parametrize("kind,spec", [
-    (kind, spec) for kind, spec in S.SURFACE_SYMMETRY_CONSTRAINTS.items()
-    if spec["factory"] is not None
+    (kind, spec) for kind, spec in R.SURFACE_SYMMETRY_CONSTRAINTS.items()
+    if spec.factory is not None
 ])
 def test_symmetry_fields_reach_surface_owned_constraint(kind, spec):
     problem = ProblemLibrary.create("shapeopt")
-    part = problem.part_interfaces()[0]
-    surface_kind = "bsp_cylinder" if spec["factory"] == "BSP" else "cpgeo_cylinder"
-    part.children = []
+    part = problem.parts()[0]
+    surface_kind = "bsp_cylinder" if spec.factory == "BSP" else "cpgeo_cylinder"
+    part.surfaces.clear()
     for index in range(2):
         part.add_surface(SurfaceNode.create(surface_kind, index=index))
-    item = S.symmetry_constraint(kind)
+    item = symmetry_constraint(kind)
     item["surface_index"] = 0
-    if spec.get("related_surface"):
+    if spec.related_surface:
         item["related_surface_index"] = 1
     statements, body = _surface_constraints_for_part(
         {"symmetry_constraints": [item]}, part, problem,
@@ -209,22 +212,24 @@ def test_symmetry_fields_reach_surface_owned_constraint(kind, spec):
     outer = ast.parse(statements[0], mode="eval").body
     call = outer.args[0]
     kwargs = {kw.arg: ast.literal_eval(kw.value) for kw in call.keywords}
-    surface_cls = getattr(morphopt.BoundaryPart, spec["factory"])
-    constraint_cls = getattr(surface_cls, spec["method"])
-    args = [object()] if spec.get("related_surface") else []
+    surface_cls = getattr(morphopt.BoundaryPart, spec.factory)
+    constraint_cls = getattr(surface_cls, spec.method)
+    args = [object()] if spec.related_surface else []
     inspect.signature(constraint_cls).bind(*args, **kwargs)
-    assert kwargs == S.clone_defaults(spec["params"])
+    assert kwargs == field_defaults(spec.fields)
 
 
-@pytest.mark.parametrize("material_type", S.MATERIAL_TYPES)
-@pytest.mark.parametrize("model", S.MATERIAL_MODEL_CHOICES)
+@pytest.mark.parametrize("material_type", R.MATERIAL_TYPES)
+@pytest.mark.parametrize("model", MATERIAL_MODEL_CHOICES)
 def test_every_visible_material_field_reaches_its_constructor(material_type, model):
     problem = ProblemLibrary.create("simp")
-    material = problem.material_nodes()[0]
-    material.type = material_type
+    original = problem.material_nodes()[0]
+    material = R.MATERIAL_TYPES[material_type](name=original.name)
+    material.set_part(original.part)
+    problem.materials.assignments[0] = material
     material.material_model = model
     visible, _, _ = fields_for_node(material, problem)
-    visible_keys = {field["key"] for field in visible}
+    visible_keys = {field.key for field in visible}
     if material_type == "SIMP_BSPFieldMaterials":
         assert {"bounding_box", "simp_field_resolution", "degree", "initial_ratio",
                 "simp_ratio_min", "voidpenalfactor", "materialpenalty"} <= visible_keys
@@ -247,7 +252,7 @@ def test_every_visible_material_field_reaches_its_constructor(material_type, mod
         **constructor_params, material_parameters=parameter_values,
     )
     for field in visible:
-        key = field["key"]
+        key = field.key
         if key != "material_model":
             actual = constructor_params[key] if key in constructor_params else material_parameters[key]
             assert actual == material.get_field(key), (material_type, model, key)
@@ -284,8 +289,8 @@ def test_parameter_form_shows_code_field_and_fairness_help():
     from morphopt.ui.widgets.param_form import ParamForm
 
     app = QApplication.instance() or QApplication([])
-    fields = S.SURFACE_TYPES["bsp_cylinder"]["params"]
-    form = ParamForm(S.clone_defaults(fields), fields)
+    fields = R.SURFACE_TYPES["bsp_cylinder"].fields
+    form = ParamForm(field_defaults(fields), fields)
     for key in ("maxR", "maxC", "maxFF"):
         tooltip = form.controls[key].toolTip()
         assert key in tooltip
@@ -299,17 +304,17 @@ def test_fairness_threshold_labels_and_help_are_defined_in_each_locale():
     manager = LocalizationManager()
     for locale in ("zh-CN", "en-US"):
         table = manager.load_locale(locale)
-        for catalog in (S.SURFACE_TYPES, S.PART_INTERFACE_TYPES, S.INTERFACE_TYPES,
-                        S.MATERIAL_TYPES, S.CAD_OPERATION_TYPES,
-                        S.SURFACE_SYMMETRY_CONSTRAINTS, S.UPDATER_OBJECTIVES, S.UPDATER_CONSTRAINTS):
+        for catalog in (R.SURFACE_TYPES, R.PART_TYPES, R.LOAD_TYPES,
+                        R.MATERIAL_TYPES, R.CAD_OPERATION_TYPES,
+                        R.SURFACE_SYMMETRY_CONSTRAINTS, R.UPDATER_OBJECTIVES, R.UPDATER_CONSTRAINTS):
             for spec in catalog.values():
-                assert spec["label_key"] in table
-                for field in spec["params"]:
-                    assert field["label_key"] in table
-                    if field.get("doc_key"):
-                        assert field["doc_key"] in table
+                assert spec.label_key in table
+                for field in spec.fields:
+                    assert field.label_key in table
+                    if field.doc_key:
+                        assert field.doc_key in table
         for key in ("maxR", "maxC", "maxFF"):
-            field = next(f for f in S.SURFACE_TYPES["bsp_cylinder"]["params"] if f["key"] == key)
-            assert "Fairness" in table[field["doc_key"]]
+            field = next(f for f in R.SURFACE_TYPES["bsp_cylinder"].fields if f.key == key)
+            assert "Fairness" in table[field.doc_key]
         assert not any("每次迭代允许的最大" in value for key, value in table.items()
                        if key.startswith("ui.schema.fields.max"))

@@ -126,8 +126,8 @@ class ResultSession:
             self._parameters_iteration = iteration
         return self.params
 
-    def interfaces(self) -> tuple[tuple[str, object], ...]:
-        return visualizable_interfaces(self.params)
+    def fea_components(self) -> tuple[tuple[str, object], ...]:
+        return visualizable_components(self.params)
 
     def deformation_mesh(self, case: int, iteration: int):
         import pyvista as pv
@@ -148,14 +148,14 @@ class ResultSession:
         return tuple(sorted(found))
 
 
-def visualizable_interfaces(parameters) -> tuple[tuple[str, object], ...]:
+def visualizable_components(parameters) -> tuple[tuple[str, object], ...]:
     """Discover result structures by protocol, independently of a Qt selector."""
     from ...optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
     if parameters is None:
         return ()
     return tuple(
-        (category, interface)
+        (category, component)
         for category, collection in (("Part", parameters.geometry), ("FEA", parameters.feamodel), ("Material", parameters.materials))
-        for interface in collection.interfaces.values()
-        if isinstance(interface, ProtocalUpdatable) and isinstance(interface, ProtocalVisualizable)
+        for component in collection.interfaces.values()
+        if isinstance(component, ProtocalUpdatable) and isinstance(component, ProtocalVisualizable)
     )

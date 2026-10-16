@@ -58,11 +58,11 @@ class TorchFEAModelEditor(QWidget):
         self.name = QLineEdit()
         if not embedded:
             name_row = QHBoxLayout()
-            name_row.addWidget(QLabel(tr('ui.widgets.torchfea_model_editor.geometry_interface_name')))
+            name_row.addWidget(QLabel(tr('ui.widgets.torchfea_model_editor.part_name')))
             self.name.setToolTip(
                 tr('ui.widgets.torchfea_model_editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted_thi')
             )
-            self.name.editingFinished.connect(self._rename_interface)
+            self.name.editingFinished.connect(self._rename_definition)
             name_row.addWidget(self.name, 1)
             outer.addLayout(name_row)
 
@@ -139,14 +139,14 @@ class TorchFEAModelEditor(QWidget):
         finally:
             self._updating = False
 
-    def _rename_interface(self) -> None:
-        """Apply the same aggregate-owned rename rule as every other interface."""
+    def _rename_definition(self) -> None:
+        """Apply the same aggregate-owned rename rule as every other component."""
         if self._updating or self._node is None or self._problem is None:
             return
         name = self.name.text().strip()
         if name == self._node.name:
             return
-        if not self._problem.rename_interface(self._node, name):
+        if not self._problem.rename_definition(self._node, name):
             self.name.setText(self._node.name)
             return
         self.changed.emit(self._node)

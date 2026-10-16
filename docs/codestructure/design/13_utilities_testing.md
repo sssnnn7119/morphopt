@@ -69,7 +69,8 @@ pytest -q
 
 ### 新增 UI 可编辑类型
 
-1. 在 `ui/model/schemas.py` 定义类型 ID、字段、默认值和引用元数据。
+1. 在 `ui/model/node_types/` 定义对应 `Node` 子类，声明类型化属性、不可变 `FieldSpec` 元组和后端类标识；在 `registry.py` 中注册该类。
+   容器通过类型化成员明确允许的子节点，新的子节点类别须同步声明其所属集合。
 2. 在 `ProblemDefinition` 中定义结构操作、重命名传播和序列化恢复规则。
 3. 在代码生成器中实现该节点到公开 MorphOpt API 的投影。
 4. 在 ModelTree、编辑路由或专用 widget 中添加展示和编辑入口。

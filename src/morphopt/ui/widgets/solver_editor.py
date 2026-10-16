@@ -108,7 +108,7 @@ class SolverEditor(QWidget):
         text = self._numproc.text().strip()
         if not text:
             return
-        value = parse_field(text, {"type": "int"})
+        value = parse_field(text, SolverNode.fields[0])
         self._node.set_field("num_process", value)
         self._emit()
 

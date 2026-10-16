@@ -5,8 +5,13 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from functools import cached_property
 from hashlib import sha256
+from typing import Literal
 
 from ...constants import CONSTANT
+
+EditOperation = Literal["added", "deleted", "modified"]
+
+
 @dataclass(frozen=True)
 class EditSnapshot:
     state: bytes
@@ -14,6 +19,7 @@ class EditSnapshot:
     selection: tuple[int, ...] | None = None
     step_id: int = 0
     created_at: datetime = field(default_factory=datetime.now)
+    operation: EditOperation = "modified"
 
     @cached_property
     def digest(self) -> bytes:

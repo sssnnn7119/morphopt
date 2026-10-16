@@ -23,6 +23,7 @@ class EditorKind(Enum):
     OBJECTIVE = auto()
     CUSTOM_CLASS = auto()
     CUSTOM_CLASSES = auto()
+    CONTROLLER = auto()
     HELPER_CODE = auto()
     HELPER_VARIABLES = auto()
     HELPER_FUNCTIONS = auto()
@@ -39,6 +40,8 @@ def route_editor(node: Node | None) -> EditorRoute:
     """Select an editor without touching Qt or mutating the definition."""
     if node is None:
         return EditorRoute(EditorKind.PROPERTIES)
+    if node.kind == "problem":
+        return EditorRoute(EditorKind.CONTROLLER, node)
     if node.kind in {"custom_classes", "new_classes_group", "override_classes_group"}:
         return EditorRoute(EditorKind.CUSTOM_CLASSES, node)
     if node.kind in {"custom_class", "method_override", "custom_function"}:
@@ -53,11 +56,11 @@ def route_editor(node: Node | None) -> EditorRoute:
         return EditorRoute(EditorKind.SOLVER, node)
     if node.kind == "geometry":
         return EditorRoute(EditorKind.GEOMETRY, node)
-    if node.kind in {"part_interface", "instance", "surface", "cad_operation"}:
+    if node.kind in {"part", "instance", "surface", "cad_operation"}:
         return EditorRoute(EditorKind.GEOMETRY, focus=node)
     if node.kind in {"loads_group", "loads"}:
         return EditorRoute(EditorKind.LOADS, focus=None)
-    if node.kind == "interface":
+    if node.kind == "fea_component":
         return EditorRoute(EditorKind.LOADS, focus=node)
     if node.kind == "materials":
         return EditorRoute(EditorKind.MATERIALS)
@@ -87,7 +90,7 @@ def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | No
     if problem is None:
         return []
     if mode == "geometry":
-        if isinstance(focus, PartNode) and focus in problem.part_interfaces():
+        if isinstance(focus, PartNode) and focus in problem.parts():
             return [focus]
         owner = None
         if isinstance(focus, InstanceNode):
@@ -100,7 +103,7 @@ def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | No
     if mode == "loads":
         # Load definitions belong to their collection editor. Selecting one in
         # the tree only focuses its card; it must not hide the other loads.
-        return list(problem.interfaces())
+        return list(problem.fea_components())
     if mode == "helper_variables":
         return list(problem.helper_variables)
     if mode == "helper_functions":

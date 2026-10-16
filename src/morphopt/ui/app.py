@@ -66,7 +66,14 @@ QSplitter::handle { background: #2b2f38; }
 def configure_environment() -> None:
     """Qt / VTK friendly defaults (call before creating QApplication)."""
     if sys.platform.startswith("linux"):
-        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+        session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+        if session_type == "x11":
+            platform = "xcb"
+        elif session_type == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
+            platform = "wayland"
+        else:
+            platform = "xcb"
+        os.environ["QT_QPA_PLATFORM"] = platform
     os.environ.setdefault("PYVISTA_QT_BINDING", "pyside6")
     os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "True")
 

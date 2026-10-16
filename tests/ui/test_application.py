@@ -56,7 +56,7 @@ def test_templates_are_starters_and_generated_models_use_core_classes() -> None:
 
 def test_shape_starter_can_combine_a_simp_material_and_updater() -> None:
     problem = ProblemLibrary.create("shapeopt")
-    part = problem.part_interfaces()[0]
+    part = problem.parts()[0]
     density = get_template(problem.scheme).make_material("SIMP_BSPFieldMaterials")
     density.name = "density"
     problem.add_material(density)
@@ -94,29 +94,29 @@ def test_problem_session_updates_definition_metadata() -> None:
     assert session.set_device("cpu") is False
 
 
-def test_renaming_a_geometry_interface_updates_only_its_default_instance() -> None:
+def test_renaming_a_part_updates_only_its_default_instance() -> None:
     problem = ProblemLibrary.create("shapeopt")
-    part = problem.part_interfaces()[0]
-    default = part.instances()[0]
+    part = problem.parts()[0]
+    default = part.instances[0]
     custom = problem.add_instance(part, InstanceNode(name="body_observer"))
     pressure = next(
-        interface
-        for interface in problem.interfaces()
-        if interface.interface_type == "Pressure"
+        component
+        for component in problem.fea_components()
+        if component.type == "Pressure"
     )
-    assert problem.set_interface_reference(pressure, "instance_name", custom)
+    assert problem.set_component_reference(pressure, "instance_name", custom)
 
-    assert problem.rename_interface(part, "shape_body")
+    assert problem.rename_definition(part, "shape_body")
 
     assert part.name == "shape_body"
-    assert part.resolved_part_name() == "shape_body"
+    assert part.assembly_name == "shape_body"
     assert default.name == "shape_body-1"
     assert custom.name == "body_observer"
     assert pressure.instance is custom
     assert all(
-        interface.instance in {default, custom}
-        for interface in problem.interfaces()
-        if interface.instance is not None
+        component.instance in {default, custom}
+        for component in problem.fea_components()
+        if component.instance is not None
     )
     assert problem.material_nodes()[0].part_name == "shape_body"
     assert problem.updater is not None
@@ -125,80 +125,80 @@ def test_renaming_a_geometry_interface_updates_only_its_default_instance() -> No
 
 def test_renaming_an_assembly_part_updates_its_default_instance_and_loads() -> None:
     problem = ProblemLibrary.create("shapeopt")
-    part = problem.part_interfaces()[0]
-    default = part.instances()[0]
+    part = problem.parts()[0]
+    default = part.instances[0]
 
     assert problem.rename_part(part, "flexible_body")
 
     assert part.name == "body"
-    assert part.resolved_part_name() == "flexible_body"
+    assert part.assembly_name == "flexible_body"
     assert default.name == "flexible_body-1"
     assert problem.material_nodes()[0].part_name == "flexible_body"
     assert all(
-        interface.instance is default
-        for interface in problem.interfaces()
-        if interface.instance is not None
+        component.instance is default
+        for component in problem.fea_components()
+        if component.instance is not None
     )
     assert problem.updater is not None
     assert problem.config_part_node(problem.updater.geometry[0]) is part
 
 
-def test_renaming_a_material_interface_retargets_its_material_updater() -> None:
+def test_renaming_a_material_definition_retargets_its_material_updater() -> None:
     problem = ProblemLibrary.create("simp")
     material = problem.material_nodes()[0]
 
-    assert problem.rename_interface(material, "density_field")
+    assert problem.rename_definition(material, "density_field")
 
     assert material.name == "density_field"
     assert problem.updater is not None
     assert problem.config_material_node(problem.updater.materials[0]) is material
 
 
-def test_renaming_a_torchfea_interface_preserves_archive_part_and_instances() -> None:
+def test_renaming_a_torchfea_part_definition_preserves_archive_part_and_instances() -> None:
     problem = ProblemLibrary.create("simp")
-    part = problem.part_interfaces()[0]
-    physical_part_name = part.resolved_part_name()
-    instance_names = part.resolved_instance_names()
+    part = problem.parts()[0]
+    physical_part_name = part.assembly_name
+    instance_names = part.instance_names
 
-    assert problem.rename_interface(part, "beam_geometry")
+    assert problem.rename_definition(part, "beam_geometry")
 
     assert part.name == "beam_geometry"
-    assert part.resolved_part_name() == physical_part_name
-    assert part.resolved_instance_names() == instance_names
+    assert part.assembly_name == physical_part_name
+    assert part.instance_names == instance_names
     compile(ProblemSession(problem).source(), "<renamed-torchfea>", "exec")
 
 
 def test_cross_node_links_are_objects_and_survive_renames() -> None:
     problem = ProblemLibrary.create("shapeopt")
     pressure = next(
-        interface
-        for interface in problem.interfaces()
-        if interface.interface_type == "Pressure"
+        component
+        for component in problem.fea_components()
+        if component.type == "Pressure"
     )
     reference_point = next(
-        interface
-        for interface in problem.interfaces()
-        if interface.interface_type == "ReferencePoint"
+        component
+        for component in problem.fea_components()
+        if component.type == "ReferencePoint"
     )
     couple = next(
-        interface
-        for interface in problem.interfaces()
-        if interface.interface_type == "Couple"
+        component
+        for component in problem.fea_components()
+        if component.type == "Couple"
     )
 
-    assert pressure.instance is problem.part_interfaces()[0].instances()[0]
+    assert pressure.instance is problem.parts()[0].instances[0]
     assert couple.reference_point is reference_point
     assert problem.steps is not None
     assert pressure in problem.steps.step_values[0]
     assert problem.updater is not None
     assert "part_name" not in problem.updater.geometry[0]
-    assert problem.config_part_node(problem.updater.geometry[0]) is problem.part_interfaces()[0]
-    problem.set_jacobian_interfaces([pressure])
+    assert problem.config_part_node(problem.updater.geometry[0]) is problem.parts()[0]
+    problem.set_jacobian_components([pressure])
     assert problem.objective is not None
     assert problem.objective.jacobian_needed == [pressure]
 
-    assert problem.rename_interface(pressure, "actuation_pressure")
-    assert problem.rename_interface(reference_point, "actuation_rp")
+    assert problem.rename_definition(pressure, "actuation_pressure")
+    assert problem.rename_definition(reference_point, "actuation_rp")
 
     assert pressure in problem.steps.step_values[0]
     assert problem.objective.jacobian_needed == [pressure]

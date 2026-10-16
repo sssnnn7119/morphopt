@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 from ...constants import CONSTANT
 from ..model.problem import ObjectiveNode, ProblemDefinition
-from ..presentation.labels import interface_title_text, node_title
+from ..presentation.labels import component_title_text, node_title
 from ..schemes.base import get_template
 from .codeeditor import CodeEditor
 from .template_insert_dialog import TemplateInsertDialog
@@ -29,7 +29,7 @@ from ..refresh import RefreshContext
 class JacobianLoadSelector(QToolButton):
     """Compact multi-select menu for the loads whose Jacobians are needed.
 
-    A Jacobian is only meaningful for an interface with an amplitude entry in
+    A Jacobian is only meaningful for an FEA component with an amplitude entry in
     the load-step matrix.  The editor supplies precisely that list, keeping
     this widget presentation-only and avoiding a second schema lookup here.
     """
@@ -159,9 +159,9 @@ class ObjectiveEditor(QWidget):
             self.tpl_combo.setCurrentIndex(0 if self.tpl_combo.count() else -1)
             if self._obj is not None:
                 self.jacobian_loads.set_loads(
-                    [interface.name for interface in problem.amplitude_interfaces()],
-                    [interface.name for interface in self._obj.jacobian_needed],
-                    {interface.name: interface_title_text(interface) for interface in problem.amplitude_interfaces()},
+                    [component.name for component in problem.amplitude_components()],
+                    [component.name for component in self._obj.jacobian_needed],
+                    {component.name: component_title_text(component) for component in problem.amplitude_components()},
                 )
                 self.obj_editor.set_body(str(self._obj.get_field("_objective_function", "")))
                 self.met_editor.set_body(str(self._obj.get_field("_get_metrics", "")))
@@ -188,7 +188,7 @@ class ObjectiveEditor(QWidget):
         if nd is None:
             return
         if self._problem is not None:
-            self._problem.set_jacobian_interfaces(
+            self._problem.set_jacobian_components(
                 self.jacobian_loads.selected_names()
             )
         self.changed.emit(nd)

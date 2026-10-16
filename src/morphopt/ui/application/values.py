@@ -2,6 +2,7 @@
 from __future__ import annotations
 import ast
 import re
+from ..model.fields import FieldSpec
 _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
 def _normalize(v, ints: bool = False):
@@ -61,9 +62,9 @@ def field_text(value) -> str:
     return str(value)
 
 
-def parse_field(text: str, spec: dict, helper_names=()):
+def parse_field(text: str, spec: FieldSpec, helper_names=()):
     """One conversion policy for node fields and updater parameter dictionaries."""
-    kind = spec["type"]
+    kind = spec.type
     stripped = text.strip()
     if kind in {"int", "float"}:
         try:
@@ -79,5 +80,5 @@ def parse_field(text: str, spec: dict, helper_names=()):
             expression = None
         if expression is not None and any(isinstance(node, ast.Name) for node in ast.walk(expression)):
             return stripped
-        return parse_mat(text) if kind == "mat" else parse_vec_text(text, ints=bool(spec.get("ints")))
+        return parse_mat(text) if kind == "mat" else parse_vec_text(text, ints=bool(spec.ints))
     return text

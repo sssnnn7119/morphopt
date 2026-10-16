@@ -130,7 +130,7 @@ class MetricsPage(QWidget):
 
 
 class UpdatableStructurePage(QWidget):
-    """Render one updateable interface at a selected result iteration."""
+    """Render one updateable component at a selected result iteration."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,13 +138,13 @@ class UpdatableStructurePage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         controls = QHBoxLayout()
-        self.interface_label = QLabel(tr('ui.widgets.observation_pages.display_interface'))
-        controls.addWidget(self.interface_label)
-        self.interface_selector = QComboBox()
-        self.interface_selector.currentIndexChanged.connect(
-            self._interface_changed
+        self.component_label = QLabel(tr('ui.widgets.observation_pages.display_component'))
+        controls.addWidget(self.component_label)
+        self.component_selector = QComboBox()
+        self.component_selector.currentIndexChanged.connect(
+            self._component_changed
         )
-        controls.addWidget(self.interface_selector, 1)
+        controls.addWidget(self.component_selector, 1)
         layout.addLayout(controls)
 
         self.viewport = PlotViewport(self)
@@ -156,57 +156,57 @@ class UpdatableStructurePage(QWidget):
     def build(self, results: ResultSession, iteration: int) -> None:
         self._results = results
         self._iteration = iteration
-        self._sync_interface_selector()
+        self._sync_component_selector()
         self._render_selected()
 
-    def _interface_changed(self, _index: int) -> None:
+    def _component_changed(self, _index: int) -> None:
         self._last_rendered = None
         self._render_selected()
 
     @staticmethod
-    def _interface_label(category: str, interface) -> str:
-        """Return an unambiguous label for one updateable interface."""
-        name = interface.name
-        part_name = getattr(interface, "part_name", None)
-        if part_name and part_name != interface.name:
-            name = tr("ui.observation.interface_name_with_part", name=name, part=part_name)
+    def _component_label(category: str, component) -> str:
+        """Return an unambiguous label for one updateable component."""
+        name = component.name
+        part_name = getattr(component, "part_name", None)
+        if part_name and part_name != component.name:
+            name = tr("ui.observation.component_name_with_part", name=name, part=part_name)
         category_key = {
             "Part": "ui.widgets.model_tree.container.geometry",
             "FEA": "ui.widgets.model_tree.container.loads_group",
             "Material": "ui.widgets.model_tree.container.materials",
         }[category]
         return tr(
-            "ui.observation.interface_title",
+            "ui.observation.component_title",
             category=tr(category_key),
-            title=typed_title(name, type(interface).__name__),
+            title=typed_title(name, type(component).__name__),
         )
 
-    def _sync_interface_selector(self) -> None:
-        interfaces = self._results.interfaces() if self._results else ()
-        current = self.interface_selector.currentData()
-        self.interface_selector.blockSignals(True)
+    def _sync_component_selector(self) -> None:
+        components = self._results.fea_components() if self._results else ()
+        current = self.component_selector.currentData()
+        self.component_selector.blockSignals(True)
         try:
-            self.interface_selector.clear()
-            for category, interface in interfaces:
-                self.interface_selector.addItem(
-                    self._interface_label(category, interface), interface
+            self.component_selector.clear()
+            for category, component in components:
+                self.component_selector.addItem(
+                    self._component_label(category, component), component
                 )
-            if not interfaces:
-                self.interface_selector.addItem(
-                    tr('ui.widgets.observation_pages.no_updateable_interfaces'), None
+            if not components:
+                self.component_selector.addItem(
+                    tr('ui.widgets.observation_pages.no_updateable_components'), None
                 )
-                self.interface_selector.setEnabled(False)
+                self.component_selector.setEnabled(False)
             else:
-                self.interface_selector.setEnabled(True)
-                index = self.interface_selector.findData(current)
-                self.interface_selector.setCurrentIndex(index if index >= 0 else 0)
+                self.component_selector.setEnabled(True)
+                index = self.component_selector.findData(current)
+                self.component_selector.setCurrentIndex(index if index >= 0 else 0)
         finally:
-            self.interface_selector.blockSignals(False)
+            self.component_selector.blockSignals(False)
 
     def _render_selected(self) -> None:
         if self._results is None or self._results.params is None or self._results.folder is None:
             return
-        selected = self.interface_selector.currentData()
+        selected = self.component_selector.currentData()
         marker = (
             self._results.folder,
             self._iteration,
@@ -233,24 +233,24 @@ class UpdatableStructurePage(QWidget):
         """Empty the viewport and forget the previous render marker."""
         self._results = None
         self._last_rendered = None
-        self.interface_selector.blockSignals(True)
+        self.component_selector.blockSignals(True)
         try:
-            self.interface_selector.clear()
-            self.interface_selector.addItem(
-                tr('ui.widgets.observation_pages.no_updatable_interfaces'), None
+            self.component_selector.clear()
+            self.component_selector.addItem(
+                tr('ui.widgets.observation_pages.no_updatable_components'), None
             )
-            self.interface_selector.setEnabled(False)
+            self.component_selector.setEnabled(False)
         finally:
-            self.interface_selector.blockSignals(False)
+            self.component_selector.blockSignals(False)
         try:
             self.viewport.rebuild(lambda _plotter: None)
         except Exception as exc:  # pragma: no cover - best-effort rendering
             print(tr("ui.messages.structure_preview_clear_failed", error=exc))
 
     def apply_language(self) -> None:
-        """Refresh the interface selector without rebuilding the scene."""
-        self.interface_label.setText(tr('ui.widgets.observation_pages.display_interface'))
-        self._sync_interface_selector()
+        """Refresh the component selector without rebuilding the scene."""
+        self.component_label.setText(tr('ui.widgets.observation_pages.display_component'))
+        self._sync_component_selector()
 
 
 class DeformationCasePage(QWidget):

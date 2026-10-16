@@ -6,7 +6,7 @@ from ..i18n import localized_message
 from pathlib import Path
 import json
 
-from .edit_history import EditHistory, EditSnapshot
+from .edit_history import EditHistory, EditOperation, EditSnapshot
 
 from ..codegen.generator import generate_source
 from ..model.loaders import load_morph, save_morph
@@ -50,12 +50,15 @@ class ProblemSession:
         self.reset_history()
 
     def snapshot(
-        self, description: str = "", selection: tuple[int, ...] | None = None,
+        self,
+        description: str = "",
+        selection: tuple[int, ...] | None = None,
+        operation: EditOperation = "modified",
     ) -> EditSnapshot:
         state = json.dumps(
             self._problem.to_dict(), ensure_ascii=False, separators=(",", ":"),
         ).encode("utf-8")
-        return EditSnapshot(state, description, selection)
+        return EditSnapshot(state, description, selection, operation=operation)
 
     def reset_history(self) -> None:
         self.history.reset(self.snapshot())
@@ -63,8 +66,11 @@ class ProblemSession:
     def record_edit(
         self, description: str, *, selection: tuple[int, ...] | None = None,
         merge_key: object | None = None,
+        operation: EditOperation = "modified",
     ) -> bool:
-        return self.history.commit(self.snapshot(description, selection), merge_key=merge_key)
+        return self.history.commit(
+            self.snapshot(description, selection, operation), merge_key=merge_key
+        )
 
     def restore_edit(self, offset: int) -> EditSnapshot:
         return self.restore_edit_step(self.history.target(offset).step_id)
@@ -80,7 +86,7 @@ class ProblemSession:
     def synchronize(self) -> bool:
         """Normalize derived links after loading or editing the model."""
         self._problem.resolve_references()
-        changed = self._problem.sync_imported_part_interfaces()
+        changed = self._problem.sync_imported_parts()
         self._problem.resolve_references()
         self._problem.align_surface_dependent_state()
         return changed
@@ -104,20 +110,19 @@ class ProblemSession:
             "rp_name1", "rp_name2", "surface_name", "surface_name1",
             "surface_name2", "set_nodes_name", "element_name", "obj_name",
         }
-        from ..model.schemas import INTERFACE_TYPES
 
-        for interface in self._problem.interfaces():
-            for field in INTERFACE_TYPES[interface.interface_type]["params"]:
-                key = field["key"]
-                if key in reference_fields and not interface.get_field(key):
+        for component in self._problem.fea_components():
+            for field in component.fields:
+                key = field.key
+                if key in reference_fields and not component.get_field(key):
                     raise ValueError(localized_message(
-                        "ui.errors.generator.interface_value_must_select_value",
-                        value_0=interface.name, value_1=key,
+                        "ui.errors.generator.component_value_must_select_value",
+                        value_0=component.name, value_1=key,
                     ))
         for material in self._problem.material_nodes():
             if material.part is None:
                 raise ValueError(localized_message(
-                    "ui.errors.generator.interface_value_must_select_value",
+                    "ui.errors.generator.component_value_must_select_value",
                     value_0=material.name, value_1="part_name",
                 ))
 

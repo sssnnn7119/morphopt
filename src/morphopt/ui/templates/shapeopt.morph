@@ -20,7 +20,7 @@
         "params": {},
         "children": [
           {
-            "kind": "part_interface",
+            "kind": "part",
             "name": "body",
             "params": {
               "type": "BoundaryPart",
@@ -85,7 +85,7 @@
         "params": {},
         "children": [
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "bc_fix",
             "params": {
               "type": "BoundaryCondition",
@@ -96,13 +96,13 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "RP_head",
             "params": {"type": "ReferencePoint", "rp_location": [0.0, 0.0, 80.0]},
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "couple_head",
             "params": {
               "type": "Couple",
@@ -113,7 +113,7 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "pressure_1",
             "params": {
               "type": "Pressure",

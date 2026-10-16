@@ -8,7 +8,8 @@ import subprocess
 import sys
 
 from ..model.modelinfo import TorchFEAModelSummary, inspect_model
-from ..model.problem import PartNode, resolve_model_directory
+from ..model.problem import resolve_model_directory
+from ..model.node_types.parts import TorchFEAPartNode
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,7 @@ class ImportedModelLibrary:
         return inspect_model(resolve_model_directory(directory), filename)
 
     @staticmethod
-    def validate_link(node: PartNode) -> str | None:
+    def validate_link(node: TorchFEAPartNode) -> str | None:
         if not node.model_directory or not node.model_filename:
             return None
         directory = resolve_model_directory(node.model_directory)

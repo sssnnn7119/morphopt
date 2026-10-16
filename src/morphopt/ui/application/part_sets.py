@@ -4,8 +4,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeVar
 from ..model.problem import PartNode, ProblemDefinition
 from .cad import cad_part_from_node
+from ..model.node_types.parts import BoundaryPartNode, OffsetBoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, TorchFEAPartNode
 
 
 @dataclass(frozen=True)
@@ -14,7 +16,8 @@ class PartSets:
     surfaces: tuple[str, ...] = ()
     elements: tuple[str, ...] = ()
 
-SetProvider = Callable[[PartNode, ProblemDefinition], PartSets]
+PartT = TypeVar("PartT", bound=PartNode)
+SetProvider = Callable[[Any, ProblemDefinition], PartSets]
 
 
 class PartSetCatalog:
@@ -22,13 +25,12 @@ class PartSetCatalog:
 
     def __init__(self, problem: ProblemDefinition):
         self.problem = problem
-        self._providers: dict[str, SetProvider] = {
-            "BoundaryPart": self.boundary,
-            "OffsetBoundaryPart": self.boundary,
-            "BoxPart": self.box,
-            "CADPart": self.cad,
-            "TorchFEAPart": self.imported,
-            "INPPart": self.inp,
+        self._providers: dict[type[PartNode], SetProvider] = {
+            BoundaryPartNode: self.boundary,
+            BoxPartNode: self.box,
+            CADPartNode: self.cad,
+            TorchFEAPartNode: self.imported,
+            INPPartNode: self.inp,
         }
         self._cache: dict[PartNode, PartSets] = {}
 
@@ -39,14 +41,14 @@ class PartSetCatalog:
     def invalidate(self) -> None:
         self._cache.clear()
 
-    def register(self, interface_type: str, provider: SetProvider) -> None:
-        self._providers[interface_type] = provider
+    def register(self, node_type: type[PartT], provider: Callable[[PartT, ProblemDefinition], PartSets]) -> None:
+        self._providers[node_type] = provider
         self.invalidate()
 
     def for_instance(self, name: str) -> PartSets:
         if not name:
             return PartSets()
-        part = self.problem.part_interface_for_instance(name)
+        part = self.problem.part_for_instance(name)
         if part is None:
             return PartSets(tuple(self.problem.node_set_names(name)), tuple(self.problem.surface_set_names(name)))
         return self.for_part(part)
@@ -55,22 +57,22 @@ class PartSetCatalog:
         if part is None:
             return PartSets()
         if part not in self._cache:
-            provider = self._providers.get(part.interface_type)
+            provider = next((self._providers[cls] for cls in type(part).__mro__ if cls in self._providers), None)
             self._cache[part] = provider(part, self.problem) if provider else PartSets()
         return self._cache[part]
 
     @staticmethod
-    def boundary(part: PartNode, problem: ProblemDefinition) -> PartSets:
-        surface_count = len(part.surfaces())
+    def boundary(part: BoundaryPartNode, problem: ProblemDefinition) -> PartSets:
+        surface_count = len(part.surfaces)
         names = [f"surface_{index}_All" for index in range(surface_count)]
-        if part.interface_type == "OffsetBoundaryPart":
+        if isinstance(part, OffsetBoundaryPartNode):
             names.extend(f"surface_{index}_offset" for index in range(1, surface_count))
         if surface_count:
             names.extend(["surface_0_Bottom", "surface_0_Head"])
         return PartSets(nodes=tuple(names), surfaces=tuple(names))
 
     @staticmethod
-    def box(part: PartNode, problem: ProblemDefinition) -> PartSets:
+    def box(part: BoxPartNode, problem: ProblemDefinition) -> PartSets:
         return PartSets(
             nodes=("all",) + tuple(f"nodes_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
             surfaces=(part.exterior_surface or "extern",) + tuple(f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
@@ -78,7 +80,7 @@ class PartSetCatalog:
         )
 
     @staticmethod
-    def cad(part: PartNode, problem: ProblemDefinition) -> PartSets:
+    def cad(part: CADPartNode, problem: ProblemDefinition) -> PartSets:
         names = cad_part_from_node(part, problem).get_face_names()
         return PartSets(
             nodes=("all", "surface_all") + tuple(f"{name}_nodes" for name in names),
@@ -86,12 +88,12 @@ class PartSetCatalog:
         )
 
     @staticmethod
-    def imported(part: PartNode, problem: ProblemDefinition) -> PartSets:
+    def imported(part: TorchFEAPartNode, problem: ProblemDefinition) -> PartSets:
         summary = problem.imported_model_summary()
         if summary is None:
             return PartSets()
         source = next(
-            (item for item in summary.parts if item.name == (part.model_part_name or part.resolved_part_name())),
+            (item for item in summary.parts if item.name == (part.model_part_name or part.assembly_name)),
             None,
         )
         return PartSets(
@@ -101,13 +103,13 @@ class PartSetCatalog:
         ) if source is not None else PartSets()
 
     @staticmethod
-    def inp(part: PartNode, problem: ProblemDefinition) -> PartSets:
+    def inp(part: INPPartNode, problem: ProblemDefinition) -> PartSets:
         if not part.mesh_file or not Path(part.mesh_file).is_file():
             return PartSets()
         from ...optcore.modelparams.parts import INPPart
         model = INPPart(
             mesh_file=part.mesh_file,
-            part_name=part.resolved_part_name(),
+            part_name=part.assembly_name,
             inp_part_name=part.inp_part_name or None,
             exterior_surface=part.exterior_surface or None,
         ).get_part()

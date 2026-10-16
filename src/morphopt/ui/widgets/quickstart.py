@@ -258,6 +258,9 @@ class ChannelPressureEditor(QWidget):
             spin = QDoubleSpinBox()
             spin.setRange(0.0, CONSTANT.UI.QUICKSTART.WIDGET.PRESSURE_MAX_KPA)
             spin.setDecimals(CONSTANT.UI.QUICKSTART.WIDGET.PRESSURE_DECIMALS)
+            spin.setSingleStep(
+                CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_STEP.PRESSURE_KPA
+            )
             spin.setSuffix(" kPa")
             value = pressures.get(channel, pressures.get(str(channel), 0.0))
             spin.setValue(float(value))
@@ -334,6 +337,9 @@ class ObjectiveListEditor(QWidget):
         )
         self.workspace_pressure.setDecimals(
             CONSTANT.UI.QUICKSTART.WIDGET.WORKSPACE_PRESSURE_DECIMALS
+        )
+        self.workspace_pressure.setSingleStep(
+            CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_STEP.PRESSURE_KPA
         )
         self.workspace_order = QSpinBox()
         self.workspace_order.setRange(
@@ -824,16 +830,22 @@ class QuickstartDialog(QDialog):
     def _double(self, form, key, label, value, minimum, maximum, group=None):
         field = QDoubleSpinBox()
         decimals = CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_DECIMALS
-        field.setDecimals(
-            decimals["material"] if key in ("mu", "kappa")
-            else decimals["volume_fraction"] if key == "volume_fraction"
-            else decimals["default"]
-        )
+        if key in ("mu", "kappa"):
+            field.setDecimals(decimals.MATERIAL)
+        elif key == "volume_fraction":
+            field.setDecimals(decimals.VOLUME_FRACTION)
+        else:
+            field.setDecimals(decimals.DEFAULT)
         field.setRange(minimum, maximum)
         steps = CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_STEP
-        field.setSingleStep(
-            steps[key] if key in steps else steps["geometry"]
-        )
+        if key == "length":
+            field.setSingleStep(steps.LENGTH)
+        elif key == "pressure_kpa":
+            field.setSingleStep(steps.PRESSURE_KPA)
+        elif key == "volume_fraction":
+            field.setSingleStep(steps.VOLUME_FRACTION)
+        else:
+            field.setSingleStep(steps.GEOMETRY)
         field.setValue(value)
         field.setKeyboardTracking(False)
         self._row(form, key, label, field, group)

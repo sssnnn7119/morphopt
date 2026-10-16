@@ -3,9 +3,9 @@
 The generated source is the authority for execution, but hand-written code
 slots only edit a method body.  This module supplies the small, stable part of
 that method context which is useful while typing: known ``self`` attributes,
-current surface indices, and load/interface names.  It intentionally does not
+current surface indices, and load/component names.  It intentionally does not
 attempt full Python type inference; an optional language-server integration can
-be added behind the same item interface later.
+be added behind the same completion protocol later.
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def _objective_reference_items(problem: "ProblemDefinition | None") -> list[Comp
     if problem is None:
         return []
     items: list[CompletionItem] = []
-    names = [interface.name for interface in problem.amplitude_interfaces()]
+    names = [component.name for component in problem.amplitude_components()]
     for result_index in _result_indices(problem):
         for name in names:
             items.append(CompletionItem(
@@ -145,7 +145,7 @@ def _surface_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
         return []
     items: list[CompletionItem] = []
     for part in problem.boundary_part_nodes():
-        for index, surface in enumerate(part.surfaces()):
+        for index, surface in enumerate(part.surfaces):
             expression = f"self.surface_interfaces()[{index}]"
             items.append(
                 CompletionItem(

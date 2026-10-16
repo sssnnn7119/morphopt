@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from ..i18n import tr
 from ...constants import CONSTANT
 from ..codegen.custom_classes import custom_options
+from ..application.edit_history import EditOperation
 from ..application.editing import CustomClassSession, DefinitionCommands
 from ..application.updaters import UpdaterItems
 from ..model.problem import (
@@ -28,13 +29,18 @@ from ..model.problem import (
     PartNode,
     SurfaceNode,
 )
-from ..model.schemas import CAD_OPERATION_TYPES, INTERFACE_TYPES, PART_INTERFACE_TYPES
+from ..model.registry import (
+    CAD_OPERATION_TYPES,
+    LOAD_TYPES,
+    PART_TYPES,
+)
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..presentation.navigation import CustomClassesTreeNode, HelperGroupTreeNode, UpdaterItemTreeNode, UpdaterTreeNode
-from ..presentation.labels import schema_label, typed_title, node_title
+from ..presentation.labels import node_type_title, typed_title, node_title
 
 
 class DefinitionActions(QObject):
-    changed = Signal(object)
+    changed = Signal(object, str)
     selectionRequested = Signal(object)
 
     def __init__(self, parent=None):
@@ -48,6 +54,9 @@ class DefinitionActions(QObject):
 
     def _select(self, select: Node | None = None) -> None:
         self.selectionRequested.emit(select)
+
+    def _emit_change(self, node: Node | None, operation: EditOperation) -> None:
+        self.changed.emit(node, operation)
 
     def add_custom_class(self, class_type: str = "override") -> None:
         if self._problem is None:
@@ -107,7 +116,7 @@ class DefinitionActions(QObject):
             class_type,
         )
         self._select(custom)
-        self.changed.emit(custom)
+        self._emit_change(custom, "added")
 
     def remove_custom_class(
         self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
@@ -116,14 +125,14 @@ class DefinitionActions(QObject):
             return
         selected = CustomClassSession(self._problem).remove(node)
         self._select(selected if selected is not None else CustomClassesTreeNode())
-        self.changed.emit(node)
+        self._emit_change(node, "deleted")
 
     def add_helper(self, kind: str) -> Node | None:
         if self._problem is None:
             return None
         node = self.commands.add_helper(kind)
         self._select(node)
-        self.changed.emit(node)
+        self._emit_change(node, "added")
         return node
 
     def remove_helper(self, node: Node) -> None:
@@ -131,14 +140,14 @@ class DefinitionActions(QObject):
             return
         group = self.commands.remove_helper(node)
         self._select(HelperGroupTreeNode(group))
-        self.changed.emit(node)
+        self._emit_change(node, "deleted")
 
     def move_helper(self, node: Node, delta: int) -> None:
         if self._problem is None or node.kind not in {"helper_variable", "helper_function"}:
             return
         if self.commands.move_helper(node, delta):
             self._select(node)
-            self.changed.emit(node)
+            self._emit_change(node, "modified")
 
     def populate_updater_menu(self, menu: QMenu) -> None:
         """List concrete targets, shared by tree and editor creation menus."""
@@ -163,8 +172,9 @@ class DefinitionActions(QObject):
         else:
             self._problem.add_material_updater(target)
             group, index = "materials", len(self._problem.updater.materials) - 1
-        self._select(UpdaterTreeNode(self._problem.updater, group, index))
-        self.changed.emit(self._problem.updater)
+        updater = UpdaterTreeNode(self._problem.updater, group, index)
+        self._select(updater)
+        self._emit_change(updater, "added")
 
     def remove_geometry_updater(self, node: Node) -> None:
         if self._problem is None or self._problem.updater is None:
@@ -173,7 +183,7 @@ class DefinitionActions(QObject):
         if 0 <= index < len(self._problem.updater.geometry):
             del self._problem.updater.geometry[index]
         self._select(select=self._problem.updater)
-        self.changed.emit(node)
+        self._emit_change(node, "deleted")
 
     def remove_materials_updater(self, node: Node) -> None:
         if self._problem is None or self._problem.updater is None:
@@ -182,15 +192,18 @@ class DefinitionActions(QObject):
         if 0 <= index < len(self._problem.updater.materials):
             del self._problem.updater.materials[index]
         self._select(select=self._problem.updater)
-        self.changed.emit(node)
+        self._emit_change(node, "deleted")
 
     def add_updater_item(self, node: UpdaterTreeNode, item_type: str, category: str) -> None:
         config = node.config()
         if config is not None:
             self.commands.add_updater_item(config, item_type, category)
             key = "objective_functions" if category == "objectives" else "constraints"
-            self._select(UpdaterItemTreeNode(node.updater_parent, node.group, node.config_index, config[key][-1]))
-            self.changed.emit(node)
+            item_node = UpdaterItemTreeNode(
+                node.updater_parent, node.group, node.config_index, config[key][-1]
+            )
+            self._select(item_node)
+            self._emit_change(item_node, "added")
 
     def add_symmetry_constraint(self, node: UpdaterTreeNode, item_type: str) -> None:
         config = node.config()
@@ -198,10 +211,11 @@ class DefinitionActions(QObject):
             config,
             item_type,
         ):
-            self._select(UpdaterItemTreeNode(
+            item_node = UpdaterItemTreeNode(
                 node.updater_parent, node.group, node.config_index, config["symmetry_constraints"][-1]
-            ))
-            self.changed.emit(node)
+            )
+            self._select(item_node)
+            self._emit_change(item_node, "added")
 
     def remove_updater_item(self, node: UpdaterItemTreeNode) -> None:
         config = node.config()
@@ -209,7 +223,7 @@ class DefinitionActions(QObject):
             return
         UpdaterItems(config, node.section_group, node.category, self._problem).remove(node.item)
         self._select(UpdaterTreeNode(node.updater_parent, node.group, node.config_index))
-        self.changed.emit(node)
+        self._emit_change(node, "deleted")
 
     def move_updater_item(self, node: UpdaterItemTreeNode, offset: int) -> None:
         config = node.config()
@@ -217,7 +231,7 @@ class DefinitionActions(QObject):
             return
         if UpdaterItems(config, node.section_group, node.category, self._problem).move(node.item, offset):
             self._select(node)
-            self.changed.emit(node)
+            self._emit_change(node, "modified")
 
     def custom_add_menu(self, menu, candidates, add):
         sub = menu.addMenu(tr('ui.widgets.model_tree.custom_class'))
@@ -239,41 +253,41 @@ class DefinitionActions(QObject):
         self._problem.objective.custom_class = custom_class
         self._problem.class_bindings.pop("ThisController.ObjectiveFunction", None)
         self._select(select=self._problem.objective)
-        self.changed.emit(self._problem.objective)
+        self._emit_change(self._problem.objective, "modified")
 
-    def add_part_interface(self, itype: str, custom_class: str = "") -> None:
+    def add_part(self, itype: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
-        if PART_INTERFACE_TYPES[itype].get("custom_only") and not custom_class:
+        if PART_TYPES[itype].custom_only and not custom_class:
             return
-        node = self.commands.add_part_interface(itype, custom_class)
+        node = self.commands.add_part(itype, custom_class)
         self._select(node)
-        self.changed.emit(node)
+        self._emit_change(node, "added")
 
-    def copy_part_interface(self, interface: Node) -> None:
-        if self._problem is None or not isinstance(interface, PartNode):
+    def copy_part(self, part: Node) -> None:
+        if self._problem is None or not isinstance(part, PartNode):
             return
-        copy = self._problem.clone_part_interface(interface)
+        copy = self._problem.clone_part(part)
         self._select(select=copy)
-        self.changed.emit(copy)
+        self._emit_change(copy, "added")
 
-    def remove_part_interface(self, interface: Node) -> None:
-        if self._problem is None or not isinstance(interface, PartNode):
+    def remove_part(self, part: Node) -> None:
+        if self._problem is None or not isinstance(part, PartNode):
             return
         try:
-            self._problem.remove_part_interface(interface)
+            self._problem.remove_part(part)
         except ValueError:
-            return  # keep at least one geometry interface
+            return  # keep at least one geometry Part
         self._select(select=self._problem.geometry)
-        self.changed.emit(interface)
+        self._emit_change(part, "deleted")
 
-    def move_part_interface(self, interface: Node, delta: int) -> None:
-        if self._problem is None or not isinstance(interface, PartNode):
+    def move_part(self, part: Node, delta: int) -> None:
+        if self._problem is None or not isinstance(part, PartNode):
             return
-        if not self._problem.move_part_interface(interface, delta):
+        if not self._problem.move_part(part, delta):
             return
-        self._select(select=interface)
-        self.changed.emit(interface)
+        self._select(select=part)
+        self._emit_change(part, "modified")
 
     def move_cad_operation(self, operation: Node, delta: int) -> None:
         if self._problem is None or not isinstance(operation, CADOperationNode):
@@ -281,16 +295,16 @@ class DefinitionActions(QObject):
         if not self._problem.move_cad_operation(operation, delta):
             return
         self._select(select=operation)
-        self.changed.emit(operation)
+        self._emit_change(operation, "modified")
 
-    def add_instance(self, interface: Node) -> None:
-        if self._problem is None or not isinstance(interface, PartNode):
+    def add_instance(self, part: Node) -> None:
+        if self._problem is None or not isinstance(part, PartNode):
             return
-        name = self._problem.suggest_instance_name(interface)
+        name = self._problem.suggest_instance_name(part)
         instance = InstanceNode(name=name)
-        self._problem.add_instance(interface, instance)
+        self._problem.add_instance(part, instance)
         self._select(select=instance)
-        self.changed.emit(instance)
+        self._emit_change(instance, "added")
 
     def remove_instance(self, instance: Node) -> None:
         if self._problem is None or not isinstance(instance, InstanceNode):
@@ -301,7 +315,7 @@ class DefinitionActions(QObject):
         except ValueError:
             return
         self._select(select=owner)
-        self.changed.emit(instance)
+        self._emit_change(instance, "deleted")
 
     def move_instance(self, instance: Node, delta: int) -> None:
         if self._problem is None or not isinstance(instance, InstanceNode):
@@ -309,10 +323,10 @@ class DefinitionActions(QObject):
         if not self._problem.move_instance(instance, delta):
             return
         self._select(select=instance)
-        self.changed.emit(instance)
+        self._emit_change(instance, "modified")
 
     def add_cad_operation_group(
-        self, group: str, owner: PartNode
+        self, group: str, owner: CADPartNode
     ) -> None:
         """Choose an operation type from a CAD feature group."""
         if group == "import":
@@ -321,11 +335,11 @@ class DefinitionActions(QObject):
         choices = [
             (operation_type, spec)
             for operation_type, spec in CAD_OPERATION_TYPES.items()
-            if spec["group"] == group
+            if spec.group == group
         ]
         if not choices:
             raise ValueError(localized_message("ui.errors.definition_actions.unknown_cad_operation_group_value", value_0=group))
-        labels = [schema_label(spec, operation_type) for operation_type, spec in choices]
+        labels = [node_type_title(spec, operation_type) for operation_type, spec in choices]
         title = {
             "primitive": tr('ui.widgets.model_tree.add_primitive'),
             "boolean": tr('ui.widgets.model_tree.add_boolean_operation'),
@@ -342,13 +356,13 @@ class DefinitionActions(QObject):
     def add_cad_operation(
         self, operation_type: str, owner: Node
     ) -> None:
-        if self._problem is None or not isinstance(owner, PartNode):
+        if self._problem is None or not isinstance(owner, CADPartNode):
             return
         spec = CAD_OPERATION_TYPES[operation_type]
         operation_id = self.commands.next_operation_id(owner, operation_type)
 
         overrides: dict[str, object] = {}
-        if spec["group"] == "boolean":
+        if spec.group == "boolean":
             live_operations = owner.live_cad_operations()
             live_ids = [operation.operation_id for operation in live_operations]
             if len(live_ids) < 2:
@@ -379,7 +393,7 @@ class DefinitionActions(QObject):
             if not accepted:
                 return
             overrides = {"object_id": object_id, "tool_id": tool_id}
-        elif spec["group"] == "transform":
+        elif spec.group == "transform":
             live_ids = [
                 operation.operation_id
                 for operation in owner.live_cad_operations()
@@ -429,7 +443,7 @@ class DefinitionActions(QObject):
 
         operation = self.commands.add_cad_operation(owner, operation_type, operation_id, **overrides)
         self._select(select=operation)
-        self.changed.emit(operation)
+        self._emit_change(operation, "added")
 
     def remove_cad_operation(self, operation: Node) -> None:
         if self._problem is None or not isinstance(operation, CADOperationNode):
@@ -447,12 +461,12 @@ class DefinitionActions(QObject):
             )
             return
         self._select(select=owner)
-        self.changed.emit(operation)
+        self._emit_change(operation, "deleted")
 
     def add_surface(
         self,
         stype: str,
-        owner: PartNode | None = None,
+        owner: BoundaryPartNode | None = None,
         custom_class: str = "",
     ) -> None:
         if self._problem is None:
@@ -462,14 +476,14 @@ class DefinitionActions(QObject):
             return
         node = self.commands.add_surface(stype, owner, custom_class)
         self._select(node)
-        self.changed.emit(node)
+        self._emit_change(node, "added")
 
     def copy_surface(self, srf: Node) -> None:
         if self._problem is None or not isinstance(srf, SurfaceNode):
             return
         copy = self._problem.clone_surface(srf)
         self._select(select=copy)
-        self.changed.emit(copy)
+        self._emit_change(copy, "added")
 
     def remove_surface(self, srf: Node) -> None:
         if self._problem is None or not isinstance(srf, SurfaceNode):
@@ -480,7 +494,7 @@ class DefinitionActions(QObject):
         except ValueError:
             return  # keep at least one surface
         self._select(select=owner)
-        self.changed.emit(srf)
+        self._emit_change(srf, "deleted")
 
     def move_surface(self, srf: Node, delta: int) -> None:
         if self._problem is None or not isinstance(srf, SurfaceNode):
@@ -488,28 +502,28 @@ class DefinitionActions(QObject):
         if not self._problem.move_surface(srf, delta):
             return
         self._select(select=srf)
-        self.changed.emit(srf)
+        self._emit_change(srf, "modified")
 
-    def add_interface(self, itype: str, custom_class: str = "") -> None:
+    def add_component(self, itype: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
-        node = self.commands.add_interface(itype, custom_class)
+        node = self.commands.add_component(itype, custom_class)
         self._select(node)
-        self.changed.emit(node)
+        self._emit_change(node, "added")
 
     def add_material(self, material_type: str, custom_class: str = "") -> None:
         if self._problem is None:
             return
         node = self.commands.add_material(material_type, custom_class)
         self._select(node)
-        self.changed.emit(node)
+        self._emit_change(node, "added")
 
     def copy_material(self, material: Node) -> None:
         if self._problem is None or not isinstance(material, MaterialNode):
             return
         copy = self._problem.clone_material(material)
         self._select(select=copy)
-        self.changed.emit(copy)
+        self._emit_change(copy, "added")
 
     def move_material(self, material: Node, delta: int) -> None:
         if self._problem is None or not isinstance(material, MaterialNode):
@@ -517,7 +531,7 @@ class DefinitionActions(QObject):
         if not self._problem.move_material(material, delta):
             return
         self._select(select=material)
-        self.changed.emit(material)
+        self._emit_change(material, "modified")
 
     def remove_material(self, material: Node) -> None:
         if self._problem is None or not isinstance(material, MaterialNode):
@@ -527,30 +541,29 @@ class DefinitionActions(QObject):
         except ValueError:
             return
         self._select(select=self._problem.materials)
-        self.changed.emit(material)
+        self._emit_change(material, "deleted")
 
-    def copy_interface(self, iface: Node) -> None:
-        if self._problem is None or not isinstance(iface, FEAComponentNode):
+    def copy_component(self, component: Node) -> None:
+        if self._problem is None or not isinstance(component, FEAComponentNode):
             return
         # a copied load is a new load: give it a fresh unique name so it does
         # not collide with the original (it starts unset / zero in the steps)
-        itype = iface.interface_type
-        hint = INTERFACE_TYPES.get(itype, {}).get("name_hint", "load_")
-        copy = self._problem.clone_interface(iface, hint)
+        hint = LOAD_TYPES[component.type].name_hint
+        copy = self._problem.clone_component(component, hint)
         self._select(select=copy)
-        self.changed.emit(copy)
+        self._emit_change(copy, "added")
 
-    def move_interface(self, iface: Node, delta: int) -> None:
-        if self._problem is None or not isinstance(iface, FEAComponentNode):
+    def move_component(self, component: Node, delta: int) -> None:
+        if self._problem is None or not isinstance(component, FEAComponentNode):
             return
-        if not self._problem.move_interface(iface, delta):
+        if not self._problem.move_component(component, delta):
             return
-        self._select(select=iface)
-        self.changed.emit(iface)
+        self._select(select=component)
+        self._emit_change(component, "modified")
 
-    def remove_interface(self, iface: Node) -> None:
-        if self._problem is None or not isinstance(iface, FEAComponentNode):
+    def remove_component(self, component: Node) -> None:
+        if self._problem is None or not isinstance(component, FEAComponentNode):
             return
-        self._problem.remove_interface(iface)
+        self._problem.remove_component(component)
         self._select(select=self._problem.loads)
-        self.changed.emit(iface)
+        self._emit_change(component, "deleted")

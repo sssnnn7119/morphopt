@@ -1,7 +1,7 @@
 """Schema-driven property editor (center pane of the workbench).
 
 ``fields_for_node`` decides which parameter fields / code slots belong to each
-tree-node kind (surface / interface / material / geometry / solver / ...);
+tree-node kind (surface / component / material / geometry / solver / ...);
 ``PropertyEditor`` renders those fields into editable widgets and keeps them in
 sync with the node's typed fields. Geometry symmetry constraints belong to the
 geometry updater editor.
@@ -103,7 +103,7 @@ class PropertyEditor(QWidget):
             fields, code_slots, extra_choices = fields_for_node(node, completion_problem)
         code_slots, extra_choices = code_slots or {}, extra_choices or {}
         helper_names = [item.name for item in completion_problem.helper_variables] if completion_problem else []
-        schema = tuple((field["key"], field["type"]) for field in fields), tuple(code_slots)
+        schema = tuple((field.key, field.type) for field in fields), tuple(code_slots)
         if node is self._node and schema == self._schema and self._parameter_form is not None:
             self._title.setText(title)
             self._parameter_form.helper_names = set(helper_names)
@@ -124,11 +124,11 @@ class PropertyEditor(QWidget):
             self._form.removeRow(0)
 
         self._title.setText(title)
-        if node.kind in {"interface", "part_interface", "material", "instance"}:
+        if node.kind in {"fea_component", "part", "material", "instance"}:
             name_edit = QLineEdit(node.name or "")
             self._name_edit = name_edit
             name_edit.setToolTip(
-                (tr('ui.widgets.editor.load_name_the_step_matrix_jacobian_needed_hold_object_references_and_fol') if node.kind == "interface" else (tr('ui.widgets.editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted') if node.kind == "part_interface" else tr('ui.widgets.editor.unique_assembly_name_of_this_part_instance')))
+                (tr('ui.widgets.editor.component_name') if node.kind == "fea_component" else (tr('ui.widgets.editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted') if node.kind == "part" else tr('ui.widgets.editor.unique_assembly_name_of_this_part_instance')))
             )
             if node.kind == "material":
                 name_edit.setToolTip(
@@ -139,11 +139,11 @@ class PropertyEditor(QWidget):
             )
             self._form.addRow(
                 (
-                    tr('ui.widgets.editor.load_name')
-                    if node.kind == "interface"
-                    else tr('ui.widgets.editor.geometry_interface_name')
-                    if node.kind == "part_interface"
-                    else tr('ui.widgets.editor.material_interface_name')
+                    tr('ui.widgets.editor.component_name')
+                    if node.kind == "fea_component"
+                    else tr('ui.widgets.editor.part_name')
+                    if node.kind == "part"
+                    else tr('ui.widgets.editor.material_name')
                     if node.kind == "material"
                     else tr('ui.widgets.editor.instance_name')
                 ),

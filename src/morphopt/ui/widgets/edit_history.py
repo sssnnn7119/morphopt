@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QHeaderView, QHBoxLayout, QLabel, QTreeWidget, QTr
 from ...constants import CONSTANT
 from ..application.edit_history import EditHistory, EditHistoryNode
 from ..i18n import tr
+from ..presentation.edit_history import edit_description
 from .collection_controls import ActionButton
 
 
@@ -66,7 +67,11 @@ class EditHistoryPanel(QWidget):
 
             def build(node: EditHistoryNode) -> QTreeWidgetItem:
                 snapshot = node.snapshot
-                description = tr("ui.history.initial") if snapshot.step_id == 0 else snapshot.description
+                description = (
+                    tr("ui.history.initial")
+                    if snapshot.step_id == 0
+                    else edit_description(snapshot)
+                )
                 markers = []
                 if snapshot.step_id == current_id:
                     markers.append(tr("ui.history.current"))

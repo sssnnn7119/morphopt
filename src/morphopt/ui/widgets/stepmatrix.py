@@ -17,7 +17,7 @@ from ..model.problem import StepsNode, ProblemDefinition
 from ..application.editing import LoadCaseSession
 from ..i18n import tr
 from ..refresh import RefreshContext
-from ..presentation.labels import interface_title_text
+from ..presentation.labels import component_title_text
 from ...constants import CONSTANT
 from .collection_controls import ActionButton, AddButton
 
@@ -52,7 +52,7 @@ class StepMatrix(QWidget):
         bar.addWidget(self._add_button)
         lay.addLayout(bar)
 
-        hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_interfaces_rows_steps_empty_cells_keep_the_previous_value_zero'))
+        hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_components_rows_steps_empty_cells_keep_the_previous_value_zero'))
         hint.setStyleSheet("color:#7f8c8d; font-size:11px;")
         lay.addWidget(hint)
 
@@ -91,8 +91,11 @@ class StepMatrix(QWidget):
         signature = (
             id(self._node), n,
             tuple(
-                (id(interface), interface.interface_type, interface.custom_class, component, caption)
-                for interface, component, caption in cols
+                (
+                    id(component), component.type, component.custom_class,
+                    component_index, caption,
+                )
+                for component, component_index, caption in cols
             ),
         )
         rebuild = signature != self._structure
@@ -103,12 +106,12 @@ class StepMatrix(QWidget):
             self._table.clear()
             self._table.setColumnCount(len(cols))
             self._table.setHorizontalHeaderLabels([h for _, _, h in cols])
-            for column, (interface, _component, _caption) in enumerate(cols):
-                self._table.horizontalHeaderItem(column).setToolTip(interface_title_text(interface))
+            for column, (component, _component_index, _caption) in enumerate(cols):
+                self._table.horizontalHeaderItem(column).setToolTip(component_title_text(component))
             self._table.setRowCount(n)
         for s in range(n):
-            for ci, (interface, comp, _h) in enumerate(cols):
-                value = self.session.value(s, interface, comp)
+            for ci, (component, component_index, _header) in enumerate(cols):
+                value = self.session.value(s, component, component_index)
                 text = value if isinstance(value, str) else f"{value:.6g}"
                 item = self._table.item(s, ci)
                 if item is None:

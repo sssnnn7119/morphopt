@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBox
 from pyvistaqt import QtInteractor
 from ..i18n import tr
 from ..refresh import RefreshContext
-from ..presentation.labels import part_interface_title_text
+from ..presentation.labels import part_title_text
 from ..model.problem import PartNode, ProblemDefinition
 from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
@@ -70,6 +70,8 @@ class PreviewViewer(QWidget):
         self._selected_step: int | None = None
         self._problem: ProblemDefinition | None = None
         self._language_pending = False
+        self._render_pending = False
+        self._pending_reset_camera = False
         self.geometry = geometry or PreviewGeometry()
         self.loads = loads or LoadPreviewVisitor()
         self.renderer = PreviewRenderer(self.host.plotter)
@@ -118,8 +120,19 @@ class PreviewViewer(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if self._render_pending or self._language_pending:
+            QTimer.singleShot(0, self._render_pending_view)
+
+    def _render_pending_view(self) -> None:
+        if not self.isVisible():
+            return
+        if self._render_pending:
+            reset_camera = self._pending_reset_camera
+            self._render_pending = False
+            self._pending_reset_camera = False
+            self._rebuild_all(reset_camera=reset_camera)
         if self._language_pending:
-            QTimer.singleShot(0, self._refresh_load_language)
+            self._refresh_load_language()
 
     def _refresh_load_language(self) -> None:
         if self._language_pending and self.isVisible():
@@ -151,9 +164,9 @@ class PreviewViewer(QWidget):
         self.part_combo.blockSignals(True)
         self.part_combo.clear()
         if self._problem is not None:
-            parts = self._problem.part_interfaces()
+            parts = self._problem.parts()
             for part in parts:
-                self.part_combo.addItem(part_interface_title_text(part), part)
+                self.part_combo.addItem(part_title_text(part), part)
             if selected is not None:
                 index = next(
                     (
@@ -197,6 +210,13 @@ class PreviewViewer(QWidget):
         self._redraw_loads()
 
     def _rebuild_all(self, *, reset_camera: bool = False) -> None:
+        if isinstance(self.host.plotter, QWidget) and not self.isVisible():
+            self._render_pending = True
+            self._pending_reset_camera |= reset_camera
+            return
+        reset_camera |= self._pending_reset_camera
+        self._render_pending = False
+        self._pending_reset_camera = False
         self._sync_part_combo(self.part_combo.currentData())
         self._sync_step_combo()
         if self._problem is None:
@@ -225,4 +245,10 @@ class PreviewViewer(QWidget):
         return None
 
     def _redraw_loads(self, *_args) -> None:
+        if isinstance(self.host.plotter, QWidget) and not self.isVisible():
+            self._render_pending = True
+            return
+        if self._render_pending:
+            self._render_pending_view()
+            return
         self.renderer.draw_loads(self._load_scene())

@@ -20,7 +20,7 @@
         "params": {},
         "children": [
           {
-            "kind": "part_interface",
+            "kind": "part",
             "name": "beam",
             "params": {
               "type": "TorchFEAPart",
@@ -58,7 +58,7 @@
         "params": {},
         "children": [
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "bc_fixed",
             "params": {
               "type": "BoundaryCondition",
@@ -73,7 +73,7 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "rp_tip",
             "params": {
               "type": "ReferencePoint",
@@ -86,7 +86,7 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "couple_tip",
             "params": {
               "type": "Couple",
@@ -97,7 +97,7 @@
             "children": []
           },
           {
-            "kind": "interface",
+            "kind": "fea_component",
             "name": "force_tip",
             "params": {
               "type": "ConcentratedForce",
@@ -200,7 +200,7 @@
           "geometry": [],
           "materials": [
             {
-              "interface_name": "solid",
+              "material_name": "solid",
               "max_step_iter": 50,
               "if_update": true,
               "objective_functions": [

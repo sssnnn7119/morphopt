@@ -8,7 +8,7 @@ the editors, the code generator and the preview can query cheaply:
 * the surface / node / element sets and element families of every Part.
 
 Those names are what the UI offers as choices for the load, material and
-contact interfaces, and what the code generator validates before emitting
+contact components, and what the code generator validates before emitting
 runnable source.
 """
 

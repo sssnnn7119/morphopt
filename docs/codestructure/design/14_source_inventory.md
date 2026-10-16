@@ -132,7 +132,8 @@
 |---|---|
 | `model/` | 类型化问题树、schema、`.morph`、TorchFEA 存档摘要。 |
 | `model/chamberlayout.py` | `ChamberLayer`, `CavitySpec`, `LayeredChambers` | Quickstart 专用气腔层排布、配置校验和初始预览。 |
-| `model/nodes.py`、`model/problem.py` | 节点内部行为与问题聚合的跨节点规则。 |
+| `model/base_nodes.py`、`model/node_types/`、`model/registry.py` | 通用节点家族、具体持久化节点及其显式注册。 |
+| `model/problem.py` | 问题聚合的跨节点规则与编辑操作。 |
 | `application/` | 问题、编辑、字段/集合查询、结果和运行用例。 |
 | `presentation/` | 无 Qt 的导航、标题与结果表格投影。 |
 | `visualization/` | Part/Surface/载荷 visitor 与场景数据。 |
