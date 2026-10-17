@@ -1,16 +1,16 @@
 """In-window observer panel + controls (definition & observer share ONE window).
 
-The definition page hands the finished problem here (:meth:`ObserverControls.
-set_definition`).  Every run now starts from an explicit *task source* chosen
-with button 0 · 选择任务来源:
+The definition page prepares a finished problem here through
+``ObserverControls.import_definition``. Alternatively, button 0 selects another
+task source:
 
 * ``definition`` — fresh run of the problem from the definition page,
 * ``py``         — fresh run of an existing runnable definition script (.py),
 * ``continue``   — resume an existing result folder (last / chosen step).
 
-Button 1 (开始/继续) is only enabled after a source is chosen; once a run
-starts the source is consumed/reset, so after stopping you must choose the
-source again via 0 (nothing can be started directly).  Progress is polled from
+Button 1 (开始/继续) is enabled after importing a definition or choosing a
+source; once a run starts the source is consumed/reset. Stopping a run with
+saved results prepares that result as the source for continuation. Progress is polled from
 the result folder on disk (per *finished* iteration), so no queue / no extra
 process is needed.  Button 2 (停止优化) terminates the job's whole process
 group but keeps the current visualization for browsing.
@@ -193,21 +193,28 @@ class ObserverPanel(QWidget):
     def _on_option(self, row: int) -> None:
         if row < 0 or row >= self.stack.count():
             return
+        self.stack.setCurrentIndex(row)
         if row == 1:
             self._refresh_updatable_structure()
         elif row >= 2:
             self._refresh_case(self.options.item(row).data(Qt.ItemDataRole.UserRole))
-        self.stack.setCurrentIndex(row)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self.options.currentRow() == 1:
+            self._refresh_updatable_structure()
+        elif self.options.currentRow() >= 2:
+            self._refresh_case(self.options.currentItem().data(Qt.ItemDataRole.UserRole))
 
     def _refresh_updatable_structure(self) -> None:
-        if self.path_result and self._results.params is not None:
+        if self.isVisible() and self.path_result and self._results.params is not None:
             self._updatable_structure_page.build(
                 self._results, self.slider.value()
             )
 
     def _refresh_case(self, case: int) -> None:
         page = self._case_pages.get(case)
-        if page is not None and self.path_result:
+        if self.isVisible() and page is not None and self.path_result:
             page.build(self._results, self.slider.value())
 
     def _nudge(self, delta: int) -> None:
@@ -244,6 +251,8 @@ class ObserverControls(QWidget):
     """Definition/observer bridge: 0·选择任务来源, 1·开始/继续, 2·停止."""
 
     backRequested = Signal()
+    importDefinitionRequested = Signal()
+    finiteElementRequested = Signal(str, int)
     outputReceived = Signal(int, str)
 
     def __init__(self, parent=None):
@@ -266,7 +275,7 @@ class ObserverControls(QWidget):
         bar.addWidget(self.btn_start)
         self.btn_stop = QPushButton(tr('ui.observe_panel.2_stop'))
         self.btn_stop.setProperty("actionRole", "danger")
-        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_the_running_task_keeping_the_current_visualization_continue_require'))
+        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
         self.status = QLabel("")
@@ -304,17 +313,9 @@ class ObserverControls(QWidget):
         content.setSizes(list(theme_manager.palette.layout.observer.content_split_sizes))
         outer.addWidget(content, 1)
 
-        # bottom-right: back to the definition page (mirrors the definition
-        # footer's right-aligned ▶ 进入优化器 button)
-        foot = QHBoxLayout()
-        foot.addStretch(1)
-        self.btn_back = QPushButton(tr('ui.observe_panel.back_to_definition'))
-        self.btn_back.setToolTip(tr('ui.observe_panel.return_to_the_definition_page_running_tasks_ask_for_confirmation'))
-        self.btn_back.setProperty("buttonLayout", "prominent")
-        self.btn_back.clicked.connect(self._on_back)
-        foot.addWidget(self.btn_back)
-        outer.addLayout(foot)
-
+        self.btn_finite_element = QPushButton(tr('ui.workspace.analyze_iteration'))
+        self.btn_finite_element.clicked.connect(self._send_to_finite_element)
+        bar.addWidget(self.btn_finite_element)
         self._timer = QTimer(self)
         self._timer.setInterval(CONSTANT.UI.OBSERVER.POLL_INTERVAL_MS)
         self._timer.timeout.connect(self._poll_once)
@@ -328,31 +329,27 @@ class ObserverControls(QWidget):
         return self._run.active
 
     def set_definition(self, problem) -> None:
-        self._timer.stop()
         self._run.set_definition(problem)
-        self.panel.reset()
-        self.status.setText(tr(
-            'ui.observe_panel.definition_ready_value_click_0_to_choose_a_source',
-            value_0=problem.label,
-        ))
+        if not self._run.active:
+            self.status.setText(tr(
+                'ui.observe_panel.definition_ready_value_click_0_to_choose_a_source',
+                value_0=problem.label,
+            ))
         self._update_buttons()
+
+    def import_definition(self, problem) -> None:
+        """Prepare an explicitly imported definition as the next task when idle."""
+        self.set_definition(problem)
+        if not self._run.active:
+            self._set_definition_source()
+
+    def _send_to_finite_element(self) -> None:
+        if self.panel.path_result and self.panel.iteration > 0:
+            self.finiteElementRequested.emit(self.panel.path_result, self.panel.slider.value())
 
     # ------------------------------------------------------------- buttons
     def _on_back(self) -> None:
-        """Return to the definition page.
-
-        If an optimization is still running, ask for confirmation first —
-        going back terminates the worker process (no silent interruption).
-        """
-        if self._run.active:
-            ret = QMessageBox.warning(
-                self, tr('ui.observe_panel.back_to_definition_04d64f97'),
-                tr('ui.observe_panel.the_optimization_is_still_running_returning_to_the_definition_page_will'),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if ret != QMessageBox.StandardButton.Yes:
-                return
-            self._stop_job()
+        """Navigate without changing the independent optimization process."""
         self.backRequested.emit()
 
     def _choose_source(self) -> None:
@@ -364,7 +361,8 @@ class ObserverControls(QWidget):
             return
         kind = dlg.chosen()
         if kind is RunSourceKind.DEFINITION:
-            self._set_definition_source()
+            # Ask the definition page to flush and validate its latest edits.
+            self.importDefinitionRequested.emit()
         elif kind is RunSourceKind.PYTHON:
             self._pick_py_source()
         elif kind is RunSourceKind.CONTINUE:
@@ -464,10 +462,13 @@ class ObserverControls(QWidget):
 
     def _stop(self) -> None:
         self._stop_job()
-        if self._run.folder:
-            self.status.setText(tr('ui.observe_panel.optimization_stopped_current_visualization_kept_to_continue_choose_the_r'))
+        if self._run.source is not None and self._run.source.kind is RunSourceKind.CONTINUE:
+            self.status.setText(tr(
+                'ui.observe_panel.optimization_paused_at_step',
+                iteration=self._run.last_iteration,
+            ))
         else:
-            self.status.setText(tr('ui.observe_panel.optimization_stopped_choose_a_source_via_0_to_run_again'))
+            self.status.setText(tr('ui.observe_panel.optimization_stopped_without_checkpoint'))
         self._update_buttons()
 
     def _stop_job(self) -> None:
@@ -534,13 +535,12 @@ class ObserverControls(QWidget):
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the observer's static texts."""
+        self.btn_finite_element.setText(tr('ui.workspace.analyze_iteration'))
         self.btn_open.setText(tr('ui.observe_panel.0_choose_source'))
         self.btn_open.setToolTip(tr('ui.observe_panel.choose_a_task_source_current_definition_a_definition_script_py_or_an_exi'))
         self.btn_start.setToolTip(tr('ui.observe_panel.enabled_after_choosing_a_source_via_0_the_source_is_reset_once_a_run_sta'))
         self.btn_stop.setText(tr('ui.observe_panel.2_stop'))
-        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_the_running_task_keeping_the_current_visualization_continue_require'))
-        self.btn_back.setText(tr('ui.observe_panel.back_to_definition'))
-        self.btn_back.setToolTip(tr('ui.observe_panel.return_to_the_definition_page_running_tasks_ask_for_confirmation'))
+        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
         self.output_label.setText(tr('ui.observe_panel.run_output'))
         self.btn_clear_output.setText(tr('ui.observe_panel.clear'))
         self.output_view.setPlaceholderText(tr('ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here'))

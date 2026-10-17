@@ -46,6 +46,7 @@ class OptimizationRunSession:
         self.fresh_label = ""
         self.started_at = 0.0
         self.definition: ProblemDefinition | None = None
+        self._running_definition: ProblemDefinition | None = None
         self.source: RunSource | None = None
         self.last_iteration = 0
         self._save_definition = True
@@ -59,11 +60,10 @@ class OptimizationRunSession:
         return self.process is not None
 
     def set_definition(self, problem: ProblemDefinition) -> None:
-        self.stop()
-        self.clear_result()
-        self.definition, self.source = problem, None
-        self._save_definition = True
-        self._saved_folders.clear()
+        """Stage an independent definition for the next run without stopping this one."""
+        self.definition = ProblemDefinition.from_dict(problem.to_dict())
+        if not self.active:
+            self.source = None
 
     def select_source(self, source: RunSource) -> None:
         self._ensure_idle()
@@ -96,9 +96,9 @@ class OptimizationRunSession:
         previous = self.folder
         if self.mode is RunMode.FRESH:
             self.discover_folder()
-        if self.active and self.folder and self._save_definition and self.definition is not None and self.folder not in self._saved_folders:
+        if self.active and self.folder and self._save_definition and self._running_definition is not None and self.folder not in self._saved_folders:
             try:
-                ProblemLibrary.save_result_copy(self.definition, self.folder)
+                ProblemLibrary.save_result_copy(self._running_definition, self.folder)
             except (OSError, ValueError, TypeError) as exc:
                 import logging
                 logging.getLogger(__name__).warning("Cannot save the result definition: %s", exc)
@@ -150,8 +150,11 @@ class OptimizationRunSession:
 
     def start_definition(self, problem: ProblemDefinition) -> subprocess.Popen:
         self._ensure_idle()
+        self._save_definition = True
+        self._running_definition = ProblemDefinition.from_dict(problem.to_dict())
+        self._saved_folders.clear()
         started_at = time.time()
-        _job, process = launcher.run_job(problem)
+        _job, process = launcher.run_job(self._running_definition)
         self.process = process
         self.mode = RunMode.FRESH
         self.folder = None
@@ -162,6 +165,8 @@ class OptimizationRunSession:
 
     def start_python(self, path: str) -> subprocess.Popen:
         self._ensure_idle()
+        self._save_definition = False
+        self._running_definition = None
         started_at = time.time()
         root, label, process = launcher.run_py_definition(path)
         self.process = process
@@ -178,6 +183,8 @@ class OptimizationRunSession:
         target_iteration: int | None,
     ) -> subprocess.Popen:
         self._ensure_idle()
+        self._save_definition = False
+        self._running_definition = None
         scripts = Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py"
         device, restart_per_iteration = launcher.parse_run_options(str(scripts))
         process = launcher.run_continue(
@@ -217,11 +224,27 @@ class OptimizationRunSession:
             self.mode = None
 
     def stop(self) -> None:
+        """Stop the worker and retain its last saved result as a resumable task."""
+        if not self.active:
+            return
         if self.mode is RunMode.FRESH:
             self.discover_folder()
         launcher.stop_job(self.process)
+        # A fresh worker may create its result folder while it is stopping.
+        if self.mode is RunMode.FRESH:
+            self.discover_folder()
         self.process = None
         self.mode = None
+        self.last_iteration = last_completed_iteration(self.folder) if self.folder else 0
+        if self.folder and self.is_result_folder(self.folder) and self.last_iteration > 0:
+            # Selecting via adopt() would reset progress for the displayed result.
+            self.source = RunSource(
+                RunSourceKind.CONTINUE,
+                path=self.folder,
+                label=Path(self.folder).name,
+            )
+        else:
+            self.source = None
 
     def _ensure_idle(self) -> None:
         if self.active:

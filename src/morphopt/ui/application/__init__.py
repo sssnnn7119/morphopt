@@ -10,6 +10,7 @@ from .expressions import DefinitionValues
 from .definitions import MissingImportedModelError, ProblemLibrary, ProblemSession
 from .quickstart import QuickstartObjective, QuickstartOptions, build_quickstart
 from .editor_routing import EditorKind, EditorRoute, route_editor
+from .finite_element import FiniteElementSession, IterationModel
 from .results import ResultSession, last_completed_iteration
 from .runs import (
     OptimizationRunSession,
@@ -23,6 +24,8 @@ __all__ = [
     "DefinitionValues",
     "EditorKind",
     "EditorRoute",
+    "FiniteElementSession",
+    "IterationModel",
     "OptimizationRunSession",
     "MissingImportedModelError",
     "ProblemLibrary",

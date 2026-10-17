@@ -153,6 +153,13 @@ class QuickstartLayout:
 
 
 @dataclass(frozen=True)
+class FiniteElementLayout:
+    split_sizes: tuple[int, int] = (650, 850)
+    load_table_minimum_height: int = 210
+    output_maximum_blocks: int = 1500
+
+
+@dataclass(frozen=True)
 class LayoutStyle:
     """Shared widget geometry, spacing, and initial window proportions."""
 
@@ -169,6 +176,7 @@ class LayoutStyle:
     updater_editor: UpdaterEditorLayout = UpdaterEditorLayout()
     widgets: WidgetLayout = WidgetLayout()
     quickstart: QuickstartLayout = QuickstartLayout()
+    finite_element: FiniteElementLayout = FiniteElementLayout()
 
 
 DEFAULT_LAYOUT_STYLE = LayoutStyle()
@@ -234,6 +242,8 @@ class ViewerLoadsStyle:
 @dataclass(frozen=True)
 class ViewerRenderStyle:
     background: str
+    result_colormap: str = 'viridis'
+    minimum_scalar_span: float = 1e-12
     depth_peels: int = 8
     depth_peeling_occlusion_ratio: float = 0.0
     mesh_ambient: float = 0.17

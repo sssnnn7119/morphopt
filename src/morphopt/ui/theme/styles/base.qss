@@ -1,6 +1,8 @@
 /* Application surfaces and navigation views. */
 QMainWindow, QDialog, QWidget { background-color: @window@; color: @text@; }
 QMenuBar, QToolBar, QMenu, QStatusBar { background-color: @panel@; color: @text@; }
+QMenuBar::item { padding: 6px 14px; }
+QMenuBar::item:selected { background-color: @selection@; color: @selection_text@; }
 QTreeWidget, QTreeView, QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {
     background-color: @panel@;
     color: @text@;

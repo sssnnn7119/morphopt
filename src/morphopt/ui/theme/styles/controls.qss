@@ -8,6 +8,11 @@ QTabBar::tab {
     border-top-right-radius: 4px;
 }
 QTabBar::tab:selected { background: @accent@; color: @selection_text@; }
+QTabBar[workspaceNavigation="true"]::tab {
+    padding: 10px 24px;
+    font-weight: 700;
+    border-radius: 0px;
+}
 QPushButton, QToolButton {
     background-color: @button@;
     color: @text@;

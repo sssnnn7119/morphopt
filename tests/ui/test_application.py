@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from morphopt.ui.application import (
     EditorKind,
     OptimizationRunSession,
@@ -17,6 +19,7 @@ from morphopt.ui.model.problem import InstanceNode
 from morphopt.ui.model.node_types import TorchFEAPartNode
 from morphopt.ui.schemes.base import get_template
 from morphopt.ui.application.fields import fields_for_node
+from morphopt.ui.application.runs import RunSourceKind
 
 
 def test_domain_packages_expose_only_concrete_components() -> None:
@@ -296,6 +299,52 @@ def test_run_session_owns_fresh_process_state(
     assert session.active
     assert session.mode is RunMode.FRESH
     assert session.discover_folder() == str(result.resolve())
+
+
+@pytest.mark.parametrize('saved', ['no_folder', 'no_history', 'no_restart_script'])
+def test_stopping_without_a_saved_restart_does_not_enable_continuation(tmp_path, monkeypatch, saved):
+    session = OptimizationRunSession()
+    session.process = object()
+    if saved != 'no_folder':
+        session.folder = str(tmp_path)
+        if saved == 'no_history':
+            scripts = tmp_path / 'scripts'
+            scripts.mkdir()
+            (scripts / 'MAIN_SCRIPT_FOR_RESTART.py').touch()
+        else:
+            log = tmp_path / 'log'
+            log.mkdir()
+            (log / 'history_record.csv').write_text('iteration,objective\n1,1.0\n')
+    stopped = []
+    monkeypatch.setattr(launcher, 'stop_job', stopped.append)
+    process = session.process
+    session.stop()
+    assert stopped == [process]
+    assert not session.active
+    assert session.source is None
+    session.stop()
+    assert stopped == [process]
+
+
+def test_stop_discovers_a_result_created_during_shutdown(tmp_path, monkeypatch):
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    (scripts / 'MAIN_SCRIPT_FOR_RESTART.py').touch()
+    log = tmp_path / 'log'
+    log.mkdir()
+    (log / 'history_record.csv').write_text('iteration,objective\n1,1.0\n')
+    session = OptimizationRunSession()
+    session.process = object()
+    session.mode = RunMode.FRESH
+    # Before shutdown the worker has not made its result visible yet.
+    candidates = iter([None, str(tmp_path)])
+    monkeypatch.setattr(launcher, 'latest_result_dir', lambda *_args: next(candidates))
+    monkeypatch.setattr(launcher, 'stop_job', lambda _process: None)
+    session.stop()
+    assert session.folder == str(tmp_path)
+    assert session.last_iteration == 1
+    assert session.source.kind is RunSourceKind.CONTINUE
+    assert session.source.path == str(tmp_path)
 
 
 def test_lower_ui_layers_do_not_import_qt_or_widgets() -> None:

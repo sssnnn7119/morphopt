@@ -6,7 +6,7 @@
 ## 1. 总体分层
 
 ```text
-MainWindow / Workbench / ObserverControls          页面组合
+MainWindow / Workbench / ObserverControls / FiniteElementPage  页面组合
         ↓                     ↓
 widgets / presentation      application             展示 / 用例
         ↓                     ↓
@@ -20,6 +20,7 @@ MorphOpt / TorchFEA core                             数值内核
 ```text
 ui/
 ├── app.py / mainwindow.py / workbench.py / observe_panel.py
+├── fea_worker.py            独立有限元求解与导出进程入口（无 Qt）
 ├── refresh.py               Refreshable 协议、刷新上下文和统一调度器
 ├── model/
 │   ├── base_nodes.py        通用节点基类与共享节点家族
@@ -31,6 +32,7 @@ ui/
 │   └── modelinfo.py          导入存档摘要
 ├── application/
 │   ├── definitions.py       ProblemSession、模板和文件用例
+│   ├── finite_element.py    指定迭代的有限元模型副本、载荷编辑和进程请求
 │   ├── edit_history.py      JSON 快照操作树、编辑合并、根节点裁剪与保存标记（无 Qt）
 │   ├── editing.py           节点/工况/任务分组、辅助代码、自定义类的编辑用例
 │   ├── fields.py            字段、动态选项、目标代码片段的模型参数校验
@@ -63,6 +65,7 @@ ui/
 │   ├── preview_renderer.py  场景数据 → PyVista actor；管理 actor 生命周期
 │   ├── plot_style.py        定义与结果视口共用的光照、背景和透明渲染配置
 │   ├── viewer.py            Part / Assembly / 工况选择与视口组合
+│   ├── finite_element.py    有限元工作区、载荷表格、独立 QProcess 和导出选择
 │   ├── model_tree.py        导航投影 → QTreeWidget；菜单与选择信号
 │   ├── language_selector.py 语言选择与 Qt 设置持久化
 │   ├── theme_selector.py    主题选择与应用
@@ -100,6 +103,8 @@ ui/
 | 定义工作流 | `ProblemSession` | 同步、校验、代码生成和跨对象编辑用例 |
 | 当前结果 | `ResultSession` | controller、params、history、iteration、参数载入缓存与变形网格读取 |
 | 优化运行 | `OptimizationRunSession` | 当前定义与任务来源、subprocess、进度、输出与结果目录发现 |
+| 独立有限元模型与结果 | `FiniteElementSession` | 从指定迭代创建的网格、材料、载荷和结果副本，不与优化共享对象 |
+| 当前文档路径 | `MainWindow` | `Ctrl+S` 原路径保存，无路径时进入另存为 |
 | 导航树与结果表格投影 | `presentation` | 根据当前定义或结果生成，不改模型 |
 | 预览几何及查询缓存 | `PreviewGeometry` | 每次构建清除局部资源，导入存档按路径/时间/位姿缓存 |
 | VTK actor | `PreviewRenderer` | 统一创建、移除；几何与载荷分别管理 |
@@ -107,6 +112,62 @@ ui/
 
 禁止在两个 QWidget 中各存一份同一业务值。Widget 缓存只允许用于选中项、相机、
 展开状态等展示信息；刷新后必须能从上述所有者恢复内容。
+
+### 三个常驻工作区
+
+顶部工作区标签切换优化定义、优化观察和有限元；页面首次使用时创建，之后持续保留。
+文件菜单拥有新建、打开、快速开始、保存、另存为及导出；设置菜单拥有语言与主题。
+页面切换不启动、停止或重置任务。优化轮询在页面隐藏后继续，隐藏视口不重绘 VTK 场景。
+停止仅由任务的停止按钮或退出窗口触发。
+手动停止后若已有完整保存结果，运行会话将当前结果目录保留为续跑来源，保留可视化和
+当前步骤，并启用“继续优化”。点击后沿用已有结果的最后一步／指定步骤续跑流程。
+尚无完整保存步骤时不启用续跑；正常结束与手动停止分别处理。
+
+“选择任务来源”中的当前定义选项和分析菜单共用 Workbench 的提交与校验入口；空闲时导入立即将
+定义设为待运行来源，用户可直接点击“开始优化”。单纯切换工作区不会重新导入或清空来源。
+运行期间导入只更新下次使用的定义，并提示当前任务继续运行。
+
+定义传入观察页时通过 `.morph` 字典创建副本。启动优化时再次冻结运行快照，后续编辑定义或
+导入另一份定义不会改变运行中的任务，也不会改变该任务随结果保存的定义。
+
+有限元从 `log/femodel&results/femodel_<iteration>.npz` 读取当步原始网格和材料，
+从 `result_<case>_iter_<iteration>.npz` 恢复原工况。只读取确切迭代，不以其他步模型替代。
+载荷表只编辑私有模型的参数，保留工况已有的启用状态，不提供额外的启用开关。
+求解和导出通过 `fea_worker` 的独立 QProcess 执行，切页后继续。
+停止后保留导入模型；载荷修改会使旧结果失效，防止把旧解导出成新工况结果。
+
+“工况与计算结果”下拉列表统一列出当前优化目录、当前迭代的原工况和各次成功的有限元结果。
+`FiniteElementSession` 用 `FiniteElementResult` 描述每项来源；每次收敛后，将模型、解和日志
+复制到会话工作目录中的独立快照，再追加条目。失败、停止和导出不会新增结果。
+切换条目会从存档加载独立模型、恢复当次载荷与解；继续编辑不会改变已有快照。
+同一会话内切换迭代、导入模型或切换语言不会删除计算记录；各目录与迭代分别筛选。
+导出以选中结果为准，NPZ 内嵌元数据标明原迭代、原工况、结果编号和计算时间。
+快照由会话临时目录管理，页面退出清理时释放，不写入优化过程的原始结果文件。
+
+### 有限元数据导出扩展
+
+`src/morphopt/postprocess/` 不依赖 Qt。`fields.py` 定义物理量提供者 `ResultField`，
+通过 `RESULT_FIELDS` 注册；`ResultLocation` 区分节点、参考点与单元，提供者接收 `FieldContext`，
+返回带稳定编号的逐行记录 `ResultTable`。`combined_table` 按编号将所选物理量向右拼成列，
+每次只导出一种位置、一个文件，不能混选不同位置的物理量。
+`exporters.py` 定义 `ResultExporter` 协议及 `EXPORTERS` 格式注册表；当前支持 CSV 与 NPZ。
+添加物理量无需修改格式写入器，添加格式无需改动物理量提取器，有限元页从注册表生成选项。
+
+节点坐标、位移以及 Cauchy 应力、Green–Lagrange 张量应变都采用装配体全局坐标轴。
+参考点按名称和独立编号输出，每个参考点一行；提供原始坐标、位移、变形后坐标以及
+`UR1/UR2/UR3` 转角向量和模长 `UR`。参考点六自由度从解转换后的 RGC 块读取，
+不使用模型的初始状态；转角沿用内核全局轴角向量，单位 rad，不转换为欧拉角或角度。
+禁用的参考点不输出；模型没有参考点时界面提示并禁止该位置的导出。
+高斯点逐点输出，不做节点平滑或单元平均；应变能同时输出密度、参考积分体积和积分能量。
+无高斯点的模型不提供高斯点物理量，也不生成高斯点编号列；混合单元模型中，无高斯点的
+单元只保留单元记录，高斯点量留空（NPZ 为 NaN），不伪造积分点或零应力。
+节点、单元、积分点编号从 1 开始，与 TorchFEA INP 导出约定一致；保留实例和单元块名称。
+保存窗口允许填写文件名，并通过文件类型选择 CSV 或 NPZ，不在编辑页重复放置格式控件。
+CSV 是单张表（UTF-8 BOM，首行为列名）；NPZ 各列为独立数组，`__metadata__` 保存来源、
+模型哈希、单位和张量约定。没有附加目录或 manifest 文件。
+导出前验证模型与结果的哈希及收敛状态；先生成完整临时文件，成功后才发布目标文件。
+已有文件只在用户确认覆盖后替换；求值失败保留原文件并清理临时文件。
+`widgets/file_dialogs.py` 统一主窗口与结果导出的文件对话框、导航图标和覆盖提示。
 
 ## 3. 统一变更流
 

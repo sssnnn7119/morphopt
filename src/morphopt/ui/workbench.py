@@ -1,14 +1,14 @@
-"""Definition workbench (v2).
+"""Definition workspace.
 
 Layout:
-  header      Quickstart / open / export actions
   center      two tabs:
                 1. 编辑   -> a QStackedWidget routed by the selected tree node
                               (controller / properties / helper code / solver / loads /
                                steps / updater / objective pages)
                 2. 代码(只读) -> generated ``ThisController`` (auto-synced)
   right       PyVista preview of the initial geometry + per-step loads
-  footer      ▶ 进入优化器 (hand the definition to the observer page)
+
+File actions and workspace switching belong to MainWindow.
 
 Interchange is the ``*.morph`` JSON (open/export); the runnable ``*.py`` is
 generated from the model in the read-only code tab (no .py import).
@@ -23,13 +23,11 @@ from PySide6.QtGui import QFont, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -86,11 +84,6 @@ class Workbench(QWidget):
     notify = Signal(str)
     #: emitted with the finished problem when the user wants the observer page
     importToObserver = Signal(object)
-    #: definition-level file / problem actions (fulfilled by the MainWindow)
-    quickstartRequested = Signal()
-    openMorphRequested = Signal()
-    exportMorphRequested = Signal()
-    exportRunPyRequested = Signal()
 
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
@@ -125,51 +118,7 @@ class Workbench(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
-        # definition actions (definition-page content, not a global toolbar) --
-        actbar = QHBoxLayout()
-        self._act_buttons: dict[str, QPushButton] = {}
-        actions = [
-            (
-                "quickstart",
-                tr("ui.workbench.quickstart"),
-                tr(
-                    "ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal"
-                ),
-                self.quickstartRequested.emit,
-            ),
-            (
-                "open",
-                tr("ui.workbench.open_morph"),
-                tr("ui.workbench.open_an_existing_morph_definition"),
-                self.openMorphRequested.emit,
-            ),
-            (
-                "export",
-                tr("ui.workbench.export_morph"),
-                tr("ui.workbench.save_the_current_definition_as_morph"),
-                self.exportMorphRequested.emit,
-            ),
-            (
-                "runpy",
-                tr("ui.workbench.export_run_py"),
-                tr(
-                    "ui.workbench.generate_a_headless_runnable_py_from_the_current_definition"
-                ),
-                self.exportRunPyRequested.emit,
-            ),
-        ]
-        for key, text, tooltip, slot in actions:
-            b = QPushButton(text)
-            b.setProperty("actionRole", "primary")
-            b.setToolTip(tooltip)
-            b.clicked.connect(slot)
-            actbar.addWidget(b)
-            self._act_buttons[key] = b
-        actbar.addStretch(1)
-        self.title = QLabel("")
-        self.title.setProperty("textRole", "muted")
-        actbar.addWidget(self.title)
-        outer.addLayout(actbar)
+        # File actions and workspace navigation are owned by MainWindow.
 
         split = QSplitter(Qt.Orientation.Horizontal)
 
@@ -231,22 +180,9 @@ class Workbench(QWidget):
         split.setSizes(list(theme_manager.palette.layout.workbench.main_split_sizes))
         outer.addWidget(split, 1)
 
-        # ---- footer: hand the finished definition over to the observer page
-        foot = QHBoxLayout()
-        self._msg = QLabel("")
+        self._msg = QLabel(self)
         self._msg.setProperty("textRole", "muted")
-        foot.addWidget(self._msg, 1)
-        self._b_import = QPushButton(tr("ui.workbench.send_to_observer"))
-        self._b_import.setToolTip(
-            tr(
-                "ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue"
-            )
-        )
-        self._b_import.setProperty("actionRole", "primary")
-        self._b_import.setProperty("buttonLayout", "prominent")
-        self._b_import.clicked.connect(self._submit_to_observer)
-        foot.addWidget(self._b_import)
-        outer.addLayout(foot)
+        outer.addWidget(self._msg)
 
     # --------------------------------------------------------- center stack
     def _repopulate_stack(self) -> None:
@@ -361,7 +297,7 @@ class Workbench(QWidget):
         )
         if self.session.history.is_modified:
             title = tr("ui.history.modified", title=title)
-        self.title.setText(title)
+        self.setWindowTitle(title)
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
@@ -373,43 +309,9 @@ class Workbench(QWidget):
         centre editors are all refreshed; the preview viewport keeps its state.
         """
         self.flush_edits()
-        act_text = {
-            "quickstart": (
-                tr("ui.workbench.quickstart"),
-                tr(
-                    "ui.workbench.create_a_problem_from_a_starting_structure_and_design_goal"
-                ),
-            ),
-            "open": (
-                tr("ui.workbench.open_morph"),
-                tr("ui.workbench.open_an_existing_morph_definition"),
-            ),
-            "export": (
-                tr("ui.workbench.export_morph"),
-                tr("ui.workbench.save_the_current_definition_as_morph"),
-            ),
-            "runpy": (
-                tr("ui.workbench.export_run_py"),
-                tr(
-                    "ui.workbench.generate_a_headless_runnable_py_from_the_current_definition"
-                ),
-            ),
-        }
-        for key, (text, tip) in act_text.items():
-            b = self._act_buttons.get(key)
-            if b is not None:
-                b.setText(text)
-                b.setToolTip(tip)
         self._update_caption()
         self._center.setTabText(0, tr("ui.workbench.edit"))
         self._center.setTabText(1, tr("ui.workbench.code_read_only"))
-        self._b_import.setText(tr("ui.workbench.send_to_observer"))
-        self._b_import.setToolTip(
-            tr(
-                "ui.workbench.hand_the_current_definition_to_the_observer_page_to_start_or_continue"
-            )
-        )
-
         # Refresh the model-tree titles and the centre editors in the new
         # language.  Only the cheap form editors are re-created (data lives on
         # the model nodes); the PyVista preview viewport is left untouched.
@@ -980,8 +882,8 @@ class Workbench(QWidget):
             self._update_history_actions()
             self.setUpdatesEnabled(updates_enabled)
 
-    # --------------------------------------------------------- footer slots
-    def _submit_to_observer(self) -> None:
+    # --------------------------------------------------------- task transfer
+    def submit_to_observer(self) -> None:
         self.flush_edits()
         try:
             self.session.validate_for_run()
