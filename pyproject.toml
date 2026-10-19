@@ -46,4 +46,5 @@ extend-select = ["RUF022"]
 "morphopt.ui" = [
     "locales/*.json",
     "theme/styles/*.qss",
+    "assets/*.svg",
 ]

@@ -20,6 +20,7 @@ MorphOpt / TorchFEA core                             数值内核
 ```text
 ui/
 ├── app.py / mainwindow.py / workbench.py / observe_panel.py
+├── application_icon.py      Qt 应用身份及进程级窗口图标
 ├── fea_worker.py            独立有限元求解与导出进程入口（无 Qt）
 ├── refresh.py               Refreshable 协议、刷新上下文和统一调度器
 ├── model/
@@ -92,6 +93,17 @@ ui/
 - `i18n.py` 仅查询语言资源、格式化参数和通知订阅者；Qt 的设置和语言选择器在
   `widgets/language_selector.py`。
 - 顶层窗口只编排页面、对话框和信号，不实现字段规则、代码生成或结果解析。
+
+图标和平台身份统一由 `application_icon.py` 编排，页面只调用 `application_icon()`。
+应用通过命令行启动，不提供或安装 `.desktop` 启动器，不写入用户应用目录或设置
+Linux 桌面文件 ID。Linux 直接使用 Qt 的运行窗口图标；Wayland 任务栏是否采用该
+图标取决于 Qt 和 compositor 对直接设置窗口图标协议的支持。
+Windows 在创建 `QApplication` 前通过 `SetCurrentProcessExplicitAppUserModelID` 设置
+稳定的 `MorphOpt.MorphOpt` 任务栏身份。Linux/Windows 的运行窗口共用
+`assets/morphopt.svg`，由 Qt 按显示尺寸直接渲染。
+SVG 是唯一图标资源，随 Python 包发布；更换图标时只编辑 SVG，无需手动转换，
+也无需 pip 安装转换钩子。若未来发布 Windows 独立 EXE，EXE 文件和安装器所需的
+ICO 应由对应打包流程生成并嵌入；运行时的 Qt 图标设置不修改 EXE 文件资源。
 
 ## 2. 状态所有权
 

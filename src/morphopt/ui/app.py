@@ -26,9 +26,13 @@ def create_application(argv: list[str] | None = None):
     configure_environment()
 
     from PySide6.QtWidgets import QApplication
+
+    from .application_icon import configure_application_identity, prepare_application_identity
     from .theme import theme_manager
 
+    prepare_application_identity()
     app = QApplication.instance() or QApplication(argv or sys.argv)
+    configure_application_identity(app)
     theme_manager.restore(app)
     return app
 
@@ -38,6 +42,7 @@ def main() -> int:
     app = create_application()
 
     from .widgets.language_selector import restore_locale
+
     restore_locale()
 
     from .mainwindow import MainWindow
