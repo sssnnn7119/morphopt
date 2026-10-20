@@ -82,8 +82,7 @@ from .widgets.viewer import PreviewViewer
 
 class Workbench(QWidget):
     notify = Signal(str)
-    #: emitted with the finished problem when the user wants the observer page
-    importToObserver = Signal(object)
+    startOptimizationRequested = Signal(object)
 
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
@@ -117,8 +116,6 @@ class Workbench(QWidget):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
-
-        # File actions and workspace navigation are owned by MainWindow.
 
         split = QSplitter(Qt.Orientation.Horizontal)
 
@@ -883,7 +880,7 @@ class Workbench(QWidget):
             self.setUpdatesEnabled(updates_enabled)
 
     # --------------------------------------------------------- task transfer
-    def submit_to_observer(self) -> None:
+    def start_optimization(self) -> None:
         self.flush_edits()
         try:
             self.session.validate_for_run()
@@ -903,7 +900,7 @@ class Workbench(QWidget):
                 str(exc),
             )
             return
-        self.importToObserver.emit(self.problem)
+        self.startOptimizationRequested.emit(self.problem)
 
     def set_message(self, text: str) -> None:
         self._msg.setText(text)

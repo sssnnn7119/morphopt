@@ -7,9 +7,18 @@ import importlib.util
 import re
 import sys
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..i18n import localized_message
+
+
+@dataclass(frozen=True)
+class ResultSelection:
+    """The saved iteration shared by the observer and finite-element views."""
+
+    folder: str
+    iteration: int
 
 
 @contextmanager

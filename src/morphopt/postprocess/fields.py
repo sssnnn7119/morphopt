@@ -186,55 +186,63 @@ def reference_point_table(context: FieldContext, kind: str) -> ResultTable:
     return ResultTable('rp_' + kind, (*REFERENCE_POINT_KEYS, *columns), rows())
 
 
-def gauss_table(context: FieldContext, kind: str) -> ResultTable:
-    components = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
-    names = {'gauss_coordinates': ('X', 'Y', 'Z'),
-             'energy': ('strain_energy_density', 'reference_volume', 'strain_energy'),
-             'stress': ('S11', 'S22', 'S33', 'S12', 'S13', 'S23', 'S_Mises'),
-             'strain': ('E11', 'E22', 'E33', 'E12', 'E13', 'E23')}
+GAUSS_COMPONENTS = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
+GAUSS_COLUMNS = {
+    'gauss_coordinates': ('X', 'Y', 'Z'),
+    'energy': ('strain_energy_density', 'reference_volume', 'strain_energy'),
+    'stress': ('S11', 'S22', 'S33', 'S12', 'S13', 'S23', 'S_Mises'),
+    'strain': ('E11', 'E22', 'E33', 'E12', 'E13', 'E23'),
+}
 
-    def rows():
-        for name, instance, block, element, local in context.gauss_blocks(kind):
-            positions = context.gauss_positions[name, block]
-            if kind == 'gauss_coordinates':
-                values = positions
-            elif kind == 'energy':
-                energy = element.get_potential_energy_density(local)
-                volume = element.gaussian_weight
-                if volume.ndim == 1:
-                    volume = volume[:, None].expand_as(energy)
-                values = torch.stack((energy, volume, energy * volume), dim=-1)
+
+def gauss_values(context: FieldContext, kind: str):
+    """Yield block arrays (Gauss point, element, component) for export and display."""
+    for name, instance, block, element, local in context.gauss_blocks(kind):
+        positions = context.gauss_positions[name, block]
+        if kind == 'gauss_coordinates':
+            values = positions
+        elif kind == 'energy':
+            energy = element.get_potential_energy_density(local)
+            volume = element.gaussian_weight
+            if volume.ndim == 1:
+                volume = volume[:, None].expand_as(energy)
+            values = torch.stack((energy, volume, energy * volume), dim=-1)
+        else:
+            gradient = element.get_deformation_gradient(local)
+            if kind == 'strain':
+                identity = torch.eye(3, dtype=gradient.dtype, device=gradient.device)
+                tensor = (gradient.transpose(-1, -2) @ gradient - identity) * 0.5
             else:
-                gradient = element.get_deformation_gradient(local)
-                if kind == 'strain':
-                    identity = torch.eye(3, dtype=gradient.dtype, device=gradient.device)
-                    tensor = (gradient.transpose(-1, -2) @ gradient - identity) * 0.5
-                else:
-                    jacobian = gradient.det()
-                    if torch.any(jacobian <= 0):
-                        raise ValueError('Cannot export Cauchy stress for an inverted element.')
-                    # torchfea returns the transpose of first Piola stress.
-                    piola_transpose, _ = element.components_Solid(local)
-                    tensor = piola_transpose.transpose(-1, -2) @ gradient.transpose(-1, -2) / jacobian[..., None, None]
-                    tensor = (tensor + tensor.transpose(-1, -2)) * 0.5
-                if instance.rotation_matrix is not None:
-                    rotation = instance.rotation_matrix.to(tensor)
-                    tensor = rotation @ tensor @ rotation.T
-                values = torch.stack(tuple(tensor[..., a, b] for a, b in components), dim=-1)
-                if kind == 'stress':
-                    identity = torch.eye(3, dtype=tensor.dtype, device=tensor.device)
-                    deviator = tensor - tensor.diagonal(dim1=-2, dim2=-1).sum(-1)[..., None, None] * identity / 3
-                    mises = (1.5 * deviator.square().sum((-1, -2))).clamp_min(0).sqrt()
-                    values = torch.cat((values, mises[..., None]), dim=-1)
-            values = array(values)
+                jacobian = gradient.det()
+                if torch.any(jacobian <= 0):
+                    raise ValueError('Cannot export Cauchy stress for an inverted element.')
+                # torchfea returns the transpose of first Piola stress.
+                piola_transpose, _ = element.components_Solid(local)
+                tensor = piola_transpose.transpose(-1, -2) @ gradient.transpose(-1, -2) / jacobian[..., None, None]
+                tensor = (tensor + tensor.transpose(-1, -2)) * 0.5
+            if instance.rotation_matrix is not None:
+                rotation = instance.rotation_matrix.to(tensor)
+                tensor = rotation @ tensor @ rotation.T
+            values = torch.stack(tuple(tensor[..., a, b] for a, b in GAUSS_COMPONENTS), dim=-1)
+            if kind == 'stress':
+                identity = torch.eye(3, dtype=tensor.dtype, device=tensor.device)
+                deviator = tensor - tensor.diagonal(dim1=-2, dim2=-1).sum(-1)[..., None, None] * identity / 3
+                mises = (1.5 * deviator.square().sum((-1, -2))).clamp_min(0).sqrt()
+                values = torch.cat((values, mises[..., None]), dim=-1)
+        values = array(values)
+        yield name, block, element, values
+
+
+def gauss_table(context: FieldContext, kind: str) -> ResultTable:
+    def rows():
+        for name, block, element, values in gauss_values(context, kind):
             element_ids = array(element._elems_index).reshape(-1)
             for element_index, element_id in enumerate(element_ids):
                 for point in range(values.shape[0]):
                     yield (name, block, int(element_id) + 1, point + 1,
                            *values[point, element_index])
 
-    return ResultTable('gauss_' + kind,
-        (*ELEMENT_KEYS, *names[kind]), rows())
+    return ResultTable('gauss_' + kind, (*ELEMENT_KEYS, *GAUSS_COLUMNS[kind]), rows())
 
 
 @dataclass(frozen=True)

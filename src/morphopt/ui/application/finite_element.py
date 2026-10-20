@@ -14,6 +14,7 @@ import numpy as np
 import torch
 import torchfea
 
+from ...postprocess.native import normalize_export_name
 from ..i18n import localized_message
 from .results import _cpu_torch_defaults
 
@@ -156,6 +157,28 @@ class FiniteElementSession:
                 provenance.update(analysis_number=entry.number, created_at=entry.created_at.isoformat())
         return self._write_request({'action': 'export', 'destination': path, 'format': format, 'fields': fields,
             'location': location, 'overwrite': overwrite, 'source': provenance})
+
+    def native_export_request(self, directory: str, name: str) -> Path:
+        """Export stored iteration snapshots, independently of unsolved UI edits."""
+        if self.source is None:
+            raise ValueError(localized_message('ui.fea.result_required'))
+        try:
+            name = normalize_export_name(name)
+        except ValueError as exc:
+            raise ValueError(localized_message('ui.fea.invalid_export_name')) from exc
+        snapshots = []
+        for entry in self.result_options(self.source.folder, self.source.iteration):
+            snapshots.append({
+                'key': entry.key,
+                'result_path': str(entry.result_path) if entry.result_path is not None else None,
+                'case': entry.source.case, 'analysis_number': entry.number,
+                'created_at': entry.created_at.isoformat() if entry.created_at is not None else None,
+            })
+        return self._write_request({
+            'action': 'export_native', 'destination': directory, 'name': name,
+            'iteration': self.source.iteration, 'model_path': str(self.source.model_path),
+            'results': snapshots, 'source': self.source.folder,
+        })
 
     def _write_request(self, request: dict) -> Path:
         path = self.directory / 'request.json'

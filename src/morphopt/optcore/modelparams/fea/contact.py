@@ -60,13 +60,13 @@ class Contact(BaseFEAComponent):
 			from FEA.assemble.loads.contact import Contact as _Contact  # type: ignore
 			TorchFEAContact = _Contact  # type: ignore
 
-		kwargs = dict(
-			instance_name1=self.instance_name1,
-			instance_name2=self.instance_name2,
-			surface_name1=self.surface_name1,
-			surface_name2=self.surface_name2,
-			penalty_threshold_h=self.penalty_threshold_h,
-		)
+		kwargs = {
+			"instance_name1": self.instance_name1,
+			"instance_name2": self.instance_name2,
+			"surface_name1": self.surface_name1,
+			"surface_name2": self.surface_name2,
+			"penalty_threshold_h": self.penalty_threshold_h,
+		}
 		if self.penalty_start_f is not None:
 			kwargs["penalty_start_f"] = self.penalty_start_f
 		if self.penalty_end_f is not None:
@@ -106,10 +106,10 @@ class SelfContact(BaseFEAComponent):
 	def modify_fea(self, fe: FEAController, name: str):
 		from torchfea.model.loads.contact import ContactSelf as TorchFEASelfContact
 
-		kwargs = dict(
-			instance_name=self.instance_name,
-			surface_name=self.surface_name,
-		)
+		kwargs = {
+			"instance_name": self.instance_name,
+			"surface_name": self.surface_name,
+		}
 		if self.penalty_threshold_h is not None:
 			kwargs["penalty_threshold_h"] = self.penalty_threshold_h
 		loadobj = TorchFEASelfContact(**kwargs)  # type: ignore

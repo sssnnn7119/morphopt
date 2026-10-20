@@ -1,22 +1,7 @@
-"""In-window observer panel + controls (definition & observer share ONE window).
-
-The definition page prepares a finished problem here through
-``ObserverControls.import_definition``. Alternatively, button 0 selects another
-task source:
-
-* ``definition`` — fresh run of the problem from the definition page,
-* ``py``         — fresh run of an existing runnable definition script (.py),
-* ``continue``   — resume an existing result folder (last / chosen step).
-
-Button 1 (开始/继续) is enabled after importing a definition or choosing a
-source; once a run starts the source is consumed/reset. Stopping a run with
-saved results prepares that result as the source for continuation. Progress is polled from
-the result folder on disk (per *finished* iteration), so no queue / no extra
-process is needed.  Button 2 (停止优化) terminates the job's whole process
-group but keeps the current visualization for browsing.
-"""
+"""Optimization task controls and live result browsing in the analysis workspace."""
 
 from __future__ import annotations
+from collections.abc import Callable
 from copy import deepcopy
 
 import os
@@ -25,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QListWidget, QStackedWidget, QSplitter, QMessageBox, QFileDialog,
+    QListWidget, QStackedWidget, QSplitter, QMessageBox,
     QDialog, QCheckBox, QPlainTextEdit,
 )
 
@@ -43,7 +28,8 @@ from .i18n import tr
 from .widgets.observation_pages import (
     DeformationCasePage, MetricsPage, UpdatableStructurePage,
 )
-from .widgets.run_dialogs import ContinueDialog, SourceDialog
+from .widgets.run_dialogs import ContinueDialog
+from .widgets.elided_label import ElidedLabel
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +38,8 @@ from .widgets.run_dialogs import ContinueDialog, SourceDialog
 
 class ObserverPanel(QWidget):
     """Embedded observer content, driven purely from the result folder."""
+
+    selectionChanged = Signal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -142,6 +130,19 @@ class ObserverPanel(QWidget):
             self._refresh_updatable_structure()
         elif row >= 2:
             self._refresh_case(self.options.item(row).data(Qt.ItemDataRole.UserRole))
+        self.selectionChanged.emit(self.path_result, self.slider.value())
+
+    def select_iteration(self, iteration: int) -> None:
+        """Pin the shared analysis selection, including when this page is hidden."""
+        self.chk_follow.setChecked(False)
+        self.slider.setValue(iteration)
+
+    def lock_selection(self, locked: bool) -> None:
+        """Keep an in-flight finite-element model bound to its source iteration."""
+        if locked:
+            self.chk_follow.setChecked(False)
+        for control in (self.slider, self.btn_prev, self.btn_next, self.chk_follow):
+            control.setEnabled(not locked)
 
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
@@ -232,6 +233,8 @@ class ObserverPanel(QWidget):
                 self._refresh_updatable_structure()
             elif row >= 2:
                 self._refresh_case(self.options.item(row).data(Qt.ItemDataRole.UserRole))
+        if self.path_result and self.iteration > 0:
+            self.selectionChanged.emit(self.path_result, value)
 
     def _discover_cases(self, folder: str) -> None:
         found = set(self._results.deformation_cases())
@@ -244,44 +247,42 @@ class ObserverPanel(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# observer page: buttons 0/1/2 + polling + job control
+# observer page: polling and job control
 # ---------------------------------------------------------------------------
 
 class ObserverControls(QWidget):
-    """Definition/observer bridge: 0·选择任务来源, 1·开始/继续, 2·停止."""
+    """Run the task selected by the definition page or File menu."""
 
-    backRequested = Signal()
-    importDefinitionRequested = Signal()
-    finiteElementRequested = Signal(str, int)
+    runStateChanged = Signal()
+    resultFolderChanged = Signal(str)
     outputReceived = Signal(int, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._run = OptimizationRunSession()
+        self.task_label = ""
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         # top control bar ---------------------------------------------------
-        bar = QHBoxLayout()
-        self.btn_open = QPushButton(tr('ui.observe_panel.0_choose_source'))
-        self.btn_open.setToolTip(tr('ui.observe_panel.choose_a_task_source_current_definition_a_definition_script_py_or_an_exi'))
-        self.btn_open.clicked.connect(self._choose_source)
-        bar.addWidget(self.btn_open)
-        self.btn_start = QPushButton(tr('ui.observe_panel.1_start'))
+        self.task_controls = QWidget()
+        bar = QHBoxLayout(self.task_controls)
+        bar.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        self.status = ElidedLabel()
+        self.status.setProperty("textRole", "muted")
+        bar.addWidget(self.status, 1)
+        self.btn_start = QPushButton(tr('ui.observe_panel.start'))
         self.btn_start.setProperty("actionRole", "primary")
-        self.btn_start.setToolTip(tr('ui.observe_panel.enabled_after_choosing_a_source_via_0_the_source_is_reset_once_a_run_sta'))
+        self.btn_start.setToolTip(tr('ui.observe_panel.start_hint'))
         self.btn_start.clicked.connect(self._start)
         bar.addWidget(self.btn_start)
-        self.btn_stop = QPushButton(tr('ui.observe_panel.2_stop'))
+        self.btn_stop = QPushButton(tr('ui.observe_panel.stop'))
         self.btn_stop.setProperty("actionRole", "danger")
         self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
-        self.status = QLabel("")
-        self.status.setProperty("textRole", "muted")
-        bar.addWidget(self.status, 1)
-        outer.addLayout(bar)
+        outer.addWidget(self.task_controls)
 
         content = QSplitter(Qt.Orientation.Vertical)
         self.panel = ObserverPanel()
@@ -313,9 +314,6 @@ class ObserverControls(QWidget):
         content.setSizes(list(theme_manager.palette.layout.observer.content_split_sizes))
         outer.addWidget(content, 1)
 
-        self.btn_finite_element = QPushButton(tr('ui.workspace.analyze_iteration'))
-        self.btn_finite_element.clicked.connect(self._send_to_finite_element)
-        bar.addWidget(self.btn_finite_element)
         self._timer = QTimer(self)
         self._timer.setInterval(CONSTANT.UI.OBSERVER.POLL_INTERVAL_MS)
         self._timer.timeout.connect(self._poll_once)
@@ -328,88 +326,42 @@ class ObserverControls(QWidget):
         """Whether an optimization task is currently running."""
         return self._run.active
 
-    def set_definition(self, problem) -> None:
-        self._run.set_definition(problem)
-        if not self._run.active:
-            self.status.setText(tr(
-                'ui.observe_panel.definition_ready_value_click_0_to_choose_a_source',
-                value_0=problem.label,
-            ))
-        self._update_buttons()
-
-    def import_definition(self, problem) -> None:
-        """Prepare an explicitly imported definition as the next task when idle."""
-        self.set_definition(problem)
-        if not self._run.active:
-            self._set_definition_source()
-
-    def _send_to_finite_element(self) -> None:
-        if self.panel.path_result and self.panel.iteration > 0:
-            self.finiteElementRequested.emit(self.panel.path_result, self.panel.slider.value())
-
-    # ------------------------------------------------------------- buttons
-    def _on_back(self) -> None:
-        """Navigate without changing the independent optimization process."""
-        self.backRequested.emit()
-
-    def _choose_source(self) -> None:
-        """Button 0: pick where the next optimization run comes from."""
-        if self._run.active:
-            return
-        dlg = SourceDialog(has_definition=self._run.definition is not None, parent=self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        kind = dlg.chosen()
-        if kind is RunSourceKind.DEFINITION:
-            # Ask the definition page to flush and validate its latest edits.
-            self.importDefinitionRequested.emit()
-        elif kind is RunSourceKind.PYTHON:
-            self._pick_py_source()
-        elif kind is RunSourceKind.CONTINUE:
-            self._pick_continue_source()
-        self._update_buttons()
-
-    def _set_definition_source(self) -> None:
-        problem = self._run.definition
-        if problem is None:
-            QMessageBox.information(
-                self,
-                tr('ui.observe_panel.no_definition'),
-                tr('ui.observe_panel.build_a_problem_on_the_definition_page_and_enter_the_observer'),
-            )
-            return
-        self._run.select_source(RunSource(RunSourceKind.DEFINITION, label=problem.label))
+    def start_definition(self, problem) -> bool:
+        """Launch a validated snapshot from the definition workspace."""
+        if self.is_running():
+            return False
+        source = RunSource(RunSourceKind.DEFINITION, label=problem.label)
+        if not self._launch(source, lambda: self._run.start_definition(problem)):
+            return False
+        self.task_label = problem.label
         self.panel.reset()
-        self._refresh_status()
-        self._update_buttons()
+        return True
 
-    def _pick_py_source(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            tr('ui.observe_panel.select_definition_script_py'),
-            os.getcwd(),
-            tr("ui.files.python"),
-        )
-        if path:
-            self._run.select_source(RunSource(RunSourceKind.PYTHON, path=path))
-            self.panel.reset()
-            self._refresh_status()
+    def start_python(self, path: str) -> bool:
+        """Launch the script chosen in the File menu."""
+        source = RunSource(RunSourceKind.PYTHON, path=path)
+        if not self._launch(source, lambda: self._run.start_python(path)):
+            return False
+        self.task_label = Path(path).name
+        self.panel.reset()
+        return True
 
-    def _pick_continue_source(self) -> None:
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            tr('ui.observe_panel.select_result_folder_continue'),
-            os.getcwd(),
-        )
-        if not folder:
-            return
-        try:
-            self._run.select_source(RunSource(RunSourceKind.CONTINUE, path=folder, label=os.path.basename(folder)))
-        except ValueError as exc:
-            QMessageBox.warning(self, tr('ui.observe_panel.invalid_result'), str(exc))
-            return
+    @staticmethod
+    def is_result_folder(folder: str) -> bool:
+        return OptimizationRunSession.is_result_folder(folder)
+
+    def open_result(self, folder: str) -> None:
+        """Browse a saved result and prepare continuation without starting a worker."""
+        self._run.select_source(RunSource(
+            RunSourceKind.CONTINUE, path=folder, label=Path(folder).name,
+        ))
+        self.task_label = Path(folder).name
+        self._clear_output()
+        self.panel.reset()
+        self.panel.chk_follow.setChecked(True)
         self._show_progress(self._run.poll())
         self._refresh_status()
+        self._update_buttons()
 
     def _refresh_status(self) -> None:
         """Status line for the current source / idle state."""
@@ -419,30 +371,31 @@ class ObserverControls(QWidget):
             return
         if self._run.active:
             return  # running-status lines are set by the run methods
-        if self._run.definition is not None:
-            self.status.setText(tr('ui.observe_panel.no_task_source_yet_click_0_to_choose'))
-        else:
-            self.status.setText(tr('ui.observe_panel.no_definition_received_build_a_problem_first'))
+        self.status.setText(tr('ui.observe_panel.no_task'))
 
-    def _start(self) -> None:
+    def _start(self) -> bool:
         if self._run.active:
-            return
+            return False
         source = self._run.source
         if source is None:
-            self.status.setText(tr('ui.observe_panel.click_0_to_choose_a_task_source_first'))
-            return
+            return False
         target = None
         if source.kind is RunSourceKind.CONTINUE:
             dialog = ContinueDialog(max_step=last_completed_iteration(source.path), parent=self)
             if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
+                return False
             target = dialog.target_iteration()
+        return self._launch(source, lambda: self._run.start_selected(target), target)
+
+    def _launch(
+        self, source: RunSource, launch: Callable[[], object], target: int | None = None,
+    ) -> bool:
         try:
-            self._run.start_selected(target)
+            launch()
         except Exception as exc:
             key = 'ui.observe_panel.continue_failed' if source.kind is RunSourceKind.CONTINUE else 'ui.observe_panel.launch_failed'
             QMessageBox.warning(self, tr(key), str(exc))
-            return
+            return False
         self.output_view.clear()
         self._run.stream_output(self.outputReceived.emit)
         if source.kind is RunSourceKind.CONTINUE:
@@ -459,6 +412,7 @@ class ObserverControls(QWidget):
             ))
         self._timer.start()
         self._update_buttons()
+        return True
 
     def _stop(self) -> None:
         self._stop_job()
@@ -496,7 +450,12 @@ class ObserverControls(QWidget):
         self._show_progress(progress)
         if progress.finished:
             self._timer.stop()
-            self.status.setText(tr('ui.observe_panel.optimization_finished_choose_a_source_via_0_to_run_again'))
+            if progress.iteration > 0 and self._run.folder and self._run.is_result_folder(self._run.folder):
+                self._run.source = RunSource(
+                    RunSourceKind.CONTINUE, path=self._run.folder,
+                    label=Path(self._run.folder).name,
+                )
+            self.status.setText(tr('ui.observe_panel.optimization_finished'))
             self._update_buttons()
         elif progress.changed and progress.iteration:
             self.status.setText(tr(
@@ -508,6 +467,7 @@ class ObserverControls(QWidget):
         if progress.folder is None:
             return
         if self.panel.path_result != progress.folder:
+            self.resultFolderChanged.emit(progress.folder)
             self.panel.ensure_loaded(progress.folder)
         if progress.iteration >= 1 and (progress.changed or self.panel.iteration != progress.iteration):
             self.panel.show_iteration(progress.folder, progress.iteration)
@@ -515,13 +475,19 @@ class ObserverControls(QWidget):
     def _update_buttons(self) -> None:
         running = self._run.active
         src = self._run.source
-        self.btn_open.setEnabled(not running)
         self.btn_stop.setEnabled(running)
-        if src is not None and src.kind is RunSourceKind.CONTINUE:
-            self.btn_start.setText(tr('ui.observe_panel.1_continue'))
+        self.btn_stop.setVisible(running)
+        if src is None or src.kind is RunSourceKind.CONTINUE:
+            self.btn_start.setText(tr('ui.observe_panel.continue'))
         else:
-            self.btn_start.setText(tr('ui.observe_panel.1_start'))
+            self.btn_start.setText(tr('ui.observe_panel.start'))
         self.btn_start.setEnabled(not running and src is not None)
+        self.btn_start.setVisible(not running)
+        self.btn_start.setToolTip(tr(
+            'ui.observe_panel.continue_unavailable_hint'
+            if src is None else 'ui.observe_panel.start_hint'
+        ))
+        self.runStateChanged.emit()
 
     @staticmethod
     def _source_status(source: RunSource) -> str:
@@ -535,11 +501,8 @@ class ObserverControls(QWidget):
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the observer's static texts."""
-        self.btn_finite_element.setText(tr('ui.workspace.analyze_iteration'))
-        self.btn_open.setText(tr('ui.observe_panel.0_choose_source'))
-        self.btn_open.setToolTip(tr('ui.observe_panel.choose_a_task_source_current_definition_a_definition_script_py_or_an_exi'))
-        self.btn_start.setToolTip(tr('ui.observe_panel.enabled_after_choosing_a_source_via_0_the_source_is_reset_once_a_run_sta'))
-        self.btn_stop.setText(tr('ui.observe_panel.2_stop'))
+        self.btn_start.setToolTip(tr('ui.observe_panel.start_hint'))
+        self.btn_stop.setText(tr('ui.observe_panel.stop'))
         self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
         self.output_label.setText(tr('ui.observe_panel.run_output'))
         self.btn_clear_output.setText(tr('ui.observe_panel.clear'))

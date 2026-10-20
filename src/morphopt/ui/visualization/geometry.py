@@ -141,22 +141,22 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
             name = instance.name if instance is not None else part.name
-            options = dict(
-                color=(
+            options = {
+                "color": (
                     context.instance_color(instance.name)
                     if instance is not None
                     else theme_manager.palette.viewer.geometry.uninstanced_color
                 ),
                 # Both sides of the exterior shell cover the cavity. Keep
                 # their combined opacity low enough to see internal loads.
-                opacity=(
+                "opacity": (
                     theme_manager.palette.viewer.geometry.boundary_shell_opacity
                     if len(surfaces) > 1 and index == 0
                     else 1.0
                 ),
-                show_edges=instance is None,
-                smooth_shading=True,
-            )
+                "show_edges": instance is None,
+                "smooth_shading": True,
+            }
             context.scene.add_base(
                 name, mesh, name=f"boundary:{name}:surface-{index}", **options
             )

@@ -120,6 +120,18 @@ def create_file_dialog(parent: QWidget, title: str, directory: str, *, save: boo
     return dialog
 
 
+def choose_directory(parent: QWidget, title: str, directory: str) -> str:
+    """Use the shared icons, labels and theme when opening a result folder."""
+    dialog = create_file_dialog(parent, title, directory, save=False)
+    dialog.setFileMode(QFileDialog.FileMode.Directory)
+    dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+    dialog.setLabelText(QFileDialog.DialogLabel.FileName, tr('ui.files.directory'))
+    if dialog.exec() != QFileDialog.DialogCode.Accepted:
+        return ''
+    selected = dialog.selectedFiles()
+    return selected[0] if selected else ''
+
+
 @dataclass(frozen=True)
 class SaveFileSelection:
     path: Path

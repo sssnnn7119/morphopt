@@ -124,7 +124,6 @@ class WidgetLayout:
     multiline_field_minimum_height: int = 120
     path_button_width: int = 28
     continue_dialog_minimum_width: int = 380
-    source_dialog_minimum_width: int = 480
     load_step_table_minimum_height: int = 220
     form_contents_margins: tuple[int, int, int, int] = (8, 4, 8, 4)
     collection_contents_margins: tuple[int, int, int, int] = (4, 4, 4, 4)
@@ -244,6 +243,8 @@ class ViewerRenderStyle:
     background: str
     result_colormap: str = 'viridis'
     minimum_scalar_span: float = 1e-12
+    orientation_axes_viewport: tuple[float, float, float, float] = (0.0, 0.0, 0.18, 0.18)
+    orientation_axis_colors: tuple[str, str, str] = ('#df624f', '#53a76a', '#518bd4')
     depth_peels: int = 8
     depth_peeling_occlusion_ratio: float = 0.0
     mesh_ambient: float = 0.17

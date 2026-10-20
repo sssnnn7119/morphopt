@@ -13,6 +13,21 @@ QTabBar[workspaceNavigation="true"]::tab {
     font-weight: 700;
     border-radius: 0px;
 }
+QTabBar[analysisNavigation="true"] {
+    qproperty-drawBase: 0;
+    qproperty-usesScrollButtons: 0;
+}
+QTabBar[analysisNavigation="true"]::tab {
+    padding: 6px 14px;
+    border: 1px solid @border@;
+    border-radius: 4px;
+    font-weight: 600;
+}
+QTabBar[analysisNavigation="true"]::tab:selected {
+    background: @selection@;
+    color: @text@;
+    border-color: @accent@;
+}
 QPushButton, QToolButton {
     background-color: @button@;
     color: @text@;
@@ -59,6 +74,7 @@ QLabel[textRole="sectionHeading"] {
     color: @heading_text@;
 }
 QLabel[textRole="muted"] { color: @muted_text@; }
+QLabel[toolbarContext="true"] { max-width: 320px; padding-right: 10px; }
 QLabel[textRole="accent"] { color: @accent_hover@; }
 QLabel[textRole="dialogTitle"] { font-size: @dialog_title_size@px; font-weight: 700; }
 QLabel[textRole="warning"] { color: @warning@; }

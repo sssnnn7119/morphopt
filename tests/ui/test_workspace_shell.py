@@ -4,6 +4,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QWidget
 
 from morphopt.ui.application import ProblemLibrary
+from morphopt.ui.application.results import ResultSelection
 from morphopt.ui.application.runs import RunMode, RunSource, RunSourceKind
 from morphopt.ui.i18n import tr
 
@@ -27,112 +28,209 @@ def shell(monkeypatch):
     return mainwindow.MainWindow()
 
 
-def test_workspace_switching_keeps_optimization_process_and_polling(monkeypatch):
+def test_analysis_is_unavailable_until_a_task_is_opened(monkeypatch):
+    from morphopt.ui import mainwindow
+
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
+    assert window.navigation.count() == 2
+    assert not window.navigation.isTabEnabled(1)
+    assert window._observer is None
+    assert window._finite_element is None
+    assert 'export_fea' not in window._menu_actions
+    assert not hasattr(window, 'export_finite_element')
     window.navigation.setCurrentIndex(1)
-    observer = window._observer
-    observer._run.process = object()
-    observer._timer.start()
-    window.navigation.setCurrentIndex(2)
-    finite_element = window._finite_element
-    window.show_definition()
     assert window.stack.currentIndex() == 0
-    assert observer.is_running()
-    assert observer._timer.isActive()
-    window.goto_observer(ProblemLibrary.create_blank('another definition'))
-    assert window._observer is observer
-    assert observer.is_running()
-    assert observer._timer.isActive()
-    assert observer._run.definition.label == 'another definition'
-    assert observer._run.source is None
-    assert window.statusBar().currentMessage() == tr(
-        'ui.workspace.definition_staged', label='another definition'
-    )
-    observer._on_back()
-    assert observer.is_running()
-    window.navigation.setCurrentIndex(2)
-    assert window._finite_element is finite_element
-    observer._run.process = None
-    observer._timer.stop()
-    finite_element.close_cleanup()
+    monkeypatch.setattr(window, '_choose_file_path', lambda *args, **kwargs: '')
+    window._menu_actions['open_python'].trigger()
+    monkeypatch.setattr(mainwindow, 'choose_directory', lambda *args: '')
+    window._menu_actions['open_result'].trigger()
+    assert not window.navigation.isTabEnabled(1)
+    assert window._observer is None
     window.deleteLater()
     app.processEvents()
 
 
-@pytest.mark.parametrize('entry', ['source_button', 'analysis_menu'])
-def test_import_definition_prepares_and_starts_latest_definition(monkeypatch, entry):
-    from PySide6.QtWidgets import QDialog, QPushButton
-
-    from morphopt.ui import launcher, observe_panel
+@pytest.mark.parametrize('entry', ['definition_button', 'analysis_menu'])
+def test_definition_entry_starts_latest_snapshot_and_preserves_it_across_navigation(monkeypatch, entry):
+    from morphopt.ui import launcher
 
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
-    window.set_problem(ProblemLibrary.create('shapeopt', label='first definition'))
-    window.navigation.setCurrentIndex(1)
-    observer = window._observer
-    assert observer._run.source is None
-    assert not observer.btn_start.isEnabled()
-
-    assert not any(
-        button.text() == tr('ui.workspace.import_definition')
-        for button in observer.findChildren(QPushButton)
-    )
-
-    class DefinitionSourceDialog:
-        def __init__(self, has_definition, parent):
-            assert has_definition
-            assert parent is observer
-
-        def exec(self):
-            return QDialog.DialogCode.Accepted
-
-        def chosen(self):
-            return RunSourceKind.DEFINITION
-
-    monkeypatch.setattr(observe_panel, 'SourceDialog', DefinitionSourceDialog)
-    # The original source button and the menu both prepare the current definition.
-    observer._run.select_source(RunSource(RunSourceKind.PYTHON, path='previous.py'))
-    import_task = (
-        observer.btn_open.click
-        if entry == 'source_button'
-        else window._send_definition_action.trigger
-    )
-    import_task()
-    assert observer._run.source.kind is RunSourceKind.DEFINITION
-    assert observer._run.source.label == 'first definition'
-    assert observer.btn_start.isEnabled()
-    assert not observer.is_running()
-    assert window.statusBar().currentMessage() == tr(
-        'ui.workspace.definition_imported', label='first definition'
-    )
-
-    # Re-importing picks up the definition page's latest model, not the old copy.
     window.set_problem(ProblemLibrary.create('shapeopt', label='latest definition'))
-    import_task()
-    assert window.stack.currentIndex() == 1
-    assert observer._run.source.label == 'latest definition'
-    prepared = observer._run.definition.to_dict()
-    assert prepared == window.current_problem().to_dict()
-    assert observer._run.definition is not window.current_problem()
-    window.current_problem().label = 'subsequent edit'
-    assert observer._run.definition.label == 'latest definition'
-
-    # Exercise the actual Start button through the process-launch boundary.
+    window._ensure_observer()
+    observer = window._observer
     launched = []
     process = object()
-    monkeypatch.setattr(
-        launcher, 'run_job',
-        lambda problem: (launched.append(problem.to_dict()), process),
-    )
+    monkeypatch.setattr(launcher, 'run_job', lambda problem: (launched.append(problem.to_dict()), process))
     monkeypatch.setattr(observer._run, 'stream_output', lambda _callback: None)
-    observer.btn_start.click()
-    assert launched == [prepared]
-    assert observer._run.process is process
+    start = (window.start_button.click if entry == 'definition_button'
+             else window._start_optimization_action.trigger)
+    start()
+    assert window.stack.currentWidget() is observer
+    assert window.navigation.isTabEnabled(1)
+    assert observer.is_running()
     assert observer._timer.isActive()
-    assert not observer.btn_start.isEnabled()
+    assert launched == [window.current_problem().to_dict()]
+    assert observer.task_controls.parentWidget() is window.analysis_header
+    assert observer.btn_start.isHidden()
+    assert not observer.btn_stop.isHidden()
+    assert observer._run.definition is not window.current_problem()
+    assert not hasattr(observer, 'btn_open')
+    assert not window._menu_actions['open_python'].isEnabled()
+    assert not window._menu_actions['open_result'].isEnabled()
+
+    window.show_definition()
+    window.current_problem().label = 'subsequent edit'
+    assert observer._run.definition.label == 'latest definition'
+    assert observer.is_running()
+    assert observer._timer.isActive()
+    assert not window.start_button.isEnabled()
+    window.navigation.setCurrentIndex(1)
+    assert window.stack.currentWidget() is observer
+    assert window._observer is observer
+    assert observer._run.process is process
     observer._timer.stop()
     observer._run.process = None
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_file_menu_starts_python_without_replacing_the_definition(monkeypatch, tmp_path):
+    from morphopt.ui import launcher
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    definition = window.current_problem()
+    path = str(tmp_path / 'another.py')
+    monkeypatch.setattr(window, '_choose_file_path', lambda *args, **kwargs: path)
+    window._ensure_observer()
+    observer = window._observer
+    process = object()
+    paths = []
+    monkeypatch.setattr(launcher, 'run_py_definition', lambda path: (paths.append(path) or str(tmp_path), 'another', process))
+    monkeypatch.setattr(observer._run, 'stream_output', lambda _callback: None)
+    window._menu_actions['open_python'].trigger()
+    assert paths == [path]
+    assert observer.is_running()
+    assert observer._timer.isActive()
+    assert window.stack.currentWidget() is observer
+    assert window.current_problem() is definition
+    assert observer.task_label == 'another.py'
+    assert 'another.py' in window.windowTitle()
+    observer._timer.stop()
+    observer._run.process = None
+    window.deleteLater()
+    app.processEvents()
+
+
+def saved_result(tmp_path):
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    (scripts / 'MAIN_SCRIPT_FOR_RESTART.py').write_text('')
+    log = tmp_path / 'log'
+    log.mkdir()
+    (log / 'history_record.csv').write_text('iteration,objective\n1,2.0\n2,1.0\n')
+    models = log / 'femodel&results'
+    models.mkdir()
+    for iteration in (1, 2):
+        (models / f'femodel_{iteration}.npz').touch()
+    return str(tmp_path.resolve())
+
+
+def test_result_menu_shares_folder_and_iteration_with_fea_without_launching(monkeypatch, tmp_path):
+    from morphopt.ui import launcher, mainwindow
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    folder = saved_result(tmp_path)
+    monkeypatch.setattr(mainwindow, 'choose_directory', lambda *args: folder)
+    monkeypatch.setattr(launcher, 'run_continue', lambda *args, **kwargs: pytest.fail('opening a result launched a worker'))
+    window._menu_actions['open_result'].trigger()
+    observer = window._observer
+    assert window.stack.currentWidget() is observer
+    assert window._result_selection == ResultSelection(folder, 2)
+    assert observer.btn_start.isEnabled()
+    assert not observer.is_running()
+    assert window.analysis_navigation.isTabEnabled(1)
+    assert window.result_context.folder == folder
+    assert window.result_context.toolTip() == folder
+    assert not hasattr(window, 'result_path')
+    clipboard = app.clipboard()
+    previous_clipboard = clipboard.text()
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        window.show()
+        app.processEvents()
+        QTest.mouseClick(window.result_context, Qt.MouseButton.LeftButton)
+        assert clipboard.text() == folder
+        assert window.statusBar().currentMessage() == tr('ui.workspace.result_path_copied')
+        clipboard.setText('before keyboard activation')
+        QTest.keyClick(window.result_context, Qt.Key.Key_Return)
+        assert clipboard.text() == folder
+    finally:
+        clipboard.setText(previous_clipboard)
+
+    window._ensure_finite_element()
+    page = window._finite_element
+    imports = []
+    monkeypatch.setattr(page, 'synchronize_result', lambda *selection: imports.append(selection))
+    window.analysis_navigation.setCurrentIndex(1)
+    assert imports[-1] == (folder, 2)
+    assert window.stack.currentWidget() is page
+    assert not observer.panel.chk_follow.isChecked()
+    page.selectionChanged.emit(folder, 1)
+    assert observer.panel.slider.value() == 1
+    assert window._result_selection == ResultSelection(folder, 1)
+    window.analysis_navigation.setCurrentIndex(0)
+    observer.panel.slider.setValue(2)
+    assert window._result_selection == ResultSelection(folder, 2)
+    window.analysis_navigation.setCurrentIndex(1)
+    assert imports[-1] == (folder, 2)
+    window.show_definition()
+    window.navigation.setCurrentIndex(1)
+    assert window.stack.currentWidget() is page
+    assert window._finite_element is page
+    assert window.result_context.toolTip() == folder
+    page.close_cleanup()
+    window.deleteLater()
+    app.processEvents()
+
+
+@pytest.mark.parametrize('existing_result', [False, True])
+def test_invalid_result_and_failed_launch_keep_current_workspace(monkeypatch, tmp_path, existing_result):
+    from morphopt.ui import launcher, mainwindow
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    warnings = []
+    monkeypatch.setattr(mainwindow, 'choose_directory', lambda *args: str(tmp_path))
+    monkeypatch.setattr(mainwindow.QMessageBox, 'warning', lambda *args: warnings.append(args))
+    window._menu_actions['open_result'].trigger()
+    assert warnings
+    assert window._observer is None
+    assert not window.navigation.isTabEnabled(1)
+    if existing_result:
+        saved_result(tmp_path)
+        window._menu_actions['open_result'].trigger()
+        selection = window._result_selection
+    monkeypatch.setattr(window, '_choose_file_path', lambda *args, **kwargs: str(tmp_path / 'bad.py'))
+    def fail(_path):
+        raise ValueError('invalid script')
+    monkeypatch.setattr(launcher, 'run_py_definition', fail)
+    window._menu_actions['open_python'].trigger()
+    assert window.stack.currentIndex() == (1 if existing_result else 0)
+    assert window.navigation.isTabEnabled(1) == existing_result
+    assert not window._observer.is_running()
+    assert window._menu_actions['open_python'].isEnabled()
+    if existing_result:
+        assert window._result_selection == selection
+        assert window._observer._run.folder == str(tmp_path)
+        assert window._observer._run.source.kind is RunSourceKind.CONTINUE
+        assert window._observer.btn_start.text() == tr('ui.observe_panel.continue')
+        assert window.result_context.folder == str(tmp_path)
     window.deleteLater()
     app.processEvents()
 
@@ -147,7 +245,8 @@ def test_stop_keeps_result_and_continue_button_resumes_it(monkeypatch, tmp_path,
 
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
-    window.navigation.setCurrentIndex(1)
+    window._ensure_observer()
+    window._show_analysis()
     observer = window._observer
     result = tmp_path / 'current_task_T1'
     scripts = result / 'scripts'
@@ -178,8 +277,10 @@ def test_stop_keeps_result_and_continue_button_resumes_it(monkeypatch, tmp_path,
     assert not observer.is_running()
     assert not observer._timer.isActive()
     assert not observer.btn_stop.isEnabled()
+    assert observer.btn_stop.isHidden()
+    assert not observer.btn_start.isHidden()
     assert observer.btn_start.isEnabled()
-    assert observer.btn_start.text() == tr('ui.observe_panel.1_continue')
+    assert observer.btn_start.text() == tr('ui.observe_panel.continue')
     assert observer._run.source == RunSource(
         RunSourceKind.CONTINUE, path=str(result), label=result.name
     )
@@ -228,6 +329,84 @@ def test_stop_keeps_result_and_continue_button_resumes_it(monkeypatch, tmp_path,
     app.processEvents()
 
 
+@pytest.mark.parametrize('missing', ['folder', 'history', 'restart_script'])
+def test_stop_keeps_continue_visible_when_no_restart_is_available(monkeypatch, tmp_path, missing):
+    from morphopt.ui import launcher
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    window._ensure_observer()
+    window._show_analysis()
+    observer = window._observer
+    observer._run.process = object()
+    if missing != 'folder':
+        observer._run.folder = str(tmp_path)
+        if missing == 'history':
+            scripts = tmp_path / 'scripts'
+            scripts.mkdir()
+            (scripts / 'MAIN_SCRIPT_FOR_RESTART.py').touch()
+        else:
+            log = tmp_path / 'log'
+            log.mkdir()
+            (log / 'history_record.csv').write_text('iteration,objective\n1,1.0\n')
+    monkeypatch.setattr(launcher, 'stop_job', lambda _process: None)
+    monkeypatch.setattr(observer, '_show_progress', lambda _progress: None)
+    monkeypatch.setattr(launcher, 'run_continue', lambda *args, **kwargs: pytest.fail('resumed without a saved restart'))
+    observer._update_buttons()
+    observer.btn_stop.click()
+    assert not observer.is_running()
+    assert observer.btn_stop.isHidden()
+    assert not observer.btn_start.isHidden()
+    assert not observer.btn_start.isEnabled()
+    assert observer.btn_start.text() == tr('ui.observe_panel.continue')
+    assert observer.btn_start.toolTip() == tr('ui.observe_panel.continue_unavailable_hint')
+    observer.btn_start.click()
+    window.show_definition()
+    window.navigation.setCurrentIndex(1)
+    assert not observer.btn_start.isHidden()
+    assert not observer.btn_start.isEnabled()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_result_path_updates_before_first_iteration_and_resets_for_a_new_task(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from morphopt.ui import launcher
+    from morphopt.ui.application.runs import RunProgress
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    window._ensure_observer()
+    window._show_analysis()
+    observer = window._observer
+    assert window.result_context.toolTip() == tr('ui.workspace.result_path_pending')
+    folder = tmp_path / 'new_result'
+    folder.mkdir()
+    observer._run.folder = str(folder)
+    observer._run.process = SimpleNamespace(stdout=None)
+    observer._show_progress(RunProgress(str(folder), 0, True))
+    assert window.result_context.folder == str(folder)
+    assert window.result_context.toolTip() == str(folder)
+    assert window._result_selection is None
+    monkeypatch.setattr(launcher, 'stop_job', lambda _process: None)
+    observer._update_buttons()
+    observer.btn_stop.click()
+    assert window.result_context.folder == str(folder)
+    assert window.result_context.toolTip() == str(folder)
+
+    monkeypatch.setattr(window, '_choose_file_path', lambda *args, **kwargs: str(tmp_path / 'another.py'))
+    monkeypatch.setattr(launcher, 'run_py_definition', lambda _path: (str(tmp_path), 'another', SimpleNamespace(stdout=None)))
+    window.open_python_optimization()
+    assert observer.is_running()
+    assert window.result_context.folder is None
+    assert window.result_context.toolTip() == tr('ui.workspace.result_path_pending')
+    observer._timer.stop()
+    observer._run.process = None
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_save_remembers_opened_and_saved_definition_path(monkeypatch, tmp_path):
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
@@ -251,7 +430,9 @@ def test_save_remembers_opened_and_saved_definition_path(monkeypatch, tmp_path):
 def test_fea_page_constructs_and_can_be_left_during_worker_start(monkeypatch):
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
-    window.navigation.setCurrentIndex(2)
+    window._ensure_observer()
+    window._show_analysis()
+    window._ensure_finite_element()
     page = window._finite_element
     assert page.loads.columnCount() == 4
     assert all(not page.loads.horizontalHeaderItem(column).text().startswith('ui.') for column in range(4))
@@ -262,5 +443,31 @@ def test_fea_page_constructs_and_can_be_left_during_worker_start(monkeypatch):
     window.navigation.setCurrentIndex(0)
     assert page.is_running()
     page.close_cleanup()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_natural_completion_keeps_the_result_available_for_continuation(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from morphopt.ui import mainwindow
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    folder = saved_result(tmp_path)
+    monkeypatch.setattr(mainwindow, 'choose_directory', lambda *args: folder)
+    window._menu_actions['open_result'].trigger()
+    observer = window._observer
+    observer._run.process = SimpleNamespace(poll=lambda: 0)
+    observer._run.mode = RunMode.CONTINUE
+    observer._run.source = None
+    observer._timer.start()
+    observer._poll_once()
+    assert not observer.is_running()
+    assert not observer._timer.isActive()
+    assert observer._run.source == RunSource(RunSourceKind.CONTINUE, path=folder, label=tmp_path.name)
+    assert observer.btn_start.isEnabled()
+    assert observer._run.last_iteration == 2
+    assert window._menu_actions['open_result'].isEnabled()
     window.deleteLater()
     app.processEvents()

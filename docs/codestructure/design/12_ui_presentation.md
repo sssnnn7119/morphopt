@@ -13,21 +13,23 @@ MainWindow
  │    ├── editor stack
  │    ├── PreviewViewer
  │    └── generated-code view
- └── ObserverPanel   [优化观察]
-      ├── ObserverControls
-      ├── MetricsPage
-      ├── UpdatableStructurePage
-      └── DeformationCasePage*
+ └── 优化过程 [有任务后开放]
+      ├── ObserverControls [迭代历史；后台优化和轮询持续运行]
+      │    └── ObserverPanel
+      │         ├── MetricsPage
+      │         ├── UpdatableStructurePage
+      │         └── DeformationCasePage*
+      └── FiniteElementPage [与观察共用结果目录和所选迭代]
 ```
 
 ## 窗口与主页面
 
 | 类 | 关键公开面 | 责任 |
 |---|---|---|
-| `MainWindow` | `current_problem`、`quickstart()`、`open_morph()`、`export_morph()`、`export_run_py()`、`set_problem()`、`goto_observer()`、`show_definition()` | 应用入口，切换定义与观察页面。 |
+| `MainWindow` | `current_problem`、`quickstart()`、`open_morph()`、`export_morph()`、`export_run_py()`、`set_problem()`、`start_optimization()`、`open_python_optimization()`、`open_optimization_result()`、`show_definition()` | 应用入口，编排定义及优化过程导航，并同步观察／有限元的目录与迭代。 |
 | `Workbench` | `problem`、`reload()`、`refresh_ui()`、`refresh_coordinator`、`set_problem()`、`set_message()` | 组合编辑页和刷新组件，准备同步后的模型上下文。 |
 | `ObserverPanel` | `ensure_loaded()`、`show_iteration()`、`reset()` | 在结果目录中切换迭代与结果视图。 |
-| `ObserverControls` | `set_definition()`、`is_running()` | 选择运行源、启动/继续/停止子进程、采集输出。 |
+| `ObserverControls` | `start_definition()`、`start_python()`、`open_result()`、`is_running()` | 消费定义页或文件菜单提供的运行源，启动/继续/停止子进程并采集输出。 |
 
 `MainWindow` 持有当前 `ProblemDefinition` 并将它传给 Workbench 或 Observer。窗口级语言切换经 `LanguageSelector` 广播到页面；`i18n.py` 查询独立 JSON 资源表并通知订阅者；语言控件和设置持久化位于 `widgets/language_selector.py`。
 

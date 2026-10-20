@@ -1,4 +1,4 @@
-"""Persistent definition, optimization and finite-element workspaces."""
+"""Definition and shared result-analysis workspaces with independent workers."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from PySide6.QtCore import QSettings
 from PySide6.QtGui import QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
+    QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
     QTabBar,
     QVBoxLayout,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ..constants import CONSTANT
 from .application import ProblemLibrary
+from .application.results import ResultSelection
 from .application_icon import application_icon
 from .i18n import SUPPORTED_LOCALES, localization, tr
 from .model.loaders import MORPH_SUFFIX
@@ -27,8 +30,9 @@ from .model.problem import ProblemDefinition
 from .observe_panel import ObserverControls
 from .schemes.base import scheme_label
 from .theme import theme_manager
-from .widgets.file_dialogs import confirm_overwrite, create_file_dialog
+from .widgets.file_dialogs import choose_directory, confirm_overwrite, create_file_dialog
 from .widgets.quickstart import QuickstartDialog
+from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
 
 
@@ -40,6 +44,10 @@ class MainWindow(QMainWindow):
         self._observer: ObserverControls | None = None
         self._finite_element = None
         self._document_path: Path | None = None
+        self._analysis_ready = False
+        self._result_selection: ResultSelection | None = None
+        self._has_analysis_model = False
+        self._syncing_selection = False
         self._unsubscribe_theme = theme_manager.subscribe(self._apply_theme)
         self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
 
@@ -50,9 +58,41 @@ class MainWindow(QMainWindow):
         self.navigation = QTabBar()
         self.navigation.setProperty("workspaceNavigation", True)
         self.navigation.setExpanding(False)
-        for key in ("definition", "observation", "finite_element"):
+        for key in ("definition", "results"):
             self.navigation.addTab(tr("ui.workspace." + key))
-        layout.addWidget(self.navigation)
+        self.navigation.setTabEnabled(1, False)
+        workspace_header = QHBoxLayout()
+        self._workspace_header = workspace_header
+        workspace_header.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        workspace_header.addWidget(self.navigation, 1)
+        self.start_button = QPushButton(tr("ui.workspace.start_optimization"))
+        self.start_button.setProperty("actionRole", "primary")
+        self.start_button.setProperty("buttonLayout", "prominent")
+        self.start_button.clicked.connect(lambda: self._workbench.start_optimization())
+        workspace_header.addWidget(self.start_button)
+        layout.addLayout(workspace_header)
+        self.analysis_header = QWidget()
+        header = QHBoxLayout(self.analysis_header)
+        header.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        self.analysis_navigation = QTabBar()
+        self.analysis_navigation.setProperty("analysisNavigation", True)
+        self.analysis_navigation.setExpanding(False)
+        for key in ("observation", "finite_element"):
+            self.analysis_navigation.addTab(tr("ui.workspace." + key))
+        self.analysis_navigation.setTabEnabled(1, False)
+        header.addWidget(self.analysis_navigation)
+        self.result_context = ResultPathLabel()
+        self.result_context.setProperty("textRole", "muted")
+        self.result_context.setProperty("toolbarContext", True)
+        self.result_context.setMinimumWidth(0)
+        self.result_context.pathCopied.connect(lambda: self.statusBar().showMessage(
+            tr("ui.workspace.result_path_copied"),
+            CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
+        ))
+        header.addWidget(self.result_context)
+        self._analysis_toolbar = header
+        self.analysis_header.hide()
+        workspace_header.insertWidget(1, self.analysis_header, 1)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(shell)
         self._build_menus()
@@ -66,7 +106,8 @@ class MainWindow(QMainWindow):
         self.set_problem(ProblemLibrary.create_blank())
         self.stack.addWidget(QWidget())
         self.stack.addWidget(QWidget())
-        self.navigation.currentChanged.connect(self._switch_page)
+        self.navigation.currentChanged.connect(self._switch_workspace)
+        self.analysis_navigation.currentChanged.connect(self._switch_analysis_page)
 
     # ------------------------------------------------------------------ api
     def current_problem(self) -> ProblemDefinition | None:
@@ -82,10 +123,11 @@ class MainWindow(QMainWindow):
             ("new", self.new_problem, QKeySequence.StandardKey.New),
             ("open", self.open_morph, QKeySequence.StandardKey.Open),
             ("quickstart", self.quickstart, None),
+            ("open_result", self.open_optimization_result, None),
+            ("open_python", self.open_python_optimization, None),
             ("save", self.save_morph, QKeySequence.StandardKey.Save),
             ("save_as", self.export_morph, QKeySequence.StandardKey.SaveAs),
             ("export_python", self.export_run_py, None),
-            ("export_fea", self.export_finite_element, None),
             ("exit", self.close, QKeySequence.StandardKey.Quit),
         ):
             action = self._file_menu.addAction("")
@@ -93,16 +135,16 @@ class MainWindow(QMainWindow):
             if shortcut is not None:
                 action.setShortcut(shortcut)
             self._menu_actions[key] = action
-            if key in {"quickstart", "save_as", "export_fea"}:
+            if key in {"quickstart", "open_python", "save_as", "export_python"}:
                 self._file_menu.addSeparator()
         self._language_menu = self._settings_menu.addMenu("")
         self._theme_menu = self._settings_menu.addMenu("")
-        self._send_definition_action = self._analysis_menu.addAction("")
-        self._send_definition_action.triggered.connect(
-            lambda: self._workbench.submit_to_observer()
+        self._start_optimization_action = self._analysis_menu.addAction("")
+        self._start_optimization_action.triggered.connect(
+            lambda: self._workbench.start_optimization()
         )
-        self._send_iteration_action = self._analysis_menu.addAction("")
-        self._send_iteration_action.triggered.connect(self.import_observer_iteration)
+        self._show_finite_element_action = self._analysis_menu.addAction("")
+        self._show_finite_element_action.triggered.connect(self.show_finite_element)
         self._refresh_menu_text()
 
     def _refresh_menu_text(self, *_args) -> None:
@@ -111,8 +153,9 @@ class MainWindow(QMainWindow):
         self._analysis_menu.setTitle(tr("ui.workspace.analysis"))
         for key, action in self._menu_actions.items():
             action.setText(tr("ui.workspace." + key))
-        self._send_definition_action.setText(tr("ui.workspace.import_definition"))
-        self._send_iteration_action.setText(tr("ui.workspace.analyze_iteration"))
+        self._start_optimization_action.setText(tr("ui.workspace.start_optimization"))
+        self.start_button.setText(tr("ui.workspace.start_optimization"))
+        self._show_finite_element_action.setText(tr("ui.workspace.analyze_iteration"))
         self._language_menu.setTitle(tr("ui.workspace.language"))
         self._theme_menu.setTitle(tr("ui.workspace.theme"))
         self._language_menu.clear()
@@ -146,13 +189,46 @@ class MainWindow(QMainWindow):
         QSettings("MorphOptUI", "ui").setValue("language", code)
         localization.set_locale(code)
 
-    def _switch_page(self, index: int) -> None:
-        if index == 1:
-            self._ensure_observer()
-        elif index == 2:
-            self._ensure_finite_element()
-        self.stack.setCurrentIndex(index)
+    def _switch_workspace(self, index: int) -> None:
+        if index == 1 and not self._analysis_ready:
+            self.navigation.setCurrentIndex(0)
+            return
+        self.analysis_header.setVisible(index == 1)
+        self.start_button.setVisible(index == 0)
+        self._workspace_header.setStretchFactor(self.navigation, 1 if index == 0 else 0)
+        if index == 0:
+            self.stack.setCurrentIndex(0)
+        else:
+            self._switch_analysis_page(self.analysis_navigation.currentIndex())
         self._set_titles()
+
+    def _switch_analysis_page(self, index: int) -> None:
+        if not self._analysis_ready or self.navigation.currentIndex() != 1:
+            return
+        if index == 1:
+            if not self._has_analysis_model or self._result_selection is None:
+                self.analysis_navigation.setCurrentIndex(0)
+                return
+            selection = self._result_selection
+            self._observer.panel.select_iteration(selection.iteration)
+            self._ensure_finite_element()
+            self._finite_element.synchronize_result(selection.folder, selection.iteration)
+        self.stack.setCurrentIndex(index + 1)
+        self._set_titles()
+
+    def _show_analysis(self, *, finite_element: bool = False) -> None:
+        self._analysis_ready = True
+        self.navigation.setTabEnabled(1, True)
+        # Block intermediate switches so a previous finite-element selection
+        # cannot import stale data while a new task is being opened.
+        self.analysis_navigation.blockSignals(True)
+        self.analysis_navigation.setCurrentIndex(1 if finite_element else 0)
+        self.analysis_navigation.blockSignals(False)
+        if self.navigation.currentIndex() == 1:
+            self._switch_workspace(1)
+        else:
+            self.navigation.setCurrentIndex(1)
+        self._update_analysis_actions()
 
     def _apply_theme(self, _theme: str | None = None) -> None:
         """Refresh theme-aware drawing without replacing either page."""
@@ -175,8 +251,11 @@ class MainWindow(QMainWindow):
             self._workbench.apply_language()
         if self._finite_element is not None:
             self._finite_element.apply_language()
-        for index, key in enumerate(("definition", "observation", "finite_element")):
+        for index, key in enumerate(("definition", "results")):
             self.navigation.setTabText(index, tr("ui.workspace." + key))
+        for index, key in enumerate(("observation", "finite_element")):
+            self.analysis_navigation.setTabText(index, tr("ui.workspace." + key))
+        self._update_result_context()
         self._refresh_menu_text()
         self._set_titles()
         self.statusBar().showMessage(
@@ -193,6 +272,8 @@ class MainWindow(QMainWindow):
             if self._document_path
             else tr("ui.workspace.untitled")
         )
+        if self.stack.currentIndex() > 0 and self._observer is not None:
+            name = self._observer.task_label or name
         self.setWindowTitle(f"MorphOpt — {tr('ui.workspace.' + page)} · {name}[*]")
         if self._workbench is not None:
             self.setWindowModified(self._workbench.session.history.is_modified)
@@ -370,48 +451,80 @@ class MainWindow(QMainWindow):
             self._workbench.set_problem(problem)
         self.stack.setCurrentWidget(self._workbench)
         self.navigation.setCurrentIndex(0)
+        self.analysis_header.hide()
         self._set_titles()
+        self._update_analysis_actions()
 
     def _build_workbench(self, problem: ProblemDefinition) -> None:
         wb = Workbench(problem)
         wb.notify.connect(self.statusBar().showMessage)
         wb.notify.connect(lambda _text: self._set_titles())
-        wb.importToObserver.connect(self.goto_observer)
+        wb.startOptimizationRequested.connect(self.start_optimization)
         self._workbench = wb
 
-    # ------------------------------------------------ definition <-> observer
-    def goto_observer(self, problem: ProblemDefinition | None = None) -> None:
-        """Import the current definition and show the prepared optimization task."""
-        problem = problem or self.current_problem()
-        if problem is None:
+    # ------------------------------------------------ analysis workspace
+    def _can_replace_task(self) -> bool:
+        if ((self._observer is not None and self._observer.is_running())
+                or (self._finite_element is not None and self._finite_element.is_running())):
+            self.statusBar().showMessage(tr("ui.workspace.task_busy"))
+            return False
+        return True
+
+    def start_optimization(self, problem: ProblemDefinition) -> None:
+        """Start the validated definition and enter the live analysis workspace."""
+        if not self._can_replace_task():
             return
         self._ensure_observer()
-        self._observer.import_definition(problem)
-        self.navigation.setCurrentIndex(1)
-        self._switch_page(1)
-        self.statusBar().showMessage(
-            tr(
-                "ui.workspace.definition_staged"
-                if self._observer.is_running()
-                else "ui.workspace.definition_imported",
-                label=problem.label,
-            ),
-            CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
+        if self._observer.start_definition(problem):
+            self._begin_analysis_task()
+            self._show_analysis()
+
+    def open_python_optimization(self) -> None:
+        if not self._can_replace_task():
+            return
+        path = self._choose_file_path(tr("ui.workspace.open_python"), ".py", save=False)
+        if not path:
+            return
+        self._ensure_observer()
+        if self._observer.start_python(path):
+            self._begin_analysis_task()
+            self._show_analysis()
+
+    def open_optimization_result(self) -> None:
+        if not self._can_replace_task():
+            return
+        folder = choose_directory(
+            self, tr("ui.workspace.open_result"), os.getcwd(),
         )
+        if not folder:
+            return
+        if not ObserverControls.is_result_folder(folder):
+            QMessageBox.warning(
+                self, tr("ui.observe_panel.invalid_result"),
+                tr("ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"),
+            )
+            return
+        self._ensure_observer()
+        self._begin_analysis_task()
+        self._observer.open_result(folder)
+        self._show_analysis()
+
+    def _begin_analysis_task(self) -> None:
+        self._result_selection = None
+        self.result_context.set_folder(None)
+        self._has_analysis_model = False
+        self.analysis_navigation.setTabEnabled(1, False)
+        self._update_result_context()
 
     def _ensure_observer(self) -> None:
-        """Create and connect the observer page once."""
+        """Create the live task view once; navigation never stops its timer."""
         if self._observer is not None:
             return
         self._observer = ObserverControls()
-        self._observer.backRequested.connect(self.show_definition)
-        self._observer.importDefinitionRequested.connect(
-            lambda: self._workbench.submit_to_observer()
-        )
-        self._observer.finiteElementRequested.connect(
-            self.open_finite_element_iteration
-        )
-        self._observer.set_definition(self.current_problem())
+        self._observer.resultFolderChanged.connect(self._set_result_folder)
+        self._analysis_toolbar.addWidget(self._observer.task_controls, 1)
+        self._observer.runStateChanged.connect(self._update_analysis_actions)
+        self._observer.panel.selectionChanged.connect(self._select_result)
         self._replace_page(1, self._observer)
 
     def _replace_page(self, index: int, page: QWidget) -> None:
@@ -426,37 +539,73 @@ class MainWindow(QMainWindow):
         from .widgets.finite_element import FiniteElementPage
 
         self._finite_element = FiniteElementPage()
-        self._finite_element.importObserverRequested.connect(
-            self.import_observer_iteration
-        )
+        self._finite_element.selectionChanged.connect(self._select_result)
+        self._finite_element.busyChanged.connect(self._finite_element_busy_changed)
         self._replace_page(2, self._finite_element)
 
-    def import_observer_iteration(self) -> None:
-        if self._observer is None or not self._observer.panel.path_result:
-            QMessageBox.information(
-                self, tr("ui.workspace.finite_element"), tr("ui.fea.no_observer_result")
-            )
+    def _select_result(self, folder: str, iteration: int) -> None:
+        """Share a single folder/iteration selection between both result views."""
+        if self._syncing_selection:
             return
-        self.open_finite_element_iteration(
-            self._observer.panel.path_result, self._observer.panel.slider.value()
-        )
+        from .application.finite_element import IterationModel
 
-    def open_finite_element_iteration(self, folder: str, iteration: int) -> None:
-        self._ensure_finite_element()
-        self.navigation.setCurrentIndex(2)
-        self._switch_page(2)
-        self._finite_element.import_iteration(folder, iteration)
+        self._syncing_selection = True
+        try:
+            self._result_selection = ResultSelection(folder, iteration)
+            if self.sender() is self._finite_element:
+                self._observer.panel.select_iteration(iteration)
+            self._has_analysis_model = IterationModel(folder, iteration).model_path.is_file()
+            self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
+            if self.stack.currentIndex() == 2 and self._finite_element is not None:
+                self._finite_element.synchronize_result(folder, iteration)
+            self._update_result_context()
+            self._update_analysis_actions()
+        finally:
+            self._syncing_selection = False
 
-    def export_finite_element(self) -> None:
-        self._ensure_finite_element()
-        self.navigation.setCurrentIndex(2)
-        self._switch_page(2)
-        self._finite_element.export_results()
+    def _set_result_folder(self, folder: str) -> None:
+        self.result_context.set_folder(folder)
+        self._update_result_context()
+
+    def _update_result_context(self) -> None:
+        if self._result_selection is None:
+            if self.result_context.folder:
+                text = Path(self.result_context.folder).name
+            elif self._observer is not None:
+                text = self._observer.task_label
+            else:
+                text = ""
+            self.result_context.setText(text)
+        else:
+            selection = self._result_selection
+            self.result_context.set_folder(selection.folder)
+            self.result_context.setText(tr(
+                "ui.workspace.result_context", name=Path(selection.folder).name,
+                iteration=selection.iteration,
+            ))
+        self._set_titles()
+
+    def _update_analysis_actions(self) -> None:
+        busy = ((self._observer is not None and self._observer.is_running())
+                or (self._finite_element is not None and self._finite_element.is_running()))
+        for key in ("open_result", "open_python"):
+            self._menu_actions[key].setEnabled(not busy)
+        self._start_optimization_action.setEnabled(not busy)
+        self.start_button.setEnabled(not busy)
+        self._show_finite_element_action.setEnabled(self._has_analysis_model)
+
+    def _finite_element_busy_changed(self, busy: bool) -> None:
+        if self._observer is not None:
+            self._observer.panel.lock_selection(busy)
+        self._update_analysis_actions()
+
+    def show_finite_element(self) -> None:
+        if self._has_analysis_model:
+            self._show_analysis(finite_element=True)
 
     def show_definition(self) -> None:
-        if self._workbench is not None:
-            self.navigation.setCurrentIndex(0)
-            self._switch_page(0)
+        self.navigation.setCurrentIndex(0)
+        self._switch_workspace(0)
 
     def closeEvent(self, event):
         running = (self._observer is not None and self._observer.is_running()) or (

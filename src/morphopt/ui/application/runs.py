@@ -150,11 +150,16 @@ class OptimizationRunSession:
 
     def start_definition(self, problem: ProblemDefinition) -> subprocess.Popen:
         self._ensure_idle()
-        self._save_definition = True
-        self._running_definition = ProblemDefinition.from_dict(problem.to_dict())
-        self._saved_folders.clear()
+        definition = ProblemDefinition.from_dict(problem.to_dict())
+        running_definition = ProblemDefinition.from_dict(definition.to_dict())
         started_at = time.time()
-        _job, process = launcher.run_job(self._running_definition)
+        _job, process = launcher.run_job(running_definition)
+        self._save_definition = True
+        self.definition = definition
+        self._running_definition = running_definition
+        self._saved_folders.clear()
+        self.source = None
+        self.last_iteration = 0
         self.process = process
         self.mode = RunMode.FRESH
         self.folder = None
@@ -165,10 +170,12 @@ class OptimizationRunSession:
 
     def start_python(self, path: str) -> subprocess.Popen:
         self._ensure_idle()
-        self._save_definition = False
-        self._running_definition = None
         started_at = time.time()
         root, label, process = launcher.run_py_definition(path)
+        self._save_definition = False
+        self._running_definition = None
+        self.source = None
+        self.last_iteration = 0
         self.process = process
         self.mode = RunMode.FRESH
         self.folder = None
@@ -183,8 +190,6 @@ class OptimizationRunSession:
         target_iteration: int | None,
     ) -> subprocess.Popen:
         self._ensure_idle()
-        self._save_definition = False
-        self._running_definition = None
         scripts = Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py"
         device, restart_per_iteration = launcher.parse_run_options(str(scripts))
         process = launcher.run_continue(
@@ -193,6 +198,8 @@ class OptimizationRunSession:
             device=device,
             restart_per_iteration=restart_per_iteration,
         )
+        self._save_definition = False
+        self._running_definition = None
         self.process = process
         self.mode = RunMode.CONTINUE
         self.folder = str(Path(folder).resolve())

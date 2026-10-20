@@ -135,11 +135,11 @@ class LoadPreviewVisitor:
             scene.items.append(
                 MessageItem(
                     tr("ui.visualization.load.error", name=component.name, error=exc),
-                    dict(
-                        position="upper_left",
-                        color=theme_manager.palette.viewer.render.marker_color_annotation_error,
-                        font_size=theme_manager.palette.viewer.render.label_font_size,
-                    ),
+                    {
+                        "position": "upper_left",
+                        "color": theme_manager.palette.viewer.render.marker_color_annotation_error,
+                        "font_size": theme_manager.palette.viewer.render.label_font_size,
+                    },
                 )
             )
 
@@ -171,19 +171,19 @@ class LoadPreviewVisitor:
         scene.items.append(
             MeshItem(
                 mesh,
-                dict(
-                    color=theme_manager.palette.viewer.loads.pressure_surface_color,
-                    opacity=theme_manager.palette.viewer.loads.pressure_opacity,
-                    show_edges=False,
-                    smooth_shading=True,
-                    ambient=theme_manager.palette.viewer.loads.pressure_ambient,
-                    diffuse=theme_manager.palette.viewer.loads.pressure_diffuse,
-                    specular=theme_manager.palette.viewer.loads.pressure_specular,
-                    preview_offset=(
+                {
+                    "color": theme_manager.palette.viewer.loads.pressure_surface_color,
+                    "opacity": theme_manager.palette.viewer.loads.pressure_opacity,
+                    "show_edges": False,
+                    "smooth_shading": True,
+                    "ambient": theme_manager.palette.viewer.loads.pressure_ambient,
+                    "diffuse": theme_manager.palette.viewer.loads.pressure_diffuse,
+                    "specular": theme_manager.palette.viewer.loads.pressure_specular,
+                    "preview_offset": (
                         geometry.scene.diagonal
                         * theme_manager.palette.viewer.loads.pressure_preview_offset_ratio
                     ),
-                ),
+                },
             )
         )
         surface = (
@@ -402,16 +402,16 @@ class LoadPreviewVisitor:
             scene.items.append(
                 MeshItem(
                     mesh,
-                    dict(
-                        color=theme_manager.palette.viewer.loads.boundary_color,
-                        opacity=theme_manager.palette.viewer.loads.boundary_opacity,
-                        show_edges=False,
-                        lighting=False,
-                        preview_offset=(
+                    {
+                        "color": theme_manager.palette.viewer.loads.boundary_color,
+                        "opacity": theme_manager.palette.viewer.loads.boundary_opacity,
+                        "show_edges": False,
+                        "lighting": False,
+                        "preview_offset": (
                             geometry.scene.diagonal
                             * theme_manager.palette.viewer.loads.boundary_preview_offset_ratio
                         ),
-                    ),
+                    },
                 )
             )
             outline = mesh.extract_feature_edges(
@@ -427,10 +427,10 @@ class LoadPreviewVisitor:
                             radius=geometry.scene.glyph_scale
                             * theme_manager.palette.viewer.loads.boundary_outline_width_ratio
                         ),
-                        dict(
-                            color=theme_manager.palette.viewer.loads.boundary_outline_color,
-                            lighting=False,
-                        ),
+                        {
+                            "color": theme_manager.palette.viewer.loads.boundary_outline_color,
+                            "lighting": False,
+                        },
                     )
                 )
         center = geometry.node_set_center(component.instance_name or "", name)

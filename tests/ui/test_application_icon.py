@@ -77,10 +77,12 @@ for size in (16, 32, 48, 256, 512, 1024):
     assert image.pixelColor(0, 0).alpha() == 0
 print(json.dumps({"identity_before_qt": True, "svg_rendered": True}))
 '''
-    environment = dict(
-        os.environ, QT_QPA_PLATFORM="offscreen", MORPHOPT_TEST_HRESULT=str(hresult),
-        XDG_DATA_HOME=str(tmp_path / "data"),
-    )
+    environment = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "MORPHOPT_TEST_HRESULT": str(hresult),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+    }
     environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "src")
     completed = subprocess.run(
         [sys.executable, "-c", code], env=environment, capture_output=True,
@@ -110,7 +112,11 @@ for window in (QMainWindow(), QDialog()):
     assert image.pixelColor(0, 0).alpha() == 0
 print(json.dumps({"svg_inherited": True}))
 '''
-    environment = dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_DATA_HOME=str(tmp_path / "data"))
+    environment = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+    }
     environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "src")
     completed = subprocess.run(
         [sys.executable, "-c", code], env=environment, capture_output=True,

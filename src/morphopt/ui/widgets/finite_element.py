@@ -10,22 +10,26 @@ import sys
 import numpy as np
 from PySide6.QtCore import QProcess, Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHeaderView,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
+    QAbstractItemView, QCheckBox, QComboBox, QGroupBox, QHeaderView,
+    QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ...postprocess import EXPORTERS, RESULT_FIELDS, ResultLocation, available_fields
+from ...postprocess.native import normalize_export_name
 from ..application.finite_element import FiniteElementResult, FiniteElementSession, IterationModel
 from ..application.results import _cpu_torch_defaults
+from ..application.result_fields import DISPLAY_FIELDS, ResultContours
 from ..i18n import tr
 from ..theme import theme_manager
 from .observation_pages import PlotViewport
-from .file_dialogs import choose_save_file
+from .file_dialogs import choose_directory, choose_save_file
+from .plot_style import add_orientation_axes
 
 
 class FiniteElementPage(QWidget):
-    importObserverRequested = Signal()
+    selectionChanged = Signal(str, int)
+    busyChanged = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,6 +40,8 @@ class FiniteElementPage(QWidget):
         self._cancelled = False
         self._render_pending = False
         self._loading = False
+        self._folder = ''
+        self._contours = None
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_output)
@@ -46,15 +52,6 @@ class FiniteElementPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self._texts = []
         row = QHBoxLayout()
-        self.import_observer = self._button('ui.fea.import_observer', self.importObserverRequested.emit)
-        self.open_folder = self._button('ui.fea.open_folder', self._choose_folder)
-        row.addWidget(self.import_observer)
-        row.addWidget(self.open_folder)
-        self.folder = QLineEdit()
-        self.folder.setReadOnly(True)
-        row.addWidget(self.folder, 1)
-        layout.addLayout(row)
-        row = QHBoxLayout()
         row.addWidget(self._label('ui.fea.iteration'))
         self.iterations = QComboBox()
         self.iterations.currentIndexChanged.connect(self._iteration_changed)
@@ -64,8 +61,6 @@ class FiniteElementPage(QWidget):
         self.cases.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.cases.currentIndexChanged.connect(self._load_selected)
         row.addWidget(self.cases)
-        self.import_selected = self._button('ui.fea.import_model', self._load_selected)
-        row.addWidget(self.import_selected)
         row.addStretch(1)
         self.status = QLabel()
         self.status.setProperty('textRole', 'muted')
@@ -132,6 +127,8 @@ class FiniteElementPage(QWidget):
         hint.setWordWrap(True)
         hint.setProperty('textRole', 'muted')
         export_layout.addWidget(hint)
+        self.native_export_button = self._button('ui.fea.export_native', self.export_native_results)
+        export_layout.addWidget(self.native_export_button)
         col.addWidget(self.exports_group)
 
         self.output = QPlainTextEdit()
@@ -146,10 +143,11 @@ class FiniteElementPage(QWidget):
         row = QHBoxLayout()
         row.addWidget(self._label('ui.fea.display'))
         self.display_field = QComboBox()
-        for key in ('U', 'U1', 'U2', 'U3'):
-            self.display_field.addItem(key, key)
         self.display_field.currentIndexChanged.connect(self._render)
         row.addWidget(self.display_field)
+        self.contour_hint = self._label('ui.fea.contour_averaged')
+        self.contour_hint.setProperty('textRole', 'muted')
+        row.addWidget(self.contour_hint)
         self.deformed = QCheckBox()
         self._texts.append((self.deformed, 'ui.fea.deformed'))
         self.deformed.setChecked(True)
@@ -179,14 +177,19 @@ class FiniteElementPage(QWidget):
     def is_running(self) -> bool:
         return self._process.state() != QProcess.ProcessState.NotRunning
 
-    def _choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, tr('ui.fea.open_folder'), self.folder.text())
-        if folder:
-            self._set_folder(folder)
-            self._load_selected()
+    def synchronize_result(self, folder: str, iteration: int) -> None:
+        """Follow the analysis selection without discarding edits to the same model."""
+        if self.is_running():
+            return
+        source = self.session.source
+        if (source is not None and Path(source.folder) == Path(folder)
+                and source.iteration == iteration):
+            self._set_folder(folder, iteration)
+        else:
+            self.import_iteration(folder, iteration)
 
     def _set_folder(self, folder: str, iteration: int | None = None) -> None:
-        self.folder.setText(str(Path(folder).resolve()))
+        self._folder = str(Path(folder).resolve())
         self.iterations.blockSignals(True)
         self.iterations.clear()
         for value in IterationModel.iterations(folder):
@@ -200,6 +203,8 @@ class FiniteElementPage(QWidget):
     def _iteration_changed(self, *_args) -> None:
         self._update_cases()
         self._load_selected()
+        if self._has_selected_model():
+            self.selectionChanged.emit(self._folder, self.iterations.currentData())
 
     def _update_cases(self, selected: FiniteElementResult | None = None) -> None:
         selected = selected or self.cases.currentData()
@@ -208,7 +213,7 @@ class FiniteElementPage(QWidget):
         try:
             self.cases.clear()
             if iteration is not None:
-                for entry in self.session.result_options(self.folder.text(), iteration):
+                for entry in self.session.result_options(self._folder, iteration):
                     if entry.is_original:
                         label = (tr('ui.fea.original_case', case=entry.source.case)
                                  if entry.source.case is not None else tr('ui.fea.model_loads'))
@@ -249,6 +254,9 @@ class FiniteElementPage(QWidget):
         try:
             self.session.select_result(entry)
         except Exception as exc:
+            if self.session.source is not None:
+                source = self.session.source
+                self._set_folder(source.folder, source.iteration)
             self.cases.blockSignals(True)
             self.cases.setCurrentIndex(self._result_index(self.session.selected_result))
             self.cases.blockSignals(False)
@@ -332,6 +340,8 @@ class FiniteElementPage(QWidget):
                 self._populate_loads()
                 self._set_status('solved')
                 self._render()
+            elif self._job == 'export_native':
+                self._set_status('native_exported')
             else:
                 self._set_status('exported')
         except Exception as exc:
@@ -352,15 +362,50 @@ class FiniteElementPage(QWidget):
     def _update_buttons(self) -> None:
         busy = self.is_running()
         has_model = self._has_selected_model()
-        for widget in (self.import_observer, self.open_folder, self.iterations, self.cases, self.import_selected):
+        for widget in (self.iterations, self.cases):
             widget.setEnabled(not busy)
-        self.import_selected.setEnabled(not busy and self.iterations.currentIndex() >= 0)
         self.loads.setEnabled(not busy and has_model)
         self.solve.setEnabled(not busy and has_model)
         self.stop.setEnabled(busy)
         self.export_button.setEnabled(not busy and has_model and self.session.result is not None)
         self.export_location.setEnabled(not busy)
+        self.native_export_button.setEnabled(not busy and has_model)
         self._update_export_fields()
+        self._update_display_fields()
+        self.busyChanged.emit(busy)
+
+    def _update_display_fields(self) -> None:
+        controller, result = self.session.controller, self.session.result
+        if controller is None or result is None:
+            self._contours = None
+        elif (self._contours is None or self._contours.controller is not controller
+              or self._contours.result is not result):
+            self._contours = ResultContours(controller, result)
+        fields = self._contours.fields if self._contours is not None else DISPLAY_FIELDS
+        selected = self.display_field.currentData()
+        items = tuple((tr(field.label_key, component=field.key), field.key) for field in fields)
+        current = tuple((self.display_field.itemText(index), self.display_field.itemData(index))
+                        for index in range(self.display_field.count()))
+        if current != items:
+            self.display_field.blockSignals(True)
+            try:
+                self.display_field.clear()
+                for field, (label, key) in zip(fields, items, strict=True):
+                    self.display_field.addItem(label, key)
+                    hint = 'ui.fea.contour_nodal_hint' if field.source == 'displacement' else 'ui.fea.contour_average_hint'
+                    self.display_field.setItemData(self.display_field.count() - 1, tr(hint),
+                                                   Qt.ItemDataRole.ToolTipRole)
+                index = self.display_field.findData(selected)
+                self.display_field.setCurrentIndex(max(index, 0))
+            finally:
+                self.display_field.blockSignals(False)
+        self.display_field.setEnabled(self._contours is not None)
+        field = next(item for item in fields if item.key == self.display_field.currentData())
+        projected = self._contours is not None and field.source != 'displacement'
+        hint = tr('ui.fea.contour_average_hint' if projected else 'ui.fea.contour_nodal_hint')
+        self.display_field.setToolTip(hint)
+        self.contour_hint.setToolTip(hint)
+        self.contour_hint.setVisible(projected)
 
     def _update_export_fields(self, *_args) -> None:
         location = ResultLocation(self.export_location.currentData())
@@ -399,7 +444,7 @@ class FiniteElementPage(QWidget):
             QMessageBox.information(self, tr('ui.fea.export'), tr('ui.fea.choose_fields'))
             return
         name = f'fea_iter_{self.session.source.iteration}_{self.session.selected_result.key}_{location.value}'
-        selection = choose_save_file(self, tr('ui.fea.export'), self.folder.text(), name,
+        selection = choose_save_file(self, tr('ui.fea.export'), self._folder, name,
             {key: tr(exporter.label_key) for key, exporter in EXPORTERS.items()})
         if selection is None:
             return
@@ -411,8 +456,33 @@ class FiniteElementPage(QWidget):
             return
         self._start_worker('export', request)
 
+    def export_native_results(self) -> None:
+        if self.is_running() or not self._has_selected_model():
+            return
+        name, accepted = QInputDialog.getText(
+            self, tr('ui.fea.export_native'), tr('ui.fea.export_native_name'),
+            text=f'iteration_{self.session.source.iteration}',
+        )
+        if not accepted:
+            return
+        try:
+            name = normalize_export_name(name)
+        except ValueError:
+            QMessageBox.warning(self, tr('ui.fea.export_native'), tr('ui.fea.invalid_export_name'))
+            return
+        directory = choose_directory(self, tr('ui.fea.export_native'), self._folder)
+        if not directory:
+            return
+        try:
+            request = self.session.native_export_request(directory, name)
+        except Exception as exc:
+            QMessageBox.warning(self, tr('ui.fea.export_native'), str(exc))
+            return
+        self._start_worker('export_native', request)
+
     def _render(self, *_args) -> None:
         self._render_pending = True
+        self._update_display_fields()
         if not self.isVisible() or self.session.controller is None:
             return
         try:
@@ -420,20 +490,18 @@ class FiniteElementPage(QWidget):
                 controller, result = self.session.controller, self.session.result
                 gc = result.GC if result is not None and self.deformed.isChecked() else None
                 meshes = controller.assembly.get_meshes(GC=gc)
-                coordinates = controller.GC2RGC(result.GC) if result is not None else None
                 field = self.display_field.currentData()
                 render_style = theme_manager.palette.viewer.render
                 values_by_instance = {}
-                if coordinates is not None:
-                    for name, instance in controller.assembly._instances.items():
-                        if instance.enabled is False:
-                            continue
-                        values = coordinates[instance._RGC_index].detach().cpu().numpy().reshape(-1, 3)
-                        values_by_instance[name] = np.linalg.norm(values, axis=1) if field == 'U' else values[:, int(field[1]) - 1]
+                if self._contours is not None:
+                    descriptor = next(item for item in self._contours.fields if item.key == field)
+                    values_by_instance = self._contours.values(descriptor)
                 scalar_range = None
-                if values_by_instance:
-                    lower = min(float(values.min()) for values in values_by_instance.values())
-                    upper = max(float(values.max()) for values in values_by_instance.values())
+                finite_values = [values[np.isfinite(values)] for values in values_by_instance.values()
+                                 if np.isfinite(values).any()]
+                if finite_values:
+                    lower = min(float(values.min()) for values in finite_values)
+                    upper = max(float(values.max()) for values in finite_values)
                     scalar_range = (lower, upper if upper > lower else lower + render_style.minimum_scalar_span)
                 def build(plotter):
                     scalar_bar_added = False
@@ -446,14 +514,16 @@ class FiniteElementPage(QWidget):
                                   'specular': render_style.mesh_specular, 'specular_power': render_style.mesh_specular_power}
                         if name in values_by_instance:
                             scalar = values_by_instance[name]
-                            if len(scalar) == mesh.n_points:
+                            if len(scalar) == mesh.n_points and np.isfinite(scalar).any():
                                 mesh.point_data[field] = scalar
                                 kwargs.pop('color')
                                 kwargs.update(scalars=field, cmap=render_style.result_colormap, clim=scalar_range,
+                                    nan_color=theme_manager.palette.muted_text,
                                     show_scalar_bar=not scalar_bar_added,
                                     scalar_bar_args={'title': field, 'color': theme_manager.palette.text})
                                 scalar_bar_added = True
                         plotter.add_mesh(mesh, **kwargs)
+                    add_orientation_axes(plotter)
                 self.viewport.rebuild(build)
             self._render_pending = False
         except Exception as exc:
@@ -474,10 +544,12 @@ class FiniteElementPage(QWidget):
                 widget.setTitle(tr(key))
             else:
                 widget.setText(tr(key))
+        self.native_export_button.setToolTip(tr('ui.fea.export_native_hint'))
         self.loads.setHorizontalHeaderLabels([tr('ui.fea.' + key) for key in ('name', 'type', 'target', 'values')])
         for index, location in enumerate(ResultLocation):
             self.export_location.setItemText(index, tr('ui.fea.location_' + location.value))
         self._update_export_fields()
+        self._update_display_fields()
         self._update_cases()
         if self._status_key:
             self._set_status(self._status_key, **self._status_values)
