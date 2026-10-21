@@ -209,6 +209,8 @@ class ViewerGeometryStyle:
     material_region_fill_opacity: float = 0.03
     material_region_opacity: float = 0.6
     boundary_shell_opacity: float = 0.28
+    picked_face_color: str = "#ffb347"
+    pick_drag_distance: int = 5
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,6 @@ import os
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,6 +21,7 @@ from ..application.devices import detect_devices
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
 from ..refresh import RefreshContext
+from .file_dialogs import choose_directory
 
 
 class ControllerSettingsEditor(QWidget):
@@ -129,7 +129,7 @@ class ControllerSettingsEditor(QWidget):
 
     def _browse_path(self) -> None:
         start = self.path.text() or os.getcwd()
-        folder = QFileDialog.getExistingDirectory(
+        folder = choose_directory(
             self, tr("ui.workbench.select_output_folder"), start
         )
         if folder:

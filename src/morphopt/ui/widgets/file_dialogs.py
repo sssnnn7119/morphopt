@@ -1,4 +1,4 @@
-"""Shared Qt file-dialog appearance and explicit, localized save-file choices."""
+"""Shared file and directory selectors with localized labels and navigation icons."""
 
 from __future__ import annotations
 
@@ -116,12 +116,24 @@ def create_file_dialog(parent: QWidget, title: str, directory: str, *, save: boo
         (QFileDialog.DialogLabel.Reject, 'cancel'),
     ):
         dialog.setLabelText(label, tr('ui.files.' + key))
-    QTimer.singleShot(0, lambda: set_file_dialog_icons(dialog))
+    set_file_dialog_icons(dialog)
+    QTimer.singleShot(0, dialog, lambda: set_file_dialog_icons(dialog))
     return dialog
 
 
+def choose_open_file(parent: QWidget, title: str, directory: str,
+                     name_filter: str) -> str:
+    """Choose one existing file with the shared appearance and file filters."""
+    dialog = create_file_dialog(parent, title, directory, save=False)
+    dialog.setNameFilter(name_filter)
+    if dialog.exec() != QFileDialog.DialogCode.Accepted:
+        return ''
+    selected = dialog.selectedFiles()
+    return selected[0] if selected else ''
+
+
 def choose_directory(parent: QWidget, title: str, directory: str) -> str:
-    """Use the shared icons, labels and theme when opening a result folder."""
+    """Choose a directory with the shared icons, labels and theme."""
     dialog = create_file_dialog(parent, title, directory, save=False)
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)

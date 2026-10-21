@@ -8,7 +8,7 @@ from ..theme import theme_manager
 from ..i18n import localized_message
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QComboBox, QDialog, QDialogButtonBox, QFormLayout,
     QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
 )
 from ..i18n import tr
@@ -37,6 +37,7 @@ from ..model.registry import (
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..presentation.navigation import CustomClassesTreeNode, HelperGroupTreeNode, UpdaterItemTreeNode, UpdaterTreeNode
 from ..presentation.labels import node_type_title, typed_title, node_title
+from .file_dialogs import choose_open_file
 
 
 class DefinitionActions(QObject):
@@ -417,7 +418,7 @@ class DefinitionActions(QObject):
                 return
             overrides = {"input_id": input_id}
         elif operation_type == "StepImport":
-            path, _ = QFileDialog.getOpenFileName(
+            path = choose_open_file(
                 self.parent(),
                 tr('ui.widgets.model_tree.select_step_file'),
                 "",

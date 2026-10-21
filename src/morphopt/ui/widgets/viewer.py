@@ -1,8 +1,10 @@
 """Qt controls for Part/Assembly preview; geometry and rendering are delegated."""
 from __future__ import annotations
 
-from PySide6.QtCore import QSignalBlocker, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt, Signal
+from PySide6.QtWidgets import (
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
+)
 from pyvistaqt import QtInteractor
 from ..theme import theme_manager
 from ..i18n import tr
@@ -11,7 +13,7 @@ from ..presentation.labels import part_title_text
 from ..model.problem import PartNode, ProblemDefinition
 from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
-from ..visualization.scene import LoadScene
+from ..visualization.scene import FaceSelection, LoadScene
 from .preview_renderer import PreviewRenderer
 from .plot_style import apply_plotter_theme
 
@@ -23,6 +25,53 @@ class _PlotHost(QWidget):
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.plotter = QtInteractor(self)
         lay.addWidget(self.plotter.interactor)
+
+
+def _qt_to_vtk_position(x: float, y: float, widget_size, render_size) -> tuple[int, int]:
+    """Convert widget-local logical pixels to render-window device pixels."""
+    width, height = widget_size
+    render_width, render_height = render_size
+    return (
+        round(x * render_width / max(1, width)),
+        render_height - 1 - round(y * render_height / max(1, height)),
+    )
+
+
+class _FaceClickFilter(QObject):
+    """Capture Qt click coordinates before interactor-style event processing."""
+
+    def __init__(self, widget: QWidget, plotter, renderer: PreviewRenderer):
+        super().__init__(widget)
+        self.widget = widget
+        self.plotter = plotter
+        self.renderer = renderer
+        self._press = None
+        self._dragged = False
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._press = event.position()
+            self._dragged = False
+        elif kind in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease) and self._press is not None:
+            delta = event.position() - self._press
+            threshold = theme_manager.palette.viewer.geometry.pick_drag_distance
+            self._dragged |= delta.x() ** 2 + delta.y() ** 2 > threshold ** 2
+            if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                self._press = None
+                if not self._dragged:
+                    position = event.position()
+                    x, y = _qt_to_vtk_position(
+                        position.x(), position.y(),
+                        (self.widget.width(), self.widget.height()),
+                        self.plotter.render_window.GetSize(),
+                    )
+                    # Finish the normal camera interaction before picking.
+                    QTimer.singleShot(0, self, lambda: self.renderer.pick_face(x, y))
+        elif kind == QEvent.Type.Leave:
+            self._press = None
+        return False
 
 
 class PreviewViewer(QWidget):
@@ -66,8 +115,34 @@ class PreviewViewer(QWidget):
         bar.addWidget(self._btn_reset)
         outer.addLayout(bar)
 
+        section_bar = QHBoxLayout()
+        self.section_enabled = QCheckBox(tr('ui.widgets.viewer.section'))
+        section_bar.addWidget(self.section_enabled)
+        self.section_axis = QComboBox()
+        for axis in 'XYZ':
+            self.section_axis.addItem(axis)
+        section_bar.addWidget(self.section_axis)
+        self.section_slider = QSlider(Qt.Orientation.Horizontal)
+        self.section_slider.setRange(0, 1000)
+        self.section_slider.setValue(500)
+        self.section_slider.setToolTip(tr('ui.widgets.viewer.section_position'))
+        section_bar.addWidget(self.section_slider, 1)
+        self.section_reverse = QCheckBox(tr('ui.widgets.viewer.section_reverse'))
+        section_bar.addWidget(self.section_reverse)
+        self.section_coordinate = QLabel()
+        section_bar.addWidget(self.section_coordinate)
+        outer.addLayout(section_bar)
+        for control in (self.section_axis, self.section_slider, self.section_reverse):
+            control.setEnabled(False)
+
         self.host = _PlotHost(self)
         outer.addWidget(self.host, 1)
+        self._picked_face: FaceSelection | None = None
+        self.face_info = QLabel(tr('ui.widgets.viewer.pick_face_hint'))
+        self.face_info.setWordWrap(True)
+        self.face_info.setTextFormat(Qt.TextFormat.PlainText)
+        self.face_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        outer.addWidget(self.face_info)
 
         self._selected_step: int | None = None
         self._problem: ProblemDefinition | None = None
@@ -77,8 +152,50 @@ class PreviewViewer(QWidget):
         self._pending_reset_camera = False
         self.geometry = geometry or PreviewGeometry()
         self.loads = loads or LoadPreviewVisitor()
-        self.renderer = PreviewRenderer(self.host.plotter)
+        self.renderer = PreviewRenderer(
+            self.host.plotter, on_face_picked=self._show_picked_face,
+            track_mouse_events=not isinstance(self.host.plotter, QWidget),
+        )
+        self._face_click_filter = (
+            _FaceClickFilter(self.host.plotter, self.host.plotter, self.renderer)
+            if isinstance(self.host.plotter, QWidget) else None
+        )
+        self.section_enabled.toggled.connect(self._section_changed)
+        self.section_axis.currentIndexChanged.connect(self._section_changed)
+        self.section_slider.valueChanged.connect(self._section_changed)
+        self.section_reverse.toggled.connect(self._section_changed)
         self._sync_view_controls()
+
+    def _section_changed(self, *_args) -> None:
+        enabled = self.section_enabled.isChecked()
+        for control in (self.section_axis, self.section_slider, self.section_reverse):
+            control.setEnabled(enabled)
+        self.renderer.set_section(
+            enabled, self.section_axis.currentIndex(),
+            self.section_slider.value() / self.section_slider.maximum(),
+            self.section_reverse.isChecked(), render=self.isVisible(),
+        )
+        self._update_section_coordinate()
+
+    def _update_section_coordinate(self) -> None:
+        position = self.renderer.section_position
+        self.section_coordinate.setText(
+            '' if position is None else f'{self.section_axis.currentText()} = {position:.5g}'
+        )
+
+    def _show_picked_face(self, selection: FaceSelection | None) -> None:
+        self._picked_face = selection
+        if selection is None:
+            text = tr('ui.widgets.viewer.pick_face_hint')
+        else:
+            text = tr(
+                'ui.widgets.viewer.picked_face',
+                part=selection.part_name,
+                surfaces=', '.join(selection.surface_names),
+            )
+            if selection.instance_name is not None:
+                text += tr('ui.widgets.viewer.picked_instance', instance=selection.instance_name)
+        self.face_info.setText(text)
 
     def set_problem(self, problem: ProblemDefinition) -> None:
         reset_camera = problem is not self._problem
@@ -103,6 +220,10 @@ class PreviewViewer(QWidget):
         self._lbl_part.setText(tr('ui.widgets.viewer.part_2eacf781'))
         self._lbl_step.setText(tr('ui.widgets.viewer.step'))
         self._btn_reset.setText(tr('ui.widgets.viewer.reset_view'))
+        self.section_enabled.setText(tr('ui.widgets.viewer.section'))
+        self.section_reverse.setText(tr('ui.widgets.viewer.section_reverse'))
+        self.section_slider.setToolTip(tr('ui.widgets.viewer.section_position'))
+        self._show_picked_face(self._picked_face)
         # Keep whichever load step is selected while re-localizing the combo.
         # Signals are blocked so a hidden viewer is not forced to re-render
         # (rendering a backgrounded viewport is what used to blacken the
@@ -256,6 +377,7 @@ class PreviewViewer(QWidget):
         # definitions must not erase a working viewport during data preparation.
         loads = self._load_scene()
         self.renderer.draw_scene(scene)
+        self._update_section_coordinate()
         self.host.plotter.show_axes()
         if reset_camera:
             self.host.plotter.view_isometric()

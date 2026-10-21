@@ -11,7 +11,6 @@ def test_file_dialog_uses_shared_labels_file_filters_and_visible_icons(tmp_path)
     dialog = file_dialogs.create_file_dialog(parent, 'Save', str(tmp_path), save=True)
     try:
         dialog.setNameFilters([tr('ui.files.csv'), tr('ui.files.npz')])
-        file_dialogs.set_file_dialog_icons(dialog)
         assert dialog.fileMode() is QFileDialog.FileMode.AnyFile
         assert dialog.acceptMode() is QFileDialog.AcceptMode.AcceptSave
         assert dialog.labelText(QFileDialog.DialogLabel.FileName) == tr('ui.files.file_name')
@@ -21,6 +20,56 @@ def test_file_dialog_uses_shared_labels_file_filters_and_visible_icons(tmp_path)
                                                  'newFolderButton', 'listModeButton', 'detailModeButton')]
         assert len(navigation) == 6
         assert all(not button.icon().isNull() for button in navigation)
+    finally:
+        parent.deleteLater()
+        app.processEvents()
+
+
+@pytest.mark.parametrize('accepted', [False, True])
+def test_open_file_selection_preserves_step_filter_and_cancel(monkeypatch, tmp_path, accepted):
+    app = QApplication.instance() or QApplication([])
+    parent = QWidget()
+    path = tmp_path / 'geometry.stp'
+    path.write_text('STEP selection fixture')
+    name_filter = tr('ui.files.step')
+
+    def choose(dialog):
+        assert dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
+        assert dialog.fileMode() is QFileDialog.FileMode.ExistingFile
+        assert dialog.acceptMode() is QFileDialog.AcceptMode.AcceptOpen
+        assert dialog.nameFilters() == [name_filter]
+        assert dialog.labelText(QFileDialog.DialogLabel.Accept) == tr('ui.files.open')
+        assert not dialog.findChild(QToolButton, 'toParentButton').icon().isNull()
+        dialog.selectFile(str(path))
+        return (QFileDialog.DialogCode.Accepted if accepted
+                else QFileDialog.DialogCode.Rejected)
+
+    monkeypatch.setattr(QFileDialog, 'exec', choose)
+    try:
+        assert file_dialogs.choose_open_file(parent, 'STEP', str(tmp_path), name_filter) == (
+            str(path) if accepted else ''
+        )
+    finally:
+        parent.deleteLater()
+        app.processEvents()
+
+
+def test_directory_selection_uses_shared_navigation_and_directory_mode(monkeypatch, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    parent = QWidget()
+
+    def choose(dialog):
+        assert dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
+        assert dialog.fileMode() is QFileDialog.FileMode.Directory
+        assert dialog.testOption(QFileDialog.Option.ShowDirsOnly)
+        assert dialog.labelText(QFileDialog.DialogLabel.FileName) == tr('ui.files.directory')
+        assert not dialog.findChild(QToolButton, 'toParentButton').icon().isNull()
+        dialog.selectFile(str(tmp_path))
+        return QFileDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QFileDialog, 'exec', choose)
+    try:
+        assert file_dialogs.choose_directory(parent, 'Directory', str(tmp_path)) == str(tmp_path)
     finally:
         parent.deleteLater()
         app.processEvents()

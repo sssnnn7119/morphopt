@@ -40,7 +40,9 @@ from ..model.problem import (
     SurfaceNode,
 )
 from ..theme import theme_manager
-from .scene import PreviewScene
+from .scene import MeshFaces, PreviewScene
+
+_CAD_FACE_ID = "morphopt_cad_face_id"
 
 
 def apply_instance_pose(
@@ -134,6 +136,13 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
             mesh = context.surface_mesh(surface)
             if mesh is None:
                 continue
+            face_groups = np.zeros(mesh.n_cells, dtype=np.int64)
+            face_names = [(f"surface_{index}_All",)]
+            if index == 0:
+                for end in ("Bottom", "Head"):
+                    cap = _boundary_end_cells(mesh, end)
+                    face_groups[cap] = len(face_names)
+                    face_names.append((f"surface_0_{end}", "surface_0_All"))
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
             name = instance.name if instance is not None else part.name
@@ -150,11 +159,22 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                     if len(surfaces) > 1 and index == 0
                     else 1.0
                 ),
-                "show_edges": instance is None,
+                # Tessellation edges are display subdivisions, not geometric
+                # boundaries; drawing them produces stripes on curved shells.
+                "show_edges": False,
                 "smooth_shading": True,
             }
             context.scene.add_base(
-                name, mesh, name=f"boundary:{name}:surface-{index}", **options
+                name,
+                mesh,
+                name=f"boundary:{name}:surface-{index}",
+                faces=MeshFaces(
+                    part.name,
+                    instance.name if instance else None,
+                    face_groups,
+                    tuple(face_names),
+                ),
+                **options,
             )
 
     def surface(
@@ -190,6 +210,13 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
     ) -> None:
         box = context.box_part(part)
         mesh = self.mesh(box.length, box.height, box.depth)
+        centers = mesh.cell_centers().points
+        bounds = np.asarray(mesh.bounds).reshape(3, 2)
+        distances = np.abs(centers[:, :, None] - bounds[None, :, :])
+        face_groups = distances.reshape(-1, 6).argmin(axis=1)
+        face_names = tuple(
+            (f"surface_{axis}{side}",) for axis in "xyz" for side in ("min", "max")
+        )
         name = instance.name if instance is not None else part.name
         if instance is not None:
             mesh = apply_instance_pose(mesh, instance, context.values)
@@ -197,6 +224,9 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
             name,
             mesh,
             name=f"box:{name}",
+            faces=MeshFaces(
+                part.name, instance.name if instance else None, face_groups, face_names
+            ),
             color=context.instance_color(instance.name)
             if instance
             else theme_manager.palette.viewer.geometry.uninstanced_color,
@@ -253,6 +283,9 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
     ) -> None:
         mesh = self.surface(context, part, part.exterior_surface or "")
         if mesh is not None:
+            faces = _inp_mesh_faces(
+                self.model_part(context, part), mesh, part, instance
+            )
             name = instance.name if instance is not None else part.name
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
@@ -260,6 +293,7 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
                 name,
                 mesh,
                 name=f"inp:{name}",
+                faces=faces,
                 color=context.instance_color(instance.name)
                 if instance
                 else theme_manager.palette.viewer.geometry.uninstanced_color,
@@ -276,95 +310,50 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
         part: CADPartNode,
         instance: InstanceNode | None,
     ) -> None:
-        records = context.cad_records(part)
         scene = context.scene
         instance_name = instance.name if instance is not None else part.name or "part"
-        face_centers = []
-        face_labels = []
-        seen_edges: set[int] = set()
+        face_mesh, edge_mesh = context.cad_meshes(part)
+        if not face_mesh.n_cells:
+            return
+        face_ids = np.asarray(face_mesh.cell_data[_CAD_FACE_ID], dtype=np.int64)
+        faces = MeshFaces(
+            part.name,
+            instance.name if instance else None,
+            face_ids,
+            tuple((f"face_{index}",) for index in range(int(face_ids.max()) + 1)),
+        )
+        if instance is not None:
+            face_mesh = apply_instance_pose(face_mesh, instance, context.values)
+            edge_mesh = apply_instance_pose(edge_mesh, instance, context.values)
 
-        for face_index, record in enumerate(records):
-            points = np.asarray(record["points"], dtype=float).reshape(-1, 3)
-            triangles = np.asarray(record["triangles"], dtype=np.int64).reshape(-1, 3)
-            if not len(points) or not len(triangles):
-                raise ValueError(
-                    localized_message(
-                        "ui.errors.geometry.cad_face_value_has_no_display_triangles",
-                        value_0=face_index,
-                    )
-                )
-            face_point_ids = np.unique(triangles)
-            face_points = points[face_point_ids]
-            face_triangles = np.searchsorted(face_point_ids, triangles)
-            faces = np.column_stack(
-                (
-                    np.full(len(face_triangles), 3, dtype=np.int64),
-                    face_triangles,
-                )
-            ).ravel()
-            face = pv.PolyData(face_points, faces)
-            context._local_cad_faces[(id(part), f"face_{face_index}")] = face
-            if instance is not None:
-                face = apply_instance_pose(face, instance, context.values)
-            context._cad_face_meshes[(instance_name, f"face_{face_index}")] = face
-            scene.add_base(
-                instance_name,
-                face,
-                name=f"cad-face:{instance_name}:{face_index}",
-                color=context.instance_color(instance.name)
-                if instance
-                else theme_manager.palette.viewer.geometry.uninstanced_color,
-                opacity=1.0,
-                show_edges=False,
-                smooth_shading=True,
-                ambient=theme_manager.palette.viewer.geometry.cad_face_ambient,
-                diffuse=theme_manager.palette.viewer.geometry.cad_face_diffuse,
-                specular=theme_manager.palette.viewer.geometry.cad_face_specular,
-                specular_power=theme_manager.palette.viewer.geometry.cad_face_specular_power,
-            )
-            centers = face.cell_centers().points
-            if len(centers):
-                face_centers.append(centers.mean(axis=0))
-                face_labels.append(str(face_index))
-
-            for edge in record.get("edge_lines", []):
-                edge_tag = int(edge.get("edge_tag", -1))
-                lines = np.asarray(edge.get("lines", []), dtype=np.int64).reshape(-1, 2)
-                if edge_tag < 0 or edge_tag in seen_edges or not len(lines):
-                    continue
-                seen_edges.add(edge_tag)
-                edge_point_ids = np.unique(lines)
-                edge_points = points[edge_point_ids]
-                edge_lines = np.searchsorted(edge_point_ids, lines)
-                edge_cells = np.column_stack(
-                    (np.full(len(edge_lines), 2, dtype=np.int64), edge_lines)
-                ).ravel()
-                edge_mesh = pv.PolyData()
-                edge_mesh.points = edge_points
-                edge_mesh.lines = edge_cells
-                if instance is not None:
-                    edge_mesh = apply_instance_pose(edge_mesh, instance, context.values)
-                scene.add_mesh(
-                    edge_mesh,
-                    name=f"cad-edge:{instance_name}:{edge_tag}",
-                    color=theme_manager.palette.viewer.geometry.cad_edge_color,
-                    line_width=theme_manager.palette.viewer.geometry.cad_edge_width,
-                    render_lines_as_tubes=True,
-                    lighting=False,
-                )
-
-        if face_centers:
-            scene.add_point_labels(
-                np.asarray(face_centers),
-                face_labels,
-                font_size=theme_manager.palette.viewer.geometry.cad_label_font_size,
-                text_color=theme_manager.palette.text,
-                shape="rounded_rect",
-                shape_color=theme_manager.palette.viewer.geometry.cad_label_shape_color,
-                shape_opacity=theme_manager.palette.viewer.geometry.cad_label_shape_opacity,
-                show_points=False,
-                always_visible=True,
-                name=f"cad-face-labels:{instance_name}",
+        # A Part is rendered as one face actor and one edge actor.  CAD models
+        # routinely contain hundreds of topological faces, so creating an actor
+        # per face (and another per edge) makes a viewport refresh prohibitively
+        # expensive.  The face index remains in cell data for set lookup.
+        scene.add_base(
+            instance_name,
+            face_mesh,
+            name=f"cad:{instance_name}",
+            faces=faces,
+            color=context.instance_color(instance.name)
+            if instance
+            else theme_manager.palette.viewer.geometry.uninstanced_color,
+            opacity=1.0,
+            show_edges=False,
+            smooth_shading=True,
+            ambient=theme_manager.palette.viewer.geometry.cad_face_ambient,
+            diffuse=theme_manager.palette.viewer.geometry.cad_face_diffuse,
+            specular=theme_manager.palette.viewer.geometry.cad_face_specular,
+            specular_power=theme_manager.palette.viewer.geometry.cad_face_specular_power,
+        )
+        if edge_mesh.n_lines:
+            scene.add_mesh(
+                edge_mesh,
+                name=f"cad-edges:{instance_name}",
+                color=theme_manager.palette.viewer.geometry.cad_edge_color,
+                line_width=theme_manager.palette.viewer.geometry.cad_edge_width,
+                render_lines_as_tubes=False,
+                lighting=False,
             )
 
     def surface(
@@ -376,8 +365,7 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
         face_name = _cad_face_name(name)
         if face_name is None:
             return None
-        # Faces are already built in local coordinates before Instance placement.
-        return context._local_cad_faces.get((id(part), face_name))
+        return context.cad_face_mesh(part, face_name)
 
 
 def default_part_visitor() -> PartPreviewVisitor:
@@ -477,6 +465,7 @@ class PreviewGeometry:
         self._part_cache: dict[int, torchfea.Part] = {}
         self._box_cache: dict[int, BoxPart] = {}
         self._cad_cache: dict[int, list[dict[str, Any]]] = {}
+        self._cad_mesh_cache: dict[int, tuple[pv.PolyData, pv.PolyData]] = {}
         self._instance_colors: dict[str, str] = {}
         self.values = DefinitionValues(None)
 
@@ -493,6 +482,7 @@ class PreviewGeometry:
         self._part_cache = {}
         self._box_cache = {}
         self._cad_cache = {}
+        self._cad_mesh_cache = {}
         self._instance_colors = {}
         self.values = DefinitionValues(problem)
         if mode == "part":
@@ -578,6 +568,96 @@ class PreviewGeometry:
             self._cad_cache[id(part)] = cad_brep_records_from_node(part, self.problem)
         return self._cad_cache[id(part)]
 
+    def cad_meshes(self, part: CADPartNode) -> tuple[pv.PolyData, pv.PolyData]:
+        """Build one face mesh and one edge mesh for a CAD Part preview.
+
+        The combined face mesh keeps the originating OCC face index in cell
+        data, so individual ``face_N`` selections can be extracted on demand
+        without multiplying viewport actors.  Points are duplicated across
+        topological faces to retain their independent face normals.
+        """
+        key = id(part)
+        if key in self._cad_mesh_cache:
+            return self._cad_mesh_cache[key]
+
+        records = self.cad_records(part)
+        if not records:
+            empty = pv.PolyData()
+            self._cad_mesh_cache[key] = (empty, empty)
+            return empty, empty
+
+        points = np.asarray(records[0]["points"], dtype=float).reshape(-1, 3)
+        face_points: list[np.ndarray] = []
+        face_cells: list[np.ndarray] = []
+        face_ids: list[np.ndarray] = []
+        edge_cells: list[np.ndarray] = []
+        seen_edges: set[int] = set()
+        face_point_offset = 0
+        for face_index, record in enumerate(records):
+            triangles = np.asarray(record["triangles"], dtype=np.int64).reshape(-1, 3)
+            if not len(triangles):
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.geometry.cad_face_value_has_no_display_triangles",
+                        value_0=face_index,
+                    )
+                )
+            point_ids = np.unique(triangles)
+            face_points.append(points[point_ids])
+            local_triangles = np.searchsorted(point_ids, triangles) + face_point_offset
+            face_cells.append(
+                np.column_stack(
+                    (
+                        np.full(len(local_triangles), 3, dtype=np.int64),
+                        local_triangles,
+                    )
+                ).ravel()
+            )
+            face_ids.append(np.full(len(triangles), face_index, dtype=np.int64))
+            face_point_offset += len(point_ids)
+
+            for edge in record.get("edge_lines", []):
+                edge_tag = int(edge.get("edge_tag", -1))
+                lines = np.asarray(edge.get("lines", []), dtype=np.int64).reshape(-1, 2)
+                if edge_tag < 0 or edge_tag in seen_edges or not len(lines):
+                    continue
+                seen_edges.add(edge_tag)
+                edge_cells.append(
+                    np.column_stack(
+                        (np.full(len(lines), 2, dtype=np.int64), lines)
+                    ).ravel()
+                )
+
+        faces = pv.PolyData(np.concatenate(face_points), np.concatenate(face_cells))
+        faces.cell_data[_CAD_FACE_ID] = np.concatenate(face_ids)
+        edges = pv.PolyData()
+        if edge_cells:
+            edges.points = points
+            edges.lines = np.concatenate(edge_cells)
+        self._cad_mesh_cache[key] = (faces, edges)
+        return faces, edges
+
+    def cad_face_mesh(self, part: CADPartNode, face_name: str) -> pv.PolyData | None:
+        """Return one local CAD face only when a load or set query requests it."""
+        key = (id(part), face_name)
+        if key in self._local_cad_faces:
+            return self._local_cad_faces[key]
+        try:
+            face_index = int(face_name.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            return None
+        mesh, _edges = self.cad_meshes(part)
+        if _CAD_FACE_ID not in mesh.cell_data:
+            return None
+        cell_ids = np.flatnonzero(
+            np.asarray(mesh.cell_data[_CAD_FACE_ID], dtype=np.int64) == face_index
+        )
+        if not len(cell_ids):
+            return None
+        face = mesh.extract_cells(cell_ids).extract_surface(algorithm="dataset_surface")
+        self._local_cad_faces[key] = face
+        return face
+
     def mesh_for_surface(
         self, component: FEAComponentNode, surface_name: str
     ) -> pv.DataSet | None:
@@ -599,7 +679,7 @@ class PreviewGeometry:
                 instance = next(
                     (item for item in part.instances if item.name == name), None
                 )
-            return (
+            mesh = (
                 apply_instance_pose(
                     mesh,
                     instance,
@@ -608,6 +688,9 @@ class PreviewGeometry:
                 if mesh is not None and instance is not None
                 else mesh
             )
+            if face is not None and mesh is not None:
+                self._cad_face_meshes[(name, face)] = mesh
+            return mesh
         except (KeyError, ValueError, NotImplementedError):
             return None
 
@@ -730,6 +813,37 @@ def _cad_face_name(surface_name: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _inp_mesh_faces(
+    model: torchfea.Part,
+    mesh: pv.PolyData,
+    part: INPPartNode,
+    instance: InstanceNode | None,
+) -> MeshFaces:
+    """Map display triangles to original INP surface sets, including overlaps."""
+    memberships: dict[tuple[int, ...], list[str]] = {}
+    for name in model.surfaces.keys():
+        if not model.surfaces.get_elements(name):
+            continue
+        triangles = model.surfaces.get_trimesh(name).detach().cpu().numpy()
+        for triangle in np.sort(triangles, axis=1):
+            memberships.setdefault(tuple(triangle), []).append(name)
+    groups: dict[tuple[str, ...], int] = {}
+    cell_groups = []
+    for triangle in mesh.faces.reshape(-1, 4)[:, 1:]:
+        names = tuple(dict.fromkeys(memberships.get(tuple(sorted(triangle)), ())))
+        if not names:
+            names = (part.exterior_surface or "extern",)
+        if names not in groups:
+            groups[names] = len(groups)
+        cell_groups.append(groups[names])
+    return MeshFaces(
+        part.name,
+        instance.name if instance else None,
+        np.asarray(cell_groups, dtype=np.int64),
+        tuple(groups),
+    )
+
+
 def _instance_color(index: int) -> str:
     if index < len(theme_manager.palette.viewer.geometry.instance_colors):
         return theme_manager.palette.viewer.geometry.instance_colors[index]
@@ -758,6 +872,16 @@ def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
     """Extract the actual cap cells used by a boundary-part end node set."""
     if not mesh.n_cells or not mesh.n_points:
         return mesh
+    cap_cells = _boundary_end_cells(mesh, end)
+    if not np.any(cap_cells):
+        return mesh
+    return mesh.extract_cells(cap_cells).extract_surface(algorithm="dataset_surface")
+
+
+def _boundary_end_cells(mesh: pv.DataSet, end: str) -> np.ndarray:
+    """Identify cap cells in local coordinates for set queries and picking."""
+    if not mesh.n_cells or not mesh.n_points:
+        return np.zeros(mesh.n_cells, dtype=bool)
     centers = mesh.cell_centers().points
     bounds = mesh.bounds
     target = bounds[5] if end == "Head" else bounds[4]
@@ -766,10 +890,7 @@ def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
         * theme_manager.palette.viewer.geometry.boundary_relative_tolerance,
         theme_manager.palette.viewer.geometry.boundary_absolute_tolerance,
     )
-    cap_cells = np.abs(centers[:, 2] - target) <= tolerance
-    if not np.any(cap_cells):
-        return mesh
-    return mesh.extract_cells(cap_cells).extract_surface(algorithm="dataset_surface")
+    return np.abs(centers[:, 2] - target) <= tolerance
 
 
 def _preview_node_set_points(

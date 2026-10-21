@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QListWidget, QListWidgetItem,
@@ -31,6 +31,7 @@ from ..i18n import tr
 from ..presentation.labels import quickstart_summary
 from ...constants import CONSTANT
 from .collection_controls import ActionButton, CollectionHeader, ItemActions
+from .file_dialogs import choose_directory
 
 
 
@@ -952,7 +953,7 @@ class QuickstartDialog(QDialog):
             self.create_button.setEnabled(True)
 
     def _browse_folder(self):
-        directory = QFileDialog.getExistingDirectory(
+        directory = choose_directory(
             self,
             tr('ui.widgets.quickstart.output_folder'),
             self.fields["result_folder"].text(),

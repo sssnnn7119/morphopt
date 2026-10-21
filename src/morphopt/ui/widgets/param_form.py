@@ -6,11 +6,12 @@ from collections.abc import Callable
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QLineEdit, QComboBox, QCheckBox,
-    QPushButton, QHBoxLayout, QFileDialog, QLabel, QPlainTextEdit,
+    QPushButton, QHBoxLayout, QLabel, QPlainTextEdit,
 )
 from ..application.values import field_text, parse_field
 from ..i18n import tr
 from .values import combo_value, display_choice, DOF_LABELS
+from .file_dialogs import choose_directory, choose_open_file
 
 
 class ParamForm(QWidget):
@@ -194,9 +195,9 @@ class ParamForm(QWidget):
     def _browse(self, key: str, kind: str, edit: QLineEdit) -> None:
         start = edit.text() or "."
         if kind == "dir":
-            path = QFileDialog.getExistingDirectory(self, tr('ui.widgets.editor.select_directory'), start)
+            path = choose_directory(self, tr('ui.widgets.editor.select_directory'), start)
         else:
-            path, _ = QFileDialog.getOpenFileName(
+            path = choose_open_file(
                 self,
                 tr('ui.widgets.editor.select_file'),
                 start,

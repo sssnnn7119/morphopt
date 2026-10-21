@@ -67,14 +67,15 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
 
 # region modules (loaded after the core classes they subclass)
 from . import codesign, shapeopt, simp
+from .codesign import OffsetBoundaryPart, UpdaterOffsetBoundaryPart
 from .opt_runner import debug_optimization, start_optimization
 from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
     BaseModelComponent,
     BasePart,
-    CADPart,
     BoxPart,
+    CADPart,
     FEAParams,
     GeometryParams,
     INPPart,
@@ -92,14 +93,13 @@ from .optcore.protocal import (
 from .optcore.solver import Solver
 from .optcore.updaters import Updaters
 from .shapeopt import (
-    BoundaryPart,
-    UpdaterBoundaryPart,
     BaseSurfaceConstraints,
-    SurfaceRelationConstraint,
+    BoundaryPart,
     BspSurfaceRelationConstraint,
     CPGEOSurfaceRelationConstraint,
+    SurfaceRelationConstraint,
+    UpdaterBoundaryPart,
 )
-from .codesign import OffsetBoundaryPart, UpdaterOffsetBoundaryPart
 from .simp import SIMP_BSPFieldMaterials, UpdaterSIMPMaterial
 
 # endregion
@@ -109,3 +109,43 @@ from .utils import check_gradients, get_controller
 # endregion
 
 controller: Controller = None
+
+
+__all__ = [
+    "BaseModelComponent",
+    "BasePart",
+    "BaseSurfaceConstraints",
+    "BoundaryPart",
+    "BoxPart",
+    "BspSurfaceRelationConstraint",
+    "CADPart",
+    "CPGEOSurfaceRelationConstraint",
+    "Controller",
+    "FEAParams",
+    "GeometryParams",
+    "History",
+    "HomogeneousMaterial",
+    "INPPart",
+    "MaterialsParams",
+    "ObjectiveFunction",
+    "OffsetBoundaryPart",
+    "Params",
+    "ProtocalInitializable",
+    "ProtocalSavable",
+    "ProtocalUpdatable",
+    "ProtocalVisualizable",
+    "SIMP_BSPFieldMaterials",
+    "Solver",
+    "SurfaceRelationConstraint",
+    "UpdaterBoundaryPart",
+    "UpdaterOffsetBoundaryPart",
+    "UpdaterSIMPMaterial",
+    "Updaters",
+    "check_gradients",
+    "codesign",
+    "debug_optimization",
+    "get_controller",
+    "shapeopt",
+    "simp",
+    "start_optimization",
+]

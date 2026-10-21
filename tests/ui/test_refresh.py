@@ -110,6 +110,36 @@ def workbench_with_vtk(app, monkeypatch):
     window.close()
 
 
+def test_section_controls_preserve_definition_camera_and_geometry(workbench_with_vtk, monkeypatch):
+    window, failures = workbench_with_vtk
+    viewer = window.viewer
+    before = window.problem.to_dict()
+    camera = viewer.host.plotter.camera_position
+    actors = list(viewer.renderer._geometry_actors)
+
+    def forbid_rebuild(*_args, **_kwargs):
+        raise AssertionError("Moving a section must not rebuild the model preview")
+
+    monkeypatch.setattr(viewer.geometry, "build", forbid_rebuild)
+    viewer.section_enabled.setChecked(True)
+    viewer.section_axis.setCurrentIndex(2)
+    viewer.section_slider.setValue(750)
+    viewer.section_reverse.setChecked(True)
+    lower, upper = viewer.renderer._geometry_bounds
+    expected = lower[2] + 0.75 * (upper[2] - lower[2])
+    assert viewer.renderer.section_position == pytest.approx(expected)
+    assert viewer.section_coordinate.text() == f"Z = {expected:.5g}"
+    assert viewer.renderer._geometry_actors == actors
+    assert viewer.host.plotter.camera_position == camera
+    assert window.problem.to_dict() == before
+    assert all(actor.mapper.GetNumberOfClippingPlanes() == 1 for actor in actors)
+    viewer.section_enabled.setChecked(False)
+    assert not viewer.section_slider.isEnabled()
+    assert viewer.section_coordinate.text() == ""
+    assert all(actor.mapper.GetNumberOfClippingPlanes() == 0 for actor in actors)
+    assert not failures
+
+
 def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vtk, monkeypatch):
     window, failures = workbench_with_vtk
     problem, viewer = window.problem, window.viewer

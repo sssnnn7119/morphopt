@@ -1152,5 +1152,11 @@
   "ui.cad.features_required": "Add CAD features before exporting STEP geometry.",
   "ui.cad.stp_files": "STEP geometry (*.stp)",
   "ui.cad.step_files": "STEP geometry (*.step)",
-  "ui.cad.exported": "STEP geometry exported to:\n{path}"
+  "ui.cad.exported": "STEP geometry exported to:\n{path}",
+  "ui.widgets.viewer.pick_face_hint": "Click a surface to inspect its name; click the background to clear the selection.",
+  "ui.widgets.viewer.picked_face": "Part: {part} · Surface: {surfaces}",
+  "ui.widgets.viewer.picked_instance": " · Instance: {instance}",
+  "ui.widgets.viewer.section": "Section",
+  "ui.widgets.viewer.section_reverse": "Reverse",
+  "ui.widgets.viewer.section_position": "Move the section plane along the selected global axis"
 }

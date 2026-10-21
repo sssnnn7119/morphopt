@@ -1152,5 +1152,11 @@
   "ui.cad.features_required": "请先添加 CAD 特征，再导出 STEP 几何。",
   "ui.cad.stp_files": "STEP 几何 (*.stp)",
   "ui.cad.step_files": "STEP 几何 (*.step)",
-  "ui.cad.exported": "STEP 几何已导出至：\n{path}"
+  "ui.cad.exported": "STEP 几何已导出至：\n{path}",
+  "ui.widgets.viewer.pick_face_hint": "单击表面查看面名称；单击空白处清除选择。",
+  "ui.widgets.viewer.picked_face": "部件：{part} · 面：{surfaces}",
+  "ui.widgets.viewer.picked_instance": " · 实例：{instance}",
+  "ui.widgets.viewer.section": "剖视",
+  "ui.widgets.viewer.section_reverse": "反向",
+  "ui.widgets.viewer.section_position": "沿所选全局坐标轴移动剖切平面"
 }

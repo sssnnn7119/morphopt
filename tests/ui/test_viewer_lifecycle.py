@@ -28,7 +28,9 @@ def test_viewer_defers_vtk_scene_render_until_the_widget_is_shown(monkeypatch):
             self.plotter = Plotter(self)
 
     class Renderer:
-        def __init__(self, _plotter):
+        section_position = None
+
+        def __init__(self, _plotter, **_kwargs):
             pass
 
         def draw_scene(self, _scene):

@@ -2,17 +2,21 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Callable
 from functools import singledispatchmethod
 import os
 from pathlib import Path
 
 import numpy as np
 import pyvista as pv
+from vtkmodules.vtkCommonDataModel import vtkPlane
+from vtkmodules.vtkRenderingCore import vtkCellPicker
 from .plot_style import configure_plotter
 from ..i18n import localized_message
 from ..theme import theme_manager
 from ..visualization.scene import (
     PreviewScene,
+    FaceSelection,
     LoadScene,
     MeshItem,
     LabelItem,
@@ -23,6 +27,9 @@ from ..visualization.scene import (
     MarkerLoad,
     CouplingLoad,
 )
+
+
+_SOURCE_CELL_ID = "morphopt_source_cell_id"
 
 
 def _cjk_font_file() -> str | None:
@@ -38,7 +45,9 @@ def _cjk_font_file() -> str | None:
 
 
 class PreviewRenderer:
-    def __init__(self, plotter):
+    def __init__(self, plotter, *,
+                 on_face_picked: Callable[[FaceSelection | None], None] | None = None,
+                 track_mouse_events: bool = True):
         self.plotter = plotter
         configure_plotter(self.plotter)
         self._overlay_actors: list = []
@@ -46,8 +55,31 @@ class PreviewRenderer:
         self._annotation_scale = theme_manager.palette.viewer.scene_fallback_diagonal
         self._callout_ranges: dict[float, list[tuple[float, float]]] = {}
         self._geometry_bounds: tuple[np.ndarray, np.ndarray] | None = None
+        self._on_face_picked = on_face_picked
+        self._face_picker = vtkCellPicker()
+        self._face_picker.SetTolerance(0.0005)
+        self._face_picker.PickFromListOn()
+        self._face_items: dict[str, MeshItem] = {}
+        self._selection_actor = None
+        self._press_position: tuple[int, int] | None = None
+        self._dragged = False
+        self._geometry_actors: list = []
+        self._section_plane = vtkPlane()
+        self._section_enabled = False
+        self._section_axis = 0
+        self._section_fraction = 0.5
+        self._section_reverse = False
+        if track_mouse_events and plotter.iren is not None:
+            plotter.iren.add_observer("LeftButtonPressEvent", self._face_press)
+            plotter.iren.add_observer("MouseMoveEvent", self._face_move)
+            plotter.iren.add_observer("LeftButtonReleaseEvent", self._face_release)
 
     def draw_scene(self, scene: PreviewScene) -> None:
+        self.clear_face_selection(render=False)
+        self._face_picker.InitializePickList()
+        self._face_items.clear()
+        self._geometry_actors.clear()
+        self._press_position = None
         self.plotter.clear()
         # clear() removes lights; restore the shared viewport configuration.
         configure_plotter(self.plotter)
@@ -64,8 +96,119 @@ class PreviewRenderer:
         else:
             self._geometry_bounds = None
         for item in scene.items:
-            self.draw(item)
+            actor = self.draw(item)
+            if isinstance(item, MeshItem):
+                self._geometry_actors.append(actor)
+            if isinstance(item, MeshItem) and item.faces is not None:
+                self._face_picker.AddPickList(actor)
+                self._face_items[actor.GetAddressAsString("")] = item
+        self._apply_section()
         self._draw_instance_legend(scene.instance_legend)
+
+    @property
+    def section_position(self) -> float | None:
+        if not self._section_enabled or self._geometry_bounds is None:
+            return None
+        lower, upper = self._geometry_bounds
+        axis = self._section_axis
+        return float(lower[axis] + self._section_fraction * (upper[axis] - lower[axis]))
+
+    def set_section(self, enabled: bool, axis: int, fraction: float,
+                    reverse: bool = False, *, render: bool = True) -> None:
+        """Move a mapper clipping plane without rebuilding any CAD geometry."""
+        if axis not in (0, 1, 2):
+            raise ValueError("Section axis must be 0, 1 or 2.")
+        self._section_enabled = enabled
+        self._section_axis = axis
+        self._section_fraction = float(np.clip(fraction, 0, 1))
+        self._section_reverse = reverse
+        self.clear_face_selection(render=False)
+        self._apply_section()
+        if render:
+            self.plotter.render()
+
+    def _apply_section(self) -> None:
+        position = self.section_position
+        if position is not None:
+            origin = np.zeros(3)
+            origin[self._section_axis] = position
+            normal = np.zeros(3)
+            normal[self._section_axis] = -1 if self._section_reverse else 1
+            self._section_plane.SetOrigin(*origin)
+            self._section_plane.SetNormal(*normal)
+        for actor in self._geometry_actors:
+            actor.mapper.RemoveAllClippingPlanes()
+            if position is not None:
+                actor.mapper.AddClippingPlane(self._section_plane)
+
+    def _face_press(self, *_args) -> None:
+        self._press_position = self.plotter.iren.get_event_position()
+        self._dragged = False
+
+    def _face_move(self, *_args) -> None:
+        if self._press_position is not None:
+            position = self.plotter.iren.get_event_position()
+            distance = np.linalg.norm(np.subtract(position, self._press_position))
+            self._dragged |= distance > theme_manager.palette.viewer.geometry.pick_drag_distance
+
+    def _face_release(self, *_args) -> None:
+        if self._press_position is None:
+            return
+        self._face_move()
+        self._press_position = None
+        if not self._dragged:
+            self.pick_face(*self.plotter.iren.get_event_position())
+
+    def clear_face_selection(self, *, render: bool = True) -> None:
+        if self._selection_actor is not None:
+            self.plotter.remove_actor(self._selection_actor, render=False)
+            self._selection_actor = None
+        if self._on_face_picked is not None:
+            self._on_face_picked(None)
+        if render:
+            self.plotter.render()
+
+    def pick_face(self, x: int, y: int) -> FaceSelection | None:
+        """Pick base geometry only; load glyphs and highlights cannot intercept it."""
+        self.clear_face_selection(render=False)
+        self._face_picker.Pick(x, y, 0, self.plotter.renderer)
+        actor = self._face_picker.GetActor()
+        cell_id = self._face_picker.GetCellId()
+        item = self._face_items.get(actor.GetAddressAsString("")) if actor else None
+        # The picker indexes the mapper's displayed dataset. Surface extraction,
+        # normal generation and triangulation may change its cell ordering.
+        displayed = pv.wrap(self._face_picker.GetDataSet()) if actor else None
+        if displayed is not None and _SOURCE_CELL_ID in displayed.cell_data and cell_id >= 0:
+            cell_id = int(displayed.cell_data[_SOURCE_CELL_ID][cell_id])
+        if item is None or item.faces is None or not 0 <= cell_id < item.mesh.n_cells:
+            self.plotter.render()
+            return None
+        faces = item.faces
+        group_id = int(faces.cell_groups[cell_id])
+        selected = item.mesh.extract_cells(faces.cell_groups == group_id)
+        self._selection_actor = self.plotter.add_mesh(
+            selected,
+            name="picked-part-face",
+            color=theme_manager.palette.viewer.geometry.picked_face_color,
+            opacity=0.55,
+            lighting=False,
+            pickable=False,
+            render=False,
+        )
+        # Coincident-topology offsets keep the selected shell visible without
+        # moving its vertices or changing the geometry used by the picker.
+        mapper = self._selection_actor.mapper
+        mapper.SetResolveCoincidentTopologyToPolygonOffset()
+        mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, -1)
+        if self.section_position is not None:
+            mapper.AddClippingPlane(self._section_plane)
+        selection = FaceSelection(
+            faces.part_name, faces.instance_name, faces.group_names[group_id]
+        )
+        if self._on_face_picked is not None:
+            self._on_face_picked(selection)
+        self.plotter.render()
+        return selection
 
     def draw_loads(self, scene: LoadScene | None) -> None:
         for actor in self._overlay_actors:
@@ -133,6 +276,9 @@ class PreviewRenderer:
         }
         preview_offset = float(options.pop("preview_offset", 0.0))
         mesh = self._offset_toward_camera(item.mesh, preview_offset)
+        if item.faces is not None:
+            mesh = mesh.copy(deep=False)
+            mesh.cell_data[_SOURCE_CELL_ID] = np.arange(mesh.n_cells, dtype=np.int64)
         return self.plotter.add_mesh(mesh, **options)
 
     @draw.register

@@ -147,7 +147,11 @@ ProblemDefinition + DefinitionValues
 
 Boundary、Box、CAD 和 INP 各有适配器，视口不按类型堆积建模分支。`PartSetCatalog` 的集合 provider 同样按节点类注册。`PreviewGeometry.build()` 先绑定当前定义与资源，再进行集合和载荷查询。
 
-Part 视图使用局部坐标，装配视图应用 Instance 位姿。CAD 按最终几何提供面号与边线，载荷与节点集查询使用当前所属部件的数据。单个 Part 预览失败记录场景错误，不生成替代优化几何。
+Part 视图使用局部坐标，装配视图应用 Instance 位姿。CAD 将全部显示三角形合并为一个面网格，并将 `face_N` 编号写入单元数据；全部拓扑边合并为一个线网格。载荷和节点集查询按需从该面网格提取指定 `face_N`，不按每个拓扑面或边创建 actor。单个 Part 预览失败记录场景错误，不生成替代优化几何。
+
+各 Part 适配器在基础网格的 `MeshItem.faces` 中提供 `MeshFaces`，记录部件、实例、显示单元分组和对应表面集合名称。`PreviewRenderer` 使用限定基础几何 actor 的 `vtkCellPicker` 识别点击单元，以单个临时 actor 高亮选中分组，并将 `FaceSelection` 交给 `PreviewViewer` 显示可复制的面名称。CAD、Box、Boundary、OffsetBoundary 和 INP 共用这一流程；载荷图元、拓扑边和选择高亮不参与拾取，鼠标拖动不触发选择。常驻面编号标签已移除。
+
+Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗口尺寸转换为 VTK 像素坐标，并翻转纵轴。显示网格携带原始单元 ID，拾取结果经该 ID 映射回 `MeshFaces`，允许渲染管线调整单元顺序。剖视滑条调用 `PreviewRenderer.set_section()` 更新共享 `vtkPlane`，几何 mapper 和选择高亮共用该裁剪平面；平面移动不重建 CAD，不修改模型定义与原始网格，拾取遵循相同裁剪范围。
 
 场景数据可以包含 PyVista 网格、标签和载荷图元，但不拥有 plotter 或 VTK actor。`PreviewRenderer` 负责 actor 的创建、替换与清理；新载荷可注册 visitor 并返回已有图元，新图元在 renderer 的分派入口扩展。
 
@@ -168,5 +172,7 @@ Part 视图使用局部坐标，装配视图应用 Instance 位姿。CAD 按最�
 `ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`styles/*.qss` 管理共用控件状态。组件读取同一主题对象，主题切换后刷新外观并保留相机等展示状态。
 
 `constants.py` 保存业务默认值、运行限制和数值配置，窗口尺寸、间距与分栏比例由 `LayoutStyle` 管理。应用显示文本使用 `locales/zh-CN.json` 与 `en-US.json` 的稳定 key；领域身份仍使用原始名称和枚举值。
+
+文件和目录选择统一由 `widgets/file_dialogs.py` 创建。STEP、网格和工程文件导入，以及结果目录和导出文件选择均使用共用入口；导航按钮图标按当前主题绘制，标签使用当前语言资源。新增文件选择功能应调用 `choose_open_file()`、`choose_directory()` 或 `choose_save_file()`。
 
 `application_icon.py` 管理应用图标与平台身份，`assets/morphopt.svg` 为共享图标资源。Windows 在创建应用前设置进程应用 ID，Linux 使用运行窗口图标；平台打包资源与运行时窗口资源分别管理。语言与主题选择不改变问题定义，不进入文档编辑历史。

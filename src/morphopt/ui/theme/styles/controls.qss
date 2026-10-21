@@ -80,6 +80,21 @@ QLabel[textRole="dialogTitle"] { font-size: @dialog_title_size@px; font-weight: 
 QLabel[textRole="warning"] { color: @warning@; }
 QLabel[textRole="error"] { color: @error@; }
 QToolButton[buttonLayout="navigation"] { padding: 2px; min-width: 30px; min-height: 30px; }
+QSlider::groove:horizontal {
+    height: 4px;
+    background: @border@;
+    border-radius: 2px;
+}
+QSlider::sub-page:horizontal { background: @accent@; border-radius: 2px; }
+QSlider::handle:horizontal {
+    width: 14px;
+    margin: -5px 0;
+    background: @accent@;
+    border: 1px solid @accent_hover@;
+    border-radius: 7px;
+}
+QSlider::handle:horizontal:disabled { background: @disabled@; border-color: @border@; }
+QSlider::sub-page:horizontal:disabled { background: @disabled@; }
 QGroupBox {
     border: 1px solid @border@;
     border-radius: 4px;

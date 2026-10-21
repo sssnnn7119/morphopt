@@ -12,9 +12,27 @@ from ..theme import theme_manager
 
 
 @dataclass
+class MeshFaces:
+    """Domain names for display-cell groups, independent of viewport actors."""
+
+    part_name: str
+    instance_name: str | None
+    cell_groups: np.ndarray
+    group_names: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
+class FaceSelection:
+    part_name: str
+    instance_name: str | None
+    surface_names: tuple[str, ...]
+
+
+@dataclass
 class MeshItem:
     mesh: pv.DataSet
     options: dict[str, Any] = field(default_factory=dict)
+    faces: MeshFaces | None = None
 
 
 @dataclass
@@ -43,8 +61,10 @@ class PreviewScene:
         self.items.append(item)
         return item
 
-    def add_base(self, instance_name: str, mesh: pv.DataSet, **options: Any) -> None:
+    def add_base(self, instance_name: str, mesh: pv.DataSet, *,
+                 faces: MeshFaces | None = None, **options: Any) -> None:
         item = self.add_mesh(mesh, **options)
+        item.faces = faces
         self.base_meshes.append((instance_name, mesh, item))
 
     def add_point_labels(self, points, labels, **options: Any) -> LabelItem:
