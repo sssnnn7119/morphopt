@@ -2,6 +2,8 @@
 
 [代码结构导览](README.md) · [领域模型](ui-model.md) · [应用服务](ui-application.md) · [结果分析](results.md)
 
+UI 按业务数据与显示分离的原则组织。领域对象和应用会话保存定义、引用与操作状态，展示投影准备导航、源码、资产与场景数据，控件和 renderer 管理交互及显示资源。[UI 数据流与显示分层图](architecture.md#section-业务数据展示投影与显示资源)给出各层的连接关系，本篇说明页面、刷新与渲染的具体接入方式。
+
 ## 目录
 
 <!-- docs:toc depth=1 -->
@@ -43,7 +45,7 @@ MainWindow
 │   ├── ModelTree / EditHistoryPanel
 │   ├── EditorPages → 当前编辑器
 │   ├── PreviewViewer → PreviewRenderer
-│   └── GeneratedSourceView
+│   └── GeneratedSourceView / AssetBrowser
 └── 优化过程
     ├── ObserverControls + ObserverPanel
     │   ├── MetricsPage

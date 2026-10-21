@@ -2,6 +2,8 @@
 
 [代码结构导览](README.md) · [模型协议](model.md#protocols) · [运行时](runtime.md)
 
+灵敏度计算与设计更新分别承担导数计算和局部设计决策。`ObjectiveFunction` 根据有限元结果与设计映射形成分类梯度，`Updaters` 将其分派给绑定对象的局部更新器。两者通过梯度布局协作，局部更新结果通过模型接口写回。它们在整体模块划分中的位置见[内核职责与数据流](architecture.md#section-模型求解灵敏度与更新)。
+
 ## 目录
 
 <!-- docs:toc depth=1 -->
