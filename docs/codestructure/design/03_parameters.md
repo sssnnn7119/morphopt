@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 统一注册模型
+<a id="section-统一注册模型"></a>
+
+## 1 统一注册模型
 
 源码目录：`optcore/modelparams/`。参数集合以命名对象字典保存自己拥有的几何 Part、FEA 组件和材料。字典键是对象的公开名称，同时给出稳定注册顺序；对象保存具体定义，集合对象负责批量生命周期、持久化和设计变量拼接。
 
@@ -13,7 +15,9 @@ Params
 └── materials: MaterialsParams──► Material interfaces
 ```
 
-## `BaseParams`
+<a id="section-baseparams"></a>
+
+## 2 `BaseParams`
 
 源码：`baseparam.py`；仅供 `GeometryParams`、`FEAParams` 和 `MaterialsParams` 继承，负责集合注册和批量转发。
 
@@ -25,7 +29,7 @@ Params
 | 公开方法 | 职责 |
 |---|---|
 | `add_interface(interface, name=None)` | 注册接口并返回最终名称；完成唯一性检查。 |
-| `define_interface()` | 用户覆写的声明钩子。 |
+| `define_interface()` | 用户重写的声明钩子。 |
 | `initialize()` | 调用一次 `define_interface()`，随后初始化所有已注册接口。 |
 | `reinitialize(iteration)` | 向所有接口转发每轮刷新。 |
 | `interface(name)` | 以注册名取得接口对象。 |
@@ -38,7 +42,9 @@ Params
 
 `add_interface()` 是集合内名称的唯一写入口。声明钩子在 `initialize()` 时运行一次，实例构造阶段保持轻量。集合转发采用接口对象而非接口名进行运行时调用；名称用于注册、持久化目录和脚本序列化。
 
-## `Params`
+<a id="section-params"></a>
+
+## 3 `Params`
 
 源码：`params.py`；继承三个基础协议。它是一次分析模型的根参数对象。
 
@@ -61,7 +67,9 @@ Params
 
 具体的 Part、载荷/约束、材料和曲面定义继承 `BaseModelComponent`；它只组合初始化、持久化和可视化三个协议，不提供集合注册表。
 
-## `GeometryParams`
+<a id="section-geometryparams"></a>
+
+## 4 `GeometryParams`
 
 源码：`geometry.py`；继承 `BaseParams`。
 
@@ -72,7 +80,9 @@ Params
 | `export_data(foldpath)` | 导出几何接口数据。 |
 | `pathlog_required()` | 声明 geometry 状态日志目录。 |
 
-## `FEAParams`
+<a id="section-feaparams"></a>
+
+## 5 `FEAParams`
 
 源码：`feaparams.py`；继承 `BaseParams`。
 
@@ -90,13 +100,17 @@ Params
 | `create_fea(assembly)` | 创建并填充 `torchfea.FEAController`。 |
 | `process_fea(fe, step_index)` | 将给定载荷步的覆盖值应用到 FEA 对象。 |
 
-## `MaterialsParams`
+<a id="section-materialsparams"></a>
+
+## 6 `MaterialsParams`
 
 源码：`materialsparams.py`；继承 `BaseParams`。
 
 `set_materials(fe)` 按注册顺序调用每个材料接口的材料分配逻辑；`pathlog_required()` 为材料设计状态声明独立日志目录。材料类型与每种材料的参数模型见 [06 材料](06_materials.md)。
 
-## 设计变量数据流
+<a id="section-设计变量数据流"></a>
+
+## 7 设计变量数据流
 
 ```text
 可更新 Part / 材料接口

@@ -1,0 +1,503 @@
+{
+  "source_definition_sha256": "663982379d94280d529cee5460f8eb0111f32b542734d98f5f2da4a73b4ee738",
+  "images": [
+    {
+      "file": "custom-code/framework-class.png",
+      "description": "自定义压力类与实际基类方法调用",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "custom-code/helper-function.png",
+      "description": "辅助变量与函数定义、参数和函数体",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "custom-code/method-override.png",
+      "description": "覆写方法：真实参数签名与保留的 super 调用",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/box-part.png",
+      "description": "BoxPart：实体尺寸、有限元网格与装配实例",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/cpgeo-cylinder.png",
+      "description": "cpgeo_cylinder 的参数与三维预览",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/cpgeo-sphere.png",
+      "description": "cpgeo_sphere 的参数与三维预览",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/offset-boundary-part.png",
+      "description": "OffsetBoundaryPart：偏置厚度与层数",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/body-force.png",
+      "description": "Bodyforce 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/concentrated-force.png",
+      "description": "ConcentratedForce 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/concentrated-moment.png",
+      "description": "ConcentratedMoment 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/contact.png",
+      "description": "Contact 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/penalty-degree-of-freedom.png",
+      "description": "PenaltyDoF 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/reference-point-boundary.png",
+      "description": "BoundaryConditionRP 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/self-contact.png",
+      "description": "ContactSelf 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/spring-between-reference-points.png",
+      "description": "SpringBetweenRPs 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/spring-load-case.png",
+      "description": "多分量接口 SpringToGround 的 k、L0、Px、Py、Pz 工况列",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/spring-to-ground.png",
+      "description": "SpringToGround 的作用对象定义",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "materials/constitutive-model-menu.png",
+      "description": "材料模型下拉菜单：八种本构模型",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "materials/ogden-model.png",
+      "description": "材料模型切换后仅显示当前本构模型的参数",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "materials/simp-material.png",
+      "description": "SIMP 材料：目标部件、实体模量与设计场",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "objectives/custom-loss.png",
+      "description": "自定义目标函数体与有限元数据代码模板入口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "objectives/fea-template-menu.png",
+      "description": "十二种有限元响应代码模板",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "objectives/jacobian-loads.png",
+      "description": "Jacobian 参数选择：同一 RP 上的集中力与集中力矩",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "objectives/jacobian-template-parameters.png",
+      "description": "插入六维 Jacobian 模板：选择工况、RP、力与力矩接口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/geometry/min-radius.png",
+      "description": "MinRadius：到全局 Z 轴的最小半径",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/geometry/rotational-symmetry.png",
+      "description": "CPGEO 旋转对称：曲面索引、轴、阶数与中心",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/geometry/surface-relation.png",
+      "description": "BSP 曲面关联：源曲面1经平移10映射到关联曲面2",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/geometry/volume-maximization.png",
+      "description": "VolumeMaximization：CPGEO 曲面体积子目标",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/material/control-bounds.png",
+      "description": "材料优化器 MinValue 接口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/material/sensitivity.png",
+      "description": "材料优化器 Sensitivity 接口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/material/volume-fraction.png",
+      "description": "材料优化器 VolFrac 接口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "custom-code/objective-class-selection.png",
+      "description": "ObjectiveFunction 通过使用类下拉框选择兼容的重写类",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "capture_note": "Actual Qt combo popup pixels composited at their window position; explicit Noto Sans CJK SC."
+    },
+    {
+      "file": "updaters/geometry/class-selection.png",
+      "description": "morphopt.UpdaterBoundaryPart 的使用类选择",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "capture_note": "Actual Qt combo popup pixels composited at their window position; explicit Noto Sans CJK SC."
+    },
+    {
+      "file": "updaters/geometry/offset-class-selection.png",
+      "description": "morphopt.UpdaterOffsetBoundaryPart 的使用类选择",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "capture_note": "Actual Qt combo popup pixels composited at their window position; explicit Noto Sans CJK SC."
+    },
+    {
+      "file": "updaters/materials/class-selection.png",
+      "description": "morphopt.UpdaterSIMPMaterial 的使用类选择",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "capture_note": "Actual Qt combo popup pixels composited at their window position; explicit Noto Sans CJK SC."
+    },
+    {
+      "file": "geometry/inp-part.png",
+      "description": "INPPart：随文档提供的网格示例",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/fixed-stl.png",
+      "description": "FixedSTLSurface：随文档提供的 STL 示例",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/cad-part.png",
+      "description": "CADPart 的建模历史、STEP 导出入口与布尔切除预览",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "cad/boolean-cut.png",
+      "description": "Cut：主体 ID 与工具 ID 的引用",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "cad/export-step-dialog.png",
+      "description": "CADPart 导出 STEP：选择目录、文件名和 STP 文件筛选",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "capture_note": "Actual Qt save-dialog pixels composited at their window position; dialog cancelled after capture."
+    }
+  ],
+  "errors": [],
+  "purpose": "Additional interface illustrations; configurations are not claimed to be solved optimization examples.",
+  "capture_font_policy": {
+    "family": "Noto Sans CJK SC",
+    "point_size": 10,
+    "vtk_font_file": "NotoSansCJKSC-Regular.otf",
+    "source_collection": "NotoSansCJK-Regular.ttc",
+    "glyph_runs": {
+      "400": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Regular"
+        }
+      ],
+      "600": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Medium"
+        }
+      ],
+      "700": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Bold"
+        }
+      ]
+    },
+    "sampled_widget_fonts": {
+      "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,10,-1,5,600,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Hack,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,-1,14,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,10,-1,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "locale_coverage": {
+      "unique_ui_han_characters": 578,
+      "family": "Noto Sans CJK SC",
+      "weights": {
+        "400": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Regular"
+          ]
+        },
+        "600": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Medium"
+          ]
+        },
+        "700": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Bold"
+          ]
+        }
+      }
+    },
+    "scope": "Documentation capture processes only; desktop font configuration unchanged",
+    "code_font": {
+      "latin": "Hack",
+      "han": "Noto Sans CJK SC"
+    }
+  },
+  "naming": "module/meaningful-name.png; no sequence numbers",
+  "diagram_files": [
+    "diagrams/object-references.svg",
+    "diagrams/optimization-cycle.svg",
+    "diagrams/simp-pipeline.svg",
+    "diagrams/geometric-constraints.svg"
+  ],
+  "font_unification": "All documentation screenshots retaken with explicit Simplified Chinese font selection for Qt, Matplotlib and VTK.",
+  "scope_counts": {
+    "registered_types": 59,
+    "material_models": 8,
+    "fea_code_templates": 12,
+    "new_screenshots": 40,
+    "svg_diagrams": 4
+  },
+  "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
+  "portable_definition": "../../examples/test.morph",
+  "portable_definition_sha256": "798481b86ead74c1941ddeed4fbe675b0da64ea63fff6d34c9302a4959b5ae03"
+}

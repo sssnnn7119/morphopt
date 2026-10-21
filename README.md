@@ -2,14 +2,14 @@
 
 **Developed by Zenan Song**
 
-A differentiable structural optimization framework that eliminates manual sensitivity derivation by fusing the adjoint method with automatic differentiation (AD). The sensitivity corresponds to the virtual work of residual force derivatives on the adjoint displacement field, computed via a single backpropagation through the residual graph. MorphOpt provides a unified interface for geometry, load, and material definition, calls torchfea for GPU-accelerated differentiable nonlinear FEA and adjoint-AD sensitivity, and employs a trust-region optimizer with L-BFGS for design updates. Validated on SIMP topology optimization with B-spline density fields and pneumatic soft robot shape optimization with deformation-dependent follower loads.
+MorphOpt is a differentiable structural optimization framework that combines the adjoint method with automatic differentiation (AD). The sensitivity corresponds to the virtual work of residual force derivatives on the adjoint displacement field, computed via a single backpropagation through the residual graph. MorphOpt provides a unified interface for geometry, load, and material definition, calls torchfea for GPU-accelerated differentiable nonlinear FEA and adjoint-AD sensitivity, and employs a trust-region optimizer with L-BFGS for design updates. Validated on SIMP topology optimization with B-spline density fields and pneumatic soft robot shape optimization with deformation-dependent follower loads.
 
 ## Features
 
 - Custom model definition covering geometry, material, and load parameters
 - Differentiable FEA via torchfea with automatic solving and sensitivity propagation
 - L-BFGS and trust-region methods for parameter updates within a subproblem framework
-- Fully extensible via inheritance — users customize every component in their definition scripts
+- Component customization through framework class inheritance
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ pip install morphopt
 
 Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
 
-> **Optimizations are run as scripts.** Each job is an ordinary Python file that calls `morphopt.start_optimization(...)`. It runs headlessly in a terminal (local or remote), and a finished run can be stopped and resumed later from its result folder. Script execution is the recommended way to run jobs.
+> **Optimizations are run as scripts.** Each job is an ordinary Python file that calls `morphopt.start_optimization(...)`. It runs headlessly in a terminal (local or remote), and optimization runs can be stopped and resumed from their result folders. Script execution is the recommended way to run jobs.
 
 1. **Run a minimal example** — execute it directly in a terminal:
 
@@ -33,7 +33,7 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
    python examples/gripper.py
    ```
 
-2. **Run your own job** — copy an example as a starting point, adapt the definition (geometry, material, load, updater, objective), and launch it as a script:
+2. **Run a custom job** — copy an example as a starting point, configure the geometry, material, loads, updater, and objective, and launch it as a script:
 
    ```bash
    python my_task.py
@@ -41,26 +41,29 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
 
    Each run writes its results (logs, FEA files, restart script) into a timestamped result folder under the run root.
 
-3. **Optional — the GUI** is a visual aid for authoring a problem definition and inspecting finished runs in one window. It can also export a runnable script (`.py`), which you can either run directly in the UI or further customize before executing it via Step 2 in a terminal.
+3. **Graphical interface.** The GUI supports problem definition, optimization monitoring, and result inspection in one window. It also exports runnable Python scripts (`.py`) for execution in the UI or a terminal.
 
    ```bash
    morphopt-ui            # console command, available after `pip install morphopt`
-   # python -m morphopt.ui works too (handy when running from a source code directory)
+   # Alternative entry point: python -m morphopt.ui
    ```
 
-The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Build a definition yourself or use **Quickstart** to choose shape or topology optimization, define geometry separately, and add weighted objective terms with their own load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable scripts.
+The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Definitions can be created directly in the workbench or generated through **Quickstart**. Quickstart provides shape and topology optimization settings, geometry definitions, and weighted objective terms with associated load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable scripts.
 
-The complete UI workflow (definition part + observer part) is described in [`docs/UIguide.md`](docs/UIguide.md).
+The [UI quick start](docs/UIguide.md) covers the complete example from model definition to optimization and result inspection. The [script quick start](docs/scriptguide.md) provides the equivalent runnable Python task.
 
 ### Numeric configuration
 
 Shared UI defaults and tunable kernel parameters live in [`src/morphopt/constants.py`](src/morphopt/constants.py), grouped under `CONSTANT.UI` and `CONSTANT.KERNEL`. Code accesses them directly, for example `CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE` or `CONSTANT.KERNEL.SOLVER.NUM_PROCESS`. Edit a value there to change its default; restart MorphOpt for the change to take effect. Coordinate indices, tensor dimensions, and coefficients that define mathematical formulas remain in code. UI translations remain in JSON files under `src/morphopt/ui/locales/`.
 
-Further references:
+### Documentation
 
-- Task definition guide: `docs/module_definition_guide.md`
-- Module API reference: `docs/module_reference.md`
-- Theory & papers: `docs/theory/`
+| Workflow | Quick start | Module and interface reference |
+|---|---|---|
+| Python script | [Start an optimization](docs/scriptguide.md) | [Define and extend each module](docs/scriptreference.md) |
+| Graphical UI | [Create and run the example](docs/UIguide.md) | [Modules, parameters and interface definitions](docs/UIreference.md) |
+
+The [documentation index](docs/README.md) includes the reading order and automatic section numbering commands. Theory and code architecture are documented separately under `docs/theory/` and `docs/codestructure/`.
 
 ## Directory Overview
 
@@ -81,7 +84,7 @@ Research use preferred. For production or commercial use, please evaluate and en
 
 ## Citation
 
-If you use MorphOpt in your research, please cite:
+Research using MorphOpt can cite the following publications:
 
 - TRO 2023
 

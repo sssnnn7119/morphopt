@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 责任与协作
+<a id="section-责任与协作"></a>
+
+## 1 责任与协作
 
 运行时位于 `src/morphopt/optcore/`。`Controller` 是唯一的迭代编排者；`Solver` 只负责 FEA 求解，`ObjectiveFunction` 只定义指标和灵敏度，`Updaters` 只协调局部设计更新，`History` 只记录可持久化的时序数据。
 
@@ -18,7 +20,9 @@ Controller.step()
  └─ save()
 ```
 
-## `Controller`
+<a id="section-controller"></a>
+
+## 2 `Controller`
 
 源码：`optcore/controller.py`。它不继承协议；它聚合所有顶层运行对象，并定义结果目录和设备边界。
 
@@ -44,7 +48,9 @@ Controller.step()
 
 `_detach_recursive()` 与 `_change_device_recursive()` 是实现细节：前者在保存前断开计算图，后者遍历实例属性、容器和 Tensor。新增运行时对象时应将 Tensor 放在普通实例属性或容器中，便于该递归逻辑覆盖。
 
-## `History`
+<a id="section-history"></a>
+
+## 3 `History`
 
 源码：`optcore/history.py`；继承 `ProtocalInitializable`、`ProtocalSavable`。
 
@@ -55,7 +61,9 @@ Controller.step()
 
 `history_objective`、`history_time`、`history_num_elements`、`history_num_nodes`、`history_deformation`、`history_metrics` 是常用键的属性视图。`append(name, value)` 接受本轮值；`save(foldpath)` 写出历史；`load(foldpath, iteration=None)` 恢复全部或截至目标迭代的数据。
 
-## `Solver`
+<a id="section-solver"></a>
+
+## 4 `Solver`
 
 源码：`optcore/solver.py`；继承 `ProtocalInitializable`、`ProtocalSavable`。
 
@@ -74,7 +82,9 @@ Controller.step()
 `U_guess[i]`，该项为 `None` 才使用上一载荷步结果，首步使用模型初始坐标。
 返回结果按全局工况编号排序。
 
-## `ObjectiveFunction`
+<a id="section-objectivefunction"></a>
+
+## 5 `ObjectiveFunction`
 
 源码：`optcore/objfunc.py`；继承 `ProtocalInitializable`、`ProtocalSavable`。
 
@@ -97,7 +107,9 @@ Controller.step()
 
 目标函数子类只描述物理量与聚合逻辑；设计变量分块和 L-BFGS 步长策略由更新器承担。
 
-## `BaseUpdater` 与 `Updaters`
+<a id="section-baseupdater-与-updaters"></a>
+
+## 6 `BaseUpdater` 与 `Updaters`
 
 源码：`optcore/updaters.py`。`BaseUpdater` 继承初始化、保存协议，作为一个局部优化问题的基类；具体类位于 shapeopt 或 simp。
 
@@ -117,7 +129,9 @@ Controller.step()
 
 `ObjectiveFunction.save()` 为每个载荷步写出变形截图与 STL，并将本轮 `FEAController` 保存为 `femodel_<iteration>`、对应 `StaticResult` 保存为 `result_<case>_iter_<iteration>.npz`。模型与结果以同一迭代号配对，供观察页读取。
 
-## 进程入口
+<a id="section-进程入口"></a>
+
+## 7 进程入口
 
 | 文件 | 公开对象 | 职责 |
 |---|---|---|

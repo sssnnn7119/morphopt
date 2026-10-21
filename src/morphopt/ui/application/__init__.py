@@ -7,7 +7,7 @@ widgets are responsible only for interaction and presentation.
 
 from .editing import DefinitionCommands
 from .expressions import DefinitionValues
-from .definitions import MissingImportedModelError, ProblemLibrary, ProblemSession
+from .definitions import ProblemLibrary, ProblemSession
 from .quickstart import QuickstartObjective, QuickstartOptions, build_quickstart
 from .editor_routing import EditorKind, EditorRoute, route_editor
 from .finite_element import FiniteElementSession, IterationModel
@@ -27,7 +27,6 @@ __all__ = [
     "FiniteElementSession",
     "IterationModel",
     "OptimizationRunSession",
-    "MissingImportedModelError",
     "ProblemLibrary",
     "ProblemSession",
     "QuickstartObjective",

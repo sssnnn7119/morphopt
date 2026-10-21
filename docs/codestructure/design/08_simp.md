@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 能力组成
+<a id="section-能力组成"></a>
+
+## 1 能力组成
 
 SIMP 模块将 B-spline 标量场投影到有限元节点或高斯点，得到元素材料比例与惩罚因子。`SIMP_BSPFieldMaterials` 同时是材料分配接口和可更新设计接口；`UpdaterSIMPMaterial` 以其控制点为局部 L-BFGS 变量。
 
@@ -16,11 +18,13 @@ SIMP_BSPFieldMaterials : BaseMaterial + ProtocalUpdatable
            UpdaterSIMPMaterial
 ```
 
-## SIMP 后端元素与材料
+<a id="section-simp-后端元素与材料"></a>
+
+## 2 SIMP 后端元素与材料
 
 源码：`simp/simpmaterial.py`。
 
-| 类 | 继承/用途 |
+| 类 | 继承关系与功能 |
 |---|---|
 | `SIMPScaledMaterial` | `torchfea.materials.Materials_Base`；将基准材料能量与刚度按密度因子缩放。 |
 | `SIMPElementFgrad` | `torchfea.elements.Element_3D`；基于形变梯度的 SIMP 单元基础。 |
@@ -30,7 +34,9 @@ SIMP_BSPFieldMaterials : BaseMaterial + ProtocalUpdatable
 
 这些类由材料接口内部选择和替换元素类型，用户侧通常只配置材料设计场和更新器。
 
-## `SIMP_BSPFieldMaterials`
+<a id="section-simp_bspfieldmaterials"></a>
+
+## 3 `SIMP_BSPFieldMaterials`
 
 源码：`simp/simpmaterial.py`；继承 `BaseMaterial`、`ProtocalUpdatable`。
 
@@ -63,7 +69,9 @@ SIMP_BSPFieldMaterials : BaseMaterial + ProtocalUpdatable
 
 `_map_bsp_designfield()` 与 `_map_bsp_designfield_with_spartial_derivative()` 是内部投影实现：前者在给定空间位置计算 B-spline 标量场，后者同时给出空间导数。它们是材料投影的数值内核，更新器通过控制点与设计场约束间接控制该映射。
 
-## `UpdaterSIMPMaterial`
+<a id="section-updatersimpmaterial"></a>
+
+## 4 `UpdaterSIMPMaterial`
 
 源码：`simp/update_simpmaterial.py`；继承 `BaseUpdater`。
 
@@ -84,7 +92,9 @@ SIMP_BSPFieldMaterials : BaseMaterial + ProtocalUpdatable
 | `update_variables(dx)` | 写回材料控制点。 |
 | `save/load` | 保存/恢复局部步长状态。 |
 
-## SIMP 目标与约束
+<a id="section-simp-目标与约束"></a>
+
+## 5 SIMP 目标与约束
 
 源码目录：`simp/objectivefuncs/`。
 

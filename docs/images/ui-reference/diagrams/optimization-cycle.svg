@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590" role="img"><title>优化计算流程与内外层迭代</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426484"/></marker></defs>
+<rect width="1200" height="590" rx="16" fill="#f5f8fc"/>
+<text x="32" y="42" font-family="Noto Sans CJK SC" font-size="24" fill="#15324d" font-weight="600">优化计算流程与内外层迭代</text>
+<rect x="35" y="100" width="250" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">① 当前设计</text>
+<text x="53" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">几何 / 材料 + 载荷工况</text>
+<text x="53" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">定义或上一轮结果输入</text>
+<rect x="355" y="100" width="250" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="373" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">② 有限元求解</text>
+<text x="373" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">逐工况计算平衡状态</text>
+<text x="373" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">位移、应力、能量等</text>
+<rect x="675" y="100" width="245" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="693" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">③ 主目标与指标</text>
+<text x="693" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">主目标：设计性能评价</text>
+<text x="693" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">指标：独立记录</text>
+<polyline points="285,160 355,160" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="605,160 675,160" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="675" y="330" width="245" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="693" y="360" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">④ 计算设计梯度</text>
+<text x="693" y="390" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">形状导数 / 材料敏感度</text>
+<text x="693" y="417" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">对应所选主目标</text>
+<rect x="355" y="330" width="250" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="373" y="360" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">⑤ 更新子问题</text>
+<text x="373" y="390" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">目标梯度 + 对称 / 约束</text>
+<text x="373" y="417" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">max_step_iter：内部上限</text>
+<rect x="35" y="330" width="250" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="360" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">⑥ 保存新设计</text>
+<text x="53" y="390" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">保存轮次、状态与指标</text>
+<text x="53" y="417" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">下一轮重新执行 FE 求解</text>
+<polyline points="797,220 797,330" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="675,390 605,390" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="355,390 285,390" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="160,330 160,220" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="970" y="255" width="195" height="155" rx="12" fill="#eef5e8" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="988" y="285" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">事后有限元</text>
+<text x="988" y="315" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">已保存设计输入</text>
+<text x="988" y="342" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">固定几何与材料</text>
+<text x="988" y="369" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">调整载荷后独立求解</text>
+<polyline points="920,160 1067,160 1067,255" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="35" y="535" font-family="Noto Sans CJK SC" font-size="21" fill="#263b50" font-weight="400">外层优化轮次 ≠ 子问题内部迭代 ≠ FE 非线性求解迭代</text>
+</svg>

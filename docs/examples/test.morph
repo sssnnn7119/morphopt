@@ -1,0 +1,318 @@
+{
+  "version": 3,
+  "scheme": "shapeopt",
+  "label": "Untitled",
+  "result_folder": "./results/",
+  "device": "cpu",
+  "updater_device": null,
+  "restart_per_iteration": 10,
+  "root": {
+    "kind": "problem",
+    "name": "Untitled",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part",
+            "name": "part1",
+            "params": {
+              "type": "BoundaryPart",
+              "fea_seed_size": 1.0,
+              "mesh_order": 1,
+              "exterior_surface": "surface_0_All",
+              "part_name": ""
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "part1-1",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": false,
+                  "r0": 8.0,
+                  "length": 80.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "maxR": 0.2,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 10.0
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "r0": 4.0,
+                  "length": 74.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    0.0,
+                    0.0,
+                    3.0
+                  ],
+                  "maxR": 0.2,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 10.0
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "fea_component",
+            "name": "pressure_1",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "part1-1",
+              "surface_name": "surface_1_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RP_1",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                0.0,
+                0.0,
+                80.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "couple_1",
+            "params": {
+              "type": "Couple",
+              "rp_name": "RP_1",
+              "instance_name": "part1-1",
+              "set_nodes_name": "surface_0_Head"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "bc_1",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "part1-1",
+              "set_nodes_name": "surface_0_Bottom",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "num_steps": 1,
+          "step_values": [
+            {
+              "pressure_1": [
+                0.06
+              ]
+            }
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "material_1",
+            "params": {
+              "type": "HomogeneousMaterial",
+              "part_name": "part1",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.482,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09,
+              "elementname": ""
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "objective_terms": [
+            {
+              "type": "displacement",
+              "weight": 1.0,
+              "reference_point_name": "RP_1",
+              "step_index": 0,
+              "component": "ry",
+              "direction": "maximize",
+              "target": 0.0
+            }
+          ],
+          "metrics_terms": [
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_1",
+              "step_index": 0,
+              "component": "ry"
+            }
+          ],
+          "jacobian_needed": []
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 1,
+          "gpus": [],
+          "task_index_list": []
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [
+            {
+              "max_step_iter": 50,
+              "if_update": [
+                true,
+                true
+              ],
+              "objective_functions": [
+                {
+                  "type": "ShapeDerivative",
+                  "params": {}
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "Fairness",
+                  "params": {}
+                },
+                {
+                  "type": "Distance",
+                  "params": {
+                    "min_distance": [
+                      [
+                        2.5,
+                        2.5
+                      ],
+                      [
+                        2.5,
+                        2.5
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "Cylinder",
+                  "params": {
+                    "radius": 10.0,
+                    "height": 80.0,
+                    "bottom": 0.0
+                  }
+                }
+              ],
+              "symmetry_constraints": [
+                {
+                  "type": "BspMirror",
+                  "params": {
+                    "plane": "xz",
+                    "offset": 0.0
+                  },
+                  "surface_index": 0
+                },
+                {
+                  "type": "BspMirror",
+                  "params": {
+                    "plane": "xz",
+                    "offset": 0.0
+                  },
+                  "surface_index": 1
+                }
+              ],
+              "part_name": "part1"
+            }
+          ],
+          "materials": []
+        },
+        "children": []
+      }
+    ]
+  },
+  "custom_classes": [],
+  "class_bindings": {},
+  "helper_code": "",
+  "helper_variables": [],
+  "helper_functions": []
+}

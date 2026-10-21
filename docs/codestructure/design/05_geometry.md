@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 领域模型
+<a id="section-领域模型"></a>
+
+## 1 领域模型
 
 几何层将一个或多个 Part 接口转化为 `torchfea.Assembly`。一个 Part 接口负责构建一个 `torchfea.Part`，并在同一接口内声明该 Part 的一个或多个 Instance。Instance 的名称和位姿属于几何声明，FEA 载荷以 instance 名称引用这些实体。
 
@@ -15,9 +17,11 @@ GeometryParams.interfaces
                     └── torchfea.Assembly.add_instance()
 ```
 
-## `BasePart`
+<a id="section-basepart"></a>
 
-源码：`optcore/modelparams/parts/base_part.py`；继承 `BaseModelComponent`。子类只需实现 `build_part()`；它们可以覆写 `define_instance()` 声明多个独立位姿。
+## 2 `BasePart`
+
+源码：`optcore/modelparams/parts/base_part.py`；继承 `BaseModelComponent`。子类实现 `build_part()`，并可通过重写 `define_instance()` 声明多个独立位姿。
 
 | 属性 | 可见性 | 说明 |
 |---|---|---|
@@ -41,12 +45,14 @@ GeometryParams.interfaces
 | `workdir(path_result)` | 返回该接口的几何缓存工作目录。 |
 | `pathlog_required()` | 返回 `['geometry']`。 |
 
-`add_instance()` 校验 instance 名在一个 Part 接口中唯一，也校验每项位姿恰为六个浮点数。`add_to_assembly()` 再校验声明中的 `part_name` 与该接口实际生成的 Part 名一致，从而让跨 Part 的引用在装配时得到明确诊断。
+`add_instance()` 校验 instance 名在一个 Part 接口中唯一，并校验每项位姿恰为六个浮点数。`add_to_assembly()` 再校验声明中的 `part_name` 与该接口实际生成的 Part 名一致，跨 Part 引用在装配阶段接受一致性校验。
 
-## 多 Instance 位姿
+<a id="section-多-instance-位姿"></a>
+
+## 3 多 Instance 位姿
 
 ```python
-class Bracket(morphopt.TorchFEAPart):
+class Bracket(morphopt.INPPart):
     def define_instance(self) -> None:
         self.add_instance(self.part_name, "left", [0, 0, 0, 0, 0, 0])
         self.add_instance(self.part_name, "right", [80, 0, 0, 0, 0, 3.14159])
@@ -54,7 +60,9 @@ class Bracket(morphopt.TorchFEAPart):
 
 几何接口名称、Part 名、instance 名是三个不同层级：接口名用于集合注册和保存路径，Part 名用于 `Assembly.get_part()` 与材料分配，instance 名用于载荷、接触和约束定位。UI 在内存中保存对象引用，生成脚本时将这些关系投影为上述名称。
 
-## 固定网格 Part：`INPPart`
+<a id="section-固定网格-partinppart"></a>
+
+## 4 固定网格 Part：`INPPart`
 
 源码：`inp_part.py`；继承 `BasePart`，`cache_part=True`。
 
@@ -66,28 +74,19 @@ class Bracket(morphopt.TorchFEAPart):
 
 `build_part()` 通过 `torchfea.FEA_INP` 读取输入文件、选择文件内 Part，并将 `exterior_surface` 应用到导入结果。该类型适合固定网格几何和外部网格流程。
 
-## TorchFEA 存档 Part：`TorchFEAPart`
+<a id="section-cad-历史与-step-导出"></a>
 
-源码：`torch_fea_part.py`；继承 `BasePart`，`cache_part=True`。
+## 5 CAD 历史与 STEP 导出
 
-| 构造状态 | 说明 |
-|---|---|
-| `model_directory`、`model_filename` | TorchFEA `.npz` 存档位置；文件名为空时选择目录中最新存档。 |
-| `model_path` | 已解析的绝对存档路径。 |
-| `model_part_name` | 存档内选中的 Part 名。 |
-| `_source_instances` | 存档中属于选中 Part 的 instance 位姿，用于复建。 |
+`CADPart.define_operations()` 通过 `add_operation()` 声明有序的 TorchFEA CAD 操作；初始化后的 `operations` 提供该历史。有限元建模通过 `CADModel.mesh_part()` 生成 Part，几何导出则直接调用 `torchfea.cad.export_step(operations, path)`，不生成网格。
 
-| 公开成员 | 职责 |
-|---|---|
-| `define_instance()` | 复制选中 Part 的存档 instances；无来源 instance 时使用基类默认。 |
-| `for_all_parts(directory, filename='')` | 为存档内每个 Part 创建一个接口。 |
-| `build_part()` | 每次从存档加载并取出选中 Part。 |
-| `resolve_model_path(...)` | 解析一个 `.npz` 文件。 |
-| `load_model_assembly(...)` | 加载存档并规范到当前 Torch 默认设备，返回有效 Assembly。 |
+UI 的 `application/cad.py::export_cad_step(node, path, problem)` 从当前 `CADPartNode.operations` 创建原生 CAD 操作，并沿用 `DefinitionValues` 解析辅助变量和表达式。导出不构造有限元 Part，也不读取网格尺寸和阶次。
 
-导入的存档只提供 Part 和其放置；载荷、材料、求解器均由当前 MorphOpt 问题重新声明。这让同一几何资产能服务于多个优化问题。
+导出保留 CAD 历史的最终实体及其局部坐标。Instance 位姿属于装配声明。`.stp`、`.step` 扩展名和文件覆盖由保存对话框处理；操作流程与实际配图见[模块参考](../../UIreference.md#cad-step-export)。
 
-## 几何构建与缓存
+<a id="section-几何构建与缓存"></a>
+
+## 6 几何构建与缓存
 
 ```text
 Params.create_feamodel(path_result)
@@ -101,6 +100,8 @@ Params.create_feamodel(path_result)
 
 固定 Part 把 `_part` 缓存在内存；可变边界 Part 每轮重建网格。`workdir()` 将每个接口的网格、STEP、INP 等中间产物放进其专属缓存目录，使多 Part 并行建模不会使用同名文件。
 
-## 重命名契约
+<a id="section-重命名契约"></a>
+
+## 7 重命名契约
 
 Part 接口重命名后，未显式设置的 `part_name` 随注册名更新；默认 instance 也在下一次 `initialize()` 中使用新 Part 名。显式 Part 名和自定义 instance 名保持为接口声明的一部分。UI 领域模型保存目标对象关系，并在序列化、代码生成和 Assembly 建立前将其投影为当前名称。

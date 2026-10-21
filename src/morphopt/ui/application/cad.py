@@ -1,6 +1,8 @@
-"""Build CAD Part previews from the UI's ordered operation nodes."""
+"""Build CAD Part previews and exports from ordered UI operation nodes."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import torchfea
 
@@ -83,3 +85,12 @@ def cad_brep_records_from_node(
     if not part.operations:
         return []
     return torchfea.cad.preview_brep(part.operations)
+
+
+def export_cad_step(
+    node: CADPartNode, path: str | Path, problem: ProblemDefinition | None = None
+) -> None:
+    """Export the Part's final CAD solids in local coordinates without meshing."""
+    namespace = DefinitionValues(problem).namespace
+    operations = [cad_operation_from_node(item, namespace) for item in node.operations]
+    torchfea.cad.export_step(operations, str(path))

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
+    QMessageBox,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -38,8 +39,10 @@ from ..model.registry import (
 )
 from .editor import PropertyEditor
 from .helper_editor import HelperCodeEditor
+from .file_dialogs import choose_save_file
 from .collection_controls import ActionButton, CollectionHeader, ItemActions, set_card_selected
 from ..application.fields import fields_for_node
+from ..application.cad import export_cad_step
 from ..application.part_sets import PartSetCatalog
 from ..application.editor_routing import managed_nodes
 from ..presentation.labels import (
@@ -74,6 +77,7 @@ class DefinitionManagerEditor(QWidget):
         self._node_editors: dict[Node, tuple[PropertyEditor, set[str] | None]] = {}
         self._helper_editors: dict[Node, HelperCodeEditor] = {}
         self._updater_buttons: dict[Node, ActionButton] = {}
+        self._cad_export_directory = "."
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -301,20 +305,7 @@ class DefinitionManagerEditor(QWidget):
             lambda item=node, delta=-1: self.actions.move_part(item, delta),
             tr('ui.widgets.definition_manager.delete_part'),
         )
-        if node.type == "TorchFEAPart":
-            from .torchfea_model_editor import TorchFEAModelEditor
-
-            col.addWidget(
-                self._node_editor(
-                    node, exclude_fields={"model_directory", "model_filename"}
-                )
-            )
-            model_editor = TorchFEAModelEditor(group, embedded=True)
-            model_editor.edit_node(node, self._problem)
-            model_editor.changed.connect(self.changed.emit)
-            col.addWidget(model_editor)
-        else:
-            col.addWidget(self._node_editor(node))
+        col.addWidget(self._node_editor(node))
 
         col.addWidget(
             self._child_collection(
@@ -387,7 +378,32 @@ class DefinitionManagerEditor(QWidget):
             button = ActionButton(tr("ui.component.create_updater"), lambda: self.actions.add_updater(node))
             self._updater_buttons[node] = button
             row.addWidget(button)
+        elif isinstance(node, CADPartNode):
+            row.addWidget(ActionButton(
+                tr("ui.cad.export_step"), lambda part=node: self._export_cad_step(part)
+            ))
         layout.addLayout(row)
+
+    def _export_cad_step(self, node: CADPartNode) -> None:
+        title = tr("ui.cad.export_step")
+        if not node.operations:
+            QMessageBox.information(self, title, tr("ui.cad.features_required"))
+            return
+        selection = choose_save_file(
+            self, title, self._cad_export_directory, node.assembly_name or "part",
+            {"stp": tr("ui.cad.stp_files"), "step": tr("ui.cad.step_files")},
+        )
+        if selection is None:
+            return
+        self._cad_export_directory = str(selection.path.parent)
+        try:
+            export_cad_step(node, selection.path, self._problem)
+        except Exception as exc:
+            QMessageBox.warning(self, title, str(exc))
+            return
+        QMessageBox.information(
+            self, title, tr("ui.cad.exported", path=str(selection.path))
+        )
 
     def _child_collection(
         self,

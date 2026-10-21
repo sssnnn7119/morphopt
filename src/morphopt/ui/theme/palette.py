@@ -154,6 +154,7 @@ class QuickstartLayout:
 @dataclass(frozen=True)
 class FiniteElementLayout:
     split_sizes: tuple[int, int] = (650, 850)
+    iteration_selector_minimum_width: int = 100
     load_table_minimum_height: int = 210
     output_maximum_blocks: int = 1500
 

@@ -7,6 +7,7 @@ Shared node bases live in :mod:`base_nodes`; concrete types live in
 from __future__ import annotations
 
 from collections.abc import Iterator
+from copy import deepcopy
 
 from ...constants import CONSTANT
 from ..i18n import localized_message
@@ -36,7 +37,6 @@ from .base_nodes import (
     SurfaceNode,
     find_node,
     list_node_paths,
-    resolve_model_directory,
 )
 from .node_types import (
     BodyForceNode,
@@ -55,7 +55,6 @@ from .node_types import (
     ProblemNode,
     SolverNode,
     StepsNode,
-    TorchFEAPartNode,
     UpdaterNode,
 )
 from .registry import NODE_TYPES
@@ -102,7 +101,6 @@ __all__ = [
     "UpdaterNode",
     "find_node",
     "list_node_paths",
-    "resolve_model_directory",
 ]
 
 
@@ -215,131 +213,6 @@ class ProblemDefinition:
             None,
         )
 
-    def imported_model_part_node(self) -> TorchFEAPartNode | None:
-        """First Part definition that links an exported TorchFEA model."""
-        return next(
-            (
-                part
-                for part in self.parts()
-                if isinstance(part, TorchFEAPartNode)
-            ),
-            None,
-        )
-
-    def sync_imported_parts(self) -> bool:
-        """Align the TorchFEA Part definitions with the linked archive.
-
-        One definition per Part keeps a multi-Part export a multi-Part model:
-        Parts and their stored Instance names are registered under their own
-        names, and definitions whose Part disappeared from the archive are
-        dropped.  Returns whether the tree changed.
-        """
-        summary = self.imported_model_summary()
-        geometry = self.geometry
-        if summary is None or geometry is None:
-            return False
-
-        linked = [
-            part
-            for part in self.parts()
-            if isinstance(part, TorchFEAPartNode)
-        ]
-        if not linked:
-            return False
-
-        directory = linked[0].model_directory
-        filename = linked[0].model_filename or ""
-        managed = [part for part in linked if part.model_directory == directory]
-        archive_parts = {part.name: part for part in summary.parts}
-        changed = False
-
-        for part in managed:
-            if part.model_part_name:
-                continue
-            if len(archive_parts) == 1:
-                part.model_part_name = next(iter(archive_parts))
-                changed = True
-
-        covered = {
-            part.model_part_name
-            for part in managed
-            if part.model_part_name
-        }
-        for part in summary.parts:
-            if part.name in covered:
-                continue
-            geometry.add_part(
-                PartNode.create(
-                    "TorchFEAPart",
-                    name=part.name,
-                    model_directory=directory,
-                    model_filename=filename,
-                    model_part_name=part.name,
-                    exterior_surface=linked[0].exterior_surface or "",
-                )
-            )
-            covered.add(part.name)
-            changed = True
-
-        for part in list(managed):
-            name = part.model_part_name
-            if not name or name in archive_parts:
-                continue
-            if len(geometry.parts) <= 1:
-                continue
-            geometry.remove_child(part)
-            changed = True
-
-        for part in summary.parts:
-            owner = next(
-                (
-                    candidate
-                    for candidate in self.parts()
-                    if isinstance(candidate, TorchFEAPartNode)
-                    and candidate.model_part_name == part.name
-                ),
-                None,
-            )
-            if owner is None:
-                continue
-            if owner.assembly_name != part.name:
-                owner.part_name = part.name
-                changed = True
-
-            # Import the archive's actual placements once, replacing the
-            # model's synthetic identity Instance.  Subsequent edits are
-            # respected: a user-edited Instance is no longer mistaken for a
-            # fresh imported default.
-            archive_instances = [
-                item for item in summary.instances if item.part_name == part.name
-            ]
-            current_instances = owner.instances
-            is_synthetic = (
-                len(current_instances) == 1
-                and current_instances[0].name
-                in {
-                    owner.assembly_name,
-                    f"{owner.assembly_name}-1",
-                }
-                and not isinstance(current_instances[0].translation, str)
-                and not isinstance(current_instances[0].rotation, str)
-                and current_instances[0].pose == [0.0] * 6
-            )
-            if archive_instances and is_synthetic:
-                owner.remove_child(current_instances[0])
-                for item in archive_instances:
-                    owner.add_instance(
-                        InstanceNode(
-                            name=item.name,
-                            params={
-                                "translation": list(item.translation),
-                                "rotation": list(item.rotation),
-                            },
-                        )
-                    )
-                changed = True
-        return changed
-
     def fea_components(self) -> list[FEAComponentNode]:
         """All loads, constraints, reference points and contacts in tree order."""
         loads = self.loads
@@ -362,16 +235,11 @@ class ProblemDefinition:
     def instance_names(self) -> list[str]:
         """Known FEA instance names, in first-use order.
 
-        Part definitions contribute their persisted Instance children;
-        imported TorchFEA models contribute any archive names not yet linked
-        to a UI Part definition.
+        Part definitions contribute their persisted Instance children.
         """
         names: list[str] = []
         for part in self.parts():
             names.extend(part.instance_names)
-        summary = self.imported_model_summary()
-        if summary is not None:
-            names.extend(item.name for item in summary.instances)
         return list(dict.fromkeys(names))
 
     def part_for_instance(
@@ -393,56 +261,14 @@ class ProblemDefinition:
         )
 
     def part_names(self) -> list[str]:
-        """Known Part names: defined Parts first, then imported Parts."""
+        """Names of defined Parts, in tree order."""
         names = [part.assembly_name for part in self.parts()]
-        summary = self.imported_model_summary()
-        if summary is not None:
-            names.extend(part.name for part in summary.parts)
         return list(dict.fromkeys(name for name in names if name))
 
     def material_nodes(self) -> list[MaterialNode]:
         """All material assignment nodes in their stable tree order."""
         section = self.section(KIND_MATERIALS)
         return section.assignments if isinstance(section, MaterialsNode) else []
-
-    def imported_model_summary(self):
-        """Inspect the linked TorchFEA model, returning ``None`` if unset."""
-        geometry = self.imported_model_part_node()
-        if geometry is None or not geometry.model_directory:
-            return None
-        try:
-            from .modelinfo import inspect_model
-
-            return inspect_model(
-                geometry.model_directory,
-                geometry.model_filename or "",
-            )
-        except Exception:
-            return None
-
-    def _part_summary(self, instance_name: str = "", part_name: str = ""):
-        summary = self.imported_model_summary()
-        if summary is None:
-            return None
-        if instance_name:
-            return summary.part_for_instance(instance_name)
-        if part_name:
-            return next(
-                (item for item in summary.parts if item.name == part_name), None
-            )
-        return summary.parts[0] if len(summary.parts) == 1 else None
-
-    def node_set_names(self, instance_name: str = "") -> list[str]:
-        part = self._part_summary(instance_name=instance_name)
-        return list(part.node_sets) if part is not None else []
-
-    def surface_set_names(self, instance_name: str = "") -> list[str]:
-        part = self._part_summary(instance_name=instance_name)
-        return list(part.surface_sets) if part is not None else []
-
-    def element_set_names(self, instance_name: str = "") -> list[str]:
-        part = self._part_summary(instance_name=instance_name)
-        return list(part.element_sets) if part is not None else []
 
     def reference_point_names(self) -> list[str]:
         """Names of reference points declared by the FEA component tree."""
@@ -452,12 +278,9 @@ class ProblemDefinition:
             if component.type == "ReferencePoint" and component.name
         ]
 
-    def element_names(self, part_name: str = "") -> list[str]:
+    def element_names(self) -> list[str]:
         """Material and load element-family names, in stable unique order."""
         names: list[str] = []
-        part = self._part_summary(part_name=part_name)
-        if part is not None:
-            names.extend(part.element_types)
         for material in self.material_nodes():
             for field in ("elementname",):
                 value = getattr(material, field, None)
@@ -928,7 +751,7 @@ class ProblemDefinition:
 
     def suggest_part_name(self, prefix: str = "part") -> str:
         """First unused Part definition name."""
-        names = {part.name for part in self.parts()}
+        names = {name for part in self.parts() for name in (part.name, part.assembly_name)}
         index = 1
         while f"{prefix}{index}" in names:
             index += 1
@@ -1099,12 +922,14 @@ class ProblemDefinition:
             part.name = self.suggest_part_name()
             instances = part.instances
             if (
-                not part.part_name
-                and len(instances) == 1
+                len(instances) == 1
                 and instances[0].name in {"part-1", "part"}
             ):
                 instances[0].name = f"{part.name}-1"
-        if any(item.name == part.name for item in geometry.parts):
+        if any(
+            item.name == part.name or item.assembly_name == part.assembly_name
+            for item in geometry.parts
+        ):
             raise ValueError(
                 localized_message(
                     "ui.errors.problem.part_name_value_already_exists",
@@ -1347,40 +1172,8 @@ class ProblemDefinition:
         return False
 
     def rename_part(self, part: PartNode, part_name: str) -> bool:
-        """Rename a generated Assembly Part and its identity Instance.
-
-        ``part_name`` may be empty, in which case the Assembly Part name falls
-        back to the Part definition name. Only the conventional identity instance
-        (``<part>-1``) follows this change;
-        explicitly named instances retain both their names and their poses.
-        """
-        if part not in self.parts():
-            return False
-        if isinstance(part, TorchFEAPartNode):
-            # The archive owns the physical Part name. The UI Part definition
-            # may still be renamed through ``rename_definition`` above.
-            return False
-
-        old_part_name = part.assembly_name
-        part_name = part_name.strip()
-        new_part_name = part_name or part.name.strip()
-        if not new_part_name:
-            return False
-        if part_name == part.part_name:
-            return False
-        if any(
-            item is not part and item.assembly_name == new_part_name
-            for item in self.parts()
-        ):
-            return False
-        if not self._can_rename_default_instance(
-            part, old_part_name, new_part_name
-        ):
-            return False
-
-        part.part_name = part_name
-        self._rename_default_instance(part, old_part_name, new_part_name)
-        return True
+        """Rename the single Part identity; Instance names remain independent."""
+        return self._rename_part_node(part, part_name)
 
     def _rename_component(
         self, component: FEAComponentNode, new_name: str
@@ -1415,29 +1208,9 @@ class ProblemDefinition:
         ):
             return False
 
-        old_part_name = part.assembly_name
-        # A TorchFEA Part-definition name is only MorphOpt's registration key. Its
-        # actual Part and Instance names are owned by the imported archive;
-        # treating it as a physical-Part rename would make load references
-        # disagree with the archive on the next synchronization.
-        imported_part = part.type == "TorchFEAPart"
-        new_part_name = (
-            old_part_name
-            if imported_part
-            else (part.part_name or new_name).strip()
-        )
-        if not self._can_rename_default_instance(
-            part, old_part_name, new_part_name
-        ):
-            return False
-
         part.name = new_name
-        if imported_part:
-            # Persist the archive Part explicitly before the registration
-            # name changes, otherwise ``assembly_name`` would fall back to the
-            # newly edited Part-definition name.
-            part.part_name = old_part_name
-        self._rename_default_instance(part, old_part_name, new_part_name)
+        # Instance names are defined only by their own cards, including the
+        # initially suggested "<part>-1" name. Object references remain bound.
         return True
 
     def _rename_material(
@@ -1458,49 +1231,6 @@ class ProblemDefinition:
 
         material.name = new_name
         return True
-
-    def _can_rename_default_instance(
-        self,
-        part: PartNode,
-        old_part_name: str,
-        new_part_name: str,
-    ) -> bool:
-        """Whether following the identity Instance would keep names unique."""
-        default = self._default_instance(part, old_part_name)
-        if default is None or old_part_name == new_part_name:
-            return True
-        target_name = f"{new_part_name}-1"
-        return not any(
-            instance is not default and instance.name == target_name
-            for part in self.parts()
-            for instance in part.instances
-        )
-
-    @staticmethod
-    def _default_instance(part: PartNode, part_name: str) -> InstanceNode | None:
-        """Return the conventional identity Instance, if it still exists."""
-        conventional = f"{part_name}-1"
-        return next(
-            (
-                instance
-                for instance in part.instances
-                if instance.name == conventional
-            ),
-            None,
-        )
-
-    def _rename_default_instance(
-        self,
-        part: PartNode,
-        old_part_name: str,
-        new_part_name: str,
-    ) -> None:
-        """Rename only the conventional identity Instance of a Part."""
-        if old_part_name == new_part_name:
-            return
-        default = self._default_instance(part, old_part_name)
-        if default is not None:
-            default.name = f"{new_part_name}-1"
 
     # ---------------------------------------------------- mutation helpers
     def _require_geometry(self) -> GeometryNode:
@@ -1724,6 +1454,41 @@ class ProblemDefinition:
             "helper_functions": [node.to_dict() for node in self.helper_functions],
         }
 
+    @staticmethod
+    def _normalize_part_names(root: dict) -> dict:
+        """Read legacy aliases without retaining a second editable Part name.
+
+        Physical Part and Instance names remain unchanged. Only old geometry
+        registration keys referenced by updaters/materials need remapping.
+        The caller's document is never mutated.
+        """
+        root = deepcopy(root)
+        sections = {item.get("kind"): item for item in root.get("children", [])}
+        parts = sections.get("geometry", {}).get("children", [])
+        renamed = {}
+        physical_names = set()
+        for part in parts:
+            if part.get("kind") != "part":
+                continue
+            params = part.get("params", {})
+            old_name = part.get("name", "")
+            alias = str(params.pop("part_name", "") or "").strip()
+            name = alias or old_name
+            part["name"] = name
+            renamed[old_name] = name
+            physical_names.add(name)
+        for material in sections.get("materials", {}).get("children", []):
+            params = material.get("params", {})
+            name = params.get("part_name")
+            if name not in physical_names and name in renamed:
+                params["part_name"] = renamed[name]
+        updater = sections.get("updater", {}).get("params", {})
+        for config in updater.get("geometry", []):
+            name = config.get("part_name")
+            if name in renamed:
+                config["part_name"] = renamed[name]
+        return root
+
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
         if data.get("version") != 3:
@@ -1733,7 +1498,8 @@ class ProblemDefinition:
                     value_0=data.get("version"),
                 )
             )
-        root = ProblemNode.from_dict(data["root"])
+        root_data = cls._normalize_part_names(data["root"])
+        root = ProblemNode.from_dict(root_data)
         problem = cls(
             scheme=data["scheme"],
             label=data.get("label", "Untitled"),

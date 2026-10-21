@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img"><title>SIMP 控制变量、材料占比与刚度比例</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426484"/></marker></defs>
+<rect width="1200" height="480" rx="16" fill="#f5f8fc"/>
+<text x="32" y="42" font-family="Noto Sans CJK SC" font-size="24" fill="#15324d" font-weight="600">SIMP 控制变量、材料占比与刚度比例</text>
+<rect x="35" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">f：设计控制场</text>
+<text x="53" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">B 样条控制变量插值</text>
+<text x="53" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">初值：initial_ratio</text>
+<text x="53" y="214" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">MinValue / MaxValue 约束</text>
+<rect x="350" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="368" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">ρ：sigmoid(f)</text>
+<text x="368" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">值在 0 与 1 之间</text>
+<text x="368" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">ρ 的体积加权平均</text>
+<text x="368" y="214" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">VolFrac：材料占比约束</text>
+<rect x="665" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="683" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">r：刚度比例</text>
+<text x="683" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">ρ 经 RAMP 插值和下限</text>
+<text x="683" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">r_min + (1-r_min) RAMP(ρ)</text>
+<text x="683" y="214" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">用于材料刚度插值</text>
+<rect x="980" y="100" width="185" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="998" y="130" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">有限元模型</text>
+<text x="998" y="160" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">材料刚度改变</text>
+<text x="998" y="187" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">重新求解响应</text>
+<polyline points="275,165 350,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="280" y="148" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">sigmoid</text>
+<polyline points="590,165 665,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="601" y="148" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">RAMP</text>
+<polyline points="905,165 980,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="35" y="310" width="1130" height="100" rx="12" fill="#fff5df" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="340" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">数值示例：控制变量初值与材料占比</text>
+<text x="53" y="370" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">f = 0.5  →  ρ ≈ 0.6225  →  p = 8 且 r_min 较小时，r ≈ 0.1548</text>
+</svg>

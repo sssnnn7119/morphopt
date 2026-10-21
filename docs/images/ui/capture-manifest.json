@@ -1,0 +1,565 @@
+{
+  "definition": "test.morph",
+  "definition_sha256": "663982379d94280d529cee5460f8eb0111f32b542734d98f5f2da4a73b4ee738",
+  "result_folder": "results/example-run",
+  "platform": "wayland",
+  "images": [
+    {
+      "file": "custom-code/framework-overrides.png",
+      "description": "可选的重写类入口；test.morph 未使用自定义类",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "custom-code/helper-code.png",
+      "description": "可选的自由代码块；test.morph 本身未使用辅助代码",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/add-surface-menu.png",
+      "description": "在part1的边界曲面栏添加BSP圆柱面",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/boundary-part.png",
+      "description": "创建part1和默认实例后，填写部件网格和外表面设置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/bsp-inner-cavity.png",
+      "description": "再添加内表面surface_1：r0=4、length=74、z=3",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/bsp-outer-surface.png",
+      "description": "只添加外表面surface_0：r0=8、length=80",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/instance-pose.png",
+      "description": "检查实例part1-1的零平移与零旋转",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/add-interface-menu.png",
+      "description": "载荷与边界条件的添加菜单，展示压力、参考点、耦合、边界条件等入口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/coupling.png",
+      "description": "新增耦合，将RP_1连接到surface_0_Head",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/fixed-boundary.png",
+      "description": "新增底部固定约束bc_1，固定X/Y/Z",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/pressure-load-case.png",
+      "description": "定义第一个工况，pressure_1的幅值为0.06",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/pressure.png",
+      "description": "先定义作用实例和内腔表面，此时工况幅值尚未设置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "loads/reference-point.png",
+      "description": "新增末端参考点RP_1，坐标0,0,80",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "materials/add-material-menu.png",
+      "description": "材料编辑区添加均匀材料或SIMP材料的入口",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "materials/homogeneous-material.png",
+      "description": "添加NeoHookeanLnJ均匀材料并分配给part1",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "objectives/displacement-objective-and-metric.png",
+      "description": "添加最大化RP_1.ry的目标项和记录ry的指标项",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/cylinder-envelope.png",
+      "description": "半径10、高80、底部z=0的圆柱包络约束",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/fairness.png",
+      "description": "表面曲率正则化约束",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/minimum-distance.png",
+      "description": "表面距离矩阵全部为2.5",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/mirror-symmetry.png",
+      "description": "两个表面的 xz 镜面对称约束",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/shape-derivative.png",
+      "description": "子优化目标 ShapeDerivative",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "workspace/file-menu.png",
+      "description": "定义保存、脚本导出、打开结果的文件菜单",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "geometry/add-part-menu.png",
+      "description": "从空白定义的几何编辑区添加 BoundaryPart",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "solver/task-configuration.png",
+      "description": "有限元求解器默认使用一个进程和 CPU",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "updaters/geometry-updater.png",
+      "description": "part1 几何优化器的默认类、50 轮和曲面更新开关",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "solver/run-settings.png",
+      "description": "任务名称、相对结果目录和运行设置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "custom-code/generated-source.png",
+      "description": "基于可移植定义生成的只读代码",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/history-and-metrics.png",
+      "description": "实际运行的迭代历史表和目标值曲线",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/initial-design.png",
+      "description": "同一算例第1轮的可更新边界结构",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/saved-design.png",
+      "description": "同一算例第36轮的可更新边界结构",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/load-case-deformation.png",
+      "description": "同一算例第36轮工况0的变形网格",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/continue-dialog.png",
+      "description": "从最后一轮或指定已保存轮次继续优化的实际对话框",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/displacement.png",
+      "description": "事后有限元导入已保存工况，查看位移模长云图",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/mises-stress.png",
+      "description": "事后有限元查看Mises应力云图与节点平均提示",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/undeformed-configuration.png",
+      "description": "取消变形显示，在原构型上显示同一结果场",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/design-iteration-menu.png",
+      "description": "展开优化迭代下拉列表，检查全部轮次编号可读",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/field-menu.png",
+      "description": "展开可用的位移、应力、应变和能量显示场",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/modified-pressure.png",
+      "description": "仅在独立事后有限元模型中将压力改为0.05，待重新求解",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/solver-running.png",
+      "description": "示例运行副本中的独立有限元求解状态",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/recomputed-displacement.png",
+      "description": "示例压力 0.05 下已收敛的独立有限元结果",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/analysis-result-menu.png",
+      "description": "原工况与独立有限元结果的选择",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/export-location-menu.png",
+      "description": "有限元数据导出位置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/gauss-point-export.png",
+      "description": "单元与积分点物理量导出设置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "finite-element/reference-point-export.png",
+      "description": "参考点物理量导出设置",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    },
+    {
+      "file": "optimization/live-progress.png",
+      "description": "独立示例副本的运行状态与实时输出",
+      "pixels": [
+        3230,
+        1836
+      ],
+      "dpr": 1.7,
+      "part_naming": "single Part name; independent Instance names"
+    }
+  ],
+  "window_dpr": 1.7,
+  "window_logical_size": [
+    1900,
+    1080
+  ],
+  "last_saved_iteration": 36,
+  "post_analysis": {
+    "iteration": 36,
+    "load": "pressure_1",
+    "original_value": 0.06,
+    "modified_value": 0.05,
+    "converged": true,
+    "elapsed_seconds": 40.07,
+    "storage": "private TemporaryDirectory; original result folder not modified",
+    "capture_archive": "analysis_1",
+    "displayed_result_archive": "analysis_1",
+    "displayed_result_note": "Result screenshots load the existing converged 0.05 analysis archive; live solver screenshot was retaken in a fresh private analysis."
+  },
+  "definition_sha256_after": "663982379d94280d529cee5460f8eb0111f32b542734d98f5f2da4a73b4ee738",
+  "live_optimization_capture": {
+    "source": "results/example-run",
+    "temporary_copy": "isolated example copy",
+    "worker_stopped": true
+  },
+  "capture_font_policy": {
+    "family": "Noto Sans CJK SC",
+    "point_size": 10,
+    "vtk_font_file": "NotoSansCJKSC-Regular.otf",
+    "source_collection": "NotoSansCJK-Regular.ttc",
+    "glyph_runs": {
+      "400": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Regular"
+        }
+      ],
+      "600": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Medium"
+        }
+      ],
+      "700": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Bold"
+        }
+      ]
+    },
+    "sampled_widget_fonts": {
+      "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,10,-1,5,600,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Hack,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,-1,14,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ],
+      "Noto Sans CJK SC,10,-1,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "locale_coverage": {
+      "unique_ui_han_characters": 578,
+      "family": "Noto Sans CJK SC",
+      "weights": {
+        "400": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Regular"
+          ]
+        },
+        "600": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Medium"
+          ]
+        },
+        "700": {
+          "actual_families": [
+            "Noto Sans CJK SC"
+          ],
+          "styles": [
+            "Bold"
+          ]
+        }
+      }
+    },
+    "scope": "Documentation capture processes only; desktop font configuration unchanged",
+    "code_font": {
+      "latin": "Hack",
+      "han": "Noto Sans CJK SC"
+    }
+  },
+  "naming": "module/meaningful-name.png; no sequence numbers",
+  "font_unification": "All documentation screenshots retaken with explicit Simplified Chinese font selection for Qt, Matplotlib and VTK.",
+  "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
+  "portable_definition": "../../examples/test.morph",
+  "portable_definition_sha256": "798481b86ead74c1941ddeed4fbe675b0da64ea63fff6d34c9302a4959b5ae03"
+}

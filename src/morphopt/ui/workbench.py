@@ -40,13 +40,11 @@ from .theme import theme_manager
 from .application import (
     EditorKind,
     EditorRoute,
-    MissingImportedModelError,
     ProblemSession,
     route_editor,
 )
 from .application.edit_history import EditOperation
 from .application.fields import fields_for_node
-from .application.imported_models import ImportedModelLibrary
 from .application.part_sets import PartSetCatalog
 from .i18n import tr
 from .model.problem import (
@@ -88,7 +86,6 @@ class Workbench(QWidget):
         super().__init__(parent)
         self._restoring = False
         self._history_ready = False
-        self._geometry_normalized = False
         self._synchronized_for_refresh = False
         self._text_edit_key: int | None = None
         self.session = ProblemSession(problem)
@@ -273,15 +270,6 @@ class Workbench(QWidget):
         self.actions.set_problem(self.problem)
         self._select_editor(self._last_selected)
         self.refresh_coordinator.refresh_now()
-        imported = self.problem.imported_model_part_node()
-        if imported is not None:
-            issue = ImportedModelLibrary.validate_link(imported)
-            if issue is not None:
-                QMessageBox.warning(
-                    self,
-                    tr("ui.widgets.torchfea_model_editor.torchfea_model_link_cleared"),
-                    issue,
-                )
 
     def refresh_ui(self, context: RefreshContext) -> None:
         self._update_caption()
@@ -570,19 +558,16 @@ class Workbench(QWidget):
         )
 
     def _prepare_refresh(self, changes: tuple[Node | None, ...]) -> RefreshContext:
-        # Restored snapshots already contain their canonical geometry. In
-        # particular, do not re-import external files while replaying history.
-        geometry_normalized = self._geometry_normalized
-        self._geometry_normalized = False
+        # Restored snapshots already contain their canonical definition.
         if not self._restoring and not self._synchronized_for_refresh:
-            geometry_normalized = self.session.synchronize() or geometry_normalized
+            self.session.synchronize()
         self._synchronized_for_refresh = False
         self.part_sets.invalidate()
         return RefreshContext(
             self.problem,
             selected=self._last_selected,
             changed_nodes=tuple(node for node in changes if node is not None),
-            full=geometry_normalized or None in changes,
+            full=None in changes,
             restoring=self._restoring,
         )
 
@@ -598,7 +583,6 @@ class Workbench(QWidget):
     def set_problem(self, problem: ProblemDefinition) -> None:
         self._finish_text_edit()
         self.refresh_coordinator.cancel()
-        self._geometry_normalized = False
         self._synchronized_for_refresh = False
         self._text_edit_key = None
         self._history_ready = False
@@ -703,9 +687,7 @@ class Workbench(QWidget):
         if self._restoring:
             return
         if self._history_ready:
-            self._geometry_normalized = (
-                self.session.synchronize() or self._geometry_normalized
-            )
+            self.session.synchronize()
             self._synchronized_for_refresh = True
             focus = QApplication.focusWidget()
             merge_key = (
@@ -826,7 +808,6 @@ class Workbench(QWidget):
 
     def _restore_history_step(self, step_id: int) -> None:
         self.refresh_coordinator.cancel()
-        self._geometry_normalized = False
         self._synchronized_for_refresh = False
         self._text_edit_key = None
         tree_state = self.tree.capture_view()
@@ -884,15 +865,6 @@ class Workbench(QWidget):
         self.flush_edits()
         try:
             self.session.validate_for_run()
-        except MissingImportedModelError:
-            QMessageBox.warning(
-                self,
-                tr("ui.workbench.torchfea_model_required"),
-                tr(
-                    "ui.workbench.select_a_model_directory_and_import_a_valid_npz_model_from_the_initial_g"
-                ),
-            )
-            return
         except Exception as exc:
             QMessageBox.warning(
                 self,

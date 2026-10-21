@@ -54,6 +54,13 @@ class FiniteElementPage(QWidget):
         row = QHBoxLayout()
         row.addWidget(self._label('ui.fea.iteration'))
         self.iterations = QComboBox()
+        self.iterations.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self.iterations.setMinimumContentsLength(5)
+        self.iterations.setMinimumWidth(
+            theme_manager.palette.layout.finite_element.iteration_selector_minimum_width
+        )
         self.iterations.currentIndexChanged.connect(self._iteration_changed)
         row.addWidget(self.iterations)
         row.addWidget(self._label('ui.fea.result_selection'))

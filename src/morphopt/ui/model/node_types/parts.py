@@ -71,7 +71,6 @@ class BoundaryPartNode(PartNode):
     fea_seed_size: float | str
     mesh_order: int | str
     exterior_surface: str
-    part_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "fea_seed_size",
@@ -96,13 +95,6 @@ class BoundaryPartNode(PartNode):
             Defaults.EXTERIOR_SURFACE.DEFAULT,
             doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
         ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
-        ),
     )
 
 
@@ -117,7 +109,6 @@ class INPPartNode(PartNode):
     mesh_file: str
     inp_part_name: str
     exterior_surface: str
-    part_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "mesh_file",
@@ -140,67 +131,6 @@ class INPPartNode(PartNode):
             Defaults.EXTERIOR_SURFACE.DEFAULT,
             doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
         ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
-        ),
-    )
-
-
-class TorchFEAPartNode(PartNode):
-    """UI definition of TorchFEAPart."""
-
-    type_name: ClassVar[str] = "TorchFEAPart"
-    backend_class: ClassVar[str] = "TorchFEAPart"
-    label_key: ClassVar[str] = (
-        "ui.schema.catalog.part.torchfeapart.label"
-    )
-    has_surfaces: ClassVar[bool] = False
-    Defaults = CONSTANT.UI.SCHEMA_FIELDS.PARTS.TORCHFEAPART
-    model_directory: str
-    model_filename: str
-    model_part_name: str
-    exterior_surface: str
-    part_name: str
-    fields: ClassVar[tuple[FieldSpec, ...]] = (
-        FieldSpec(
-            "model_directory",
-            "ui.schema.fields.model_directory.label.model_directory",
-            "dir",
-            Defaults.MODEL_DIRECTORY.DEFAULT,
-            doc_key="ui.schema.fields.model_directory.help.folder_containing_the_exported_npz_model",
-        ),
-        FieldSpec(
-            "model_filename",
-            "ui.schema.fields.model_filename.label.model_file",
-            "str",
-            Defaults.MODEL_FILENAME.DEFAULT,
-            doc_key="ui.schema.fields.model_filename.help.exported_npz_name_empty_uses_the_newest_file_in_the_folder",
-        ),
-        FieldSpec(
-            "model_part_name",
-            "ui.schema.fields.model_part_name.label.part_in_model",
-            "str",
-            Defaults.MODEL_PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.model_part_name.help.part_to_import_from_the_archive_empty_selects_the_only_part",
-        ),
-        FieldSpec(
-            "exterior_surface",
-            "ui.schema.fields.exterior_surface.label.exterior_surface",
-            "str",
-            Defaults.EXTERIOR_SURFACE.DEFAULT,
-            doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
-        ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
-        ),
     )
 
 
@@ -216,7 +146,6 @@ class BasePartNode(PartNode):
     has_surfaces: ClassVar[bool] = False
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BASEPART
     exterior_surface: str
-    part_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "exterior_surface",
@@ -224,13 +153,6 @@ class BasePartNode(PartNode):
             "str",
             Defaults.EXTERIOR_SURFACE.DEFAULT,
             doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
-        ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
         ),
     )
 
@@ -249,7 +171,6 @@ class BoxPartNode(PartNode):
     mesh_size: float | str
     mesh_order: int | str
     exterior_surface: str
-    part_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "length",
@@ -296,13 +217,6 @@ class BoxPartNode(PartNode):
             "str",
             Defaults.EXTERIOR_SURFACE.DEFAULT,
             doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
-        ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
         ),
     )
 
@@ -379,7 +293,6 @@ class CADPartNode(PartNode):
     mesh_size: float | str
     mesh_order: int | str
     exterior_surface: str
-    part_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "mesh_size",
@@ -402,13 +315,6 @@ class CADPartNode(PartNode):
             "str",
             Defaults.EXTERIOR_SURFACE.DEFAULT,
             doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
-        ),
-        FieldSpec(
-            "part_name",
-            "ui.schema.fields.part_name.label.assembly_part_name",
-            "str",
-            Defaults.PART_NAME.DEFAULT,
-            doc_key="ui.schema.fields.part_name.help.part_name_inside_the_assembly_empty_uses_the_part_definition_name",
         ),
     )
 

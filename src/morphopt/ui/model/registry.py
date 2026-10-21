@@ -83,7 +83,6 @@ from .node_types import (
     SpringToGroundNode,
     StepImportOperationNode,
     StepsNode,
-    TorchFEAPartNode,
     TorusOperationNode,
     TranslateOperationNode,
     UpdaterNode,
@@ -150,7 +149,6 @@ PART_TYPES: dict[str, type[PartNode]] = {
     node.type_name: node for node in (
         BoundaryPartNode,
         INPPartNode,
-        TorchFEAPartNode,
         BasePartNode,
         BoxPartNode,
         CADPartNode,

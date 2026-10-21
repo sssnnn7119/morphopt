@@ -16,7 +16,6 @@ from morphopt.ui.application import (
 )
 from morphopt.ui import launcher
 from morphopt.ui.model.problem import InstanceNode
-from morphopt.ui.model.node_types import TorchFEAPartNode
 from morphopt.ui.schemes.base import get_template
 from morphopt.ui.application.fields import fields_for_node
 from morphopt.ui.application.runs import RunSourceKind
@@ -98,7 +97,7 @@ def test_problem_session_updates_definition_metadata() -> None:
     assert session.set_device("cpu") is False
 
 
-def test_renaming_a_part_updates_only_its_default_instance() -> None:
+def test_renaming_a_part_preserves_all_instance_names() -> None:
     problem = ProblemLibrary.create("shapeopt")
     part = problem.parts()[0]
     default = part.instances[0]
@@ -114,7 +113,7 @@ def test_renaming_a_part_updates_only_its_default_instance() -> None:
 
     assert part.name == "shape_body"
     assert part.assembly_name == "shape_body"
-    assert default.name == "shape_body-1"
+    assert default.name == "body-1"
     assert custom.name == "body_observer"
     assert pressure.instance is custom
     assert all(
@@ -127,16 +126,16 @@ def test_renaming_a_part_updates_only_its_default_instance() -> None:
     assert problem.config_part_node(problem.updater.geometry[0]) is part
 
 
-def test_renaming_an_assembly_part_updates_its_default_instance_and_loads() -> None:
+def test_part_rename_entry_point_preserves_instance_names_and_loads() -> None:
     problem = ProblemLibrary.create("shapeopt")
     part = problem.parts()[0]
     default = part.instances[0]
 
     assert problem.rename_part(part, "flexible_body")
 
-    assert part.name == "body"
+    assert part.name == "flexible_body"
     assert part.assembly_name == "flexible_body"
-    assert default.name == "flexible_body-1"
+    assert default.name == "body-1"
     assert problem.material_nodes()[0].part_name == "flexible_body"
     assert all(
         component.instance is default
@@ -156,33 +155,6 @@ def test_renaming_a_material_definition_retargets_its_material_updater() -> None
     assert material.name == "density_field"
     assert problem.updater is not None
     assert problem.config_material_node(problem.updater.materials[0]) is material
-
-
-def test_renaming_a_torchfea_part_definition_preserves_archive_part_and_instances() -> None:
-    problem = ProblemLibrary.create("simp")
-    original_part = problem.parts()[0]
-    physical_part_name = original_part.assembly_name
-    instance_names = original_part.instance_names
-    part = TorchFEAPartNode(
-        name=original_part.name,
-        params={
-            "model_directory": "",
-            "model_filename": "",
-            "model_part_name": "archive_body",
-            "exterior_surface": "",
-            "part_name": physical_part_name,
-        },
-    )
-    part.instances[0].name = instance_names[0]
-    problem.geometry.parts[0] = part
-    problem.resolve_references()
-
-    assert problem.rename_definition(part, "beam_geometry")
-
-    assert part.name == "beam_geometry"
-    assert part.assembly_name == physical_part_name
-    assert part.instance_names == instance_names
-    compile(ProblemSession(problem).source(), "<renamed-torchfea>", "exec")
 
 
 def test_cross_node_links_are_objects_and_survive_renames() -> None:

@@ -2,11 +2,15 @@
 
 返回 [设计导览](../README.md)。
 
-## 应用服务层
+<a id="section-应用服务层"></a>
+
+## 1 应用服务层
 
 源码目录：`ui/application/`。该层把领域模型、文件、生成器与运行进程组合成可由窗口调用的用例，并保持与 Qt 控件无关。
 
-### `ProblemSession` 与 `ProblemLibrary`
+<a id="section-problemsession-与-problemlibrary"></a>
+
+### 1.1 `ProblemSession` 与 `ProblemLibrary`
 
 源码：`application/definitions.py`。
 
@@ -17,7 +21,9 @@
 
 `synchronize()` 调用领域模型的引用解析和一致性整理；窗口刷新前后可安全调用，作为将外部文件与当前对象树对齐的统一入口。
 
-### 运行与结果会话
+<a id="section-运行与结果会话"></a>
+
+### 1.2 运行与结果会话
 
 源码：`application/runs.py`、`application/results.py`。
 
@@ -31,11 +37,15 @@
 
 运行会话将定义导出为结果目录内的 Python 副本后再启动 `morphopt`，因此运行过程使用的脚本可与用户当前编辑中的定义区分开来。
 
-### 编辑路由
+<a id="section-编辑路由"></a>
 
-源码：`application/editor_routing.py`。`EditorKind` 枚举规定节点应由属性表单、代码编辑器、载荷步矩阵、求解器编辑器、更新器编辑器或 TorchFEA 模型编辑器处理；不可变 `EditorRoute` 将一个节点种类映射到对应编辑器。Workbench 只依据这份路由选择组件。
+### 1.3 编辑路由
 
-## 优化方案策略
+源码：`application/editor_routing.py`。`EditorKind` 枚举规定节点应由属性表单、代码编辑器、载荷步矩阵、求解器编辑器或更新器编辑器处理；不可变 `EditorRoute` 将一个节点种类映射到对应编辑器。Workbench 只依据这份路由选择组件。
+
+<a id="section-优化方案策略"></a>
+
+## 2 优化方案策略
 
 源码：`ui/schemes/base.py`。方案元数据由 Python 类注册，Quickstart 负责创建起始问题。
 
@@ -56,7 +66,9 @@ SchemeTemplate
 内置 `shapeopt`、`simp` 等方案通过 Python 类注册；Quickstart 生成其起始问题。
 `.morph` 文件只保存用户的问题定义；方案注册由 Python 代码完成，网格从用户指定的路径加载。
 
-## 代码生成
+<a id="section-代码生成"></a>
+
+## 3 代码生成
 
 源码：`ui/codegen/generator.py`。生成器是 `ProblemDefinition → Python` 的纯投影：相同业务树产生相同文本，生成过程不修改问题树。
 
@@ -76,8 +88,12 @@ ProblemDefinition
 
 用户代码位于目标函数、约束代码槽和 `MethodOverrideNode.body`。`ProblemDefinition.custom_classes` 保存顶层自定义类，`class_bindings` 保存模型节点选择的类名。`codegen/custom_classes.py` 从生成代码读取可配置的类位置，从框架父类读取方法签名与文档，不执行用户代码。自定义类在模块顶层继承框架类，例如 `CustomSolver(morphopt.Solver)`；模型节点选用后，其生成类改为 `Solver(CustomSolver)`。生成构造器通过 `super()` 传入 UI 配置；显式重写的声明方法替代相应生成方法。接口、材料及曲面的构造表达式直接使用条目选中的自定义类。未选用的自定义类仅被定义，不改变模型行为。同一框架父类可以有多个可选自定义类。
 
-展示层的 `ModelClassSelector` 只服务根级配置。模型树以持久化问题根作为 Controller 节点，以临时 Params 导航节点归组几何、载荷、材料；Solver 和 Updater 同属 Controller。选中这些配置节点时使用编辑页的类选择控件；Params 的稳定导航键保证重建后仍能恢复选中项。此层级只用于展示，持久化章节结构保持不变。接口、曲面和优化目标在添加菜单中选择，`Node.custom_class` 随条目持久化；子优化目标/罚函数约束在添加列表中选择，类名随配置条目持久化。生成器按条目构造自定义对象，不替换同类型的其他条目。生成器检查名称冲突、缺失父类、缺失选择、类型兼容性、无效方法和方法语法。父类只接受框架类路径；根级选择只接受固定配置类路径。旧 Part 编号、深层别名绑定和隐式类替换不再支持。
+展示层的 `ModelClassSelector` 只服务根级配置。模型树以持久化问题根作为 Controller 节点，以临时 Params 导航节点归组几何、载荷、材料；Solver 和 Updater 同属 Controller。ObjectiveFunction 同样提供编辑页的类选择控件，使用 `ObjectiveNode.custom_class` 保存选用的重写类。选中这些配置节点时使用编辑页的类选择控件；Params 的稳定导航键保证重建后仍能恢复选中项。此层级只用于展示，持久化章节结构保持不变。接口、曲面和优化目标在添加菜单中选择，`Node.custom_class` 随条目持久化；子优化目标/罚函数约束在添加列表中选择，类名随配置条目持久化。生成器按条目构造自定义对象，不替换同类型的其他条目。生成器检查名称冲突、缺失父类、缺失选择、类型兼容性、无效方法和方法语法。父类只接受框架类路径；根级选择只接受固定配置类路径。旧 Part 编号、深层别名绑定和隐式类替换不再支持。
 
-## 验证与失败边界
+<a id="section-验证与失败边界"></a>
 
-运行前 `ProblemSession.validate_for_run()` 检查问题树、导入模型链接和必需引用。`MissingImportedModelError` 专门表示 TorchFEA 存档缺失或无法解析。生成完成后，运行子进程的标准输出/错误由展示层消费；结果目录中的定义副本使任何失败都可使用当次声明重现。
+## 4 验证与失败边界
+
+运行前 `ProblemSession.validate_for_run()` 检查问题树和必需引用。生成完成后，运行子进程的标准输出/错误由展示层消费；结果目录中的定义副本使任何失败都可使用当次声明重现。
+
+每个几何或材料子优化器的配置可保存 `custom_class`。选中对应的 `UpdaterTreeNode` 后，`ModelClassSelector` 按实际后端类型筛选重写类；选择与配置对象一同保存，生成时再映射到当前索引对应的嵌套类，因此配置重排不会改变绑定对象。类重命名或删除同步更新配置中的引用。

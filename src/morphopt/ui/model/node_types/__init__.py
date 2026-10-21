@@ -52,7 +52,6 @@ from .parts import (
     CADPartNode,
     INPPartNode,
     OffsetBoundaryPartNode,
-    TorchFEAPartNode,
 )
 from .penalties import (
     CylinderPenaltyNode,
@@ -160,7 +159,6 @@ __all__ = (
     "SpringToGroundNode",
     "StepImportOperationNode",
     "StepsNode",
-    "TorchFEAPartNode",
     "TorusOperationNode",
     "TranslateOperationNode",
     "UpdaterNode",

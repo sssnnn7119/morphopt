@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。另见已有的 [UI 架构规范](../ui.md)。
 
-## 边界与状态所有权
+<a id="section-边界与状态所有权"></a>
+
+## 1 边界与状态所有权
 
 源码目录：`ui/model/`。UI 的业务真相是 `ProblemDefinition` 与其类型化 `Node` 树；Qt widget 只是这棵树的编辑器，Python 脚本是由它确定性生成的产物，`.morph` 是它的持久化表示。
 
@@ -15,7 +17,9 @@
 
 每个领域关系保留对象引用：载荷接口保留目标 instance、surface、参考点等 Node；材料保留目标 Part Node；更新器配置保留目标 Part/材料 Node。序列化时将引用转换为名称，读取时由 `resolve_references()` 恢复对象关系。这样 UI 的重命名操作可以集中更新关联状态。
 
-## 基础节点：`Node`
+<a id="section-基础节点node"></a>
+
+## 2 基础节点：`Node`
 
 源码：`ui/model/base_nodes.py`、`ui/model/node_types/`。
 
@@ -33,9 +37,11 @@
 | `iter_nodes/find` | 遍历或查询子树。 |
 | `to_dict/from_dict/clone` | 将业务树转换为持久化数据或副本。 |
 
-`Node` 负责通用树操作；领域节点把类型、引用和结构约束封装在自己的方法中。
+`Node` 负责通用树操作；领域节点把类型、引用和结构约束封装在领域方法中。
 
-## 问题树
+<a id="section-问题树"></a>
+
+## 3 问题树
 
 ```text
 ProblemNode
@@ -73,14 +79,16 @@ ProblemNode
 | `SolverNode` | 求解器、进程和任务分配字段。 |
 | `UpdaterNode` | 几何/材料更新器配置；`add_geometry_config()`、`add_materials_config()`。 |
 
-## `ProblemDefinition`
+<a id="section-problemdefinition"></a>
+
+## 4 `ProblemDefinition`
 
 `ProblemDefinition` 是领域操作的唯一服务面。它拥有根节点、问题标签、结果路径和设备配置，并集中提供结构变换和引用同步。
 
 | 类别 | 公开方法 |
 |---|---|
 | 查询 | `node()`、`nodes()`、`geometry`、`loads`、`steps`、`materials`、`objective`、`solver`、`updater`、`part_interfaces()`、`material_nodes()`、`interfaces()`。 |
-| 模型摘要 | `imported_model_summary()`、`node_set_names()`、`surface_set_names()`、`element_set_names()`、`reference_point_names()`、`element_names()`。 |
+| 引用名称 | `instance_names()`、`part_names()`、`reference_point_names()`、`element_names()`；集合选项由 `PartSetCatalog` 按所属 Part 提供。 |
 | 引用 | `resolve_references()`、`set_interface_reference()`、`set_material_part()`、`set_geometry_updater_target()`、`set_material_updater_target()`。 |
 | 结构编辑 | `add/remove/move/clone` Part、instance、surface、载荷接口、材料接口和更新器配置。 |
 | 命名 | `suggest_*_name()`、`rename_instance()`、`rename_interface()`、`rename_part()`。 |
@@ -89,7 +97,9 @@ ProblemNode
 
 `rename_interface()`、`rename_part()` 及其私有辅助函数统一更新注册名、默认 instance 名、载荷引用、材料目标、载荷步键和更新器目标。用户界面通过这些领域操作修改名称，保证树内每条引用始终指向有效对象。
 
-## Schema、导入模型与持久化
+<a id="section-schema导入模型与持久化"></a>
+
+## 5 Schema、导入模型与持久化
 
 | 文件 | 责任 |
 |---|---|
@@ -100,13 +110,14 @@ ProblemNode
 | `configuration.py` | 从节点默认值创建优化器配置。 |
 | `material_models.py` | 枚举后端材料模型及其参数。 |
 | `loaders.py` | `.morph` 文件读写，负责调用 `ProblemDefinition.to_dict/from_dict`。 |
-| `modelinfo.py` | 读取 TorchFEA `.npz`，生成 `TorchFEAModelSummary`、`PartSummary`、`InstanceSummary`，供 UI 选择集合与引用。 |
 
 具体节点类是字段与后端类型的唯一声明位置。例如 `CADPartNode` 继承 `PartNode`，额外声明 `operations`；`BoundaryPartNode` 额外声明 `surfaces`。容器直接管理这些类型化集合，`children` 只用于统一遍历和 JSON 保存。叶节点拒绝添加子节点，根节点显式保存唯一的 geometry、loads、steps 等章节。
 
 新增类型时在 `node_types/` 对应领域文件中继承节点家族基类，声明类型化属性、`fields` 元组和后端类名，再将类加入 `registry.py` 的对应目录。唯一 kind 的节点登记在 `NODE_TYPES`；共用 kind 的节点登记在相应 `NODE_FAMILIES`。预览适配器按节点类注册，继承类型可以复用父类适配器。
 
-## 领域不变量
+<a id="section-领域不变量"></a>
+
+## 6 领域不变量
 
 1. Part 接口、instance、曲面、材料、载荷与更新器在各自拥有者中保持稳定顺序。
 2. 每个引用字段拥有对象引用与序列化名称投影；`resolve_references()` 负责从名称恢复对象。

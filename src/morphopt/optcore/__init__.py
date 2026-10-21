@@ -9,9 +9,6 @@ from .modelparams import (
     INPPart,
     MaterialsParams,
     Params,
-    TorchFEAPart,
-    load_model_assembly,
-    resolve_model_path,
 )
 from .protocal import (
     ProtocalInitializable,

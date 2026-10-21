@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ..model.fields import FieldSpec
 from ..model.material_models import MATERIAL_MODEL_PARAMETERS
-from ..model.problem import CADOperationNode, FEAComponentNode, MaterialNode, Node, PartNode, ProblemDefinition
+from ..model.problem import CADOperationNode, FEAComponentNode, MaterialNode, Node, ProblemDefinition
 from .part_sets import PartSetCatalog
 
 
@@ -45,9 +45,6 @@ def fields_for_node(
             choices["part_name"] = problem.part_names()
             catalog = sets or PartSetCatalog(problem)
             choices["elementname"] = list(catalog.for_part(node.part).elements)
-    elif isinstance(node, PartNode) and problem is not None:
-        summary = problem.imported_model_summary()
-        choices["model_part_name"] = [item.name for item in summary.parts] if summary is not None else []
     return fields, {}, choices
 
 
@@ -58,7 +55,7 @@ def dynamic_choices(
     *,
     sets: PartSetCatalog | None = None,
 ) -> dict[str, list[str]]:
-    """Resolve choices against the owning Part, including mixed local/imported models."""
+    """Resolve choices against the owning Part, including imported INP meshes."""
     catalog = sets or PartSetCatalog(problem)
     references = {
         "set_nodes_name": (component.instance_name or "", "nodes"),

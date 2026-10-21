@@ -167,7 +167,7 @@ def updater_section_title_text(problem: ProblemDefinition, group: str, config: d
     label = updater_group_title(group)
     if target is not None:
         label = tr("ui.naming.optimizer_for_target", target=target.name)
-    return typed_title(label, class_name)
+    return typed_title(label, config.get("custom_class") or class_name)
 
 
 def updater_title_text(problem: ProblemDefinition | None, node: UpdaterTreeNode) -> str:
@@ -243,6 +243,8 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         return node.name + "()"
     path = class_path_for_node(node)
     selected = problem.class_bindings.get(path) if problem is not None and path else None
+    if node.kind == "objective":
+        selected = node.custom_class or selected
     return container_title(node.kind, selected or node.custom_class or None)
 
 

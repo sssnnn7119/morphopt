@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 领域边界
+<a id="section-领域边界"></a>
+
+## 1 领域边界
 
 材料层把一个参数化材料模型分配给某个 Part 的一个或多个元素族。`MaterialsParams` 统一注册材料接口并在 FEA 初始化前调用 `set_materials(fe)`；材料接口通过 `part_name` 与几何 Part 关联，而不通过 instance 名关联。
 
@@ -14,7 +16,9 @@ MaterialsParams.interfaces
               └── elements.set_materials(torchfea material)
 ```
 
-## `BaseMaterial`
+<a id="section-basematerial"></a>
+
+## 2 `BaseMaterial`
 
 源码：`optcore/modelparams/materials/base_material.py`；继承 `BaseModelComponent`。
 
@@ -34,13 +38,17 @@ MaterialsParams.interfaces
 
 材料组件继承 `BaseModelComponent` 的初始化、持久化和可视化协议。`BaseMaterial` 不包含集合注册表；均质材料不注册子组件，SIMP 材料将其设计场状态保存在自身属性中，详见 [08 SIMP 材料优化](08_simp.md)。
 
-## `HomogeneousMaterial`
+<a id="section-homogeneousmaterial"></a>
+
+## 3 `HomogeneousMaterial`
 
 源码：`homogeneous_material.py`；继承 `BaseMaterial`。
 
 `set_materials(fe)` 针对 `target_elements(fe.assembly)` 中的每个元素族执行以下操作：清除已有材料，调用 `MaterialModels.create_material(material_parameters)` 生成 TorchFEA 材料，并设置元素密度。`HomogeneousMaterial` 表达固定材料分配，设计变量数量为零；SIMP 材料在 [08 SIMP 材料优化](08_simp.md) 中提供可更新实现。
 
-## `MaterialModels`
+<a id="section-materialmodels"></a>
+
+## 4 `MaterialModels`
 
 源码：`models.py`。`MaterialModels` 是参数类型命名空间；嵌套的冻结 dataclass 把所需的本构参数与对应 TorchFEA 材料类绑定。
 
@@ -57,7 +65,9 @@ MaterialsParams.interfaces
 
 共同基类 `MaterialParameters` 以 `material_class` 这个 `ClassVar` 指向后端本构类型。`create_material(material_parameters)` 利用 dataclass 字段构造相应的 TorchFEA 材料，因此参数对象是声明式、可序列化且不可变的。
 
-## 分配顺序与覆盖范围
+<a id="section-分配顺序与覆盖范围"></a>
+
+## 5 分配顺序与覆盖范围
 
 ```text
 Params.create_feamodel()
@@ -69,7 +79,9 @@ Params.create_feamodel()
 
 材料接口的注册顺序表达元素材料的覆盖顺序。针对同一元素族的多个接口，后注册接口会在该元素族上执行后一次分配；一个问题应采用清晰的元素分区或明确的覆盖意图。运行时材料接口以 `part_name` 字符串定位 Assembly Part；UI 领域模型保存目标 Part 对象关系，并在重命名或生成 Python 时同步得到当前字符串。
 
-## 新材料接口的实现检查表
+<a id="section-新材料接口的实现检查表"></a>
+
+## 6 新材料接口的实现检查表
 
 1. 继承 `BaseMaterial`，构造函数接收目标 Part、元素选择、材料参数和密度，并调用 `super().__init__()`。
 2. 实现 `set_materials(fe)`；以 `target_elements(fe.assembly)` 获取所有目标元素。

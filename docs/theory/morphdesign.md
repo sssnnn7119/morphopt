@@ -6,24 +6,30 @@
 
 ## 目录
 
-1. [问题概述](#1-问题概述)
-2. [几何表示](#2-几何表示)
-3. [力学模型](#3-力学模型)
-4. [优化问题建模](#4-优化问题建模)
-5. [形状灵敏度分析](#5-形状灵敏度分析)
-6. [工作空间优化与连续体雅可比矩阵](#6-工作空间优化与连续体雅可比矩阵)
-7. [几何约束](#7-几何约束)
-8. [子优化与信赖域方法](#8-子优化与信赖域方法)
-9. [数值流程](#9-数值流程)
-10. [参考文献](#10-参考文献)
+<!-- docs:toc depth=1 -->
+
+- [1 问题概述](#section-问题概述)
+- [2 几何表示](#section-几何表示)
+- [3 力学模型](#section-力学模型)
+- [4 优化问题建模](#section-优化问题建模)
+- [5 灵敏度分析（基于自动微分的离散伴随法）](#section-灵敏度分析基于自动微分的离散伴随法)
+- [6 工作空间优化与连续体雅可比矩阵](#section-工作空间优化与连续体雅可比矩阵)
+- [7 几何约束](#section-几何约束)
+- [8 子优化与信赖域方法](#section-子优化与信赖域方法)
+- [9 数值流程](#section-数值流程)
+- [10 参考文献](#section-参考文献)
+
+<!-- /docs:toc -->
 
 ---
 
-## 1. 问题概述
+<a id="section-问题概述"></a>
+
+## 1 问题概述
 
 气动软体机器人的变形行为由其**形态**（包括内部气腔形状和外部轮廓）决定。给定输入气压后，软体材料的柔性会产生连续大变形。形态设计的目标是**逆向求解**：给定期望的变形行为，自动确定最优的内外几何形状。
 
-MorphOpt 框架要解决的核心问题可以分为两类：
+MorphOpt 的优化问题分为两类：
 
 | 问题类型               | 描述                                                                         | 对应论文        |
 | ---------------------- | ---------------------------------------------------------------------------- | --------------- |
@@ -39,7 +45,11 @@ MorphOpt 框架要解决的核心问题可以分为两类：
 
 ---
 
-## 2. 几何表示
+<a id="section-几何表示"></a>
+
+## 2 几何表示
+
+<a id="section-b-样条曲面外表面与气腔表面"></a>
 
 ### 2.1 B 样条曲面（外表面与气腔表面）
 
@@ -56,9 +66,11 @@ $$
 - $B_i^q, B_j^r$ 为 B 样条基函数（Cox-de Boor 递推公式）
 - $(q,r)$ 为曲面参数坐标（纵向和环向）
 
-B 样条的核心优势在于**局部支撑性**：调整一个控制点只会影响曲面局部区域，这为梯度优化提供了稀疏的灵敏度映射。
+B 样条具有**局部支撑性**：单个控制点的调整影响局部曲面区域，相应灵敏度映射具有稀疏结构。
 
-#### 代码对应
+<a id="section-代码对应"></a>
+
+#### 2.1.1 代码对应
 
 在 `src/morphopt/shapeopt/surfaces/` 中，`BspSurface`（别名 `BSP`）实现了 B 样条曲面的初始化与操作；曲面属于某个边界 Part：
 
@@ -78,6 +90,8 @@ class GeometryParams(morphopt.GeometryParams):
     def define_interface(self):
         self.add_interface(self.BoundaryPart(fea_seed_size=1.0), name='body')
 ```
+
+<a id="section-球面映射闭曲面内嵌气腔"></a>
 
 ### 2.2 球面映射闭曲面（内嵌气腔）
 
@@ -110,6 +124,8 @@ $$
 
 其中 $\bar{d}^i = d(\mathbf{S}, \mathbf{\Phi}^i)/d_0^i$ 为相对距离，$d_0^i$ 为第 $i$ 个控制点的影响半径（取第 $k$ 近邻距离）。
 
+<a id="section-曲面重建算法"></a>
+
 ### 2.3 曲面重建算法
 
 优化过程中控制点分布可能变得不均匀（局部过密或过稀），导致数值病态。MorphOpt 引入了**周期性曲面重建**算法：
@@ -126,7 +142,11 @@ $$
 
 ---
 
-## 3. 力学模型
+<a id="section-力学模型"></a>
+
+## 3 力学模型
+
+<a id="section-超弹性本构"></a>
 
 ### 3.1 超弹性本构
 
@@ -148,7 +168,7 @@ $$
 s_{ij} = \frac{\partial W}{\partial F_{ji}} = \mu\left(\frac{1}{J^{2/3}}F_{ji} - \frac{1}{3}\bar{I}_1 F^{-1}_{ij}\right) + \kappa J(J-1)F^{-1}_{ij}
 $$
 
-**代码对应**：`myjobs/ral2026fea/shapeoptimization.py` 中设置材料参数：
+**材料参数配置示例：**
 
 ```python
 class MaterialsParams(morphopt.MaterialsParams):
@@ -161,6 +181,8 @@ class MaterialsParams(morphopt.MaterialsParams):
                 part_name="body", elementname=""),
             name="body")
 ```
+
+<a id="section-虚功原理与平衡方程"></a>
 
 ### 3.2 虚功原理与平衡方程
 
@@ -198,13 +220,19 @@ def solve(self):
     result: torchfea.solver.StaticResult = fe.solve(...)
 ```
 
+<a id="section-量纲分析"></a>
+
 ### 3.3 量纲分析
 
 对于气动软体机器人，变形仅由**无量纲气压** $\tilde{p} = p/\mu$ 决定，与尺寸无关。这使得优化结果可跨尺度迁移。
 
 ---
 
-## 4. 优化问题建模
+<a id="section-优化问题建模"></a>
+
+## 4 优化问题建模
+
+<a id="section-变形形态设计tro2023morph"></a>
 
 ### 4.1 变形形态设计（TRO2023Morph）
 
@@ -221,15 +249,19 @@ $$
 - $w_{\text{pos}}, w_{\text{ori}}$ 为权重系数
 - 约束条件：平衡方程 $\mathcal{A}(\mathbf{u}, \mathbf{v}) - \mathcal{B}(\mathbf{u}, \mathbf{v}) = 0$
 
-#### 代码对应
+<a id="section-代码对应-1"></a>
 
-在 `myjobs/ral2026fea/shapeoptimization.py`（或 `examples/bendingactuator.py`）中，目标函数通过继承 `morphopt.ObjectiveFunction` 实现，例如最大化末端轴向位移：
+#### 4.1.1 代码对应
+
+目标函数通过继承 `morphopt.ObjectiveFunction` 定义，以下示例最大化末端轴向位移：
 
 ```python
 class ObjectiveFunction(morphopt.ObjectiveFunction):
     def objective_function(self):
         return self.fe_results[0].GC[-2]  # 末端位移的 z 分量
 ```
+
+<a id="section-工作空间优化tro2025jacobian"></a>
 
 ### 4.2 工作空间优化（TRO2025Jacobian）
 
@@ -267,15 +299,23 @@ $$
 
 ---
 
-## 5. 灵敏度分析（基于自动微分的离散伴随法）
+<a id="section-灵敏度分析基于自动微分的离散伴随法"></a>
+
+## 5 灵敏度分析（基于自动微分的离散伴随法）
+
+<a id="section-设计思路"></a>
 
 ### 5.1 设计思路
 
 在协同优化中，设计变量 $\mathbf{\Phi} = [\mathbf{\Phi}_G; \mathbf{\Phi}_M]$ 的维度可达 $10^5$ 量级。有限差分法求梯度需要逐变量摄动并重新执行非线性有限元分析，计算量不可接受。MorphOpt 采用 **基于 PyTorch 自动微分的离散伴随法** 计算精确梯度，整个灵敏度分析由底层的 `torchfea` 框架自动完成。
 
-核心思路：设计变量 $\Phi_m$ 通过有限元装配过程（几何生成、材料插值、单元组装）影响系统，产生位移 $U_k$，位移进而决定目标函数 $\mathcal{J}$。利用链式法则和隐函数定理，通过引入**伴随变量**，将对 $M$ 个设计变量分别求导的 $M$ 次线性求解，压缩为对伴随变量的 **1--3 次线性求解**——与设计变量数量无关。
+设计变量 $\Phi_m$ 通过有限元装配过程（几何生成、材料插值、单元组装）影响系统，产生位移 $U_k$，位移进而决定目标函数 $\mathcal{J}$。利用链式法则和隐函数定理，通过引入**伴随变量**，将对 $M$ 个设计变量分别求导的 $M$ 次线性求解，压缩为对伴随变量的 **1--3 次线性求解**——与设计变量数量无关。
+
+<a id="section-一阶伴随法位移场灵敏度"></a>
 
 ### 5.2 一阶伴随法：位移场灵敏度
+
+<a id="section-链式法则起点"></a>
 
 #### 5.2.1 链式法则起点
 
@@ -300,6 +340,8 @@ $$
 
 第一项 $\partial\mathcal{J}/\partial\Phi_m$ 为显式依赖（如正则化项直接含 $\Phi_m$），可直接求偏导。第二项含 $\mathrm{d}U_k/\mathrm{d}\Phi_m$，即**位移对设计变量的隐式导数**——直接对每个 $m$ 求解需要 $M$ 次线性系统，不可行。
 
+<a id="section-隐函数定理求-mathrmdu_kmathrmdphi_m"></a>
+
 #### 5.2.2 隐函数定理求 $\mathrm{d}U_k/\mathrm{d}\Phi_m$
 
 由于平衡方程 $R_i = 0$ 对任意设计均成立，其对 $\Phi_m$ 的全导数为零：
@@ -317,6 +359,8 @@ K_{ik}\,\frac{\mathrm{d}U_k}{\mathrm{d}\Phi_m} = -\frac{\partial R_i}{\partial\P
 \frac{\mathrm{d}U_k}{\mathrm{d}\Phi_m} = -K_{kr}^{-1}\,\frac{\partial R_r}{\partial\Phi_m}
 \tag{5.3}
 $$
+
+<a id="section-伴随变量与总灵敏度"></a>
 
 #### 5.2.3 伴随变量与总灵敏度
 
@@ -341,6 +385,8 @@ $$
 \tag{5.6}
 $$
 
+<a id="section-计算步骤总结"></a>
+
 #### 5.2.4 计算步骤总结
 
 | 步骤 | 操作 | 计算量 |
@@ -350,11 +396,15 @@ $$
 | **Step 3** | 计算 $\partial R_r/\partial\Phi_m$ 和 $\partial\mathcal{J}/\partial\Phi_m$ | 一次沿计算图反向传播 |
 | **Step 4** | 组合为 $\mathrm{d}\mathcal{J}/\mathrm{d}\Phi_m$ | 内积，可忽略 |
 
-整个过程只需求解**一次额外的线性方程组**，相比有限差分法计算量从 $\mathcal{O}(M \cdot N_{\text{dof}}^2)$ 降为 $\mathcal{O}(N_{\text{dof}}^2)$，与设计变量数量 $M$ 无关。
+该过程需求解**一次额外的线性方程组**，相比有限差分法计算量从 $\mathcal{O}(M \cdot N_{\text{dof}}^2)$ 降为 $\mathcal{O}(N_{\text{dof}}^2)$，与设计变量数量 $M$ 无关。
 
 ---
 
+<a id="section-二阶伴随法雅可比灵敏度"></a>
+
 ### 5.3 二阶伴随法：雅可比灵敏度
+
+<a id="section-问题扩展"></a>
 
 #### 5.3.1 问题扩展
 
@@ -381,6 +431,8 @@ $$
 
 前两项由一阶伴随法处理。难点在第三项：需要雅可比矩阵本身对设计变量的导数 $\mathrm{d}J_{in}/\mathrm{d}\Phi_m$。
 
+<a id="section-雅可比矩阵的定解方程"></a>
+
 #### 5.3.2 雅可比矩阵的定解方程
 
 对平衡方程 $R_j(U_i, \Phi_m, p_n) = 0$ 关于气压参数 $p_n$ 求偏导（固定 $\Phi_m$）：
@@ -394,9 +446,11 @@ $$
 
 即 $J_{in} = -K_{ij}^{-1}\,\partial R_j/\partial p_n$。这是 $J_{in}$ 必须满足的定解方程。
 
+<a id="section-雅可比矩阵对设计变量的全导数"></a>
+
 #### 5.3.3 雅可比矩阵对设计变量的全导数
 
-对 (5.10) 关于设计变量 $\Phi_m$ 求全导数。注意 $K_{ji}$ 和 $\partial R_j/\partial p_n$ 同时显式依赖于 $\Phi_m$ 和隐式依赖于 $U_k(\Phi_m)$：
+对 (5.10) 关于设计变量 $\Phi_m$ 求全导数。其中 $K_{ji}$ 和 $\partial R_j/\partial p_n$ 同时显式依赖于 $\Phi_m$ 和隐式依赖于 $U_k(\Phi_m)$：
 
 $$
 \begin{aligned}
@@ -420,6 +474,8 @@ $$
 \frac{\mathrm{d}J_{in}}{\mathrm{d}\Phi_m} = K_{ij}^{-1}\,\frac{\mathrm{d}K_{jk}}{\mathrm{d}p_n}\,K_{kr}^{-1}\,\frac{\partial R_r}{\partial\Phi_m} - K_{ij}^{-1}\,\frac{\partial}{\partial\Phi_m}\!\left(\frac{\mathrm{d}R_j}{\mathrm{d}p_n}\right)
 \tag{5.13}
 $$
+
+<a id="section-二阶伴随变量"></a>
 
 #### 5.3.4 二阶伴随变量
 
@@ -455,6 +511,8 @@ $$
 \tag{5.17}
 $$
 
+<a id="section-完整二阶伴随灵敏度"></a>
+
 #### 5.3.5 完整二阶伴随灵敏度
 
 综合一阶伴随结果 (5.6) 和雅可比修正 (5.17)，得到**完整二阶伴随灵敏度公式**：
@@ -475,11 +533,15 @@ $$
 
 当目标函数不含雅可比依赖时（$\partial\mathcal{J}/\partial J_{in}=0$），有 $\lambda_{rn}^*=0$、$\lambda_i^{**}=0$，(5.18) 自动退化为 (5.6)。
 
+<a id="section-计算效率"></a>
+
 #### 5.3.6 计算效率
 
 三个伴随方程 (5.5)、(5.15)、(5.16) 共用同一个切线刚度矩阵 $K_{ij}$。前向 Newton-Raphson 求解时已完成 $LDL^\mathrm{T}$ 分解，每个伴随方程仅需一次前代/回代（$< 5\%$ 的前向求解耗时）。全部偏导数 $\partial R_i/\partial\Phi_m$ 和 $\partial(\mathrm{d}R_r/\mathrm{d}p_n)/\partial\Phi_m$ 通过一次沿计算图的反向传播获取——几何生成、材料插值、单元装配均表达为对 $\Phi_m$ 可微的张量操作。
 
 **最终结论：无论设计变量数量 $M$ 多大，完整的二阶伴随灵敏度分析在每一次外层迭代中仅需 1--3 次额外的线性求解，计算量与 $M$ 无关。**
+
+<a id="section-morphopt-中的灵敏度工作流"></a>
 
 ### 5.4 MorphOpt 中的灵敏度工作流
 
@@ -495,6 +557,8 @@ $$
 4. **梯度拆分**：总梯度先按几何-材料拆分，几何部分再**按 Part 切片**，分别送入各自的 `UpdaterBoundaryPart`（每个绑定一个边界 Part）和 `UpdaterSIMPMaterial` 子优化器。
 
 **代码对应**：`src/morphopt/optcore/objfunc.py` 中的 `ObjectiveFunction.sensitivity_analysis()` 方法。
+
+<a id="section-灵敏度从-fea-节点到控制点的映射"></a>
 
 ### 5.5 灵敏度从 FEA 节点到控制点的映射
 
@@ -516,7 +580,11 @@ class ShapeDerivative(BaseObjective):
 
 ---
 
-## 6. 工作空间优化与连续体雅可比矩阵
+<a id="section-工作空间优化与连续体雅可比矩阵"></a>
+
+## 6 工作空间优化与连续体雅可比矩阵
+
+<a id="section-连续体雅可比定义"></a>
 
 ### 6.1 连续体雅可比定义
 
@@ -528,11 +596,13 @@ $$
 
 其中 $U_i$ 是末端执行器的第 $i$ 个自由度（3个平动 + 3个转动），$p_r$ 是第 $r$ 个气腔的气压。
 
-这一雅可比将工作空间体积分从未知的构型空间映射到预设的气压空间；利用散度定理后，数值积分只需求解驱动参数域边界上的工况：
+这一雅可比将工作空间体积分从未知的构型空间映射到预设的气压空间；利用散度定理后，数值积分仅涉及驱动参数域边界上的工况求解：
 
 $$
 |\mathbb{W}| = \int_{\mathbb{W}} \mathrm{d}\mathbf{U} = \int_{\partial \mathbb{P}} w(\mathbf{U}, \mathbf{J}) \,\mathrm{d}\zeta
 $$
+
+<a id="section-驱动边界上的高斯求积"></a>
 
 ### 6.2 驱动边界上的高斯求积
 
@@ -554,15 +624,21 @@ $$
 | $3\text{A}3\text{R}0\text{T}$ | 8        | 无对称性的全面积分    |
 | $3\text{A}1\text{R}2\text{T}$ | 24       | 无对称性的全面积分    |
 
+<a id="section-工作空间形状设计扩展"></a>
+
 ### 6.3 工作空间形状设计扩展
 
 通过引入非均匀权重函数，工作空间优化可扩展到**形状设计**，例如在期望的姿态区域赋予更高权重，使优化结果偏向特定区域的工作空间。
 
 ---
 
-## 7. 几何约束
+<a id="section-几何约束"></a>
+
+## 7 几何约束
 
 为确保优化结果的**可制造性**和**数值稳定性**，MorphOpt 集成了多种几何约束，均以**罚函数**形式加入子优化问题。
+
+<a id="section-最小距离约束"></a>
 
 ### 7.1 最小距离约束
 
@@ -579,6 +655,8 @@ $$
 $$
 
 **代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/distancesurface.py` 中的 `Distance` 类。
+
+<a id="section-曲率约束"></a>
 
 ### 7.2 曲率约束
 
@@ -597,6 +675,8 @@ class InwardCurvatureRadius(BaseConstraints):
     """约束向内主曲率: k_inward <= 1 / (thickness + margin)"""
 ```
 
+<a id="section-曲面光顺性约束"></a>
+
 ### 7.3 曲面光顺性约束
 
 **角度约束**：惩罚切向量偏离正交：
@@ -613,6 +693,8 @@ $$
 
 **代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/surfacefairness.py` 中的 `Fairness` 类。
 
+<a id="section-边界约束"></a>
+
 ### 7.4 边界约束
 
 限制曲面在设计域内（如圆柱边界）：
@@ -623,6 +705,8 @@ class Cylinder(BaseConstraints):
 ```
 
 **代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/boundarys.py`。
+
+<a id="section-罚函数形式"></a>
 
 ### 7.5 罚函数形式
 
@@ -640,11 +724,17 @@ $$
 
 ---
 
-## 8. 子优化与信赖域方法
+<a id="section-子优化与信赖域方法"></a>
+
+## 8 子优化与信赖域方法
+
+<a id="section-动机"></a>
 
 ### 8.1 动机
 
 FEA 是计算瓶颈（单次求解可能耗时数分钟）。MorphOpt 采用**信赖域方法**减少 FEA 调用频率：在信赖域内用一阶泰勒展开构造代理函数代替真实 FEA，仅当子优化收敛后才重新执行 FEA。
+
+<a id="section-子优化问题"></a>
 
 ### 8.2 子优化问题
 
@@ -655,6 +745,8 @@ $$
 $$
 
 其中 $\vec{\Psi} = \mathbf{\Phi}^{k+1} - \mathbf{\Phi}^k$ 为设计变量的变化量。
+
+<a id="section-l-bfgs-求解器"></a>
 
 ### 8.3 L-BFGS 求解器
 
@@ -690,6 +782,8 @@ class LBFGS(BaseOpt):
         # 更新 BFGS 历史
 ```
 
+<a id="section-回溯线搜索"></a>
+
 ### 8.4 回溯线搜索
 
 步长 $\alpha_l$ 通过满足 Armijo 条件的回溯搜索确定：
@@ -697,6 +791,8 @@ class LBFGS(BaseOpt):
 $$
 f(\mathbf{x} + \alpha \mathbf{d}) < f(\mathbf{x}) + c_1 \alpha \nabla f(\mathbf{x})^\text{T} \mathbf{d}
 $$
+
+<a id="section-收敛判据与自适应策略"></a>
 
 ### 8.5 收敛判据与自适应策略
 
@@ -722,7 +818,11 @@ $$
 
 ---
 
-## 9. 数值流程
+<a id="section-数值流程"></a>
+
+## 9 数值流程
+
+<a id="section-整体优化循环"></a>
 
 ### 9.1 整体优化循环
 
@@ -762,6 +862,8 @@ while 未收敛:
 ———————————————————————————————————
 ```
 
+<a id="section-代码架构对应"></a>
+
 ### 9.2 代码架构对应
 
 ```
@@ -769,7 +871,7 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 ├── Params                    → 参数管理 (optcore/modelparams/params.py)
 │   ├── GeometryParams        → 一组 Part 接口（每个 Part = 一个 PartInterface）
 │   │   ├── BoundaryPart (BSP/球面映射曲面，可优化)
-│   │   ├── INPPart / TorchFEAPart (固定几何)
+│   │   ├── INPPart (固定几何)
 │   │   └── 每个 Part 的 Instance 按 <part>-1, <part>-2, … 自动命名
 │   ├── FEAParams             → FEA 参数（加载步、BC、RP）
 │   └── Materials             → 材料参数（μ, κ, ρ）
@@ -805,7 +907,9 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 
 ---
 
-## 10. 参考文献
+<a id="section-参考文献"></a>
+
+## 10 参考文献
 
 1. **Chen F, Song Z, Chen S, Gu G, Zhu X.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023.
 2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2026.

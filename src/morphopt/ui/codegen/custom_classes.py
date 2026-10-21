@@ -190,8 +190,8 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
             spec = ClassSpec(expression, expression, definition, backend)
             spec.methods = _backend_methods(backend, expression)
             parents[expression] = spec
-    for part_type in PART_TYPES:
-        expression = f"morphopt.{part_type}"
+    for class_name in (*PART_TYPES, "UpdaterBoundaryPart", "UpdaterOffsetBoundaryPart", "UpdaterSIMPMaterial"):
+        expression = f"morphopt.{class_name}"
         if expression not in parents:
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
@@ -264,6 +264,7 @@ CONFIGURATION_CLASS_PATHS = {
     "loads_group": "ThisController.Params.FEAParams",
     "materials": "ThisController.Params.MaterialsParams",
     "solver": "ThisController.Solver",
+    "objective": "ThisController.ObjectiveFunction",
     "updater": "ThisController.Updater",
 }
 
@@ -272,7 +273,19 @@ def class_path_for_node(node):
     """Generated configuration class selected by a model-tree row."""
     if node is None:
         return None
+    if node.kind in {"updater_geometry", "updater_materials"} and node.config() is not None:
+        return updater_class_path(node.section_group, node.config_index)
     return CONFIGURATION_CLASS_PATHS.get(node.kind)
+
+
+def updater_class_name(group: str, index: int) -> str:
+    """Generated class name for one independently configured sub-updater."""
+    base = {"geometry": "UpdaterBoundaryPart", "materials": "UpdaterSIMPMaterial"}[group]
+    return base if index == 0 else f"{base}{index}"
+
+
+def updater_class_path(group: str, index: int) -> str:
+    return f"ThisController.Updater.{updater_class_name(group, index)}"
 
 
 def compatible_custom_classes(problem, target, parents=None):
@@ -385,6 +398,10 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
     if problem.updater:
         configurations = [("geometry", config) for config in problem.updater.geometry]
         configurations += [("materials", config) for config in problem.updater.materials]
+        for group, configs in (("geometry", problem.updater.geometry), ("materials", problem.updater.materials)):
+            for index, config in enumerate(configs):
+                if config.get("custom_class"):
+                    bindings[updater_class_path(group, index)] = config["custom_class"]
         for group, config in configurations:
             for key, category in (("objective_functions", "objectives"), ("constraints", "constraints")):
                 for item in config.get(key, []):

@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 定位
+<a id="section-定位"></a>
+
+## 1 定位
 
 `codesign` 只提供内腔偏置 Part、对应的几何更新器和偏置约束。
 参数集合、目标函数、FEA、求解器和更新器集合统一使用 `optcore`，
@@ -14,7 +16,9 @@ UpdaterOffsetBoundaryPart   ──extends──► UpdaterBoundaryPart
 偏置约束                   ──extends──► shape BaseConstraints
 ```
 
-## `OffsetBoundaryPart`
+<a id="section-offsetboundarypart"></a>
+
+## 2 `OffsetBoundaryPart`
 
 源码：`codesign/offset_boundary_part.py`。
 
@@ -30,12 +34,14 @@ UpdaterOffsetBoundaryPart   ──extends──► UpdaterBoundaryPart
 
 不再定义 codesign 专用 Params、GeometryParams 或 FEAParams，也不依赖全局控制器查找 Part。
 
-## `UpdaterOffsetBoundaryPart`
+<a id="section-updateroffsetboundarypart"></a>
+
+## 3 `UpdaterOffsetBoundaryPart`
 
 源码：`codesign/update_offset_boundary_part.py`。
 
 复用 `UpdaterBoundaryPart` 的更新、步长和状态保存流程，`target_type` 限定为
-`OffsetBoundaryPart`。更新器在构造时不持有模型，注册时通过名字指定
+`OffsetBoundaryPart`。更新器在构造时不持有模型，注册时通过名称指定
 目标，初始化时由 `morphopt.Updaters` 交接一个 Part。
 
 ```python
@@ -57,7 +63,9 @@ class Updater(morphopt.Updaters):
             self.add_objective_function(self.objectivefuncs.Sensitivity())
 ```
 
-## 偏置约束
+<a id="section-偏置约束"></a>
+
+## 4 偏置约束
 
 源码：`codesign/constraints.py`。
 

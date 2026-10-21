@@ -1,0 +1,39 @@
+** INPPart import example for the MorphOpt UI interface reference.
+** 40 x 16 x 8 box with placeholder Neo-Hookean material for the current importer.
+** Review final material assignments and define loads in MorphOpt.
+*Heading
+MorphOpt INPPart interface illustration
+*Part, name=ReferenceBox
+*Node
+1, 0, 0, 0
+2, 40, 0, 0
+3, 40, 16, 0
+4, 0, 16, 0
+5, 0, 0, 8
+6, 40, 0, 8
+7, 40, 16, 8
+8, 0, 16, 8
+*Element, type=C3D8, elset=design
+1, 1, 2, 3, 4, 5, 6, 7, 8
+*Elset, elset=design
+1
+*Nset, nset=nodes_xmin
+1, 4, 5, 8
+*Nset, nset=nodes_xmax
+2, 3, 6, 7
+*Surface, type=ELEMENT, name=extern
+design, S1
+design, S2
+design, S3
+design, S4
+design, S5
+design, S6
+** Section: ImportSection
+*Solid Section, elset=design, material=ImportPlaceholder
+,
+*End Part
+*Material, name=ImportPlaceholder
+*Hyperelastic, neo hooke
+0.241, 0.4166666666666667
+*Density
+1.08e-9

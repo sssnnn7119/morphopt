@@ -1,534 +1,290 @@
-# 模块定义指南（how to define each module）
+# MorphOpt 脚本快速开始
 
-本文回答两个问题：
+[UI 快速开始](UIguide.md) · [脚本模块与接口参考](scriptreference.md) · [UI 模块与接口参考](UIreference.md)
 
-- 每个模块你应该怎么定义。
-- 每个模块在优化流程里负责什么。
+本文以单气腔软体结构为例，说明任务脚本的准备、优化启动、结果读取与继续计算。示例与 [UI 快速开始](UIguide.md) 采用相同的几何、载荷、材料和优化目标。各模块的扩展方法及完整接口约定见[脚本模块与接口参考](scriptreference.md)。
 
-## 1. 总体思路
+## 目录
 
-MorphOpt 的任务定义是“控制器驱动”的：
+<!-- docs:toc depth=1 -->
 
-1. 你定义 `ThisController`。
-2. 在控制器内定义四个模块：`ObjectiveFunction / Params / Solver / Updater`。
-3. 通过 `morphopt.start_optimization(...)` 启动。
+- [1 算例与运行条件](#section-算例与运行条件)
+- [2 安装并启动算例](#section-安装并启动算例)
+- [3 完整任务脚本](#section-完整任务脚本)
+- [4 查看输出与设计变化](#section-查看输出与设计变化)
+- [5 停止与继续计算](#continuation)
+- [6 修改算例](#section-修改算例)
 
-代码骨架：通用模块全部直接继承顶层 `morphopt`；按需组合具体接口与更新器。
+<!-- /docs:toc -->
+
+<a id="section-算例与运行条件"></a>
+
+## 1 算例与运行条件
+
+| 项目 | 本例定义 |
+|---|---|
+| 几何 | 沿 Z 轴布置的圆柱结构，外半径 8、长度 80；内腔半径 4、长度 74，底端 Z 坐标为 3 |
+| 部件与实例 | `part1` 与 `part1-1` |
+| 边界条件 | 外表面底端固定 X、Y、Z 平移 |
+| 载荷 | 内腔表面压力 `0.06`，一个载荷工况 |
+| 末端响应 | `RP_1` 与顶端节点耦合，读取旋转向量的 Y 分量 `ry` |
+| 材料 | `NeoHookeanLnJ`，`mu=0.482`、`kappa=4.8` |
+| 设计变量 | 外边界与内腔的曲面控制点 |
+| 优化目标 | 最大化有符号转角 `ry`，损失为 `-ry` |
+| 几何控制 | xz 镜面对称、曲率正则化、最小距离与圆柱包络 |
+| 计算设置 | CPU，一个有限元求解进程 |
+
+本例采用 mm–N–MPa 一致单位制，`0.06 MPa` 对应 `60 kPa`；旋转向量采用 rad。MorphOpt 不执行自动单位换算，无需安装 Abaqus。脚本运行不打开 MorphOpt 界面；几何网格与离屏图像保存仍由相应的 Gmsh、VTK 运行环境提供支持。
+
+![算例中部件、实例、材料与载荷的引用关系](images/ui-reference/diagrams/object-references.svg)
+
+<a id="section-安装并启动算例"></a>
+
+## 2 安装并启动算例
+
+运行环境要求 Python 3.12 或更新版本。在选定的 Python 环境中安装：
+
+```bash
+python -m pip install morphopt
+```
+
+完整任务文件为 [bending_optimization.py](examples/bending_optimization.py)。在仓库根目录可直接执行：
+
+```bash
+python docs/examples/bending_optimization.py
+```
+
+独立使用时，将该文件保存到任务目录，在该目录执行 `python bending_optimization.py`。从源码运行时，在仓库根目录以 `python -m pip install -e .` 安装，再执行同一任务文件。
+
+该任务使用 CPU 和一个求解进程，不要求配置 CUDA。首次迭代依次完成曲面初始化、体网格生成、非线性有限元求解、灵敏度计算与设计更新。首轮完成前尚无完整历史曲线；计算时间由网格规模、材料非线性和计算资源共同决定。
+
+<a id="section-完整任务脚本"></a>
+
+## 3 完整任务脚本
+
+以下代码与随文档提供的任务文件一致，可整体保存为 `bending_optimization.py` 后运行。
 
 ```python
+"""脚本与 UI 快速开始共用的气动弯曲优化算例。"""
+
 import morphopt
+
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder='D:/Results', opt_label='MyTask')
+        super().__init__(path_result_folder="./results/", opt_label="BendingExample")
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        ...
+        def reference_point_motion(self, step_index=0):
+            morphopt.controller.params.feamodel.process_fea(
+                self.fe, step_index=step_index
+            )
+            assembly = self.fe.assembly
+            coordinates = self.fe_results[step_index].GC.to(assembly.device)
+            reference_point = assembly.get_reference_point("RP_1")
+            return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
+
+        def objective_function(self):
+            # 最小化 -ry，对应最大化绕全局 Y 轴的有符号转角。
+            return -self.reference_point_motion()[4]
+
+        def get_metrics(self):
+            return [self.reference_point_motion()[4].detach().cpu().item()]
 
     class Params(morphopt.Params):
-        ...
+        class GeometryParams(morphopt.GeometryParams):
+            class Actuator(morphopt.BoundaryPart):
+                def define_instance(self):
+                    self.add_instance(self.part_name, "part1-1", [0.0] * 6)
+
+                def define_surfaces(self):
+                    for radius, length, location, flip in [
+                        (8.0, 80.0, [0.0, 0.0, 0.0], False),
+                        (4.0, 74.0, [0.0, 0.0, 3.0], True),
+                    ]:
+                        surface = self.BSP.initialize_cylinder(
+                            r0=radius,
+                            length=length,
+                            seed_size=1.0,
+                            init_location=location,
+                            flip=flip,
+                            maxR=0.2,
+                            maxC=1.0,
+                            maxFF=0.2,
+                            perturbation_L=10.0,
+                        )
+                        surface.add_constraint(surface.mirror("xz"))
+                        self.add_surface_interface(surface)
+
+            def define_interface(self):
+                self.add_interface(
+                    self.Actuator(fea_seed_size=1.0, mesh_order=1), name="part1"
+                )
+
+        class FEAParams(morphopt.FEAParams):
+            def define_interface(self):
+                self.add_interface(
+                    self.BoundaryCondition(
+                        instance_name="part1-1",
+                        set_nodes_name="surface_0_Bottom",
+                        index_dof=[0, 1, 2],
+                    ),
+                    name="bc_1",
+                )
+                self.add_interface(
+                    self.ReferencePoint(rp_location=[0.0, 0.0, 80.0]), name="RP_1"
+                )
+                self.add_interface(
+                    self.Couple(
+                        rp_name="RP_1",
+                        instance_name="part1-1",
+                        set_nodes_name="surface_0_Head",
+                    ),
+                    name="couple_1",
+                )
+                self.add_interface(
+                    self.Pressure(
+                        instance_name="part1-1", surface_name="surface_1_All"
+                    ),
+                    name="pressure_1",
+                )
+
+            def define_steps(self):
+                self.set_step_num(1)
+                self.set_step_params(0, "pressure_1", [0.06])
+
+        class MaterialsParams(morphopt.MaterialsParams):
+            def define_interface(self):
+                self.add_interface(
+                    self.HomogeneousMaterial(
+                        material_parameters=self.models.NeoHookeanLnJParams(
+                            mu=0.482, kappa=4.8
+                        ),
+                        density=1.08e-9,
+                        part_name="part1",
+                    ),
+                    name="material_1",
+                )
+
+        def __init__(self):
+            super().__init__(
+                geometry=self.GeometryParams(),
+                feamodel=self.FEAParams(),
+                materials=self.MaterialsParams(),
+            )
 
     class Solver(morphopt.Solver):
-        ...
+        def __init__(self, params):
+            super().__init__(params=params, num_process=1, available_gpus=[])
 
     class Updater(morphopt.Updaters):
-        ...
+        def define_updater(self):
+            self.add_geometry_updater(self.Shape(), name="part1")
+
+        class Shape(morphopt.UpdaterBoundaryPart):
+            def __init__(self):
+                super().__init__(max_step_iter=50)
+                self.if_update = [True, True]
+
+            def define_objective(self):
+                self.add_objective_function(self.objectivefuncs.ShapeDerivative())
+                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_constraints(
+                    self.objectivefuncs.Distance(
+                        min_distance=[[2.5, 2.5], [2.5, 2.5]]
+                    )
+                )
+                self.add_constraints(
+                    self.objectivefuncs.boundarys.Cylinder(
+                        radius=10.0, height=80.0, bottom=0.0
+                    )
+                )
+
+
+if __name__ == "__main__":
+    morphopt.start_optimization(device="cpu", restart_per_iteration=20)
 ```
 
-> **通用基类只从顶层 `morphopt` 继承**。`shapeopt` 与 `simp` 不是优化问题
-> 基类层级；它们只实现可组合的具体 Part / 材料接口和更新器。
+`ThisController` 为运行器加载的任务类名称。文件末尾的 `if __name__ == "__main__":` 限制启动入口，避免多进程导入脚本时重复启动任务。
 
-### 1.1 通用约定：构造函数轻量，解析放在 `initialize()`
+各段代码按以下关系组成完整模型：
 
-声明式方法（`define_interface()` / `define_steps()` / `define_surfaces()` / `define_updater()`）只负责**登记对象**；
-构造函数只保存原始参数（名字、数值、配置），不查表、不建模型、不算尺寸：
-
-| 模块 | 构造函数只做 | 解析/构建发生在 |
-|---|---|---|
-| `Params` 集合（geometry / feamodel / materials） | 建空集合 | `initialize()` → `define_interface()` / `define_steps()`（只在集合为空时登记一次，可重复调用） |
-| Part 接口 | 存 `part_name` / 实例名 / 网格参数 | `define_surfaces()`（初始化时调用一次）、`build_part()`（生成网格时） |
-| 几何优化器 | 存 `interface_name` 字符串 | 注册时 `define_objective()`；`initialize()` → 统一解析目标 + `bind_target(target)` |
-| 材料接口（SIMP） | 存材料参数与场参数 | `initialize()` 建 B 样条设计场与控制点 |
-| 材料优化器 | 存 `interface_name` 字符串 | 注册时 `define_objective()`；`initialize()` → 统一解析目标 + `bind_target(target)` |
-| `Updaters` | 存 `params` / `device`，跑 `define_updater()` | `initialize()` 逐个绑定目标并算尺寸 |
-
-两条配套约定：
-
-- **`initialize()` 之前集合是空的**：要读接口（`interfaces`）或 Part 曲面
-  （`part.surface_interfaces()`）
-  或要 `load()` 的脚本，得自己先调一次 `initialize()`（或 `controller.initialize()`）。
-- `define_objective()` 在 updater 注册时调用一次；`initialize()` 只负责目标绑定和运行时准备。
-
-好处：`Params()` / `Updater()` 可以随时构造（UI 预览、模型对比都不需要真网格）；名字写错只在
-`initialize()` 报错——那时控制器已持有完整模型，可以直接给出“可选项列表”。
-
-| 类型 | 顶层基类 |
+| 定义位置 | 本例中的内容 |
 |---|---|
-| 控制器模块 | `morphopt.ObjectiveFunction` / `Params` / `Solver` / `Updaters` |
-| 参数集合 | `morphopt.GeometryParams` / `FEAParams` / `MaterialsParams` |
-| 边界曲面 Part | `morphopt.BoundaryPart` |
-| SIMP 密度场材料 | `morphopt.SIMP_BSPFieldMaterials` |
-| 几何更新器 | `morphopt.UpdaterBoundaryPart` |
-| 材料更新器 | `morphopt.UpdaterSIMPMaterial` |
+| `ThisController.__init__()` | 任务名称和结果根目录 |
+| `ObjectiveFunction` | 从 `RP_1` 读取末端运动，返回损失并记录转角 |
+| `Params.GeometryParams` | 注册 `part1`，声明实例、外边界与内腔 |
+| `Params.FEAParams` | 注册固定条件、参考点、耦合和压力，再填写工况幅值 |
+| `Params.MaterialsParams` | 将本构模型分配给 `part1` |
+| `Params.__init__()` | 将三个参数集合传入框架 |
+| `Solver` | 使用一个 CPU 求解进程 |
+| `Updater` | 将几何更新器绑定到 `part1`，注册灵敏度与几何约束 |
 
-不使用的接口和更新器不注册即可；同一问题可以同时有多个 Part、多个 Instance 和多个材料更新器。
+参考点运动按名称从装配体中提取，分量顺序为 `[x, y, z, rx, ry, rz]`。示例的索引 `4` 对应 `ry`。提取过程与 UI 的参考点数据模板一致，使用当前后端的 `_GC2RGC` 与 `_RGC_index`；目标函数中的张量保留梯度，只有记录指标时转换为普通数值。
 
-## 2. ObjectiveFunction 怎么定义
+<a id="section-查看输出与设计变化"></a>
 
-功能：定义你的优化目标和监控指标。
+## 4 查看输出与设计变化
 
-最小实现要求：
+结果保存在任务脚本所在目录的 `results/BendingExample_T<时间戳>/`。相对输入路径和结果根目录均按任务脚本目录解析。
 
-- 在 `objective_function(self)` 返回标量 `torch.Tensor`。
-- 如果目标依赖载荷雅可比，提前声明 `self.jacobian_needed = [...]`。
+| 文件或目录 | 内容 |
+|---|---|
+| `log/history_record.csv` | 每轮损失、指标、计算时间和网格统计 |
+| `log/morphopt.log` | 优化流程日志 |
+| `log/torchfea.log` | 有限元求解日志 |
+| `log/geometry/`、`log/materials/` | 各轮设计状态 |
+| `log/geometryupdater/` | 几何更新器状态 |
+| `log/femodel&results/` | 各轮有限元模型及工况结果 |
+| `log/deformation/` | 工况变形图与表面文件 |
+| `scripts/MAIN_SCRIPT_FOR_RESTART.py` | 继续计算使用的任务脚本快照 |
 
-模板：
+终端的 `Iteration`、`Loss` 与分阶段耗时反映当前优化进展。本例最小化 `-ry`，因此负损失与正转角可以同时出现。判断优化方向时，应同时读取损失与记录的 `ry`，并区分有符号转角、转角绝对值和欧拉角。
 
-```python
-class ObjectiveFunction(morphopt.ObjectiveFunction):
-    def __init__(self):
-        super().__init__()
-        self.jacobian_needed = ['force_1']
+图形查看步骤如下：
 
-    def objective_function(self):
-        # self.fe_results[i].GC 是第 i 个 load step 的位移自由度向量
-        # self.fe_results[i].jacobian[...] 是对应雅可比
-        return self.fe_results[0].GC.norm()
+1. 执行 `morphopt-ui`。
+2. 选择 **文件 → 打开优化结果**，定位到包含 `log/` 和 `scripts/` 的具体任务目录。
+3. 在 **优化过程** 中选择迭代，查看历史曲线、设计边界与工况变形。
+4. 进入 **工况与计算结果**，查看该轮对应的位移、应力和应变。
 
-    def get_metrics(self):
-        return [self.fe_results[0].GC[-1].item()]
-```
+该过程读取脚本运行产生的归档。任意 Python 任务不会反向转换为主定义页中可编辑的 `.morph` 模型树。界面操作见 [UI 快速开始](UIguide.md#optimization) 与 [UI 结果分析参考](UIreference.md#results)。
 
-实践建议：
+<a id="continuation"></a>
 
-- 多工况时把各工况目标统一放在 `objective_function` 里汇总。
-- `get_metrics` 只放可视化指标，不参与梯度。
+## 5 停止与继续计算
 
-## 3. Params 怎么定义
+终端中按 Ctrl+C 中断当前任务。继续计算应选择已经完整保存模型、结果和设计状态的运行目录；被中断但尚未完成保存的迭代不作为恢复依据。
 
-`Params` 是三个子参数模块的聚合器：
-
-- `GeometryParams`：几何定义与网格生成。
-- `FEAParams`：载荷/边界/接触定义与工况幅值。
-- `MaterialsParams`：材料接口集合；每个接口独立指定 Part 和可选单元类型。
-
-模板：
+新建 `resume_optimization.py`，将下列运行目录替换为实际路径：
 
 ```python
-class Params(morphopt.Params):
-    class GeometryParams(morphopt.GeometryParams):
-        class Body(morphopt.BoundaryPart):
-            def define_surfaces(self):
-                self.add_surface_interface(
-                    self.BSP.initialize_cylinder(r0=10.0, length=50.0, seed_size=1.0, flip=False))
+from pathlib import Path
+import morphopt
 
-        def define_interface(self):
-            self.add_interface(self.Body(fea_seed_size=1.0, mesh_order=1), name='body')
-
-    class FEAParams(morphopt.FEAParams):
-        def define_interface(self):
-            self.add_interface(self.BoundaryCondition(instance_name='body', set_nodes_name='surface_0_Bottom', index_dof=[0,1,2]))
-            self.add_interface(self.Pressure(instance_name='body', surface_name='surface_0_All'), name='pressure_1')
-
-        def define_steps(self):
-            self.set_step_num(1)
-            self.set_step_params(0, 'pressure_1', [0.06])
-
-    class MaterialsParams(morphopt.MaterialsParams):
-        def define_interface(self):
-            self.add_interface(
-                self.HomogeneousMaterial(
-                    material_parameters=self.materialmodels.NeoHookeanLnJParams(
-                        mu=0.48, kappa=4.8),
-                    density=1.08e-9,
-                    part_name="body", elementname=""),
-                name="body")
-
-    def __init__(self):
-        super().__init__(geometry=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams())
+if __name__ == "__main__":
+    run_folder = Path("results/BendingExample_T<时间戳>").resolve()
+    morphopt.start_optimization(
+        device="cpu",
+        path_result=str(run_folder),
+    )
 ```
 
-### 3.1 GeometryParams 定义要点：一个 Part 接口
+运行 `python resume_optimization.py` 后，程序从该目录的任务快照和最近保存状态继续计算。`path_result` 指向单个运行目录；其父目录仅用于容纳多个运行。任务结构发生变化时应创建新运行，原始脚本的后续修改不会自动替换已有运行中的脚本快照。
 
-几何是三层结构：
+`restart_per_iteration=20` 指定分段运行时的进程重启间隔，重启后继续同一任务。`max_step_iter=50` 限定每轮设计更新内部的子优化次数。两者均不是外层优化总轮数上限。
 
-1. `GeometryParams`：按名称保存的 **Part 接口字典**（`interfaces`），本身不关心曲面。
-2. `BasePart`：一个 **Part + 若干 Instance**。子类
-   - `INPPart`：直接读 Abaqus INP 网格；
-   - `TorchFEAPart`：读 torchfea 导出的模型目录（`torchfea.load_model`）；
-   - `BoundaryPart`（shapeopt/codesign）：由参数化曲面生成网格，**只有它有曲面**。
-3. `SurfaceInterface`：属于 `BoundaryPart` 的单个曲面（BSP / CPGEO / …）。
+<a id="section-修改算例"></a>
 
-一个 Part 的 Instance 在 Part 内部定义，不再通过 GeometryParams 传一组平行
-配置。基类默认创建一个与 Part 同名、位姿不变的 Instance。需要多个 Instance
-时，只需覆盖 `define_instance()`，用六维指数坐标
-`[tx, ty, tz, rx, ry, rz]` 调用 `add_instance()`：
+## 6 修改算例
 
-```python
-class Frame(morphopt.INPPart):
-    def define_instance(self):
-        self.add_instance(self.part_name, "frame_left", [0, 0, 0, 0, 0, 0])
-        self.add_instance(self.part_name, "frame_right", [0, 40, 0, 0, 0, 1.5708])
-```
-
-`rx/ry/rz` 直接作为 TorchFEA 的 rotation exponential coordinates（弧度）
-传入。Part 名字默认就是注册名（`add_interface(..., name='body')`）。
-
-**曲面写在哪里**：曲面的声明放在 Part 类里（`define_surfaces`），与其它模块的
-`define_interface()` 一致：Part 初始化时调用一次，顺序即曲面索引顺序。曲面工厂
-（`BSP` / `CPGEO` / `FixedSurface`）由 `BoundaryPart`
-自带，子类里 `self.BSP.…` 直接可用。Part 特有的辅助方法直接定义在对应的
-Part 子类中：
-
-```python
-class GeometryParams(morphopt.GeometryParams):
-
-    class CPGEO_Symmetry(morphopt.BoundaryPart.CPGEO):  # 模型级自定义曲面类
-        ...
-
-    class BoundaryPart(morphopt.BoundaryPart):
-        """可优化实体：曲面参数化，一个 Part 两个曲面（0 外表面、1 内腔）。"""
-
-        def define_surfaces(self):
-            outer = self.BSP.initialize_cylinder(
-                r0=8.0, length=80.0, seed_size=0.8, flip=False)
-            outer.add_constraint(outer.mirror("xz"))
-            self.add_surface_interface(outer)
-
-            cavity = self.BSP.initialize_cylinder(
-                r0=4.0, length=74.0, seed_size=0.8, flip=True)
-            cavity.add_constraint(cavity.mirror("xz"))
-            self.add_surface_interface(cavity)
-
-    def define_interface(self):
-        # 可优化实体
-        self.add_interface(
-            self.BoundaryPart(fea_seed_size=1.0, mesh_order=1), name='body')
-
-        # 固定实体：直接读 INP，一个 Part 两个 Instance
-        frame = self.Frame(mesh_file='model/frame.inp')
-        self.add_interface(frame, name='frame')
-```
-
-其他要点：
-
-- 每个 `BaseSurface` 持有一个有序的约束列表。BSP 支持 `mirror("xz")`
-  和 `mirror("xy", offset=h/2)`；其它 BSP 对称方式暂不支持。CPGEO 的
-  `surface.mirror(...)` 和 `surface.rotate(...)` 创建曲面专属约束；跨曲面关系直接构造
-  `surface.relate(other, pose=...)`。`relate` 是对应后端的约束类属性。用
-  `surface.add_constraint(...)` 显式登记，调用顺序就是执行顺序。约束会自动在
-  曲面更新和重初始化时按登记顺序逐个执行。BSP 和 CPGEO 各自复制所需的曲面数据，
-  将源曲面的几何变换后写入目标曲面；两侧必须是同一类曲面。相对位姿用
-  `pose=(tx, ty, tz, rx, ry, rz)` 表示，与 Instance 一致，后三项是旋转向量（弧度）。
-  自定义约束继承 `morphopt.BaseSurfaceConstraints`，并实现
-  `apply(surface)` 和 `reinitialize(surface)`，再通过
-  `surface.add_constraint(MyConstraint())` 注册。
-  `apply_surface_constraints()` 可用于需要跨曲面整体处理的 Part 级扩展逻辑。
-- 曲面顺序即设计变量顺序：先按 Part 注册顺序，再按曲面注册顺序；几何优化器
-  按 Part 切分梯度。
-- 每个曲面在实例下的集合名约定为 `surface_<i>_<标签>`，FEA 接口按实例名 +
-  集合名引用（`instance_name='body', surface_name='surface_0_All'`）。
-- 可以在 `define_interface` 里直接 `part.add_surface_interface(...)`（UI 导出
-  的旧脚本、运行时重建的模型仍然支持）；初始化时检测到已有曲面后，
-  `define_surfaces` 不会再执行。
-
-### 3.2 FEAParams 定义要点
-
-功能：
-
-- 构建 FEA 接口集合。
-- 管理多加载步参数。
-
-你要做的事：
-
-- 在 `define_interface()` 里注册所有接口。
-- 在 `define_steps()` 里配置每步幅值。
-- 这两个钩子由 `initialize()` 调用（构造函数只建空集合），所以 `Params` 还没
-  `initialize()` 时 `interfaces` / `fea_steps_params` 都是空的。
-
-常见接口：
-
-- 压力：`Pressure`
-- 接触：`Contact`, `SelfContact`
-- 力/力矩：`ConcentratedForce`, `ConcentratedMoment`
-- 约束：`BoundaryCondition`, `ReferencePointBoundaryCondition`
-- 耦合：`Couple`
-- 参考点：`ReferencePoint`
-- 体力：`BodyForce`
-
-### 3.3 MaterialsParams 定义要点
-
-功能：
-
-- 把参数映射到材料本构，并把所有材料接口的设计变量聚合给优化器。
-
-两条路线：
-
-1. 继承 `morphopt.MaterialsParams`。
-2. 在 `define_interface()` 中调用 `add_interface(...)` 注册一个或多个接口。
-3. 均质材料使用 `HomogeneousMaterial`；SIMP 材料使用 `SIMP_BSPFieldMaterials`。
-
-`part_name` 不能为空；`elementname=""` 表示该 Part 的所有单元类型。一个
-codesign 材料集合通常注册两个接口：实体单元上的 SIMP 接口和 `C3D6` 上的
-`HomogeneousMaterial` 接口。材料接口的设计变量由 `MaterialsParams` 自动拼接，
-因此 `simp` 和 `codesign` 的 `UpdaterSIMPMaterial` 不需要额外适配。
-
-每个材料接口通过 `material_parameters` 的参数对象选择 TorchFEA 本构模型，
-不再单独传入 `material_model`。当前可选参数类型为
-`self.materialmodels.LinearElasticParams`、`NeoHookeanParams`、
-`NeoHookeanLnJParams`、`MooneyRivlinParams`、`YeohParams`、`GentParams`、
-`ArrudaBoyceParams` 和 `OgdenParams`；参数对象的类名同时决定材料模型。
-这些参数类型由 `MaterialsParams.materialmodels` 提供，不需要从顶层
-`morphopt` 导入。
-模型所需的参数使用对应的参数类型传入，例如：
-
-```python
-self.HomogeneousMaterial(
-    material_parameters=self.materialmodels.MooneyRivlinParams(
-        c10=0.24, c01=0.12, kappa=4.8),
-    density=1.08e-9,
-    part_name="body")
-```
-
-SIMP 接口也使用相同的模型选择；例如 Yeoh 模型的参数通过对应类型传入：
-
-```python
-morphopt.SIMP_BSPFieldMaterials(
-    material_parameters=self.materialmodels.YeohParams(
-        c1=0.48, c2=0.0, c3=0.0, kappa=4.8),
-    mumax=10.0, kappamax=100.0,
-    simp_ratio_min=1e-7,
-    bounding_box=[0, 20, 0, 10, 0, 5],
-    simp_field_resolution=0.5, degree=2,
-    density=1.08e-9,
-    part_name="body")
-```
-
-SIMP 场常见重写点：
-
-- SIMP 的 B 样条映射由材料接口内部统一完成；材料节点只配置设计域、分辨率、阶次和材料参数。
-- 对称等式约束应作为材料更新器的约束项注册，不应修改内部映射函数。
-
-## 4. Solver 怎么定义
-
-功能：调度多工况 FEA 求解。
-
-通常只需设置并行参数：
-
-```python
-class Solver(morphopt.Solver):
-    def __init__(self, params: morphopt.Params):
-        super().__init__(params=params, num_process=1)
-```
-
-你可以扩展：
-
-- `task_index_list`：手动控制工况到进程的分配。
-- `available_gpus`：多 GPU 场景下显式绑定。
-
-未显式传入 `U_guess` 时，模型中的 Part 接口都满足 `is_variable=False`，
-求解器才会通过 `StaticResult.load()` 读取最近一次已保存迭代的各工况坐标作为初值。
-首次求解或某个工况的结果文件不存在时，对应初值为 `None`。
-`BasePart` 默认 `is_variable=False`，`BoundaryPart` 默认 `True`；
-该标记也会传到装配中的 `torchfea.Part`。
-自定义 Part 的几何或网格会随优化变化时，在类中设置 `is_variable=True`。
-仅优化材料密度而保持网格不变的 SIMP Part 使用 `False`。
-
-`U_guess` 按全局工况编号排列，求解器按 `task_index_list` 为每个子进程提取初值列表。
-子进程逐工况使用对应初值；该项为 `None` 时，使用同一任务上一工况的求解结果，
-任务首工况则使用模型初始坐标。例如任务 `[2, 0]` 接收 `[U_guess[2], U_guess[0]]`。
-
-## 5. Updater 怎么定义
-
-功能：根据灵敏度更新设计变量。
-
-`Updaters` 把子优化器维护成一个**字典**：所有子优化器行为一致（各自拥有一个更新
-对象、只吃自己那一片梯度、各自保存状态）。声明在**一个钩子** `define_updater()` 里完成，
-“更新的是几何还是材料还是载荷”由**用哪个 add 方法**说明，一眼可见、不用猜：
-
-| 注册方法 | 更新的集合 | 梯度键 |
+| 修改内容 | 修改位置 | 同步核查 |
 |---|---|---|
-| `add_geometry_updater(updater, name=None)` | `params.geometry` | `geometry` |
-| `add_material_updater(updater, name=None)` | `params.materials` | `materials` |
+| 圆柱与内腔尺寸 | `Actuator.define_surfaces()` | 内腔位置、壁厚、参考点位置与包络尺寸 |
+| 压力幅值 | `FEAParams.define_steps()` 中的 `[0.06]` | 一致单位制及加压表面 |
+| 材料参数 | `MaterialsParams.define_interface()` | 参数名称、本构模型及部件分配 |
+| 运动方向 | `objective_function()` 的分量与符号 | 指标分量、最大化或最小化含义 |
+| 网格疏密 | `fea_seed_size` | 首轮流程、求解稳定性与正式结果精度 |
+| 更新控制 | `Shape.define_objective()` | 最小距离、曲率阈值和包络 |
 
-不带名字时默认命名为 `<类名>_<序号>`（`UpdaterBoundaryPart_0`、`UpdaterSIMPMaterial_1`…）。
-每个子优化器**指向自己的更新对象**，而且“哪一类 params 的哪个 interface”完全由**注册那两行**说清楚：
-
-- 更新哪一类集合（`"geometry"` / `"materials"`）：由**用的哪个注册方法**钉死
-  （`add_geometry_updater` ⇒ `geometry`），也就是 `update_kind`（同时作为梯度键）；
-- 该集合里的哪个 interface（几何 = Part 名，材料 = 材料接口名）：就是 `add_*_updater(...)` 的 **`name`**。
-
-**核对关系是双向的**：`update_kind` 由所用基类继承（`UpdaterBoundaryPart` → `geometry`，
-`UpdaterSIMPMaterial` → `materials`），注册时会校验“基类声明的种类”和“注册用的方法”是否一致——
-把几何优化器塞进 `add_material_updater()` 会直接报错，不会默默地切错梯度。
-
-**updater 类本身不写目标**，所以同一个类可以对不同对象分别优化不同的 Part；目标与目标函数分开声明：构造只给“自己的超参”，目标/约束写在 `define_objective()` 里（和 `define_interface()` 对称，由注册方法调用一次）：
-
-```python
-class Updater(morphopt.Updaters):
-    def define_updater(self) -> None:
-        # 同一个类，两个对象，各自优化自己的 Part
-        self.add_geometry_updater(self.Shape(), name='body')
-        self.add_geometry_updater(self.Shape(), name='leg')
-
-    class Shape(morphopt.UpdaterBoundaryPart):
-        def __init__(self, interface_name=None):
-            super().__init__(interface_name=interface_name, max_step_iter=200)
-
-        def define_objective(self) -> None:
-            self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-            self.add_constraints(self.objectivefuncs.Fairness())
-```
-
-上面两个对象各自解析到 `params.geometry` 的 `body` / `leg`，梯度切片、状态目录
-（`log/geometryupdater/<interface>/`）也各自分开。
-
-如果注册名和 interface 名确实需要不同（例如字典键想叫 `arm` 而 Part 叫 `body`），
-就在构造时显式给出，它会胜过注册名：
-
-```python
-self.add_geometry_updater(self.Shape(interface_name='body'), name='arm')
-```
-
-**“从哪个集合里找这个 interface”是明确的**：初始化时（`Updaters.initialize()`）每个
-更新器只会收到**自己那一类集合**（`params.geometry` / `params.materials`），它在这个
-集合里按名字取出自己的 interface，并且**只保留那一个
-interface**（`self.part` / `self.material`），不再持有集合或 `params`：
-
-```python
-collection.interfaces['body']
-collection.interface('solid')       # MaterialsParams.interface(name)
-```
-
-写错名字会在 `initialize()` 立即报错并列出可用名；没写名字、而该集合里只有
-“唯一一个可设计的目标”时，也可以省略（自动采用唯一的那个）。
-
-模板（codesign：两个 Part 各一个几何优化器，两个材料接口各一个材料优化器）：
-
-```python
-class Updater(morphopt.Updaters):
-    def define_updater(self) -> None:
-        self.add_geometry_updater(self.UpdaterBoundaryPart(), name='body')
-        self.add_geometry_updater(self.UpdaterBoundaryPartFrame(), name='frame')
-        self.add_material_updater(self.UpdaterSIMPMaterial(), name='solid')
-        self.add_material_updater(self.UpdaterSIMPMaterialShell(), name='shell')
-
-    def __init__(self, params: morphopt.Params):
-        super().__init__(params=params, device='cuda:0')
-
-    class UpdaterBoundaryPart(morphopt.UpdaterOffsetBoundaryPart):
-        def __init__(self):
-            super().__init__(max_step_iter=100)
-
-        def define_objective(self) -> None:
-            self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-            # 约束只作用于本更新器自己的 Part，因此不需要再传 surfaces
-            self.add_constraints(self.objectivefuncs.Fairness())
-
-    class UpdaterBoundaryPartFrame(morphopt.UpdaterOffsetBoundaryPart):
-        def __init__(self):
-            super().__init__(max_step_iter=80)
-
-        def define_objective(self) -> None:
-            self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-            self.add_constraints(self.objectivefuncs.Fairness())
-
-    class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
-        def __init__(self):
-            super().__init__(max_step_iter=200, max_step_length=0.2)
-
-        def define_objective(self) -> None:
-            self.add_objective_function(self.objectivefuncs.Sensitivity(normalize_gradient=False))
-            self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=0.001, threshold=0.0, p=2))
-            self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=0.999, threshold=0.0, p=2))
-            self.if_update = True
-
-    class UpdaterSIMPMaterialShell(morphopt.UpdaterSIMPMaterial):
-        def __init__(self):
-            super().__init__(max_step_iter=100)
-
-        def define_objective(self) -> None:
-            self.add_objective_function(self.objectivefuncs.Sensitivity())
-```
-
-（上面 `define_updater()` 里的 `name='body'` / `name='frame'` 就是说“这个对象优化哪个 Part”；
-两个几何类不同是因为它们的目保/约束不同——如果完全一样，完全可以只写一个类、注册两次。）
-
-> 只做几何时只注册 `add_geometry_updater(...)`；只做拓扑时只注册
-> `add_material_updater(...)`。两者都直接继承 `morphopt.Updaters`，不使用的
-> 注册方法不写即可。
-
-定义规则：
-
-- **每个子优化器在注册时点名自己的目标**：`add_geometry_updater(self.Shape(), name='body')`
-  （材料同理 `add_material_updater(..., name='solid')`）——这个 `name` 既是字典键，也是它拥有的 interface。
-  需要覆盖注册名时，用 `interface_name=` 在构造时指定。
-  完全没有名字时，如果该集合里只有唯一一个可设计目标，就自动用它。
-- 构造函数只收自己的旋钮（`max_step_iter` / `max_step_length` / …）：**目标在
-  `initialize()` 由集合交接、按名字解析**（controller 在循环前调用）。名字写错会在
-  初始化时立即报错并列出可用名；updater 始终不持有 `params` 或集合。
-- 目标 / 约束不是写在 `__init__` 里，而是写在 `define_objective()` 中（和
-  `define_interface()` 对称，由注册方法调用一次）：所有目标项用
-  `add_objective_function(...)`，所有约束项用 `add_constraints(...)`。
-- 通过 `if_update` 精细控制哪些变量被更新（几何：长度 = 本 Part 的曲面数；材料：bool）。
-- 子优化器彼此独立：梯度按各自目标切片（几何按 Part、材料按材料接口），状态分别
-  保存在 `log/geometryupdater/<interface_name>/`、`log/materialupdater/<interface_name>/`。
-- `add_geometry_updater` / `add_material_updater` 的 `name` 省略时按
-  注册顺序自动编号（`<类名>_<序号>`）；同名会直接报错。
-  已注册的子优化器直接保存在 `updaters` 字典中。
-## 6. Codesign 模块怎么定义
-
-协同设计直接使用公共的 `morphopt.Params`、`GeometryParams`、`FEAParams`、
-`MaterialsParams`、`ObjectiveFunction`、`Solver` 和 `Updaters`。
-只有内腔偏置 Part 和对应的几何更新器使用专用实现：
-
-- Part：`morphopt.OffsetBoundaryPart`。
-- 几何更新器：`morphopt.UpdaterOffsetBoundaryPart`，注册到 `add_geometry_updater(..., name="body")`。
-- 材料更新器：`morphopt.UpdaterSIMPMaterial`，注册到 `add_material_updater(...)`。
-
-自定义 CPGEO 曲面类继承 `morphopt.OffsetBoundaryPart.CPGEO`。
-壳网格由 Part 构建、转换为指定阶次并检查，不需要专用 FEAParams。
-
-SIMP 材料的空间映射属于内核实现，不在 UI 的材料节点中编辑。
-
-几何约束可直接加：
-
-- `morphopt.codesign.InwardCurvatureRadius(...)`
-- `morphopt.codesign.OffsetSurfaceMinThickness(...)`
-
-## 7. 迭代与重启机制
-
-优化每次迭代主流程：
-
-1. `params/solver/updater/objfun.reinitialize(...)`
-2. 生成 FEA 模型
-3. 多工况求解
-4. 灵敏度分析
-5. 更新几何/材料变量
-6. 记录历史并保存快照
-
-`restart_per_iteration` 控制多少步后自动退出并由外层任务进程继续，降低长时运行失败影响。
-
-## 8. 输出与排错建议
-
-输出目录核心子目录：
-
-- `log/`：参数与历史。
-- `cache/`：中间 INP。
-- `fea/`：FEA 结果。
-- `scripts/`：用于重启的脚本和依赖快照。
-
-排错优先级：
-
-1. 先检查 FEA 是否收敛。
-2. 检查接口命名与 surface/set 是否一致。
-3. 检查 `jacobian_needed` 是否覆盖目标函数所需项。
-4. 检查约束权重与步长是否过激导致更新不稳定。
-
-## 9. 参考实现
-
-- shapeopt 完整示例：`examples/bendingactuator.py`
-- simp 完整示例：`examples/gripper.py`
-- 协同设计任务（壳偏移 + SIMP 材料）：`myjobs/codesign/`（如 `stiffness_twist_largemat.py`、`energy_contraction.py`）
-- 目标函数与结果保存逻辑：`src/morphopt/optcore/objfunc.py`
-- 几何 / 材料更新核心：`src/morphopt/shapeopt/update_boundary_part.py`、`src/morphopt/simp/update_simpmaterial.py`
+`seed_size` 控制曲面控制网格，`fea_seed_size` 控制体有限元网格，两者独立。只增大体网格尺寸不会同时减少曲面设计变量。多工况、材料拓扑优化、CAD、接触和自定义更新器分别见[脚本模块与接口参考](scriptreference.md)。

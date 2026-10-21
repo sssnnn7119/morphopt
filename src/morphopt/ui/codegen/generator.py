@@ -16,10 +16,8 @@ from dataclasses import fields
 
 from ...constants import CONSTANT
 from ...optcore.modelparams.materials import MaterialModels
-from ..model.modelinfo import PartSummary, TorchFEAModelSummary
 from ..model.problem import (
     CADOperationNode,
-    INSTANCE_REFERENCE_FIELDS,
     FEAComponentNode,
     Node,
     ObjectiveNode,
@@ -171,10 +169,12 @@ def generate_source(problem: ProblemDefinition) -> str:
     """Read a synchronized definition and activate its custom subclasses."""
     source = generate_base_source(problem)
     custom_items = problem.updater and any(
-        item.get("custom_class")
+        config.get("custom_class") or any(
+            item.get("custom_class")
+            for key in ("objective_functions", "constraints")
+            for item in config.get(key, [])
+        )
         for config in problem.updater.geometry + problem.updater.materials
-        for key in ("objective_functions", "constraints")
-        for item in config.get(key, [])
     )
     if problem.custom_classes or problem.class_bindings or custom_items or any(node.custom_class for node in problem.root.iter_nodes()):
         from .custom_classes import apply_custom_classes
@@ -561,7 +561,7 @@ def generate_base_source(
 
 #: Part fields that must always be emitted, even when empty
 #: (they are positional requirements of the Part constructor)
-_REQUIRED_GEOMETRY_FIELDS = {"model_directory", "mesh_file"}
+_REQUIRED_GEOMETRY_FIELDS = {"mesh_file"}
 
 
 def _render_part_constructor(
@@ -619,7 +619,6 @@ def _emit_part_classes(
         "CADPart": "morphopt.CADPart",
         "BoxPart": "morphopt.BoxPart",
         "INPPart": "morphopt.INPPart",
-        "TorchFEAPart": "morphopt.TorchFEAPart",
     }
     local_class: dict[str, str] = {}
     class_names = part_class_names(problem)
@@ -702,10 +701,6 @@ def _emit_part_init(
         a("                pass")
         return
 
-    model = problem.imported_model_summary()
-    if model is not None:
-        _validate_imported_component_selections(problem, model)
-
     local_class = dict(local_classes or {})
     prefix = " " * 16
     for index, part in enumerate(parts):
@@ -727,76 +722,6 @@ def _emit_part_init(
                     f"{render_surface_call(surface, problem)})"
                 )
         a(f"                self.add_interface({variable}, name={name!r})")
-
-
-def _validate_imported_component_selections(
-    problem: ProblemDefinition,
-    model: TorchFEAModelSummary,
-) -> None:
-    """Validate all Assembly-backed names before emitting runnable source."""
-    instances = {item.name: item for item in model.instances}
-    parts = {item.name: item for item in model.parts}
-    for component in problem.fea_components():
-        spec = type(component)
-        fields_for_type = {field.key for field in spec.fields}
-        boundary_instance = False
-        for instance_key in ("instance_name", "instance_name1", "instance_name2"):
-            if instance_key not in fields_for_type:
-                continue
-            target = getattr(component, INSTANCE_REFERENCE_FIELDS[instance_key])
-            if target is None:
-                raise ValueError(
-                    localized_message("ui.errors.generator.component_value_must_select_value", value_0=component.name, value_1=instance_key)
-                )
-            selected = target.name
-            if selected not in instances:
-                owner = problem.part_for_instance(selected)
-                if owner is not None and owner.has_surfaces:
-                    # Boundary Parts create their node/surface sets while
-                    # generating the Part.  They are not present in the
-                    # imported TorchFEA archive being validated here.
-                    boundary_instance = True
-                    continue
-                raise ValueError(
-                    localized_message("ui.errors.generator.component_value_references_unknown_torchfea_instance_value", value_0=component.name, value_1=selected)
-                )
-
-        if boundary_instance:
-            continue
-
-        selections: tuple[
-            tuple[str, str, Callable[[PartSummary], tuple[str, ...]]], ...
-        ] = (
-            ("set_nodes_name", "instance_name", lambda part: part.node_sets),
-            ("surface_name", "instance_name", lambda part: part.surface_sets),
-            ("surface_name1", "instance_name1", lambda part: part.surface_sets),
-            ("surface_name2", "instance_name2", lambda part: part.surface_sets),
-        )
-        for key, instance_key, sets_of in selections:
-            if key not in fields_for_type:
-                continue
-            selected = str(component.get_field(key, "") or "").strip()
-            target = getattr(component, INSTANCE_REFERENCE_FIELDS[instance_key])
-            instance_name = target.name if target is not None else ""
-            if not selected:
-                raise ValueError(localized_message("ui.errors.generator.component_value_must_select_value", value_0=component.name, value_1=key))
-            instance = instances.get(instance_name)
-            part = parts.get(instance.part_name) if instance is not None else None
-            available = sets_of(part) if part is not None else ()
-            if selected not in available:
-                raise ValueError(
-                    localized_message("ui.errors.generator.component_value_references_unknown_value_value_on_instance_value", value_0=component.name, value_1=key, value_2=selected, value_3=instance_name)
-                )
-
-        if "element_name" in fields_for_type:
-            element_name = str(component.element_name or "").strip()
-            instance_name = component.instance.name if component.instance else ""
-            instance = instances.get(instance_name)
-            part = parts.get(instance.part_name) if instance is not None else None
-            if part is None or element_name not in part.element_types:
-                raise ValueError(
-                    localized_message("ui.errors.generator.component_value_references_unknown_element_value_on_instance_value", value_0=component.name, value_1=element_name, value_2=instance_name)
-                )
 
 
 def _geometry_config_for_part(
@@ -1075,6 +1000,8 @@ def _emit_updater(
     template: SchemeTemplate,
     device: str,
 ) -> None:
+    from .custom_classes import updater_class_name
+
     upd = problem.updater or UpdaterNode()
     geom_cfgs = upd.geometry
     geom_targets = _resolve_geometry_targets(problem, geom_cfgs)
@@ -1090,11 +1017,11 @@ def _emit_updater(
         return
 
     geometry_classes = [
-        "UpdaterBoundaryPart" if index == 0 else f"UpdaterBoundaryPart{index}"
+        updater_class_name("geometry", index)
         for index in range(len(geom_cfgs))
     ]
     material_classes = [
-        "UpdaterSIMPMaterial" if index == 0 else f"UpdaterSIMPMaterial{index}"
+        updater_class_name("materials", index)
         for index in range(len(mat_cfgs))
     ]
 

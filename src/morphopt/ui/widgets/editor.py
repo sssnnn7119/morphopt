@@ -224,7 +224,14 @@ class PropertyEditor(QWidget):
             self._parameter_form.refresh_choices(choices)
 
     def _rename_node(self, text: str) -> None:
-        if self._node is not None and rename_node(self._node, text, self._completion_problem):
+        if self._node is None:
+            return
+        renamed = rename_node(self._node, text, self._completion_problem)
+        if self._name_edit is not None:
+            # Rejected or whitespace-only edits must not leave the form
+            # displaying a name that differs from the referenced object.
+            self._name_edit.setText(self._node.name)
+        if renamed:
             self._title.setText(node_title(self._completion_problem, self._node))
             self.changed.emit(self._node)
 

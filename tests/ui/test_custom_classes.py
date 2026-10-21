@@ -385,7 +385,7 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     assert window.tree._item_node[window.tree.currentItem()].kind == "params_class"
     assert problem.root.to_dict() == before
     window._on_node_selected(problem.objective)
-    assert window.class_selector.isHidden()
+    assert not window.class_selector.isHidden()
     window.tree.actions.set_objective_class(other.name)
     assert problem.objective.custom_class == other.name
     assert load_classes(problem).ObjectiveFunction().get_metrics() == {"other": 1}
@@ -394,7 +394,6 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     assert window.class_selector.combo.findData("CustomSolver") >= 0
     assert window.class_selector.combo.findData(other.name) == -1
     for node in (
-        problem.objective,
         problem.loads,
         problem.steps,
         problem.parts()[0],

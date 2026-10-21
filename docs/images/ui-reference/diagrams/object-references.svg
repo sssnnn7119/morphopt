@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="610" viewBox="0 0 1200 610" role="img"><title>几何、材料与分析对象的引用关系</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426484"/></marker></defs>
+<rect width="1200" height="610" rx="16" fill="#f5f8fc"/>
+<text x="32" y="42" font-family="Noto Sans CJK SC" font-size="24" fill="#15324d" font-weight="600">几何、材料与分析对象的引用关系</text>
+<rect x="40" y="95" width="290" height="124" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="58" y="125" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">Part：部件定义</text>
+<text x="58" y="155" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">实体来源、网格、边界曲面</text>
+<text x="58" y="182" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">例：part1</text>
+<rect x="445" y="95" width="310" height="124" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="463" y="125" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">Instance：装配中的实例</text>
+<text x="463" y="155" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">引用 Part + 放置位姿</text>
+<text x="463" y="182" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">例：part1-1</text>
+<rect x="40" y="325" width="290" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="58" y="355" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">材料</text>
+<text x="58" y="385" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">分配至 Part / 单元块</text>
+<text x="58" y="412" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">均匀材料或 SIMP 设计材料</text>
+<rect x="445" y="325" width="310" height="150" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="463" y="355" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">载荷 / 边界 / 连接</text>
+<text x="463" y="385" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">作用于实例的集合或 RP</text>
+<text x="463" y="412" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">Pressure → 表面集</text>
+<text x="463" y="439" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">Couple / 固定 → 节点集</text>
+<rect x="870" y="95" width="290" height="124" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="888" y="125" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">RP：参考点</text>
+<text x="888" y="155" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">位置 + 运动自由度</text>
+<text x="888" y="182" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">通过 Couple 连接实体</text>
+<rect x="870" y="325" width="290" height="150" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="888" y="355" font-family="Noto Sans CJK SC" font-size="21" fill="#154575" font-weight="600">工况 → 目标 / 指标</text>
+<text x="888" y="385" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">工况指定接口参数</text>
+<text x="888" y="412" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">目标读取指定工况的响应</text>
+<text x="888" y="439" font-family="Noto Sans CJK SC" font-size="18" fill="#263b50" font-weight="400">指标仅用于响应记录</text>
+<polyline points="330,155 445,155" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="345" y="140" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">复用并放置</text>
+<polyline points="185,325 185,219" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="202" y="281" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">材料指派</text>
+<polyline points="600,219 600,325" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="615" y="281" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">实例及集合</text>
+<polyline points="870,155 812,155 812,365 755,365" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="815" y="275" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">引用 RP</text>
+<polyline points="755,420 870,420" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="762" y="398" font-family="Noto Sans CJK SC" font-size="16" fill="#426484" font-weight="400">载荷参数关联</text>
+<text x="40" y="552" font-family="Noto Sans CJK SC" font-size="21" fill="#263b50" font-weight="400">核查流程：对象定义 → 引用关系 → 工况赋值 → FE 响应 → 目标或指标</text>
+</svg>

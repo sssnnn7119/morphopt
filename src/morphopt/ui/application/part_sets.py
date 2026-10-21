@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 from ..model.problem import PartNode, ProblemDefinition
 from .cad import cad_part_from_node
-from ..model.node_types.parts import BoundaryPartNode, OffsetBoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, TorchFEAPartNode
+from ..model.node_types.parts import BoundaryPartNode, OffsetBoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,6 @@ class PartSetCatalog:
             BoundaryPartNode: self.boundary,
             BoxPartNode: self.box,
             CADPartNode: self.cad,
-            TorchFEAPartNode: self.imported,
             INPPartNode: self.inp,
         }
         self._cache: dict[PartNode, PartSets] = {}
@@ -50,7 +49,7 @@ class PartSetCatalog:
             return PartSets()
         part = self.problem.part_for_instance(name)
         if part is None:
-            return PartSets(tuple(self.problem.node_set_names(name)), tuple(self.problem.surface_set_names(name)))
+            return PartSets()
         return self.for_part(part)
 
     def for_part(self, part: PartNode | None) -> PartSets:
@@ -86,21 +85,6 @@ class PartSetCatalog:
             nodes=("all", "surface_all") + tuple(f"{name}_nodes" for name in names),
             surfaces=tuple(dict.fromkeys([part.exterior_surface or "extern", *names])),
         )
-
-    @staticmethod
-    def imported(part: TorchFEAPartNode, problem: ProblemDefinition) -> PartSets:
-        summary = problem.imported_model_summary()
-        if summary is None:
-            return PartSets()
-        source = next(
-            (item for item in summary.parts if item.name == (part.model_part_name or part.assembly_name)),
-            None,
-        )
-        return PartSets(
-            source.node_sets,
-            source.surface_sets,
-            source.element_types,
-        ) if source is not None else PartSets()
 
     @staticmethod
     def inp(part: INPPartNode, problem: ProblemDefinition) -> PartSets:

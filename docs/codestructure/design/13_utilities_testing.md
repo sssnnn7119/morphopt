@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 用户脚本与示例
+<a id="section-用户脚本与示例"></a>
+
+## 1 用户脚本与示例
 
 `examples/` 是公开组合 API 的可运行说明：
 
@@ -13,7 +15,9 @@
 
 示例从顶层 `morphopt` 导入 `Params`、集合、接口和运行对象，再从 `morphopt.shapeopt` 或 `morphopt.simp` 导入对应扩展。每个示例都定义 `ThisController`，可直接由 `start_optimization()`、`debug_optimization()` 或 UI 生成的运行器加载。
 
-## 灵敏度检查
+<a id="section-灵敏度检查"></a>
+
+## 2 灵敏度检查
 
 源码：`utils/gradient_check.py`；顶层导出为 `morphopt.check_gradients`。
 
@@ -26,19 +30,25 @@
 
 检查器使用同一份 `Params.modify_assembly()` 与 `ObjectiveFunction` 计算路径，适合验证新 `ProtocalUpdatable` 实现中变量顺序、投影和灵敏度变量的一致性。它在结束时关闭 Controller 所有进程池。
 
-## 历史读取与重启诊断
+<a id="section-历史读取与重启诊断"></a>
+
+## 3 历史读取与重启诊断
 
 源码：`utils/history_read.py`；顶层导出为 `morphopt.get_controller`。
 
 `get_controller(path_result, iteration=None)` 从结果目录的 `scripts/MAIN_SCRIPT_FOR_RESTART.py` 动态导入 `ThisController`，创建实例并调用其 `_load_history()`。它提供面向分析与 UI 的已完成/中断优化读取入口；返回 Controller 后可读取 History、Params 状态和结果文件。
 
-## 日志与包入口
+<a id="section-日志与包入口"></a>
+
+## 4 日志与包入口
 
 `morphopt.__init__` 在 Linux 上配置 `MKL_THREADING_LAYER=GNU`，并提供 `enable_logging(level, log_file, file_log_level)`。日志工具负责 MorphOpt 包级 logger 的控制台/文件 handler 配置。`opt_runner.py` 与 `taskoptmization.py` 负责运行进程边界，详见 [02 运行时内核](02_runtime.md)。
 
 UI 入口是 `morphopt-ui` 控制台脚本，落在 `ui/__main__.py`、`ui/app.py` 与 `ui/launcher.py`；它们创建 Qt application 并显示 `MainWindow`。
 
-## 测试职责
+<a id="section-测试职责"></a>
+
+## 5 测试职责
 
 当前自动化测试位于 `tests/`：
 
@@ -48,7 +58,7 @@ UI 入口是 `morphopt-ui` 控制台脚本，落在 `ui/__main__.py`、`ui/app.p
 | `tests/optcore/test_solver.py` | Solver 生命周期、任务配置和求解结果路径。 |
 | `tests/ui/test_application.py` | `.morph`、模板、应用会话、领域引用和代码生成的集成行为。 |
 
-推荐执行方式：
+执行命令如下：
 
 ```bash
 pytest -q
@@ -56,9 +66,13 @@ pytest -q
 
 涉及 UI 的测试使用无界面 Qt 环境；涉及网格、TorchFEA 或 GPU 的扩展测试应显式声明所需后端和设备条件。
 
-## 变更检查表
+<a id="section-变更检查表"></a>
 
-### 新增核心接口
+## 6 变更检查表
+
+<a id="section-新增核心接口"></a>
+
+### 6.1 新增核心接口
 
 1. 选择对应的集合：Part 到 Geometry、FEA 对象到 FEAParams、材料到 MaterialsParams。
 2. 定义构造参数、公开属性和运行时私有缓存；构造函数调用 `super().__init__()`。
@@ -67,7 +81,9 @@ pytest -q
 5. 为可更新接口实现完整变量顺序、灵敏度与 `modify_assembly()` 契约；为需要持久化的状态实现 `save/load`。
 6. 更新对应模块设计页与 [源码清单](14_source_inventory.md)。
 
-### 新增 UI 可编辑类型
+<a id="section-新增-ui-可编辑类型"></a>
+
+### 6.2 新增 UI 可编辑类型
 
 1. 在 `ui/model/node_types/` 定义对应 `Node` 子类，声明类型化属性、不可变 `FieldSpec` 元组和后端类标识；在 `registry.py` 中注册该类。
    容器通过类型化成员明确允许的子节点，新的子节点类别须同步声明其所属集合。
@@ -76,7 +92,9 @@ pytest -q
 4. 在 ModelTree、编辑路由或专用 widget 中添加展示和编辑入口。
 5. 为模板给出最小有效实例，并在 `tests/ui/` 覆盖保存、加载、重命名与生成代码。
 
-### 设备与持久化
+<a id="section-设备与持久化"></a>
+
+### 6.3 设备与持久化
 
 - 局部更新器的完整对象图在 `Updaters.update()` 中成对移动到目标设备与原设备。
 - 保存状态时使用 `ProtocalSavable.save_directory()` 和 `pathlog_required()` 获得命名空间目录。

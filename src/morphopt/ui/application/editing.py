@@ -153,8 +153,6 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
             return problem.set_component_reference(node, key, value)
         if key == "part_name" and isinstance(node, MaterialNode):
             return problem.set_material_part(node, value)
-        if key == "part_name" and isinstance(node, PartNode):
-            return problem.rename_part(node, str(value or ""))
     node.set_field(key, value)
     return True
 
@@ -247,6 +245,11 @@ class CustomClassSession:
                 node.custom_class = new
         if problem.updater is not None:
             for config in problem.updater.geometry + problem.updater.materials:
+                if config.get("custom_class") == old:
+                    if new:
+                        config["custom_class"] = new
+                    else:
+                        config.pop("custom_class", None)
                 for key in ("objective_functions", "constraints"):
                     for item in config.get(key, []):
                         if item.get("custom_class") == old:

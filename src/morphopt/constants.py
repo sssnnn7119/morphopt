@@ -684,9 +684,6 @@ class _Constants:
                     class EXTERIOR_SURFACE:
                         DEFAULT = 'surface_0_All'
 
-                    class PART_NAME:
-                        DEFAULT = ''
-
                 class INPPART:
 
                     class MESH_FILE:
@@ -698,32 +695,10 @@ class _Constants:
                     class EXTERIOR_SURFACE:
                         DEFAULT = ''
 
-                    class PART_NAME:
-                        DEFAULT = ''
-
-                class TORCHFEAPART:
-
-                    class MODEL_DIRECTORY:
-                        DEFAULT = ''
-
-                    class MODEL_FILENAME:
-                        DEFAULT = ''
-
-                    class MODEL_PART_NAME:
-                        DEFAULT = ''
-
-                    class EXTERIOR_SURFACE:
-                        DEFAULT = ''
-
-                    class PART_NAME:
-                        DEFAULT = ''
 
                 class BASEPART:
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = ''
-
-                    class PART_NAME:
                         DEFAULT = ''
 
                 class BOXPART:
@@ -751,9 +726,6 @@ class _Constants:
                     class EXTERIOR_SURFACE:
                         DEFAULT = 'extern'
 
-                    class PART_NAME:
-                        DEFAULT = ''
-
                 class CADPART:
 
                     class MESH_SIZE:
@@ -767,9 +739,6 @@ class _Constants:
                     class EXTERIOR_SURFACE:
                         DEFAULT = 'extern'
 
-                    class PART_NAME:
-                        DEFAULT = ''
-
                 class OFFSETBOUNDARYPART:
 
                     class FEA_SEED_SIZE:
@@ -782,9 +751,6 @@ class _Constants:
 
                     class EXTERIOR_SURFACE:
                         DEFAULT = 'surface_0_All'
-
-                    class PART_NAME:
-                        DEFAULT = ''
 
                     class SHELL_THICKNESS:
                         DEFAULT = 0.5
@@ -1105,7 +1071,7 @@ class _Constants:
             RESTART_PER_ITERATION = 20
 
         class SOLVER:
-            NUM_PROCESS = 4
+            NUM_PROCESS = 1
             STATIC_TOLERANCE_ERROR = 1e-07
 
         class VISUALIZATION:

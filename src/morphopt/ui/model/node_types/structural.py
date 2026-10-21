@@ -535,7 +535,11 @@ class SolverNode(Node):
         self.num_process: int | str = data.get(
             "num_process", CONSTANT.KERNEL.SOLVER.NUM_PROCESS
         )
-        self.gpus: list = list(data.get("gpus") or [])
+        # CPU is represented by an empty GPU selection. Read older quickstart
+        # definitions that explicitly stored ["cpu"] using the same convention.
+        self.gpus: list = [
+            device for device in (data.get("gpus") or []) if device != "cpu"
+        ]
         self.task_index_list: list = list(data.get("task_index_list") or [])
 
 

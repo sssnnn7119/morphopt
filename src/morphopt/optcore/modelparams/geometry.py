@@ -37,7 +37,6 @@ class GeometryParams(BaseParams):
         CADPart,
         BoxPart,
         INPPart,
-        TorchFEAPart,
     )
 
     def instance_names(self) -> list[str]:

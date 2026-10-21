@@ -251,7 +251,7 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
     }))
     problem.root.add_section(SolverNode(name="Solver", params={
         "num_process": CONSTANT.UI.QUICKSTART.DEFAULT.NUM_PROCESS,
-        "gpus": ["cpu"],
+        "gpus": [],
         "task_index_list": [list(range(len(step_values)))],
     }))
     problem.root.add_section(updater)

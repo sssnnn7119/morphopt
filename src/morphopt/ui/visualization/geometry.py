@@ -15,8 +15,6 @@ import torchfea
 from ...optcore.modelparams.parts import (
     BoxPart,
     INPPart,
-    load_model_assembly,
-    resolve_model_path,
 )
 from ..application.cad import cad_brep_records_from_node
 from ..application.expressions import DefinitionValues
@@ -27,7 +25,6 @@ from ..model.node_types.parts import (
     BoxPartNode,
     CADPartNode,
     INPPartNode,
-    TorchFEAPartNode,
 )
 from ..model.node_types.surfaces import (
     BspCylinderSurfaceNode,
@@ -41,7 +38,6 @@ from ..model.problem import (
     PartNode,
     ProblemDefinition,
     SurfaceNode,
-    resolve_model_directory,
 )
 from ..theme import theme_manager
 from .scene import PreviewScene
@@ -384,57 +380,12 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
         return context._local_cad_faces.get((id(part), face_name))
 
 
-class TorchFEAPreviewAdapter(PartPreviewAdapter[TorchFEAPartNode]):
-    def model_part(
-        self, context: PreviewGeometry, part: TorchFEAPartNode
-    ) -> torchfea.Part:
-        linked = context.problem.imported_model_part_node()
-        if linked is None:
-            raise ValueError(
-                localized_message("ui.errors.geometry.no_linked_torchfea_model")
-            )
-        assembly = context._ensure_torchfea_model(linked)
-        return assembly.get_part(part.assembly_name)
-
-    def surface(
-        self,
-        context: PreviewGeometry,
-        part: TorchFEAPartNode,
-        name: str,
-    ) -> pv.DataSet | None:
-        return self.model_part(context, part).get_mesh(surf_name=name or None)
-
-    def preview(
-        self,
-        context: PreviewGeometry,
-        part: TorchFEAPartNode,
-        instance: InstanceNode | None,
-    ) -> None:
-        mesh = self.surface(context, part, part.exterior_surface or "")
-        if mesh is not None:
-            name = instance.name if instance is not None else part.name
-            if instance is not None:
-                mesh = apply_instance_pose(mesh, instance, context.values)
-            context.scene.add_base(
-                name,
-                mesh,
-                name=f"torchfea:{name}",
-                color=context.instance_color(instance.name)
-                if instance
-                else theme_manager.palette.viewer.geometry.uninstanced_color,
-                opacity=1.0,
-                show_edges=instance is None,
-                smooth_shading=True,
-            )
-
-
 def default_part_visitor() -> PartPreviewVisitor:
     visitor = PartPreviewVisitor()
     visitor.register(BoundaryPartNode, BoundaryPreviewAdapter())
     visitor.register(BoxPartNode, BoxPreviewAdapter())
     visitor.register(CADPartNode, CADPreviewAdapter())
     visitor.register(INPPartNode, INPPreviewAdapter())
-    visitor.register(TorchFEAPartNode, TorchFEAPreviewAdapter())
     return visitor
 
 
@@ -521,8 +472,6 @@ class PreviewGeometry:
         self.surfaces = surfaces or SurfacePreviewVisitor()
         self.problem: ProblemDefinition
         self.scene = PreviewScene()
-        self._model_cache_key: tuple[object, ...] | None = None
-        self._model_assembly: torchfea.Assembly | None = None
         self._cad_face_meshes: dict[tuple[str, str], pv.DataSet] = {}
         self._local_cad_faces: dict[tuple[int, str], pv.DataSet] = {}
         self._part_cache: dict[int, torchfea.Part] = {}
@@ -546,8 +495,6 @@ class PreviewGeometry:
         self._cad_cache = {}
         self._instance_colors = {}
         self.values = DefinitionValues(problem)
-        if problem.imported_model_part_node() is None:
-            self._clear_model_preview()
         if mode == "part":
             parts = [selected] if selected is not None else []
         elif mode == "assembly":
@@ -738,72 +685,6 @@ class PreviewGeometry:
             color=theme_manager.palette.viewer.render.marker_color_annotation_error,
             font_size=theme_manager.palette.viewer.render.label_font_size,
         )
-
-    def _ensure_torchfea_model(self, geometry: TorchFEAPartNode) -> torchfea.Assembly:
-        if not geometry.model_directory:
-            self._clear_model_preview()
-            raise ValueError(
-                localized_message(
-                    "ui.errors.geometry.no_torchfea_model_is_linked_from_initial_geometry"
-                )
-            )
-        model_directory = resolve_model_directory(geometry.model_directory)
-        path = resolve_model_path(model_directory, geometry.model_filename or "")
-        placement_key = tuple(
-            (
-                part.assembly_name,
-                part.model_part_name,
-                tuple(
-                    (
-                        instance.name,
-                        *self.values.resolve(instance.translation),
-                        *self.values.resolve(instance.rotation),
-                    )
-                    for instance in part.instances
-                ),
-            )
-            for part in self.problem.parts()
-            if part.type == "TorchFEAPart"
-        )
-        cache_key = (str(path), path.stat().st_mtime_ns, placement_key)
-        if cache_key == self._model_cache_key and self._model_assembly is not None:
-            return self._model_assembly
-        source = load_model_assembly(model_directory, geometry.model_filename or "")
-        assembly = self._assembly_for_problem(source)
-        assembly.initialize()
-        self._model_assembly = assembly
-        self._model_cache_key = cache_key
-        return assembly
-
-    def _clear_model_preview(self) -> None:
-        """Forget the cached Assembly when the preview switches model type."""
-        self._model_cache_key = None
-        self._model_assembly = None
-
-    def _assembly_for_problem(self, source: torchfea.Assembly) -> torchfea.Assembly:
-        """Build a preview Assembly from the UI's Part/Instance definitions."""
-        assembly = torchfea.Assembly()
-        parts = [part for part in self.problem.parts() if part.type == "TorchFEAPart"]
-        if not parts:
-            return source
-
-        for part_definition in parts:
-            source_part_name = (
-                part_definition.model_part_name or part_definition.assembly_name
-            )
-            part = source.get_part(source_part_name)
-            part_name = part_definition.assembly_name
-            assembly.add_part(part=part, name=part_name)
-            for instance in part_definition.instances:
-                assembly.add_instance(
-                    instance=torchfea.Instance(
-                        part_name=part_name,
-                        translation=self.values.resolve(instance.translation),
-                        rotation=self.values.resolve(instance.rotation),
-                    ),
-                    name=instance.name,
-                )
-        return assembly
 
     def instance_center(self, instance_name: str) -> np.ndarray | None:
         meshes = [

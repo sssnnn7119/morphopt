@@ -1,0 +1,78 @@
+{
+  "family": "Noto Sans CJK SC",
+  "point_size": 10,
+  "vtk_font_file": "NotoSansCJKSC-Regular.otf",
+  "source_collection": "NotoSansCJK-Regular.ttc",
+  "glyph_runs": {
+    "400": [
+      {
+        "family": "Noto Sans CJK SC",
+        "style": "Regular"
+      }
+    ],
+    "600": [
+      {
+        "family": "Noto Sans CJK SC",
+        "style": "Medium"
+      }
+    ],
+    "700": [
+      {
+        "family": "Noto Sans CJK SC",
+        "style": "Bold"
+      }
+    ]
+  },
+  "sampled_widget_fonts": {
+    "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+      "Noto Sans CJK SC"
+    ],
+    "Noto Sans CJK SC,10,-1,5,600,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+      "Noto Sans CJK SC"
+    ],
+    "Hack,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+      "Noto Sans CJK SC"
+    ],
+    "Noto Sans CJK SC,-1,14,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+      "Noto Sans CJK SC"
+    ],
+    "Noto Sans CJK SC,10,-1,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+      "Noto Sans CJK SC"
+    ]
+  },
+  "locale_coverage": {
+    "unique_ui_han_characters": 578,
+    "family": "Noto Sans CJK SC",
+    "weights": {
+      "400": {
+        "actual_families": [
+          "Noto Sans CJK SC"
+        ],
+        "styles": [
+          "Regular"
+        ]
+      },
+      "600": {
+        "actual_families": [
+          "Noto Sans CJK SC"
+        ],
+        "styles": [
+          "Medium"
+        ]
+      },
+      "700": {
+        "actual_families": [
+          "Noto Sans CJK SC"
+        ],
+        "styles": [
+          "Bold"
+        ]
+      }
+    }
+  },
+  "scope": "Documentation capture processes only; desktop font configuration unchanged",
+  "code_font": {
+    "latin": "Hack",
+    "han": "Noto Sans CJK SC"
+  }
+}

@@ -3,7 +3,9 @@
 本文是 `src/morphopt/ui/` 的唯一架构规范。目标是让新增功能沿同一条数据流实现，
 避免模型规则、文件操作、进程状态和 Qt 展示再次混在一起。
 
-## 1. 总体分层
+<a id="section-总体分层"></a>
+
+## 1 总体分层
 
 ```text
 MainWindow / Workbench / ObserverControls / FiniteElementPage  页面组合
@@ -29,8 +31,7 @@ ui/
 │   ├── registry.py          节点类型与多态家族注册
 │   ├── problem.py           问题聚合：跨节点关联、增删排序、不变量
 │   ├── fields.py             字段元数据
-│   ├── loaders.py           .morph JSON 边界
-│   └── modelinfo.py          导入存档摘要
+│   └── loaders.py           .morph JSON 边界
 ├── application/
 │   ├── definitions.py       ProblemSession、模板和文件用例
 │   ├── finite_element.py    指定迭代的有限元模型副本、载荷编辑和进程请求
@@ -42,7 +43,6 @@ ui/
 │   ├── expressions.py       辅助代码与表达式求值上下文
 │   ├── updaters.py           优化器分节投影、统一有序项、对称约束和距离矩阵规则
 │   ├── editor_routing.py     Node → EditorRoute
-│   ├── imported_models.py   导入文件扫描、模型摘要和外部建模器启动
 │   ├── completion.py        代码补全候选
 │   ├── values.py / devices.py 数值文本解析、设备发现
 │   └── quickstart.py / results.py / runs.py
@@ -105,7 +105,9 @@ SVG 是唯一图标资源，随 Python 包发布；更换图标时只编辑 SVG�
 也无需 pip 安装转换钩子。若未来发布 Windows 独立 EXE，EXE 文件和安装器所需的
 ICO 应由对应打包流程生成并嵌入；运行时的 Qt 图标设置不修改 EXE 文件资源。
 
-## 2. 状态所有权
+<a id="section-状态所有权"></a>
+
+## 2 状态所有权
 
 每类状态只能有一个所有者：
 
@@ -119,14 +121,16 @@ ICO 应由对应打包流程生成并嵌入；运行时的 Qt 图标设置不修
 | 共享分析选择 | `MainWindow` | 观察与有限元视图共用的结果目录和迭代，不共享可修改的内核对象 |
 | 当前文档路径 | `MainWindow` | `Ctrl+S` 原路径保存，无路径时进入另存为 |
 | 导航树与结果表格投影 | `presentation` | 根据当前定义或结果生成，不改模型 |
-| 预览几何及查询缓存 | `PreviewGeometry` | 每次构建清除局部资源，导入存档按路径/时间/位姿缓存 |
+| 预览几何及查询缓存 | `PreviewGeometry` | 每次构建清除局部资源，同一次预览复用 Part 与 CAD 记录 |
 | VTK actor | `PreviewRenderer` | 统一创建、移除；几何与载荷分别管理 |
 | 当前页/节点/相机 | Qt view/widget | 仅短生命周期展示状态 |
 
 禁止在两个 QWidget 中各存一份同一业务值。Widget 缓存只允许用于选中项、相机、
 展开状态等展示信息；刷新后必须能从上述所有者恢复内容。
 
-### 定义与优化过程
+<a id="section-定义与优化过程"></a>
+
+### 2.1 定义与优化过程
 
 顶层导航分为“优化定义”和“优化过程”。启动时只允许进入定义；在定义页点击“开始优化”、
 通过文件菜单从 `.py` 开始优化，或打开已有优化结果目录后，才开放优化过程。
@@ -187,7 +191,9 @@ ICO 应由对应打包流程生成并嵌入；运行时的 Qt 图标设置不修
 模型通过 `torchfea.load_model()` 读取，结果通过 `StaticResult.load()` 读取；
 恢复结果的 `work_conditions` 后可按模型哈希检查配对。
 
-### 有限元场量显示
+<a id="section-有限元场量显示"></a>
+
+### 2.2 有限元场量显示
 
 `ui/application/result_fields.py` 用 `DisplayField` 注册云图分量，`ResultContours` 按当前解缓存场量。
 可显示位移模长及分量、Cauchy 应力及 Mises 应力、Green–Lagrange 应变和应变能密度。
@@ -198,7 +204,9 @@ ICO 应由对应打包流程生成并嵌入；运行时的 Qt 图标设置不修
 有限元视图左下角的 XYZ 方向轴由 `plot_style.add_orientation_axes()` 创建，文字颜色随主题变化，
 轴颜色与位置统一放在 `ViewerRenderStyle`，每次重建场景都会恢复。
 
-### 有限元数据导出扩展
+<a id="section-有限元数据导出扩展"></a>
+
+### 2.3 有限元数据导出扩展
 
 `src/morphopt/postprocess/` 不依赖 Qt。`fields.py` 定义物理量提供者 `ResultField`，
 通过 `RESULT_FIELDS` 注册；`ResultLocation` 区分节点、参考点与单元，提供者接收 `FieldContext`，
@@ -221,9 +229,11 @@ CSV 是单张表（UTF-8 BOM，首行为列名）；NPZ 各列为独立数组，
 模型哈希、单位和张量约定。没有附加目录或 manifest 文件。
 导出前验证模型与结果的哈希及收敛状态；先生成完整临时文件，成功后才发布目标文件。
 已有文件只在用户确认覆盖后替换；求值失败保留原文件并清理临时文件。
-`widgets/file_dialogs.py` 统一主窗口与结果导出的文件对话框、导航图标和覆盖提示。
+`widgets/file_dialogs.py` 统一主窗口、结果导出与 CADPart STEP 导出的文件对话框、导航图标和覆盖提示。
 
-## 3. 统一变更流
+<a id="section-统一变更流"></a>
+
+## 3 统一变更流
 
 ```text
 用户结构操作（树右键 / 编辑页按钮）
@@ -261,7 +271,7 @@ def refresh_ui(self, context: RefreshContext) -> None:
 ```
 
 `RefreshContext` 包含问题定义、当前选中节点、变更节点列表和是否完整刷新。
-组件负责刷新自己的内容；`Workbench` 只负责同步准备与注册顺序，不判断当前组件的具体类型。
+组件刷新各自的内容；`Workbench` 只负责同步准备与注册顺序，不判断当前组件的具体类型。
 `EditorPages` 将刷新委托给活动编辑页，静态页面不参与数据刷新。
 
 - 新增、删除、排序与字段修改共用 `changed(node)`，删除操作仍传递被删除的节点，
@@ -275,7 +285,9 @@ def refresh_ui(self, context: RefreshContext) -> None:
 新增需要刷新的组件时，实现上述方法，并在 `Workbench._register_refreshables()` 中按依赖顺序注册。
 新增编辑页时，将其传给 `EditorPages.register(..., refreshable=editor)`。
 
-### 文档撤销与重做
+<a id="section-文档撤销与重做"></a>
+
+### 3.1 文档撤销与重做
 
 `ProblemSession.history` 持有 `EditHistory`，每个状态保存与 `.morph` 相同结构的 UTF-8 JSON
 字节和轻量选择路径。快照不可变，不与模型共享列表或字典；不逐次写磁盘、不存网格和求解结果。
@@ -283,7 +295,7 @@ def refresh_ui(self, context: RefreshContext) -> None:
 `EditHistoryNode` 存储快照、父节点 ID、有序子节点 ID 和首选重做子节点；使用 ID 关联，避免父子对象循环引用。
 超限时找出旧根通往当前状态的第一个子节点，将它提升为新根；删除旧根及其所有其他子树，逐根重复直到满足上限。
 
-- 所有模型定义通过 `changed(node)` 接入历史；新增组件沿现有编辑页注册即可参与。
+- 所有模型定义通过 `changed(node)` 接入历史；新增组件通过现有编辑页注册后纳入该流程。
 - 添加、删除、排序分别记录；同一输入框一次连续输入合并。焦点切换、点击其他操作或提交单行输入结束合并。
 - 相同 JSON 不增加记录，撤销后新增编辑创建子分支，已有分支保留。只有本轮输入创建的叶节点允许合并。
   连续输入恢复成父状态时移除该叶节点，其他兄弟分支保持。预览失败不影响已保存的编辑历史。
@@ -338,7 +350,9 @@ Updater 的目标函数、几何对称约束和罚函数也投影为组节点下
 平面和深度剥离。清空视口后重新恢复光照与配置，避免半透明外表面消失。
 BoundaryPart 的每个曲面使用独立且稳定的 actor 名称，空心部件的外表面半透明、内表面不透明。
 
-### 主题与外观
+<a id="section-主题与外观"></a>
+
+### 3.2 主题与外观
 
 `ui/theme` 是外观配置入口。`ThemePalette` 组合 Qt 颜色令牌、字体与代码高亮、图表、Quickstart
 预览、变形网格、PyVista 的 `ViewerStyle`，以及 `LayoutStyle` 中的窗口尺寸、控件尺寸、间距和
@@ -350,7 +364,9 @@ BoundaryPart 的每个曲面使用独立且稳定的 actor 名称，空心部件
 预览和结果网格也会刷新。`constants.py` 只保留业务默认值、运行限制、刷新/轮询时序和几何
 算法精度；窗口及控件布局尺寸统一保存在 `LayoutStyle`。
 
-## 4. 类型化任务树
+<a id="section-类型化任务树"></a>
+
+## 4 类型化任务树
 
 持久化模型的顶层结构为：
 
@@ -379,13 +395,13 @@ ProblemNode
   `ProblemDefinition.rename_interface()` 改名。运行时的材料目标、优化器目标、
   Instance / 参考点引用、载荷步和 Jacobian 都持有目标 Node 对象，不保存名称副本；
   改名后它们天然跟随。名称只在 `.morph`、下拉显示和代码生成边界投影出来。
-- Assembly Part 的物理名称通过 `ProblemDefinition.rename_part()` 修改。它会同步
-  指向该 Part 的材料，以及仍使用 `<part>-1`（或旧 `<part>`）名称的默认 Instance
-  和载荷引用；用户额外命名的 Instance 保持不变。TorchFEA 导入 Part 的物理名称属于
-  `.npz` archive，只允许改其 MorphOpt 几何接口名称。
+- 每个 UI Part 仅保留一个部件名称，`ProblemDefinition.rename_part()` 修改该名称。
+  材料和优化器持有 Part 对象引用；Instance 名称由各自的卡片独立定义，部件改名不改变实例名称。
 - `.morph` 是唯一可编辑定义格式；Python 只作为生成结果，不反向解析成定义。
 
-### 显示命名
+<a id="section-显示命名"></a>
+
+### 4.1 显示命名
 
 树节点、编辑卡片、添加菜单和对象选择框统一由 `presentation/labels.py` 命名：
 
@@ -407,7 +423,9 @@ ProblemNode
 - 下拉框的展示标题与 `itemData` 分开，保存和代码生成仍使用原始名称或对象引用。
   禁止从展示标题中解析名称，或把带类名的标题写回定义。
 
-## 5. 模板体系
+<a id="section-模板体系"></a>
+
+## 5 模板体系
 
 启动时直接显示空白定义工作台；标准栏目存在，但不预填具体设计。用户可手动定义，或使用 Quickstart。
 `application/quickstart.py` 的类型化配置负责参数校验、
@@ -419,6 +437,8 @@ ProblemNode
 几何工厂、网格构建及其参数化变换归内核；UI 不生成重写几何工厂的类，
 也不生成设计块或接触物体的建网格脚本。结构化设计块使用 `BoxPart`；
 其他 CAD 几何由 `CADPart` 交给 `torchfea.cad` 建模和网格化。
+
+CADPart 卡片顶部提供“导出 STEP…”按钮。`DefinitionManagerEditor._export_cad_step()` 调用共用 `choose_save_file()`，默认文件名取部件名称，格式为 `.stp` 或 `.step`，文件列表同时显示目录和所选格式文件。用户确认覆盖后，`application.cad.export_cad_step()` 将解析后的操作列表直接交给 `torchfea.cad.export_step()`；取消选择或覆盖确认时不执行导出。导出内容为部件局部 CAD 实体，不依赖 FE 网格；成功与失败分别显示对应提示。
 
 `ui/model/chamberlayout.py` 中的 `ChamberLayer` / `LayeredChambers` 只负责 Quickstart 的分层气腔配置、排布校验和初始预览；生成的形状优化定义仍使用内核现有的曲面与 Part 接口。
 工作空间驱动边界的高斯点、权重、切向和取向由 `optcore/quadrature.py` 生成；应用服务将
@@ -441,12 +461,14 @@ Quickstart 复用该方法。几何准备归 `visualization`，widget 只负责�
 `SchemeTemplate` 提供 schema 驱动的共享工厂；`BuiltinSchemeTemplate` 以 Python 策略
 配合 Quickstart 生成起始问题。方案策略不依赖起始文件目录。
 
-## 6. 编辑器规范
+<a id="section-编辑器规范"></a>
+
+## 6 编辑器规范
 
 - Node 与中央编辑页的关系只在 `application/editor_routing.py::route_editor()` 定义。
 - 参数表单字段由 `application/fields.py` 根据 schema 与模型查询决定；控件只负责渲染。
 - 动态集合按所属 Part 经 `PartSetCatalog` 查询，不能用“问题是否包含导入模型”决定所有 Part 的选项。
-- 页面加入编辑栈、路由绑定和变更信号连接统一注册在 `EditorPages`；不用维护第二份页面清单。
+- 页面加入编辑栈、路由绑定和变更信号连接统一注册在 `EditorPages`；页面清单由该注册表统一维护。
 - `ParamForm` 是唯一 schema 字段渲染器。参数字典直接绑定字典；类型化节点通过 read/write
   回调绑定。禁止将节点字段复制到临时字典，再同步两份值。
 - 数字、向量、矩阵和辅助变量表达式统一由 `application/values.py` 解析。
@@ -476,11 +498,13 @@ Quickstart 复用该方法。几何准备归 `visualization`，widget 只负责�
 - 语言切换原地刷新文本，不重建 PyVista/OpenGL viewport。
 - 一个专用 editor 只在通用 schema 表单无法清楚表达交互时新增。
 
-### 参数与内核的对应
+<a id="section-参数与内核的对应"></a>
+
+### 6.1 参数与内核的对应
 
 新增接口的实例、部件、集合、参考点、CAD 输入对象和对称目标等引用默认留空，
 下拉框提供空选项，允许清空。未选择实例或部件时，不显示其他部件的集合。
-不因模型中只有一个部件而自动绑定材料；模板和 Quickstart 必须明确写出自己的引用。
+不因模型中只有一个部件而自动绑定材料；模板和 Quickstart 必须明确写出对应的引用。
 求解前检查必选引用。数值和算法枚举保留各自的有效初值。
 
 `model/schemas.py` 的字段 key 对应构造函数或工厂方法的关键字参数，表单提示显示该 key。
@@ -512,7 +536,9 @@ SIMP 中 `initial_ratio` 是设计场控制点初值，材料比例由 sigmoid�
 检查载荷幅值数量、所有材料模型的可见参数、CAD 预览与脚本参数、对称约束、
 辅助变量和 CPU/GPU 选择；同时直接构造 BSP 与 CPGEO 曲面以检查工厂内部的参数传递。
 
-### 可视化的扩展协议
+<a id="section-可视化的扩展协议"></a>
+
+### 6.2 可视化的扩展协议
 
 载荷符号使用场景对角线和部件典型宽度共同确定尺寸；细长部件不能仅按长度放大箭头。
 直箭头统一长度、箭头和箭杆比例，力矩、弹簧和标记同步缩放，显示尺寸与载荷幅值分离。
@@ -524,8 +550,8 @@ PreviewScene / LoadScene → PreviewRenderer              → PyVista actors
 ```
 
 每类 Part 的 adapter 提供 `preview()`、`surface()` 和可选的 `model_part()`：分别负责
-初始形状、载荷/边界面的几何、节点集合查询所需的模型。Boundary、Box、CAD、INP、
-TorchFEA 导入模型分别实现；`PreviewViewer` 不按 Part 类型写分支。
+初始形状、载荷/边界面的几何、节点集合查询所需的模型。Boundary、Box、CAD、INP
+分别实现；`PreviewViewer` 不按 Part 类型写分支。
 CAD adapter 只保留三角面实际引用的顶点，按 OCC 顺序显示 `face_0` 起的面号与轮廓边。
 Part 视图使用局部坐标；Assembly 视图对每个 Instance 应用位姿后显示工况载荷。
 
@@ -552,7 +578,9 @@ geometry.parts.register("MyPartInterface", MyPartPreview())
 先调用 `PreviewGeometry.build()` 绑定问题和资源，然后查询集合或构建载荷场景。
 单个 Part 预览错误显示在场景中，不阻止其他 Part 的显示；它不会修改优化模型或生成兜底几何。
 
-## 7. 定义、代码生成与文件边界
+<a id="section-定义代码生成与文件边界"></a>
+
+## 7 定义、代码生成与文件边界
 
 - View 使用 `ProblemSession.source()`，不直接调用 `generate_source()`。
 - MainWindow 使用 `ProblemLibrary` 创建模板、打开、保存和导出 Python。
@@ -562,7 +590,9 @@ geometry.parts.register("MyPartInterface", MyPartPreview())
   `to_dict/from_dict` 和模板测试。
 - 模板资源路径通过包位置解析，不依赖当前工作目录。
 
-## 8. 运行与结果观察
+<a id="section-运行与结果观察"></a>
+
+## 8 运行与结果观察
 
 - `OptimizationRunSession` 是唯一 subprocess 所有者，负责 fresh/continue 模式、停止
   整个进程组和 timestamp 结果目录发现。
@@ -580,7 +610,9 @@ geometry.parts.register("MyPartInterface", MyPartPreview())
   模板写分支；显示名采用 `Part: name`、`Material: name`。
 - 进程 stdout 在线程中读取，通过 Qt signal 回到 UI 线程；不得在 UI 线程阻塞读取。
 
-## 9. 命名与代码风格
+<a id="section-命名与代码风格"></a>
+
+## 9 命名与代码风格
 
 - 类名表达角色：`*Session` 是有状态应用会话，`*Library` 是无状态资源/文件入口，
   `*Page`/`*Editor`/`*Viewer` 是 Qt 展示。
@@ -589,10 +621,12 @@ geometry.parts.register("MyPartInterface", MyPartPreview())
 - 列表和集合使用复数；不要用 `data/info/tmp` 表示长期业务对象。
 - 应用状态用 dataclass/Enum，不使用字符串键 dict。
 - 不写只转发且不增加语义的方法；抽象必须拥有明确不变量或边界。
-- 注释解释“为什么”和约束，不复述代码；公开边界写简洁 docstring。
+- 注释说明设计依据与约束条件，公开接口通过 docstring 说明参数、返回值及异常条件。
 - Python 使用 4 空格、类型注解、`pathlib.Path` 处理服务层文件路径。
 
-## 10. 新功能落点
+<a id="section-新功能落点"></a>
+
+## 10 新功能落点
 
 1. 新业务字段：类型化 Node + schema。
 2. 新跨节点规则：`ProblemDefinition` 聚合操作。
@@ -605,7 +639,9 @@ geometry.parts.register("MyPartInterface", MyPartPreview())
 9. 新结构动作：领域操作/应用策略 + `DefinitionActions`，树和编辑页复用。
 10. 新模板：一个 `.morph`。
 
-## 11. 提交前检查
+<a id="section-提交前检查"></a>
+
+## 11 提交前检查
 
 至少执行：
 

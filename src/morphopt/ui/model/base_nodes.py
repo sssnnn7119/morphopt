@@ -68,11 +68,6 @@ REFERENCE_POINT_FIELDS = {
 }
 
 
-def resolve_model_directory(directory: str | None) -> str:
-    """Normalize a user-provided model directory without package fallbacks."""
-    return str(directory or "")
-
-
 #: canonical order of the top-level sections inside a problem tree.
 SECTION_ORDER = (
     KIND_GEOMETRY,
@@ -285,7 +280,8 @@ class Node:
                     actual=node_type.__name__,
                 )
             )
-        unknown = set(params) - set(node_type.field_names()) - {"custom_class"}
+        legacy_fields = {"part_name"} if issubclass(node_type, PartNode) else set()
+        unknown = set(params) - set(node_type.field_names()) - {"custom_class"} - legacy_fields
         if unknown:
             raise ValueError(
                 localized_message(
@@ -411,7 +407,6 @@ class PartNode(TypedNode):
 
     kind = KIND_PART
     has_surfaces: ClassVar[bool] = False
-    part_name: str
     exterior_surface: str
 
     def __init__(
@@ -423,8 +418,14 @@ class PartNode(TypedNode):
         **values: Any,
     ) -> None:
         self.instances: list[InstanceNode] = []
+        data = {**(params or {}), **values}
+        # Older definitions stored a second, editable Assembly Part name.
+        # Keep its physical identity on import, with a single name thereafter.
+        legacy_name = str(data.pop("part_name", "") or "").strip()
+        if legacy_name:
+            name = legacy_name
         super().__init__(
-            kind=kind, name=name, params=params, children=children, **values
+            kind=kind, name=name, params=data, children=children
         )
         if not self.instances:
             from .node_types.structural import InstanceNode
@@ -435,7 +436,7 @@ class PartNode(TypedNode):
     @property
     def assembly_name(self) -> str:
         """Part name used in the assembly and generated script."""
-        return (self.part_name or self.name).strip()
+        return self.name.strip()
 
     @property
     def instance_names(self) -> list[str]:

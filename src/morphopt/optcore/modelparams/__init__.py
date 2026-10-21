@@ -11,9 +11,6 @@ from .parts import (
     CADPart,
     BoxPart,
     INPPart,
-    TorchFEAPart,
-    load_model_assembly,
-    resolve_model_path,
 )
 
 __all__ = [
@@ -27,7 +24,4 @@ __all__ = [
     "CADPart",
     "BoxPart",
     "INPPart",
-    "TorchFEAPart",
-    "load_model_assembly",
-    "resolve_model_path",
 ]

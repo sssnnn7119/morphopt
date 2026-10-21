@@ -181,7 +181,7 @@ def editor_signature(problem: ProblemDefinition, sections: list[UpdaterSection],
             tuple((id(item), item["type"], item.get("custom_class")) for item in section.config.get(key, []))
             for key in ("objective_functions", "constraints", "symmetry_constraints")
         )
-        records.append((section.group, id(section.config), section.target.name if section.target else None,
+        records.append((section.group, id(section.config), section.config.get("custom_class"), section.target.name if section.target else None,
                         tuple(id(surface) for surface in surfaces), item_order))
     return (id(problem), category, tuple(records), tuple(helper.name for helper in problem.helper_variables),
             tuple((custom.name, custom.base_class) for custom in problem.custom_classes))

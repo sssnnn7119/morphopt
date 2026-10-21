@@ -415,6 +415,8 @@ class ModelClassSelector(QWidget):
         super().__init__(parent)
         self._title = title
         self._problem = None
+        self._node = None
+        self._config = None
         self._path = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -432,6 +434,12 @@ class ModelClassSelector(QWidget):
 
     def edit_node(self, node, problem):
         self._problem = problem
+        self._node = node
+        self._config = (
+            node.config()
+            if node is not None and node.kind in {"updater_geometry", "updater_materials"}
+            else None
+        )
         self._path = class_path_for_node(node)
         self.combo.blockSignals(True)
         self.combo.clear()
@@ -443,6 +451,10 @@ class ModelClassSelector(QWidget):
                 for custom in compatible_custom_classes(problem, target):
                     self.combo.addItem(typed_title(custom.name, custom.base_class.rsplit(".", 1)[-1]), custom.name)
                 selected = problem.class_bindings.get(self._path, "")
+                if node.kind == "objective":
+                    selected = node.custom_class or selected
+                elif self._config is not None:
+                    selected = self._config.get("custom_class", "")
                 if selected and self.combo.findData(selected) < 0:
                     self.combo.addItem(typed_title(tr("ui.naming.unavailable"), selected), selected)
                 self.combo.setCurrentIndex(max(0, self.combo.findData(selected)))
@@ -462,7 +474,15 @@ class ModelClassSelector(QWidget):
         if self._problem is None or not self._path:
             return
         value = self.combo.currentData()
-        if value:
+        if self._config is not None:
+            if value:
+                self._config["custom_class"] = value
+            else:
+                self._config.pop("custom_class", None)
+        elif self._node.kind == "objective":
+            self._node.custom_class = value or ""
+            self._problem.class_bindings.pop(self._path, None)
+        elif value:
             self._problem.class_bindings[self._path] = value
         else:
             self._problem.class_bindings.pop(self._path, None)

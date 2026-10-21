@@ -21,7 +21,7 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         self,
         params: Params,
         num_process: int = CONSTANT.KERNEL.SOLVER.NUM_PROCESS,
-        available_gpus: list[str] = None,
+        available_gpus: list[str] | None = None,
         task_index_list: list[list[int]] = None,
     ):
         """
@@ -30,6 +30,9 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         Parameters:
             params (Params):
             num_process (int): The number of processes to use for parallel computation.
+                Defaults to one process.
+            available_gpus (list[str] | None): GPU devices to use. Defaults to
+                CPU execution when omitted or empty.
         """
 
         super().__init__()
@@ -44,12 +47,7 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         int: The number of processes to use for parallel computation.
         """
 
-        if available_gpus is None:
-            self.available_gpus = [
-                "cuda:%d" % i for i in range(torch.cuda.device_count())
-            ]
-        else:
-            self.available_gpus = available_gpus
+        self.available_gpus = list(available_gpus or [])
 
         self.task_index_list = task_index_list
         """

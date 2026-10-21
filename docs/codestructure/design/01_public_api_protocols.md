@@ -2,7 +2,9 @@
 
 返回 [设计导览](../README.md)。
 
-## 顶层 `morphopt` 命名空间
+<a id="section-顶层-morphopt-命名空间"></a>
+
+## 1 顶层 `morphopt` 命名空间
 
 `src/morphopt/__init__.py` 是用户脚本唯一要求的公共导入面。
 
@@ -11,16 +13,17 @@
 | 运行时 | `Controller`, `History`, `Solver`, `ObjectiveFunction`, `Updaters` | `optcore` |
 | 参数集合 | `Params`, `GeometryParams`, `FEAParams`, `MaterialsParams` | `optcore.modelparams` |
 | 单个模型组件基类 | `BaseModelComponent` | `optcore.modelparams.base_model_component` |
-| 几何 | `BasePart`, `INPPart`, `TorchFEAPart` | `optcore.modelparams.parts` |
+| 几何 | `BasePart`, `INPPart`, `BoxPart`, `CADPart` | `optcore.modelparams.parts` |
 | 材料 | `HomogeneousMaterial` | `optcore.modelparams.materials` |
 | 形状扩展 | `BoundaryPart`, `UpdaterBoundaryPart` | `shapeopt` |
 | SIMP 扩展 | `SIMP_BSPFieldMaterials`, `UpdaterSIMPMaterial` | `simp` |
 | 运行工具 | `start_optimization`, `debug_optimization`, `check_gradients`, `get_controller` | runner / utils |
-| 路径工具 | `resolve_model_path`, `load_model_assembly` | Part 导入接口 |
 
 `shapeopt.__all__` 导出边界 Part 和形状更新器；`simp.__all__` 导出 SIMP 材料和材料更新器。`Params`、`Solver`、`ObjectiveFunction` 和 `Updaters` 始终从顶层 `morphopt` 导入。
 
-## 协议继承图
+<a id="section-协议继承图"></a>
+
+## 2 协议继承图
 
 ```text
 ProtocalInitializable ─┬─ BaseParams ─────────────── GeometryParams / FEAParams / MaterialsParams
@@ -35,7 +38,9 @@ ProtocalUpdatable ─────► BoundaryPart / SIMP_BSPFieldMaterials
 
 类名中的 `Protocal` 是当前公开拼写；新增代码沿用该拼写，使协议名称保持单一、稳定。
 
-## `ProtocalInitializable`
+<a id="section-protocalinitializable"></a>
+
+## 3 `ProtocalInitializable`
 
 源码：`optcore/protocal.py`。
 
@@ -44,9 +49,11 @@ ProtocalUpdatable ─────► BoundaryPart / SIMP_BSPFieldMaterials
 | `initialize(*args, **kwargs)` | 优化开始前建立声明或运行时状态；默认空实现。 |
 | `reinitialize(iteration, *args, **kwargs)` | 每轮开始前刷新状态；默认空实现。 |
 
-该协议允许没有特殊初始化的类不覆写空方法。定义构造函数的多继承类必须 cooperative：调用 `super().__init__()`，以保证协议链和其他父类都有机会初始化。
+该协议允许没有特殊初始化的类不重写空方法。定义构造函数的多继承类必须 cooperative：调用 `super().__init__()`，以完成协议链及其他父类的初始化。
 
-## `ProtocalSavable`
+<a id="section-protocalsavable"></a>
+
+## 4 `ProtocalSavable`
 
 | 公开方法 | 语义 |
 |---|---|
@@ -55,9 +62,11 @@ ProtocalUpdatable ─────► BoundaryPart / SIMP_BSPFieldMaterials
 | `pathlog_required()` | 返回需要的 `log/` 子目录；默认 `[]`。 |
 | `save_directory(foldpath, name=None)` | 用第一个 log 子目录创建并返回命名空间目录。 |
 
-`save_directory()` 是所有会写入命名状态的对象的统一路径工具；调用者必须覆写 `pathlog_required()`，否则会显式报错。
+`save_directory()` 是所有会写入命名状态的对象的统一路径工具；调用者必须重写 `pathlog_required()`，否则会显式报错。
 
-## `ProtocalVisualizable`
+<a id="section-protocalvisualizable"></a>
+
+## 5 `ProtocalVisualizable`
 
 | 公开方法 | 语义 |
 |---|---|
@@ -66,7 +75,9 @@ ProtocalUpdatable ─────► BoundaryPart / SIMP_BSPFieldMaterials
 
 预览是可选能力。拥有几何数据的接口返回相应网格；其余 FEA 接口保留默认空列表。
 
-## `ProtocalUpdatable`
+<a id="section-protocalupdatable"></a>
+
+## 6 `ProtocalUpdatable`
 
 该协议定义“能作为一个局部优化器目标”的最小面：
 

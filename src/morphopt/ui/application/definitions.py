@@ -24,10 +24,6 @@ from ..model.problem import (
 from ..schemes.base import SchemeTemplate, available_templates, get_template
 
 
-class MissingImportedModelError(ValueError):
-    """The definition references an imported Part without a readable archive."""
-
-
 class ProblemSession:
     """Single application-level owner of the definition being edited.
 
@@ -83,13 +79,10 @@ class ProblemSession:
         self.history.select(step_id)
         return snapshot
 
-    def synchronize(self) -> bool:
+    def synchronize(self) -> None:
         """Normalize derived links after loading or editing the model."""
         self._problem.resolve_references()
-        changed = self._problem.sync_imported_parts()
-        self._problem.resolve_references()
         self._problem.align_surface_dependent_state()
-        return changed
 
     def source(self, *, synchronize: bool = True) -> str:
         """Return runnable source for the current, synchronized definition."""
@@ -99,11 +92,6 @@ class ProblemSession:
 
     def validate_for_run(self) -> None:
         """Raise a user-facing error when the definition cannot be executed."""
-        imported = self._problem.imported_model_part_node()
-        if imported is not None and self._problem.imported_model_summary() is None:
-            raise MissingImportedModelError(
-                localized_message("ui.errors.definitions.select_a_valid_torchfea_npz_model_for_the_imported_part")
-            )
         self.source()
         reference_fields = {
             "instance_name", "instance_name1", "instance_name2", "rp_name",
@@ -147,7 +135,6 @@ class ProblemSession:
             return False
         self._problem.device = value
         return True
-
 
 
 class ProblemLibrary:

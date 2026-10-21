@@ -8,22 +8,26 @@
 
 ## 目录
 
+<!-- docs:toc depth=1 -->
+
 **Part I — 理论与方法**
 
-1. [研究动机与设计思路](#1-研究动机与设计思路)
-2. [几何建模：可变形气腔与偏置壁面](#2-几何建模可变形气腔与偏置壁面)
-3. [外骨骼材料设计：SIMP 拓扑优化](#3-外骨骼材料设计simp-拓扑优化)
-4. [正则化方法：抑制低密度区零能模式](#4-正则化方法抑制低密度区零能模式)
-5. [形状-材料联合优化模型](#5-形状-材料联合优化模型)
-6. [协同约束](#6-协同约束)
+- [1 研究动机与设计思路](#section-研究动机与设计思路)
+- [2 几何建模：可变形气腔与偏置壁面](#section-几何建模可变形气腔与偏置壁面)
+- [3 外骨骼材料设计：SIMP 拓扑优化](#section-外骨骼材料设计simp-拓扑优化)
+- [4 正则化方法：抑制低密度区零能模式](#section-正则化方法抑制低密度区零能模式)
+- [5 形状-材料联合优化模型](#section-形状-材料联合优化模型)
+- [6 协同约束](#section-协同约束)
 
 **Part II — 实现细节**
 
-7. [代码架构总览](#7-代码架构总览)
-8. [关键实现细节](#8-关键实现细节)
-9. [数值流程](#9-数值流程)
-10. [完整代码示例](#10-完整代码示例)
-11. [参考文献](#11-参考文献)
+- [7 代码架构总览](#section-代码架构总览)
+- [8 关键实现细节](#section-关键实现细节)
+- [9 数值流程](#section-数值流程)
+- [10 完整代码示例](#section-完整代码示例)
+- [11 参考文献](#section-参考文献)
+
+<!-- /docs:toc -->
 
 ---
 
@@ -31,22 +35,29 @@
 
 ---
 
-## 1. 研究动机与设计思路
+<a id="section-研究动机与设计思路"></a>
+
+## 1 研究动机与设计思路
+
+<a id="section-问题背景"></a>
 
 ### 1.1 问题背景
 
-气动软体机器人的变形能力由两个因素共同决定：**气腔几何**（决定气体膨胀的方向）和**壁面刚度分布**（决定变形被如何约束和放大）。理想情况是像生物体一样——柔软的肌肉负责大范围运动，坚硬的骨骼提供支撑和力的高效传递——两者协同工作。
+气动软体机器人的变形响应由**气腔几何**与**壁面刚度分布**共同决定。气腔几何影响压力载荷的作用位置与方向，壁面刚度分布影响结构柔度、变形模式及载荷传递。协同设计同时调整两类设计变量，以满足运动与承载要求。
 
-然而传统单一材料设计面临根本矛盾：
-- **材料偏软** → 变形大，但承载弱，能量传递效率低，结构易失稳
-- **材料偏硬** → 承载强，但变形小，驱动器做功受限
-- **刚度均一** → 无法在同一结构内同时实现"该软的地方软、该硬的地方硬"
+单一材料设计中的变形能力与承载能力存在权衡：
 
-这意味着仅优化气腔几何而不改变材料空间分布，设计自由度是严重受限的。如果能**同时**设计气腔形状和外壁材料的空间刚度分布——让受压区高刚度以约束变形到目标方向，让非受压区低刚度以允许大变形——就能突破单一材料的性能天花板。
+- 较低的材料刚度允许较大变形，但可能降低承载能力与稳定性。
+- 较高的材料刚度提高变形约束，也可能限制驱动位移。
+- 空间均匀的刚度分布限制局部柔顺性与支撑性能的独立调节。
 
-### 1.2 核心思路：两层设计
+气腔形状与材料空间分布的联合优化扩大了可调设计变量的范围。局部刚度的调整改变结构约束与柔顺区域的分布，并与气腔几何共同影响目标变形。
 
-为解决上述问题，本文提出一种**双层协同设计**策略：
+<a id="section-双层协同设计"></a>
+
+### 1.2 双层协同设计
+
+双层协同设计包含密封壁与外骨骼两类结构区域，其网格、材料及设计变量定义如下：
 
 
 
@@ -57,7 +68,9 @@
 | **CPGEO 分界面** | — | — | **C3D4/C3D6 交界** | **腔体形状 $\mathbf{\Phi}_G$** |
 | 外骨骼 | C3D4 四面体（CPGEO 外侧） | SIMP 变密度 | 约束变形、放大运动 | 密度场 $\mathbf{\Phi}_M$ |
 
-### 1.3 关键挑战与解决方案
+<a id="section-数值问题与处理方法"></a>
+
+### 1.3 数值问题与处理方法
 
 | 挑战 | 解决方案 | 代码位置 |
 |------|---------|---------|
@@ -65,6 +78,8 @@
 | 外骨骼需大范围拓扑优化 | **SIMP + BSP 场参数化** + **RAMP 惩罚插值** | `simp/simpmaterial.py` |
 | 低密度区零能模式导致数值不稳定 | **Fskew 正则化**：惩罚位移二阶梯度反对称分量 + 逐高斯点自适应惩罚 | `simpmaterial.py` |
 | 壳结构在优化中可能自交或畸变 | **内凹曲率约束** + **偏移面最小距离约束** | `codesign/constraints.py` |
+
+<a id="section-问题形式化"></a>
 
 ### 1.4 问题形式化
 
@@ -85,7 +100,11 @@ $$
 
 ---
 
-## 2. 几何建模：可变形气腔与偏置壁面
+<a id="section-几何建模可变形气腔与偏置壁面"></a>
+
+## 2 几何建模：可变形气腔与偏置壁面
+
+<a id="section-整体架构"></a>
 
 ### 2.1 整体架构
 
@@ -99,6 +118,8 @@ CPGEO 球面映射闭曲面定义了**C3D4 实体域与 C3D6 密封壁的分界�
   + C3D4 四面体网格（实体域，SIMP 变密度外骨骼）
 ```
 
+<a id="section-壳单元构建流程"></a>
+
 ### 2.2 壳单元构建流程
 
 偏置壳的构建以 CPGEO 分界面为起点，向**气腔侧（法向反向）**偏移生成密封壁：
@@ -111,6 +132,8 @@ CPGEO 球面映射闭曲面定义了**C3D4 实体域与 C3D6 密封壁的分界�
    其中 $t$ 为密封壁总厚度，$\mathbf{n}_i$ 为基层节点处的单位法向量（指向 C3D4 侧）
 3. **构建楔形单元**：连接相邻层节点，生成 C3D6 楔形单元，并在最内层创建偏移表面用于气压加载
 
+<a id="section-法向量计算"></a>
+
 ### 2.3 法向量计算
 
 法向量由 CPGEO 曲面参数化 $\mathbf{r}(u,v)$ 的切向量叉积解析给出：
@@ -120,6 +143,8 @@ $$
 $$
 
 网格生成和灵敏度分析共用同一套解析法向量，保证了形状灵敏度的连续性。
+
+<a id="section-装配体修改计算图保持"></a>
 
 ### 2.4 装配体修改（计算图保持）
 
@@ -131,13 +156,19 @@ $$
 
 其中负号表示向气腔侧（法向反向）偏移。整个链条（CPGEO 控制点 $\to$ 分界面节点 $\to$ 法向量 $\to$ 偏置节点）通过自动微分保持连接，使得后续伴随法可以正确反传梯度。实现细节见 §8.1。
 
+<a id="section-负高斯权重检测"></a>
+
 ### 2.5 负高斯权重检测
 
 偏置壳单元可能出现几何畸变导致高斯权重为负，此时程序会报错并提示检查网格质量。
 
 ---
 
-## 3. 外骨骼材料设计：SIMP 拓扑优化
+<a id="section-外骨骼材料设计simp-拓扑优化"></a>
+
+## 3 外骨骼材料设计：SIMP 拓扑优化
+
+<a id="section-b-样条材料场参数化"></a>
 
 ### 3.1 B 样条材料场参数化
 
@@ -148,6 +179,8 @@ $$
 $$
 
 其中 $N_i, N_j, N_k$ 为三个方向上的 B 样条基函数。$\chi$ 的取值范围无约束（$-\infty < \chi < \infty$），需经后续映射转化为物理密度。
+
+<a id="section-设计场到密度的映射"></a>
 
 ### 3.2 设计场到密度的映射
 
@@ -177,6 +210,8 @@ $$
 
 其中 $\mu_{\min} = \mu_{\max} \cdot \text{simp\_ratio\_min}$ 为避免数值奇异。
 
+<a id="section-计算图完整性空间导数代理"></a>
+
 ### 3.3 计算图完整性：空间导数代理
 
 SIMP 密度场通过 BSP 场查询得到设计场值：$\chi(\mathbf{x}_g) = \sum N(\mathbf{x}_g) \cdot \mathbf{\Phi}_M$，其中 $\mathbf{x}_g$ 为高斯点坐标。再经 Sigmoid 和 RAMP 映射得到有效密度 $\rho(\chi)$。当气腔几何 $\mathbf{\Phi}_G$ 变化时，分界面附近的网格节点随之移动，导致其对应的高斯点位置 $\mathbf{x}_g(\mathbf{\Phi}_G)$ 也发生改变。这意味着设计场值 $\chi$ 实际上同时依赖于两类设计变量：
@@ -187,7 +222,7 @@ $$
 
 然而在标准的 BSP 场查询中，$\mathbf{x}_g$ 被视为常数（仅 $\mathbf{\Phi}_M$ 参与计算图），$\partial\chi/\partial\mathbf{\Phi}_G$ 这一路径被截断，导致自动微分给出的灵敏度**不完整**——几何变化对材料场的影响被遗漏。
 
-为解决此问题，我们在密度插值中引入**一阶空间导数代理修正**，通过泰勒展开近似补充这部分缺失的梯度：
+密度插值通过**一阶空间导数代理修正**补充该梯度路径，其近似形式由泰勒展开得到：
 
 $$
 \Delta\chi \approx \frac{\partial\chi}{\partial\mathbf{x}} \cdot \Delta\mathbf{x}(\mathbf{\Phi}_G)
@@ -195,13 +230,19 @@ $$
 
 其中 $\partial\chi/\partial\mathbf{x}$ 由 BSP 场的空间导数解析给出，$\Delta\mathbf{x}$ 由几何控制点变化引起。修正项在计算图中保持连接，确保 $\chi$（进而 $\rho$）对 $\mathbf{\Phi}_G$ 的敏感性被正确反传，从而保证伴随法灵敏度结果的完整性。
 
+<a id="section-材料分配流程"></a>
+
 ### 3.4 材料分配流程
 
 每次 FEA 求解前，标准 C3D4 单元被替换为嵌入正则化的自定义单元，根据高斯点位置查询密度场，为每个积分点分配独立的材料属性 $\mu(\mathbf{x}), \kappa(\mathbf{x})$ 和惩罚因子 $p(\mathbf{x})$（见 §4.2）。壳单元（C3D6）则分配均匀的软材料参数。具体实现见 §8.2。
 
 ---
 
-## 4. 正则化方法：抑制低密度区零能模式
+<a id="section-正则化方法抑制低密度区零能模式"></a>
+
+## 4 正则化方法：抑制低密度区零能模式
+
+<a id="section-问题动机"></a>
 
 ### 4.1 问题动机
 
@@ -212,9 +253,11 @@ $$
 
 为抑制此类模式，MorphOpt 提供了三种正则化策略，均通过惩罚位移二阶梯度来实现，并采用**每个高斯点独立的自适应惩罚系数**。
 
+<a id="section-自适应惩罚因子"></a>
+
 ### 4.2 自适应惩罚因子
 
-惩罚因子 $p(\mathbf{x})$ 控制在每个高斯点处正则化能量的强度。其不再是一个全局标量，而是通过平滑映射从设计场 $\chi$ 逐点计算。关键设计是：整个过渡区间定义在 $\chi$ 的**负半轴**（$\chi_{\min}=-6,\;\chi_{\max}=-5$），确保惩罚仅作用于弱材料区域：
+惩罚因子 $p(\mathbf{x})$ 控制在每个高斯点处正则化能量的强度。该因子通过设计场 $\chi$ 的平滑映射逐点计算。过渡区间定义在 $\chi$ 的**负半轴**（$\chi_{\min}=-6,\;\chi_{\max}=-5$），确保惩罚仅作用于弱材料区域：
 
 $$
 p(\mathbf{x}) = p_0 \cdot S\!\left(\frac{\chi_{\max} - \chi(\mathbf{x})}{\chi_{\max} - \chi_{\min}}\right), \quad S(\xi) = 6\xi^5 - 15\xi^4 + 10\xi^3
@@ -227,11 +270,15 @@ $$
 
 ---
 
-### 4.3 Fskew 正则化（推荐）
+<a id="section-fskew-正则化"></a>
 
-#### 4.2.1 原理
+### 4.3 Fskew 正则化
 
-Fskew 正则化惩罚位移二阶梯度的**反对称分量**。零能模式通常伴随着位移场的快速空间振荡，而反对称二阶梯度恰好能捕捉这种振荡，同时不干扰物理变形中的对称部分（如弯曲应变梯度）。
+<a id="section-原理"></a>
+
+#### 4.3.1 原理
+
+Fskew 正则化惩罚位移二阶梯度的**反对称分量**。零能模式通常伴随位移场的高频空间振荡；该正则项通过反对称二阶梯度表征相应振荡，并保留物理变形中的对称分量（如弯曲应变梯度）。
 
 定义位移二阶梯度张量：
 
@@ -255,6 +302,8 @@ $$
 
 实现中，正则化能量在单元 `potential_Energy()` 中叠加到超弹性应变能之上，同时 `_get_EpdUe_EpdUe2()` 给出了对应的内力（一阶变分）和切线刚度（二阶变分）修正。具体代码见 §8.3。
 
+<a id="section-fgrad-正则化备选"></a>
+
 ### 4.4 Fgrad 正则化（备选）
 
 直接惩罚位移二阶梯度的**完整 Frobenius 范数**（而非仅反对称部分）：
@@ -264,6 +313,8 @@ E_{\text{reg}}^{\text{Fgrad}} = \int_{\Omega} p(\mathbf{x}) \; U_{,ijk} U_{,ijk}
 $$
 
 该方法对弯曲变形中的线性应变梯度也会惩罚，对物理变形的侵入性略高于 Fskew。
+
+<a id="section-huhu_lulu-正则化试验性"></a>
 
 ### 4.5 HuHu\_LuLu 正则化（试验性）
 
@@ -277,13 +328,19 @@ $$
 
 ---
 
+<a id="section-单元组合与默认选择"></a>
+
 ### 4.6 单元组合与默认选择
 
 默认单元组合为 `C3D10 + Fskew`。各选项及适用场景见 §8.3 中的代码实现与表格。所有正则化方法均支持每个高斯点独立的惩罚因子（§4.2）。
 
 ---
 
-## 5. 形状-材料联合优化模型
+<a id="section-形状-材料联合优化模型"></a>
+
+## 5 形状-材料联合优化模型
+
+<a id="section-设计变量"></a>
 
 ### 5.1 设计变量
 
@@ -294,6 +351,8 @@ $$
 | 气腔控制点 | $\mathbf{\Phi}_G$ | 球面映射 CPGEO 的控制点坐标 | $\mathbb{R}^{N_G \times 3}$ | `UpdaterBoundaryPart` |
 | 材料密度场控制点 | $\mathbf{\Phi}_M$ | BSP 场控制点（密度值） | $\mathbb{R}^{N_M}$ | `UpdaterSIMPMaterial` |
 
+<a id="section-目标函数"></a>
+
 ### 5.2 目标函数
 
 典型的目标函数是最大化结构刚度（最小化总势能）或最大化做功（如扭转释放能量），可包含多工况加权：
@@ -303,6 +362,8 @@ $$
 $$
 
 体积分数 $\bar\rho = \frac{\int_\Omega \rho(\mathbf{x}) \, \mathrm{d}\Omega}{\int_\Omega \mathrm{d}\Omega}$ 可作为约束或惩罚项嵌入目标。
+
+<a id="section-联合更新策略"></a>
 
 ### 5.3 联合更新策略
 
@@ -319,9 +380,13 @@ $$
 
 ---
 
-## 6. 协同约束
+<a id="section-协同约束"></a>
+
+## 6 协同约束
 
 协同优化需要处理两类特有的几何约束，确保壳结构的可制造性和数值稳定性。
+
+<a id="section-内凹曲率约束inwardcurvatureradius"></a>
 
 ### 6.1 内凹曲率约束（InwardCurvatureRadius）
 
@@ -336,6 +401,8 @@ $$
 其中 $k_{\text{inward}} = \max(k_1^+, k_2^+)$ 取正主曲率（仅内凹方向），$t$ 为壳厚度。主曲率通过对曲面第一、第二基本形式求解形状算子的特征值得出。
 
 
+<a id="section-偏移面最小距离约束offsetsurfaceminthickness"></a>
+
 ### 6.2 偏移面最小距离约束（OffsetSurfaceMinThickness）
 
 偏置壳的外表面在变形过程中可能与自身发生碰撞。该约束在偏移面上构建邻域图，约束相邻面片的距离不小于最小厚度。
@@ -345,6 +412,8 @@ $$
 $$
 \mathcal{L}_{\text{dist}} = \sum_{(i,j) \in \mathcal{N}} \text{penalty}\bigl(d_{ij},\; d_{\min} \cdot \text{opposition}_{ij}\bigr)
 $$
+
+<a id="section-几何约束汇总"></a>
 
 ### 6.3 几何约束汇总
 
@@ -365,7 +434,11 @@ MorphOpt codesign 中的约束体系：
 
 ---
 
-## 7. 代码架构总览
+<a id="section-代码架构总览"></a>
+
+## 7 代码架构总览
+
+<a id="section-文件组织"></a>
 
 ### 7.1 文件组织
 
@@ -387,8 +460,10 @@ morphopt/
 │   └── solver.py           ← 伴随法灵敏度求解
 ├── simp/
 │   └── simpmaterial.py     ← SIMP_BSPFieldMaterials、SIMPElementFskew/Fgrad/...
-└── myjobs/codesign/        ← 任务脚本（协同设计）
+└── task_scripts/          ← 协同设计任务脚本目录（示例）
 ```
+
+<a id="section-类继承链"></a>
 
 ### 7.2 类继承链
 
@@ -398,12 +473,14 @@ MaterialsParams                 ← 聚合多个材料接口并拼接设计变�
   └── HomogeneousMaterial        ← C3D6 壳等单元的均匀材料
 
 torchfea.elements.Element_3D
-  ├── SIMPElementFskew          ← Fskew 正则化（推荐）
+  ├── SIMPElementFskew          ← Fskew 正则化
   ├── SIMPElementFgrad          ← Fgrad 正则化（备选）
   ├── SIMPElementHuHu_LuLu      ← 体积分量正则化（试验性）
   └── SIMPElementC3D10          ← C3D10 + Fskew 继承组合（默认）
          (C3D10, SIMPElementFskew)
 ```
+
+<a id="section-数据流示意"></a>
 
 ### 7.3 数据流示意
 
@@ -418,9 +495,15 @@ FEA 求解 ──→ 目标函数 ──→ 伴随法 ──→ dJ/dΦ_G + dJ/d�
 
 ---
 
-## 8. 关键实现细节
+<a id="section-关键实现细节"></a>
+
+## 8 关键实现细节
+
+<a id="section-几何偏置壳构建与计算图保持"></a>
 
 ### 8.1 几何：偏置壳构建与计算图保持
+
+<a id="section-壳网格生成codesignoffset_boundary_partpy"></a>
 
 #### 8.1.1 壳网格生成（`codesign/offset_boundary_part.py`）
 
@@ -449,6 +532,8 @@ def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
     part.add_surface_set(surf_name_offset, [(elem_ids, 1)])
 ```
 
+<a id="section-解析法向量"></a>
+
 #### 8.1.2 解析法向量
 
 CPGEO 曲面的 `get_normals()` 直接返回指向 C3D4 侧（外侧）的参数化法向量（曲面从所属 Part 接口的 `surface_interfaces()` 取）：
@@ -461,6 +546,8 @@ def _compute_normals(self, base_nodes):
         normal_list.append(normals)
     return torch.cat(normal_list, dim=0)
 ```
+
+<a id="section-计算图保持"></a>
 
 #### 8.1.3 计算图保持
 
@@ -482,6 +569,8 @@ def modify_assembly(self, design_sensitivity_vars, assembly):
         nodes[layer_ids] = base_nodes + alpha * disp
 ```
 
+<a id="section-偏置层网格检查"></a>
+
 #### 8.1.4 偏置层网格检查
 
 ```python
@@ -492,7 +581,11 @@ if not torch.isfinite(weights).all() or (weights <= 0).any():
 
 ---
 
+<a id="section-材料bsp-场--ramp--自适应惩罚"></a>
+
 ### 8.2 材料：BSP 场 + RAMP + 自适应惩罚
+
+<a id="section-bsp-场初始化"></a>
 
 #### 8.2.1 BSP 场初始化
 
@@ -507,6 +600,8 @@ self.simp_field = bsp
 self._cps = torch.from_numpy(bsp.control_points)  # 设计变量
 ```
 
+<a id="section-ramp-密度插值"></a>
+
 #### 8.2.2 RAMP 密度插值
 
 ```python
@@ -519,6 +614,8 @@ def get_material_ratio(self, designfield):
 def RAMP_interpolation(rho, p):
     return rho / (1 + p * (1 - rho))
 ```
+
+<a id="section-空间导数代理计算图补全"></a>
 
 #### 8.2.3 空间导数代理（计算图补全）
 
@@ -539,7 +636,9 @@ def get_ratio_with_spatial_derivative(self, nodes):
     return result
 ```
 
-核心技巧 `result + (surrogate - surrogate.detach())` 保证前向结果不变，但 autograd 图中保留了高斯点坐标对 $\chi$ 的梯度路径，使得伴随法能正确反传 $\partial\mathcal{J}/\partial\mathbf{\Phi}_G$ 中经由材料场的贡献。
+表达式 `result + (surrogate - surrogate.detach())` 保持前向计算结果，同时在自动微分图中保留高斯点坐标至 $\chi$ 的梯度路径。该路径对应 $\partial\mathcal{J}/\partial\mathbf{\Phi}_G$ 中经材料场传递的贡献。
+
+<a id="section-自适应惩罚因子-1"></a>
 
 #### 8.2.4 自适应惩罚因子
 
@@ -555,6 +654,8 @@ def get_penalty_factor(self, designfield):
     penalty_factor = 6 * normalized**5 - 15 * normalized**4 + 10 * normalized**3
     return penalty_factor
 ```
+
+<a id="section-材料装配"></a>
 
 #### 8.2.5 材料装配
 
@@ -576,6 +677,8 @@ def set_materials(self, fe):
     # 每个高斯点独立惩罚因子
     elements_new.penalfactor = self.get_penalty_factor(designfield) * self.voidpenalfactor
 ```
+
+<a id="section-壳材料处理独立材料接口"></a>
 
 #### 8.2.6 壳材料处理（独立材料接口）
 
@@ -602,9 +705,13 @@ class MaterialsParams(morphopt.MaterialsParams):
 
 ---
 
+<a id="section-正则化fskew--fgrad--huhu_lulu-单元实现"></a>
+
 ### 8.3 正则化：Fskew / Fgrad / HuHu_LuLu 单元实现
 
-#### 8.3.1 Fskew（默认推荐）
+<a id="section-fskew-正则化实现"></a>
+
+#### 8.3.1 Fskew 正则化实现
 
 ```python
 class SIMPElementFskew(torchfea.elements.Element_3D):
@@ -658,6 +765,8 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         return EmdUe + result0[0], self._EmdUe_2 + result0[1]
 ```
 
+<a id="section-默认单元组合"></a>
+
 #### 8.3.2 默认单元组合
 
 ```python
@@ -667,7 +776,11 @@ class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFskew):
 
 ---
 
+<a id="section-灵敏度分析与自动微分"></a>
+
 ### 8.4 灵敏度分析与自动微分
+
+<a id="section-设计变量到装配体的映射"></a>
 
 #### 8.4.1 设计变量到装配体的映射
 
@@ -678,6 +791,8 @@ geometry.modify_assembly(dv['geometry'], assembly)
 # 材料密度控制点 → 修改高斯点材料属性
 materials.modify_assembly(dv['materials'], assembly)
 ```
+
+<a id="section-联合灵敏度求解"></a>
 
 #### 8.4.2 联合灵敏度求解
 
@@ -693,12 +808,16 @@ design_gradients = solver.get_jacobian_sensitivity_multistep(
 )
 ```
 
+<a id="section-梯度分配"></a>
+
 #### 8.4.3 梯度分配
 
 ```python
 grad_G = design_gradients[:len(Φ_G)]  # → UpdaterBoundaryPart
 grad_M = design_gradients[len(Φ_G):]  # → UpdaterSIMPMaterial
 ```
+
+<a id="section-材料灵敏度平滑"></a>
 
 #### 8.4.4 材料灵敏度平滑
 
@@ -720,7 +839,11 @@ class DensityFieldMinimize(BaseObjective):
 
 ---
 
-## 9. 数值流程
+<a id="section-数值流程"></a>
+
+## 9 数值流程
+
+<a id="section-完整优化循环"></a>
 
 ### 9.1 完整优化循环
 
@@ -765,6 +888,8 @@ while 未收敛:
 ———————————————————————————————————
 ```
 
+<a id="section-代码架构对应"></a>
+
 ### 9.2 代码架构对应
 
 ```
@@ -795,9 +920,11 @@ Controller                         → 优化主循环 (optcore/controller.py)
         └── MinValue / MaxValue    → 密度范围约束
 ```
 
+<a id="section-设计变量数量参考"></a>
+
 ### 9.3 设计变量数量参考
 
-以 `myjobs/codesign/twist.py` 为例：
+以下为扭转协同设计算例的变量规模：
 
 | 变量 | 数量 | 描述 |
 |-----|------|------|
@@ -808,11 +935,15 @@ Controller                         → 优化主循环 (optcore/controller.py)
 
 ---
 
-## 10. 完整代码示例
+<a id="section-完整代码示例"></a>
+
+## 10 完整代码示例
+
+<a id="section-示例脚本结构"></a>
 
 ### 10.1 示例脚本结构
 
-以 `myjobs/codesign/twist.py` 为例，展示如何定义协同优化任务：
+以下代码说明协同优化任务的模块定义：
 
 ```python
 import morphopt
@@ -875,7 +1006,7 @@ class ThisController(morphopt.Controller):
     # ---- 更新器 ----
     class Updater(morphopt.Updaters):
         def define_updater(self) -> None:
-            # 注册行的 name 就是它要优化的接口：从 params.geometry 里找名为 body 的 Part
+            # name 指定目标接口：绑定 params.geometry 中名称为 body 的 Part
             self.add_geometry_updater(self.UpdaterOffsetBoundaryPart(), name='body')
             # 从 params.materials 里找名为 solid 的材料接口
             self.add_material_updater(self.UpdaterSIMPMaterial(), name='solid')
@@ -910,26 +1041,26 @@ if __name__ == '__main__':
     morphopt.start_optimization(device='cpu', restart_per_iteration=20)
 ```
 
+<a id="section-其他-codesign-示例"></a>
+
 ### 10.2 其他 codesign 示例
 
-`myjobs/codesign/` 中包含多个协同优化任务脚本：
+协同优化可采用以下目标配置：
 
-| 示例文件 | 目标 | 特点 |
+| 算例类型 | 目标 | 特点 |
 |---------|------|------|
-| `twist.py` | 最大化扭转角 | 3 重旋转对称气腔 + SIMP 骨架 |
-| `twist_energy.py` | 最大化扭转释放能量 | 目标为势能差 |
-| `elongate_stiffness.py` | 最大化伸长刚度 | 单向拉伸 |
-| `contraction_energy.py` | 最大化收缩能量 | 负泊松比效应 |
-| `positive_contraction.py` | 正收缩变形 | 对比验证 |
+| 扭转角优化 | 最大化扭转角 | 3 重旋转对称气腔 + SIMP 骨架 |
+| 扭转能量优化 | 最大化扭转释放能量 | 目标为势能差 |
+| 伸长刚度优化 | 最大化伸长刚度 | 单向拉伸 |
+| 收缩能量优化 | 最大化收缩能量 | 负泊松比效应 |
+| 正收缩变形优化 | 正收缩变形 | 对比验证 |
 
 ---
 
-## 11. 参考文献
+<a id="section-参考文献"></a>
+
+## 11 参考文献
 
 1. **Chen F, Song Z, et al.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023.
 
 2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2025.
-
----
-
-> **撰写说明**：本文档阐述了 MorphOpt codesign 子模块中气腔形态与 SIMP 外骨架材料**协同优化**的完整理论框架与实现细节。该方法将薄壁壳单元的几何精确仿真（C3D6 偏置）与变密度拓扑优化的材料高效分配（BSP + SIMP）统一在可微分优化流水线中，并通过 Fskew 正则化保证数值稳定性。
