@@ -1,33 +1,52 @@
-# MorphOpt 代码结构设计
+# MorphOpt 代码结构
 
-这组文档以当前 `src/morphopt/` 源码为准，面向实现、扩展和重构 MorphOpt 的开发者，描述系统的对象边界、继承关系、状态所有权和运行数据流。
+本文档集面向维护与扩展 MorphOpt 的开发者，说明当前源码的模块边界、对象所有权、调用顺序与持久化约定。任务编写和界面操作分别见[脚本模块参考](../scriptreference.md)与 [UI 模块参考](../UIreference.md)。
 
-<a id="section-导览"></a>
+<a id="section-专题导航"></a>
 
-## 1 导览
+## 1 专题导航
 
-| 页面 | 覆盖范围 |
+| 文档 | 内容归属 |
 |---|---|
-| [00 总览](design/00_overview.md) | 分层、总生命周期、依赖方向、名称与持久化边界 |
-| [01 公共 API 与协议](design/01_public_api_protocols.md) | `morphopt` 顶层 API、四个 `Protocal*` 协议 |
-| [02 运行时内核](design/02_runtime.md) | `Controller`、`History`、`Solver`、`ObjectiveFunction`、进程入口 |
-| [03 参数集合](design/03_parameters.md) | `Params`、`BaseParams`、几何/FEA/材料集合 |
-| [04 载荷与 FEA](design/04_loads_and_fea.md) | 载荷、边界、接触、参考点、弹簧和载荷步 |
-| [05 几何](design/05_geometry.md) | Part、Instance、导入模型、装配体与几何持久化 |
-| [06 材料](design/06_materials.md) | 均质材料、材料模型与材料分配 |
-| [07 形状优化](design/07_shape_optimization.md) | `BoundaryPart`、曲面、网格和形状更新器 |
-| [08 SIMP 材料优化](design/08_simp.md) | 密度场材料、材料更新器和 SIMP 目标/约束 |
-| [09 协同设计扩展](design/09_codesign.md) | 偏置壳 Part、壳 FEA 和协同约束 |
-| [10 UI 领域模型](design/10_ui_domain.md) | `.morph`、类型化任务树、引用与不变量 |
-| [11 UI 应用、模板与代码生成](design/11_ui_application_codegen.md) | 会话、模板、生成 Python、运行和结果读取 |
-| [12 UI 展示层](design/12_ui_presentation.md) | Workbench、观察页、widgets 与依赖规则 |
-| [13 工具、测试与变更准则](design/13_utilities_testing.md) | 调试入口、有限差分检查、测试职责和扩展检查表 |
-| [14 源码清单](design/14_source_inventory.md) | 每个源码文件的归属、主要类型与依赖边界 |
+| [系统架构](architecture.md) | 包目录、公共入口、依赖方向、核心对象与状态边界 |
+| [运行时与进程](runtime.md) | 任务启动、控制器初始化、单轮计算、进程重启与运行归档 |
+| [模型与参数集合](model.md) | 共享协议、Part/Instance、载荷工况、材料分配与模型构建 |
+| [灵敏度与设计更新](optimization.md) | 变量布局、目标梯度、更新器绑定、形状、SIMP 与偏置扩展 |
+| [UI 领域模型](ui-model.md) | 类型化节点、对象引用、结构操作、名称与 `.morph` 序列化 |
+| [UI 应用服务](ui-application.md) | 编辑会话、操作历史、Quickstart、代码生成、自定义类与优化运行会话 |
+| [UI 展示与刷新](ui-presentation.md) | 窗口、编辑器、导航投影、刷新调度、预览渲染、主题与本地化 |
+| [结果分析与导出](results.md) | 结果读取、共享迭代选择、独立有限元、物理场与文件导出 |
+| [扩展与维护](development.md) | 新类型和功能的实现位置、参数契约、现有检查工具与文档维护 |
 
-已有的 [UI 架构规范](ui.md) 保留为 UI 实现约束；第 09–11 页说明该规范与内核模块的关系。
+每个主题在上表对应的文档中集中说明。系统架构保留总体关系，专题文档说明内部实现；源码路径在相关专题的“源码入口”中列出。
 
-<a id="section-阅读路线"></a>
+<a id="section-阅读路径"></a>
 
-## 2 阅读路线
+## 2 阅读路径
 
-00–03 页说明系统结构与运行约定，04–09 页说明内核模块，10–12 页说明 UI 体系。修改公共接口、生命周期或持久化格式时，同步更新 00、对应模块页和 14。
+- 内核维护：系统架构 → 运行时 → 模型与参数集合 → 灵敏度与设计更新。
+- UI 编辑功能：系统架构 → UI 领域模型 → UI 应用服务 → UI 展示与刷新。
+- 结果与后处理：运行时 → 结果分析与导出 → UI 展示与刷新中的结果页面组合。
+- 新功能开发：先确定状态所属层，再查阅对应专题与扩展位置。
+
+<a id="section-按变更定位"></a>
+
+## 3 按变更定位
+
+| 变更内容 | 主要实现位置 | 文档 |
+|---|---|---|
+| 求解调度、工作进程、重启 | `opt_runner.py`、`taskoptmization.py`、`optcore/controller.py`、`solver.py` | [运行时](runtime.md) |
+| Part、载荷、本构与装配 | `optcore/modelparams/` | [模型](model.md) |
+| 曲面、密度场、梯度与局部优化 | `shapeopt/`、`simp/`、`codesign/`、`optcore/updaters.py` | [设计更新](optimization.md) |
+| 字段、引用、增删排序与改名 | `ui/model/`、`ui/application/editing.py` | [UI 领域模型](ui-model.md) |
+| 历史、脚本生成、类选择、任务来源 | `ui/application/`、`ui/codegen/`、`ui/schemes/` | [UI 应用服务](ui-application.md) |
+| 控件、树、卡片、刷新与预览 | `ui/widgets/`、`ui/presentation/`、`ui/visualization/`、`ui/refresh.py` | [UI 展示](ui-presentation.md) |
+| 独立求解、场量与数据导出 | `ui/application/finite_element.py`、`result_fields.py`、`ui/fea_worker.py`、`postprocess/` | [结果分析](results.md) |
+
+<a id="section-文档组织约定"></a>
+
+## 4 文档组织约定
+
+文件名按主题命名，不承载章节序号。各篇标题编号与目录由仓库根目录的 `python scripts/number_docs.py` 生成，编辑时可使用 `--watch`。
+
+API 参数表与可执行示例集中于使用文档；本目录说明实现边界、调用关系和状态约束。结构调整时更新相关专题、当前导航及源码中的文档引用，避免并存多份同一层的架构说明。

@@ -27,7 +27,8 @@ ui/schemes/          code-defined scheme policies + snippets
 ui/launcher.py       headless job launch / continue / result helpers
 
 The maintainability contract lives in
-``docs/codestructure/ui.md``.
+``docs/codestructure/README.md`` and its UI model, application, presentation,
+and results chapters.
 """
 
 from __future__ import annotations
