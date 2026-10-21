@@ -1017,6 +1017,8 @@
   "ui.component.create_updater": "Create updater for this component",
   "ui.component.updater_created": "Updater created",
   "ui.component.no_available_targets": "No updatable components without an updater",
+  "ui.component.delete_bound_updaters_title": "Confirm deletion of bound optimizers",
+  "ui.component.delete_bound_updaters_message": "Deleting component “{component}” will also delete the following bound optimizers, including their objectives, constraints and surface relations:\n\n{updaters}\n\nContinue deleting?",
   "ui.errors.nodes.unknown_node_type": "Unknown {kind} node type: {type_name!r}",
   "ui.errors.nodes.invalid_child": "{parent} cannot contain {child}.",
   "ui.errors.nodes.child_not_attached": "The node is not attached to {parent}.",

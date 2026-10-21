@@ -43,7 +43,12 @@ from ..model.registry import (
     LOAD_TYPES,
     PART_TYPES,
 )
-from ..presentation.labels import node_title, node_type_title, typed_title
+from ..presentation.labels import (
+    node_title,
+    node_type_title,
+    typed_title,
+    updater_section_title_text,
+)
 from ..presentation.navigation import (
     CustomClassesTreeNode,
     HelperGroupTreeNode,
@@ -334,9 +339,38 @@ class DefinitionActions(QObject):
     def remove_part(self, part: Node) -> None:
         if self._problem is None or not isinstance(part, PartNode):
             return
+        if not self._confirm_remove_bound_updaters(part, "geometry"):
+            return
         self._problem.remove_part(part)
         self._select(select=self._problem.geometry)
         self._emit_change(part, "deleted")
+
+    def _confirm_remove_bound_updaters(
+        self, component: PartNode | MaterialNode, group: str
+    ) -> bool:
+        updater = self._problem.updater
+        if updater is None:
+            return True
+        configs = updater.geometry if group == "geometry" else updater.materials
+        titles = [
+            updater_section_title_text(self._problem, group, config)
+            for config in configs
+            if config.get("target") is component
+        ]
+        if not titles:
+            return True
+        reply = QMessageBox.warning(
+            self.parent(),
+            tr("ui.component.delete_bound_updaters_title"),
+            tr(
+                "ui.component.delete_bound_updaters_message",
+                component=component.name,
+                updaters="\n".join(f"• {title}" for title in titles),
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def move_part(self, part: Node, delta: int) -> None:
         if self._problem is None or not isinstance(part, PartNode):
@@ -601,10 +635,11 @@ class DefinitionActions(QObject):
     def remove_material(self, material: Node) -> None:
         if self._problem is None or not isinstance(material, MaterialNode):
             return
-        try:
-            self._problem.remove_material(material)
-        except ValueError:
+        if len(self._problem.material_nodes()) <= 1:
             return
+        if not self._confirm_remove_bound_updaters(material, "materials"):
+            return
+        self._problem.remove_material(material)
         self._select(select=self._problem.materials)
         self._emit_change(material, "deleted")
 

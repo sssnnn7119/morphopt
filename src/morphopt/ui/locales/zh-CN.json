@@ -1017,6 +1017,8 @@
   "ui.component.create_updater": "为此组件创建优化器",
   "ui.component.updater_created": "已创建优化器",
   "ui.component.no_available_targets": "没有尚未配置优化器的可更新组件",
+  "ui.component.delete_bound_updaters_title": "确认删除关联优化器",
+  "ui.component.delete_bound_updaters_message": "删除组件“{component}”将同时删除以下关联优化器及其目标项、约束和曲面关系：\n\n{updaters}\n\n是否继续删除？",
   "ui.errors.nodes.unknown_node_type": "未知的 {kind} 节点类型：{type_name!r}",
   "ui.errors.nodes.invalid_child": "{parent} 不能包含 {child}。",
   "ui.errors.nodes.child_not_attached": "该节点不属于 {parent}。",

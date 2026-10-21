@@ -983,23 +983,22 @@ class ProblemDefinition:
         return self.add_part(clone, index=position + 1)
 
     def remove_part(self, part: PartNode) -> None:
-        """Remove a Part definition and its surfaces."""
+        """Remove a Part, its surfaces and the geometry updaters bound to it."""
         geometry = self._require_geometry()
         if part not in geometry.parts:
             raise ValueError(
                 localized_message("ui.errors.problem.the_part_is_not_in_this_problem")
             )
-        surfaces = part.surfaces if isinstance(part, BoundaryPartNode) else ()
-        for _ in surfaces:
-            self._remove_surface_state(part, 0)
         for material in self.material_nodes():
             if material.part is part:
                 material.part = None
                 material._part_name = ""
         if self.updater is not None:
-            for config in self.updater.geometry:
-                if config.get("target") is part:
-                    config.pop("target", None)
+            self.updater.geometry[:] = [
+                config
+                for config in self.updater.geometry
+                if config.get("target") is not part
+            ]
         for instance in part.instances:
             for load in self.fea_components():
                 for field, attr in INSTANCE_REFERENCE_FIELDS.items():
@@ -1067,6 +1066,7 @@ class ProblemDefinition:
         return self.add_material(clone, section.assignments.index(material) + 1)
 
     def remove_material(self, material: MaterialNode) -> None:
+        """Remove a material and the material updaters bound to it."""
         section = self.materials
         if section is None or material not in section.assignments:
             raise ValueError(
@@ -1082,9 +1082,11 @@ class ProblemDefinition:
             )
         section.remove_child(material)
         if self.updater is not None:
-            for config in self.updater.materials:
-                if config.get("target") is material:
-                    config.pop("target", None)
+            self.updater.materials[:] = [
+                config
+                for config in self.updater.materials
+                if config.get("target") is not material
+            ]
 
     def move_material(self, material: MaterialNode, offset: int) -> bool:
         section = self.materials
