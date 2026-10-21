@@ -14,9 +14,14 @@ def add_orientation_axes(plotter: BasePlotter) -> None:
     """Keep labelled global XYZ directions in the lower left of a result view."""
     style = theme_manager.palette.viewer.render
     x_color, y_color, z_color = style.orientation_axis_colors
-    plotter.add_axes(interactive=False, color=theme_manager.palette.text,
-                     x_color=x_color, y_color=y_color, z_color=z_color,
-                     viewport=style.orientation_axes_viewport)
+    plotter.add_axes(
+        interactive=False,
+        color=theme_manager.palette.text,
+        x_color=x_color,
+        y_color=y_color,
+        z_color=z_color,
+        viewport=style.orientation_axes_viewport,
+    )
 
 
 def configure_plotter(plotter: BasePlotter) -> None:
@@ -31,7 +36,9 @@ def configure_plotter(plotter: BasePlotter) -> None:
     # conflicts with the EGL context owned by the embedded QtInteractor.
     for renderer in plotter.renderers:
         renderer.SetUseDepthPeeling(True)
-        renderer.SetMaximumNumberOfPeels(theme_manager.palette.viewer.render.depth_peels)
+        renderer.SetMaximumNumberOfPeels(
+            theme_manager.palette.viewer.render.depth_peels
+        )
         renderer.SetOcclusionRatio(
             theme_manager.palette.viewer.render.depth_peeling_occlusion_ratio
         )

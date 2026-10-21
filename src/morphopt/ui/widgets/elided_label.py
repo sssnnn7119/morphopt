@@ -38,6 +38,10 @@ class ElidedLabel(QLabel):
             self._elide()
 
     def _elide(self) -> None:
-        super().setText(self.fontMetrics().elidedText(
-            self._full_text, Qt.TextElideMode.ElideRight, self.contentsRect().width(),
-        ))
+        super().setText(
+            self.fontMetrics().elidedText(
+                self._full_text,
+                Qt.TextElideMode.ElideRight,
+                self.contentsRect().width(),
+            )
+        )

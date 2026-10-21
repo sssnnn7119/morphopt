@@ -12,18 +12,25 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QCheckBox,
-    QLineEdit, QTableWidget, QTableWidgetItem,
+    QCheckBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..theme import theme_manager
-from ..model.problem import SolverNode, ProblemDefinition
-from ..i18n import tr
-from ..refresh import RefreshContext
-from ..presentation.labels import node_title
 from ..application.devices import detect_devices
 from ..application.editing import SolverTasks
 from ..application.values import parse_field
+from ..i18n import tr
+from ..model.problem import ProblemDefinition, SolverNode
+from ..presentation.labels import node_title
+from ..refresh import RefreshContext
+from ..theme import theme_manager
 
 
 class SolverEditor(QWidget):
@@ -38,7 +45,11 @@ class SolverEditor(QWidget):
         lay.addWidget(self._heading)
 
         form = QFormLayout()
-        hint = QLabel(tr('ui.widgets.solver_editor.devices_multi_select_gpus_checking_cpu_uses_cpu_only'))
+        hint = QLabel(
+            tr(
+                "ui.widgets.solver_editor.devices_multi_select_gpus_checking_cpu_uses_cpu_only"
+            )
+        )
         hint.setProperty("textRole", "muted")
         form.addRow(hint)
         self._device_box = QHBoxLayout()
@@ -51,24 +62,34 @@ class SolverEditor(QWidget):
         self._device_box.addStretch(1)
         devhost = QWidget()
         devhost.setLayout(self._device_box)
-        form.addRow(tr('ui.widgets.solver_editor.devices'), devhost)
+        form.addRow(tr("ui.widgets.solver_editor.devices"), devhost)
 
         self._numproc = QLineEdit()
         self._numproc.editingFinished.connect(self._on_numproc)
-        form.addRow(tr('ui.widgets.solver_editor.processes_num_process'), self._numproc)
+        form.addRow(tr("ui.widgets.solver_editor.processes_num_process"), self._numproc)
         lay.addLayout(form)
 
-        grp_title = QLabel(tr('ui.widgets.solver_editor.load_steps_process_task_groups'))
+        grp_title = QLabel(
+            tr("ui.widgets.solver_editor.load_steps_process_task_groups")
+        )
         grp_title.setProperty("textRole", "sectionHeading")
         lay.addWidget(grp_title)
-        help = QLabel(tr('ui.widgets.solver_editor.load_steps_in_the_same_group_are_solved_sequentially_in_one_process_warm'))
+        help = QLabel(
+            tr(
+                "ui.widgets.solver_editor.load_steps_in_the_same_group_are_solved_sequentially_in_one_process_warm"
+            )
+        )
         help.setProperty("textRole", "muted")
         help.setWordWrap(True)
         lay.addWidget(help)
         self._table = QTableWidget()
         self._table.setColumnCount(2)
         self._table.setHorizontalHeaderLabels(
-            [tr('ui.widgets.solver_editor.step'), tr('ui.widgets.solver_editor.process_group')])
+            [
+                tr("ui.widgets.solver_editor.step"),
+                tr("ui.widgets.solver_editor.process_group"),
+            ]
+        )
         self._table.cellChanged.connect(self._on_cell)
         lay.addWidget(self._table, 1)
 
@@ -116,8 +137,11 @@ class SolverEditor(QWidget):
     def _on_devices_changed(self, *_a) -> None:
         if self._loading or self._node is None:
             return
-        gpus = [name for name, cb in self._device_checks.items()
-                if name != "cpu" and cb.isChecked()]
+        gpus = [
+            name
+            for name, cb in self._device_checks.items()
+            if name != "cpu" and cb.isChecked()
+        ]
         cpu_cb = self._device_checks.get("cpu")
         # CPU and GPU devices are mutually exclusive: picking a GPU clears CPU,
         # clearing the last GPU falls back to CPU.
@@ -141,8 +165,11 @@ class SolverEditor(QWidget):
         self._table.setRowCount(n)
         self._table.setColumnCount(2)
         for s in range(n):
-            self._table.setItem(s, 0, QTableWidgetItem(
-                tr('ui.widgets.solver_editor.step_value', value_0=s)))
+            self._table.setItem(
+                s,
+                0,
+                QTableWidgetItem(tr("ui.widgets.solver_editor.step_value", value_0=s)),
+            )
             self._table.setItem(s, 1, QTableWidgetItem(str(assignments[s])))
         self._table.blockSignals(False)
 
@@ -157,10 +184,17 @@ class SolverEditor(QWidget):
         except ValueError:
             return
         try:
-            assignments = [gi if row == r else int(self._table.item(
-                row,
-                1,
-            ).text()) for row in range(self._table.rowCount())]
+            assignments = [
+                gi
+                if row == r
+                else int(
+                    self._table.item(
+                        row,
+                        1,
+                    ).text()
+                )
+                for row in range(self._table.rowCount())
+            ]
         except ValueError:
             return
         self.tasks.assign(assignments)

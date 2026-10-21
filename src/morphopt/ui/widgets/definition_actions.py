@@ -3,30 +3,39 @@
 Dialog/selection policy belongs here. Model operations remain on the definition
 and construction defaults are supplied by the application editing service.
 """
+
 from __future__ import annotations
-from ..theme import theme_manager
-from ..i18n import localized_message
+
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
 )
-from ..i18n import tr
-from ..codegen.custom_classes import custom_options
+
 from ..application.edit_history import EditOperation
 from ..application.editing import CustomClassSession, DefinitionCommands
 from ..application.updaters import UpdaterItems
+from ..codegen.custom_classes import custom_options
+from ..i18n import localized_message, tr
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.problem import (
-    Node,
-    ProblemDefinition,
     CADOperationNode,
     CustomClassNode,
     CustomFunctionNode,
-    InstanceNode,
     FEAComponentNode,
+    InstanceNode,
     MaterialNode,
     MethodOverrideNode,
+    Node,
     PartNode,
+    ProblemDefinition,
     SurfaceNode,
 )
 from ..model.registry import (
@@ -34,9 +43,14 @@ from ..model.registry import (
     LOAD_TYPES,
     PART_TYPES,
 )
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
-from ..presentation.navigation import CustomClassesTreeNode, HelperGroupTreeNode, UpdaterItemTreeNode, UpdaterTreeNode
-from ..presentation.labels import node_type_title, typed_title, node_title
+from ..presentation.labels import node_title, node_type_title, typed_title
+from ..presentation.navigation import (
+    CustomClassesTreeNode,
+    HelperGroupTreeNode,
+    UpdaterItemTreeNode,
+    UpdaterTreeNode,
+)
+from ..theme import theme_manager
 from .file_dialogs import choose_open_file
 
 
@@ -66,25 +80,33 @@ class DefinitionActions(QObject):
         try:
             catalog = session.catalog()
         except Exception as exc:
-            QMessageBox.warning(self.parent(), tr('ui.widgets.custom_classes.cannot_read_base_classes'), str(exc))
+            QMessageBox.warning(
+                self.parent(),
+                tr("ui.widgets.custom_classes.cannot_read_base_classes"),
+                str(exc),
+            )
             return
         available = sorted(catalog)
         if class_type == "override" and not available:
             return
         dialog = QDialog(self.parent())
-        dialog.setWindowTitle(tr(
-            "ui.widgets.custom_classes.add_new_class"
-            if class_type == "new"
-            else "ui.widgets.custom_classes.add_override_class"
-        ))
+        dialog.setWindowTitle(
+            tr(
+                "ui.widgets.custom_classes.add_new_class"
+                if class_type == "new"
+                else "ui.widgets.custom_classes.add_override_class"
+            )
+        )
         layout = QFormLayout(dialog)
         name = QLineEdit("CustomClass")
-        layout.addRow(tr('ui.widgets.custom_classes.class_name'), name)
+        layout.addRow(tr("ui.widgets.custom_classes.class_name"), name)
         if class_type == "override":
             base = QComboBox()
             base.addItems(available)
-            base.setMinimumWidth(theme_manager.palette.layout.widgets.custom_class_base_minimum_width)
-            layout.addRow(tr('ui.widgets.custom_classes.inherits_from'), base)
+            base.setMinimumWidth(
+                theme_manager.palette.layout.widgets.custom_class_base_minimum_width
+            )
+            layout.addRow(tr("ui.widgets.custom_classes.inherits_from"), base)
         else:
             base = None
         hint_key = (
@@ -95,7 +117,9 @@ class DefinitionActions(QObject):
         hint = QLabel(tr(hint_key))
         hint.setWordWrap(True)
         layout.addRow(hint)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         layout.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
 
@@ -104,7 +128,9 @@ class DefinitionActions(QObject):
             try:
                 session.validate_name(value)
             except ValueError as exc:
-                QMessageBox.warning(dialog, tr('ui.widgets.custom_classes.invalid_class_name'), str(exc))
+                QMessageBox.warning(
+                    dialog, tr("ui.widgets.custom_classes.invalid_class_name"), str(exc)
+                )
                 return
             dialog.accept()
 
@@ -137,14 +163,20 @@ class DefinitionActions(QObject):
         return node
 
     def remove_helper(self, node: Node) -> None:
-        if self._problem is None or node.kind not in {"helper_variable", "helper_function"}:
+        if self._problem is None or node.kind not in {
+            "helper_variable",
+            "helper_function",
+        }:
             return
         group = self.commands.remove_helper(node)
         self._select(HelperGroupTreeNode(group))
         self._emit_change(node, "deleted")
 
     def move_helper(self, node: Node, delta: int) -> None:
-        if self._problem is None or node.kind not in {"helper_variable", "helper_function"}:
+        if self._problem is None or node.kind not in {
+            "helper_variable",
+            "helper_function",
+        }:
             return
         if self.commands.move_helper(node, delta):
             self._select(node)
@@ -153,10 +185,16 @@ class DefinitionActions(QObject):
     def populate_updater_menu(self, menu: QMenu) -> None:
         """List concrete targets, shared by tree and editor creation menus."""
         menu.clear()
-        targets = self.commands.available_optimizer_targets() if self._problem is not None else []
+        targets = (
+            self.commands.available_optimizer_targets()
+            if self._problem is not None
+            else []
+        )
         for target in targets:
             action = menu.addAction(node_title(self._problem, target))
-            action.triggered.connect(lambda _checked=False, target=target: self.add_updater(target))
+            action.triggered.connect(
+                lambda _checked=False, target=target: self.add_updater(target)
+            )
         if not targets:
             action = menu.addAction(tr("ui.component.no_available_targets"))
             action.setEnabled(False)
@@ -195,7 +233,9 @@ class DefinitionActions(QObject):
         self._select(select=self._problem.updater)
         self._emit_change(node, "deleted")
 
-    def add_updater_item(self, node: UpdaterTreeNode, item_type: str, category: str) -> None:
+    def add_updater_item(
+        self, node: UpdaterTreeNode, item_type: str, category: str
+    ) -> None:
         config = node.config()
         if config is not None:
             self.commands.add_updater_item(config, item_type, category)
@@ -208,12 +248,19 @@ class DefinitionActions(QObject):
 
     def add_symmetry_constraint(self, node: UpdaterTreeNode, item_type: str) -> None:
         config = node.config()
-        if self._problem is not None and config is not None and self.commands.add_symmetry_constraint(
-            config,
-            item_type,
+        if (
+            self._problem is not None
+            and config is not None
+            and self.commands.add_symmetry_constraint(
+                config,
+                item_type,
+            )
         ):
             item_node = UpdaterItemTreeNode(
-                node.updater_parent, node.group, node.config_index, config["symmetry_constraints"][-1]
+                node.updater_parent,
+                node.group,
+                node.config_index,
+                config["symmetry_constraints"][-1],
             )
             self._select(item_node)
             self._emit_change(item_node, "added")
@@ -222,30 +269,42 @@ class DefinitionActions(QObject):
         config = node.config()
         if self._problem is None or config is None:
             return
-        UpdaterItems(config, node.section_group, node.category, self._problem).remove(node.item)
-        self._select(UpdaterTreeNode(node.updater_parent, node.group, node.config_index))
+        UpdaterItems(config, node.section_group, node.category, self._problem).remove(
+            node.item
+        )
+        self._select(
+            UpdaterTreeNode(node.updater_parent, node.group, node.config_index)
+        )
         self._emit_change(node, "deleted")
 
     def move_updater_item(self, node: UpdaterItemTreeNode, offset: int) -> None:
         config = node.config()
         if self._problem is None or config is None:
             return
-        if UpdaterItems(config, node.section_group, node.category, self._problem).move(node.item, offset):
+        if UpdaterItems(config, node.section_group, node.category, self._problem).move(
+            node.item, offset
+        ):
             self._select(node)
             self._emit_change(node, "modified")
 
     def custom_add_menu(self, menu, candidates, add):
-        sub = menu.addMenu(tr('ui.widgets.model_tree.custom_class'))
+        sub = menu.addMenu(tr("ui.widgets.model_tree.custom_class"))
         options = custom_options(self._problem, candidates)
         shown = set()
         for kind, custom in options:
             if custom.name in shown:
                 continue
             shown.add(custom.name)
-            action = sub.addAction(typed_title(custom.name, candidates[kind].rsplit(".", 1)[-1]))
-            action.triggered.connect(lambda _=False, kind=kind, name=custom.name: add(kind, name))
+            action = sub.addAction(
+                typed_title(custom.name, candidates[kind].rsplit(".", 1)[-1])
+            )
+            action.triggered.connect(
+                lambda _=False, kind=kind, name=custom.name: add(kind, name)
+            )
         if not options:
-            action = sub.addAction(tr('ui.widgets.model_tree.create_a_compatible_custom_class_first'))
+            action = sub.addAction(
+                tr("ui.widgets.model_tree.create_a_compatible_custom_class_first")
+            )
             action.setEnabled(False)
 
     def set_objective_class(self, custom_class):
@@ -275,10 +334,7 @@ class DefinitionActions(QObject):
     def remove_part(self, part: Node) -> None:
         if self._problem is None or not isinstance(part, PartNode):
             return
-        try:
-            self._problem.remove_part(part)
-        except ValueError:
-            return  # keep at least one geometry Part
+        self._problem.remove_part(part)
         self._select(select=self._problem.geometry)
         self._emit_change(part, "deleted")
 
@@ -326,9 +382,7 @@ class DefinitionActions(QObject):
         self._select(select=instance)
         self._emit_change(instance, "modified")
 
-    def add_cad_operation_group(
-        self, group: str, owner: CADPartNode
-    ) -> None:
+    def add_cad_operation_group(self, group: str, owner: CADPartNode) -> None:
         """Choose an operation type from a CAD feature group."""
         if group == "import":
             self.add_cad_operation("StepImport", owner)
@@ -339,24 +393,29 @@ class DefinitionActions(QObject):
             if spec.group == group
         ]
         if not choices:
-            raise ValueError(localized_message("ui.errors.definition_actions.unknown_cad_operation_group_value", value_0=group))
-        labels = [node_type_title(spec, operation_type) for operation_type, spec in choices]
+            raise ValueError(
+                localized_message(
+                    "ui.errors.definition_actions.unknown_cad_operation_group_value",
+                    value_0=group,
+                )
+            )
+        labels = [
+            node_type_title(spec, operation_type) for operation_type, spec in choices
+        ]
         title = {
-            "primitive": tr('ui.widgets.model_tree.add_primitive'),
-            "boolean": tr('ui.widgets.model_tree.add_boolean_operation'),
-            "transform": tr('ui.widgets.model_tree.add_transform'),
+            "primitive": tr("ui.widgets.model_tree.add_primitive"),
+            "boolean": tr("ui.widgets.model_tree.add_boolean_operation"),
+            "transform": tr("ui.widgets.model_tree.add_transform"),
         }[group]
         label, accepted = QInputDialog.getItem(
-            self.parent(), title, tr('ui.widgets.model_tree.type'), labels, 0, False
+            self.parent(), title, tr("ui.widgets.model_tree.type"), labels, 0, False
         )
         if not accepted:
             return
         operation_type = choices[labels.index(label)][0]
         self.add_cad_operation(operation_type, owner)
 
-    def add_cad_operation(
-        self, operation_type: str, owner: Node
-    ) -> None:
+    def add_cad_operation(self, operation_type: str, owner: Node) -> None:
         if self._problem is None or not isinstance(owner, CADPartNode):
             return
         spec = CAD_OPERATION_TYPES[operation_type]
@@ -369,14 +428,16 @@ class DefinitionActions(QObject):
             if len(live_ids) < 2:
                 QMessageBox.information(
                     self.parent(),
-                    tr('ui.widgets.model_tree.cad_operation'),
-                    tr('ui.widgets.model_tree.boolean_operations_need_two_unconsumed_features'),
+                    tr("ui.widgets.model_tree.cad_operation"),
+                    tr(
+                        "ui.widgets.model_tree.boolean_operations_need_two_unconsumed_features"
+                    ),
                 )
                 return
             object_id, accepted = QInputDialog.getItem(
                 self.parent(),
-                tr('ui.widgets.model_tree.boolean_operation'),
-                tr('ui.widgets.model_tree.object_feature'),
+                tr("ui.widgets.model_tree.boolean_operation"),
+                tr("ui.widgets.model_tree.object_feature"),
                 live_ids,
                 0,
                 False,
@@ -385,8 +446,8 @@ class DefinitionActions(QObject):
                 return
             tool_id, accepted = QInputDialog.getItem(
                 self.parent(),
-                tr('ui.widgets.model_tree.boolean_operation'),
-                tr('ui.widgets.model_tree.tool_feature'),
+                tr("ui.widgets.model_tree.boolean_operation"),
+                tr("ui.widgets.model_tree.tool_feature"),
                 [item for item in live_ids if item != object_id],
                 0,
                 False,
@@ -396,20 +457,19 @@ class DefinitionActions(QObject):
             overrides = {"object_id": object_id, "tool_id": tool_id}
         elif spec.group == "transform":
             live_ids = [
-                operation.operation_id
-                for operation in owner.live_cad_operations()
+                operation.operation_id for operation in owner.live_cad_operations()
             ]
             if not live_ids:
                 QMessageBox.information(
                     self.parent(),
-                    tr('ui.widgets.model_tree.cad_operation'),
-                    tr('ui.widgets.model_tree.add_an_unconsumed_feature_first'),
+                    tr("ui.widgets.model_tree.cad_operation"),
+                    tr("ui.widgets.model_tree.add_an_unconsumed_feature_first"),
                 )
                 return
             input_id, accepted = QInputDialog.getItem(
                 self.parent(),
-                tr('ui.widgets.model_tree.transform'),
-                tr('ui.widgets.model_tree.input_feature'),
+                tr("ui.widgets.model_tree.transform"),
+                tr("ui.widgets.model_tree.input_feature"),
                 live_ids,
                 0,
                 False,
@@ -420,7 +480,7 @@ class DefinitionActions(QObject):
         elif operation_type == "StepImport":
             path = choose_open_file(
                 self.parent(),
-                tr('ui.widgets.model_tree.select_step_file'),
+                tr("ui.widgets.model_tree.select_step_file"),
                 "",
                 tr("ui.files.step"),
             )
@@ -433,7 +493,7 @@ class DefinitionActions(QObject):
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(
                     self.parent(),
-                    tr('ui.widgets.model_tree.step_import_failed'),
+                    tr("ui.widgets.model_tree.step_import_failed"),
                     str(exc),
                 )
                 return
@@ -442,7 +502,9 @@ class DefinitionActions(QObject):
                 "data": imported.data,
             }
 
-        operation = self.commands.add_cad_operation(owner, operation_type, operation_id, **overrides)
+        operation = self.commands.add_cad_operation(
+            owner, operation_type, operation_id, **overrides
+        )
         self._select(select=operation)
         self._emit_change(operation, "added")
 
@@ -457,8 +519,8 @@ class DefinitionActions(QObject):
         except ValueError as exc:
             QMessageBox.information(
                 self.parent(),
-                tr('ui.widgets.model_tree.cad_operation'),
-                tr('ui.widgets.model_tree.cannot_delete_value', value_0=exc),
+                tr("ui.widgets.model_tree.cad_operation"),
+                tr("ui.widgets.model_tree.cannot_delete_value", value_0=exc),
             )
             return
         self._select(select=owner)
@@ -472,7 +534,9 @@ class DefinitionActions(QObject):
     ) -> None:
         if self._problem is None:
             return
-        owner = owner if owner is not None else self._problem.default_surface_part_node()
+        owner = (
+            owner if owner is not None else self._problem.default_surface_part_node()
+        )
         if owner is None:
             return
         node = self.commands.add_surface(stype, owner, custom_class)

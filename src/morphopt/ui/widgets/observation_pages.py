@@ -7,7 +7,6 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
-
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -22,11 +21,11 @@ from PySide6.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from ..theme import theme_manager
-from ..i18n import tr
 from ..application.results import ResultSession
+from ..i18n import tr
 from ..presentation.history import history_table
 from ..presentation.labels import typed_title
+from ..theme import theme_manager
 from .plot_style import apply_plotter_theme, configure_plotter
 
 
@@ -100,7 +99,10 @@ class MetricsPage(QWidget):
         # Prefer an installed CJK font so translated chart labels do not turn
         # into tofu boxes on Linux; Matplotlib silently falls back elsewhere.
         plt.rcParams["font.sans-serif"] = [
-            "Noto Sans CJK SC", "Noto Sans CJK TC", "DejaVu Sans", "sans-serif",
+            "Noto Sans CJK SC",
+            "Noto Sans CJK TC",
+            "DejaVu Sans",
+            "sans-serif",
         ]
         plt.rcParams["axes.unicode_minus"] = False
         self.figure.clear()
@@ -115,9 +117,9 @@ class MetricsPage(QWidget):
             linewidth=theme_manager.palette.chart.line_width,
             markersize=theme_manager.palette.chart.marker_size,
         )
-        axes.set_xlabel(tr('ui.widgets.observation_pages.iteration'))
-        axes.set_ylabel(tr('ui.widgets.observation_pages.objective'))
-        axes.set_title(tr('ui.widgets.observation_pages.objective_vs_iteration'))
+        axes.set_xlabel(tr("ui.widgets.observation_pages.iteration"))
+        axes.set_ylabel(tr("ui.widgets.observation_pages.objective"))
+        axes.set_title(tr("ui.widgets.observation_pages.objective_vs_iteration"))
         axes.tick_params(colors=theme_manager.palette.chart.text)
         axes.xaxis.label.set_color(theme_manager.palette.chart.text)
         axes.yaxis.label.set_color(theme_manager.palette.chart.text)
@@ -167,12 +169,12 @@ class UpdatableStructurePage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         controls = QHBoxLayout()
-        self.component_label = QLabel(tr('ui.widgets.observation_pages.display_component'))
+        self.component_label = QLabel(
+            tr("ui.widgets.observation_pages.display_component")
+        )
         controls.addWidget(self.component_label)
         self.component_selector = QComboBox()
-        self.component_selector.currentIndexChanged.connect(
-            self._component_changed
-        )
+        self.component_selector.currentIndexChanged.connect(self._component_changed)
         controls.addWidget(self.component_selector, 1)
         layout.addLayout(controls)
 
@@ -199,7 +201,9 @@ class UpdatableStructurePage(QWidget):
         name = component.name
         part_name = getattr(component, "part_name", None)
         if part_name and part_name != component.name:
-            name = tr("ui.observation.component_name_with_part", name=name, part=part_name)
+            name = tr(
+                "ui.observation.component_name_with_part", name=name, part=part_name
+            )
         category_key = {
             "Part": "ui.widgets.model_tree.container.geometry",
             "FEA": "ui.widgets.model_tree.container.loads_group",
@@ -223,18 +227,22 @@ class UpdatableStructurePage(QWidget):
                 )
             if not components:
                 self.component_selector.addItem(
-                    tr('ui.widgets.observation_pages.no_updateable_components'), None
+                    tr("ui.widgets.observation_pages.no_updateable_components"), None
                 )
                 self.component_selector.setEnabled(False)
             else:
                 self.component_selector.setEnabled(True)
                 index = self.component_selector.findData(current)
-                self.component_selector.setCurrentIndex(index if index >= 0 else 0)
+                self.component_selector.setCurrentIndex(max(index, 0))
         finally:
             self.component_selector.blockSignals(False)
 
     def _render_selected(self) -> None:
-        if self._results is None or self._results.params is None or self._results.folder is None:
+        if (
+            self._results is None
+            or self._results.params is None
+            or self._results.folder is None
+        ):
             return
         selected = self.component_selector.currentData()
         marker = (
@@ -277,7 +285,11 @@ class UpdatableStructurePage(QWidget):
             self._last_rendered = marker
         except Exception as exc:  # pragma: no cover - best-effort rendering
             print(
-                tr("ui.messages.structure_preview_failed", iteration=self._iteration, error=exc)
+                tr(
+                    "ui.messages.structure_preview_failed",
+                    iteration=self._iteration,
+                    error=exc,
+                )
             )
 
     def clear_view(self) -> None:
@@ -288,7 +300,7 @@ class UpdatableStructurePage(QWidget):
         try:
             self.component_selector.clear()
             self.component_selector.addItem(
-                tr('ui.widgets.observation_pages.no_updatable_components'), None
+                tr("ui.widgets.observation_pages.no_updatable_components"), None
             )
             self.component_selector.setEnabled(False)
         finally:
@@ -300,7 +312,9 @@ class UpdatableStructurePage(QWidget):
 
     def apply_language(self) -> None:
         """Refresh the component selector without rebuilding the scene."""
-        self.component_label.setText(tr('ui.widgets.observation_pages.display_component'))
+        self.component_label.setText(
+            tr("ui.widgets.observation_pages.display_component")
+        )
         self._sync_component_selector()
 
     def apply_theme(self) -> None:
@@ -336,6 +350,7 @@ class DeformationCasePage(QWidget):
         if marker == self._last_rendered:
             return
         mesh = results.deformation_mesh(self.case_index, iteration)
+
         def build_scene(plotter) -> None:
             if mesh is not None:
                 plotter.add_mesh(
@@ -346,6 +361,7 @@ class DeformationCasePage(QWidget):
                     name="deformation-mesh",
                 )
                 plotter.show_axes()
+
         self.viewport.rebuild(build_scene)
         if mesh is not None:
             self._last_rendered = marker

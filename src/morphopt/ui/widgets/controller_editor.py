@@ -1,4 +1,5 @@
 """Controller-level problem settings."""
+
 from __future__ import annotations
 
 import os
@@ -16,11 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..theme import theme_manager
 from ..application.devices import detect_devices
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
 from ..refresh import RefreshContext
+from ..theme import theme_manager
 from .file_dialogs import choose_directory
 
 
@@ -44,7 +45,9 @@ class ControllerSettingsEditor(QWidget):
 
         self.name_label = QLabel()
         self.name = QLineEdit(self.group)
-        self.name.setFixedWidth(theme_manager.palette.layout.workbench.output_name_width)
+        self.name.setFixedWidth(
+            theme_manager.palette.layout.workbench.output_name_width
+        )
         self.name.editingFinished.connect(
             lambda: self.labelChanged.emit(self.name.text().strip())
         )
@@ -52,7 +55,9 @@ class ControllerSettingsEditor(QWidget):
 
         self.path_label = QLabel()
         self.path = QLineEdit(self.group)
-        self.path.setMinimumWidth(theme_manager.palette.layout.workbench.path_minimum_width)
+        self.path.setMinimumWidth(
+            theme_manager.palette.layout.workbench.path_minimum_width
+        )
         self.path.editingFinished.connect(
             lambda: self.resultFolderChanged.emit(self.path.text().strip())
         )
@@ -75,9 +80,7 @@ class ControllerSettingsEditor(QWidget):
             theme_manager.palette.layout.workbench.device_selector_width
         )
         self.device.addItem("cpu")
-        self.device.addItems(
-            [device for device in detect_devices() if device != "cpu"]
-        )
+        self.device.addItems([device for device in detect_devices() if device != "cpu"])
         self.device.currentTextChanged.connect(self._emit_device)
         form.addRow(self.device_label, self.device)
 
@@ -129,9 +132,7 @@ class ControllerSettingsEditor(QWidget):
 
     def _browse_path(self) -> None:
         start = self.path.text() or os.getcwd()
-        folder = choose_directory(
-            self, tr("ui.workbench.select_output_folder"), start
-        )
+        folder = choose_directory(self, tr("ui.workbench.select_output_folder"), start)
         if folder:
             self.path.setText(folder)
             self.resultFolderChanged.emit(folder)

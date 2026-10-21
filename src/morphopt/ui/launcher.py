@@ -15,8 +15,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .model.problem import ProblemDefinition
 
@@ -24,8 +24,9 @@ from .model.problem import ProblemDefinition
 UI_RUN_DIR = os.path.join(os.getcwd(), "ui_runs")
 
 
-def _start_headless_process(command: Sequence[str], working_directory: str
-                            ) -> subprocess.Popen:
+def _start_headless_process(
+    command: Sequence[str], working_directory: str
+) -> subprocess.Popen:
     """Start one UI-managed job in its own process group.
 
     All launch paths use this helper so Stop can reliably terminate spawned
@@ -49,15 +50,6 @@ def _start_headless_process(command: Sequence[str], working_directory: str
     )
 
 
-def export_to_py(problem: ProblemDefinition, path) -> str:
-    """Write the problem definition to a runnable ``ThisController`` module."""
-    from .application.definitions import ProblemSession
-
-    src = ProblemSession(problem).source()
-    Path(path).write_text(src, encoding="utf-8")
-    return path
-
-
 def sanitize_name(name: str) -> str:
     """Return a filesystem- and module-friendly problem label."""
     out = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in name)
@@ -75,42 +67,33 @@ def run_root_for(problem: ProblemDefinition, base: str | None = None) -> str:
     return rf
 
 
-def run_job(problem: ProblemDefinition, workdir: str | None = None) -> tuple[str, subprocess.Popen]:
-    """Launch the problem headless in a subprocess.
+def run_job(
+    problem: ProblemDefinition, workdir: str | None = None
+) -> tuple[str, subprocess.Popen]:
+    """Export a private temporary script bundle and launch it headless.
 
-    Nothing is written into the project/``workdir``: the only generated module
-    file is a tiny launch stub placed in the *system* temporary directory
-    (spawn workers must import a real module file to obtain ``ThisController``,
-    while the timestamped result folder does not exist yet).  Once the run's
-    result folder appears, the controller writes the canonical runnable script
-    ``<result>/scripts/MAIN_SCRIPT_FOR_RESTART.py`` and the observer adds the
-    definition ``<result>/scripts/MAIN_SCRIPT_FOR_RESTART.morph`` beside it.
-
-    Returns ``(staging_job_path, process)``.  The process (and its mp-spawned
-    children) run in their own process group so the whole tree can be stopped
-    at once.
+    The controller copies the bundle into the result's scripts directory.
+    Returns the staging script path and the process owning the worker tree.
     """
-    if workdir is None:
-        base = UI_RUN_DIR
-    else:
-        base = workdir
-    os.makedirs(base, exist_ok=True)
-    # ensure the run root is absolute so the observer can discover folders
-    run_root = run_root_for(problem, base)
-    problem.result_folder = run_root
+    from .application.definitions import ProblemLibrary
 
-    # system temp launch module (unique, import-safe stem) -- never in base
-    stem = re.sub(r"[^A-Za-z0-9_]", "_", sanitize_name(problem.label))
-    job_path = os.path.join(tempfile.gettempdir(), f"{stem}_{os.getpid()}.py")
-    export_to_py(problem, job_path)
+    base = UI_RUN_DIR if workdir is None else workdir
+    problem.result_folder = run_root_for(problem, base)
+    job_path = ProblemLibrary.export_python_bundle(
+        problem, tempfile.mkdtemp(prefix="morphopt_")
+    )
 
     proc = _start_headless_process([sys.executable, job_path], base)
     return job_path, proc
 
 
-def run_continue(path_result: str, target_iteration: int | None = None,
-                 device: str = "cpu", restart_per_iteration: int = 10,
-                 workdir: str | None = None) -> subprocess.Popen:
+def run_continue(
+    path_result: str,
+    target_iteration: int | None = None,
+    device: str = "cpu",
+    restart_per_iteration: int = 10,
+    workdir: str | None = None,
+) -> subprocess.Popen:
     """Continue an existing result folder (last step or a chosen step)."""
     if workdir is None:
         workdir = UI_RUN_DIR
@@ -150,8 +133,9 @@ def parse_job_location(py_path: str) -> tuple[str, str]:
     return os.path.normpath(folder), label
 
 
-def run_py_definition(py_path: str, workdir: str | None = None
-                      ) -> tuple[str, str, subprocess.Popen]:
+def run_py_definition(
+    py_path: str, workdir: str | None = None
+) -> tuple[str, str, subprocess.Popen]:
     """Run an existing definition ``.py`` from scratch (headless job).
 
     The script keeps its own result location (``opt_label`` +
@@ -162,8 +146,7 @@ def run_py_definition(py_path: str, workdir: str | None = None
         workdir = os.path.dirname(os.path.abspath(py_path))
     os.makedirs(workdir, exist_ok=True)
     root, label = parse_job_location(py_path)
-    proc = _start_headless_process([sys.executable, os.path.abspath(py_path)],
-                                   workdir)
+    proc = _start_headless_process([sys.executable, os.path.abspath(py_path)], workdir)
     return root, label, proc
 
 
@@ -195,6 +178,7 @@ def latest_result_dir(run_root: str, label: str) -> str | None:
 
 def glob_dirs(pattern: str):
     import glob
+
     out = []
     for p in glob.glob(pattern):
         if os.path.isdir(p):

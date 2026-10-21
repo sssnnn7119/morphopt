@@ -14,7 +14,9 @@ class ThemeSelector(QComboBox):
         self.setFixedWidth(theme_manager.palette.layout.theme_selector_width)
         self.currentIndexChanged.connect(self._apply)
         self._unsubscribe_theme = theme_manager.subscribe(self._theme_changed)
-        self._unsubscribe_catalog = theme_manager.subscribe_catalog(self._catalog_changed)
+        self._unsubscribe_catalog = theme_manager.subscribe_catalog(
+            self._catalog_changed
+        )
         self._unsubscribe_locale = localization.subscribe(self._language_changed)
         self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
         self.destroyed.connect(lambda *_args: self._unsubscribe_catalog())

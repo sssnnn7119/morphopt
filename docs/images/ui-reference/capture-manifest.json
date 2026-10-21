@@ -13,7 +13,7 @@
     },
     {
       "file": "custom-code/helper-function.png",
-      "description": "辅助变量与函数定义、参数和函数体",
+      "description": "自定义常量与函数定义、名称、参数和函数体",
       "pixels": [
         3230,
         1836

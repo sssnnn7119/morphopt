@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFrame,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from ..theme import theme_manager
 from ...constants import CONSTANT
 from ..i18n import localization, tr
 from ..model.node_types.loads import ReferencePointNode
@@ -33,6 +32,7 @@ from ..presentation.navigation import ObjectiveItemTreeNode
 from ..refresh import RefreshContext
 from ..schemes.base import get_template
 from ..schemes.snippets import CodeSnippet
+from ..theme import theme_manager
 from .codeeditor import CodeEditor
 from .collection_controls import CollectionHeader, ItemActions, set_card_selected
 from .template_insert_dialog import TemplateInsertDialog
@@ -51,7 +51,9 @@ class JacobianLoadSelector(QToolButton):
         self.setMenu(self._menu)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setProperty("menuButton", True)
-        self.setFixedHeight(theme_manager.palette.layout.widgets.objective_selector_height)
+        self.setFixedHeight(
+            theme_manager.palette.layout.widgets.objective_selector_height
+        )
         self._update_summary()
 
     def set_loads(
@@ -86,15 +88,22 @@ class JacobianLoadSelector(QToolButton):
         selected = self.selected_names()
         if not self._load_names:
             self.setText(tr("ui.widgets.objective_editor.no_parameterized_loads"))
-            self.setToolTip(tr("ui.widgets.objective_editor.add_a_load_with_an_amplitude_first"))
+            self.setToolTip(
+                tr("ui.widgets.objective_editor.add_a_load_with_an_amplitude_first")
+            )
         elif not selected:
             self.setText(tr("ui.widgets.objective_editor.none_selected"))
-            self.setToolTip(tr("ui.widgets.objective_editor.select_loads_requiring_jacobians"))
+            self.setToolTip(
+                tr("ui.widgets.objective_editor.select_loads_requiring_jacobians")
+            )
         else:
-            self.setText(tr(
-                "ui.widgets.objective_editor.value_value_selected",
-                value_0=len(selected), value_1=len(self._load_names),
-            ))
+            self.setText(
+                tr(
+                    "ui.widgets.objective_editor.value_value_selected",
+                    value_0=len(selected),
+                    value_1=len(self._load_names),
+                )
+            )
             self.setToolTip("\n".join(self._checks[name].text() for name in selected))
 
 
@@ -141,7 +150,9 @@ class ObjectiveEditor(QWidget):
             )
             self._add_actions.append((action, label_key))
             action.triggered.connect(
-                lambda _checked=False, selected_type=term_type: self._add_term(selected_type)
+                lambda _checked=False, selected_type=term_type: self._add_term(
+                    selected_type
+                )
             )
         self._term_header = CollectionHeader(
             tr("ui.widgets.objective_editor.objective_terms"), menu=self._add_menu
@@ -159,7 +170,9 @@ class ObjectiveEditor(QWidget):
         self._term_layout.setContentsMargins(
             *theme_manager.palette.layout.widgets.collection_contents_margins
         )
-        self._term_layout.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
+        self._term_layout.setSpacing(
+            theme_manager.palette.layout.widgets.collection_spacing
+        )
         self._term_layout.addStretch(1)
         layout.addWidget(body)
 
@@ -176,8 +189,9 @@ class ObjectiveEditor(QWidget):
             )
             self._metric_actions.append((action, label_key))
             action.triggered.connect(
-                lambda _checked=False, selected_type=metric_type:
-                self._add_metric(selected_type)
+                lambda _checked=False, selected_type=metric_type: self._add_metric(
+                    selected_type
+                )
             )
         self._metric_header = CollectionHeader(
             tr("ui.widgets.objective_editor.metric_terms"), menu=self._metric_menu
@@ -196,7 +210,9 @@ class ObjectiveEditor(QWidget):
         self._metric_layout.setContentsMargins(
             *theme_manager.palette.layout.widgets.collection_contents_margins
         )
-        self._metric_layout.setSpacing(theme_manager.palette.layout.widgets.collection_spacing)
+        self._metric_layout.setSpacing(
+            theme_manager.palette.layout.widgets.collection_spacing
+        )
         self._metric_layout.addStretch(1)
         metrics_layout.addWidget(metric_body)
         layout.addWidget(self.metrics_group)
@@ -236,9 +252,7 @@ class ObjectiveEditor(QWidget):
         self._metric_header.title.setText(
             tr("ui.widgets.objective_editor.metric_terms")
         )
-        self._jacobian_label.setText(
-            tr("ui.widgets.objective_editor.jacobian_needed")
-        )
+        self._jacobian_label.setText(tr("ui.widgets.objective_editor.jacobian_needed"))
         for action, label_key in self._add_actions:
             action.setText(tr(f"ui.widgets.objective_editor.{label_key}"))
         self._term_header.add_button.setMenu(self._add_menu)
@@ -286,7 +300,9 @@ class ObjectiveEditor(QWidget):
             set_card_selected(card, False)
         if focus is None or focus.objective_parent is not self._obj:
             return
-        cards = self._term_cards if focus.category == "objective" else self._metric_cards
+        cards = (
+            self._term_cards if focus.category == "objective" else self._metric_cards
+        )
         if not 0 <= focus.index < len(cards):
             return
         card = cards[focus.index]
@@ -294,9 +310,7 @@ class ObjectiveEditor(QWidget):
         if scroll:
             QTimer.singleShot(
                 0,
-                lambda target=card: self._page_scroll.ensureWidgetVisible(
-                    target, 8, 8
-                ),
+                lambda target=card: self._page_scroll.ensureWidgetVisible(target, 8, 8),
             )
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
@@ -322,7 +336,8 @@ class ObjectiveEditor(QWidget):
         if self._problem is None:
             return []
         return [
-            item for item in self._problem.fea_components()
+            item
+            for item in self._problem.fea_components()
             if isinstance(item, ReferencePointNode) and item.name
         ]
 
@@ -360,9 +375,13 @@ class ObjectiveEditor(QWidget):
         elif not terms:
             self._hint.setText(tr("ui.widgets.objective_editor.add_an_objective_term"))
         elif not self._reference_points():
-            self._hint.setText(tr("ui.widgets.objective_editor.add_reference_point_for_displacement"))
+            self._hint.setText(
+                tr("ui.widgets.objective_editor.add_reference_point_for_displacement")
+            )
         else:
-            self._hint.setText(tr("ui.widgets.objective_editor.weighted_sum_description"))
+            self._hint.setText(
+                tr("ui.widgets.objective_editor.weighted_sum_description")
+            )
 
     def _sync_metrics(self) -> None:
         metrics = self._obj.metrics_terms if self._obj is not None else []
@@ -477,8 +496,7 @@ class ObjectiveEditor(QWidget):
                 editor.set_completion_context("get_metrics", self._problem)
             self._set_editor_body(editor, str(metric.get("body") or ""))
             editor.edit.textChanged.connect(
-                lambda item=index, widget=editor:
-                self._save_metric_body(item, widget)
+                lambda item=index, widget=editor: self._save_metric_body(item, widget)
             )
             layout.addWidget(editor)
             fields["body"] = editor
@@ -493,8 +511,9 @@ class ObjectiveEditor(QWidget):
                 continue
             if isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(
-                    lambda _index, item=index, field=key, control=widget:
-                    self._update_metric(item, field, control.currentData())
+                    lambda _index, item=index, field=key, control=widget: (
+                        self._update_metric(item, field, control.currentData())
+                    )
                 )
         return card
 
@@ -540,11 +559,13 @@ class ObjectiveEditor(QWidget):
             return
         metric: dict[str, object] = {"type": metric_type}
         if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
-            metric.update({
-                "reference_point_name": "",
-                "step_index": None,
-                "component": "",
-            })
+            metric.update(
+                {
+                    "reference_point_name": "",
+                    "step_index": None,
+                    "component": "",
+                }
+            )
         else:
             metric["body"] = ""
         self._obj.metrics_terms.append(metric)
@@ -622,9 +643,7 @@ class ObjectiveEditor(QWidget):
                 ("direction_maximize", CONSTANT.UI.OBJECTIVE.DIRECTION_MAXIMIZE),
                 ("direction_minimize", CONSTANT.UI.OBJECTIVE.DIRECTION_MINIMIZE),
             ):
-                direction.addItem(
-                    tr(f"ui.widgets.objective_editor.{label_key}"), value
-                )
+                direction.addItem(tr(f"ui.widgets.objective_editor.{label_key}"), value)
             self._set_combo_value(
                 direction,
                 term.get("direction", CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION),
@@ -683,9 +702,7 @@ class ObjectiveEditor(QWidget):
                 if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT
                 else "target_value"
             )
-            form.addRow(
-                tr(f"ui.widgets.objective_editor.{target_label}"), target
-            )
+            form.addRow(tr(f"ui.widgets.objective_editor.{target_label}"), target)
             fields["target"] = target
 
         weight = self._numeric_field(
@@ -722,13 +739,15 @@ class ObjectiveEditor(QWidget):
                 continue
             if isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(
-                    lambda _index, item=index, field=key, control=widget:
-                    self._update_term(item, field, control.currentData())
+                    lambda _index, item=index, field=key, control=widget: (
+                        self._update_term(item, field, control.currentData())
+                    )
                 )
             elif isinstance(widget, QDoubleSpinBox):
                 widget.valueChanged.connect(
-                    lambda value, item=index, field=key:
-                    self._update_term(item, field, value)
+                    lambda value, item=index, field=key: self._update_term(
+                        item, field, value
+                    )
                 )
         return card
 
@@ -743,8 +762,9 @@ class ObjectiveEditor(QWidget):
         button = QPushButton(tr("ui.widgets.objective_editor.insert_snippet"))
         button.setEnabled(bool(combo.count()))
         button.clicked.connect(
-            lambda _checked=False, target=editor, selector=combo:
-            self._insert_template(target, selector)
+            lambda _checked=False, target=editor, selector=combo: self._insert_template(
+                target, selector
+            )
         )
         row.addWidget(QLabel(tr("ui.widgets.objective_editor.template")))
         row.addWidget(combo, 1)
@@ -763,7 +783,7 @@ class ObjectiveEditor(QWidget):
     @staticmethod
     def _set_combo_value(combo: QComboBox, value: object) -> None:
         index = combo.findData(value)
-        combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.setCurrentIndex(max(index, 0))
 
     @staticmethod
     def _set_editor_body(editor: CodeEditor, body: str) -> None:
@@ -812,7 +832,11 @@ class ObjectiveEditor(QWidget):
         self.changed.emit(self._obj)
 
     def _save_term_body(self, index: int, editor: CodeEditor) -> None:
-        if self._loading or self._obj is None or not 0 <= index < len(self._obj.objective_terms):
+        if (
+            self._loading
+            or self._obj is None
+            or not 0 <= index < len(self._obj.objective_terms)
+        ):
             return
         self._obj.objective_terms[index]["body"] = editor.body()
         self.changed.emit(self._obj)
@@ -831,13 +855,15 @@ class ObjectiveEditor(QWidget):
             "weight": CONSTANT.UI.OBJECTIVE.DEFAULT_WEIGHT,
         }
         if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT:
-            term.update({
-                "reference_point_name": "",
-                "step_index": None,
-                "component": "",
-                "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
-                "target": CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET,
-            })
+            term.update(
+                {
+                    "reference_point_name": "",
+                    "step_index": None,
+                    "component": "",
+                    "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
+                    "target": CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET,
+                }
+            )
         else:
             term["body"] = ""
         self._obj.objective_terms.append(term)

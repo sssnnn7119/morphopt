@@ -5,8 +5,11 @@ from morphopt.ui.model.material_models import MATERIAL_MODEL_CHOICES
 from morphopt.ui.model.configuration import symmetry_constraint
 
 import ast
+import base64
 import inspect
+import os
 from textwrap import dedent
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -97,16 +100,22 @@ def test_bsp_fairness_thresholds_control_penalties(key, index, monkeypatch):
 
 
 @pytest.mark.parametrize("kind,spec", R.PART_TYPES.items())
-def test_part_fields_reach_constructor_or_explicit_base_parameter(kind, spec):
+def test_part_fields_reach_constructor_or_explicit_base_parameter(kind, spec, tmp_path):
     part = PartNode.create(kind, name="body")
     # Empty import paths are deliberate unfinished definitions, so use actual
     # values to check every field rather than have codegen omit optional ones.
     for field in spec.fields:
         if part.get_field(field.key) == "":
             part.set_field(field.key, "selected")
-    args, kwargs = literal_call(_render_part_constructor(part))
+    rendered = _render_part_constructor(
+        part, asset_paths={id(part): "morphopt_assets/selected.inp"}
+    )
+    kwargs = eval(rendered, {
+        "self": SimpleNamespace(**{kind: lambda **values: values}),
+        "os": os, "__file__": str(tmp_path / "model.py"),
+    })
     cls = getattr(morphopt, kind)
-    inspect.signature(cls).bind(*args, **kwargs)
+    inspect.signature(cls).bind(**kwargs)
     declared = {
         name for base in cls.__mro__ for name, parameter
         in inspect.signature(base.__init__).parameters.items()
@@ -115,7 +124,11 @@ def test_part_fields_reach_constructor_or_explicit_base_parameter(kind, spec):
     for field in spec.fields:
         key = field.key
         assert key in declared, (kind, key)
-        assert kwargs[key] == part.get_field(key)
+        expected = (
+            str(tmp_path / "morphopt_assets" / "selected.inp")
+            if key == "mesh_file" else part.get_field(key)
+        )
+        assert kwargs[key] == expected
 
 
 @pytest.mark.parametrize("kind,spec", R.LOAD_TYPES.items())
@@ -149,14 +162,31 @@ def test_penalty_object_type_choices_are_supported_by_assembly(kind):
 
 
 @pytest.mark.parametrize("kind,spec", R.CAD_OPERATION_TYPES.items())
-def test_cad_fields_reach_native_operation(kind, spec):
+def test_cad_fields_reach_native_operation(kind, spec, tmp_path):
     from morphopt.ui.application.cad import cad_operation_from_node
 
     operation = CADOperationNode.create(kind, operation_id="feature")
     for field in spec.fields:
         if field.type in {"combo", "str"}:
             operation.set_field(field.key, f"selected_{field.key}")
-    args, kwargs = literal_call(render_cad_operation_call(operation))
+    if kind == "StepImport":
+        content = b"STEP payload"
+        operation.data = base64.b64encode(content).decode("ascii")
+        relative = "morphopt_assets/" + operation.filename
+        asset = tmp_path / relative
+        asset.parent.mkdir()
+        asset.write_bytes(content)
+        rendered = render_cad_operation_call(operation, asset_paths={id(operation): relative})
+        exported = eval(rendered, {
+            "torchfea": torchfea, "os": os, "__file__": str(tmp_path / "model.py"),
+        })
+        preview = cad_operation_from_node(operation)
+        assert (exported.id, exported.filename, exported.data) == (
+            preview.id, preview.filename, preview.data,
+        )
+        return
+    rendered = render_cad_operation_call(operation)
+    args, kwargs = literal_call(rendered)
     cls = getattr(torchfea.cad, kind)
     bound = inspect.signature(cls).bind(*args, **kwargs)
     assert bound.arguments["id"] == "feature"

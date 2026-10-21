@@ -23,40 +23,39 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import tr
-from ..refresh import RefreshContext
 from ..model.problem import (
     CADOperationNode,
     CustomClassNode,
+    CustomFunctionNode,
     InstanceNode,
     MaterialNode,
     MethodOverrideNode,
-    CustomFunctionNode,
     Node,
     PartNode,
     ProblemDefinition,
 )
 from ..model.registry import (
     CAD_OPERATION_TYPES,
-    UPDATER_CONSTRAINTS,
-    UPDATER_OBJECTIVES,
     LOAD_TYPES,
     MATERIAL_TYPES,
     PART_TYPES,
-    SURFACE_TYPES,
     SURFACE_SYMMETRY_CONSTRAINTS,
+    SURFACE_TYPES,
+    UPDATER_CONSTRAINTS,
+    UPDATER_OBJECTIVES,
     available_surface_symmetry_types,
 )
-
-from ..presentation.labels import node_type_title, cad_operation_summary_text
+from ..presentation.labels import cad_operation_summary_text, node_type_title
 from ..presentation.navigation import (
-    UpdaterTreeNode,
-    UpdaterItemTreeNode,
     DefinitionNavigation,
     NavigationEntry,
+    UpdaterItemTreeNode,
+    UpdaterTreeNode,
+    node_at_path,
     node_key,
     node_path,
-    node_at_path,
 )
+from ..refresh import RefreshContext
 from .definition_actions import DefinitionActions
 
 
@@ -84,8 +83,7 @@ class ModelTree(QTreeWidget):
 
     def refresh_ui(self, context: RefreshContext) -> None:
         expanded = {
-            node_key(node): item.isExpanded()
-            for item, node in self._item_node.items()
+            node_key(node): item.isExpanded() for item, node in self._item_node.items()
         }
         scroll = self.verticalScrollBar().value()
         self._problem = context.problem
@@ -101,7 +99,14 @@ class ModelTree(QTreeWidget):
         item = self._node_item.get(node)
         if item is None:
             key = node_key(node)
-            item = next((item for candidate, item in self._node_item.items() if node_key(candidate) == key), None)
+            item = next(
+                (
+                    item
+                    for candidate, item in self._node_item.items()
+                    if node_key(candidate) == key
+                ),
+                None,
+            )
         if item is None or item is self.currentItem():
             return
         blocked = self.blockSignals(True)
@@ -145,7 +150,14 @@ class ModelTree(QTreeWidget):
             for entry in DefinitionNavigation(self._problem).build():
                 self.addTopLevelItem(self._render_entry(entry))
             self.expandAll()
-            item = next((item for node, item in self._node_item.items() if node_key(node) == selected_key), None)
+            item = next(
+                (
+                    item
+                    for node, item in self._node_item.items()
+                    if node_key(node) == selected_key
+                ),
+                None,
+            )
             if item is not None:
                 self.setCurrentItem(item)
         finally:
@@ -196,7 +208,8 @@ class ModelTree(QTreeWidget):
                 tr(
                     "ui.widgets.model_tree.material_assignment_tooltip",
                     value_0=node.part_name,
-                    value_1=node.elementname or tr("ui.widgets.model_tree.all_elements"),
+                    value_1=node.elementname
+                    or tr("ui.widgets.model_tree.all_elements"),
                 ),
             )
         if bold:
@@ -233,58 +246,73 @@ class ModelTree(QTreeWidget):
 
         if kind == "custom_classes":
             menu.addAction(
-                tr('ui.widgets.custom_classes.add_new_class'),
+                tr("ui.widgets.custom_classes.add_new_class"),
                 lambda _checked=False: self.actions.add_custom_class("new"),
             )
             menu.addAction(
-                tr('ui.widgets.custom_classes.add_override_class'),
+                tr("ui.widgets.custom_classes.add_override_class"),
                 lambda _checked=False: self.actions.add_custom_class("override"),
             )
         if kind == "new_classes_group":
             menu.addAction(
-                tr('ui.widgets.custom_classes.add_new_class'),
+                tr("ui.widgets.custom_classes.add_new_class"),
                 lambda _checked=False: self.actions.add_custom_class("new"),
             )
         if kind == "override_classes_group":
             menu.addAction(
-                tr('ui.widgets.custom_classes.add_override_class'),
+                tr("ui.widgets.custom_classes.add_override_class"),
                 lambda _checked=False: self.actions.add_custom_class("override"),
             )
         if kind == "helper_code":
             menu.addAction(
-                tr('ui.widgets.model_tree.add_helper_variable'),
+                tr("ui.widgets.model_tree.add_helper_variable"),
                 lambda _checked=False: self.actions.add_helper("helper_variable"),
             )
             menu.addAction(
-                tr('ui.widgets.model_tree.add_helper_function'),
+                tr("ui.widgets.model_tree.add_helper_function"),
                 lambda _checked=False: self.actions.add_helper("helper_function"),
             )
         if isinstance(node, CustomClassNode):
             menu.addAction(
                 tr(
-                    'ui.widgets.custom_classes.add_function'
+                    "ui.widgets.custom_classes.add_function"
                     if node.class_type == "new"
-                    else 'ui.widgets.custom_classes.override_method'
+                    else "ui.widgets.custom_classes.override_method"
                 ),
                 lambda: self.classMethodAddRequested.emit(node),
             )
         if isinstance(node, (CustomClassNode, MethodOverrideNode, CustomFunctionNode)):
-            menu.addAction(tr('ui.widgets.custom_classes.delete'),
-                           lambda: self.actions.remove_custom_class(node))
+            menu.addAction(
+                tr("ui.widgets.custom_classes.delete"),
+                lambda: self.actions.remove_custom_class(node),
+            )
 
         if kind == "helper_variables_group":
-            menu.addAction(tr('ui.widgets.model_tree.add_helper_variable'),
-                           lambda: self.actions.add_helper("helper_variable"))
+            menu.addAction(
+                tr("ui.widgets.model_tree.add_helper_variable"),
+                lambda: self.actions.add_helper("helper_variable"),
+            )
         if kind == "helper_functions_group":
-            menu.addAction(tr('ui.widgets.model_tree.add_helper_function'),
-                           lambda: self.actions.add_helper("helper_function"))
+            menu.addAction(
+                tr("ui.widgets.model_tree.add_helper_function"),
+                lambda: self.actions.add_helper("helper_function"),
+            )
         if kind in {"helper_variable", "helper_function"}:
-            menu.addAction(tr('ui.widgets.model_tree.move_up'), lambda: self.actions.move_helper(node, -1))
-            menu.addAction(tr('ui.widgets.model_tree.move_down'), lambda: self.actions.move_helper(node, 1))
-            menu.addAction(tr('ui.widgets.model_tree.delete'), lambda: self.actions.remove_helper(node))
+            menu.addAction(
+                tr("ui.widgets.model_tree.move_up"),
+                lambda: self.actions.move_helper(node, -1),
+            )
+            menu.addAction(
+                tr("ui.widgets.model_tree.move_down"),
+                lambda: self.actions.move_helper(node, 1),
+            )
+            menu.addAction(
+                tr("ui.widgets.model_tree.delete"),
+                lambda: self.actions.remove_helper(node),
+            )
 
         if kind == "geometry":
-            sub = menu.addMenu(tr('ui.widgets.model_tree.add_part'))
+            sub = menu.addMenu(tr("ui.widgets.model_tree.add_part"))
             from ..schemes.base import get_template
 
             for itype in get_template(scheme).available_geometry_types():
@@ -292,29 +320,44 @@ class ModelTree(QTreeWidget):
                 act = QAction(node_type_title(spec, itype), sub)
                 act.setData(itype)
                 sub.addAction(act)
-                act.triggered.connect(lambda _=False, kind=itype: self.actions.add_part(kind))
-            candidates = {kind: "morphopt.BoundaryPart" if PART_TYPES[kind].has_surfaces
-                          else f"morphopt.{kind}" for kind in get_template(scheme).available_geometry_types()}
+                act.triggered.connect(
+                    lambda _=False, kind=itype: self.actions.add_part(kind)
+                )
+            candidates = {
+                kind: "morphopt.BoundaryPart"
+                if PART_TYPES[kind].has_surfaces
+                else f"morphopt.{kind}"
+                for kind in get_template(scheme).available_geometry_types()
+            }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(sub, candidates, self.actions.add_part)
 
         if kind == "part":
-            act_instance = QAction(tr('ui.widgets.model_tree.add_instance'), menu)
-            act_instance.triggered.connect(lambda _=False, owner=node: self.actions.add_instance(owner))
+            act_instance = QAction(tr("ui.widgets.model_tree.add_instance"), menu)
+            act_instance.triggered.connect(
+                lambda _=False, owner=node: self.actions.add_instance(owner)
+            )
             menu.addAction(act_instance)
             menu.addSeparator()
             if node.has_surfaces:
-                sub = menu.addMenu(tr('ui.widgets.model_tree.add_surface'))
+                sub = menu.addMenu(tr("ui.widgets.model_tree.add_surface"))
                 for stype, spec in SURFACE_TYPES.items():
                     act = QAction(node_type_title(spec, stype), sub)
                     act.setData(stype)
                     sub.addAction(act)
-                    act.triggered.connect(lambda _=False, kind=stype, owner=node: self.actions.add_surface(
-                        kind,
-                        owner,
-                    ))
-                candidates = {kind: "morphopt.BoundaryPart." + (spec.factory.split(".")[0] if spec.factory else "FixedSurface")
-                              for kind, spec in SURFACE_TYPES.items()}
+                    act.triggered.connect(
+                        lambda _=False, kind=stype, owner=node: (
+                            self.actions.add_surface(
+                                kind,
+                                owner,
+                            )
+                        )
+                    )
+                candidates = {
+                    kind: "morphopt.BoundaryPart."
+                    + (spec.factory.split(".")[0] if spec.factory else "FixedSurface")
+                    for kind, spec in SURFACE_TYPES.items()
+                }
                 self.actions.custom_add_menu(
                     sub,
                     candidates,
@@ -323,39 +366,37 @@ class ModelTree(QTreeWidget):
                 menu.addSeparator()
             elif isinstance(node, PartNode) and node.type == "CADPart":
                 for group, title in (
-                    ("primitive", tr('ui.widgets.model_tree.add_primitive_494ebece')),
-                    ("boolean", tr('ui.widgets.model_tree.add_boolean')),
-                    ("transform", tr('ui.widgets.model_tree.add_transform_aad8bcb1')),
+                    ("primitive", tr("ui.widgets.model_tree.add_primitive_494ebece")),
+                    ("boolean", tr("ui.widgets.model_tree.add_boolean")),
+                    ("transform", tr("ui.widgets.model_tree.add_transform_aad8bcb1")),
                 ):
                     sub = menu.addMenu(title)
                     for operation_type, spec in CAD_OPERATION_TYPES.items():
                         if spec.group != group:
                             continue
-                        action = QAction(
-                            node_type_title(spec, operation_type), sub
-                        )
+                        action = QAction(node_type_title(spec, operation_type), sub)
                         sub.addAction(action)
                         action.triggered.connect(
-                            lambda _=False, kind=operation_type, owner=node:
+                            lambda _=False, kind=operation_type, owner=node: (
                                 self.actions.add_cad_operation(kind, owner)
+                            )
                         )
-                import_action = QAction(
-                    tr('ui.widgets.model_tree.import_step'), menu
-                )
+                import_action = QAction(tr("ui.widgets.model_tree.import_step"), menu)
                 import_action.triggered.connect(
-                    lambda _=False, owner=node:
-                        self.actions.add_cad_operation("StepImport", owner)
+                    lambda _=False, owner=node: self.actions.add_cad_operation(
+                        "StepImport", owner
+                    )
                 )
                 menu.addAction(import_action)
                 menu.addSeparator()
 
-            act_copy = QAction(tr('ui.widgets.model_tree.copy'), menu)
+            act_copy = QAction(tr("ui.widgets.model_tree.copy"), menu)
             act_copy.triggered.connect(lambda: self.actions.copy_part(node))
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_part(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_part(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete_part'), menu)
+            act_del = QAction(tr("ui.widgets.model_tree.delete_part"), menu)
             act_del.triggered.connect(lambda: self.actions.remove_part(node))
             menu.addAction(act_copy)
             menu.addAction(act_up)
@@ -364,23 +405,25 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "instance":
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_instance(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_instance(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete_instance'), menu)
-            act_del.triggered.connect(lambda _=False: self.actions.remove_instance(node))
+            act_del = QAction(tr("ui.widgets.model_tree.delete_instance"), menu)
+            act_del.triggered.connect(
+                lambda _=False: self.actions.remove_instance(node)
+            )
             menu.addAction(act_up)
             menu.addAction(act_dn)
             menu.addSeparator()
             menu.addAction(act_del)
 
         if isinstance(node, CADOperationNode):
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_cad_operation(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_cad_operation(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete_cad_operation'), menu)
+            act_del = QAction(tr("ui.widgets.model_tree.delete_cad_operation"), menu)
             act_del.triggered.connect(lambda: self.actions.remove_cad_operation(node))
             menu.addAction(act_up)
             menu.addAction(act_dn)
@@ -388,7 +431,7 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "materials":
-            sub = menu.addMenu(tr('ui.widgets.model_tree.add_material'))
+            sub = menu.addMenu(tr("ui.widgets.model_tree.add_material"))
             from ..schemes.base import get_template
 
             available = get_template(scheme).available_material_types()
@@ -397,7 +440,9 @@ class ModelTree(QTreeWidget):
                 act = QAction(node_type_title(spec, mtype), sub)
                 act.setData(mtype)
                 sub.addAction(act)
-                act.triggered.connect(lambda _=False, kind=mtype: self.actions.add_material(kind))
+                act.triggered.connect(
+                    lambda _=False, kind=mtype: self.actions.add_material(kind)
+                )
             self.actions.custom_add_menu(
                 sub,
                 {kind: f"morphopt.{kind}" for kind in available},
@@ -405,13 +450,13 @@ class ModelTree(QTreeWidget):
             )
 
         if kind == "material":
-            act_copy = QAction(tr('ui.widgets.model_tree.copy'), menu)
+            act_copy = QAction(tr("ui.widgets.model_tree.copy"), menu)
             act_copy.triggered.connect(lambda: self.actions.copy_material(node))
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_material(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_material(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete'), menu)
+            act_del = QAction(tr("ui.widgets.model_tree.delete"), menu)
             act_del.triggered.connect(lambda: self.actions.remove_material(node))
             menu.addAction(act_copy)
             menu.addAction(act_up)
@@ -420,13 +465,13 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
         if kind == "surface":
-            act_copy = QAction(tr('ui.widgets.model_tree.copy'), menu)
+            act_copy = QAction(tr("ui.widgets.model_tree.copy"), menu)
             act_copy.triggered.connect(lambda: self.actions.copy_surface(node))
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_surface(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_surface(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete_surface'), menu)
+            act_del = QAction(tr("ui.widgets.model_tree.delete_surface"), menu)
             act_del.triggered.connect(lambda: self.actions.remove_surface(node))
             menu.addAction(act_copy)
             menu.addAction(act_up)
@@ -440,52 +485,83 @@ class ModelTree(QTreeWidget):
 
         if isinstance(node, (PartNode, MaterialNode)) and node.is_updatable:
             action = menu.addAction(tr("ui.component.create_updater"))
-            action.setEnabled(node in self.actions.commands.available_optimizer_targets())
-            action.triggered.connect(lambda _checked=False: self.actions.add_updater(node))
+            action.setEnabled(
+                node in self.actions.commands.available_optimizer_targets()
+            )
+            action.triggered.connect(
+                lambda _checked=False: self.actions.add_updater(node)
+            )
 
         if kind == "updater_geometry":
             act_del = QAction(
-                tr('ui.widgets.model_tree.delete_this_geometry_optimizer'), menu
+                tr("ui.widgets.model_tree.delete_this_geometry_optimizer"), menu
             )
-            act_del.triggered.connect(lambda: self.actions.remove_geometry_updater(node))
+            act_del.triggered.connect(
+                lambda: self.actions.remove_geometry_updater(node)
+            )
             menu.addAction(act_del)
 
         if kind == "updater_materials":
             act_del = QAction(
-                tr('ui.widgets.model_tree.delete_this_material_optimizer'), menu
+                tr("ui.widgets.model_tree.delete_this_material_optimizer"), menu
             )
-            act_del.triggered.connect(lambda: self.actions.remove_materials_updater(node))
+            act_del.triggered.connect(
+                lambda: self.actions.remove_materials_updater(node)
+            )
             menu.addAction(act_del)
 
         if isinstance(node, UpdaterItemTreeNode):
-            menu.addAction(tr('ui.widgets.model_tree.move_up'), lambda: self.actions.move_updater_item(node, -1))
-            menu.addAction(tr('ui.widgets.model_tree.move_down'), lambda: self.actions.move_updater_item(node, 1))
-            menu.addAction(tr('ui.widgets.model_tree.delete'), lambda: self.actions.remove_updater_item(node))
+            menu.addAction(
+                tr("ui.widgets.model_tree.move_up"),
+                lambda: self.actions.move_updater_item(node, -1),
+            )
+            menu.addAction(
+                tr("ui.widgets.model_tree.move_down"),
+                lambda: self.actions.move_updater_item(node, 1),
+            )
+            menu.addAction(
+                tr("ui.widgets.model_tree.delete"),
+                lambda: self.actions.remove_updater_item(node),
+            )
 
-        if isinstance(node, UpdaterTreeNode) and not isinstance(node, UpdaterItemTreeNode) and node.group in {
-            "geometry_objectives",
-            "geometry_penalty",
-            "materials_objectives",
-            "materials_penalty",
-        }:
-            category = "objectives" if node.group.endswith("objectives") else "constraints"
-            catalog = UPDATER_OBJECTIVES if category == "objectives" else UPDATER_CONSTRAINTS
+        if (
+            isinstance(node, UpdaterTreeNode)
+            and not isinstance(node, UpdaterItemTreeNode)
+            and node.group
+            in {
+                "geometry_objectives",
+                "geometry_penalty",
+                "materials_objectives",
+                "materials_penalty",
+            }
+        ):
+            category = (
+                "objectives" if node.group.endswith("objectives") else "constraints"
+            )
+            catalog = (
+                UPDATER_OBJECTIVES if category == "objectives" else UPDATER_CONSTRAINTS
+            )
             section = node.section_group
             sub = menu.addMenu(
-                (tr('ui.widgets.model_tree.add_objective') if category == "objectives" else tr('ui.widgets.model_tree.add_penalty_constraint'))
+                tr("ui.widgets.model_tree.add_objective")
+                if category == "objectives"
+                else tr("ui.widgets.model_tree.add_penalty_constraint")
             )
             for item_type, spec in catalog.items():
                 if spec.group != section or spec.hidden:
                     continue
-                action = sub.addAction(
-                    node_type_title(spec, item_type)
-                )
+                action = sub.addAction(node_type_title(spec, item_type))
                 action.triggered.connect(
-                    lambda _checked=False, entry=node, kind=item_type, cat=category:
-                    self.actions.add_updater_item(entry, kind, cat)
+                    lambda _checked=False, entry=node, kind=item_type, cat=category: (
+                        self.actions.add_updater_item(entry, kind, cat)
+                    )
                 )
 
-        if isinstance(node, UpdaterTreeNode) and not isinstance(node, UpdaterItemTreeNode) and node.group == "geometry_symmetry":
+        if (
+            isinstance(node, UpdaterTreeNode)
+            and not isinstance(node, UpdaterItemTreeNode)
+            and node.group == "geometry_symmetry"
+        ):
             config = node.config()
             target = (
                 self._problem.config_part_node(config)
@@ -498,25 +574,26 @@ class ModelTree(QTreeWidget):
                     surface.surface_type for surface in surfaces
                 )
             )
-            sub = menu.addMenu(tr('ui.widgets.model_tree.add_symmetry_constraint'))
+            sub = menu.addMenu(tr("ui.widgets.model_tree.add_symmetry_constraint"))
             for item_type, spec in SURFACE_SYMMETRY_CONSTRAINTS.items():
                 if item_type != "Custom" and item_type not in available:
                     continue
-                action = sub.addAction(
-                    node_type_title(spec, item_type)
-                )
+                action = sub.addAction(node_type_title(spec, item_type))
                 action.triggered.connect(
-                    lambda _checked=False, entry=node, kind=item_type:
-                    self.actions.add_symmetry_constraint(entry, kind)
+                    lambda _checked=False, entry=node, kind=item_type: (
+                        self.actions.add_symmetry_constraint(entry, kind)
+                    )
                 )
 
         if kind == "loads":
-            sub = menu.addMenu(tr('ui.widgets.model_tree.add_load'))
+            sub = menu.addMenu(tr("ui.widgets.model_tree.add_load"))
             for itype, spec in LOAD_TYPES.items():
                 act = QAction(node_type_title(spec, itype), sub)
                 act.setData(itype)
                 sub.addAction(act)
-                act.triggered.connect(lambda _=False, kind=itype: self.actions.add_component(kind))
+                act.triggered.connect(
+                    lambda _=False, kind=itype: self.actions.add_component(kind)
+                )
             self.actions.custom_add_menu(
                 sub,
                 {
@@ -527,13 +604,13 @@ class ModelTree(QTreeWidget):
             )
 
         if kind == "fea_component":
-            act_copy = QAction(tr('ui.widgets.model_tree.copy'), menu)
+            act_copy = QAction(tr("ui.widgets.model_tree.copy"), menu)
             act_copy.triggered.connect(lambda: self.actions.copy_component(node))
-            act_up = QAction(tr('ui.widgets.model_tree.move_up'), menu)
+            act_up = QAction(tr("ui.widgets.model_tree.move_up"), menu)
             act_up.triggered.connect(lambda: self.actions.move_component(node, -1))
-            act_dn = QAction(tr('ui.widgets.model_tree.move_down'), menu)
+            act_dn = QAction(tr("ui.widgets.model_tree.move_down"), menu)
             act_dn.triggered.connect(lambda: self.actions.move_component(node, 1))
-            act_del = QAction(tr('ui.widgets.model_tree.delete'), menu)
+            act_del = QAction(tr("ui.widgets.model_tree.delete"), menu)
             act_del.triggered.connect(lambda: self.actions.remove_component(node))
             menu.addAction(act_copy)
             menu.addAction(act_up)

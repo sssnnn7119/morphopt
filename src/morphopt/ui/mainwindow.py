@@ -30,7 +30,12 @@ from .model.problem import ProblemDefinition
 from .observe_panel import ObserverControls
 from .schemes.base import scheme_label
 from .theme import theme_manager
-from .widgets.file_dialogs import choose_directory, confirm_overwrite, create_file_dialog
+from .widgets.file_dialogs import (
+    choose_save_directory,
+    choose_directory,
+    confirm_overwrite,
+    create_file_dialog,
+)
 from .widgets.quickstart import QuickstartDialog
 from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
@@ -85,10 +90,12 @@ class MainWindow(QMainWindow):
         self.result_context.setProperty("textRole", "muted")
         self.result_context.setProperty("toolbarContext", True)
         self.result_context.setMinimumWidth(0)
-        self.result_context.pathCopied.connect(lambda: self.statusBar().showMessage(
-            tr("ui.workspace.result_path_copied"),
-            CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
-        ))
+        self.result_context.pathCopied.connect(
+            lambda: self.statusBar().showMessage(
+                tr("ui.workspace.result_path_copied"),
+                CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
+            )
+        )
         header.addWidget(self.result_context)
         self._analysis_toolbar = header
         self.analysis_header.hide()
@@ -212,7 +219,9 @@ class MainWindow(QMainWindow):
             selection = self._result_selection
             self._observer.panel.select_iteration(selection.iteration)
             self._ensure_finite_element()
-            self._finite_element.synchronize_result(selection.folder, selection.iteration)
+            self._finite_element.synchronize_result(
+                selection.folder, selection.iteration
+            )
         self.stack.setCurrentIndex(index + 1)
         self._set_titles()
 
@@ -373,28 +382,43 @@ class MainWindow(QMainWindow):
         return False
 
     def export_run_py(self) -> None:
-        """Generate the runnable job .py from the serialized .morph model."""
+        """Export a runnable Python module and its assets into one directory."""
         workbench = self._workbench
         if workbench is None:
             return
         workbench.flush_edits()
         problem = workbench.problem
-        path = self._choose_file_path(
-            tr("ui.mainwindow.export_runnable_py"),
-            ".py",
-            save=True,
-            label=problem.label,
+        folder = choose_save_directory(
+            self,
+            tr("ui.mainwindow.export_runnable_folder"),
+            str(self._document_path.parent) if self._document_path else os.getcwd(),
+            self._export_folder_name(problem.label),
         )
-        if path:
-            try:
-                ProblemLibrary.export_python(problem, path)
-            except Exception as exc:
-                QMessageBox.warning(self, tr("ui.workspace.save_failed"), str(exc))
+        if not folder:
+            return
+        output_directory = Path(folder)
+        if output_directory.exists():
+            if not output_directory.is_dir():
+                QMessageBox.warning(
+                    self,
+                    tr("ui.workspace.save_failed"),
+                    tr("ui.mainwindow.export_folder_not_directory_value", value_0=folder),
+                )
                 return
-            self.statusBar().showMessage(
-                tr("ui.mainwindow.exported_runnable_script") + path,
-                CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
-            )
+            if not confirm_overwrite(
+                self, output_directory,
+                message_key="ui.mainwindow.export_folder_exists_value",
+            ):
+                return
+        try:
+            ProblemLibrary.export_python_bundle(problem, output_directory)
+        except Exception as exc:
+            QMessageBox.warning(self, tr("ui.workspace.save_failed"), str(exc))
+            return
+        self.statusBar().showMessage(
+            tr("ui.mainwindow.exported_runnable_script") + str(output_directory),
+            CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.SHORT,
+        )
 
     def _choose_file_path(
         self, title: str, suffix: str, *, save: bool, label: str = ""
@@ -432,12 +456,17 @@ class MainWindow(QMainWindow):
         stem = (label or "").strip()
         if stem.lower().endswith(suffix.lower()):
             stem = stem[: -len(suffix)]
+        return MainWindow._export_folder_name(stem) + suffix
+
+    @staticmethod
+    def _export_folder_name(label: str) -> str:
+        stem = (label or "").strip()
         invalid = "<>:/\\|?*"
         stem = "".join(
             "_" if character in invalid or ord(character) < 32 else character
             for character in stem
         ).strip(" .")
-        return f"{stem or 'Untitled'}{suffix}"
+        return stem or "Untitled"
 
     # ------------------------------------------------------------- problem
     def set_problem(
@@ -464,8 +493,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------ analysis workspace
     def _can_replace_task(self) -> bool:
-        if ((self._observer is not None and self._observer.is_running())
-                or (self._finite_element is not None and self._finite_element.is_running())):
+        if (self._observer is not None and self._observer.is_running()) or (
+            self._finite_element is not None and self._finite_element.is_running()
+        ):
             self.statusBar().showMessage(tr("ui.workspace.task_busy"))
             return False
         return True
@@ -494,14 +524,19 @@ class MainWindow(QMainWindow):
         if not self._can_replace_task():
             return
         folder = choose_directory(
-            self, tr("ui.workspace.open_result"), os.getcwd(),
+            self,
+            tr("ui.workspace.open_result"),
+            os.getcwd(),
         )
         if not folder:
             return
         if not ObserverControls.is_result_folder(folder):
             QMessageBox.warning(
-                self, tr("ui.observe_panel.invalid_result"),
-                tr("ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"),
+                self,
+                tr("ui.observe_panel.invalid_result"),
+                tr(
+                    "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"
+                ),
             )
             return
         self._ensure_observer()
@@ -554,7 +589,9 @@ class MainWindow(QMainWindow):
             self._result_selection = ResultSelection(folder, iteration)
             if self.sender() is self._finite_element:
                 self._observer.panel.select_iteration(iteration)
-            self._has_analysis_model = IterationModel(folder, iteration).model_path.is_file()
+            self._has_analysis_model = IterationModel(
+                folder, iteration
+            ).model_path.is_file()
             self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
             if self.stack.currentIndex() == 2 and self._finite_element is not None:
                 self._finite_element.synchronize_result(folder, iteration)
@@ -579,15 +616,19 @@ class MainWindow(QMainWindow):
         else:
             selection = self._result_selection
             self.result_context.set_folder(selection.folder)
-            self.result_context.setText(tr(
-                "ui.workspace.result_context", name=Path(selection.folder).name,
-                iteration=selection.iteration,
-            ))
+            self.result_context.setText(
+                tr(
+                    "ui.workspace.result_context",
+                    name=Path(selection.folder).name,
+                    iteration=selection.iteration,
+                )
+            )
         self._set_titles()
 
     def _update_analysis_actions(self) -> None:
-        busy = ((self._observer is not None and self._observer.is_running())
-                or (self._finite_element is not None and self._finite_element.is_running()))
+        busy = (self._observer is not None and self._observer.is_running()) or (
+            self._finite_element is not None and self._finite_element.is_running()
+        )
         for key in ("open_result", "open_python"):
             self._menu_actions[key].setEnabled(not busy)
         self._start_optimization_action.setEnabled(not busy)

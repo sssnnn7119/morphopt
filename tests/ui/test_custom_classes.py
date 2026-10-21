@@ -110,13 +110,13 @@ def test_helper_entries_round_trip_and_use_from_override(tmp_path):
     assert load_classes(loaded).ObjectiveFunction().get_metrics() == {"error": 1.0}
 
 
-def test_invalid_helper_function_is_rejected_before_run():
+def test_invalid_helper_function_is_rejected_during_export(tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     from morphopt.ui.model.problem import HelperFunctionNode
 
     problem.helper_functions = [HelperFunctionNode(name="broken", params={"parameters": "(", "body": "pass"})]
     with pytest.raises(ValueError, match="Invalid helper code"):
-        ProblemSession(problem).validate_for_run()
+        ProblemLibrary.export_python_bundle(problem, tmp_path / "run")
 
 
 def test_custom_classes_are_top_level_and_only_selected_class_is_used():
@@ -188,12 +188,12 @@ def test_selected_constructor_receives_ui_options_and_hooks_take_priority():
         {"Missing.Node": "MyObjective"},
     ],
 )
-def test_missing_or_incompatible_class_selection_is_rejected(bindings):
+def test_missing_or_incompatible_class_selection_is_rejected(bindings, tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     customize(problem, "morphopt.ObjectiveFunction", "MyObjective", bind=False)
     problem.class_bindings = bindings
     with pytest.raises(ValueError):
-        ProblemSession(problem).validate_for_run()
+        ProblemLibrary.export_python_bundle(problem, tmp_path / "run")
 
 
 def test_part_class_names_use_part_types_and_old_paths_are_rejected():
@@ -314,7 +314,7 @@ def test_super_calls_generated_method_and_classmethod_uses_custom_type(monkeypat
         ("ThisController", "Custom", "step", "return ("),
     ],
 )
-def test_invalid_overrides_are_rejected_before_run(base, name, method, body):
+def test_invalid_overrides_are_rejected_during_export(base, name, method, body, tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     problem.custom_classes.append(
         CustomClassNode(
@@ -324,7 +324,7 @@ def test_invalid_overrides_are_rejected_before_run(base, name, method, body):
         )
     )
     with pytest.raises(ValueError):
-        ProblemSession(problem).validate_for_run()
+        ProblemLibrary.export_python_bundle(problem, tmp_path / "run")
 
 
 def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
@@ -477,7 +477,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     monkeypatch.setattr(workbench, "PreviewViewer", Viewer)
     problem = ProblemLibrary.create("shapeopt")
     window = workbench.Workbench(problem)
-    assert window._center.count() == 2
+    assert window._center.count() == 3
     helper_item = window.tree.topLevelItem(0)
     helper_node = window.tree._item_node[helper_item]
     assert route_editor(helper_node).kind is EditorKind.HELPER_CODE
@@ -489,9 +489,12 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.helper_page
     variable = window.actions.add_helper("helper_variable")
+    assert variable.name == "constant_1"
     window.refresh_coordinator.flush()
     assert window.tree._item_node[window.tree.currentItem()] is variable
     variable_editor = window.helper_variables_editor._helper_editors[variable]
+    assert variable_editor.name_label.text() == "Constant name"
+    assert variable_editor.name.placeholderText() == "Constant name"
     variable_editor.name.setText("target_force")
     variable_editor.value.setText("3.0")
     variable_editor._save()

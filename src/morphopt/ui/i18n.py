@@ -18,9 +18,7 @@ _RESOURCE_DIR = Path(__file__).with_name("locales")
 class LocalizationManager:
     """Load keyed string tables, format messages, and notify locale listeners."""
 
-    def __init__(
-        self, locale: str = "zh-CN", fallback_locale: str = _FALLBACK_LOCALE
-    ):
+    def __init__(self, locale: str = "zh-CN", fallback_locale: str = _FALLBACK_LOCALE):
         self._locale = self._normalize_locale(locale)
         self.fallback_locale = self._normalize_locale(fallback_locale)
         self._tables: dict[str, dict[str, str]] = {}

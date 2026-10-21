@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-import logging
 from typing import Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -26,8 +26,15 @@ class RefreshContext:
     @property
     def geometry_changed(self) -> bool:
         unrelated = {
-            "fea_component", "loads", "loads_group", "steps", "solver",
-            "objective", "updater", "problem", "params_class",
+            "fea_component",
+            "loads",
+            "loads_group",
+            "steps",
+            "solver",
+            "objective",
+            "updater",
+            "problem",
+            "params_class",
         }
         return self.full or any(
             node.kind not in unrelated and not node.kind.startswith("updater_")

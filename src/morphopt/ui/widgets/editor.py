@@ -8,15 +8,15 @@ geometry updater editor.
 """
 
 from __future__ import annotations
-from copy import deepcopy
 
 from collections.abc import Callable
+from copy import deepcopy
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QFrame,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -26,15 +26,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..theme import theme_manager
+from ..application.editing import rename_node, set_node_field
+from ..application.fields import fields_for_node
 from ..i18n import tr
-from ..refresh import RefreshContext
 from ..model.problem import Node
 from ..presentation.labels import node_title, reference_choice_title
+from ..refresh import RefreshContext
+from ..theme import theme_manager
 from .codeeditor import CodeEditor
 from .collection_controls import ActionButton
-from ..application.fields import fields_for_node
-from ..application.editing import set_node_field, rename_node
 from .param_form import ParamForm
 from .values import display_choice
 
@@ -71,8 +71,12 @@ class PropertyEditor(QWidget):
         self._body = QWidget()
         self._form = QFormLayout(self._body)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._form.setContentsMargins(*deepcopy(theme_manager.palette.layout.widgets.form_contents_margins))
-        self._form.setVerticalSpacing(theme_manager.palette.layout.widgets.standard_form_spacing)
+        self._form.setContentsMargins(
+            *deepcopy(theme_manager.palette.layout.widgets.form_contents_margins)
+        )
+        self._form.setVerticalSpacing(
+            theme_manager.palette.layout.widgets.standard_form_spacing
+        )
         self._scroll.setWidget(self._body)
         outer.addWidget(self._scroll, 0 if compact else 1)
 
@@ -100,11 +104,21 @@ class PropertyEditor(QWidget):
         self._completion_problem = completion_problem
         title = title if title is not None else node_title(completion_problem, node)
         if fields is None:
-            fields, code_slots, extra_choices = fields_for_node(node, completion_problem)
+            fields, code_slots, extra_choices = fields_for_node(
+                node, completion_problem
+            )
         code_slots, extra_choices = code_slots or {}, extra_choices or {}
-        helper_names = [item.name for item in completion_problem.helper_variables] if completion_problem else []
+        helper_names = (
+            [item.name for item in completion_problem.helper_variables]
+            if completion_problem
+            else []
+        )
         schema = tuple((field.key, field.type) for field in fields), tuple(code_slots)
-        if node is self._node and schema == self._schema and self._parameter_form is not None:
+        if (
+            node is self._node
+            and schema == self._schema
+            and self._parameter_form is not None
+        ):
             self._title.setText(title)
             self._parameter_form.helper_names = set(helper_names)
             self._parameter_form.refresh_choices(extra_choices)
@@ -128,24 +142,36 @@ class PropertyEditor(QWidget):
             name_edit = QLineEdit(node.name or "")
             self._name_edit = name_edit
             name_edit.setToolTip(
-                (tr('ui.widgets.editor.component_name') if node.kind == "fea_component" else (tr('ui.widgets.editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted') if node.kind == "part" else tr('ui.widgets.editor.unique_assembly_name_of_this_part_instance')))
+                tr("ui.widgets.editor.component_name")
+                if node.kind == "fea_component"
+                else (
+                    tr(
+                        "ui.widgets.editor.registration_name_in_geometryparams_geometry_updaters_are_retargeted"
+                    )
+                    if node.kind == "part"
+                    else tr(
+                        "ui.widgets.editor.unique_assembly_name_of_this_part_instance"
+                    )
+                )
             )
             if node.kind == "material":
                 name_edit.setToolTip(
-                    tr('ui.widgets.editor.registration_name_in_materialsparams_material_updaters_are_retargeted')
+                    tr(
+                        "ui.widgets.editor.registration_name_in_materialsparams_material_updaters_are_retargeted"
+                    )
                 )
             name_edit.editingFinished.connect(
                 lambda e=name_edit: self._rename_node(e.text())
             )
             self._form.addRow(
                 (
-                    tr('ui.widgets.editor.component_name')
+                    tr("ui.widgets.editor.component_name")
                     if node.kind == "fea_component"
-                    else tr('ui.widgets.editor.part_name')
+                    else tr("ui.widgets.editor.part_name")
                     if node.kind == "part"
-                    else tr('ui.widgets.editor.material_name')
+                    else tr("ui.widgets.editor.material_name")
                     if node.kind == "material"
-                    else tr('ui.widgets.editor.instance_name')
+                    else tr("ui.widgets.editor.instance_name")
                 ),
                 name_edit,
             )
@@ -157,11 +183,15 @@ class PropertyEditor(QWidget):
 
         if actions:
             action_row = QWidget()
-            action_grid_columns = theme_manager.palette.layout.widgets.action_grid_columns
+            action_grid_columns = (
+                theme_manager.palette.layout.widgets.action_grid_columns
+            )
             if len(actions) > action_grid_columns:
                 action_layout = QGridLayout(action_row)
                 action_layout.setContentsMargins(
-                    0, theme_manager.palette.layout.widgets.action_row_vertical_margin, 0,
+                    0,
+                    theme_manager.palette.layout.widgets.action_row_vertical_margin,
+                    0,
                     theme_manager.palette.layout.widgets.action_row_vertical_margin,
                 )
                 action_layout.setHorizontalSpacing(
@@ -170,18 +200,27 @@ class PropertyEditor(QWidget):
                 action_layout.setVerticalSpacing(
                     theme_manager.palette.layout.widgets.action_grid_spacing
                 )
-                for column in range(theme_manager.palette.layout.widgets.action_grid_columns):
+                for column in range(
+                    theme_manager.palette.layout.widgets.action_grid_columns
+                ):
                     action_layout.setColumnStretch(column, 1)
             else:
                 action_layout = QHBoxLayout(action_row)
                 action_layout.setContentsMargins(
-                    0, theme_manager.palette.layout.widgets.action_row_vertical_margin, 0,
+                    0,
+                    theme_manager.palette.layout.widgets.action_row_vertical_margin,
+                    0,
                     theme_manager.palette.layout.widgets.action_row_vertical_margin,
                 )
-                action_layout.setSpacing(theme_manager.palette.layout.widgets.action_grid_spacing)
+                action_layout.setSpacing(
+                    theme_manager.palette.layout.widgets.action_grid_spacing
+                )
             for index, (label, callback, danger) in enumerate(actions):
                 button = ActionButton(label, callback, danger=danger)
-                if len(actions) > theme_manager.palette.layout.widgets.action_grid_columns:
+                if (
+                    len(actions)
+                    > theme_manager.palette.layout.widgets.action_grid_columns
+                ):
                     columns = theme_manager.palette.layout.widgets.action_grid_columns
                     action_layout.addWidget(button, index // columns, index % columns)
                 else:
@@ -190,10 +229,17 @@ class PropertyEditor(QWidget):
                 action_layout.addStretch(1)
             self._form.addRow(action_row)
 
-        form = ParamForm(None, fields, extra_choices, helper_names=helper_names,
-                         read=node.get_field,
-                         write=lambda key, value: set_node_field(node, key, value, self._completion_problem),
-                         choice_label=self._choice_label)
+        form = ParamForm(
+            None,
+            fields,
+            extra_choices,
+            helper_names=helper_names,
+            read=node.get_field,
+            write=lambda key, value: set_node_field(
+                node, key, value, self._completion_problem
+            ),
+            choice_label=self._choice_label,
+        )
         form.changed.connect(lambda _key: self.changed.emit(node))
         self._parameter_form = form
         self._controls = form.controls
@@ -205,9 +251,7 @@ class PropertyEditor(QWidget):
             widget.installEventFilter(self)
         if self._compact:
             self._body.adjustSize()
-            self._scroll.setMinimumHeight(
-                self._body.layout().sizeHint().height() + 8
-            )
+            self._scroll.setMinimumHeight(self._body.layout().sizeHint().height() + 8)
 
     def refresh_ui(self, context: RefreshContext) -> None:
         if self._node is not None:
@@ -236,7 +280,9 @@ class PropertyEditor(QWidget):
             self.changed.emit(self._node)
 
     def _choice_label(self, key: str, value: object) -> str:
-        return reference_choice_title(self._completion_problem, key, value) or display_choice(key, value)
+        return reference_choice_title(
+            self._completion_problem, key, value
+        ) or display_choice(key, value)
 
     def _add_code_slot(self, key: str, caption: str) -> None:
         node = self._node

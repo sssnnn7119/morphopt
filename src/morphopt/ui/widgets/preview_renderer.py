@@ -1,33 +1,34 @@
 """Render scene descriptions; owns actors, never reads problem definitions."""
+
 from __future__ import annotations
 
-from copy import deepcopy
-from collections.abc import Callable
-from functools import singledispatchmethod
 import os
+from collections.abc import Callable
+from copy import deepcopy
+from functools import singledispatchmethod
 from pathlib import Path
 
 import numpy as np
 import pyvista as pv
 from vtkmodules.vtkCommonDataModel import vtkPlane
 from vtkmodules.vtkRenderingCore import vtkCellPicker
-from .plot_style import configure_plotter
+
 from ..i18n import localized_message
 from ..theme import theme_manager
 from ..visualization.scene import (
-    PreviewScene,
-    FaceSelection,
-    LoadScene,
-    MeshItem,
-    LabelItem,
-    MessageItem,
     ArrowLoad,
-    MomentLoad,
-    SpringLoad,
-    MarkerLoad,
     CouplingLoad,
+    FaceSelection,
+    LabelItem,
+    LoadScene,
+    MarkerLoad,
+    MeshItem,
+    MessageItem,
+    MomentLoad,
+    PreviewScene,
+    SpringLoad,
 )
-
+from .plot_style import configure_plotter
 
 _SOURCE_CELL_ID = "morphopt_source_cell_id"
 
@@ -45,9 +46,13 @@ def _cjk_font_file() -> str | None:
 
 
 class PreviewRenderer:
-    def __init__(self, plotter, *,
-                 on_face_picked: Callable[[FaceSelection | None], None] | None = None,
-                 track_mouse_events: bool = True):
+    def __init__(
+        self,
+        plotter,
+        *,
+        on_face_picked: Callable[[FaceSelection | None], None] | None = None,
+        track_mouse_events: bool = True,
+    ):
         self.plotter = plotter
         configure_plotter(self.plotter)
         self._overlay_actors: list = []
@@ -113,8 +118,15 @@ class PreviewRenderer:
         axis = self._section_axis
         return float(lower[axis] + self._section_fraction * (upper[axis] - lower[axis]))
 
-    def set_section(self, enabled: bool, axis: int, fraction: float,
-                    reverse: bool = False, *, render: bool = True) -> None:
+    def set_section(
+        self,
+        enabled: bool,
+        axis: int,
+        fraction: float,
+        reverse: bool = False,
+        *,
+        render: bool = True,
+    ) -> None:
         """Move a mapper clipping plane without rebuilding any CAD geometry."""
         if axis not in (0, 1, 2):
             raise ValueError("Section axis must be 0, 1 or 2.")
@@ -149,7 +161,9 @@ class PreviewRenderer:
         if self._press_position is not None:
             position = self.plotter.iren.get_event_position()
             distance = np.linalg.norm(np.subtract(position, self._press_position))
-            self._dragged |= distance > theme_manager.palette.viewer.geometry.pick_drag_distance
+            self._dragged |= (
+                distance > theme_manager.palette.viewer.geometry.pick_drag_distance
+            )
 
     def _face_release(self, *_args) -> None:
         if self._press_position is None:
@@ -178,7 +192,11 @@ class PreviewRenderer:
         # The picker indexes the mapper's displayed dataset. Surface extraction,
         # normal generation and triangulation may change its cell ordering.
         displayed = pv.wrap(self._face_picker.GetDataSet()) if actor else None
-        if displayed is not None and _SOURCE_CELL_ID in displayed.cell_data and cell_id >= 0:
+        if (
+            displayed is not None
+            and _SOURCE_CELL_ID in displayed.cell_data
+            and cell_id >= 0
+        ):
             cell_id = int(displayed.cell_data[_SOURCE_CELL_ID][cell_id])
         if item is None or item.faces is None or not 0 <= cell_id < item.mesh.n_cells:
             self.plotter.render()
@@ -263,7 +281,12 @@ class PreviewRenderer:
 
     @singledispatchmethod
     def draw(self, item):
-        raise TypeError(localized_message("ui.errors.preview_renderer.unsupported_scene_item_value", value_0=type(item).__name__))
+        raise TypeError(
+            localized_message(
+                "ui.errors.preview_renderer.unsupported_scene_item_value",
+                value_0=type(item).__name__,
+            )
+        )
 
     @draw.register
     def _(self, item: MeshItem):
@@ -293,7 +316,9 @@ class PreviewRenderer:
 
     @draw.register
     def _(self, item: ArrowLoad):
-        self._add_load_arrow(item.start, item.vector, item.color, item.label, self._scale)
+        self._add_load_arrow(
+            item.start, item.vector, item.color, item.label, self._scale
+        )
 
     @draw.register
     def _(self, item: MomentLoad):
@@ -306,7 +331,9 @@ class PreviewRenderer:
     @draw.register
     def _(self, item: MarkerLoad):
         if item.is_reference_point:
-            self._add_reference_point(item.location, item.label, item.color, self._scale)
+            self._add_reference_point(
+                item.location, item.label, item.color, self._scale
+            )
         else:
             self._add_marker(item.location, item.label, item.color, self._scale)
 
@@ -340,7 +367,8 @@ class PreviewRenderer:
             )
             highlighted_surface = self._offset_toward_camera(
                 surface,
-                scale_len * theme_manager.palette.viewer.render.coupling_normal_offset_ratio,
+                scale_len
+                * theme_manager.palette.viewer.render.coupling_normal_offset_ratio,
             )
             self._overlay_actors.append(
                 self.plotter.add_mesh(
@@ -386,7 +414,11 @@ class PreviewRenderer:
             if len(spoke_targets):
                 spoke_points = np.vstack((start, spoke_targets))
                 spoke_lines = np.asarray(
-                    [value for index in range(1, len(spoke_points)) for value in (2, 0, index)],
+                    [
+                        value
+                        for index in range(1, len(spoke_points))
+                        for value in (2, 0, index)
+                    ],
                     dtype=np.int64,
                 )
                 lines = pv.PolyData()
@@ -429,7 +461,8 @@ class PreviewRenderer:
                 end,
                 "",
                 theme_manager.palette.viewer.render.marker_color_reference_point,
-                scale_len * theme_manager.palette.viewer.render.coupling_marker_scale_ratio,
+                scale_len
+                * theme_manager.palette.viewer.render.coupling_marker_scale_ratio,
             )
 
     def _add_load_arrow(
@@ -454,24 +487,29 @@ class PreviewRenderer:
             tip_radius=theme_manager.palette.viewer.loads.load_arrow_tip_radius_ratio,
             shaft_radius=theme_manager.palette.viewer.loads.load_arrow_shaft_radius_ratio,
         )
-        self._overlay_actors.append(self.plotter.add_mesh(arrow, color=color, lighting=False))
+        self._overlay_actors.append(
+            self.plotter.add_mesh(arrow, color=color, lighting=False)
+        )
         if label:
             label_position = (
                 np.asarray(start, dtype=float)
-                + direction * length * theme_manager.palette.viewer.render.load_arrow_label_offset_ratio
+                + direction
+                * length
+                * theme_manager.palette.viewer.render.load_arrow_label_offset_ratio
             )
             self._add_label(label_position, label, color)
 
-    def _add_moment_glyph(
-        self, center, moment, scale_len: float, label: str
-    ) -> None:
+    def _add_moment_glyph(self, center, moment, scale_len: float, label: str) -> None:
         axis = np.asarray(moment, dtype=float).reshape(3)
         magnitude = float(np.linalg.norm(axis))
         if magnitude <= theme_manager.palette.viewer.loads.glyph_zero_tolerance:
             return
         axis /= magnitude
         reference = np.array([1.0, 0.0, 0.0])
-        if abs(float(axis @ reference)) > theme_manager.palette.viewer.render.direction_alignment_threshold:
+        if (
+            abs(float(axis @ reference))
+            > theme_manager.palette.viewer.render.direction_alignment_threshold
+        ):
             reference = np.array([0.0, 1.0, 0.0])
         first = np.cross(axis, reference)
         first /= np.linalg.norm(first)
@@ -491,7 +529,8 @@ class PreviewRenderer:
         self._overlay_actors.append(
             self.plotter.add_mesh(
                 arc.tube(
-                    radius=scale_len * theme_manager.palette.viewer.render.moment_tube_radius_ratio
+                    radius=scale_len
+                    * theme_manager.palette.viewer.render.moment_tube_radius_ratio
                 ),
                 color=theme_manager.palette.viewer.render.marker_color_moment,
             )
@@ -506,7 +545,9 @@ class PreviewRenderer:
         )
         self._add_label(
             np.asarray(center)
-            + radius * theme_manager.palette.viewer.render.moment_label_offset_ratio * first,
+            + radius
+            * theme_manager.palette.viewer.render.moment_label_offset_ratio
+            * first,
             label,
             theme_manager.palette.viewer.render.marker_color_moment,
         )
@@ -520,7 +561,10 @@ class PreviewRenderer:
             return
         direction = axis / length
         reference = np.array([0.0, 0.0, 1.0])
-        if abs(float(direction @ reference)) > theme_manager.palette.viewer.render.direction_alignment_threshold:
+        if (
+            abs(float(direction @ reference))
+            > theme_manager.palette.viewer.render.direction_alignment_threshold
+        ):
             reference = np.array([0.0, 1.0, 0.0])
         side = np.cross(direction, reference)
         side /= np.linalg.norm(side)
@@ -535,7 +579,8 @@ class PreviewRenderer:
                 * np.pi
             )[:, None]
             * min(
-                scale_len * theme_manager.palette.viewer.render.spring_wave_amplitude_ratio,
+                scale_len
+                * theme_manager.palette.viewer.render.spring_wave_amplitude_ratio,
                 length * theme_manager.palette.viewer.render.spring_wave_length_ratio,
             )
             * side
@@ -547,7 +592,8 @@ class PreviewRenderer:
             line.tube(
                 radius=min(
                     scale_len * theme_manager.palette.viewer.render.spring_width_ratio,
-                    length * theme_manager.palette.viewer.render.spring_width_length_ratio,
+                    length
+                    * theme_manager.palette.viewer.render.spring_width_length_ratio,
                 )
             ),
             color=theme_manager.palette.viewer.render.marker_color_spring,
@@ -569,7 +615,9 @@ class PreviewRenderer:
         self, location, label: str, color: str, scale_len: float
     ) -> None:
         location = np.asarray(location, dtype=float).reshape(3)
-        radius = scale_len * theme_manager.palette.viewer.render.reference_point_radius_ratio
+        radius = (
+            scale_len * theme_manager.palette.viewer.render.reference_point_radius_ratio
+        )
         sphere = pv.Sphere(
             center=location,
             radius=radius,
@@ -584,7 +632,10 @@ class PreviewRenderer:
                 specular=theme_manager.palette.viewer.render.reference_point_specular,
             )
         )
-        half_axis = scale_len * theme_manager.palette.viewer.render.reference_point_axis_length_ratio
+        half_axis = (
+            scale_len
+            * theme_manager.palette.viewer.render.reference_point_axis_length_ratio
+        )
         for axis in np.eye(3):
             line = pv.Line(location - half_axis * axis, location + half_axis * axis)
             self._overlay_actors.append(
@@ -644,8 +695,7 @@ class PreviewRenderer:
         self, anchor: np.ndarray, label: str, side_override: float | None = None
     ) -> np.ndarray:
         camera_position, focal_point, view_up = (
-            np.asarray(value, dtype=float)
-            for value in self.plotter.camera_position
+            np.asarray(value, dtype=float) for value in self.plotter.camera_position
         )
         forward = focal_point - camera_position
         forward /= np.linalg.norm(forward)
@@ -656,7 +706,9 @@ class PreviewRenderer:
 
         anchor_projection = float(np.dot(anchor, right))
         if self._geometry_bounds is None:
-            side = side_override or (-1.0 if np.dot(anchor - focal_point, right) > 0.0 else 1.0)
+            side = side_override or (
+                -1.0 if np.dot(anchor - focal_point, right) > 0.0 else 1.0
+            )
             edge_distance = 0.0
         else:
             lower, upper = self._geometry_bounds
@@ -701,7 +753,8 @@ class PreviewRenderer:
         horizontal_offset = (
             edge_distance
             + half_card_width
-            + self._annotation_scale * theme_manager.palette.viewer.render.callout_gap_ratio
+            + self._annotation_scale
+            * theme_manager.palette.viewer.render.callout_gap_ratio
         )
         camera = self.plotter.camera
         if camera.GetParallelProjection():
@@ -711,29 +764,39 @@ class PreviewRenderer:
             view_height = 2.0 * depth * np.tan(np.deg2rad(camera.GetViewAngle()) / 2.0)
         world_per_pixel = view_height / self.plotter.window_size[1]
         half_height = (
-            len(label.splitlines()) * theme_manager.palette.viewer.render.callout_line_height_px
-            + theme_manager.palette.viewer.render.callout_vertical_padding_px
-        ) * world_per_pixel / 2.0
+            (
+                len(label.splitlines())
+                * theme_manager.palette.viewer.render.callout_line_height_px
+                + theme_manager.palette.viewer.render.callout_vertical_padding_px
+            )
+            * world_per_pixel
+            / 2.0
+        )
         gap = theme_manager.palette.viewer.render.callout_gap_px * world_per_pixel
         vertical = float(np.dot(anchor, up))
         occupied = self._callout_ranges.setdefault(side, [])
         candidates = [vertical]
         for center, height in occupied:
-            candidates.extend((center - height - half_height - gap, center + height + half_height + gap))
+            candidates.extend(
+                (
+                    center - height - half_height - gap,
+                    center + height + half_height + gap,
+                )
+            )
         center = next(
-            value for value in sorted(candidates, key=lambda value: abs(value - vertical))
+            value
+            for value in sorted(candidates, key=lambda value: abs(value - vertical))
             if all(
                 abs(value - other)
-                >= half_height + height + gap
+                >= half_height
+                + height
+                + gap
                 - theme_manager.palette.viewer.render.callout_min_separation_tolerance
                 for other, height in occupied
             )
         )
         occupied.append((center, half_height))
-        return (
-            anchor + right * side * horizontal_offset
-            + up * (center - vertical)
-        )
+        return anchor + right * side * horizontal_offset + up * (center - vertical)
 
     def _offset_toward_camera(self, mesh: pv.DataSet, distance: float) -> pv.DataSet:
         if distance <= 0.0:
@@ -771,4 +834,7 @@ def _spread_surface_points(
 
 
 def _load_arrow_length(characteristic_length: float) -> float:
-    return float(characteristic_length) * theme_manager.palette.viewer.loads.load_arrow_length_ratio
+    return (
+        float(characteristic_length)
+        * theme_manager.palette.viewer.loads.load_arrow_length_ratio
+    )

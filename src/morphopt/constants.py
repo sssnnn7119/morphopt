@@ -38,11 +38,8 @@ class _Constants:
             CACHE_ENTRIES = 16
 
         class SCHEMA_FIELDS:
-
             class CAD_OPERATIONS:
-
                 class BOX:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -62,7 +59,6 @@ class _Constants:
                         DEFAULT = 5.0
 
                 class WEDGE:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -85,7 +81,6 @@ class _Constants:
                         DEFAULT = 0.0
 
                 class CYLINDER:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -108,7 +103,6 @@ class _Constants:
                         DEFAULT = 5.0
 
                 class SPHERE:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -122,7 +116,6 @@ class _Constants:
                         DEFAULT = 5.0
 
                 class CONE:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -148,7 +141,6 @@ class _Constants:
                         DEFAULT = 1.0
 
                 class TORUS:
-
                     class X:
                         DEFAULT = 0.0
 
@@ -165,49 +157,43 @@ class _Constants:
                         DEFAULT = 2.0
 
                 class STEPIMPORT:
-
                     class FILENAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class DATA:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class FUSE:
-
                     class OBJECT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class TOOL_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class CUT:
-
                     class OBJECT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class TOOL_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class INTERSECT:
-
                     class OBJECT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class TOOL_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class FRAGMENT:
-
                     class OBJECT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class TOOL_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class TRANSLATE:
-
                     class INPUT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class DX:
                         DEFAULT = 5.0
@@ -219,9 +205,8 @@ class _Constants:
                         DEFAULT = 0.0
 
                 class ROTATE:
-
                     class INPUT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class X:
                         DEFAULT = 0.0
@@ -245,9 +230,8 @@ class _Constants:
                         DEFAULT = 1.5707963267948966
 
                 class DILATE:
-
                     class INPUT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class X:
                         DEFAULT = 0.0
@@ -268,9 +252,8 @@ class _Constants:
                         DEFAULT = 1.0
 
                 class MIRROR:
-
                     class INPUT_ID:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class A:
                         DEFAULT = 1.0
@@ -285,75 +268,73 @@ class _Constants:
                         DEFAULT = 0.0
 
             class FEA_COMPONENTS:
-
                 class PRESSURE:
-
                     class INSTANCE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SURFACE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class CONCENTRATEDFORCE:
-
                     class RP_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class CONCENTRATEDMOMENT:
-
                     class RP_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class BODYFORCE:
-
                     class ELEMENT_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class INSTANCE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class SPRINGTOGROUND:
-
                     class RP_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class SPRINGBETWEENRPS:
-
                     class RP_NAME1:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class RP_NAME2:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class PENALTYDOF:
-
                     class OBJ_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class S:
                         DEFAULT = 0
 
                     class OBJ_TYPE:
-                        DEFAULT = 'auto'
-                        CHOICES = ('auto', 'instance', 'rp', 'load', 'constraint', 'boundary')
+                        DEFAULT = "auto"
+                        CHOICES = (
+                            "auto",
+                            "instance",
+                            "rp",
+                            "load",
+                            "constraint",
+                            "boundary",
+                        )
 
                 class BOUNDARYCONDITION:
-
                     class INSTANCE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SET_NODES_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class INDEX_DOF:
@@ -361,9 +342,8 @@ class _Constants:
                         SIZE = 6
 
                 class BOUNDARYCONDITIONRP:
-
                     class RP_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class INDEX_DOF:
@@ -371,59 +351,53 @@ class _Constants:
                         SIZE = 6
 
                 class COUPLE:
-
                     class RP_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class INSTANCE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SET_NODES_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class REFERENCEPOINT:
-
                     class RP_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
                 class CONTACT:
-
                     class INSTANCE_NAME1:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SURFACE_NAME1:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class INSTANCE_NAME2:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SURFACE_NAME2:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class PENALTY_THRESHOLD_H:
                         DEFAULT = 3.0
 
                 class CONTACTSELF:
-
                     class INSTANCE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class SURFACE_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
             class SURFACES:
-
                 class BSP_CYLINDER:
-
                     class R0:
                         DEFAULT = 4.0
                         MIN = 0.0
@@ -467,7 +441,6 @@ class _Constants:
                         DEFAULT = -1.0
 
                 class CPGEO_CYLINDER:
-
                     class R0:
                         DEFAULT = 4.0
                         MIN = 0.0
@@ -499,7 +472,6 @@ class _Constants:
                         DEFAULT = -1.0
 
                 class CPGEO_SPHERE:
-
                     class R0:
                         DEFAULT = 7.0
                         MIN = 0.0
@@ -516,28 +488,27 @@ class _Constants:
                         MIN = 0.0
 
                 class FIXED_STL:
-
                     class PATH_STL:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
             class MATERIALS:
-
                 class HOMOGENEOUSMATERIAL:
-
                     class PART_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class MATERIAL_MODEL:
-                        DEFAULT = 'NeoHookeanLnJ'
-                        CHOICES = ('LinearElastic',
-                                   'NeoHookean',
-                                   'NeoHookeanLnJ',
-                                   'MooneyRivlin',
-                                   'Yeoh',
-                                   'Gent',
-                                   'ArrudaBoyce',
-                                   'Ogden')
+                        DEFAULT = "NeoHookeanLnJ"
+                        CHOICES = (
+                            "LinearElastic",
+                            "NeoHookean",
+                            "NeoHookeanLnJ",
+                            "MooneyRivlin",
+                            "Yeoh",
+                            "Gent",
+                            "ArrudaBoyce",
+                            "Ogden",
+                        )
 
                     class E:
                         DEFAULT = 1.0
@@ -579,25 +550,26 @@ class _Constants:
                         DEFAULT = 1.08e-09
 
                     class ELEMENTNAME:
-                        DEFAULT = ''
-                        CHOICES = ('',)
+                        DEFAULT = ""
+                        CHOICES = ("",)
 
                 class SIMP_BSPFIELDMATERIALS:
-
                     class PART_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                     class MATERIAL_MODEL:
-                        DEFAULT = 'NeoHookeanLnJ'
-                        CHOICES = ('LinearElastic',
-                                   'NeoHookean',
-                                   'NeoHookeanLnJ',
-                                   'MooneyRivlin',
-                                   'Yeoh',
-                                   'Gent',
-                                   'ArrudaBoyce',
-                                   'Ogden')
+                        DEFAULT = "NeoHookeanLnJ"
+                        CHOICES = (
+                            "LinearElastic",
+                            "NeoHookean",
+                            "NeoHookeanLnJ",
+                            "MooneyRivlin",
+                            "Yeoh",
+                            "Gent",
+                            "ArrudaBoyce",
+                            "Ogden",
+                        )
 
                     class MUMAX:
                         DEFAULT = 10.0
@@ -666,13 +638,11 @@ class _Constants:
                         DEFAULT = 8
 
                     class ELEMENTNAME:
-                        DEFAULT = ''
-                        CHOICES = ('',)
+                        DEFAULT = ""
+                        CHOICES = ("",)
 
             class PARTS:
-
                 class BOUNDARYPART:
-
                     class FEA_SEED_SIZE:
                         DEFAULT = 2.5
                         MIN = 0.001
@@ -682,27 +652,23 @@ class _Constants:
                         CHOICES = (1, 2)
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = 'surface_0_All'
+                        DEFAULT = "surface_0_All"
 
                 class INPPART:
-
                     class MESH_FILE:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class INP_PART_NAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = ''
-
+                        DEFAULT = ""
 
                 class BASEPART:
-
                     class EXTERIOR_SURFACE:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
                 class BOXPART:
-
                     class LENGTH:
                         DEFAULT = 40.0
                         MIN = 0.001
@@ -724,10 +690,9 @@ class _Constants:
                         CHOICES = (1, 2)
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = 'extern'
+                        DEFAULT = "extern"
 
                 class CADPART:
-
                     class MESH_SIZE:
                         DEFAULT = 2.0
                         MIN = 0.001
@@ -737,10 +702,9 @@ class _Constants:
                         CHOICES = (1, 2)
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = 'extern'
+                        DEFAULT = "extern"
 
                 class OFFSETBOUNDARYPART:
-
                     class FEA_SEED_SIZE:
                         DEFAULT = 2.5
                         MIN = 0.001
@@ -750,7 +714,7 @@ class _Constants:
                         CHOICES = (1, 2)
 
                     class EXTERIOR_SURFACE:
-                        DEFAULT = 'surface_0_All'
+                        DEFAULT = "surface_0_All"
 
                     class SHELL_THICKNESS:
                         DEFAULT = 0.5
@@ -761,30 +725,26 @@ class _Constants:
                         MIN = 1
 
             class SURFACE_CONSTRAINTS:
-
                 class BSPMIRROR:
-
                     class PLANE:
-                        DEFAULT = 'xz'
-                        CHOICES = ('xz', 'xy')
+                        DEFAULT = "xz"
+                        CHOICES = ("xz", "xy")
 
                     class OFFSET:
                         DEFAULT = 0.0
 
                 class CPGEOMIRROR:
-
                     class PLANE:
-                        DEFAULT = 'xz'
-                        CHOICES = ('xy', 'xz', 'yz')
+                        DEFAULT = "xz"
+                        CHOICES = ("xy", "xz", "yz")
 
                     class OFFSET:
                         DEFAULT = 0.0
 
                 class CPGEOROTATION:
-
                     class AXIS:
-                        DEFAULT = 'z'
-                        CHOICES = ('x', 'y', 'z')
+                        DEFAULT = "z"
+                        CHOICES = ("x", "y", "z")
 
                     class ORDER:
                         DEFAULT = 2
@@ -794,41 +754,32 @@ class _Constants:
                         DEFAULT = (0.0, 0.0, 0.0)
 
                 class BSPRELATION:
-
                     class POSE:
                         DEFAULT = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
                 class CPGEORELATION:
-
                     class POSE:
                         DEFAULT = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
                 class CUSTOM:
-
                     class CODE:
-                        DEFAULT = ''
+                        DEFAULT = ""
 
             class UPDATER_OBJECTIVES:
-
                 class SENSITIVITY:
-
                     class NORMALIZE_GRADIENT:
                         DEFAULT = False
 
                 class DENSITYFIELDMINIMIZE:
-
                     class SCALE:
                         DEFAULT = 1e-07
 
             class UPDATER_CONSTRAINTS:
-
                 class DISTANCE:
-
                     class MIN_DISTANCE:
                         DEFAULT = ((2.5, 2.5), (2.5, 2.5))
 
                 class CYLINDER:
-
                     class RADIUS:
                         DEFAULT = 10.0
 
@@ -839,12 +790,10 @@ class _Constants:
                         DEFAULT = 0.0
 
                 class MINRADIUS:
-
                     class RADIUS:
                         DEFAULT = 2.0
 
                 class VOLUMEMAXIMIZATION:
-
                     class SURF_IDX:
                         DEFAULT = 1
                         MIN = 1
@@ -853,7 +802,6 @@ class _Constants:
                         DEFAULT = 0.01
 
                 class INWARDCURVATURERADIUS:
-
                     class MARGIN:
                         DEFAULT = 0.4
 
@@ -868,12 +816,10 @@ class _Constants:
                         DEFAULT = 1000.0
 
                 class OFFSETSURFACEMINTHICKNESS:
-
                     class MIN_DISTANCE:
                         DEFAULT = 2.0
 
                 class VOLFRAC:
-
                     class VOLFRAC_MIN:
                         DEFAULT = 0.0
 
@@ -884,11 +830,10 @@ class _Constants:
                         DEFAULT = 10000.0
 
                     class ELEMENTNAME:
-                        DEFAULT = ''
+                        DEFAULT = ""
                         CHOICES = ()
 
                 class MINVALUE:
-
                     class XMIN:
                         DEFAULT = -15.0
 
@@ -900,7 +845,6 @@ class _Constants:
                         MIN = 1
 
                 class MAXVALUE:
-
                     class XMAX:
                         DEFAULT = 15.0
 
@@ -910,6 +854,7 @@ class _Constants:
                     class P:
                         DEFAULT = 2
                         MIN = 1
+
         class MATERIAL_MODEL_DEFAULTS:
             E = 1.0
             NU = 0.45
@@ -1081,6 +1026,7 @@ class _Constants:
             INSTANCE_COLORS = ("#2878b5", "#edb120", "#af52cd", "#f15854", "#779548")
             SIMP_WINDOW_SIZE = (1400, 1000)
             SIMP_DENSITY_THRESHOLD_RATIO = 0.5
+
             class SIMP_DENSITY_HISTOGRAM:
                 FIGURE_SIZE = (8, 5)
                 BINS = 50
@@ -1088,6 +1034,7 @@ class _Constants:
                 BAR_OPACITY = 0.8
                 GRID_OPACITY = 0.4
                 DPI = 300
+
             BOUNDARY_OUTER_SURFACE_OPACITY = 0.6
             BOUNDARY_DIFFUSE = 0.8
             BOUNDARY_SPECULAR = 0.2

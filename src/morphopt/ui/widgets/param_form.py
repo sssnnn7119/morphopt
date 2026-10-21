@@ -1,26 +1,42 @@
 """Shared schema form for live node fields and updater parameter dictionaries."""
+
 from __future__ import annotations
-from ..theme import theme_manager
-from ..i18n import localized_message
+
 from collections.abc import Callable
+
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QComboBox, QCheckBox,
-    QPushButton, QHBoxLayout, QLabel, QPlainTextEdit,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QWidget,
 )
+
 from ..application.values import field_text, parse_field
-from ..i18n import tr
-from .values import combo_value, display_choice, DOF_LABELS
+from ..i18n import localized_message, tr
+from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_open_file
+from .values import DOF_LABELS, combo_value, display_choice
 
 
 class ParamForm(QWidget):
     """Render a schema and write directly to its bound source; no value copy."""
+
     changed = Signal(str)
 
     def __init__(
-        self, params: dict | None, fields, extra_choices=None, parent=None,
-        helper_names=(), *,
+        self,
+        params: dict | None,
+        fields,
+        extra_choices=None,
+        parent=None,
+        helper_names=(),
+        *,
         read: Callable[[str, object], object] | None = None,
         write: Callable[[str, object], bool | None] | None = None,
         choice_label: Callable[[str, object], str] = display_choice,
@@ -31,7 +47,11 @@ class ParamForm(QWidget):
         self._choice_label = choice_label
         if params is None:
             if read is None or write is None:
-                raise TypeError(localized_message("ui.errors.param_form.bind_a_parameter_dictionary_or_provide_both_field_callbacks"))
+                raise TypeError(
+                    localized_message(
+                        "ui.errors.param_form.bind_a_parameter_dictionary_or_provide_both_field_callbacks"
+                    )
+                )
             self._read, self._write = read, write
         else:
             self._read = read or params.get
@@ -44,21 +64,38 @@ class ParamForm(QWidget):
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._form.setVerticalSpacing(6)
         builders = {
-            "bool": self._checkbox, "combo": self._combo, "file": self._path,
-            "dir": self._path, "dofs": self._dofs, "text": self._text, "code": self._text,
+            "bool": self._checkbox,
+            "combo": self._combo,
+            "file": self._path,
+            "dir": self._path,
+            "dofs": self._dofs,
+            "text": self._text,
+            "code": self._text,
         }
         for spec in self.specs:
             key = spec.key
             value = self._read(key, spec.new_default())
-            choices = list(dict.fromkeys([*(spec.choices or []), *((extra_choices or {}).get(key) or [])]))
+            choices = list(
+                dict.fromkeys(
+                    [*(spec.choices or []), *((extra_choices or {}).get(key) or [])]
+                )
+            )
             if spec.type == "combo" and spec.default == "" and "" not in choices:
                 choices.insert(0, "")
             widget = builders.get(spec.type, self._line)(spec, value, choices)
             label = QLabel(tr(spec.label_key))
             help_text = tr(spec.doc_key) if spec.doc_key else ""
-            label.setToolTip("\n".join(filter(None, (
-                tr("ui.common.parameter_key", parameter=key), help_text,
-            ))))
+            label.setToolTip(
+                "\n".join(
+                    filter(
+                        None,
+                        (
+                            tr("ui.common.parameter_key", parameter=key),
+                            help_text,
+                        ),
+                    )
+                )
+            )
             widget.setToolTip(label.toolTip())
             self._form.addRow(label, widget)
 
@@ -69,11 +106,15 @@ class ParamForm(QWidget):
             key = spec.key
             combo = self.controls[key]
             current = self._read(key, spec.new_default())
-            items = list(dict.fromkeys([*(spec.choices or []), *(choices.get(key) or [])]))
+            items = list(
+                dict.fromkeys([*(spec.choices or []), *(choices.get(key) or [])])
+            )
             if spec.default == "" and "" not in items:
                 items.insert(0, "")
             labels = [self._choice_label(key, value) for value in items]
-            if [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count())] == list(zip(labels, items)):
+            if [
+                (combo.itemText(i), combo.itemData(i)) for i in range(combo.count())
+            ] == list(zip(labels, items)):
                 continue
             combo.blockSignals(True)
             try:
@@ -110,7 +151,9 @@ class ParamForm(QWidget):
         for spec in self.specs:
             key = spec.key
             control = self.controls[key]
-            if control.hasFocus() or any(child.hasFocus() for child in control.findChildren(QWidget)):
+            if control.hasFocus() or any(
+                child.hasFocus() for child in control.findChildren(QWidget)
+            ):
                 continue
             value = self._read(key, spec.new_default())
             if key in self.dof_groups:
@@ -139,7 +182,9 @@ class ParamForm(QWidget):
         key = spec.key
         edit = QLineEdit(field_text(value))
         edit.setReadOnly(bool(spec.read_only))
-        edit.editingFinished.connect(lambda: self._commit(key, parse_field(edit.text(), spec, self.helper_names)))
+        edit.editingFinished.connect(
+            lambda: self._commit(key, parse_field(edit.text(), spec, self.helper_names))
+        )
         self.controls[key] = edit
         return edit
 
@@ -163,14 +208,18 @@ class ParamForm(QWidget):
         if index < 0:
             combo.setEditText(field_text(value))
         combo.setEnabled(not spec.read_only)
-        combo.currentTextChanged.connect(lambda _text: self._commit(key, combo_value(combo)))
+        combo.currentTextChanged.connect(
+            lambda _text: self._commit(key, combo_value(combo))
+        )
         self.controls[key] = combo
         return combo
 
     def _text(self, spec, value, choices):
         key = spec.key
         edit = QPlainTextEdit(str(value or ""))
-        edit.setMinimumHeight(theme_manager.palette.layout.widgets.multiline_field_minimum_height)
+        edit.setMinimumHeight(
+            theme_manager.palette.layout.widgets.multiline_field_minimum_height
+        )
         edit.setReadOnly(bool(spec.read_only))
         edit.textChanged.connect(lambda: self._commit(key, edit.toPlainText()))
         self.controls[key] = edit
@@ -195,11 +244,13 @@ class ParamForm(QWidget):
     def _browse(self, key: str, kind: str, edit: QLineEdit) -> None:
         start = edit.text() or "."
         if kind == "dir":
-            path = choose_directory(self, tr('ui.widgets.editor.select_directory'), start)
+            path = choose_directory(
+                self, tr("ui.widgets.editor.select_directory"), start
+            )
         else:
             path = choose_open_file(
                 self,
-                tr('ui.widgets.editor.select_file'),
+                tr("ui.widgets.editor.select_file"),
                 start,
                 tr("ui.files.mesh_and_geometry"),
             )
@@ -217,10 +268,12 @@ class ParamForm(QWidget):
         for index in range(int(spec.size)):
             checkbox = QCheckBox(DOF_LABELS.get(index, str(index)))
             checkbox.setChecked(index in current)
-            checkbox.toggled.connect(lambda _checked: self._commit(
-                key,
-                [i for i, box in enumerate(boxes) if box.isChecked()],
-            ))
+            checkbox.toggled.connect(
+                lambda _checked: self._commit(
+                    key,
+                    [i for i, box in enumerate(boxes) if box.isChecked()],
+                )
+            )
             boxes.append(checkbox)
             layout.addWidget(checkbox)
         layout.addStretch(1)

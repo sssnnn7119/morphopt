@@ -1,20 +1,30 @@
 """Optimization task controls and live result browsing in the analysis workspace."""
 
 from __future__ import annotations
-from collections.abc import Callable
-from copy import deepcopy
 
 import os
+from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QListWidget, QStackedWidget, QSplitter, QMessageBox,
-    QDialog, QCheckBox, QPlainTextEdit,
+    QCheckBox,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSlider,
+    QSplitter,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from .theme import theme_manager
+from ..constants import CONSTANT
 from .application import (
     OptimizationRunSession,
     ResultSession,
@@ -23,18 +33,20 @@ from .application import (
     last_completed_iteration,
 )
 from .application.runs import RunProgress
-from ..constants import CONSTANT
 from .i18n import tr
+from .theme import theme_manager
+from .widgets.elided_label import ElidedLabel
 from .widgets.observation_pages import (
-    DeformationCasePage, MetricsPage, UpdatableStructurePage,
+    DeformationCasePage,
+    MetricsPage,
+    UpdatableStructurePage,
 )
 from .widgets.run_dialogs import ContinueDialog
-from .widgets.elided_label import ElidedLabel
-
 
 # ---------------------------------------------------------------------------
 # observer content (slider + left options + stacked pages)
 # ---------------------------------------------------------------------------
+
 
 class ObserverPanel(QWidget):
     """Embedded observer content, driven purely from the result folder."""
@@ -51,18 +63,24 @@ class ObserverPanel(QWidget):
 
         top = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
-        self.btn_prev.setFixedWidth(theme_manager.palette.layout.observer.step_button_width)
+        self.btn_prev.setFixedWidth(
+            theme_manager.palette.layout.observer.step_button_width
+        )
         self.btn_prev.clicked.connect(lambda: self._nudge(-1))
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setMinimum(1)
         self.slider.setMaximum(1)
         self.slider.valueChanged.connect(self._on_slider)
         self.btn_next = QPushButton("▶")
-        self.btn_next.setFixedWidth(theme_manager.palette.layout.observer.step_button_width)
+        self.btn_next.setFixedWidth(
+            theme_manager.palette.layout.observer.step_button_width
+        )
         self.btn_next.clicked.connect(lambda: self._nudge(1))
         self.iter_label = QLabel("0 / 0")
-        self.iter_label.setMinimumWidth(theme_manager.palette.layout.observer.iteration_label_minimum_width)
-        self.chk_follow = QCheckBox(tr('ui.observe_panel.follow_latest'))
+        self.iter_label.setMinimumWidth(
+            theme_manager.palette.layout.observer.iteration_label_minimum_width
+        )
+        self.chk_follow = QCheckBox(tr("ui.observe_panel.follow_latest"))
         self.chk_follow.setChecked(True)
         self.chk_follow.toggled.connect(self._on_follow)
         top.addWidget(self.btn_prev)
@@ -74,9 +92,11 @@ class ObserverPanel(QWidget):
 
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
-        self.options.setFixedWidth(theme_manager.palette.layout.observer.option_panel_width)
-        self.options.addItem(tr('ui.observe_panel.metrics'))
-        self.options.addItem(tr('ui.observe_panel.updatable_structures'))
+        self.options.setFixedWidth(
+            theme_manager.palette.layout.observer.option_panel_width
+        )
+        self.options.addItem(tr("ui.observe_panel.metrics"))
+        self.options.addItem(tr("ui.observe_panel.updatable_structures"))
         self.options.currentRowChanged.connect(self._on_option)
         split.addWidget(self.options)
 
@@ -171,14 +191,16 @@ class ObserverPanel(QWidget):
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the panel's static texts."""
-        self.chk_follow.setText(tr('ui.observe_panel.follow_latest'))
-        self.options.item(0).setText(tr('ui.observe_panel.metrics'))
-        self.options.item(1).setText(tr('ui.observe_panel.updatable_structures'))
+        self.chk_follow.setText(tr("ui.observe_panel.follow_latest"))
+        self.options.item(0).setText(tr("ui.observe_panel.metrics"))
+        self.options.item(1).setText(tr("ui.observe_panel.updatable_structures"))
         self._metrics_page.apply_language()
         self._updatable_structure_page.apply_language()
         for row, case in enumerate(list(self._case_pages.keys())):
             if self.options.count() > row + 2:
-                self.options.item(row + 2).setText(tr("ui.observe_panel.case_value", case=case))
+                self.options.item(row + 2).setText(
+                    tr("ui.observe_panel.case_value", case=case)
+                )
         row = self.options.currentRow()
         if row == 1:
             self._refresh_updatable_structure()
@@ -205,13 +227,13 @@ class ObserverPanel(QWidget):
         if self.options.currentRow() == 1:
             self._refresh_updatable_structure()
         elif self.options.currentRow() >= 2:
-            self._refresh_case(self.options.currentItem().data(Qt.ItemDataRole.UserRole))
+            self._refresh_case(
+                self.options.currentItem().data(Qt.ItemDataRole.UserRole)
+            )
 
     def _refresh_updatable_structure(self) -> None:
         if self.isVisible() and self.path_result and self._results.params is not None:
-            self._updatable_structure_page.build(
-                self._results, self.slider.value()
-            )
+            self._updatable_structure_page.build(self._results, self.slider.value())
 
     def _refresh_case(self, case: int) -> None:
         page = self._case_pages.get(case)
@@ -232,7 +254,9 @@ class ObserverPanel(QWidget):
             if row == 1:
                 self._refresh_updatable_structure()
             elif row >= 2:
-                self._refresh_case(self.options.item(row).data(Qt.ItemDataRole.UserRole))
+                self._refresh_case(
+                    self.options.item(row).data(Qt.ItemDataRole.UserRole)
+                )
         if self.path_result and self.iteration > 0:
             self.selectionChanged.emit(self.path_result, value)
 
@@ -243,12 +267,15 @@ class ObserverPanel(QWidget):
             self._case_pages[case] = DeformationCasePage(case)
             self.stack.addWidget(self._case_pages[case])
             self.options.addItem(tr("ui.observe_panel.case_value", case=case))
-            self.options.item(self.options.count() - 1).setData(Qt.ItemDataRole.UserRole, case)
+            self.options.item(self.options.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, case
+            )
 
 
 # ---------------------------------------------------------------------------
 # observer page: polling and job control
 # ---------------------------------------------------------------------------
+
 
 class ObserverControls(QWidget):
     """Run the task selected by the definition page or File menu."""
@@ -272,14 +299,16 @@ class ObserverControls(QWidget):
         self.status = ElidedLabel()
         self.status.setProperty("textRole", "muted")
         bar.addWidget(self.status, 1)
-        self.btn_start = QPushButton(tr('ui.observe_panel.start'))
+        self.btn_start = QPushButton(tr("ui.observe_panel.start"))
         self.btn_start.setProperty("actionRole", "primary")
-        self.btn_start.setToolTip(tr('ui.observe_panel.start_hint'))
+        self.btn_start.setToolTip(tr("ui.observe_panel.start_hint"))
         self.btn_start.clicked.connect(self._start)
         bar.addWidget(self.btn_start)
-        self.btn_stop = QPushButton(tr('ui.observe_panel.stop'))
+        self.btn_stop = QPushButton(tr("ui.observe_panel.stop"))
         self.btn_stop.setProperty("actionRole", "danger")
-        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
+        self.btn_stop.setToolTip(
+            tr("ui.observe_panel.stop_and_keep_result_for_continuation")
+        )
         self.btn_stop.clicked.connect(self._stop)
         bar.addWidget(self.btn_stop)
         outer.addWidget(self.task_controls)
@@ -292,10 +321,10 @@ class ObserverControls(QWidget):
         output_layout = QVBoxLayout(output_area)
         output_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         output_header = QHBoxLayout()
-        self.output_label = QLabel(tr('ui.observe_panel.run_output'))
+        self.output_label = QLabel(tr("ui.observe_panel.run_output"))
         output_header.addWidget(self.output_label)
         output_header.addStretch(1)
-        self.btn_clear_output = QPushButton(tr('ui.observe_panel.clear'))
+        self.btn_clear_output = QPushButton(tr("ui.observe_panel.clear"))
         self.btn_clear_output.clicked.connect(self._clear_output)
         output_header.addWidget(self.btn_clear_output)
         output_layout.addLayout(output_header)
@@ -305,13 +334,21 @@ class ObserverControls(QWidget):
         self.output_view.setMaximumBlockCount(
             CONSTANT.UI.OBSERVER.OUTPUT_MAXIMUM_BLOCKS
         )
-        self.output_view.setPlaceholderText(tr('ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here'))
+        self.output_view.setPlaceholderText(
+            tr(
+                "ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here"
+            )
+        )
         output_layout.addWidget(self.output_view, 1)
         content.addWidget(output_area)
-        stretch = deepcopy(theme_manager.palette.layout.observer.content_stretch_factors)
+        stretch = deepcopy(
+            theme_manager.palette.layout.observer.content_stretch_factors
+        )
         content.setStretchFactor(0, stretch[0])
         content.setStretchFactor(1, stretch[1])
-        content.setSizes(list(theme_manager.palette.layout.observer.content_split_sizes))
+        content.setSizes(
+            list(theme_manager.palette.layout.observer.content_split_sizes)
+        )
         outer.addWidget(content, 1)
 
         self._timer = QTimer(self)
@@ -352,9 +389,13 @@ class ObserverControls(QWidget):
 
     def open_result(self, folder: str) -> None:
         """Browse a saved result and prepare continuation without starting a worker."""
-        self._run.select_source(RunSource(
-            RunSourceKind.CONTINUE, path=folder, label=Path(folder).name,
-        ))
+        self._run.select_source(
+            RunSource(
+                RunSourceKind.CONTINUE,
+                path=folder,
+                label=Path(folder).name,
+            )
+        )
         self.task_label = Path(folder).name
         self._clear_output()
         self.panel.reset()
@@ -371,7 +412,7 @@ class ObserverControls(QWidget):
             return
         if self._run.active:
             return  # running-status lines are set by the run methods
-        self.status.setText(tr('ui.observe_panel.no_task'))
+        self.status.setText(tr("ui.observe_panel.no_task"))
 
     def _start(self) -> bool:
         if self._run.active:
@@ -381,48 +422,72 @@ class ObserverControls(QWidget):
             return False
         target = None
         if source.kind is RunSourceKind.CONTINUE:
-            dialog = ContinueDialog(max_step=last_completed_iteration(source.path), parent=self)
+            dialog = ContinueDialog(
+                max_step=last_completed_iteration(source.path), parent=self
+            )
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return False
             target = dialog.target_iteration()
         return self._launch(source, lambda: self._run.start_selected(target), target)
 
     def _launch(
-        self, source: RunSource, launch: Callable[[], object], target: int | None = None,
+        self,
+        source: RunSource,
+        launch: Callable[[], object],
+        target: int | None = None,
     ) -> bool:
         try:
             launch()
         except Exception as exc:
-            key = 'ui.observe_panel.continue_failed' if source.kind is RunSourceKind.CONTINUE else 'ui.observe_panel.launch_failed'
+            key = (
+                "ui.observe_panel.continue_failed"
+                if source.kind is RunSourceKind.CONTINUE
+                else "ui.observe_panel.launch_failed"
+            )
             QMessageBox.warning(self, tr(key), str(exc))
             return False
         self.output_view.clear()
         self._run.stream_output(self.outputReceived.emit)
         if source.kind is RunSourceKind.CONTINUE:
-            self.status.setText(tr(
-                'ui.observe_panel.continuing_optimization_from_step_value',
-                value_0=target or last_completed_iteration(source.path),
-            ))
+            self.status.setText(
+                tr(
+                    "ui.observe_panel.continuing_optimization_from_step_value",
+                    value_0=target or last_completed_iteration(source.path),
+                )
+            )
         elif source.kind is RunSourceKind.DEFINITION:
-            self.status.setText(tr('ui.observe_panel.starting_optimization_from_scratch_waiting_for_the_first_step'))
+            self.status.setText(
+                tr(
+                    "ui.observe_panel.starting_optimization_from_scratch_waiting_for_the_first_step"
+                )
+            )
         else:
-            self.status.setText(tr(
-                'ui.observe_panel.optimizing_from_value_waiting_for_the_first_step',
-                value_0=os.path.basename(source.path),
-            ))
+            self.status.setText(
+                tr(
+                    "ui.observe_panel.optimizing_from_value_waiting_for_the_first_step",
+                    value_0=os.path.basename(source.path),
+                )
+            )
         self._timer.start()
         self._update_buttons()
         return True
 
     def _stop(self) -> None:
         self._stop_job()
-        if self._run.source is not None and self._run.source.kind is RunSourceKind.CONTINUE:
-            self.status.setText(tr(
-                'ui.observe_panel.optimization_paused_at_step',
-                iteration=self._run.last_iteration,
-            ))
+        if (
+            self._run.source is not None
+            and self._run.source.kind is RunSourceKind.CONTINUE
+        ):
+            self.status.setText(
+                tr(
+                    "ui.observe_panel.optimization_paused_at_step",
+                    iteration=self._run.last_iteration,
+                )
+            )
         else:
-            self.status.setText(tr('ui.observe_panel.optimization_stopped_without_checkpoint'))
+            self.status.setText(
+                tr("ui.observe_panel.optimization_stopped_without_checkpoint")
+            )
         self._update_buttons()
 
     def _stop_job(self) -> None:
@@ -450,18 +515,25 @@ class ObserverControls(QWidget):
         self._show_progress(progress)
         if progress.finished:
             self._timer.stop()
-            if progress.iteration > 0 and self._run.folder and self._run.is_result_folder(self._run.folder):
+            if (
+                progress.iteration > 0
+                and self._run.folder
+                and self._run.is_result_folder(self._run.folder)
+            ):
                 self._run.source = RunSource(
-                    RunSourceKind.CONTINUE, path=self._run.folder,
+                    RunSourceKind.CONTINUE,
+                    path=self._run.folder,
                     label=Path(self._run.folder).name,
                 )
-            self.status.setText(tr('ui.observe_panel.optimization_finished'))
+            self.status.setText(tr("ui.observe_panel.optimization_finished"))
             self._update_buttons()
         elif progress.changed and progress.iteration:
-            self.status.setText(tr(
-                'ui.observe_panel.optimization_running_step_value_completed',
-                value_0=progress.iteration,
-            ))
+            self.status.setText(
+                tr(
+                    "ui.observe_panel.optimization_running_step_value_completed",
+                    value_0=progress.iteration,
+                )
+            )
 
     def _show_progress(self, progress: RunProgress) -> None:
         if progress.folder is None:
@@ -469,7 +541,9 @@ class ObserverControls(QWidget):
         if self.panel.path_result != progress.folder:
             self.resultFolderChanged.emit(progress.folder)
             self.panel.ensure_loaded(progress.folder)
-        if progress.iteration >= 1 and (progress.changed or self.panel.iteration != progress.iteration):
+        if progress.iteration >= 1 and (
+            progress.changed or self.panel.iteration != progress.iteration
+        ):
             self.panel.show_iteration(progress.folder, progress.iteration)
 
     def _update_buttons(self) -> None:
@@ -478,39 +552,55 @@ class ObserverControls(QWidget):
         self.btn_stop.setEnabled(running)
         self.btn_stop.setVisible(running)
         if src is None or src.kind is RunSourceKind.CONTINUE:
-            self.btn_start.setText(tr('ui.observe_panel.continue'))
+            self.btn_start.setText(tr("ui.observe_panel.continue"))
         else:
-            self.btn_start.setText(tr('ui.observe_panel.start'))
+            self.btn_start.setText(tr("ui.observe_panel.start"))
         self.btn_start.setEnabled(not running and src is not None)
         self.btn_start.setVisible(not running)
-        self.btn_start.setToolTip(tr(
-            'ui.observe_panel.continue_unavailable_hint'
-            if src is None else 'ui.observe_panel.start_hint'
-        ))
+        self.btn_start.setToolTip(
+            tr(
+                "ui.observe_panel.continue_unavailable_hint"
+                if src is None
+                else "ui.observe_panel.start_hint"
+            )
+        )
         self.runStateChanged.emit()
 
     @staticmethod
     def _source_status(source: RunSource) -> str:
         if source.kind is RunSourceKind.DEFINITION:
-            return tr('ui.observe_panel.current_task_fresh_run_definition_value', value_0=source.label)
+            return tr(
+                "ui.observe_panel.current_task_fresh_run_definition_value",
+                value_0=source.label,
+            )
         if source.kind is RunSourceKind.PYTHON:
             filename = os.path.basename(source.path)
-            return tr('ui.observe_panel.current_task_fresh_run_script_value', value_0=filename)
-        return tr('ui.observe_panel.current_task_continue_result_value', value_0=source.label)
+            return tr(
+                "ui.observe_panel.current_task_fresh_run_script_value", value_0=filename
+            )
+        return tr(
+            "ui.observe_panel.current_task_continue_result_value", value_0=source.label
+        )
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the observer's static texts."""
-        self.btn_start.setToolTip(tr('ui.observe_panel.start_hint'))
-        self.btn_stop.setText(tr('ui.observe_panel.stop'))
-        self.btn_stop.setToolTip(tr('ui.observe_panel.stop_and_keep_result_for_continuation'))
-        self.output_label.setText(tr('ui.observe_panel.run_output'))
-        self.btn_clear_output.setText(tr('ui.observe_panel.clear'))
-        self.output_view.setPlaceholderText(tr('ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here'))
+        self.btn_start.setToolTip(tr("ui.observe_panel.start_hint"))
+        self.btn_stop.setText(tr("ui.observe_panel.stop"))
+        self.btn_stop.setToolTip(
+            tr("ui.observe_panel.stop_and_keep_result_for_continuation")
+        )
+        self.output_label.setText(tr("ui.observe_panel.run_output"))
+        self.btn_clear_output.setText(tr("ui.observe_panel.clear"))
+        self.output_view.setPlaceholderText(
+            tr(
+                "ui.observe_panel.standard_output_and_errors_from_optimization_tasks_appear_here"
+            )
+        )
         self.panel.apply_language()
         self._update_buttons()
         if self._run.active:
-            self.status.setText(tr('ui.observe_panel.optimization_running'))
+            self.status.setText(tr("ui.observe_panel.optimization_running"))
         else:
             self._refresh_status()
 

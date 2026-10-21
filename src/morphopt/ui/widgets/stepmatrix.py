@@ -4,27 +4,27 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..theme import theme_manager
-from ..model.problem import StepsNode, ProblemDefinition
+from ...constants import CONSTANT
 from ..application.editing import LoadCaseSession
 from ..i18n import tr
-from ..refresh import RefreshContext
+from ..model.problem import ProblemDefinition, StepsNode
 from ..presentation.labels import component_title_text
-from ...constants import CONSTANT
+from ..refresh import RefreshContext
+from ..theme import theme_manager
 from .collection_controls import ActionButton, AddButton
 
 
 class StepMatrix(QWidget):
-    changed = Signal(object)   # steps Node
+    changed = Signal(object)  # steps Node
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,7 +32,7 @@ class StepMatrix(QWidget):
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         bar = QHBoxLayout()
-        bar.addWidget(QLabel(tr('ui.widgets.stepmatrix.load_steps')))
+        bar.addWidget(QLabel(tr("ui.widgets.stepmatrix.load_steps")))
         self._nspin = QSpinBox()
         self._nspin.setRange(
             CONSTANT.UI.WIDGETS.MINIMUM_LOAD_STEPS,
@@ -41,24 +41,34 @@ class StepMatrix(QWidget):
         self._nspin.valueChanged.connect(self._on_n_steps)
         bar.addWidget(self._nspin)
         bar.addStretch(1)
-        self._copy_button = ActionButton(tr('ui.widgets.stepmatrix.copy_selected_row'), self._copy_selected_row)
+        self._copy_button = ActionButton(
+            tr("ui.widgets.stepmatrix.copy_selected_row"), self._copy_selected_row
+        )
         bar.addWidget(self._copy_button)
         self._delete_button = ActionButton(
-            tr('ui.common.delete'), self._remove_selected_row, danger=True,
-            tooltip=tr('ui.widgets.stepmatrix.delete_selected_row'),
+            tr("ui.common.delete"),
+            self._remove_selected_row,
+            danger=True,
+            tooltip=tr("ui.widgets.stepmatrix.delete_selected_row"),
         )
         bar.addWidget(self._delete_button)
         self._add_button = AddButton(self._add_step)
-        self._add_button.setToolTip(tr('ui.widgets.stepmatrix.add_step'))
+        self._add_button.setToolTip(tr("ui.widgets.stepmatrix.add_step"))
         bar.addWidget(self._add_button)
         lay.addLayout(bar)
 
-        hint = QLabel(tr('ui.widgets.stepmatrix.amplitude_components_rows_steps_empty_cells_keep_the_previous_value_zero'))
+        hint = QLabel(
+            tr(
+                "ui.widgets.stepmatrix.amplitude_components_rows_steps_empty_cells_keep_the_previous_value_zero"
+            )
+        )
         hint.setProperty("textRole", "muted")
         lay.addWidget(hint)
 
         self._table = QTableWidget()
-        self._table.setMinimumHeight(theme_manager.palette.layout.widgets.load_step_table_minimum_height)
+        self._table.setMinimumHeight(
+            theme_manager.palette.layout.widgets.load_step_table_minimum_height
+        )
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self._table.cellChanged.connect(self._on_cell_changed)
@@ -90,11 +100,15 @@ class StepMatrix(QWidget):
         cols = self.session.columns()
         n = int(self._node.num_steps)
         signature = (
-            id(self._node), n,
+            id(self._node),
+            n,
             tuple(
                 (
-                    id(component), component.type, component.custom_class,
-                    component_index, caption,
+                    id(component),
+                    component.type,
+                    component.custom_class,
+                    component_index,
+                    caption,
                 )
                 for component, component_index, caption in cols
             ),
@@ -108,7 +122,9 @@ class StepMatrix(QWidget):
             self._table.setColumnCount(len(cols))
             self._table.setHorizontalHeaderLabels([h for _, _, h in cols])
             for column, (component, _component_index, _caption) in enumerate(cols):
-                self._table.horizontalHeaderItem(column).setToolTip(component_title_text(component))
+                self._table.horizontalHeaderItem(column).setToolTip(
+                    component_title_text(component)
+                )
             self._table.setRowCount(n)
         for s in range(n):
             for ci, (component, component_index, _header) in enumerate(cols):

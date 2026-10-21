@@ -1,42 +1,58 @@
 """Design-intent Quickstart dialog; detailed model editing stays in Workbench."""
+
 from __future__ import annotations
 
 from copy import deepcopy
 
 import numpy as np
-
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QListWidget, QListWidgetItem,
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..theme import theme_manager
+from ...constants import CONSTANT
+from ..codegen.generator import generate_source
 from ..application.quickstart import (
     GOALS,
-    QuickstartOptions,
-    build_quickstart,
     ObjectiveDraft,
+    QuickstartOptions,
     available_objectives,
+    build_quickstart,
     select_workspace_channels,
 )
-from ..model.chamberlayout import ChamberLayer
-from ..visualization.geometry import InitialDesignGeometry
-from ..application.definitions import ProblemSession
 from ..i18n import tr
+from ..model.chamberlayout import ChamberLayer
 from ..presentation.labels import quickstart_summary
-from ...constants import CONSTANT
+from ..theme import theme_manager
+from ..visualization.geometry import InitialDesignGeometry
 from .collection_controls import ActionButton, CollectionHeader, ItemActions
 from .file_dialogs import choose_directory
 
 
-
 class ChamberLayersEditor(QWidget):
     """Rows define serial layers; cavity count and arrangement define parallelism."""
+
     changed = Signal()
 
     def __init__(self, layers, parent=None):
@@ -46,22 +62,38 @@ class ChamberLayersEditor(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         header = CollectionHeader("", self._add)
         self.add_button = header.add_button
-        self.add_button.setToolTip(tr('ui.widgets.quickstart.add_layer'))
+        self.add_button.setToolTip(tr("ui.widgets.quickstart.add_layer"))
         self.row_actions = ItemActions(-1, 0, self._remove, self._move)
         header.actions.addWidget(self.row_actions)
         layout.addWidget(header)
-        hint = QLabel(tr('ui.widgets.quickstart.layers_run_from_base_to_tip_along_z_equal_channel_numbers_share_pressure'))
+        hint = QLabel(
+            tr(
+                "ui.widgets.quickstart.layers_run_from_base_to_tip_along_z_equal_channel_numbers_share_pressure"
+            )
+        )
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels([
-            tr('ui.widgets.quickstart.length_mm_30b65866'), tr('ui.widgets.quickstart.cavities'), tr('ui.widgets.quickstart.arrangement'),
-            tr('ui.widgets.quickstart.radius_mm'), tr('ui.widgets.quickstart.center_mm'), tr('ui.widgets.quickstart.shape'),
-            tr('ui.widgets.quickstart.phase'), tr('ui.widgets.quickstart.channels')])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setHorizontalHeaderLabels(
+            [
+                tr("ui.widgets.quickstart.length_mm_30b65866"),
+                tr("ui.widgets.quickstart.cavities"),
+                tr("ui.widgets.quickstart.arrangement"),
+                tr("ui.widgets.quickstart.radius_mm"),
+                tr("ui.widgets.quickstart.center_mm"),
+                tr("ui.widgets.quickstart.shape"),
+                tr("ui.widgets.quickstart.phase"),
+                tr("ui.widgets.quickstart.channels"),
+            ]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setMinimumHeight(theme_manager.palette.layout.quickstart.layer_table_minimum_height)
+        self.table.setMinimumHeight(
+            theme_manager.palette.layout.quickstart.layer_table_minimum_height
+        )
         self.table.cellChanged.connect(self._cell_changed)
         self.table.itemSelectionChanged.connect(self._update_actions)
         layout.addWidget(self.table)
@@ -73,15 +105,35 @@ class ChamberLayersEditor(QWidget):
         for layer in layers:
             row = self.table.rowCount()
             self.table.insertRow(row)
-            values = [f"{layer.length:g}", str(layer.chambers), layer.arrangement, f"{layer.radius:g}",
-                      f"{layer.center_radius:g}", layer.shape, f"{layer.phase_degrees:g}", ",".join(map(
-                          str,
-                          layer.pressure_channels,
-                      ))]
+            values = [
+                f"{layer.length:g}",
+                str(layer.chambers),
+                layer.arrangement,
+                f"{layer.radius:g}",
+                f"{layer.center_radius:g}",
+                layer.shape,
+                f"{layer.phase_degrees:g}",
+                ",".join(
+                    map(
+                        str,
+                        layer.pressure_channels,
+                    )
+                ),
+            ]
             for column, value in enumerate(values):
                 if column in (2, 5):
                     combo = QComboBox()
-                    choices = [("ring", tr('ui.widgets.quickstart.ring')), ("line", tr('ui.widgets.quickstart.line'))] if column == 2 else [("cylinder", tr('ui.widgets.quickstart.cylinder')), ("sphere", tr('ui.widgets.quickstart.sphere'))]
+                    choices = (
+                        [
+                            ("ring", tr("ui.widgets.quickstart.ring")),
+                            ("line", tr("ui.widgets.quickstart.line")),
+                        ]
+                        if column == 2
+                        else [
+                            ("cylinder", tr("ui.widgets.quickstart.cylinder")),
+                            ("sphere", tr("ui.widgets.quickstart.sphere")),
+                        ]
+                    )
                     for key, caption in choices:
                         combo.addItem(caption, key)
                     combo.setCurrentIndex(combo.findData(value))
@@ -94,20 +146,36 @@ class ChamberLayersEditor(QWidget):
 
     def _update_actions(self) -> None:
         count = self.table.rowCount()
-        self.row_actions.set_position(self.table.currentRow(), count, allow_remove=count > 1)
-        self.add_button.setEnabled(count < CONSTANT.UI.QUICKSTART.LIMITS.LAYER_MAX_COUNT)
+        self.row_actions.set_position(
+            self.table.currentRow(), count, allow_remove=count > 1
+        )
+        self.add_button.setEnabled(
+            count < CONSTANT.UI.QUICKSTART.LIMITS.LAYER_MAX_COUNT
+        )
 
     def layers(self):
         layers = []
         try:
             for row in range(self.table.rowCount()):
                 value = lambda column: self.table.item(row, column).text().strip()
-                layers.append(ChamberLayer(length=float(value(0)), chambers=int(value(1)),
-                    arrangement=self.table.cellWidget(row, 2).currentData(), radius=float(value(3)),
-                    center_radius=float(value(4)), shape=self.table.cellWidget(row, 5).currentData(),
-                    phase_degrees=float(value(6)), pressure_channels=[int(c.strip()) for c in value(7).split(",")]))
+                layers.append(
+                    ChamberLayer(
+                        length=float(value(0)),
+                        chambers=int(value(1)),
+                        arrangement=self.table.cellWidget(row, 2).currentData(),
+                        radius=float(value(3)),
+                        center_radius=float(value(4)),
+                        shape=self.table.cellWidget(row, 5).currentData(),
+                        phase_degrees=float(value(6)),
+                        pressure_channels=[int(c.strip()) for c in value(7).split(",")],
+                    )
+                )
         except ValueError as exc:
-            raise ValueError(tr('ui.widgets.quickstart.enter_valid_layer_parameters_separate_channel_numbers_with_commas')) from exc
+            raise ValueError(
+                tr(
+                    "ui.widgets.quickstart.enter_valid_layer_parameters_separate_channel_numbers_with_commas"
+                )
+            ) from exc
         return layers
 
     def _cell_changed(self, row, column):
@@ -125,7 +193,9 @@ class ChamberLayersEditor(QWidget):
                 and 1 <= count <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT
             ):
                 self._loading = True
-                self.table.item(row, 7).setText(",".join(str(c) for c in range(1, count+1)))
+                self.table.item(row, 7).setText(
+                    ",".join(str(c) for c in range(1, count + 1))
+                )
                 self._loading = False
         self.changed.emit()
 
@@ -146,13 +216,13 @@ class ChamberLayersEditor(QWidget):
     def _remove(self):
         if self.table.rowCount() > 1:
             row = self.table.currentRow()
-            self.table.removeRow(row if row >= 0 else self.table.rowCount()-1)
+            self.table.removeRow(row if row >= 0 else self.table.rowCount() - 1)
             self._update_actions()
             self.changed.emit()
 
     def _move(self, delta):
         row = self.table.currentRow()
-        target = row+delta
+        target = row + delta
         if row < 0 or not 0 <= target < self.table.rowCount():
             return
         try:
@@ -168,6 +238,7 @@ class ChamberLayersEditor(QWidget):
 
 class WorkspaceChannelSelector(QWidget):
     """Select independent pressure channels and show the cavities they drive."""
+
     changed = Signal()
 
     def __init__(self, parent=None):
@@ -199,11 +270,13 @@ class WorkspaceChannelSelector(QWidget):
         self.list.clear()
         for channel in available:
             cavities = ", ".join(map(str, members[channel]))
-            item = QListWidgetItem(tr(
-                'ui.widgets.quickstart.channel_value_chambers_value',
-                value_0=channel,
-                value_1=cavities,
-            ))
+            item = QListWidgetItem(
+                tr(
+                    "ui.widgets.quickstart.channel_value_chambers_value",
+                    value_0=channel,
+                    value_1=cavities,
+                )
+            )
             item.setData(Qt.ItemDataRole.UserRole, channel)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
@@ -211,12 +284,18 @@ class WorkspaceChannelSelector(QWidget):
             )
             self.list.addItem(item)
         if required is None:
-            self.hint.setText(tr('ui.widgets.quickstart.chambers_on_the_same_pressure_channel_move_together'))
+            self.hint.setText(
+                tr(
+                    "ui.widgets.quickstart.chambers_on_the_same_pressure_channel_move_together"
+                )
+            )
         else:
-            self.hint.setText(tr(
-                'ui.widgets.quickstart.select_value_independent_inputs_chambers_on_one_channel_move_together',
-                value_0=required,
-            ))
+            self.hint.setText(
+                tr(
+                    "ui.widgets.quickstart.select_value_independent_inputs_chambers_on_one_channel_move_together",
+                    value_0=required,
+                )
+            )
         self._updating = False
 
     def selected_channels(self):
@@ -229,9 +308,11 @@ class WorkspaceChannelSelector(QWidget):
     def _item_changed(self, item):
         if self._updating:
             return
-        if (self._required is not None
-                and item.checkState() == Qt.CheckState.Checked
-                and len(self.selected_channels()) > self._required):
+        if (
+            self._required is not None
+            and item.checkState() == Qt.CheckState.Checked
+            and len(self.selected_channels()) > self._required
+        ):
             self._updating = True
             item.setCheckState(Qt.CheckState.Unchecked)
             self._updating = False
@@ -241,6 +322,7 @@ class WorkspaceChannelSelector(QWidget):
 
 class ChannelPressureEditor(QWidget):
     """Edit one explicit pressure value per independent geometry channel."""
+
     changed = Signal()
 
     def __init__(self, parent=None):
@@ -269,11 +351,13 @@ class ChannelPressureEditor(QWidget):
             spin.valueChanged.connect(self._value_changed)
             self.fields[channel] = spin
             self.form.addRow(
-                QLabel(tr(
-                    'ui.widgets.quickstart.channel_value_chambers_value',
-                    value_0=channel,
-                    value_1=cavities,
-                )),
+                QLabel(
+                    tr(
+                        "ui.widgets.quickstart.channel_value_chambers_value",
+                        value_0=channel,
+                        value_1=cavities,
+                    )
+                ),
                 spin,
             )
         self._updating = False
@@ -288,6 +372,7 @@ class ChannelPressureEditor(QWidget):
 
 class ObjectiveListEditor(QWidget):
     """Multi-objective editor with a load condition attached to each term."""
+
     changed = Signal()
 
     def __init__(self, objectives, method, channel_members, parent=None):
@@ -300,16 +385,22 @@ class ObjectiveListEditor(QWidget):
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         header = CollectionHeader("", self._add)
         self.add_button = header.add_button
-        self.add_button.setToolTip(tr('ui.widgets.quickstart.add_objective'))
+        self.add_button.setToolTip(tr("ui.widgets.quickstart.add_objective"))
         self.remove_button = ActionButton(
-            tr('ui.common.delete'), self._remove, danger=True,
-            tooltip=tr('ui.widgets.quickstart.remove_objective'),
+            tr("ui.common.delete"),
+            self._remove,
+            danger=True,
+            tooltip=tr("ui.widgets.quickstart.remove_objective"),
         )
         header.actions.addWidget(self.remove_button)
         outer.addWidget(header)
         self.list = QListWidget()
-        self.list.setMinimumHeight(theme_manager.palette.layout.quickstart.objective_list_minimum_height)
-        self.list.setMaximumHeight(theme_manager.palette.layout.quickstart.objective_list_maximum_height)
+        self.list.setMinimumHeight(
+            theme_manager.palette.layout.quickstart.objective_list_minimum_height
+        )
+        self.list.setMaximumHeight(
+            theme_manager.palette.layout.quickstart.objective_list_maximum_height
+        )
         self.list.currentRowChanged.connect(self._selection_changed)
         outer.addWidget(self.list)
 
@@ -318,7 +409,9 @@ class ObjectiveListEditor(QWidget):
         outer.addWidget(self.detail)
         self.kind = QComboBox()
         self.weight = QDoubleSpinBox()
-        self.weight.setRange(0.0, CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_WEIGHT_MAXIMUM)
+        self.weight.setRange(
+            0.0, CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_WEIGHT_MAXIMUM
+        )
         self.weight.setDecimals(CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_WEIGHT_DECIMALS)
         self.weight.setValue(CONSTANT.UI.QUICKSTART.DEFAULT.OBJECTIVE_WEIGHT)
         self.target = QDoubleSpinBox()
@@ -329,7 +422,8 @@ class ObjectiveListEditor(QWidget):
         self.target.setDecimals(CONSTANT.UI.QUICKSTART.WIDGET.OBJECTIVE_TARGET_DECIMALS)
         self.force = QDoubleSpinBox()
         self.force.setRange(
-            CONSTANT.UI.QUICKSTART.WIDGET.FORCE_MINIMUM, CONSTANT.UI.QUICKSTART.WIDGET.FORCE_MAXIMUM
+            CONSTANT.UI.QUICKSTART.WIDGET.FORCE_MINIMUM,
+            CONSTANT.UI.QUICKSTART.WIDGET.FORCE_MAXIMUM,
         )
         self.force.setDecimals(CONSTANT.UI.QUICKSTART.WIDGET.FORCE_DECIMALS)
         self.workspace_pressure = QDoubleSpinBox()
@@ -350,31 +444,43 @@ class ObjectiveListEditor(QWidget):
         )
         self.pressures = ChannelPressureEditor()
         self.workspace_inputs = WorkspaceChannelSelector()
-        self.kind_caption = self._add_row("kind", tr('ui.widgets.quickstart.objective_type'), self.kind)
-        self.weight_caption = self._add_row("weight", tr('ui.widgets.quickstart.weight'), self.weight)
-        self.target_caption = self._add_row("target", tr('ui.widgets.quickstart.target'), self.target)
-        self.force_caption = self._add_row("force", tr('ui.widgets.quickstart.load_z_n'), self.force)
+        self.kind_caption = self._add_row(
+            "kind", tr("ui.widgets.quickstart.objective_type"), self.kind
+        )
+        self.weight_caption = self._add_row(
+            "weight", tr("ui.widgets.quickstart.weight"), self.weight
+        )
+        self.target_caption = self._add_row(
+            "target", tr("ui.widgets.quickstart.target"), self.target
+        )
+        self.force_caption = self._add_row(
+            "force", tr("ui.widgets.quickstart.load_z_n"), self.force
+        )
         self.pressure_caption = self._add_row(
             "pressures",
-            tr('ui.widgets.quickstart.pressure_load_case'),
+            tr("ui.widgets.quickstart.pressure_load_case"),
             self.pressures,
         )
         self.workspace_caption = self._add_row(
             "workspace_channels",
-            tr('ui.widgets.quickstart.workspace_drives'),
+            tr("ui.widgets.quickstart.workspace_drives"),
             self.workspace_inputs,
         )
         self.workspace_pressure_caption = self._add_row(
             "workspace_pressure",
-            tr('ui.widgets.quickstart.workspace_max_pressure_kpa'),
+            tr("ui.widgets.quickstart.workspace_max_pressure_kpa"),
             self.workspace_pressure,
         )
         self.workspace_order_caption = self._add_row(
             "workspace_order",
-            tr('ui.widgets.quickstart.boundary_gauss_points_free_axis'),
+            tr("ui.widgets.quickstart.boundary_gauss_points_free_axis"),
             self.workspace_order,
         )
-        self.workspace_note = QLabel(tr('ui.widgets.quickstart.workspace_has_no_manually_selected_load_case_boundary_integration_cases'))
+        self.workspace_note = QLabel(
+            tr(
+                "ui.widgets.quickstart.workspace_has_no_manually_selected_load_case_boundary_integration_cases"
+            )
+        )
         self.workspace_note.setWordWrap(True)
         self.form.addRow(self.workspace_note)
 
@@ -406,16 +512,19 @@ class ObjectiveListEditor(QWidget):
     def _objective_label(self, objective):
         label = tr(GOALS[objective.kind][0])
         if self.draft.method == "simp" and objective.kind == "bend":
-            label = tr('ui.widgets.quickstart.target_tip_deflection')
+            label = tr("ui.widgets.quickstart.target_tip_deflection")
         return tr("ui.quickstart.objective_title", label=label, weight=objective.weight)
 
     def _update_list_item(self, row):
         if 0 <= row < len(self.draft.objectives) and self.list.item(row) is not None:
-            self.list.item(row).setText(self._objective_label(self.draft.objectives[row]))
+            self.list.item(row).setText(
+                self._objective_label(self.draft.objectives[row])
+            )
 
     def _update_buttons(self):
         self.add_button.setEnabled(
-            len(self.draft.objectives) < CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT
+            len(self.draft.objectives)
+            < CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT
         )
         self.remove_button.setEnabled(len(self.draft.objectives) > 1)
 
@@ -444,7 +553,7 @@ class ObjectiveListEditor(QWidget):
         for kind in available_objectives(self.draft.method):
             label = tr(GOALS[kind][0])
             if self.draft.method == "simp" and kind == "bend":
-                label = tr('ui.widgets.quickstart.target_tip_deflection')
+                label = tr("ui.widgets.quickstart.target_tip_deflection")
             self.kind.addItem(label, kind)
         self.kind.setCurrentIndex(max(0, self.kind.findData(objective.kind)))
         self.weight.setValue(objective.weight)
@@ -454,7 +563,9 @@ class ObjectiveListEditor(QWidget):
         self.workspace_order.setValue(objective.gauss_order)
         self.pressures.set_channels(self.draft.members, objective.pressures_kpa)
         dimensions = len(GOALS[objective.kind][1]) if objective.is_workspace else None
-        self.workspace_inputs.set_channels(self.draft.members, dimensions, objective.workspace_channels)
+        self.workspace_inputs.set_channels(
+            self.draft.members, dimensions, objective.workspace_channels
+        )
         self._updating = False
         self.detail.show()
         self._set_detail_visibility(objective)
@@ -464,8 +575,16 @@ class ObjectiveListEditor(QWidget):
         workspace = objective.is_workspace
         shape = self.draft.method == "shapeopt"
         target_visible = not workspace and objective.kind != "stiffness"
-        target_unit = "°" if objective.kind == "twist" else "N" if objective.kind == "contact" else "mm"
-        self.target_caption.setText(tr('ui.widgets.quickstart.target_value', value_0=target_unit))
+        target_unit = (
+            "°"
+            if objective.kind == "twist"
+            else "N"
+            if objective.kind == "contact"
+            else "mm"
+        )
+        self.target_caption.setText(
+            tr("ui.widgets.quickstart.target_value", value_0=target_unit)
+        )
         self.target_caption.setVisible(target_visible)
         self.target.setVisible(target_visible)
         self.force_caption.setVisible(not shape)
@@ -504,24 +623,29 @@ class ObjectiveListEditor(QWidget):
         self.changed.emit()
 
     def _add(self):
-        if len(self.draft.objectives) >= CONSTANT.UI.WIDGETS.MAXIMUM_QUICKSTART_OBJECTIVES:
+        if (
+            len(self.draft.objectives)
+            >= CONSTANT.UI.WIDGETS.MAXIMUM_QUICKSTART_OBJECTIVES
+        ):
             return
         self._save_current()
         self.draft.add()
         self._refresh_list()
-        self.list.setCurrentRow(len(self.draft.objectives)-1)
+        self.list.setCurrentRow(len(self.draft.objectives) - 1)
         self._update_buttons()
         self.changed.emit()
 
     def _remove(self):
-        if len(self.draft.objectives) <= 1 or not 0 <= self.list.currentRow() < len(self.draft.objectives):
+        if len(self.draft.objectives) <= 1 or not 0 <= self.list.currentRow() < len(
+            self.draft.objectives
+        ):
             return
         index = self.list.currentRow()
         self._save_current()
         self.draft.remove(index)
         self._current_index = -1
         self._refresh_list()
-        self.list.setCurrentRow(min(index, len(self.draft.objectives)-1))
+        self.list.setCurrentRow(min(index, len(self.draft.objectives) - 1))
         self._update_buttons()
         self.changed.emit()
 
@@ -531,7 +655,7 @@ class ObjectiveListEditor(QWidget):
         self._save_current()
         self.draft.set_method(method)
         self._refresh_list()
-        selected = min(max(self._current_index, 0), len(self.draft.objectives)-1)
+        selected = min(max(self._current_index, 0), len(self.draft.objectives) - 1)
         self._updating = True
         self.list.setCurrentRow(selected)
         self._updating = False
@@ -552,9 +676,12 @@ class ObjectiveListEditor(QWidget):
 
 class InitialDesignPreview(QWidget):
     """Orthographic isometric rendering of initial meshes supplied by the kernel."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(*deepcopy(theme_manager.palette.quickstart_preview.minimum_size))
+        self.setMinimumSize(
+            *deepcopy(theme_manager.palette.quickstart_preview.minimum_size)
+        )
         self.options = QuickstartOptions()
         self.geometry = None
         unsubscribe = theme_manager.subscribe(self._apply_theme)
@@ -578,11 +705,13 @@ class InitialDesignPreview(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor(theme_manager.palette.quickstart_preview.background))
+        painter.fillRect(
+            self.rect(), QColor(theme_manager.palette.quickstart_preview.background)
+        )
         painter.setPen(QColor(theme_manager.palette.quickstart_preview.heading))
         painter.drawText(
             *deepcopy(theme_manager.palette.quickstart_preview.heading_position),
-            tr('ui.widgets.quickstart.initial_design_isometric_projection'),
+            tr("ui.widgets.quickstart.initial_design_isometric_projection"),
         )
         if self.geometry is not None:
             scale, shift = self.geometry.transform(self.width(), self.height())
@@ -592,7 +721,9 @@ class InitialDesignPreview(QWidget):
                 brush.setAlpha(alpha)
                 painter.setBrush(brush)
                 uv = scale * points + shift
-                painter.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in uv]))
+                painter.drawPolygon(
+                    QPolygonF([QPointF(float(x), float(y)) for x, y in uv])
+                )
             painter.setPen(
                 QPen(
                     QColor(theme_manager.palette.quickstart_preview.edge),
@@ -601,8 +732,14 @@ class InitialDesignPreview(QWidget):
             )
             painter.setBrush(Qt.BrushStyle.NoBrush)
             for line in self.geometry.lines:
-                painter.drawPolyline(QPolygonF([QPointF(float(x), float(y)) for x, y in scale * line + shift]))
-        origin_x, origin_bottom = deepcopy(theme_manager.palette.quickstart_preview.axis_origin)
+                painter.drawPolyline(
+                    QPolygonF(
+                        [QPointF(float(x), float(y)) for x, y in scale * line + shift]
+                    )
+                )
+        origin_x, origin_bottom = deepcopy(
+            theme_manager.palette.quickstart_preview.axis_origin
+        )
         origin = QPointF(origin_x, self.height() - origin_bottom)
         axis_colors = deepcopy(theme_manager.palette.quickstart_preview.axis_colors)
         axis_labels = deepcopy(theme_manager.palette.quickstart_preview.axis_labels)
@@ -610,20 +747,30 @@ class InitialDesignPreview(QWidget):
             (np.eye(3)[0], np.eye(3)[1], np.eye(3)[2]), axis_labels, axis_colors
         ):
             delta = QPointF(
-                float(theme_manager.palette.quickstart_preview.axis_length * vector @ InitialDesignGeometry.horizontal),
-                float(theme_manager.palette.quickstart_preview.axis_length * vector @ InitialDesignGeometry.vertical),
+                float(
+                    theme_manager.palette.quickstart_preview.axis_length
+                    * vector
+                    @ InitialDesignGeometry.horizontal
+                ),
+                float(
+                    theme_manager.palette.quickstart_preview.axis_length
+                    * vector
+                    @ InitialDesignGeometry.vertical
+                ),
             )
-            end = origin+delta
+            end = origin + delta
             painter.setPen(
                 QPen(QColor(color), theme_manager.palette.quickstart_preview.axis_width)
             )
             painter.drawLine(origin, end)
-            painter.drawText(end+QPointF(3, -3), label)
+            painter.drawText(end + QPointF(3, -3), label)
         painter.setPen(QColor(theme_manager.palette.quickstart_preview.text))
-        caption = tr('ui.widgets.quickstart.length_value_mm', value_0=self.options.total_length)
+        caption = tr(
+            "ui.widgets.quickstart.length_value_mm", value_0=self.options.total_length
+        )
         if self.options.method == "shapeopt":
             caption += tr(
-                'ui.widgets.quickstart.value_layers_value_cavities',
+                "ui.widgets.quickstart.value_layers_value_cavities",
                 value_0=len(self.options.layers),
                 value_1=self.options.chambers,
             )
@@ -643,10 +790,12 @@ class InitialDesignPreview(QWidget):
 class QuickstartDialog(QDialog):
     def __init__(self, problem=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(tr('ui.widgets.quickstart.quickstart'))
+        self.setWindowTitle(tr("ui.widgets.quickstart.quickstart"))
         self.resize(*deepcopy(theme_manager.palette.layout.quickstart.dialog_size))
         self.problem = None
-        initial = QuickstartOptions.from_problem(problem) if problem else QuickstartOptions()
+        initial = (
+            QuickstartOptions.from_problem(problem) if problem else QuickstartOptions()
+        )
         if problem:
             initial.result_folder = problem.result_folder
             initial.label = problem.label
@@ -654,10 +803,14 @@ class QuickstartDialog(QDialog):
         self.fields = {}
         self._rows = []
         outer = QVBoxLayout(self)
-        title = QLabel(tr('ui.widgets.quickstart.start_with_the_motion_you_want'))
+        title = QLabel(tr("ui.widgets.quickstart.start_with_the_motion_you_want"))
         title.setProperty("textRole", "dialogTitle")
         outer.addWidget(title)
-        description = QLabel(tr('ui.widgets.quickstart.describe_the_starting_structure_and_goal_to_create_an_editable_optimizat'))
+        description = QLabel(
+            tr(
+                "ui.widgets.quickstart.describe_the_starting_structure_and_goal_to_create_an_editable_optimizat"
+            )
+        )
         description.setWordWrap(True)
         outer.addWidget(description)
         columns = QHBoxLayout()
@@ -666,36 +819,52 @@ class QuickstartDialog(QDialog):
         left.setContentsMargins(
             0, 0, theme_manager.palette.layout.quickstart.left_column_right_margin, 0
         )
-        task = self._group(left, tr('ui.widgets.quickstart.1_choose_a_design_task'))
+        task = self._group(left, tr("ui.widgets.quickstart.1_choose_a_design_task"))
         self._combo(
             task,
             "method",
-            tr('ui.widgets.quickstart.optimization_method'),
-            [("shapeopt", tr('ui.widgets.quickstart.shape_optimization')), ("simp", tr('ui.widgets.quickstart.topology_optimization'))],
+            tr("ui.widgets.quickstart.optimization_method"),
+            [
+                ("shapeopt", tr("ui.widgets.quickstart.shape_optimization")),
+                ("simp", tr("ui.widgets.quickstart.topology_optimization")),
+            ],
         )
-        geometry = self._group(left, tr('ui.widgets.quickstart.2_define_geometry'))
+        geometry = self._group(left, tr("ui.widgets.quickstart.2_define_geometry"))
         self._double(
-            geometry, "length", tr('ui.widgets.quickstart.length_mm'), initial.length,
+            geometry,
+            "length",
+            tr("ui.widgets.quickstart.length_mm"),
+            initial.length,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.LENGTH.RANGE),
         )
         self._double(
-            geometry, "radius", tr('ui.widgets.quickstart.body_radius_mm'), initial.radius,
-            *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.RADIUS.RANGE), group="shape",
+            geometry,
+            "radius",
+            tr("ui.widgets.quickstart.body_radius_mm"),
+            initial.radius,
+            *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.RADIUS.RANGE),
+            group="shape",
         )
         self.layers_editor = ChamberLayersEditor(initial.layers)
         self.layers_editor.changed.connect(self._refresh)
-        layer_caption = QLabel(tr('ui.widgets.quickstart.serial_layers_parallel_cavities'))
+        layer_caption = QLabel(
+            tr("ui.widgets.quickstart.serial_layers_parallel_cavities")
+        )
         geometry.addRow(layer_caption)
         geometry.addRow(self.layers_editor)
         self._rows.append(("layers", layer_caption, self.layers_editor, "shape"))
         self._double(
-            geometry, "wall", tr('ui.widgets.quickstart.minimum_wall_mm'), initial.wall,
-            *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.WALL.RANGE), group="shape",
+            geometry,
+            "wall",
+            tr("ui.widgets.quickstart.minimum_wall_mm"),
+            initial.wall,
+            *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.WALL.RANGE),
+            group="shape",
         )
         self._double(
             geometry,
             "height",
-            tr('ui.widgets.quickstart.domain_height_mm'),
+            tr("ui.widgets.quickstart.domain_height_mm"),
             initial.height,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.HEIGHT.RANGE),
             group="topology",
@@ -703,33 +872,42 @@ class QuickstartDialog(QDialog):
         self._double(
             geometry,
             "depth",
-            tr('ui.widgets.quickstart.domain_depth_mm'),
+            tr("ui.widgets.quickstart.domain_depth_mm"),
             initial.depth,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.DEPTH.RANGE),
             group="topology",
         )
         self._double(
-            geometry, "mesh_size", tr('ui.widgets.quickstart.mesh_size_mm'), initial.mesh_size,
+            geometry,
+            "mesh_size",
+            tr("ui.widgets.quickstart.mesh_size_mm"),
+            initial.mesh_size,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.MESH_SIZE.RANGE),
         )
         self._check(
             geometry,
             "optimize_outer",
-            tr('ui.widgets.quickstart.optimize_inner_and_outer_profiles_on_by_default'),
+            tr("ui.widgets.quickstart.optimize_inner_and_outer_profiles_on_by_default"),
             group="shape",
         )
 
-        material = self._group(left, tr('ui.widgets.quickstart.3_material_properties'))
+        material = self._group(left, tr("ui.widgets.quickstart.3_material_properties"))
         self._double(
-            material, "mu", tr('ui.widgets.quickstart.shear_modulus_mpa'), initial.mu,
+            material,
+            "mu",
+            tr("ui.widgets.quickstart.shear_modulus_mpa"),
+            initial.mu,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.MU.RANGE),
         )
         self._double(
-            material, "kappa", tr('ui.widgets.quickstart.bulk_modulus_mpa'), initial.kappa,
+            material,
+            "kappa",
+            tr("ui.widgets.quickstart.bulk_modulus_mpa"),
+            initial.kappa,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.KAPPA.RANGE),
         )
 
-        objective_group = QGroupBox(tr('ui.widgets.quickstart.4_define_objectives'))
+        objective_group = QGroupBox(tr("ui.widgets.quickstart.4_define_objectives"))
         objective_layout = QVBoxLayout(objective_group)
         self.objectives_editor = ObjectiveListEditor(
             initial.objectives, initial.method, initial.channel_members
@@ -738,25 +916,34 @@ class QuickstartDialog(QDialog):
         objective_layout.addWidget(self.objectives_editor)
         left.addWidget(objective_group)
 
-        conditions = self._group(left, tr('ui.widgets.quickstart.5_solve_and_output'))
+        conditions = self._group(left, tr("ui.widgets.quickstart.5_solve_and_output"))
         self._double(
             conditions,
             "volume_fraction",
-            tr('ui.widgets.quickstart.material_fraction'),
+            tr("ui.widgets.quickstart.material_fraction"),
             initial.volume_fraction,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.VOLUME_FRACTION.RANGE),
             group="topology",
         )
-        self._line(conditions, "label", tr('ui.widgets.quickstart.task_name'), initial.label)
-        self._line(conditions, "result_folder", tr('ui.widgets.quickstart.result_folder'), initial.result_folder)
-        folder = QPushButton(tr('ui.widgets.quickstart.choose_output_folder'))
+        self._line(
+            conditions, "label", tr("ui.widgets.quickstart.task_name"), initial.label
+        )
+        self._line(
+            conditions,
+            "result_folder",
+            tr("ui.widgets.quickstart.result_folder"),
+            initial.result_folder,
+        )
+        folder = QPushButton(tr("ui.widgets.quickstart.choose_output_folder"))
         folder.clicked.connect(self._browse_folder)
         conditions.addRow("", folder)
         left.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
-        scroll.setMinimumWidth(theme_manager.palette.layout.quickstart.scroll_minimum_width)
+        scroll.setMinimumWidth(
+            theme_manager.palette.layout.quickstart.scroll_minimum_width
+        )
         columns.addWidget(scroll, 3)
         right = QVBoxLayout()
         self.preview = InitialDesignPreview()
@@ -773,9 +960,11 @@ class QuickstartDialog(QDialog):
         columns.addLayout(right, 2)
         outer.addLayout(columns, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('ui.widgets.quickstart.cancel'))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(
+            tr("ui.widgets.quickstart.cancel")
+        )
         self.create_button = buttons.addButton(
-            tr('ui.widgets.quickstart.create_and_edit'),
+            tr("ui.widgets.quickstart.create_and_edit"),
             QDialogButtonBox.ButtonRole.AcceptRole,
         )
         self.create_button.setDefault(True)
@@ -889,7 +1078,9 @@ class QuickstartDialog(QDialog):
                 values[key] = widget.isChecked()
             else:
                 values[key] = widget.value()
-        values["layers"] = self.layers_editor.layers() if values["method"] == "shapeopt" else []
+        values["layers"] = (
+            self.layers_editor.layers() if values["method"] == "shapeopt" else []
+        )
         values["objectives"] = self.objectives_editor.values()
         return QuickstartOptions(**values)
 
@@ -902,8 +1093,14 @@ class QuickstartDialog(QDialog):
             self.fields["length"].setValue(
                 simp_length if method == "simp" else shape_length
             )
-        shape_material = (CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_MU, CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_KAPPA)
-        simp_material = (CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_MU, CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_KAPPA)
+        shape_material = (
+            CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_MU,
+            CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_KAPPA,
+        )
+        simp_material = (
+            CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_MU,
+            CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_KAPPA,
+        )
         current_material = (self.fields["mu"].value(), self.fields["kappa"].value())
         if current_material in (shape_material, simp_material):
             selected = simp_material if method == "simp" else shape_material
@@ -926,9 +1123,19 @@ class QuickstartDialog(QDialog):
             o.objectives = self.objectives_editor.values()
         shape = o.method == "shapeopt"
         for key, caption, widget, group in self._rows:
-            visible = (group is None or group == "shape" and shape or group == "topology" and not shape)
+            visible = (
+                group is None
+                or group == "shape"
+                and shape
+                or group == "topology"
+                and not shape
+            )
             if key == "length":
-                caption.setText(tr('ui.widgets.quickstart.total_length_mm') if shape else tr('ui.widgets.quickstart.domain_length_mm'))
+                caption.setText(
+                    tr("ui.widgets.quickstart.total_length_mm")
+                    if shape
+                    else tr("ui.widgets.quickstart.domain_length_mm")
+                )
             caption.setVisible(visible)
             widget.setVisible(visible)
         self.fields["length"].setReadOnly(shape)
@@ -955,7 +1162,7 @@ class QuickstartDialog(QDialog):
     def _browse_folder(self):
         directory = choose_directory(
             self,
-            tr('ui.widgets.quickstart.output_folder'),
+            tr("ui.widgets.quickstart.output_folder"),
             self.fields["result_folder"].text(),
         )
         if directory:
@@ -964,7 +1171,7 @@ class QuickstartDialog(QDialog):
     def _create(self):
         try:
             problem = build_quickstart(self.options())
-            ProblemSession(problem).source()
+            generate_source(problem)
         except (ValueError, TypeError, KeyError) as exc:
             self.error.setText(str(exc))
             return

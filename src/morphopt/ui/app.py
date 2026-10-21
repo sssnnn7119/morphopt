@@ -27,7 +27,10 @@ def create_application(argv: list[str] | None = None):
 
     from PySide6.QtWidgets import QApplication
 
-    from .application_icon import configure_application_identity, prepare_application_identity
+    from .application_icon import (
+        configure_application_identity,
+        prepare_application_identity,
+    )
     from .theme import theme_manager
 
     prepare_application_identity()

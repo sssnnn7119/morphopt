@@ -1,10 +1,13 @@
 """Registry binding editor routes to Qt pages and their bind functions."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from PySide6.QtWidgets import QStackedWidget, QWidget
+
 from PySide6.QtCore import SignalInstance
+from PySide6.QtWidgets import QStackedWidget, QWidget
+
 from ..application.editor_routing import EditorKind, EditorRoute
 from ..model.problem import ProblemDefinition
 from ..refresh import Refreshable, RefreshContext
@@ -29,7 +32,8 @@ class EditorPages:
         kind: EditorKind,
         widget: QWidget,
         bind: Callable[[EditorRoute, ProblemDefinition], None],
-        *, changed: SignalInstance | None = None,
+        *,
+        changed: SignalInstance | None = None,
         refreshable: Refreshable | None = None,
     ) -> None:
         self._pages[kind] = EditorPage(widget, bind, refreshable)
@@ -52,6 +56,9 @@ class EditorPages:
     def refresh_ui(self, context: RefreshContext) -> None:
         """Refresh the active editor in place, retaining its focus and scroll."""
         for page in self._pages.values():
-            if page.widget is self.stack.currentWidget() and page.refreshable is not None:
+            if (
+                page.widget is self.stack.currentWidget()
+                and page.refreshable is not None
+            ):
                 page.refreshable.refresh_ui(context)
                 break

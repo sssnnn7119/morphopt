@@ -1,14 +1,13 @@
 """Use cases for creating, editing and serializing problem definitions."""
 
 from __future__ import annotations
-from ..i18n import localized_message
 
-from pathlib import Path
 import json
+from pathlib import Path
 
-from .edit_history import EditHistory, EditOperation, EditSnapshot
-
+from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
 from ..codegen.generator import generate_source
+from ..i18n import localized_message
 from ..model.loaders import load_morph, save_morph
 from ..model.problem import (
     GeometryNode,
@@ -22,6 +21,12 @@ from ..model.problem import (
     UpdaterNode,
 )
 from ..schemes.base import SchemeTemplate, available_templates, get_template
+from .edit_history import EditHistory, EditOperation, EditSnapshot
+
+
+def _synchronize_problem(problem: ProblemDefinition) -> None:
+    problem.resolve_references()
+    problem.align_surface_dependent_state()
 
 
 class ProblemSession:
@@ -81,8 +86,7 @@ class ProblemSession:
 
     def synchronize(self) -> None:
         """Normalize derived links after loading or editing the model."""
-        self._problem.resolve_references()
-        self._problem.align_surface_dependent_state()
+        _synchronize_problem(self._problem)
 
     def source(self, *, synchronize: bool = True) -> str:
         """Return runnable source for the current, synchronized definition."""
@@ -90,9 +94,8 @@ class ProblemSession:
             self.synchronize()
         return generate_source(self._problem)
 
-    def validate_for_run(self) -> None:
-        """Raise a user-facing error when the definition cannot be executed."""
-        self.source()
+    def validate_references(self) -> None:
+        """Check required model references before the runnable script is generated."""
         reference_fields = {
             "instance_name", "instance_name1", "instance_name2", "rp_name",
             "rp_name1", "rp_name2", "surface_name", "surface_name1",
@@ -152,7 +155,7 @@ class ProblemLibrary:
     def create(template_id: str, label: str | None = None) -> ProblemDefinition:
         template = get_template(template_id)
         problem = template.create_problem(label or f"{template_id}_untitled")
-        ProblemSession(problem).synchronize()
+        _synchronize_problem(problem)
         return problem
 
     @staticmethod
@@ -173,20 +176,33 @@ class ProblemLibrary:
     @staticmethod
     def load(path: str | Path) -> ProblemDefinition:
         problem = load_morph(str(path))
-        ProblemSession(problem).synchronize()
+        _synchronize_problem(problem)
         return problem
 
     @staticmethod
     def save(problem: ProblemDefinition, path: str | Path) -> str:
-        ProblemSession(problem).synchronize()
+        _synchronize_problem(problem)
         return save_morph(problem, str(path))
 
     @staticmethod
     def export_python(problem: ProblemDefinition, path: str | Path) -> str:
-        source = ProblemSession(problem).source()
+        _synchronize_problem(problem)
+        paths, files = collect_python_assets(problem)
+        source = generate_source(problem, asset_paths=paths)
         output = Path(path)
+        asset_directory = output.parent / PYTHON_ASSET_DIRECTORY
+        asset_directory.mkdir(parents=True, exist_ok=True)
+        for asset in files.values():
+            (asset_directory / asset.name).write_bytes(asset.content)
         output.write_text(source, encoding="utf-8")
         return str(output)
+
+    @staticmethod
+    def export_python_bundle(problem: ProblemDefinition, folder: str | Path) -> str:
+        """Export a runnable module and its assets into a named folder."""
+        directory = Path(folder)
+        output = directory / f"{directory.name}.py"
+        return ProblemLibrary.export_python(problem, output)
 
     @staticmethod
     def save_result_copy(problem: ProblemDefinition, folder: str | Path) -> str:

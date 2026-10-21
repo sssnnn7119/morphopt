@@ -184,16 +184,21 @@ class Controller:
         os.makedirs(self.path_result + "/fea")
 
         os.makedirs(self.path_result + "/scripts/", exist_ok=True)
-        if main_filepath is not None:
-            shutil.copy(
-                main_filepath, self.path_result + "/scripts/MAIN_SCRIPT_FOR_RESTART.py"
-            )
-        else:
+        if main_filepath is None:
             import __main__
 
-            shutil.copy(
-                __main__.__file__,
-                self.path_result + "/scripts/MAIN_SCRIPT_FOR_RESTART.py",
+            main_filepath = __main__.__file__
+        scripts_directory = self.path_result + "/scripts/"
+        shutil.copy(
+            main_filepath, scripts_directory + "MAIN_SCRIPT_FOR_RESTART.py"
+        )
+        asset_directory = os.path.join(
+            os.path.dirname(os.path.abspath(main_filepath)), "morphopt_assets"
+        )
+        if os.path.isdir(asset_directory):
+            shutil.copytree(
+                asset_directory,
+                os.path.join(scripts_directory, "morphopt_assets"),
             )
 
         vendor_package("torchfea", target_dir=self.path_result + "/scripts/")

@@ -1,9 +1,10 @@
 """Branching operation history and navigation controls for the left pane."""
+
 from __future__ import annotations
 
 from collections import defaultdict
 
-from PySide6.QtCore import QModelIndex, QSignalBlocker, QSize, QTimer, Qt, Signal
+from PySide6.QtCore import QModelIndex, QSignalBlocker, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -11,18 +12,17 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QStyle,
-    QStyleOptionViewItem,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
 
-from ..theme import theme_manager
 from ..application.edit_history import EditHistory
 from ..i18n import tr
 from ..presentation.edit_history import edit_description
+from ..theme import theme_manager
 from .collection_controls import ActionButton
-
 
 _STEP_ID_ROLE = Qt.ItemDataRole.UserRole
 _GRAPH_LANE_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -97,9 +97,12 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         middle = (top + bottom) // 2
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        for parent_lane, child_lane, is_parent_row, is_child_row in (
-            graph_list._segments_by_row.get(row, ())
-        ):
+        for (
+            parent_lane,
+            child_lane,
+            is_parent_row,
+            is_child_row,
+        ) in graph_list._segments_by_row.get(row, ()):
             color = self._lane_color(child_lane)
             pen = QPen(color, graph.graph_line_width)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -117,11 +120,7 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         lane = int(index.data(_GRAPH_LANE_ROLE) or 0)
         node_x = self._lane_x(option.rect.left(), lane)
         current = view_option.font.bold()
-        radius = (
-            graph.graph_current_node_radius
-            if current
-            else graph.graph_node_radius
-        )
+        radius = graph.graph_current_node_radius if current else graph.graph_node_radius
         node_color = self._lane_color(lane)
         painter.setPen(QPen(node_color, graph.graph_line_width))
         painter.setBrush(node_color)
@@ -134,9 +133,7 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
 
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         text_color_role = (
-            QPalette.ColorRole.HighlightedText
-            if selected
-            else QPalette.ColorRole.Text
+            QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
         )
         painter.setPen(view_option.palette.color(text_color_role))
         painter.setFont(view_option.font)
@@ -202,7 +199,9 @@ class EditHistoryPanel(QWidget):
         self.history_list = _HistoryGraphList(self)
         self.history_list.setItemDelegate(_HistoryGraphDelegate(self.history_list))
         self.history_list.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.history_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.history_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.history_list.setUniformItemSizes(True)
         self.history_list.itemDoubleClicked.connect(self._request)
@@ -227,7 +226,11 @@ class EditHistoryPanel(QWidget):
         scroll = self.history_list.verticalScrollBar().value()
         current_id = history.current.step_id
         self.title.setToolTip(
-            tr("ui.history.node_count", count=history.node_count, limit=history.max_nodes)
+            tr(
+                "ui.history.node_count",
+                count=history.node_count,
+                limit=history.max_nodes,
+            )
         )
 
         rows, lanes = self._layout_nodes(history, current_id)
@@ -344,7 +347,9 @@ class EditHistoryPanel(QWidget):
 
         add_main(main_path[0])
         if len(rows) != history.node_count or len(lanes) != history.node_count:
-            raise RuntimeError("History graph layout did not include every node exactly once.")
+            raise RuntimeError(
+                "History graph layout did not include every node exactly once."
+            )
         return rows, lanes
 
     def _request(self, item: QListWidgetItem) -> None:

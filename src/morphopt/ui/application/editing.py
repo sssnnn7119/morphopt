@@ -30,7 +30,7 @@ class DefinitionCommands:
 
     def add_helper(self, kind: str) -> Node:
         types = {
-            "helper_variable": (HelperVariableNode, "variable", {"value": "None"}),
+            "helper_variable": (HelperVariableNode, "constant", {"value": "None"}),
             "helper_function": (HelperFunctionNode, "helper", {"parameters": "", "body": "pass"}),
         }
         node_type, base, params = types[kind]

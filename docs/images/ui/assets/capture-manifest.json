@@ -1,0 +1,75 @@
+{
+  "file": "geometry-assets.png",
+  "description": "资产清单与 STEP 原始几何预览，右侧保留定义的装配预览",
+  "sources": [
+    "../../../examples/PartDesignExample-Body.step",
+    "../../../examples/reference-boundary.stl",
+    "../../../examples/reference-box.inp"
+  ],
+  "capture": "QWidget.grab() from the running MorphOpt UI",
+  "platform": "wayland",
+  "locale": "zh-CN",
+  "pixels": [
+    3570,
+    2035
+  ],
+  "font_policy": {
+    "family": "Noto Sans CJK SC",
+    "point_size": 10,
+    "vtk_font_file": "NotoSansCJKSC-Regular.otf",
+    "source_collection": "NotoSansCJK-Regular.ttc",
+    "glyph_runs": {
+      "400": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Regular"
+        }
+      ],
+      "600": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Medium"
+        }
+      ],
+      "700": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Bold"
+        }
+      ]
+    },
+    "sampled_widget_fonts": {
+      "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Regular"
+        }
+      ],
+      "Noto Sans CJK SC,10,-1,5,600,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Medium"
+        }
+      ],
+      "Hack,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Regular"
+        }
+      ],
+      "Noto Sans CJK SC,-1,14,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Bold"
+        }
+      ],
+      "Noto Sans CJK SC,10,-1,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
+        {
+          "family": "Noto Sans CJK SC",
+          "style": "Bold"
+        }
+      ]
+    }
+  },
+  "scope": "Documentation capture process only; desktop fonts unchanged"
+}

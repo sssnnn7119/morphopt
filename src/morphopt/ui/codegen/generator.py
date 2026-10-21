@@ -5,9 +5,6 @@ class), ready for ``morphopt.start_optimization`` / ``restart_optimization``.
 
 from __future__ import annotations
 
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
-from ..i18n import localized_message
-
 import ast
 import keyword
 import math
@@ -16,6 +13,8 @@ from dataclasses import fields
 
 from ...constants import CONSTANT
 from ...optcore.modelparams.materials import MaterialModels
+from ..i18n import localized_message
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.problem import (
     CADOperationNode,
     FEAComponentNode,
@@ -28,16 +27,12 @@ from ..model.problem import (
     UpdaterNode,
 )
 from ..model.registry import (
-    CAD_OPERATION_TYPES,
-    LOAD_TYPES,
-    PART_TYPES,
     SURFACE_SYMMETRY_CONSTRAINTS,
-    SURFACE_TYPES,
-    surface_factory_for_type,
     UPDATER_CATALOG,
+    surface_factory_for_type,
 )
 from ..schemes.base import SchemeTemplate, get_template
-
+from .assets import collect_python_assets
 
 CORE_BASES = {
     "controller": "morphopt.Controller",
@@ -68,7 +63,9 @@ def _material_parameters_expression(
     """Render model parameters with their typed parameter constructor."""
     parameter_class = getattr(MaterialModels, f"{model}Params")
     parameter_type = parameter_class.__name__
-    values = ", ".join(f"{key}={_render_value(value, problem)}" for key, value in parameters.items())
+    values = ", ".join(
+        f"{key}={_render_value(value, problem)}" for key, value in parameters.items()
+    )
     return f"self.models.{parameter_type}({values})"
 
 
@@ -79,7 +76,11 @@ def indent_block(text: str, spaces: int) -> str:
 
 
 def _helper_names(problem: ProblemDefinition | None) -> set[str]:
-    return {node.name for node in problem.helper_variables} if problem is not None else set()
+    return (
+        {node.name for node in problem.helper_variables}
+        if problem is not None
+        else set()
+    )
 
 
 def _render_value(value: object, problem: ProblemDefinition | None) -> str:
@@ -89,7 +90,12 @@ def _render_value(value: object, problem: ProblemDefinition | None) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_render_value(item, problem) for item in value) + "]"
     if isinstance(value, tuple):
-        return "(" + ", ".join(_render_value(item, problem) for item in value) + ("," if len(value) == 1 else "") + ")"
+        return (
+            "("
+            + ", ".join(_render_value(item, problem) for item in value)
+            + ("," if len(value) == 1 else "")
+            + ")"
+        )
     return repr(value)
 
 
@@ -98,15 +104,27 @@ def _render_value(value: object, problem: ProblemDefinition | None) -> str:
 # --------------------------------------------------------------------------
 
 
-def _surface_factory(surface: Node) -> str:
-    return surface.factory
+def _asset_path_expression(path: str) -> str:
+    """Resolve an exported asset relative to the generated Python module."""
+    if not path:
+        return repr("")
+    return f"os.path.join(os.path.dirname(os.path.abspath(__file__)), {path!r})"
 
 
-def render_surface_call(surface: Node, problem: ProblemDefinition | None = None) -> str:
-    factory = _surface_factory(surface)
+def render_surface_call(
+    surface: Node,
+    problem: ProblemDefinition | None = None,
+    *,
+    asset_paths: dict[int, str] | None = None,
+) -> str:
+    factory = surface.factory
     prefix = surface.custom_class or "self.FixedSurface"
     if factory is None:  # fixed_stl
-        return f"{prefix}.initialize_from_stl_file({_render_value(surface.path_stl or '', problem)})"
+        path_expression = (
+            _asset_path_expression(asset_paths[id(surface)])
+            if surface.path_stl else repr("")
+        )
+        return f"{prefix}.initialize_from_stl_file({path_expression})"
     kwargs = []
     for field in surface.fields:
         key = field.key
@@ -114,23 +132,28 @@ def render_surface_call(surface: Node, problem: ProblemDefinition | None = None)
         if value is None:
             continue
         kwargs.append(f"{key}={_render_value(value, problem)}")
-    kwargs.append(f"flip={repr(surface.flip)}")
-    factory = (surface.custom_class + "." + factory.split(".", 1)[1]) if surface.custom_class else f"self.{factory}"
+    kwargs.append(f"flip={surface.flip!r}")
+    factory = (
+        (surface.custom_class + "." + factory.split(".", 1)[1])
+        if surface.custom_class
+        else f"self.{factory}"
+    )
     return f"{factory}({', '.join(kwargs)})"
 
 
 def render_cad_operation_call(
-    operation: CADOperationNode, problem: ProblemDefinition | None = None
+    operation: CADOperationNode,
+    problem: ProblemDefinition | None = None,
+    *,
+    asset_paths: dict[int, str] | None = None,
 ) -> str:
     """Render one structured UI CAD operation as a TorchFEA constructor."""
     operation_type = operation.operation_type
     spec = type(operation)
     if operation_type == "StepImport":
         return (
-            "torchfea.cad.StepImport("
-            f"{operation.operation_id!r}, "
-            f"filename={operation.filename or 'import.step'!r}, "
-            f"data={operation.data or ''!r})"
+            "torchfea.cad.StepImport.from_file("
+            f"{operation.operation_id!r}, {_asset_path_expression(asset_paths[id(operation)])})"
         )
 
     kwargs = [f"id={operation.operation_id!r}"]
@@ -139,15 +162,15 @@ def render_cad_operation_call(
         value = operation.get_field(key)
         if value is not None:
             expression = (
-                _render_value(value, problem)
-                if field.type == "float"
-                else repr(value)
+                _render_value(value, problem) if field.type == "float" else repr(value)
             )
             kwargs.append(f"{key}={expression}")
     return f"torchfea.cad.{operation_type}({', '.join(kwargs)})"
 
 
-def render_component_call(component: Node, problem: ProblemDefinition | None = None) -> str:
+def render_component_call(
+    component: Node, problem: ProblemDefinition | None = None
+) -> str:
     cls = component.backend_class
     kwargs = []
     for field in component.fields:
@@ -165,38 +188,63 @@ def render_component_call(component: Node, problem: ProblemDefinition | None = N
 # --------------------------------------------------------------------------
 
 
-def generate_source(problem: ProblemDefinition) -> str:
+def generate_source(
+    problem: ProblemDefinition, *, asset_paths: dict[int, str] | None = None
+) -> str:
     """Read a synchronized definition and activate its custom subclasses."""
-    source = generate_base_source(problem)
+    source = generate_base_source(problem, asset_paths=asset_paths)
     custom_items = problem.updater and any(
-        config.get("custom_class") or any(
+        config.get("custom_class")
+        or any(
             item.get("custom_class")
             for key in ("objective_functions", "constraints")
             for item in config.get(key, [])
         )
         for config in problem.updater.geometry + problem.updater.materials
     )
-    if problem.custom_classes or problem.class_bindings or custom_items or any(node.custom_class for node in problem.root.iter_nodes()):
+    if (
+        problem.custom_classes
+        or problem.class_bindings
+        or custom_items
+        or any(node.custom_class for node in problem.root.iter_nodes())
+    ):
         from .custom_classes import apply_custom_classes
 
         source = apply_custom_classes(problem, source)
     helper_blocks = [problem.helper_code]
     seen: set[str] = set()
     for node in [*problem.helper_variables, *problem.helper_functions]:
-        if not node.name.isidentifier() or keyword.iskeyword(node.name) or node.name in seen:
-            raise ValueError(localized_message("ui.errors.generator.invalid_or_duplicate_helper_name_value", value_0=node.name))
+        if (
+            not node.name.isidentifier()
+            or keyword.iskeyword(node.name)
+            or node.name in seen
+        ):
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.invalid_or_duplicate_helper_name_value",
+                    value_0=node.name,
+                )
+            )
         seen.add(node.name)
         if node.kind == "helper_variable":
             try:
                 ast.parse(node.value, mode="eval")
             except SyntaxError as exc:
-                raise ValueError(localized_message("ui.errors.generator.invalid_helper_variable_value_value", value_0=node.name, value_1=exc)) from exc
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.invalid_helper_variable_value_value",
+                        value_0=node.name,
+                        value_1=exc,
+                    )
+                ) from exc
             helper_blocks.append(f"{node.name} = {node.value}")
         else:
             helper_blocks.append(
                 f"def {node.name}({node.parameters}):\n{indent_block(node.body or 'pass', 4)}"
             )
-    return _insert_helpers(source, "\n\n".join(block for block in helper_blocks if block.strip()))
+    return _insert_helpers(
+        source, "\n\n".join(block for block in helper_blocks if block.strip())
+    )
 
 
 def _insert_helpers(source: str, helper_source: str) -> str:
@@ -206,10 +254,15 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     try:
         compile(helper_source, "<helper code>", "exec")
     except SyntaxError as exc:
-        raise ValueError(localized_message("ui.errors.generator.invalid_helper_code_value", value_0=exc)) from exc
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.invalid_helper_code_value", value_0=exc
+            )
+        ) from exc
 
     first_class = next(
-        node.lineno - 1 for node in ast.parse(source).body
+        node.lineno - 1
+        for node in ast.parse(source).body
         if isinstance(node, ast.ClassDef)
     )
     lines = source.splitlines()
@@ -218,11 +271,17 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     try:
         compile(result, "<generated model>", "exec")
     except SyntaxError as exc:
-        raise ValueError(localized_message("ui.errors.generator.invalid_generated_script_value", value_0=exc)) from exc
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.invalid_generated_script_value", value_0=exc
+            )
+        ) from exc
     return result
 
 
-def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
+def _objective_function_body(
+    objective: ObjectiveNode, problem: ProblemDefinition
+) -> str:
     """Generate one local measurement function per ordered objective term."""
     terms = objective.objective_terms
     if not terms:
@@ -247,9 +306,17 @@ def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinitio
         try:
             weight = float(term["weight"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values")) from exc
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.objective_term_has_invalid_values"
+                )
+            ) from exc
         if not math.isfinite(weight) or weight < 0:
-            raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values"))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.objective_term_has_invalid_values"
+                )
+            )
         positive_weight = positive_weight or weight > 0
 
         function_name = f"objective_term_{index + 1}"
@@ -262,10 +329,12 @@ def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinitio
                 CONSTANT.UI.OBJECTIVE.DIRECTION_MAXIMIZE,
                 CONSTANT.UI.OBJECTIVE.DIRECTION_MINIMIZE,
             }:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.objective_has_unknown_direction_value",
-                    value_0=direction,
-                ))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_has_unknown_direction_value",
+                        value_0=direction,
+                    )
+                )
             target = CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET
             if direction == CONSTANT.UI.OBJECTIVE.DIRECTION_TARGET:
                 try:
@@ -273,45 +342,61 @@ def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinitio
                         term.get("target", CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET)
                     )
                 except (TypeError, ValueError) as exc:
-                    raise ValueError(localized_message(
-                        "ui.errors.generator.objective_term_has_invalid_values"
-                    )) from exc
+                    raise ValueError(
+                        localized_message(
+                            "ui.errors.generator.objective_term_has_invalid_values"
+                        )
+                    ) from exc
                 if not math.isfinite(target):
-                    raise ValueError(localized_message(
-                        "ui.errors.generator.objective_term_has_invalid_values"
-                    ))
+                    raise ValueError(
+                        localized_message(
+                            "ui.errors.generator.objective_term_has_invalid_values"
+                        )
+                    )
             reference_point = str(term.get("reference_point_name") or "").strip()
             component = str(term.get("component") or "")
             try:
                 step_index = int(term["step_index"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(localized_message("ui.errors.generator.objective_term_has_invalid_values")) from exc
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_term_has_invalid_values"
+                    )
+                ) from exc
             if reference_point not in reference_points:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.objective_references_unknown_point_value",
-                    value_0=reference_point,
-                ))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_references_unknown_point_value",
+                        value_0=reference_point,
+                    )
+                )
             if not 0 <= step_index < step_count:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.objective_references_unknown_step_value",
-                    value_0=step_index,
-                ))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_references_unknown_step_value",
+                        value_0=step_index,
+                    )
+                )
             if component not in component_indices:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.objective_has_unknown_component_value",
-                    value_0=component,
-                ))
-            functions.extend([
-                f"def {function_name}() -> Any:",
-                f"    self.set_step({step_index})",
-                "    assembly = self.fe.assembly",
-                "    state = assembly._GC2RGC(",
-                f"        self.fe_results[{step_index}].GC.to(assembly.device)",
-                "    )",
-                f"    reference_point = assembly.get_reference_point({reference_point!r})",
-                "    return state[reference_point._RGC_index].reshape(-1)["
-                f"{component_indices[component]}]",
-            ])
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_has_unknown_component_value",
+                        value_0=component,
+                    )
+                )
+            functions.extend(
+                [
+                    f"def {function_name}() -> Any:",
+                    f"    self.set_step({step_index})",
+                    "    assembly = self.fe.assembly",
+                    "    state = assembly._GC2RGC(",
+                    f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                    "    )",
+                    f"    reference_point = assembly.get_reference_point({reference_point!r})",
+                    "    return state[reference_point._RGC_index].reshape(-1)["
+                    f"{component_indices[component]}]",
+                ]
+            )
             if direction == CONSTANT.UI.OBJECTIVE.DIRECTION_TARGET:
                 weighted_terms.append(
                     f"({weight!r}) * ({function_name}() - {target!r}) ** 2"
@@ -323,27 +408,37 @@ def _objective_function_body(objective: ObjectiveNode, problem: ProblemDefinitio
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
             body = str(term.get("body") or "").strip()
             if not body:
-                raise ValueError(localized_message("ui.errors.generator.objective_term_needs_code"))
+                raise ValueError(
+                    localized_message("ui.errors.generator.objective_term_needs_code")
+                )
             try:
                 ast.parse("def _objective_term():\n" + indent_block(body, 4) + "\n")
             except SyntaxError as exc:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.objective_term_has_invalid_code_value",
-                    value_0=exc,
-                )) from exc
-            functions.extend([
-                f"def {function_name}() -> Any:",
-                indent_block(body, 4),
-            ])
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.objective_term_has_invalid_code_value",
+                        value_0=exc,
+                    )
+                ) from exc
+            functions.extend(
+                [
+                    f"def {function_name}() -> Any:",
+                    indent_block(body, 4),
+                ]
+            )
             weighted_terms.append(f"({weight!r}) * {function_name}()")
         else:
-            raise ValueError(localized_message(
-                "ui.errors.generator.objective_has_unknown_term_type_value",
-                value_0=term_type,
-            ))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.objective_has_unknown_term_type_value",
+                    value_0=term_type,
+                )
+            )
 
     if not positive_weight:
-        raise ValueError(localized_message("ui.errors.generator.objective_needs_positive_weight"))
+        raise ValueError(
+            localized_message("ui.errors.generator.objective_needs_positive_weight")
+        )
     return "\n".join([*functions, "return " + " + ".join(weighted_terms)])
 
 
@@ -381,58 +476,73 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
                 # Metrics are optional. Ignore incomplete selections while the
                 # user is still configuring the objective editor.
                 continue
-            functions.extend([
-                f"def {function_name}() -> Any:",
-                f"    self.set_step({step_index})",
-                "    assembly = self.fe.assembly",
-                "    state = assembly._GC2RGC(",
-                f"        self.fe_results[{step_index}].GC.to(assembly.device)",
-                "    )",
-                f"    reference_point = assembly.get_reference_point({reference_point!r})",
-                "    return state[reference_point._RGC_index].reshape(-1)["
-                f"{component_indices[component]}]",
-            ])
+            functions.extend(
+                [
+                    f"def {function_name}() -> Any:",
+                    f"    self.set_step({step_index})",
+                    "    assembly = self.fe.assembly",
+                    "    state = assembly._GC2RGC(",
+                    f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                    "    )",
+                    f"    reference_point = assembly.get_reference_point({reference_point!r})",
+                    "    return state[reference_point._RGC_index].reshape(-1)["
+                    f"{component_indices[component]}]",
+                ]
+            )
         elif metric_type == CONSTANT.UI.METRIC.TYPE_CUSTOM:
             body = str(term.get("body") or "").strip()
             if not body:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.metric_term_needs_code"
-                ))
+                raise ValueError(
+                    localized_message("ui.errors.generator.metric_term_needs_code")
+                )
             try:
                 ast.parse("def _metric_term():\n" + indent_block(body, 4) + "\n")
             except SyntaxError as exc:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.metric_term_has_invalid_code_value",
-                    value_0=exc,
-                )) from exc
-            functions.extend([
-                f"def {function_name}() -> Any:",
-                indent_block(body, 4),
-            ])
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.metric_term_has_invalid_code_value",
+                        value_0=exc,
+                    )
+                ) from exc
+            functions.extend(
+                [
+                    f"def {function_name}() -> Any:",
+                    indent_block(body, 4),
+                ]
+            )
         else:
-            raise ValueError(localized_message(
-                "ui.errors.generator.metric_has_unknown_term_type_value",
-                value_0=metric_type,
-            ))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.metric_has_unknown_term_type_value",
+                    value_0=metric_type,
+                )
+            )
         value_name = f"metric_value_{index + 1}"
-        values.extend([
-            f"{value_name} = {function_name}()",
-            f"if isinstance({value_name}, (list, tuple)):",
-            f"    metrics.extend({value_name})",
-            "else:",
-            f"    metrics.append({value_name})",
-        ])
+        values.extend(
+            [
+                f"{value_name} = {function_name}()",
+                f"if isinstance({value_name}, (list, tuple)):",
+                f"    metrics.extend({value_name})",
+                "else:",
+                f"    metrics.append({value_name})",
+            ]
+        )
 
-    return "\n".join([
-        *functions,
-        "metrics = []",
-        *values,
-        "return metrics",
-    ])
+    return "\n".join(
+        [
+            *functions,
+            "metrics = []",
+            *values,
+            "return metrics",
+        ]
+    )
 
 
 def generate_base_source(
-    problem: ProblemDefinition, *, for_class_catalog: bool = False
+    problem: ProblemDefinition,
+    *,
+    for_class_catalog: bool = False,
+    asset_paths: dict[int, str] | None = None,
 ) -> str:
     """Return the full source of a runnable problem module (always headless).
 
@@ -441,6 +551,8 @@ def generate_base_source(
     ``for_class_catalog`` emits inert objective methods so editor class discovery
     also works while the user is still defining objective and metric terms.
     """
+    if asset_paths is None:
+        asset_paths, _ = collect_python_assets(problem)
     template = get_template(problem.scheme)
     L: list[str] = []
     a = L.append
@@ -463,7 +575,7 @@ def generate_base_source(
     a("    def __init__(self) -> None:")
     a("        super().__init__(")
     a(
-        f"            path_result_folder={repr(problem.result_folder)}, opt_label={repr(problem.label)}"
+        f"            path_result_folder={problem.result_folder!r}, opt_label={problem.label!r}"
     )
     a("        )")
     a("")
@@ -498,10 +610,10 @@ def generate_base_source(
     a("")
     a(f"        class GeometryParams({CORE_BASES['geometry']}):")
     a("")
-    local_classes = _emit_part_classes(a, problem)
+    local_classes = _emit_part_classes(a, problem, asset_paths=asset_paths)
     a("")
     a("            def define_interface(self) -> None:")
-    _emit_part_init(a, problem, local_classes)
+    _emit_part_init(a, problem, local_classes, asset_paths=asset_paths)
     a("")
     a("")
     a(f"        class FEAParams({CORE_BASES['fea']}):")
@@ -565,8 +677,11 @@ _REQUIRED_GEOMETRY_FIELDS = {"mesh_file"}
 
 
 def _render_part_constructor(
-    part: PartNode, class_name: str | None = None,
+    part: PartNode,
+    class_name: str | None = None,
     problem: ProblemDefinition | None = None,
+    *,
+    asset_paths: dict[int, str] | None = None,
 ) -> str:
     """Render ``self.<ClassName>(...)`` for one Part definition.
 
@@ -583,7 +698,12 @@ def _render_part_constructor(
             value is None or value == "" or value == []
         ):
             continue
-        kwargs.append(f"{key}={_render_value(value if value is not None else '', problem)}")
+        expression = (
+            _asset_path_expression(asset_paths[id(part)])
+            if key == "mesh_file" and value
+            else _render_value(value if value is not None else "", problem)
+        )
+        kwargs.append(f"{key}={expression}")
     if not kwargs:
         return f"self.{type_name}()"
     inner = ",\n".join("    " + option for option in kwargs)
@@ -605,6 +725,8 @@ def part_class_names(problem: ProblemDefinition) -> dict[str, str]:
 def _emit_part_classes(
     a: Callable[[str], object],
     problem: ProblemDefinition,
+    *,
+    asset_paths: dict[int, str] | None = None,
 ) -> dict[str, str]:
     """Emit local Part subclasses carrying surfaces and Instances.
 
@@ -614,23 +736,10 @@ def _emit_part_classes(
     ``apply_surface_constraints`` hook.
     Returns the mapping from Part-definition names to emitted class names.
     """
-    fixed_bases = {
-        "BasePart": "morphopt.BasePart",
-        "CADPart": "morphopt.CADPart",
-        "BoxPart": "morphopt.BoxPart",
-        "INPPart": "morphopt.INPPart",
-    }
-    local_class: dict[str, str] = {}
     class_names = part_class_names(problem)
 
     for part in problem.parts():
-        base = (
-            f"morphopt.{part.type}"
-            if part.has_surfaces
-            else fixed_bases.get(part.type)
-        )
-        if not base:
-            continue
+        base = f"morphopt.{part.backend_class}"
         class_name = class_names[part.name]
         surfaces = part.surfaces if isinstance(part, BoundaryPartNode) else ()
         a("")
@@ -647,7 +756,7 @@ def _emit_part_classes(
             for index, surface in enumerate(surfaces):
                 a(
                     f"                    surface_{index} = "
-                    f"{render_surface_call(surface, problem)}"
+                    f"{render_surface_call(surface, problem, asset_paths=asset_paths)}"
                 )
                 a(f"                    self.add_surface_interface(surface_{index})")
             for line in constraint_lines:
@@ -664,7 +773,7 @@ def _emit_part_classes(
             for operation in operations:
                 a(
                     "                    self.add_operation("
-                    f"{render_cad_operation_call(operation, problem)})"
+                    f"{render_cad_operation_call(operation, problem, asset_paths=asset_paths)})"
                 )
 
         a("")
@@ -677,7 +786,8 @@ def _emit_part_classes(
             pose = (
                 f"[*{_render_value(instance.translation, problem)}, "
                 f"*{_render_value(instance.rotation, problem)}]"
-                if isinstance(instance.translation, str) or isinstance(instance.rotation, str)
+                if isinstance(instance.translation, str)
+                or isinstance(instance.rotation, str)
                 else repr(instance.pose)
             )
             a(
@@ -686,14 +796,15 @@ def _emit_part_classes(
                 f"{instance.name!r}, "
                 f"{pose})"
             )
-        local_class[part.name] = class_name
-    return local_class
+    return class_names
 
 
 def _emit_part_init(
     a: Callable[[str], object],
     problem: ProblemDefinition,
-    local_classes: dict[str, str] | None = None,
+    local_classes: dict[str, str],
+    *,
+    asset_paths: dict[int, str] | None = None,
 ) -> None:
     """Emit initial-geometry Part registration for the model."""
     parts = problem.parts()
@@ -701,26 +812,18 @@ def _emit_part_init(
         a("                pass")
         return
 
-    local_class = dict(local_classes or {})
     prefix = " " * 16
     for index, part in enumerate(parts):
         label = part.type
         variable = f"part_{index}"
         name = part.name or part.assembly_name or f"part{index + 1}"
         constructor = _render_part_constructor(
-            part, local_class.get(part.name), problem
+            part, local_classes[part.name], problem, asset_paths=asset_paths
         ).replace("\n", "\n" + prefix)
 
         a("")
         a(f"                # {label}")
         a(f"                {variable} = {constructor}")
-        if part.name not in local_class and isinstance(part, BoundaryPartNode):
-            # a boundary part declares its surfaces in its own class
-            for surface in part.surfaces:
-                a(
-                    f"                {variable}.add_surface_interface("
-                    f"{render_surface_call(surface, problem)})"
-                )
         a(f"                self.add_interface({variable}, name={name!r})")
 
 
@@ -755,11 +858,21 @@ def _surface_constraints_for_part(
     custom_bodies: list[str] = []
     for item in config.get("symmetry_constraints", []) or []:
         if not isinstance(item, dict):
-            raise ValueError(localized_message("ui.errors.generator.invalid_geometry_symmetry_constraint_value", value_0=item))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.invalid_geometry_symmetry_constraint_value",
+                    value_0=item,
+                )
+            )
         item_type = item.get("type")
         spec = SURFACE_SYMMETRY_CONSTRAINTS.get(item_type)
         if spec is None:
-            raise ValueError(localized_message("ui.errors.generator.unknown_geometry_symmetry_constraint_value", value_0=item_type))
+            raise ValueError(
+                localized_message(
+                    "ui.errors.generator.unknown_geometry_symmetry_constraint_value",
+                    value_0=item_type,
+                )
+            )
         params = item.get("params") or {}
         if item_type == "Custom":
             custom_bodies.append(str(params.get("code") or ""))
@@ -768,27 +881,50 @@ def _surface_constraints_for_part(
         surface_index = item.get("surface_index")
         if not isinstance(surface_index, int) or not 0 <= surface_index < len(surfaces):
             raise ValueError(
-                localized_message("ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_surface", value_0=item_type, value_1=part.name, value_2=surface_index)
+                localized_message(
+                    "ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_surface",
+                    value_0=item_type,
+                    value_1=part.name,
+                    value_2=surface_index,
+                )
             )
         surface = surfaces[surface_index]
         surface_factory = surface_factory_for_type(surface.surface_type)
         if surface_factory != spec.factory:
             raise ValueError(
-                localized_message("ui.errors.generator.geometry_symmetry_constraint_value_requires_a_value_surface_surface_value", value_0=item_type, value_1=spec.factory, value_2=surface_index, value_3=part.name, value_4=surface.surface_type)
+                localized_message(
+                    "ui.errors.generator.geometry_symmetry_constraint_value_requires_a_value_surface_surface_value",
+                    value_0=item_type,
+                    value_1=spec.factory,
+                    value_2=surface_index,
+                    value_3=part.name,
+                    value_4=surface.surface_type,
+                )
             )
 
         method_args = []
         if spec.related_surface:
             related_index = item.get("related_surface_index")
-            if not isinstance(related_index, int) or not 0 <= related_index < len(surfaces):
+            if not isinstance(related_index, int) or not 0 <= related_index < len(
+                surfaces
+            ):
                 raise ValueError(
-                    localized_message("ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_related", value_0=item_type, value_1=part.name, value_2=related_index)
+                    localized_message(
+                        "ui.errors.generator.geometry_symmetry_constraint_value_on_part_value_references_invalid_related",
+                        value_0=item_type,
+                        value_1=part.name,
+                        value_2=related_index,
+                    )
                 )
             related = surfaces[related_index]
             related_factory = surface_factory_for_type(related.surface_type)
             if related_factory != spec.factory:
                 raise ValueError(
-                    localized_message("ui.errors.generator.geometry_symmetry_constraint_value_requires_both_surfaces_to_use_value", value_0=item_type, value_1=spec.factory)
+                    localized_message(
+                        "ui.errors.generator.geometry_symmetry_constraint_value_requires_both_surfaces_to_use_value",
+                        value_0=item_type,
+                        value_1=spec.factory,
+                    )
                 )
             method_args.append(f"surface_{related_index}")
 
@@ -941,19 +1077,28 @@ def _resolve_geometry_targets(
     boundary = problem.boundary_part_nodes()
     if not boundary:
         raise ValueError(
-            localized_message("ui.errors.generator.a_geometry_optimizer_needs_a_boundary_part_inp_torchfea")
+            localized_message(
+                "ui.errors.generator.a_geometry_optimizer_needs_a_boundary_part_inp_torchfea"
+            )
         )
     targets: list[str] = []
     for index, cfg in enumerate(geom_cfgs):
         target = problem.config_part_node(cfg)
         if target is None:
             raise ValueError(
-                localized_message("ui.errors.generator.geometry_optimizer_value_has_no_target_boundary_part_choose_one", value_0=index + 1, value_1=[node.name for node in boundary])
+                localized_message(
+                    "ui.errors.generator.geometry_optimizer_value_has_no_target_boundary_part_choose_one",
+                    value_0=index + 1,
+                    value_1=[node.name for node in boundary],
+                )
             )
         name = target.name
         if name in targets:
             raise ValueError(
-                localized_message("ui.errors.generator.two_geometry_optimizers_both_target_value_give_each_one_its", value_0=name)
+                localized_message(
+                    "ui.errors.generator.two_geometry_optimizers_both_target_value_give_each_one_its",
+                    value_0=name,
+                )
             )
         targets.append(name)
     return targets
@@ -976,19 +1121,28 @@ def _resolve_material_targets(
     ]
     if not design:
         raise ValueError(
-            localized_message("ui.errors.generator.a_material_optimizer_needs_a_design_carrying_material_simp")
+            localized_message(
+                "ui.errors.generator.a_material_optimizer_needs_a_design_carrying_material_simp"
+            )
         )
     targets: list[str] = []
     for index, cfg in enumerate(mat_cfgs):
         target = problem.config_material_node(cfg)
         if target is None or target not in design:
             raise ValueError(
-                localized_message("ui.errors.generator.material_optimizer_value_has_no_target_design_material_choose_one", value_0=index + 1, value_1=[material.name for material in design])
+                localized_message(
+                    "ui.errors.generator.material_optimizer_value_has_no_target_design_material_choose_one",
+                    value_0=index + 1,
+                    value_1=[material.name for material in design],
+                )
             )
         name = target.name
         if name in targets:
             raise ValueError(
-                localized_message("ui.errors.generator.two_material_optimizers_both_target_value_give_each_one_its", value_0=name)
+                localized_message(
+                    "ui.errors.generator.two_material_optimizers_both_target_value_give_each_one_its",
+                    value_0=name,
+                )
             )
         targets.append(name)
     return targets
@@ -1017,12 +1171,10 @@ def _emit_updater(
         return
 
     geometry_classes = [
-        updater_class_name("geometry", index)
-        for index in range(len(geom_cfgs))
+        updater_class_name("geometry", index) for index in range(len(geom_cfgs))
     ]
     material_classes = [
-        updater_class_name("materials", index)
-        for index in range(len(mat_cfgs))
+        updater_class_name("materials", index) for index in range(len(mat_cfgs))
     ]
 
     a(f"    class Updater({CORE_BASES['updaters']}):")
@@ -1056,21 +1208,38 @@ def _emit_updater(
         a("")
 
 
-def _render_updater_item(item: dict, category: str, problem: ProblemDefinition | None = None) -> str:
+def _render_updater_item(
+    item: dict, category: str, problem: ProblemDefinition | None = None
+) -> str:
     """Render one valid structured objective/constraint item into source."""
     if not isinstance(item, dict):
-        raise ValueError(localized_message("ui.errors.generator.invalid_updater_item_value", value_0=item))
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.invalid_updater_item_value", value_0=item
+            )
+        )
     if item.get("type") == "Custom" and item.get("custom_class"):
         return f"{item['custom_class']}()"
     cat = UPDATER_CATALOG.get(category, {})
     spec = cat.get(item.get("type", ""))
     if spec is None:
-        raise ValueError(localized_message("ui.errors.generator.unknown_updater_value_type_value", value_0=category, value_1=item.get('type')))
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.unknown_updater_value_type_value",
+                value_0=category,
+                value_1=item.get("type"),
+            )
+        )
     gen = spec.gen
     if not gen:
-        raise ValueError(localized_message("ui.errors.generator.missing_generator_for_updater_item_value", value_0=item['type']))
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.missing_generator_for_updater_item_value",
+                value_0=item["type"],
+            )
+        )
     if item.get("custom_class"):
-        gen = item["custom_class"] + gen[gen.index("("):]
+        gen = item["custom_class"] + gen[gen.index("(") :]
     params = dict(item.get("params") or {})
     for f in spec.fields:
         params.setdefault(f.key, f.new_default())
@@ -1078,16 +1247,28 @@ def _render_updater_item(item: dict, category: str, problem: ProblemDefinition |
         item.get("type") == "VolFrac"
         and not str(params.get("elementname") or "").strip()
     ):
-        raise ValueError(localized_message("ui.errors.generator.volfrac_requires_an_explicit_elems_name"))
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.volfrac_requires_an_explicit_elems_name"
+            )
+        )
     fmt = {k: _render_value(v, problem) for k, v in params.items()}
     try:
         return gen.format(**fmt)
     except (KeyError, IndexError, ValueError) as exc:
-        raise ValueError(localized_message("ui.errors.generator.invalid_updater_parameters_value", value_0=item['type'])) from exc
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.invalid_updater_parameters_value",
+                value_0=item["type"],
+            )
+        ) from exc
 
 
 def _emit_nested_updater(
-    a: Callable[[str], object], cls_name: str, base: str, cfg,
+    a: Callable[[str], object],
+    cls_name: str,
+    base: str,
+    cfg,
     problem: ProblemDefinition,
 ) -> None:
     """Emit one sub-updater class.
@@ -1102,11 +1283,17 @@ def _emit_nested_updater(
     """
     cfg = cfg or {}
     if "code" in cfg:
-        raise ValueError(localized_message("ui.errors.generator.raw_updater_code_is_unsupported_use_method_overrides"))
+        raise ValueError(
+            localized_message(
+                "ui.errors.generator.raw_updater_code_is_unsupported_use_method_overrides"
+            )
+        )
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")
-    a(f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)})")
+    a(
+        f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)})"
+    )
 
     body: list[str] = []
     # NOTE: the model stores the lists under ``objective_functions`` / ``constraints``

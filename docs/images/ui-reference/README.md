@@ -14,6 +14,7 @@
 - INP 演示使用 [`reference-box.inp`](../../examples/reference-box.inp)，包含当前导入器需要的显式集合、截面与占位 Neo-Hookean 材料。正式模型仍需复核材料分配并定义边界、载荷和目标。
 - `cad/export-step-dialog.png` 展示真实 STEP 保存对话框及 STP 文件筛选，截图后取消保存。`geometry/cad-part.png` 已包含卡片顶部的“导出 STEP…”入口。
 - 截图采用独立的示例定义与运行副本；可移植定义位于 `docs/examples/test.morph`，结果目录使用相对路径。
+- 新增[资产页截图](../ui/assets/geometry-assets.png)展示随文档提供的 STEP、STL 和 INP 文件，采用下述统一简体中文字体设置；来源、尺寸与实际字形记录在[资产页截图清单](../ui/assets/capture-manifest.json)。
 
 <a id="section-统一简体中文字体"></a>
 
@@ -32,6 +33,8 @@
 旧图混用的原因有两处：Qt 将缺失汉字分别回退到 MS Gothic、微软雅黑等字体；VTK 读取 TTC 集合时也可能使用其中默认的日文字体面。两处均已在截图进程中明确指定简体中文版本。该处理不修改桌面的全局字体设置。
 
 实际 glyph runs 检查覆盖普通、600、700 字重和界面控件字体；检查记录见 [统一字体记录](../font-policy.json)。标题与正文保留 UI 原本的字重层级，同一类文字不再因中文回退而混用字形。
+
+资产页截图由 [`scripts/docs/capture_assets.py`](../../../scripts/docs/capture_assets.py)生成。共享的 `capture_fonts.py` 从系统字体中提取 SC 字体面，并检查界面控件实际采用的中文字体。该脚本需要 `fonttools`、`fontconfig` 和系统已安装的 Noto Sans CJK SC；字体设置仅作用于截图进程。
 
 <a id="section-部件与实例命名"></a>
 

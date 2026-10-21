@@ -1,11 +1,12 @@
 """Definition workspace.
 
 Layout:
-  center      two tabs:
+  center      three tabs:
                 1. 编辑   -> a QStackedWidget routed by the selected tree node
                               (controller / properties / helper code / solver / loads /
                                steps / updater / objective pages)
                 2. 代码(只读) -> generated ``ThisController`` (auto-synced)
+                3. 资产 -> referenced files and category-specific previews
   right       PyVista preview of the initial geometry + per-step loads
 
 File actions and workspace switching belong to MainWindow.
@@ -36,7 +37,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .theme import theme_manager
 from .application import (
     EditorKind,
     EditorRoute,
@@ -56,6 +56,7 @@ from .presentation.labels import node_title
 from .presentation.navigation import ObjectiveItemTreeNode, node_at_path, node_path
 from .refresh import Refreshable, RefreshContext, RefreshCoordinator
 from .schemes.base import scheme_label
+from .theme import theme_manager
 from .widgets.collection_controls import CollectionHeader
 from .widgets.controller_editor import ControllerSettingsEditor
 from .widgets.custom_classes import (
@@ -73,6 +74,7 @@ from .widgets.model_tree import ModelTree
 from .widgets.objective_editor import ObjectiveEditor
 from .widgets.solver_editor import SolverEditor
 from .widgets.source_view import GeneratedSourceView
+from .widgets.asset_browser import AssetBrowser
 from .widgets.stepmatrix import StepMatrix
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
@@ -133,11 +135,13 @@ class Workbench(QWidget):
         self._tree_split = QSplitter(Qt.Orientation.Vertical)
         self._tree_split.addWidget(self.tree)
         self._tree_split.addWidget(self.history_panel)
-        self._tree_split.setSizes(list(theme_manager.palette.layout.workbench.left_split_sizes))
+        self._tree_split.setSizes(
+            list(theme_manager.palette.layout.workbench.left_split_sizes)
+        )
         self._tree_split.setChildrenCollapsible(False)
         split.addWidget(self._tree_split)
 
-        # ---- center: 编辑 (stacked) + 代码(只读)
+        # ---- center: editor, generated source and assets
         center = QTabWidget()
         self._center = center
 
@@ -161,7 +165,11 @@ class Workbench(QWidget):
             )
         )
         center.addTab(self.code_view, tr("ui.workbench.code_read_only"))
-        center.setMinimumWidth(theme_manager.palette.layout.workbench.editor_minimum_width)
+        self.asset_view = AssetBrowser()
+        center.addTab(self.asset_view, tr("ui.workbench.assets"))
+        center.setMinimumWidth(
+            theme_manager.palette.layout.workbench.editor_minimum_width
+        )
         split.addWidget(center)
 
         # ---- right preview
@@ -297,6 +305,7 @@ class Workbench(QWidget):
         self._update_caption()
         self._center.setTabText(0, tr("ui.workbench.edit"))
         self._center.setTabText(1, tr("ui.workbench.code_read_only"))
+        self._center.setTabText(2, tr("ui.workbench.assets"))
         # Refresh the model-tree titles and the centre editors in the new
         # language.  Only the cheap form editors are re-created (data lives on
         # the model nodes); the PyVista preview viewport is left untouched.
@@ -309,6 +318,7 @@ class Workbench(QWidget):
         self._center.setCurrentIndex(center_idx)
 
         self.viewer.apply_language()
+        self.asset_view.apply_language()
         self.history_panel.apply_language()
         self._update_history_actions()
 
@@ -321,6 +331,7 @@ class Workbench(QWidget):
             )
         )
         self.viewer.apply_theme()
+        self.asset_view.apply_theme()
         self.history_panel.apply_theme()
 
     # -------------------------------------------- name / output-path slots
@@ -351,7 +362,7 @@ class Workbench(QWidget):
     # ------------------------------------------------------ node selection
     def _on_model_item_clicked(self, item, _column: int) -> None:
         # currentItemChanged does not fire when the selected row is clicked again.
-        if self._center.currentWidget() is self.code_view:
+        if self._center.currentIndex() != 0:
             node = item.data(0, Qt.ItemDataRole.UserRole)
             if node is not None:
                 self._on_node_selected(node)
@@ -553,6 +564,7 @@ class Workbench(QWidget):
                 self.class_selector,
                 self.pages,
                 self.code_view,
+                self.asset_view,
                 self.viewer,
             ]
         )
@@ -864,7 +876,7 @@ class Workbench(QWidget):
     def start_optimization(self) -> None:
         self.flush_edits()
         try:
-            self.session.validate_for_run()
+            self.session.validate_references()
         except Exception as exc:
             QMessageBox.warning(
                 self,

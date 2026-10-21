@@ -110,6 +110,8 @@
 
 `codegen/generator.py` 将同步后的定义投影为标准 `ThisController`。生成器读取模型，不将生成时的临时状态写回定义。
 
+`codegen/assets.py` 统一收集 STL、INP 和 STEP 资源，返回节点到相对路径的映射及 `DefinitionAsset` 记录。记录包含类别、格式、文件内容、来源、关联节点及引用位置。资源名称仅由当前定义与文件内容确定。代码预览、资产页和文件导出使用同一清单；`ProblemLibrary.export_python()` 负责将源码和资源写入磁盘。文件覆盖确认由界面处理。
+
 | 定义内容 | 生成位置 |
 |---|---|
 | Part、Instance、Surface、CAD 操作 | `Params.GeometryParams` 及对应 Part 子类 |
@@ -121,6 +123,12 @@
 | 辅助代码与自定义类 | 模块级定义及配置类的继承入口 |
 
 生成调用沿用内核注册顺序和引用名称。相同定义应得到相同文本；`.morph` 是可编辑源，Python 是单向输出，不承担反向重建任意任务的职责。
+
+<a id="asset-previews"></a>
+
+资产页位于 `widgets/asset_browser.py`，按类别注册预览组件。`AssetBrowser.register_preview(category, title_key, factory)` 指定类别标识、语言文本键及组件工厂；组件继承 `AssetPreview` 并实现 `set_asset(asset, problem)`，可通过 `apply_language()` 和 `apply_theme()` 响应界面切换。新增类别的收集逻辑应返回对应的 `DefinitionAsset`，其显示逻辑由注册组件处理。
+
+内置的 `GeometryAssetPreview` 使用 `visualization/assets.py` 将 STEP、STL 和 INP 内容转换为场景，再复用 `PreviewRenderer` 绘制。STEP 场景复用 CAD 面片合并逻辑；INP 场景沿用其关联节点的部件选择。组件在资产页可见且选中条目时创建，隐藏页不额外创建渲染窗口。清单刷新保留当前选择，内容不变时保留已显示场景与视角。
 
 <a id="custom-classes"></a>
 
@@ -153,6 +161,8 @@
 ## 9 优化运行会话
 
 `RunSourceKind`、`RunSource` 与 `RunMode` 表达定义、Python 或已有结果等任务来源。`OptimizationRunSession` 持有唯一活动 `subprocess.Popen`、输出消费状态、结果目录发现和续跑来源。
+
+从界面定义启动时，运行会话创建一份独立定义快照。`launcher.run_job()` 调用与手动导出共用的 `export_python_bundle()`，在独立临时目录中生成脚本和 `morphopt_assets`，随后启动该脚本。控制器将脚本及资源复制到结果目录的 `scripts/` 中。引用检查在启动前执行，完整代码校验在实际生成脚本时执行。
 
 ```text
 选择任务来源 → 冻结定义/脚本快照 → 启动独立进程

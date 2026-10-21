@@ -21,20 +21,25 @@ class ContinueDialog(QDialog):
 
     def __init__(self, max_step: int, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(tr('ui.widgets.run_dialogs.continue_optimization'))
-        self.setMinimumWidth(theme_manager.palette.layout.widgets.continue_dialog_minimum_width)
+        self.setWindowTitle(tr("ui.widgets.run_dialogs.continue_optimization"))
+        self.setMinimumWidth(
+            theme_manager.palette.layout.widgets.continue_dialog_minimum_width
+        )
         layout = QVBoxLayout(self)
         layout.addWidget(
             QLabel(
-                tr('ui.widgets.run_dialogs.the_result_has_reached_step_value_choose_where_to_resume', value_0=max_step)
+                tr(
+                    "ui.widgets.run_dialogs.the_result_has_reached_step_value_choose_where_to_resume",
+                    value_0=max_step,
+                )
             )
         )
         self.last_step = QRadioButton(
-            tr('ui.widgets.run_dialogs.resume_from_the_last_step')
+            tr("ui.widgets.run_dialogs.resume_from_the_last_step")
         )
         self.last_step.setChecked(True)
         self.chosen_step = QRadioButton(
-            tr('ui.widgets.run_dialogs.resume_from_a_chosen_step')
+            tr("ui.widgets.run_dialogs.resume_from_a_chosen_step")
         )
         self.step = QSpinBox()
         self.step.setRange(1, max(1, max_step))
@@ -51,9 +56,9 @@ class ContinueDialog(QDialog):
         layout.addLayout(step_row)
 
         buttons = QHBoxLayout()
-        accept = QPushButton(tr('ui.widgets.run_dialogs.continue'))
+        accept = QPushButton(tr("ui.widgets.run_dialogs.continue"))
         accept.clicked.connect(self.accept)
-        cancel = QPushButton(tr('ui.widgets.run_dialogs.cancel'))
+        cancel = QPushButton(tr("ui.widgets.run_dialogs.cancel"))
         cancel.clicked.connect(self.reject)
         buttons.addStretch(1)
         buttons.addWidget(cancel)

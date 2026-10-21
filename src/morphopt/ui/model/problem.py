@@ -989,12 +989,6 @@ class ProblemDefinition:
             raise ValueError(
                 localized_message("ui.errors.problem.the_part_is_not_in_this_problem")
             )
-        if len(geometry.parts) <= 1:
-            raise ValueError(
-                localized_message(
-                    "ui.errors.problem.a_problem_must_keep_at_least_one_part"
-                )
-            )
         surfaces = part.surfaces if isinstance(part, BoundaryPartNode) else ()
         for _ in surfaces:
             self._remove_surface_state(part, 0)

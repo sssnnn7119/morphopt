@@ -28,12 +28,22 @@ class ResultPathLabel(ElidedLabel):
 
     def _update_description(self) -> None:
         self.setToolTip(self.folder or tr("ui.workspace.result_path_pending"))
-        self.setStatusTip(tr(
-            "ui.workspace.copy_result_path" if self.folder else "ui.workspace.result_path_pending"
-        ))
+        self.setStatusTip(
+            tr(
+                "ui.workspace.copy_result_path"
+                if self.folder
+                else "ui.workspace.result_path_pending"
+            )
+        )
         self.setAccessibleDescription(self.toolTip())
-        self.setCursor(Qt.CursorShape.PointingHandCursor if self.folder else Qt.CursorShape.ArrowCursor)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus if self.folder else Qt.FocusPolicy.NoFocus)
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if self.folder
+            else Qt.CursorShape.ArrowCursor
+        )
+        self.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus if self.folder else Qt.FocusPolicy.NoFocus
+        )
 
     def copy_path(self) -> None:
         if self.folder:
@@ -41,15 +51,22 @@ class ResultPathLabel(ElidedLabel):
             self.pathCopied.emit()
 
     def mouseReleaseEvent(self, event):
-        if (self.folder and event.button() == Qt.MouseButton.LeftButton
-                and self.rect().contains(event.position().toPoint())):
+        if (
+            self.folder
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.rect().contains(event.position().toPoint())
+        ):
             self.copy_path()
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
-        if self.folder and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+        if self.folder and event.key() in (
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Space,
+        ):
             self.copy_path()
             event.accept()
         else:

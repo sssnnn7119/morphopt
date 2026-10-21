@@ -151,12 +151,11 @@ class OptimizationRunSession:
     def start_definition(self, problem: ProblemDefinition) -> subprocess.Popen:
         self._ensure_idle()
         definition = ProblemDefinition.from_dict(problem.to_dict())
-        running_definition = ProblemDefinition.from_dict(definition.to_dict())
         started_at = time.time()
-        _job, process = launcher.run_job(running_definition)
+        _job, process = launcher.run_job(definition)
         self._save_definition = True
         self.definition = definition
-        self._running_definition = running_definition
+        self._running_definition = definition
         self._saved_folders.clear()
         self.source = None
         self.last_iteration = 0

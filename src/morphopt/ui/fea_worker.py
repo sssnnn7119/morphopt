@@ -33,9 +33,14 @@ def execute(request_path: str) -> None:
         from ..postprocess.native import NativeResultSnapshot, export_native_results
 
         output = export_native_results(
-            request["destination"], name=request["name"], iteration=request["iteration"],
-            model_path=request["model_path"], source=request["source"],
-            results=tuple(NativeResultSnapshot(**entry) for entry in request["results"]),
+            request["destination"],
+            name=request["name"],
+            iteration=request["iteration"],
+            model_path=request["model_path"],
+            source=request["source"],
+            results=tuple(
+                NativeResultSnapshot(**entry) for entry in request["results"]
+            ),
         )
         print(str(output), flush=True)
     elif request["action"] == "export":

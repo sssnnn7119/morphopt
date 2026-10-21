@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QSize, QTimer, Qt
+from PySide6.QtCore import QDir, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QToolButton, QWidget
 
@@ -13,14 +13,17 @@ from ..i18n import tr
 from ..theme import theme_manager
 
 
-def confirm_overwrite(parent: QWidget, path: Path) -> bool:
+def confirm_overwrite(
+    parent: QWidget,
+    path: Path,
+    *,
+    message_key: str = "ui.mainwindow.overwrite_existing_file_value",
+) -> bool:
     """Ask for overwrite confirmation using the active UI language."""
     message_box = QMessageBox(parent)
     message_box.setIcon(QMessageBox.Icon.Warning)
     message_box.setWindowTitle(tr("ui.mainwindow.overwrite_confirmation"))
-    message_box.setText(
-        tr("ui.mainwindow.overwrite_existing_file_value", value_0=path.name)
-    )
+    message_box.setText(tr(message_key, value_0=path.name))
     replace_button = message_box.addButton(
         tr("ui.mainwindow.overwrite_yes"), QMessageBox.ButtonRole.YesRole
     )
@@ -101,35 +104,44 @@ def set_file_dialog_icons(dialog: QFileDialog) -> None:
         button.style().polish(button)
 
 
-def create_file_dialog(parent: QWidget, title: str, directory: str, *, save: bool) -> QFileDialog:
+def create_file_dialog(
+    parent: QWidget, title: str, directory: str, *, save: bool
+) -> QFileDialog:
     dialog = QFileDialog(parent, title, directory)
     dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
     dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, save)
-    dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave if save else QFileDialog.AcceptMode.AcceptOpen)
-    dialog.setFileMode(QFileDialog.FileMode.AnyFile if save else QFileDialog.FileMode.ExistingFile)
-    dialog.setFilter(QDir.Filter.AllDirs | QDir.Filter.Files | QDir.Filter.NoDotAndDotDot)
+    dialog.setAcceptMode(
+        QFileDialog.AcceptMode.AcceptSave if save else QFileDialog.AcceptMode.AcceptOpen
+    )
+    dialog.setFileMode(
+        QFileDialog.FileMode.AnyFile if save else QFileDialog.FileMode.ExistingFile
+    )
+    dialog.setFilter(
+        QDir.Filter.AllDirs | QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
+    )
     for label, key in (
-        (QFileDialog.DialogLabel.LookIn, 'look_in'),
-        (QFileDialog.DialogLabel.FileName, 'file_name'),
-        (QFileDialog.DialogLabel.FileType, 'file_type'),
-        (QFileDialog.DialogLabel.Accept, 'save' if save else 'open'),
-        (QFileDialog.DialogLabel.Reject, 'cancel'),
+        (QFileDialog.DialogLabel.LookIn, "look_in"),
+        (QFileDialog.DialogLabel.FileName, "file_name"),
+        (QFileDialog.DialogLabel.FileType, "file_type"),
+        (QFileDialog.DialogLabel.Accept, "save" if save else "open"),
+        (QFileDialog.DialogLabel.Reject, "cancel"),
     ):
-        dialog.setLabelText(label, tr('ui.files.' + key))
+        dialog.setLabelText(label, tr("ui.files." + key))
     set_file_dialog_icons(dialog)
     QTimer.singleShot(0, dialog, lambda: set_file_dialog_icons(dialog))
     return dialog
 
 
-def choose_open_file(parent: QWidget, title: str, directory: str,
-                     name_filter: str) -> str:
+def choose_open_file(
+    parent: QWidget, title: str, directory: str, name_filter: str
+) -> str:
     """Choose one existing file with the shared appearance and file filters."""
     dialog = create_file_dialog(parent, title, directory, save=False)
     dialog.setNameFilter(name_filter)
     if dialog.exec() != QFileDialog.DialogCode.Accepted:
-        return ''
+        return ""
     selected = dialog.selectedFiles()
-    return selected[0] if selected else ''
+    return selected[0] if selected else ""
 
 
 def choose_directory(parent: QWidget, title: str, directory: str) -> str:
@@ -137,11 +149,27 @@ def choose_directory(parent: QWidget, title: str, directory: str) -> str:
     dialog = create_file_dialog(parent, title, directory, save=False)
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
-    dialog.setLabelText(QFileDialog.DialogLabel.FileName, tr('ui.files.directory'))
+    dialog.setLabelText(QFileDialog.DialogLabel.FileName, tr("ui.files.directory"))
     if dialog.exec() != QFileDialog.DialogCode.Accepted:
-        return ''
+        return ""
     selected = dialog.selectedFiles()
-    return selected[0] if selected else ''
+    return selected[0] if selected else ""
+
+
+def choose_save_directory(
+    parent: QWidget, title: str, directory: str, name: str
+) -> str:
+    """Choose a new or existing output directory by entering its name."""
+    dialog = create_file_dialog(parent, title, directory, save=True)
+    dialog.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
+    dialog.setLabelText(
+        QFileDialog.DialogLabel.FileName, tr("ui.files.directory_name")
+    )
+    dialog.selectFile(name)
+    if dialog.exec() != QFileDialog.DialogCode.Accepted:
+        return ""
+    selected = dialog.selectedFiles()
+    return selected[0] if selected else ""
 
 
 @dataclass(frozen=True)
@@ -151,15 +179,16 @@ class SaveFileSelection:
     overwrite: bool = False
 
 
-def choose_save_file(parent: QWidget, title: str, directory: str, name: str,
-                     formats: dict[str, str]) -> SaveFileSelection | None:
+def choose_save_file(
+    parent: QWidget, title: str, directory: str, name: str, formats: dict[str, str]
+) -> SaveFileSelection | None:
     """Choose a filename and format in one dialog; approve replacement exactly once."""
     dialog = create_file_dialog(parent, title, directory, save=True)
     filters = {label: key for key, label in formats.items()}
     dialog.setNameFilters(list(filters))
     first = next(iter(formats))
     dialog.setDefaultSuffix(first)
-    dialog.selectFile(name + '.' + first)
+    dialog.selectFile(name + "." + first)
 
     def change_format(label: str) -> None:
         suffix = filters[label]
@@ -167,15 +196,20 @@ def choose_save_file(parent: QWidget, title: str, directory: str, name: str,
         selected = dialog.selectedFiles()
         if selected:
             path = Path(selected[0])
-            if path.suffix.lstrip('.').lower() in formats:
-                dialog.selectFile(path.with_suffix('.' + suffix).name)
+            if path.suffix.lstrip(".").lower() in formats:
+                dialog.selectFile(path.with_suffix("." + suffix).name)
+
     dialog.filterSelected.connect(change_format)
     if dialog.exec() != QFileDialog.DialogCode.Accepted or not dialog.selectedFiles():
         return None
     key = filters[dialog.selectedNameFilter()]
     path = Path(dialog.selectedFiles()[0])
-    if path.suffix.lower() != '.' + key:
-        path = path.with_suffix('.' + key) if path.suffix.lstrip('.').lower() in formats else Path(str(path) + '.' + key)
+    if path.suffix.lower() != "." + key:
+        path = (
+            path.with_suffix("." + key)
+            if path.suffix.lstrip(".").lower() in formats
+            else Path(str(path) + "." + key)
+        )
     exists = path.exists()
     if exists and not confirm_overwrite(parent, path):
         return None

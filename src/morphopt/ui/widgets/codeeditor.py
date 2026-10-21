@@ -15,16 +15,22 @@ Editing behaviour (via the internal :class:`_CodeEdit`):
 from __future__ import annotations
 
 import re
-from PySide6.QtCore import Qt, QStringListModel, QTimer, Signal
-from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QShortcut, QKeySequence,
-    QSyntaxHighlighter, QTextCharFormat,
-)
-from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QWidget, QVBoxLayout, QLabel
 
-from ..theme import theme_manager
+from PySide6.QtCore import QStringListModel, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QKeySequence,
+    QShortcut,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+)
+from PySide6.QtWidgets import QCompleter, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+
 from ..application.completion import CompletionItem, completion_items
 from ..i18n import tr
+from ..theme import theme_manager
 
 
 class _PythonHighlighter(QSyntaxHighlighter):
@@ -36,7 +42,9 @@ class _PythonHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document):
         super().__init__(document)
-        self._string_re = re.compile(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')')
+        self._string_re = re.compile(
+            r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')'
+        )
         self._comment_re = re.compile(r"#[^\n]*")
         self._apply_theme(theme_manager.name)
         unsubscribe = theme_manager.subscribe(self._apply_theme)
@@ -61,7 +69,10 @@ class _PythonHighlighter(QSyntaxHighlighter):
         self._rules = [
             (re.compile(r"\b(%s)\b" % self.KEYWORDS), self._format(keyword, True)),
             (re.compile(r"\b(?:self|super)\b"), self._format(self_name)),
-            (re.compile(r"\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b"), self._format(number)),
+            (
+                re.compile(r"\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b"),
+                self._format(number),
+            ),
         ]
         self._f_string = self._format(string)
         self._f_comment = self._format(comment)
@@ -91,7 +102,10 @@ class _CodeEdit(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         # ensure undo / redo always work, even if native shortcuts are remapped
-        for key, slot in ((QKeySequence.StandardKey.Undo, self.undo), (QKeySequence.StandardKey.Redo, self.redo)):
+        for key, slot in (
+            (QKeySequence.StandardKey.Undo, self.undo),
+            (QKeySequence.StandardKey.Redo, self.redo),
+        ):
             shortcut = QShortcut(key, self, activated=slot)
             shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         self._completion_slot = ""
@@ -107,8 +121,7 @@ class _CodeEdit(QPlainTextEdit):
     # ----------------------------------------------------------- completion
     def set_completion_context(self, slot_key: str, problem=None) -> None:
         """Set the model code slot whose symbols should be suggested."""
-        if (slot_key == self._completion_slot
-                and problem is self._completion_problem):
+        if slot_key == self._completion_slot and problem is self._completion_problem:
             return
         self._completion_slot = slot_key
         self._completion_problem = problem
@@ -141,12 +154,14 @@ class _CodeEdit(QPlainTextEdit):
         # line on some Qt platform themes, so reserve enough width for the
         # longest visible candidate and its scrollbar.
         popup_width = (
-            popup.sizeHintForColumn(0)
-            + popup.verticalScrollBar().sizeHint().width()
+            popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width()
         )
         popup_rect = self.cursorRect()
         popup_rect.setWidth(
-            max(theme_manager.palette.layout.widgets.code_completion_minimum_width, popup_width)
+            max(
+                theme_manager.palette.layout.widgets.code_completion_minimum_width,
+                popup_width,
+            )
         )
         self._completer.complete(popup_rect)
 
@@ -155,7 +170,7 @@ class _CodeEdit(QPlainTextEdit):
 
     def _completion_prefix(self) -> str:
         cursor = self.textCursor()
-        before_cursor = cursor.block().text()[:cursor.positionInBlock()]
+        before_cursor = cursor.block().text()[: cursor.positionInBlock()]
         match = re.search(r"[A-Za-z_]\w*$", before_cursor)
         return match.group(0) if match else ""
 
@@ -165,7 +180,7 @@ class _CodeEdit(QPlainTextEdit):
     def _member_expression(self) -> str | None:
         """Return the expression left of the current member-access dot."""
         cursor = self.textCursor()
-        before_cursor = cursor.block().text()[:cursor.positionInBlock()]
+        before_cursor = cursor.block().text()[: cursor.positionInBlock()]
         match = re.search(
             r"([A-Za-z_]\w*(?:\.\w+|\[[^\]]+\])*)\.\s*[A-Za-z_]*$",
             before_cursor,
@@ -173,14 +188,15 @@ class _CodeEdit(QPlainTextEdit):
         return match.group(1) if match else None
 
     @staticmethod
-    def _member_candidates(candidates: list[CompletionItem], expression: str
-                           ) -> list[CompletionItem]:
+    def _member_candidates(
+        candidates: list[CompletionItem], expression: str
+    ) -> list[CompletionItem]:
         """Adapt full-path candidates to text inserted after ``expression.``."""
         member_prefix = f"{expression}."
         items: list[CompletionItem] = []
         for item in candidates:
             if item.insert_text.startswith(member_prefix):
-                suffix = item.insert_text[len(member_prefix):]
+                suffix = item.insert_text[len(member_prefix) :]
                 items.append(CompletionItem(suffix, suffix))
         return items
 
@@ -191,8 +207,9 @@ class _CodeEdit(QPlainTextEdit):
         prefix = self._completion_prefix()
         cursor = self.textCursor()
         if prefix:
-            cursor.movePosition(cursor.MoveOperation.Left,
-                                cursor.MoveMode.KeepAnchor, len(prefix))
+            cursor.movePosition(
+                cursor.MoveOperation.Left, cursor.MoveMode.KeepAnchor, len(prefix)
+            )
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)
 
@@ -205,27 +222,31 @@ class _CodeEdit(QPlainTextEdit):
         key = event.key()
         mods = event.modifiers()
         if self._completer.popup().isVisible() and key in (
-                Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape,
-                Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Escape,
+            Qt.Key.Key_Tab,
+            Qt.Key.Key_Backtab,
+        ):
             event.ignore()
             return
-        if (key == Qt.Key.Key_Space
-                and mods & Qt.KeyboardModifier.ControlModifier):
+        if key == Qt.Key.Key_Space and mods & Qt.KeyboardModifier.ControlModifier:
             self._show_completions(force=True)
             return
         # Note: on most platforms Shift+Tab arrives as Key_Backtab (not
         # Key_Tab), so we must treat both as Tab / Shift+Tab and consume them,
         # otherwise Qt would fall through to widget focus traversal.
-        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and \
-                not (mods & Qt.KeyboardModifier.ControlModifier):
-            if (mods & Qt.KeyboardModifier.ShiftModifier) or \
-                    key == Qt.Key.Key_Backtab:
+        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and not (
+            mods & Qt.KeyboardModifier.ControlModifier
+        ):
+            if (mods & Qt.KeyboardModifier.ShiftModifier) or key == Qt.Key.Key_Backtab:
                 self._unindent()
             else:
                 self._indent()
             return
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and \
-                not (mods & Qt.KeyboardModifier.ControlModifier):
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
+            mods & Qt.KeyboardModifier.ControlModifier
+        ):
             if not self.textCursor().hasSelection():
                 self._newline_with_indent()
                 return
@@ -264,9 +285,10 @@ class _CodeEdit(QPlainTextEdit):
 
         def drop(ln: str) -> str:
             if ln.startswith(self.INDENT):
-                return ln[len(self.INDENT):]
+                return ln[len(self.INDENT) :]
             n = len(ln) - len(ln.lstrip(" \t"))
             return ln[n:]
+
         self._transform_lines(drop)
 
     def _transform_lines(self, fn) -> None:
@@ -289,8 +311,9 @@ class _CodeEdit(QPlainTextEdit):
         while True:
             # select the whole line (minus its trailing newline) and replace it
             cur.setPosition(block.position())
-            cur.setPosition(block.position() + block.length() - 1,
-                            cur.MoveMode.KeepAnchor)
+            cur.setPosition(
+                block.position() + block.length() - 1, cur.MoveMode.KeepAnchor
+            )
             cur.insertText(fn(block.text()))
             if block == end:
                 break
@@ -301,8 +324,9 @@ class _CodeEdit(QPlainTextEdit):
         # keep the (shifted) selection so repeated Tab keeps working
         new_sel = self.textCursor()
         new_sel.setPosition(start.position())
-        new_sel.setPosition(end.position() + end.length() - 1,
-                            new_sel.MoveMode.KeepAnchor)
+        new_sel.setPosition(
+            end.position() + end.length() - 1, new_sel.MoveMode.KeepAnchor
+        )
         self.setTextCursor(new_sel)
 
     def _unindent_current_line(self) -> None:
@@ -332,8 +356,13 @@ class CodeEditor(QWidget):
 
     focusReceived = Signal()
 
-    def __init__(self, title: str | None = None, parent=None,
-                 completion_context: str = "", completion_problem=None):
+    def __init__(
+        self,
+        title: str | None = None,
+        parent=None,
+        completion_context: str = "",
+        completion_problem=None,
+    ):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -343,7 +372,9 @@ class CodeEditor(QWidget):
         lay.addWidget(cap)
         self._edit = _CodeEdit(self)
         self._edit.focusReceived.connect(self.focusReceived)
-        self._edit.setMinimumHeight(theme_manager.palette.layout.widgets.code_editor_minimum_height)
+        self._edit.setMinimumHeight(
+            theme_manager.palette.layout.widgets.code_editor_minimum_height
+        )
         self._apply_theme(theme_manager.name)
         unsubscribe = theme_manager.subscribe(self._apply_theme)
         self.destroyed.connect(lambda *_args: unsubscribe())

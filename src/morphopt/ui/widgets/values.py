@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from ..i18n import tr
 
-
-
 #: labels for degree-of-freedom check boxes (dof index -> short name)
 DOF_LABELS = {0: "X", 1: "Y", 2: "Z", 3: "Rx", 4: "Ry", 5: "Rz"}
 DOF_COUNT = 6
