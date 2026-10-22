@@ -697,7 +697,11 @@ class Solver(morphopt.Solver):
 
 未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务。分组名称须有效且不重复，单进程仍可依次完成多个任务。
 
-工况以字符串名称作为键，顺序由 `add_step()` 的注册顺序确定。结果通过 `self.fe_results["load_case_1"]` 访问；`ObjectiveFunction.workspace_measure()` 使用具名工况及载荷 Jacobian 计算工作空间边界积分。归档使用 `result_<工况名>_iter_<轮次>.npz`，`load_cases.json` 保存注册顺序。
+工况以字符串名称作为键，顺序由 `add_step()` 的注册顺序确定。结果通过 `self.fe_results["load_case_1"]` 访问。归档使用 `result_<工况名>_iter_<轮次>.npz`，`load_cases.json` 保存注册顺序。
+
+工作空间目标在任务脚本中显式计算各边界高斯点工况的位移与载荷 Jacobian，并逐项加权求和。`samples` 表记录工况名称、高斯权重、边界方向符号与切向输入编号。每次循环设置当前工况，提取参考点的响应分量，并从 `result.jacobian[载荷名]` 中读取相应参数列；同一独立输入中的多个载荷参数，其 Jacobian 相加。
+
+二维工作空间的单点积分项为 `motion[0] * tangent[1] - motion[1] * tangent[0]`，其中 `tangent` 为当前边界切向输入对应的位移 Jacobian。各点按 `integral += weight * orientation * integrand` 累加，面积为 `abs(integral) / 2`。该表达式对应驱动参数域的逆时针边界取向；绝对值在全部高斯点累加后计算。三维积分项在脚本中展开为位移与两列切向 Jacobian 的标量三重积，体积为 `abs(integral) / 3`；纯转动工作空间保留 `abs(integral) / 24` 的度量系数。目标值在积分结果上施加负号、目标权重及归一化尺度。 二维工况按第一输入下界、第一输入上界、第二输入下界、第二输入上界分组，正向切向 Jacobian 对应的边界系数依次为 `−、＋、＋、−`；每边两个高斯点时，排列为 `--++++--`。该系数规定载荷域的闭合边界取向，响应坐标中的正负方向由 Jacobian 本身给出。快速开始的工作空间指标使用同样的显式求和，返回未归一化的正值。
 
 
 <a id="section-初始解与几何变化"></a>

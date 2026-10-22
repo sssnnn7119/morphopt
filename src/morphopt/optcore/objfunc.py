@@ -65,37 +65,6 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         self.fe_results = dict(zip(self.fe_results, fe_results, strict=True))
         return self.objective_function()
     
-    def workspace_measure(
-        self, reference_point_name: str, axes: list[int], inputs: list[dict],
-        case_names: list[str], weights: list[float], tangents: list[list[int]],
-        orientations: list[float],
-    ) -> torch.Tensor:
-        """Integrate a 2-D or 3-D workspace boundary using load Jacobians."""
-        assembly = self.fe.assembly
-        reference = assembly.get_reference_point(reference_point_name)
-        start = assembly._GC_list_indexStart[reference._RGC_index]
-        measure = None
-        for index, name in enumerate(case_names):
-            self.set_step(name)
-            result = self.fe_results[name]
-            state = assembly._GC2RGC(result.GC.to(assembly.device))
-            motion = state[reference._RGC_index].reshape(-1)[axes]
-            derivatives = [
-                sum(result.jacobian[load][start:start + 6, component].to(motion.device)
-                    for load, component in entry["parameters"])[axes]
-                for entry in inputs
-            ]
-            a, b = tangents[index]
-            if len(axes) == 2:
-                integrand = motion[1] * derivatives[a][0] - motion[0] * derivatives[a][1]
-            else:
-                integrand = torch.dot(motion, torch.linalg.cross(derivatives[a], derivatives[b]))
-            if measure is None:
-                measure = motion.sum() * 0.0
-            measure = measure + weights[index] * orientations[index] * integrand
-        factor = 0.5 if len(axes) == 2 else (1 / 24 if axes == [3, 4, 5] else 1 / 3)
-        return measure.abs() * factor
-
     def sensitivity_analysis(self, params: Params) -> dict[str, torch.Tensor]:
         """
         Perform sensitivity analysis to compute the design sensitivity variables.

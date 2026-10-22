@@ -1211,5 +1211,7 @@
   "ui.load_cases.delete_objectives": "Delete referring terms",
   "ui.load_cases.clear_references": "Keep terms and clear cases",
   "ui.workspace_objective.cases_cleared": "Case references have been cleared. Changing the load inputs, upper limits, or Gauss order automatically generates new boundary Gauss-point cases.",
-  "ui.load_cases.workspace_link": "Objective {index} · Workspace (configure)"
+  "ui.load_cases.workspace_link": "Objective {index} · Workspace (configure)",
+  "ui.widgets.updater_editor.max_step_length": "Maximum update step length",
+  "ui.widgets.updater_editor.max_step_length_help": "Maximum design-update step length. The actual step adapts to the update direction. Enter a positive number or a custom constant name."
 }

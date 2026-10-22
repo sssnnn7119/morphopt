@@ -282,6 +282,7 @@ class ObserverControls(QWidget):
 
     runStateChanged = Signal()
     resultFolderChanged = Signal(str)
+    resultsUpdated = Signal()
     outputReceived = Signal(int, str)
 
     def __init__(self, parent=None):
@@ -545,6 +546,7 @@ class ObserverControls(QWidget):
             progress.changed or self.panel.iteration != progress.iteration
         ):
             self.panel.show_iteration(progress.folder, progress.iteration)
+        self.resultsUpdated.emit()
 
     def _update_buttons(self) -> None:
         running = self._run.active

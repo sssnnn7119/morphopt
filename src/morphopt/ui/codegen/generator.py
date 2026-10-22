@@ -33,6 +33,7 @@ from ..model.registry import (
 )
 from ..schemes.base import SchemeTemplate, get_template
 from .assets import collect_python_assets
+from .workspace import workspace_integral_body
 
 CORE_BASES = {
     "controller": "morphopt.Controller",
@@ -408,10 +409,20 @@ def _objective_function_body(
             scale = float(term.get("normalization", 1.0))
             if not math.isfinite(scale) or scale <= 0:
                 raise ValueError("Workspace normalization must be positive.")
-            arguments = {key: spec[key] for key in ("axes", "weights", "tangents", "orientations")}
-            arguments.update(reference_point_name=term["reference_point_name"], inputs=term["inputs"], case_names=term["case_names"])
-            call = "self.workspace_measure(" + ", ".join(f"{key}={value!r}" for key, value in arguments.items()) + ")"
-            weighted_terms.append(f"-({weight!r}) * {call} / {scale!r}")
+            body = workspace_integral_body(
+                reference_point_name=term["reference_point_name"],
+                axes=spec["axes"],
+                load_groups=[[(name, component) for name, component in entry["parameters"]] for entry in term["inputs"]],
+                case_names=term["case_names"],
+                weights=spec["weights"],
+                tangents=spec["tangents"],
+                orientations=spec["orientations"],
+            )
+            functions.extend([
+                f"def {function_name}() -> Any:",
+                indent_block(body, 4),
+            ])
+            weighted_terms.append(f"-({weight!r}) * {function_name}() / {scale!r}")
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
             body = str(term.get("body") or "").strip()
             if not body:
@@ -1279,8 +1290,10 @@ def _emit_nested_updater(
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")
+    defaults = CONSTANT.KERNEL.SIMP_UPDATE if base == MATERIAL_UPDATER_BASE else CONSTANT.KERNEL.SHAPE_UPDATE
     a(
-        f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)})"
+        f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)}, "
+        f"max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)})"
     )
 
     body: list[str] = []

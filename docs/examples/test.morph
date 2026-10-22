@@ -2,7 +2,7 @@
   "version": 4,
   "scheme": "shapeopt",
   "label": "Untitled",
-  "result_folder": "./results/",
+  "result_folder": "/run/media/song/SS/minedata/learning/code/projects/morphopt/ui_runs/.results/",
   "device": "cpu",
   "updater_device": null,
   "restart_per_iteration": 10,

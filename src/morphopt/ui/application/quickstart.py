@@ -11,6 +11,7 @@ from textwrap import dedent
 from ...constants import CONSTANT
 from ...optcore.quadrature import actuation_boundary_gauss_points
 from ..model.chamberlayout import ChamberLayer, LayeredChambers
+from ..codegen.workspace import workspace_integral_body
 from ..model.problem import (
     CADOperationNode,
     GeometryNode, HelperFunctionNode, HelperVariableNode,
@@ -341,6 +342,7 @@ def _shape_geometry(options, geometry, loads, materials):
         "geometry": [{
             "part_name": "body",
             "max_step_iter": CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
+            "max_step_length": CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
             "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
             "constraints": constraints,
         }],
@@ -396,21 +398,20 @@ def _shape(p, options, geometry, loads, materials):
             inputs = [{"parameters": [[name, 0] for name in group], "upper": span} for group in groups]
             arguments = {
                 "reference_point_name": "RP_tip", "axes": list(GOALS[objective.kind][1]),
-                "inputs": inputs, "case_names": workspace_steps, "weights": weights.tolist(),
+                "load_groups": [[(name, 0) for name in group] for group in groups],
+                "case_names": workspace_steps, "weights": weights.tolist(),
                 "tangents": tangents.tolist(), "orientations": orientations.tolist(),
             }
             scale = options.total_length**sum(axis < 3 for axis in GOALS[objective.kind][1])
-            measure = "self.workspace_measure(" + ", ".join(f"{key}={value!r}" for key, value in arguments.items()) + ")"
+            metric_body = workspace_integral_body(**arguments)
             objective_records.append({
                 "objective": objective,
-                "workspace_measure": measure,
                 "case_names": workspace_steps,
-                "inputs": [{"parameters": [[name, 0] for name in group], "upper": span} for group in groups],
+                "inputs": inputs,
                 "scale": scale,
                 "step": None,
+                "metric_body": metric_body,
             })
-            # Metrics are evaluated separately from objective_function.
-            objective_records[-1]["metric"] = measure
             continue
 
         channel_values = {
@@ -420,12 +421,14 @@ def _shape(p, options, geometry, loads, materials):
         step = add_pressure_case(channel_values)
         objective_records.append({"objective": objective, "step": step})
 
-    objective_terms, metrics = [], []
+    objective_terms, metrics, metric_functions = [], [], []
     for index, record in enumerate(objective_records):
         objective = record["objective"]
         if objective.is_workspace:
-            measure = record["workspace_measure"]
-            metrics.append(record["metric"])
+            metric_name = f"workspace_metric_{index + 1}"
+            metric_body = "\n".join("    " + line for line in record["metric_body"].splitlines())
+            metric_functions.append(f"def {metric_name}():\n{metric_body}")
+            metrics.append(f"{metric_name}()")
             objective_terms.append({
                 "type": "workspace", "kind": objective.kind,
                 "reference_point_name": "RP_tip", "gauss_order": objective.gauss_order,
@@ -473,7 +476,7 @@ def _shape(p, options, geometry, loads, materials):
                     step, "ux", reach,
                     0.1 * objective.weight / reach**2,
                 ))
-    metrics_code = "return ["+", ".join(metrics)+"]\n"
+    metrics_code = "\n".join([*metric_functions, "return [" + ", ".join(metrics) + "]", ""])
     return step_values, objective_terms, metrics_code, list(dict.fromkeys(jacobian_names)), updater
 
 
@@ -592,6 +595,7 @@ def _topology(options, geometry, loads, materials):
         "materials": [{
             "material_name": "density",
             "max_step_iter": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
+            "max_step_length": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
             "if_update": True,
             "objective_functions": [{"type": "Sensitivity", "params": {"normalize_gradient": False}}],
             "constraints": [

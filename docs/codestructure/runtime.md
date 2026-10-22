@@ -126,7 +126,7 @@ Controller.opt_loop()
 | `log/deformation/` | 目标对象保存各工况变形图与表面文件 |
 | `log/femodel&results/` | 目标对象保存每轮匹配的 FE 模型和结果 |
 
-子目录由各对象的 `pathlog_required()` 聚合分配。分析会话只消费已完成的归档；模型配对、独立求解和导出约定见[结果分析与导出](results.md)。
+子目录由各对象的 `pathlog_required()` 聚合分配。`Controller.save()` 先保存参数、求解器、更新器及本轮有限元模型和结果，最后写入历史记录；历史中的完成轮次表示相应归档已保存。分析会话只消费已完成的归档；模型配对、独立求解和导出约定见[结果分析与导出](results.md)。
 
 <a id="section-设备资源与错误边界"></a>
 

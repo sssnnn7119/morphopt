@@ -425,10 +425,11 @@ class Controller:
         self.updater.save(
             foldpath=self.path_result + "/log/", iteration=self.history.iteration
         )
-        self.history.save(
+        self.objfun.save(
             foldpath=self.path_result + "/log/", iteration=self.history.iteration
         )
-        self.objfun.save(
+        # Publish a completed iteration only after its model and results exist.
+        self.history.save(
             foldpath=self.path_result + "/log/", iteration=self.history.iteration
         )
 

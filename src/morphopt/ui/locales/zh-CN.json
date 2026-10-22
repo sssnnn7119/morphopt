@@ -1211,5 +1211,7 @@
   "ui.load_cases.delete_objectives": "同时删除目标",
   "ui.load_cases.clear_references": "保留目标并清空工况",
   "ui.workspace_objective.cases_cleared": "工况引用已清空。修改载荷输入、上限或高斯点数后，将自动生成新的边界高斯点工况。",
-  "ui.load_cases.workspace_link": "目标 {index} · 工作空间（点击配置）"
+  "ui.load_cases.workspace_link": "目标 {index} · 工作空间（点击配置）",
+  "ui.widgets.updater_editor.max_step_length": "最大更新步长",
+  "ui.widgets.updater_editor.max_step_length_help": "设计更新的最大步长，实际步长按更新方向自适应调整。填写正数或自定义常量名。"
 }
