@@ -116,7 +116,6 @@ class WidgetLayout:
     multiline_field_minimum_height: int = 120
     path_button_width: int = 28
     continue_dialog_minimum_width: int = 380
-    load_step_table_minimum_height: int = 220
     form_contents_margins: tuple[int, int, int, int] = (8, 4, 8, 4)
     collection_contents_margins: tuple[int, int, int, int] = (4, 4, 4, 4)
     collection_spacing: int = 8

@@ -56,7 +56,7 @@ class ObserverPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._results = ResultSession()
-        self._case_pages: dict[int, DeformationCasePage] = {}
+        self._case_pages: dict[str, DeformationCasePage] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -235,7 +235,7 @@ class ObserverPanel(QWidget):
         if self.isVisible() and self.path_result and self._results.params is not None:
             self._updatable_structure_page.build(self._results, self.slider.value())
 
-    def _refresh_case(self, case: int) -> None:
+    def _refresh_case(self, case: str) -> None:
         page = self._case_pages.get(case)
         if self.isVisible() and page is not None and self.path_result:
             page.build(self._results, self.slider.value())
@@ -261,9 +261,9 @@ class ObserverPanel(QWidget):
             self.selectionChanged.emit(self.path_result, value)
 
     def _discover_cases(self, folder: str) -> None:
-        found = set(self._results.deformation_cases())
+        found = self._results.deformation_cases()
         existing = set(self._case_pages)
-        for case in sorted(found - existing):
+        for case in (name for name in found if name not in existing):
             self._case_pages[case] = DeformationCasePage(case)
             self.stack.addWidget(self._case_pages[case])
             self.options.addItem(tr("ui.observe_panel.case_value", case=case))

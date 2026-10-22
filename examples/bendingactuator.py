@@ -10,10 +10,10 @@ class ThisController(morphopt.Controller):
             super().__init__()
 
         def objective_function(self):
-            return self.fe_results[0].GC[-2]
+            return self.fe_results["load_case_1"].GC[-2]
 
         def get_metrics(self):
-            return [self.fe_results[0].GC[-2]]
+            return [self.fe_results["load_case_1"].GC[-2]]
 
     class Params(morphopt.Params):
         class GeometryParams(morphopt.GeometryParams):
@@ -93,8 +93,8 @@ class ThisController(morphopt.Controller):
                 )
 
             def define_steps(self):
-                self.set_step_num(1)
-                self.set_step_params(0, "pressure_1", [0.06])
+                self.add_step("load_case_1")
+                self.set_step_params("load_case_1", "pressure_1", [0.06])
 
         class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self) -> None:

@@ -22,8 +22,8 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         params: Params,
         num_process: int = CONSTANT.KERNEL.SOLVER.NUM_PROCESS,
         available_gpus: list[str] | None = None,
-        task_index_list: list[list[int]] = None,
-    ):
+        task_step_list: list[list[str]] | None = None,
+    ) -> None:
         """
         Initialize the Solver class with a list of pressure values.
 
@@ -49,16 +49,20 @@ class Solver(ProtocalInitializable, ProtocalSavable):
 
         self.available_gpus = list(available_gpus or [])
 
-        self.task_index_list = task_index_list
+        self.task_step_list = task_step_list
         """
-        list[list[int]]: A list of task indices for each process.
+        list[list[str]]: Named load cases grouped for sequential execution.
         """
 
-    def initialize(self):
-        if self.task_index_list is None:
-            self.task_index_list = []
-            for i in range(morphopt.controller.params.feamodel.num_load_steps):
-                self.task_index_list.append([i])
+    def initialize(self) -> None:
+        names = list(self.params.feamodel.fea_steps_params)
+        if not names:
+            raise ValueError("At least one named load case is required.")
+        groups = self.task_step_list or []
+        registered = [name for group in groups for name in group]
+        if len(set(registered)) != len(registered) or not set(registered) <= set(names):
+            raise ValueError("Solver task groups must reference existing load cases without duplicates.")
+        self.task_step_list = [*groups, *[[name] for name in names if name not in registered]]
 
     def reinitialize(self, iteration: int) -> None:
         """
@@ -68,7 +72,7 @@ class Solver(ProtocalInitializable, ProtocalSavable):
             iteration (int): The current iteration number.
         """
 
-    def solve(self, U_guess: np.ndarray | list[np.ndarray | None] | None = None):
+    def solve(self, U_guess: dict[str, np.ndarray | None] | None = None) -> dict[str, torchfea.solver.StaticResult]:
         """
         Solve the optimization problem using the specified solver.
 
@@ -88,9 +92,9 @@ class Solver(ProtocalInitializable, ProtocalSavable):
             self._solve_FEA(
                 fe=fe_cpu,
                 feamodel=self.params.feamodel,
-                task_index=self.task_index_list[0],
+                step_names=self.task_step_list[0],
                 available_gpus=self.available_gpus,
-                U_guess=[U_guess[step] for step in self.task_index_list[0]]
+                U_guess=[U_guess[step] for step in self.task_step_list[0]]
                 if U_guess is not None else None,
                 path_result=morphopt.controller.path_result,
             )
@@ -101,16 +105,16 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         # pools = mp.Pool(processes=self.num_process)
         # morphopt.controller.pools = pools
         result = []
-        for i in range(len(self.task_index_list)):
+        for i in range(len(self.task_step_list)):
             result.append(
                 pools.apply_async(
                     self._solve_FEA,
                     kwds={
                         "fe": fe_cpu,
                         "feamodel": self.params.feamodel,
-                        "task_index": self.task_index_list[i],
+                        "step_names": self.task_step_list[i],
                         "available_gpus": self.available_gpus,
-                        "U_guess": [U_guess[step] for step in self.task_index_list[i]]
+                        "U_guess": [U_guess[step] for step in self.task_step_list[i]]
                         if U_guess is not None
                         else None,
                         "path_result": morphopt.controller.path_result,
@@ -121,24 +125,25 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         # get the result
         indexed_results = []
         for i in range(len(result)):
-            indexed_results.extend(zip(self.task_index_list[i], result[i].get()))
-        indexed_results.sort(key=lambda item: item[0])
+            indexed_results.extend(zip(self.task_step_list[i], result[i].get()))
+        indexed_results = dict(indexed_results)
 
-        output: list[torchfea.solver.StaticResult] = []
-        for step_index, step_result in indexed_results:
+        output: dict[str, torchfea.solver.StaticResult] = {}
+        for step_name in self.params.feamodel.fea_steps_params:
+            step_result = indexed_results[step_name]
             morphopt.controller.objfun.fe._change_device_recursive(
                 step_result, torch.get_default_device()
             )
             if not step_result.converged:
                 raise ValueError(
-                    "FEA did not converge for load step %d" % step_index
+                    f"FEA did not converge for load case {step_name!r}"
                 )
-            output.append(step_result)
+            output[step_name] = step_result
 
         del fe_cpu
         return output
 
-    def _previous_solution(self) -> list[np.ndarray | None] | None:
+    def _previous_solution(self) -> dict[str, np.ndarray | None] | None:
         """Load previous-iteration coordinates only for fixed-geometry models.
 
         ``history.iteration`` counts completed iterations and names the most
@@ -150,30 +155,30 @@ class Solver(ProtocalInitializable, ProtocalSavable):
             return None
 
         iteration = morphopt.controller.history.iteration
-        guesses = []
-        for taskidx in range(self.params.feamodel.num_load_steps):
+        guesses = {}
+        for taskidx, step_name in enumerate(self.params.feamodel.fea_steps_params):
             path = (
                 morphopt.controller.path_result
-                + f"/log/femodel&results/result_{taskidx}_iter_{iteration}.npz"
+                + f"/log/femodel&results/result_{step_name}_iter_{iteration}.npz"
             )
             try:
                 result = torchfea.solver.StaticResult.load(path)
             except FileNotFoundError:
-                guesses.append(None)
+                guesses[step_name] = None
             else:
-                guesses.append(result.GC.detach().cpu().numpy())
-        return guesses if any(guess is not None for guess in guesses) else None
+                guesses[step_name] = result.GC.detach().cpu().numpy()
+        return guesses if any(guess is not None for guess in guesses.values()) else None
 
     @classmethod
     def _solve_FEA(
         cls,
         fe: torchfea.FEAController,
         feamodel: FEAParams,
-        task_index: list[int],
+        step_names: list[str],
         available_gpus: list[str],
         U_guess: list[np.ndarray | None] | None = None,
-        path_result: str = None,
-    ):
+        path_result: str | None = None,
+    ) -> list[torchfea.solver.StaticResult]:
         import os
 
         os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
@@ -214,16 +219,16 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         # construct the FEA
         fe.change_device(device_now)
 
-        # Task-local guesses follow task_index, not global load-step order.
+        # Task-local guesses follow step_names, not global load-step order.
         U0 = fe.assembly._GC.to(torch.get_default_device())
 
         result_list = []
-        for i in range(len(task_index)):
+        for i in range(len(step_names)):
             if U_guess is not None and U_guess[i] is not None:
                 U0 = torch.from_numpy(U_guess[i]).to(
                     dtype=torch.float64, device=torch.get_default_device()
                 )
-            feamodel.process_fea(fe=fe, step_index=task_index[i])
+            feamodel.process_fea(fe=fe, step_name=step_names[i])
             result: torchfea.solver.StaticResult = fe.solve(
                 GC0=U0.to(torch.get_default_device()), if_initialize=False
             )

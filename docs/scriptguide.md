@@ -75,12 +75,12 @@ class ThisController(morphopt.Controller):
         super().__init__(path_result_folder="./results/", opt_label="BendingExample")
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def reference_point_motion(self, step_index=0):
+        def reference_point_motion(self, step_name="load_case_1"):
             morphopt.controller.params.feamodel.process_fea(
-                self.fe, step_index=step_index
+                self.fe, step_name=step_name
             )
             assembly = self.fe.assembly
-            coordinates = self.fe_results[step_index].GC.to(assembly.device)
+            coordinates = self.fe_results[step_name].GC.to(assembly.device)
             reference_point = assembly.get_reference_point("RP_1")
             return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
@@ -151,8 +151,8 @@ class ThisController(morphopt.Controller):
                 )
 
             def define_steps(self):
-                self.set_step_num(1)
-                self.set_step_params(0, "pressure_1", [0.06])
+                self.add_step("load_case_1")
+                self.set_step_params("load_case_1", "pressure_1", [0.06])
 
         class MaterialsParams(morphopt.MaterialsParams):
             def define_interface(self):

@@ -108,11 +108,11 @@ def _objective_reference_items(problem: "ProblemDefinition | None") -> list[Comp
         return []
     items: list[CompletionItem] = []
     names = [component.name for component in problem.amplitude_components()]
-    for result_index in _result_indices(problem):
+    for step_name in _result_names(problem):
         for name in names:
             items.append(CompletionItem(
-                f"result[{result_index}].jacobian[{name!r}]",
-                f"self.fe_results[{result_index}].jacobian[{name!r}]",
+                f"result[{step_name!r}].jacobian[{name!r}]",
+                f"self.fe_results[{step_name!r}].jacobian[{name!r}]",
             ))
     items.extend(CompletionItem(repr(name), repr(name))
                  for name in names)
@@ -122,8 +122,8 @@ def _objective_reference_items(problem: "ProblemDefinition | None") -> list[Comp
 def _objective_result_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
     """Build result candidates from the current number of load steps."""
     items: list[CompletionItem] = []
-    for result_index in _result_indices(problem):
-        result = f"self.fe_results[{result_index}]"
+    for step_name in _result_names(problem):
+        result = f"self.fe_results[{step_name!r}]"
         items.extend((
             CompletionItem(result, result),
             CompletionItem(f"{result}.GC", f"{result}.GC"),
@@ -135,10 +135,9 @@ def _objective_result_items(problem: "ProblemDefinition | None") -> list[Complet
     return items
 
 
-def _result_indices(problem: "ProblemDefinition | None") -> range:
-    """Result-list indices currently valid for objective code completion."""
-    step_count = problem.steps.num_steps if problem is not None and problem.steps else 1
-    return range(max(1, int(step_count)))
+def _result_names(problem: "ProblemDefinition | None") -> list[str]:
+    """Registered result names available to objective code."""
+    return list(problem.steps.step_values) if problem is not None and problem.steps else []
 
 
 def _surface_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:

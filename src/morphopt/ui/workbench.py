@@ -78,7 +78,7 @@ from .widgets.objective_editor import ObjectiveEditor
 from .widgets.solver_editor import SolverEditor
 from .widgets.source_view import GeneratedSourceView
 from .widgets.asset_browser import AssetBrowser
-from .widgets.stepmatrix import StepMatrix
+from .widgets.load_cases import LoadCaseEditor
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
 
@@ -218,7 +218,9 @@ class Workbench(QWidget):
         self.controller_editor.resultFolderChanged.connect(self._apply_path)
         self.controller_editor.deviceChanged.connect(self._save_device)
         self.solver_editor = SolverEditor(stack)
-        self.step_matrix = StepMatrix(stack)
+        self.load_cases = LoadCaseEditor(stack)
+        self.load_cases.objectiveRequested.connect(self._on_node_selected)
+        self.load_cases.objectiveRequested.connect(self.tree.select_node)
         self.updater_editor = UpdaterEditor(stack)
         self.updater_editor.activated.connect(self._on_editor_activated)
         self.geometry_editor = DefinitionManagerEditor(
@@ -428,7 +430,7 @@ class Workbench(QWidget):
         for kind, editor in (
             (EditorKind.CUSTOM_CLASS, self.custom_class_editor),
             (EditorKind.SOLVER, self.solver_editor),
-            (EditorKind.STEPS, self.step_matrix),
+            (EditorKind.STEPS, self.load_cases),
         ):
             self.pages.register(
                 kind,

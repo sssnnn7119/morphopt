@@ -227,8 +227,8 @@ UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映�
 |---|---|---|
 | 建模 | `modify_fea(fe, name)` | 向模型添加载荷、边界或连接对象 |
 | 工况应用 | `apply_fea_value(fe, name)` | 将当前数值覆盖传给已创建对象 |
-| 工况配置 | `FEAParams.set_step_num()`、`set_step_params()` | 建立工况表并填写接口幅值 |
-| 求解前 | `FEAParams.process_fea(fe, step_index)` | 应用指定工况 |
+| 工况配置 | `FEAParams.add_step(name)`、`set_step_params()` | 建立工况表并填写接口幅值 |
+| 求解前 | `FEAParams.process_fea(fe, step_name)` | 应用指定工况 |
 
 压力、集中力/力矩、体力、弹簧与自由度罚项具有数值列表；固定条件、RP、耦合与接触不通过相同列表接收幅值。当前 `ReferencePointBoundaryCondition.num_values` 为零，不能据外部求解器的功能推断其支持任意非零位移工况。
 

@@ -40,7 +40,7 @@ if __name__ == "__main__":
     fe = controller.params.create_feamodel()
     fe.initialize()
 
-    controller.params.feamodel.process_fea(fe=fe, step_index=1)
+    controller.params.feamodel.process_fea(fe=fe, step_name="load_case_2")
 
     # result: torchfea.solver.StaticResult = fe.solve()
     U = fe.assembly._GC2RGC(fe.assembly.GC)[0]

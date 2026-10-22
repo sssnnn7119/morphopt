@@ -3,14 +3,14 @@ are grouped into solver tasks (processes).
 
 * devices are auto-detected (cpu + torch.cuda devices) and offered as
   check boxes (multiple GPU devices are allowed).
-* ``task_index_list`` groups load steps that should run sequentially inside
+* ``task_step_list`` groups load steps that should run sequentially inside
   the same process (so the next step warm-starts from the previous result);
   the default is one step per process.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -168,8 +168,9 @@ class SolverEditor(QWidget):
             self._table.setItem(
                 s,
                 0,
-                QTableWidgetItem(tr("ui.widgets.solver_editor.step_value", value_0=s)),
+                QTableWidgetItem(list(self._problem.steps.step_values)[s]),
             )
+            self._table.item(s, 0).setFlags(self._table.item(s, 0).flags() & ~Qt.ItemFlag.ItemIsEditable)
             self._table.setItem(s, 1, QTableWidgetItem(str(assignments[s])))
         self._table.blockSignals(False)
 

@@ -297,9 +297,6 @@ def _objective_function_body(
         if component.type == "ReferencePoint" and component.name
     }
     steps = problem.steps
-    step_count = (
-        max(int(steps.num_steps), len(steps.step_values)) if steps is not None else 0
-    )
     component_indices = dict(CONSTANT.UI.OBJECTIVE.DISPLACEMENT_COMPONENTS)
     functions: list[str] = []
     weighted_terms: list[str] = []
@@ -359,14 +356,7 @@ def _objective_function_body(
                     )
             reference_point = str(term.get("reference_point_name") or "").strip()
             component = str(term.get("component") or "")
-            try:
-                step_index = int(term["step_index"])
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(
-                    localized_message(
-                        "ui.errors.generator.objective_term_has_invalid_values"
-                    )
-                ) from exc
+            step_name = term.get("step_name")
             if reference_point not in reference_points:
                 raise ValueError(
                     localized_message(
@@ -374,11 +364,11 @@ def _objective_function_body(
                         value_0=reference_point,
                     )
                 )
-            if not 0 <= step_index < step_count:
+            if not isinstance(step_name, str) or step_name not in steps.step_values:
                 raise ValueError(
                     localized_message(
                         "ui.errors.generator.objective_references_unknown_step_value",
-                        value_0=step_index,
+                        value_0=step_name,
                     )
                 )
             if component not in component_indices:
@@ -391,10 +381,10 @@ def _objective_function_body(
             functions.extend(
                 [
                     f"def {function_name}() -> Any:",
-                    f"    self.set_step({step_index})",
+                    f"    self.set_step({step_name!r})",
                     "    assembly = self.fe.assembly",
                     "    state = assembly._GC2RGC(",
-                    f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                    f"        self.fe_results[{step_name!r}].GC.to(assembly.device)",
                     "    )",
                     f"    reference_point = assembly.get_reference_point({reference_point!r})",
                     "    return state[reference_point._RGC_index].reshape(-1)["
@@ -409,6 +399,19 @@ def _objective_function_body(
                 weighted_terms.append(f"-({weight!r}) * {function_name}()")
             else:
                 weighted_terms.append(f"({weight!r}) * {function_name}()")
+        elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE:
+            from ..application.load_cases import workspace_spec
+            spec = workspace_spec(term, problem)
+            if (len(term.get("case_names", [])) != len(spec["points"])
+                    or any(name not in steps.step_values for name in term.get("case_names", []))):
+                raise ValueError(localized_message("ui.workspace_objective.generate_required"))
+            scale = float(term.get("normalization", 1.0))
+            if not math.isfinite(scale) or scale <= 0:
+                raise ValueError("Workspace normalization must be positive.")
+            arguments = {key: spec[key] for key in ("axes", "weights", "tangents", "orientations")}
+            arguments.update(reference_point_name=term["reference_point_name"], inputs=term["inputs"], case_names=term["case_names"])
+            call = "self.workspace_measure(" + ", ".join(f"{key}={value!r}" for key, value in arguments.items()) + ")"
+            weighted_terms.append(f"-({weight!r}) * {call} / {scale!r}")
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
             body = str(term.get("body") or "").strip()
             if not body:
@@ -455,9 +458,6 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
         if component.type == "ReferencePoint" and component.name
     }
     steps = problem.steps
-    step_count = (
-        max(int(steps.num_steps), len(steps.step_values)) if steps is not None else 0
-    )
     component_indices = dict(CONSTANT.UI.OBJECTIVE.DISPLACEMENT_COMPONENTS)
     functions: list[str] = []
     values: list[str] = []
@@ -468,13 +468,11 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
         if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
             reference_point = str(term.get("reference_point_name") or "").strip()
             component = str(term.get("component") or "")
-            try:
-                step_index = int(term.get("step_index"))
-            except (TypeError, ValueError):
-                continue
+            step_name = term.get("step_name")
             if (
                 reference_point not in reference_points
-                or not 0 <= step_index < step_count
+                or not isinstance(step_name, str)
+                or step_name not in steps.step_values
                 or component not in component_indices
             ):
                 # Metrics are optional. Ignore incomplete selections while the
@@ -483,10 +481,10 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
             functions.extend(
                 [
                     f"def {function_name}() -> Any:",
-                    f"    self.set_step({step_index})",
+                    f"    self.set_step({step_name!r})",
                     "    assembly = self.fe.assembly",
                     "    state = assembly._GC2RGC(",
-                    f"        self.fe_results[{step_index}].GC.to(assembly.device)",
+                    f"        self.fe_results[{step_name!r}].GC.to(assembly.device)",
                     "    )",
                     f"    reference_point = assembly.get_reference_point({reference_point!r})",
                     "    return state[reference_point._RGC_index].reshape(-1)["
@@ -586,7 +584,10 @@ def generate_base_source(
 
     # -------- ObjectiveFunction ------------------------------------------
     objective = problem.objective or ObjectiveNode()
-    jac = [item.name for item in objective.jacobian_needed]
+    jac = list(dict.fromkeys([item.name for item in objective.jacobian_needed] + [
+        name for term in objective.objective_terms if term.get("type") == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
+        for entry in term.get("inputs", []) for name, _component in entry["parameters"]
+    ]))
     if for_class_catalog:
         obj_body = "return 0.0"
         met_body = "return []"
@@ -650,10 +651,10 @@ def generate_base_source(
     solver = problem.solver or SolverNode()
     np_ = _render_value(solver.num_process, problem)
     gpus = list(solver.gpus)
-    tasklist = list(solver.task_index_list)
+    tasklist = list(solver.task_step_list)
     args = ["params=params", f"num_process={np_}", f"available_gpus={gpus!r}"]
     if tasklist:
-        args.append(f"task_index_list={tasklist!r}")
+        args.append(f"task_step_list={tasklist!r}")
     a("")
     a("            super().__init__(" + ", ".join(args) + ")")
     a("")
@@ -964,34 +965,16 @@ def _emit_components(a: Callable[[str], object], problem: ProblemDefinition) -> 
 
 
 def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
-    steps = problem.steps or StepsNode(
-        name="Load steps", params={"num_steps": 1, "step_values": [{}]}
-    )
-    n = int(steps.num_steps)
-
-    values = list(steps.step_values) or [{} for _ in range(n)]
-    while len(values) < n:
-        values.append({})
-
-    # every amplitude-bearing load component must be set for every step, so a
-    # load that was added but left unset in a step is written explicitly as a
-    # zero amplitude (matching the step-matrix UI, where an empty cell is 0).
-    amps: dict[FEAComponentNode, int] = {}
-    for it in problem.fea_components():
-        nv = it.num_values
-        if nv and it.name:
-            amps[it] = nv
-
-    a(f"                self.set_step_num({n})")
-    for s in range(n):
-        step_dict = (values[s] if s < len(values) else {}) or {}
-        for component, nv in amps.items():
-            stored = step_dict.get(component)
-            amps_values = stored if stored is not None else [0.0] * nv
-            a(
-                f"                self.set_step_params({s}, {component.name!r}, "
-                f"{_render_value(amps_values, problem)})"
-            )
+    steps = problem.steps
+    values = steps.step_values if steps is not None else {"load_case_1": {}}
+    if not values:
+        a("                pass")
+    for name, amplitudes in values.items():
+        a(f"                self.add_step({name!r})")
+        for component in problem.amplitude_components():
+            stored = amplitudes.get(component, [0.0] * component.num_values)
+            a(f"                self.set_step_params({name!r}, {component.name!r}, "
+              f"{_render_value(stored, problem)})")
 
 
 def _emit_material_init(

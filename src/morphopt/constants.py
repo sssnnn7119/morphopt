@@ -28,8 +28,6 @@ class _Constants:
             DEFAULT_INTER_SURFACE_DISTANCE = 2.5
 
         class WIDGETS:
-            MINIMUM_LOAD_STEPS = 1
-            MAXIMUM_LOAD_STEPS = 200
             MAXIMUM_QUICKSTART_OBJECTIVES = 8
             MODEL_SCAN_DEBOUNCE_MS = 500
 
@@ -984,6 +982,7 @@ class _Constants:
         class OBJECTIVE:
             TYPE_DISPLACEMENT = "displacement"
             TYPE_CUSTOM_LOSS = "custom_loss"
+            TYPE_WORKSPACE = "workspace"
             DEFAULT_TYPE = TYPE_DISPLACEMENT
             DIRECTION_TARGET = "target"
             DIRECTION_MAXIMIZE = "maximize"

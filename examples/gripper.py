@@ -82,9 +82,9 @@ class ThisController(morphopt.Controller):
 
             loss_list = []
             for stepidx in range(self.num_tasks):
-                self.set_step(stepidx)
+                self.set_step(f"load_case_{stepidx + 1}")
                 total_force = self.fe.assembly._assemble_generalized_Matrix(
-                    GC=self.fe_results[stepidx].GC
+                    GC=self.fe_results[f"load_case_{stepidx + 1}"].GC
                 )[0]
 
                 ins_gripper = self.fe.assembly.get_instance("final_model")
@@ -106,9 +106,9 @@ class ThisController(morphopt.Controller):
 
             metrics_list = []
             for stepidx in range(self.num_tasks):
-                self.set_step(stepidx)
+                self.set_step(f"load_case_{stepidx + 1}")
                 total_force = self.fe.assembly._assemble_generalized_Matrix(
-                    GC=self.fe_results[stepidx].GC
+                    GC=self.fe_results[f"load_case_{stepidx + 1}"].GC
                 )[0]
 
                 ins_gripper = self.fe.assembly.get_instance("final_model")
@@ -253,11 +253,11 @@ class ThisController(morphopt.Controller):
                     )
 
             def define_steps(self):
-                self.set_step_num(len(cylinder_x))
                 for stepidx in range(len(cylinder_x)):
+                    self.add_step(f"load_case_{stepidx + 1}")
                     for cylinderidx in range(len(cylinder_x)):
                         self.set_step_params(
-                            step_index=stepidx,
+                            step_name=f"load_case_{stepidx + 1}",
                             load_name=f"Penalty_RPCylinder{cylinder_x[cylinderidx]}_Z",
                             values=[1e2, -10.0]
                             if cylinderidx == stepidx

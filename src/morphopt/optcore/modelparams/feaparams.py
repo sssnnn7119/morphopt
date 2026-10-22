@@ -35,8 +35,8 @@ class FEAParams(BaseParams):
         """
         super().__init__()
 
-        self.fea_steps_params: list[dict[str, list[float]]] = []
-        """load_steps (list): A list to hold the load steps."""
+        self.fea_steps_params: dict[str, dict[str, list[float]]] = {}
+        """Named load cases in registration order."""
 
     def define_steps(self):
         """Configure the amplitude of every load in every load step."""
@@ -47,48 +47,23 @@ class FEAParams(BaseParams):
         if not self.fea_steps_params:
             self.define_steps()
 
-    def set_step_num(self, num_steps: int) -> None:
-        """
-        Set the number of load steps.
+    def add_step(self, name: str, values: dict[str, list[float]] | None = None) -> None:
+        """Register a named load case in execution order."""
+        if not isinstance(name, str) or not name.strip() or any(char in name for char in ("/", "\\", "\0")):
+            raise ValueError("A load case requires a nonempty string name.")
+        if name in self.fea_steps_params:
+            raise ValueError(f"Duplicate load case: {name!r}")
+        self.fea_steps_params[name] = {
+            key: interface._values.copy() for key, interface in self.interfaces.items()
+        }
+        for load, amplitudes in (values or {}).items():
+            self.set_step_params(name, load, amplitudes)
 
-        Args:
-            num_steps (int): The number of load steps.
-        """
-        self.fea_steps_params = []
-        for _ in range(num_steps):
-            load_step = {}
-            for name, load_interface in self.interfaces.items():
-                load_step[name] = load_interface._values.copy()
-            self.fea_steps_params.append(load_step)
-
-    def set_step_params(
-        self, step_index: int, load_name: str, values: list[float]
-    ) -> None:
-        """
-        Set the load parameters for a specific load step.
-
-        Args:
-            step_index (int): The index of the load step.
-            load_name (str): The name of the load interface.
-            values (list[float]): The load parameter values.
-        """
-        if step_index < 0 or step_index >= len(self.fea_steps_params):
-            raise IndexError("step_index out of range.")
+    def set_step_params(self, step_name: str, load_name: str, values: list[float]) -> None:
+        """Assign load parameters to a registered named case."""
         if load_name not in self.interfaces:
-            raise KeyError(f"Load interface with name '{load_name}' does not exist.")
-        self.fea_steps_params[step_index][load_name] = values
-
-    def reinitialize(self, iteration, *args, **kwargs):
-        # Sort the load interfaces and load steps parameters by their keys
-        sorted_fea_interfaces = dict(sorted(self.interfaces.items()))
-        sorted_fea_steps_params = [
-            dict(sorted(step.items())) for step in self.fea_steps_params
-        ]
-
-        # Update the dictionaries with the sorted versions
-        self.interfaces = sorted_fea_interfaces
-        self.fea_steps_params = sorted_fea_steps_params
-        super().reinitialize(iteration, *args, **kwargs)
+            raise KeyError(f"Unknown load: {load_name!r}")
+        self.fea_steps_params[step_name][load_name] = list(values)
 
     @property
     def num_load_steps(self) -> int:
@@ -123,15 +98,15 @@ class FEAParams(BaseParams):
 
         return fe
 
-    def process_fea(self, fe: FEAController, step_index: int) -> None:
+    def process_fea(self, fe: FEAController, step_name: str) -> None:
         """
         Process the FEA controller to update load-related information.
 
         Args:
             fe (FEAController): The FEA controller instance.
-            step_index (int): The index of the load step.
+            step_name (str): The registered load-case name.
         """
-        load_step_now = self.fea_steps_params[step_index]
+        load_step_now = self.fea_steps_params[step_name]
         for name, load_interface in self.interfaces.items():
             load_interface._values = load_step_now[name]
             load_interface.apply_fea_value(fe, name)

@@ -37,8 +37,8 @@ class CodeSnippet:
         return self.source.format(**(defaults | dict(values or {})))
 
 
-_LOAD_STEP = SnippetParameter("step_index", 'ui.snippets.parameters.step_index',
-                              "load_steps", 0)
+_LOAD_STEP = SnippetParameter("step_name", 'ui.snippets.parameters.step_name',
+                              "load_steps", "load_case_1")
 _INSTANCE = SnippetParameter("instance_name", 'ui.snippets.parameters.instance_name',
                              "instances", "final_model")
 _REFERENCE_POINT = SnippetParameter("reference_point_name", 'ui.snippets.parameters.reference_point_name', "reference_points", "RP_head")
@@ -174,11 +174,11 @@ def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
 def _instance_state_source() -> str:
     return (
         "# Change the load step and instance name for this extraction.\n"
-        "step_index = {step_index}\n"
+        "step_name = {step_name!r}\n"
         "instance_name = {instance_name!r}\n"
-        "morphopt.controller.params.feamodel.process_fea(self.fe, step_index=step_index)\n"
+        "morphopt.controller.params.feamodel.process_fea(self.fe, step_name=step_name)\n"
         "assembly = self.fe.assembly\n"
-        "GC = self.fe_results[step_index].GC.to(assembly.device)\n"
+        "GC = self.fe_results[step_name].GC.to(assembly.device)\n"
         "instance = assembly.get_instance(instance_name)\n"
         "RGC = assembly._GC2RGC(GC)\n"
         "node_displacement = RGC[instance._RGC_index]\n"
@@ -188,11 +188,11 @@ def _instance_state_source() -> str:
 def _reference_point_state_source() -> str:
     return (
         "# Change the load step and reference-point name for this extraction.\n"
-        "step_index = {step_index}\n"
+        "step_name = {step_name!r}\n"
         "reference_point_name = {reference_point_name!r}\n"
-        "morphopt.controller.params.feamodel.process_fea(self.fe, step_index=step_index)\n"
+        "morphopt.controller.params.feamodel.process_fea(self.fe, step_name=step_name)\n"
         "assembly = self.fe.assembly\n"
-        "GC = self.fe_results[step_index].GC.to(assembly.device)\n"
+        "GC = self.fe_results[step_name].GC.to(assembly.device)\n"
         "reference_point = assembly.get_reference_point(reference_point_name)\n"
         "RGC = assembly._GC2RGC(GC)\n"
         "reference_point_motion = RGC[reference_point._RGC_index]\n"
@@ -206,7 +206,7 @@ def _jacobian_6d_source() -> str:
         "# The selected RP determines the Jacobian output rows in GC space.\n"
         "# Also select both load names manually in Objective > Jacobian needed.\n"
         "import torch\n"
-        "step_index = {step_index}\n"
+        "step_name = {step_name!r}\n"
         "reference_point_name = {reference_point_name!r}\n"
         "force_load_name = {force_load_name!r}\n"
         "moment_load_name = {moment_load_name!r}\n"
@@ -215,7 +215,7 @@ def _jacobian_6d_source() -> str:
         "gc_index_start = assembly._GC_list_indexStart\n"
         "reference_point_start = gc_index_start[reference_point._RGC_index]\n"
         "reference_point_end = gc_index_start[reference_point._RGC_index + 1]\n"
-        "force_jacobian = self.fe_results[step_index].jacobian[force_load_name][reference_point_start:reference_point_end, :]\n"
-        "moment_jacobian = self.fe_results[step_index].jacobian[moment_load_name][reference_point_start:reference_point_end, :]\n"
+        "force_jacobian = self.fe_results[step_name].jacobian[force_load_name][reference_point_start:reference_point_end, :]\n"
+        "moment_jacobian = self.fe_results[step_name].jacobian[moment_load_name][reference_point_start:reference_point_end, :]\n"
         "jacobian_6x6 = torch.cat((force_jacobian, moment_jacobian), dim=1)\n"
     )

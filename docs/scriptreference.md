@@ -450,12 +450,13 @@ class FEAParams(morphopt.FEAParams):
         )
 
     def define_steps(self):
-        self.set_step_num(2)
-        self.set_step_params(0, "pressure_1", [0.04])
-        self.set_step_params(1, "pressure_1", [0.06])
+        self.add_step("load_case_1")
+        self.add_step("load_case_2")
+        self.set_step_params("load_case_1", "pressure_1", [0.04])
+        self.set_step_params("load_case_2", "pressure_1", [0.06])
 ```
 
-`set_step_num()` 建立工况参数表，随后才能调用 `set_step_params()`。载荷名称必须已注册，工况索引从 `0` 开始，参数列表长度与接口 `num_values` 一致。工况表示由当前接口共同定义的载荷条件，不等同于任意时间积分历程。
+`add_step(name)` 按注册顺序建立具名工况，随后通过 `set_step_params(step_name, load_name, values)` 赋值。工况名称须非空且唯一，载荷名称必须已注册，参数列表长度与接口 `num_values` 一致。工况表示由当前接口共同定义的载荷条件，不等同于任意时间积分历程。
 
 <a id="section-十三类接口与参数顺序"></a>
 
@@ -517,7 +518,7 @@ self.add_interface(
 self.add_interface(self.SpringToGround(rp_name="RP_1"), name="spring_1")
 ```
 
-该片段要求模型中已存在 `frame` 实例及其 `contact_face` 表面。弹簧在 `define_steps()` 中设置，如 `self.set_step_params(0, "spring_1", [1.0, 10.0, 0.0, 0.0, 90.0])`。罚参数、接触方向与弹簧初始长度应与几何尺度和一致单位制匹配。各接口的完整字段与图示见 [UI 载荷参考](UIreference.md#loads)。
+该片段要求模型中已存在 `frame` 实例及其 `contact_face` 表面。弹簧在 `define_steps()` 中设置，如 `self.set_step_params("load_case_1", "spring_1", [1.0, 10.0, 0.0, 0.0, 90.0])`。罚参数、接触方向与弹簧初始长度应与几何尺度和一致单位制匹配。各接口的完整字段与图示见 [UI 载荷参考](UIreference.md#loads)。
 
 <a id="section-materialsparams-定义要点"></a>
 
@@ -626,10 +627,10 @@ self.add_interface(
 
 ```python
 class ObjectiveFunction(morphopt.ObjectiveFunction):
-    def reference_point_motion(self, step_index=0):
-        morphopt.controller.params.feamodel.process_fea(self.fe, step_index=step_index)
+    def reference_point_motion(self, step_name="load_case_1"):
+        morphopt.controller.params.feamodel.process_fea(self.fe, step_name=step_name)
         assembly = self.fe.assembly
-        coordinates = self.fe_results[step_index].GC.to(assembly.device)
+        coordinates = self.fe_results[step_name].GC.to(assembly.device)
         reference_point = assembly.get_reference_point("RP_1")
         return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
@@ -657,7 +658,7 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
         self.jacobian_needed = ["force_1", "moment_1"]
 ```
 
-该片段扩展前述目标类的构造方法，两个载荷必须已在 `FEAParams` 中注册。结果通过 `self.fe_results[step_index].jacobian[load_name]` 访问，行对应全局广义坐标，列对应所选载荷的参数分量。提取某个 RP 的 6×6 力/力矩响应矩阵时，应按该 RP 的坐标区间选行，并按所声明的力和力矩载荷拼接，不能将任意全局矩阵直接视为末端响应。
+该片段扩展前述目标类的构造方法，两个载荷必须已在 `FEAParams` 中注册。结果通过 `self.fe_results[step_name].jacobian[load_name]` 访问，行对应全局广义坐标，列对应所选载荷的参数分量。提取某个 RP 的 6×6 力/力矩响应矩阵时，应按该 RP 的坐标区间选行，并按所声明的力和力矩载荷拼接，不能将任意全局矩阵直接视为末端响应。
 
 节点位移、能量、应力应变及雅可比等数据提取示例可由 [UI 有限元数据模板](UIreference.md#section-十二个有限元数据代码模板) 查看和生成。工况切换后涉及当前载荷、接触或材料状态的量，应先按该工况更新模型状态。
 
@@ -688,13 +689,16 @@ class Solver(morphopt.Solver):
             params=params,
             num_process=2,
             available_gpus=["cuda:0", "cuda:1"],
-            task_index_list=[[0, 1], [2]],
+            task_step_list=[["load_case_1", "load_case_2"], ["load_case_3"]],
         )
 ```
 
 该示例要求三个已定义的工况及两张可用 GPU，任务 `[0, 1]` 表示在同一任务中顺序求解工况 0 和 1。任务组的数量与进程数并非同一概念；进程池调度各组任务。所有待求解工况应包含在配置中，GPU 并发数量应与模型显存占用匹配。
 
-未配置 `task_index_list` 时，框架为每个工况建立一个任务。单进程仍可依次完成多个任务。
+未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务。分组名称须有效且不重复，单进程仍可依次完成多个任务。
+
+工况以字符串名称作为键，顺序由 `add_step()` 的注册顺序确定。结果通过 `self.fe_results["load_case_1"]` 访问；`ObjectiveFunction.workspace_measure()` 使用具名工况及载荷 Jacobian 计算工作空间边界积分。归档使用 `result_<工况名>_iter_<轮次>.npz`，`load_cases.json` 保存注册顺序。
+
 
 <a id="section-初始解与几何变化"></a>
 
@@ -870,7 +874,7 @@ class RotationObjective(morphopt.ObjectiveFunction):
     def objective_function(self):
         assembly = self.fe.assembly
         reference_point = assembly.get_reference_point("RP_1")
-        coordinates = self.fe_results[0].GC.to(assembly.device)
+        coordinates = self.fe_results["load_case_1"].GC.to(assembly.device)
         motion = assembly._GC2RGC(coordinates)[reference_point._RGC_index]
         return -motion.reshape(-1)[4]
 
@@ -933,7 +937,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 | 名称解析失败 | 集合注册名、Part 名、Instance 名、材料接口名分别核对 |
 | `interfaces` 为空 | 是否尚未初始化，是否在构造阶段提前访问 |
 | Part 有定义但装配体中无实例 | `define_instance()` 是否正确声明实例 |
-| 压力为零 | 工况是否登记对应幅值，表面与工况索引是否正确 |
+| 压力为零 | 工况是否登记对应幅值，表面与具名工况引用是否正确 |
 | 目标无法求导 | 是否使用 `.item()`、NumPy 或 `.detach()` 切断目标计算图 |
 | 优化方向不符 | 最大化所需负号、分量与有符号响应定义 |
 | 材料参数入口错误 | 当前入口为 `MaterialsParams.models` |

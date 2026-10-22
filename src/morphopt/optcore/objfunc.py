@@ -1,5 +1,7 @@
 from copy import deepcopy
 import math
+import json
+from pathlib import Path
 import torchfea
 import torch
 import morphopt
@@ -19,7 +21,7 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         The FEA solver instance.
         """
         
-        self.fe_results: list[torchfea.solver.StaticResult] = None
+        self.fe_results: dict[str, torchfea.solver.StaticResult] = {}
         """
         The FEA results for each step.
         """
@@ -47,12 +49,12 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         """
         raise NotImplementedError("The objective_function method should be implemented in subclass.")
 
-    def set_step(self, step: int):
+    def set_step(self, step: str) -> None:
         """
         Set the current step for the objective function. This can be used to update any step-specific parameters or states.
 
         Args:
-            step (int): The current step index.
+            step (str): The registered load-case name.
         """
         self.fe.assembly.set_work_conditions(self.fe_results[step].work_conditions)
 
@@ -60,9 +62,40 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         """
         Compute the total objective from a multistep FE result list.
         """
-        self.fe_results = fe_results
+        self.fe_results = dict(zip(self.fe_results, fe_results, strict=True))
         return self.objective_function()
     
+    def workspace_measure(
+        self, reference_point_name: str, axes: list[int], inputs: list[dict],
+        case_names: list[str], weights: list[float], tangents: list[list[int]],
+        orientations: list[float],
+    ) -> torch.Tensor:
+        """Integrate a 2-D or 3-D workspace boundary using load Jacobians."""
+        assembly = self.fe.assembly
+        reference = assembly.get_reference_point(reference_point_name)
+        start = assembly._GC_list_indexStart[reference._RGC_index]
+        measure = None
+        for index, name in enumerate(case_names):
+            self.set_step(name)
+            result = self.fe_results[name]
+            state = assembly._GC2RGC(result.GC.to(assembly.device))
+            motion = state[reference._RGC_index].reshape(-1)[axes]
+            derivatives = [
+                sum(result.jacobian[load][start:start + 6, component].to(motion.device)
+                    for load, component in entry["parameters"])[axes]
+                for entry in inputs
+            ]
+            a, b = tangents[index]
+            if len(axes) == 2:
+                integrand = motion[1] * derivatives[a][0] - motion[0] * derivatives[a][1]
+            else:
+                integrand = torch.dot(motion, torch.linalg.cross(derivatives[a], derivatives[b]))
+            if measure is None:
+                measure = motion.sum() * 0.0
+            measure = measure + weights[index] * orientations[index] * integrand
+        factor = 0.5 if len(axes) == 2 else (1 / 24 if axes == [3, 4, 5] else 1 / 3)
+        return measure.abs() * factor
+
     def sensitivity_analysis(self, params: Params) -> dict[str, torch.Tensor]:
         """
         Perform sensitivity analysis to compute the design sensitivity variables.
@@ -91,7 +124,7 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         solver: torchfea.solver.StaticImplicitSolver = self.fe.solver
 
         design_gradients = solver.get_jacobian_sensitivity_multistep(
-            fe_results=self.fe_results,
+            fe_results=list(self.fe_results.values()),
             design_vars=design_sensitivity_vars,
             load_names=self.jacobian_needed,
             apply_func=apply_func,
@@ -136,14 +169,14 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         except AttributeError:
             raise KeyError(f"'{key}' not found in FE_result") from None
 
-    def get_mesh_case(self, case: int):
+    def get_mesh_case(self, case: str):
         """Return the meshes carrying the result of one load case."""
         # Create pyvista mesh
         mesh = list(self.fe.assembly.get_meshes(GC=self.fe_results[case].GC).values())
 
         return mesh
     
-    def plot(self, case: int) -> None:
+    def plot(self, case: str) -> None:
         """
         Plot the FEA results for a specific case.
 
@@ -186,7 +219,7 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
 
         color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
 
-        for caseidx in range(self.num_tasks):
+        for case_name in self.fe_results:
 
             plotter = pv.Plotter(
                 off_screen=True,
@@ -195,7 +228,7 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
 
             # Create faces list for pyvista
             # Create pyvista mesh
-            meshes = self.get_mesh_case(caseidx)
+            meshes = self.get_mesh_case(case_name)
 
             for meshidx, mesh in enumerate(meshes):
                 plotter.add_mesh(mesh, color=color_list[meshidx % len(color_list)], opacity=1.0)
@@ -210,10 +243,10 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
                 math.sin(math.radians(elevation))))
 
             # Save the figure as a PNG file
-            plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{caseidx}_iter_{iteration}.png")
+            plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.png")
 
             # # Save the deformed mesh as an STL file
-            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{caseidx}_iter_{iteration}.stl"
+            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.stl"
             meshall = meshes[0]
             for meshidx in range(1, len(meshes)):
                 meshall = meshall.merge(meshes[meshidx])
@@ -230,5 +263,9 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}"
         )
 
-        for caseidx in range(self.num_tasks):
-            self.fe_results[caseidx].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{caseidx}_iter_{iteration}.npz")
+        mapping = Path(f"{foldpath}/{self.pathlog_required()[1]}/load_cases.json")
+        temporary = mapping.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(list(self.fe_results), ensure_ascii=False), encoding="utf-8")
+        temporary.replace(mapping)
+        for case_name in self.fe_results:
+            self.fe_results[case_name].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{case_name}_iter_{iteration}.npz")

@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "scheme": "shapeopt",
   "label": "Untitled",
   "result_folder": "./results/",
@@ -158,14 +158,14 @@
         "kind": "steps",
         "name": "Load steps",
         "params": {
-          "num_steps": 1,
-          "step_values": [
-            {
+          "step_values": {
+            "load_case_1": {
               "pressure_1": [
                 0.06
               ]
             }
-          ]
+          },
+          "generated_by": {}
         },
         "children": []
       },
@@ -211,18 +211,18 @@
               "type": "displacement",
               "weight": 1.0,
               "reference_point_name": "RP_1",
-              "step_index": 0,
               "component": "ry",
               "direction": "maximize",
-              "target": 0.0
+              "target": 0.0,
+              "step_name": "load_case_1"
             }
           ],
           "metrics_terms": [
             {
               "type": "displacement",
               "reference_point_name": "RP_1",
-              "step_index": 0,
-              "component": "ry"
+              "component": "ry",
+              "step_name": "load_case_1"
             }
           ],
           "jacobian_needed": []
@@ -235,7 +235,7 @@
         "params": {
           "num_process": 1,
           "gpus": [],
-          "task_index_list": []
+          "task_step_list": []
         },
         "children": []
       },

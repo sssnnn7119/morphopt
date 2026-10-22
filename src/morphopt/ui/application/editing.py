@@ -331,59 +331,51 @@ class CustomClassSession:
 
 
 class LoadCaseSession:
-    """Load cases and their object-keyed amplitudes, independent of a table widget."""
-    def __init__(self, steps: StepsNode, problem: ProblemDefinition):
+    """Named case operations and amplitude editing, independent of widgets."""
+
+    def __init__(self, steps: StepsNode, problem: ProblemDefinition) -> None:
         self.steps, self.problem = steps, problem
 
-    def columns(self) -> list[tuple[FEAComponentNode, int, str]]:
-        columns = []
-        for component in self.problem.amplitude_components():
-            count = component.num_values
-            columns.extend((component, index, component.name if count == 1 else f"{component.name}.{index}") for index in range(count))
-        return columns
+    def add(self) -> str:
+        index = 1
+        while f"load_case_{index}" in self.steps.step_values:
+            index += 1
+        name = f"load_case_{index}"
+        self.steps.step_values[name] = {}
+        return name
 
-    def value(
-        self, row: int, component: FEAComponentNode, component_index: int
-    ):
-        amplitudes = self.steps.step_values[row].get(component, []) if row < len(self.steps.step_values) else []
-        return amplitudes[component_index] if component_index < len(amplitudes) else 0.
+    def rename(self, name: str, new_name: str) -> None:
+        from .load_cases import rename_case
+        rename_case(self.problem, name, new_name)
 
-    def resize(self, count: int) -> None:
-        if count < 1:
-            raise ValueError(localized_message("ui.errors.editing.keep_at_least_one_load_case"))
-        rows = self.steps.step_values[:count]
-        rows.extend({} for _ in range(count - len(rows)))
-        self.steps.num_steps, self.steps.step_values = count, rows
+    def move(self, name: str, delta: int) -> bool:
+        names = list(self.steps.step_values)
+        index = names.index(name)
+        target = index + delta
+        if not 0 <= target < len(names):
+            return False
+        names[index], names[target] = names[target], names[index]
+        self.steps.step_values = {key: self.steps.step_values[key] for key in names}
+        return True
 
-    def copy(self, row: int) -> int:
-        self.resize(self.steps.num_steps)
-        self.steps.step_values.insert(
-            row + 1,
-            {component: list(values) for component, values in self.steps.step_values[row].items()},
-        )
-        self.steps.num_steps += 1
-        return row + 1
+    def remove(self, name: str, *, remove_objectives: bool, remove_unused: bool) -> None:
+        from .load_cases import remove_case
+        remove_case(self.problem, name, remove_objectives, remove_unused)
 
-    def remove(self, row: int) -> int:
-        if self.steps.num_steps <= 1:
-            raise ValueError(localized_message("ui.errors.editing.keep_at_least_one_load_case"))
-        self.resize(self.steps.num_steps)
-        self.steps.step_values.pop(row)
-        self.steps.num_steps -= 1
-        return min(row, self.steps.num_steps - 1)
-
-    def set_value(self, row: int, column: int, text: str) -> bool:
-        try:
-            value = float(text)
-        except ValueError:
-            value = text.strip()
-            if value not in {node.name for node in self.problem.helper_variables}:
-                return False
-        component, component_index, _caption = self.columns()[column]
-        self.resize(self.steps.num_steps)
-        values = self.steps.step_values[row].setdefault(component, [])
-        values.extend(0. for _ in range(component_index + 1 - len(values)))
-        values[component_index] = value
+    def set_value(self, name: str, component: FEAComponentNode, text: str) -> bool:
+        values = []
+        constants = {constant.name for constant in self.problem.helper_variables}
+        for entry in text.strip().strip("[]").split(","):
+            try:
+                value = float(entry.strip())
+            except ValueError:
+                value = entry.strip()
+                if value not in constants:
+                    return False
+            values.append(value)
+        if len(values) != component.num_values:
+            return False
+        self.steps.step_values[name][component] = values
         return True
 
 
@@ -393,12 +385,17 @@ class SolverTasks:
         self.solver, self.problem = solver, problem
 
     def assignments(self) -> list[int]:
-        count = self.problem.steps.num_steps if self.problem.steps is not None else 1
-        assigned = {step: group for group, steps in enumerate(self.solver.task_index_list) for step in steps}
-        return [assigned.get(step, step) for step in range(count)]
+        names = list(self.problem.steps.step_values) if self.problem.steps is not None else []
+        assigned = {step: group for group, steps in enumerate(self.solver.task_step_list) for step in steps}
+        next_group = len(self.solver.task_step_list)
+        for name in names:
+            if name not in assigned:
+                assigned[name] = next_group
+                next_group += 1
+        return [assigned[name] for name in names]
 
     def assign(self, assignments: list[int]) -> None:
-        groups: dict[int, list[int]] = {}
-        for step, group in enumerate(assignments):
-            groups.setdefault(max(0, group), []).append(step)
-        self.solver.task_index_list = [groups[index] for index in sorted(groups)]
+        groups: dict[int, list[str]] = {}
+        for name, group in zip(self.problem.steps.step_values, assignments):
+            groups.setdefault(max(0, group), []).append(name)
+        self.solver.task_step_list = [groups[index] for index in sorted(groups)]
