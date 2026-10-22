@@ -62,7 +62,7 @@
                     0.0
                   ],
                   "maxR": 0.2,
-                  "maxC": 1.0,
+                  "maxC": 2.0,
                   "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
@@ -87,7 +87,7 @@
                     3.0
                   ],
                   "maxR": 0.2,
-                  "maxC": 1.0,
+                  "maxC": 2.0,
                   "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
@@ -112,7 +112,7 @@
                     53.0
                   ],
                   "maxR": 0.2,
-                  "maxC": 1.0,
+                  "maxC": 2.0,
                   "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
