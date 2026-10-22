@@ -44,7 +44,7 @@ class RefreshContext:
     @property
     def loads_changed(self) -> bool:
         return self.geometry_changed or any(
-            node.kind in {"fea_component", "loads", "loads_group", "steps"}
+            node.kind in {"fea_component", "loads", "loads_group", "steps", "objective"}
             for node in self.changed_nodes
         )
 

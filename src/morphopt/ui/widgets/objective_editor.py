@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...constants import CONSTANT
+from ..application.load_cases import remove_objectives, unused_cases
 from ..i18n import localization, tr
 from ..model.node_types.loads import ReferencePointNode
 from ..model.problem import ObjectiveNode, ProblemDefinition
@@ -33,6 +34,8 @@ from ..refresh import RefreshContext
 from ..schemes.base import get_template
 from ..schemes.snippets import CodeSnippet
 from ..theme import theme_manager
+from .workspace_objective import WorkspaceObjectiveEditor
+from .case_deletion import confirm_case_cleanup
 from .codeeditor import CodeEditor
 from .collection_controls import CollectionHeader, ItemActions, set_card_selected
 from .template_insert_dialog import TemplateInsertDialog
@@ -61,14 +64,17 @@ class JacobianLoadSelector(QToolButton):
         load_names: list[str],
         selected_names: list[str],
         titles: dict[str, str] | None = None,
+        required_names: set[str] | None = None,
     ) -> None:
         self._load_names = list(dict.fromkeys(name for name in load_names if name))
-        selected = set(selected_names)
+        required = required_names or set()
+        selected = set(selected_names) | required
         self._menu.clear()
         self._checks.clear()
         for name in self._load_names:
             check = QCheckBox((titles or {}).get(name, name), self._menu)
             check.setChecked(name in selected)
+            check.setEnabled(name not in required)
             check.toggled.connect(self._selection_changed)
             action = QWidgetAction(self._menu)
             action.setDefaultWidget(check)
@@ -144,6 +150,7 @@ class ObjectiveEditor(QWidget):
         for label_key, term_type in (
             ("displacement_term", CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT),
             ("custom_loss_term", CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS),
+            ("workspace_term", CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE),
         ):
             action = self._add_menu.addAction(
                 tr(f"ui.widgets.objective_editor.{label_key}")
@@ -268,6 +275,12 @@ class ObjectiveEditor(QWidget):
             self._snippets = get_template(problem.scheme).objective_code_snippets()
             if self._obj is not None:
                 amplitude_components = problem.amplitude_components()
+                workspace_loads = {
+                    name for term in self._obj.objective_terms
+                    if term.get("type") == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
+                    for entry in term.get("inputs", [])
+                    for name, _index in entry["parameters"]
+                }
                 self.jacobian_loads.set_loads(
                     [component.name for component in amplitude_components],
                     [component.name for component in self._obj.jacobian_needed],
@@ -275,6 +288,7 @@ class ObjectiveEditor(QWidget):
                         component.name: component_title_text(component)
                         for component in amplitude_components
                     },
+                    required_names=workspace_loads,
                 )
             else:
                 self.jacobian_loads.set_loads([], [])
@@ -341,19 +355,14 @@ class ObjectiveEditor(QWidget):
             if isinstance(item, ReferencePointNode) and item.name
         ]
 
-    def _step_count(self) -> int:
-        if self._problem is None or self._problem.steps is None:
-            return 0
-        steps = self._problem.steps
-        return max(int(steps.num_steps), len(steps.step_values))
-
     def _sync_terms(self) -> None:
         terms = self._obj.objective_terms if self._obj is not None else []
         signature = (
             id(self._obj),
             localization.locale,
             tuple(point.name for point in self._reference_points()),
-            self._step_count(),
+            tuple((load.name, load.num_values) for load in self._problem.amplitude_components()) if self._problem else (),
+            tuple(self._problem.steps.step_values) if self._problem and self._problem.steps else (),
             tuple(
                 (
                     term.get("type"),
@@ -389,7 +398,8 @@ class ObjectiveEditor(QWidget):
             id(self._obj),
             localization.locale,
             tuple(point.name for point in self._reference_points()),
-            self._step_count(),
+            tuple((load.name, load.num_values) for load in self._problem.amplitude_components()) if self._problem else (),
+            tuple(self._problem.steps.step_values) if self._problem and self._problem.steps else (),
             tuple(metric.get("type") for metric in metrics),
         )
         self._metric_header.add_button.setEnabled(self._obj is not None)
@@ -464,13 +474,13 @@ class ObjectiveEditor(QWidget):
 
             step_combo = QComboBox()
             step_combo.addItem(tr("ui.widgets.objective_editor.select_load_case"), None)
-            for step_index in range(self._step_count()):
+            for step_name in self._problem.steps.step_values:
                 step_combo.addItem(
-                    tr("ui.widgets.viewer.step_value", value_0=step_index), step_index
+                    step_name, step_name
                 )
-            self._set_combo_value(step_combo, metric.get("step_index"))
+            self._set_combo_value(step_combo, metric.get("step_name"))
             form.addRow(tr("ui.widgets.objective_editor.load_case"), step_combo)
-            fields["step_index"] = step_combo
+            fields["step_name"] = step_combo
 
             component_combo = QComboBox()
             component_combo.addItem(
@@ -536,8 +546,8 @@ class ObjectiveEditor(QWidget):
             return
         if not 0 <= index < len(self._obj.metrics_terms):
             return
-        if key == "step_index":
-            value = int(value) if value is not None else None
+        if key == "step_name":
+            value = str(value) if value is not None else None
         else:
             value = str(value or "")
         metric = self._obj.metrics_terms[index]
@@ -562,7 +572,7 @@ class ObjectiveEditor(QWidget):
             metric.update(
                 {
                     "reference_point_name": "",
-                    "step_index": None,
+                    "step_name": None,
                     "component": "",
                 }
             )
@@ -576,7 +586,8 @@ class ObjectiveEditor(QWidget):
     def _remove_metric(self, index: int) -> None:
         if self._obj is None:
             return
-        self._obj.metrics_terms.pop(index)
+        if not self._delete_terms([self._obj.metrics_terms[index]]):
+            return
         self._metric_signature = None
         self._sync_metrics()
         self.changed.emit(self._obj)
@@ -621,6 +632,7 @@ class ObjectiveEditor(QWidget):
         title_key = {
             CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT: "displacement_term",
             CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS: "custom_loss_term",
+            CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE: "workspace_term",
         }.get(term_type, "objective_term")
         card = QGroupBox(
             f"{index + 1}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
@@ -663,13 +675,13 @@ class ObjectiveEditor(QWidget):
 
             step_combo = QComboBox()
             step_combo.addItem(tr("ui.widgets.objective_editor.select_load_case"), None)
-            for step_index in range(self._step_count()):
+            for step_name in self._problem.steps.step_values:
                 step_combo.addItem(
-                    tr("ui.widgets.viewer.step_value", value_0=step_index), step_index
+                    step_name, step_name
                 )
-            self._set_combo_value(step_combo, term.get("step_index"))
+            self._set_combo_value(step_combo, term.get("step_name"))
             form.addRow(tr("ui.widgets.objective_editor.load_case"), step_combo)
-            fields["step_index"] = step_combo
+            fields["step_name"] = step_combo
 
             component_combo = QComboBox()
             component_combo.addItem(
@@ -713,6 +725,12 @@ class ObjectiveEditor(QWidget):
         form.addRow(tr("ui.widgets.objective_editor.weight"), weight)
         fields["weight"] = weight
         layout.addLayout(form)
+
+        if term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE and self._problem is not None:
+            workspace = WorkspaceObjectiveEditor(term, self._problem)
+            workspace.changed.connect(lambda: self.changed.emit(self._obj))
+            layout.addWidget(workspace)
+            fields["workspace"] = workspace
 
         if term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
             editor = CodeEditor(
@@ -803,6 +821,8 @@ class ObjectiveEditor(QWidget):
                 if isinstance(widget, QComboBox):
                     with QSignalBlocker(widget):
                         self._set_combo_value(widget, term.get(key))
+                elif isinstance(widget, WorkspaceObjectiveEditor):
+                    widget.refresh_status()
                 elif isinstance(widget, QDoubleSpinBox):
                     value = term.get(key)
                     if value is not None:
@@ -814,8 +834,8 @@ class ObjectiveEditor(QWidget):
             return
         if not 0 <= index < len(self._obj.objective_terms):
             return
-        if key == "step_index":
-            value = int(value) if value is not None else None
+        if key == "step_name":
+            value = str(value) if value is not None else None
         elif key in {"target", "weight"}:
             value = float(value)
         elif key == "direction":
@@ -858,12 +878,14 @@ class ObjectiveEditor(QWidget):
             term.update(
                 {
                     "reference_point_name": "",
-                    "step_index": None,
+                    "step_name": None,
                     "component": "",
                     "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
                     "target": CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET,
                 }
             )
+        elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE:
+            term.update(kind="workspace_plane", reference_point_name="", inputs=[], gauss_order=2, normalization=1.0, case_names=[])
         else:
             term["body"] = ""
         self._obj.objective_terms.append(term)
@@ -871,10 +893,18 @@ class ObjectiveEditor(QWidget):
         self._sync_terms()
         self.changed.emit(self._obj)
 
+    def _delete_terms(self, terms: list[dict]) -> bool:
+        remove_unused = confirm_case_cleanup(self, unused_cases(self._problem, terms))
+        if remove_unused is None:
+            return False
+        remove_objectives(self._problem, terms, remove_unused)
+        return True
+
     def _remove_term(self, index: int) -> None:
         if self._obj is None:
             return
-        self._obj.objective_terms.pop(index)
+        if not self._delete_terms([self._obj.objective_terms[index]]):
+            return
         self._term_signature = None
         self._sync_terms()
         self.changed.emit(self._obj)

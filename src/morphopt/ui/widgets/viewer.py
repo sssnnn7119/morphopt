@@ -167,7 +167,7 @@ class PreviewViewer(QWidget):
         )
         outer.addWidget(self.face_info)
 
-        self._selected_step: int | None = None
+        self._selected_step: str | None = None
         self._problem: ProblemDefinition | None = None
         self._language_pending = False
         self._theme_pending = False
@@ -364,17 +364,15 @@ class PreviewViewer(QWidget):
     def _sync_step_combo(self) -> None:
         steps = self._problem.steps if self._problem is not None else None
         n = (
-            max(int(steps.num_steps), len(steps.step_values))
+            len(steps.step_values)
             if steps is not None
             else 0
         )
         with QSignalBlocker(self.step_combo):
             self.step_combo.clear()
-            self.step_combo.addItem(tr("ui.widgets.viewer.no_load_step"), -1)
-            for step in range(n):
-                self.step_combo.addItem(
-                    tr("ui.widgets.viewer.step_value", value_0=step), step
-                )
+            self.step_combo.addItem(tr("ui.widgets.viewer.no_load_step"), None)
+            for step in (steps.step_values if steps is not None else ()):
+                self.step_combo.addItem(step, step)
             selected = self.step_combo.findData(self._selected_step)
             self.step_combo.setCurrentIndex(
                 selected if selected >= 0 else (1 if n else 0)

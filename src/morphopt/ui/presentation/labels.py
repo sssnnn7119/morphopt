@@ -199,6 +199,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         label_key = {
             "displacement": "displacement_term",
             "custom_loss": "custom_loss_term",
+            "workspace": "workspace_term",
         }.get(term_type, "objective_term")
         return tr(
             "ui.widgets.objective_editor.tree_objective_entry",

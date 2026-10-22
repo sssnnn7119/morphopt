@@ -82,7 +82,7 @@ MainWindow
 | `DefinitionManagerEditor` | 部件及子项、载荷或辅助定义的集合卡片 |
 | `CollectionHeader`、`ItemActions` | 共用添加、上移、下移与删除入口 |
 | `DefinitionActions` | 树菜单与卡片共用的结构动作、对话框与通知 |
-| `StepMatrix`、`SolverEditor` | 工况表和任务分组表 |
+| `LoadCaseEditor`、`SolverEditor` | 具名工况卡片和任务分组表 |
 | `UpdaterEditor` | 子目标、对称和罚函数的有序卡片 |
 | `ObjectiveEditor` | 目标、指标与 Jacobian 选择 |
 | `ModelClassSelector` | 根级配置、目标函数和具体子优化器的类选择 |

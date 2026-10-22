@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import hashlib
 import importlib.util
 import re
@@ -138,23 +140,20 @@ class ResultSession:
     def fea_components(self) -> tuple[tuple[str, object], ...]:
         return visualizable_components(self.params)
 
-    def deformation_mesh(self, case: int, iteration: int):
+    def deformation_mesh(self, case: str, iteration: int):
         import pyvista as pv
         if self.folder is None:
             return None
         path = Path(self.folder) / "log" / "deformation" / f"task_{case}_iter_{iteration}.stl"
         return pv.read(path) if path.is_file() else None
 
-    def deformation_cases(self) -> tuple[int, ...]:
+    def deformation_cases(self) -> tuple[str, ...]:
         if not self.folder:
             return ()
-        found: set[int] = set()
-        deformation = Path(self.folder) / "log" / "deformation"
-        for path in deformation.glob("task_*_iter_*.stl"):
-            match = re.match(r"task_(\d+)_iter_\d+\.stl$", path.name)
-            if match:
-                found.add(int(match.group(1)))
-        return tuple(sorted(found))
+        mapping = Path(self.folder) / "log" / "femodel&results" / "load_cases.json"
+        if not mapping.is_file():
+            return ()
+        return tuple(json.loads(mapping.read_text(encoding="utf-8")))
 
 
 def visualizable_components(parameters) -> tuple[tuple[str, object], ...]:

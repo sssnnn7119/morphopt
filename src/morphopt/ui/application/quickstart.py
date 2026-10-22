@@ -11,6 +11,7 @@ from textwrap import dedent
 from ...constants import CONSTANT
 from ...optcore.quadrature import actuation_boundary_gauss_points
 from ..model.chamberlayout import ChamberLayer, LayeredChambers
+from ..codegen.workspace import workspace_integral_body
 from ..model.problem import (
     CADOperationNode,
     GeometryNode, HelperFunctionNode, HelperVariableNode,
@@ -238,7 +239,7 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
         )
     problem.root.add_section(StepsNode(
         name="Load steps",
-        params={"num_steps": len(step_values), "step_values": step_values},
+        params={"step_values": step_values},
     ))
     problem.root.add_section(materials)
     problem.root.add_section(ObjectiveNode(name="Objective Function", params={
@@ -252,11 +253,22 @@ def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
     problem.root.add_section(SolverNode(name="Solver", params={
         "num_process": CONSTANT.UI.QUICKSTART.DEFAULT.NUM_PROCESS,
         "gpus": [],
-        "task_index_list": [list(range(len(step_values)))],
+        "task_step_list": [],
     }))
     problem.root.add_section(updater)
     problem.resolve_references()
     problem.align_surface_dependent_state()
+    from .load_cases import synchronize_workspaces
+    import hashlib
+    import json
+    from uuid import uuid4
+    for term in problem.objective.objective_terms:
+        if term.get("type") == "workspace":
+            term["id"] = uuid4().hex
+            term["case_signature"] = hashlib.sha256(json.dumps([term["inputs"], term["gauss_order"]], sort_keys=True).encode()).hexdigest()
+            for name in term["case_names"]:
+                problem.steps.generated_by[name] = term["id"]
+    synchronize_workspaces(problem)
     return problem
 
 
@@ -330,6 +342,7 @@ def _shape_geometry(options, geometry, loads, materials):
         "geometry": [{
             "part_name": "body",
             "max_step_iter": CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
+            "max_step_length": CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
             "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
             "constraints": constraints,
         }],
@@ -344,7 +357,7 @@ def _shape(p, options, geometry, loads, materials):
     if any(objective.kind == "contact" for objective in options.objectives):
         _contact_setup(p, options, geometry, loads, materials)
 
-    step_values = []
+    step_values = {}
     step_indices = {}
 
     def add_pressure_case(channel_values):
@@ -354,8 +367,8 @@ def _shape(p, options, geometry, loads, materials):
         }
         signature = tuple(amplitudes[name][0] for name in pressure_names)
         if signature not in step_indices:
-            step_indices[signature] = len(step_values)
-            step_values.append(amplitudes)
+            step_indices[signature] = f"load_case_{len(step_values) + 1}"
+            step_values[step_indices[signature]] = amplitudes
         return step_indices[signature]
 
     objective_records, jacobian_names = [], []
@@ -368,42 +381,37 @@ def _shape(p, options, geometry, loads, materials):
                 [(0., span)]*dimensions, objective.gauss_order
             )
             workspace_steps = []
-            for point in points:
+            for point_index, point in enumerate(points, 1):
                 channel_values = {channel: float(point[axis]) for axis, channel in enumerate(active_channels)}
-                workspace_steps.append(add_pressure_case(channel_values))
+                name = f"workspace_{index + 1}_case_{point_index}"
+                step_values[name] = {
+                    load: [float(channel_values.get(cavity.pressure_channel, 0.0))]
+                    for load, cavity in zip(pressure_names, cavities)
+                }
+                workspace_steps.append(name)
             groups = [
                 [name for name, cavity in zip(pressure_names, cavities) if cavity.pressure_channel == channel]
                 for channel in active_channels
             ]
             for group in groups:
                 jacobian_names.extend(group)
-            names = {
-                "weights": f"workspace_{index}_weights",
-                "axes": f"workspace_{index}_axes",
-                "channels": f"workspace_{index}_channels",
-                "tangents": f"workspace_{index}_tangents",
-                "orientations": f"workspace_{index}_orientations",
+            inputs = [{"parameters": [[name, 0] for name in group], "upper": span} for group in groups]
+            arguments = {
+                "reference_point_name": "RP_tip", "axes": list(GOALS[objective.kind][1]),
+                "load_groups": [[(name, 0) for name in group] for group in groups],
+                "case_names": workspace_steps, "weights": weights.tolist(),
+                "tangents": tangents.tolist(), "orientations": orientations.tolist(),
             }
-            for key, value in (
-                ("weights", weights.tolist()),
-                ("axes", list(GOALS[objective.kind][1])),
-                ("channels", groups),
-                ("tangents", tangents.tolist()),
-                ("orientations", orientations.tolist()),
-            ):
-                p.helper_variables.append(HelperVariableNode(name=names[key], params={"value": repr(value)}))
-            function_name = f"workspace_measure_{index}"
-            _workspace_function(p, function_name, names)
             scale = options.total_length**sum(axis < 3 for axis in GOALS[objective.kind][1])
-            measure = f"{function_name}(self, {workspace_steps!r})"
+            metric_body = workspace_integral_body(**arguments)
             objective_records.append({
                 "objective": objective,
-                "workspace_measure": measure,
+                "case_names": workspace_steps,
+                "inputs": inputs,
                 "scale": scale,
                 "step": None,
+                "metric_body": metric_body,
             })
-            # Metrics are evaluated separately from objective_function.
-            objective_records[-1]["metric"] = measure
             continue
 
         channel_values = {
@@ -413,16 +421,19 @@ def _shape(p, options, geometry, loads, materials):
         step = add_pressure_case(channel_values)
         objective_records.append({"objective": objective, "step": step})
 
-    objective_terms, metrics = [], []
+    objective_terms, metrics, metric_functions = [], [], []
     for index, record in enumerate(objective_records):
         objective = record["objective"]
         if objective.is_workspace:
-            measure = record["workspace_measure"]
-            metrics.append(record["metric"])
+            metric_name = f"workspace_metric_{index + 1}"
+            metric_body = "\n".join("    " + line for line in record["metric_body"].splitlines())
+            metric_functions.append(f"def {metric_name}():\n{metric_body}")
+            metrics.append(f"{metric_name}()")
             objective_terms.append({
-                "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
-                "body": f"return -{measure}/{record['scale']!r}",
-                "weight": objective.weight,
+                "type": "workspace", "kind": objective.kind,
+                "reference_point_name": "RP_tip", "gauss_order": objective.gauss_order,
+                "inputs": record["inputs"], "case_names": record["case_names"],
+                "normalization": record["scale"], "weight": objective.weight,
             })
         else:
             step = record["step"]
@@ -430,7 +441,7 @@ def _shape(p, options, geometry, loads, materials):
             _loss, metric = _shape_objective_expression(
                 objective, index, options, motion_name, step
             )
-            metrics.append(metric.replace(motion_name, f"tip_motion(self, {step})"))
+            metrics.append(metric.replace(motion_name, f"tip_motion(self, {step!r})"))
             target = objective.target
             if objective.kind == "bend":
                 target = math.radians(target)
@@ -455,7 +466,7 @@ def _shape(p, options, geometry, loads, materials):
                 objective_terms.append({
                     "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
                     "body": (
-                        f"return (contact_force(self, {step}) "
+                        f"return (contact_force(self, {step!r}) "
                         f"- {objective.target!r}) ** 2"
                     ),
                     "weight": objective.weight / objective.target**2,
@@ -465,14 +476,14 @@ def _shape(p, options, geometry, loads, materials):
                     step, "ux", reach,
                     0.1 * objective.weight / reach**2,
                 ))
-    metrics_code = "return ["+", ".join(metrics)+"]\n"
+    metrics_code = "\n".join([*metric_functions, "return [" + ", ".join(metrics) + "]", ""])
     return step_values, objective_terms, metrics_code, list(dict.fromkeys(jacobian_names)), updater
 
 
 def _quickstart_displacement_term(step: int, component: str, target: float, weight: float):
     return {
         "type": CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT,
-        "step_index": step,
+        "step_name": step,
         "reference_point_name": "RP_tip",
         "component": component,
         "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
@@ -498,44 +509,13 @@ def _shape_objective_expression(objective, index, options, motion, step):
     elif objective.kind == "contact":
         reach = 4*options.wall
         loss = (
-            f"loss_{index} = ((contact_force(self, {step})-{objective.target!r})/{objective.target!r}).square()"
+            f"loss_{index} = ((contact_force(self, {step!r})-{objective.target!r})/{objective.target!r}).square()"
             f" + 0.1*(({motion}[0]-{reach!r})/{reach!r}).square()"
         )
-        metric = f"contact_force(self, {step})"
+        metric = f"contact_force(self, {step!r})"
     else:
         raise ValueError(localized_message("ui.errors.quickstart.unsupported_shape_objective_value", value_0=objective.kind))
     return loss, metric
-
-
-def _workspace_function(problem, function_name, names):
-    _function(problem, function_name, "objective, step_indices", f'''
-        assembly = objective.fe.assembly
-        rp = assembly.get_reference_point("RP_tip")
-        start = assembly._GC_list_indexStart[rp._RGC_index]
-        volume = None
-        for local, step in enumerate(step_indices):
-            result = objective.fe_results[step]
-            motion = tip_motion(objective, step)[{names["axes"]}]
-            derivatives = [
-                sum(result.jacobian[name][start:start+6, 0].to(motion.device) for name in channel)[{names["axes"]}]
-                for channel in {names["channels"]}
-            ]
-            tangent_a, tangent_b = {names["tangents"]}[local]
-            if len({names["axes"]}) == 2:
-                tangent = derivatives[tangent_a]
-                integrand = motion[1]*tangent[0] - motion[0]*tangent[1]
-            else:
-                jacobian_a = derivatives[tangent_a]
-                jacobian_b = derivatives[tangent_b]
-                integrand = torch.dot(motion, torch.linalg.cross(jacobian_a, jacobian_b))
-            if volume is None:
-                volume = motion.sum()*0
-            volume = volume + {names["weights"]}[local]*{names["orientations"]}[local]*integrand
-        if len({names["axes"]}) == 2:
-            return volume.abs()/2
-        factor = 1/24 if {names["axes"]} == [3, 4, 5] else 1/3
-        return volume.abs()*factor
-    ''')
 
 
 def _contact_setup(problem, options, geometry, loads, materials):
@@ -615,6 +595,7 @@ def _topology(options, geometry, loads, materials):
         "materials": [{
             "material_name": "density",
             "max_step_iter": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
+            "max_step_length": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
             "if_update": True,
             "objective_functions": [{"type": "Sensitivity", "params": {"normalize_gradient": False}}],
             "constraints": [
@@ -628,20 +609,20 @@ def _topology(options, geometry, loads, materials):
             ],
         }],
     })
-    steps, signatures = [], {}
+    steps, signatures = {}, {}
     objective_steps = []
     for objective in options.objectives:
         signature = float(objective.force_n)
         if signature not in signatures:
-            signatures[signature] = len(steps)
-            steps.append({"tip_force": [0., 0., -signature]})
+            signatures[signature] = f"load_case_{len(steps) + 1}"
+            steps[signatures[signature]] = {"tip_force": [0., 0., -signature]}
         objective_steps.append(signatures[signature])
     objective_terms, metrics = [], []
     for objective, step in zip(options.objectives, objective_steps):
-        metrics.append(f"tip_motion(self, {step})[2]")
+        metrics.append(f"tip_motion(self, {step!r})[2]")
         if objective.kind == "stiffness":
             body = (
-                f"motion = tip_motion(self, {step})\n"
+                f"motion = tip_motion(self, {step!r})\n"
                 f"return -motion[2]/{options.total_length!r}"
             )
             objective_terms.append({

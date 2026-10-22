@@ -566,8 +566,7 @@ class MainWindow(QMainWindow):
     def _begin_analysis_task(self) -> None:
         self._result_selection = None
         self.result_context.set_folder(None)
-        self._has_analysis_model = False
-        self.analysis_navigation.setTabEnabled(1, False)
+        self._refresh_analysis_model()
         self._update_result_context()
 
     def _ensure_observer(self) -> None:
@@ -576,6 +575,7 @@ class MainWindow(QMainWindow):
             return
         self._observer = ObserverControls()
         self._observer.resultFolderChanged.connect(self._set_result_folder)
+        self._observer.resultsUpdated.connect(self._refresh_analysis_model)
         self._analysis_toolbar.addWidget(self._observer.task_controls, 1)
         self._observer.runStateChanged.connect(self._update_analysis_actions)
         self._observer.panel.selectionChanged.connect(self._select_result)
@@ -601,23 +601,29 @@ class MainWindow(QMainWindow):
         """Share a single folder/iteration selection between both result views."""
         if self._syncing_selection:
             return
-        from .application.finite_element import IterationModel
-
         self._syncing_selection = True
         try:
             self._result_selection = ResultSelection(folder, iteration)
             if self.sender() is self._finite_element:
                 self._observer.panel.select_iteration(iteration)
-            self._has_analysis_model = IterationModel(
-                folder, iteration
-            ).model_path.is_file()
-            self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
+            self._refresh_analysis_model()
             if self.stack.currentIndex() == 2 and self._finite_element is not None:
                 self._finite_element.synchronize_result(folder, iteration)
             self._update_result_context()
             self._update_analysis_actions()
         finally:
             self._syncing_selection = False
+
+    def _refresh_analysis_model(self) -> None:
+        """Recheck the selected task's archive even if its iteration is unchanged."""
+        from .application.finite_element import IterationModel
+
+        selection = self._result_selection
+        self._has_analysis_model = selection is not None and IterationModel(
+            selection.folder, selection.iteration
+        ).model_path.is_file()
+        self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
+        self._show_finite_element_action.setEnabled(self._has_analysis_model)
 
     def _set_result_folder(self, folder: str) -> None:
         self.result_context.set_folder(folder)

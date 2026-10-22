@@ -120,9 +120,7 @@ class SnippetInputs:
 
     def values(self, source: str) -> list:
         providers = {
-            "load_steps": lambda: list(
-                range(self.problem.steps.num_steps if self.problem.steps else 1)
-            ),
+            "load_steps": lambda: list(self.problem.steps.step_values) if self.problem.steps else [],
             "instances": self.problem.instance_names,
             "reference_points": self.problem.reference_point_names,
             "elements": self.problem.element_names,

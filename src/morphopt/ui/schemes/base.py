@@ -161,14 +161,11 @@ class SchemeTemplate:
         """Loads section (empty container; add components afterwards)."""
         return LoadsNode(name="Loads")
 
-    def make_steps(self, num_steps: int, step_values: list) -> StepsNode:
-        """Steps section: total count + per-component amplitudes per step."""
+    def make_steps(self, step_values: dict[str, dict]) -> StepsNode:
+        """Named cases and per-component amplitudes in registration order."""
         return StepsNode(
             name="Load steps",
-            params={
-                "num_steps": int(num_steps),
-                "step_values": list(step_values),
-            },
+            params={"step_values": dict(step_values)},
         )
 
     def make_objective(
@@ -199,7 +196,7 @@ class SchemeTemplate:
         )
 
     def make_solver(
-        self, num_process: int = 1, gpus=None, task_index_list=None
+        self, num_process: int = 1, gpus=None, task_step_list=None
     ) -> SolverNode:
         """Solver section: FEA process count, gpus and task partitioning."""
         return SolverNode(
@@ -207,7 +204,7 @@ class SchemeTemplate:
             params={
                 "num_process": int(num_process),
                 "gpus": list(gpus or []),
-                "task_index_list": list(task_index_list or []),
+                "task_step_list": list(task_step_list or []),
             },
         )
 
@@ -225,10 +222,10 @@ class SchemeTemplate:
 
     # ----------------------------------------------------- objective slots
     def default_objective_slot(self) -> str:
-        return "return self.fe_results[0].GC[-2]\n"
+        return "return self.fe_results['load_case_1'].GC[-2]\n"
 
     def default_metrics_slot(self) -> str:
-        return "return [self.fe_results[0].GC[-2]]\n"
+        return "return [self.fe_results['load_case_1'].GC[-2]]\n"
 
     def objective_code_snippets(self) -> tuple[CodeSnippet, ...]:
         """Snippets offered by the Objective editor for this scheme.
@@ -327,8 +324,8 @@ BUILTIN_SCHEMES = (
         material_type="HomogeneousMaterial",
         body_name="body",
         quickstart_method="shapeopt",
-        objective_slot="return self.fe_results[0].GC[-2]\n",
-        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+        objective_slot="return self.fe_results['load_case_1'].GC[-2]\n",
+        metrics_slot="return [self.fe_results['load_case_1'].GC[-2]]\n",
     ),
     BuiltinSchemeTemplate(
         scheme="simp",
@@ -337,11 +334,11 @@ BUILTIN_SCHEMES = (
         body_name="body",
         quickstart_method="simp",
         objective_slot=(
-            "RGC = self.fe.assembly._GC2RGC(self.fe_results[0].GC)\n"
+            "RGC = self.fe.assembly._GC2RGC(self.fe_results['load_case_1'].GC)\n"
             "return sum(instance.potential_energy(RGC=RGC)\n"
             "           for instance in self.fe.assembly._instances.values())\n"
         ),
-        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+        metrics_slot="return [self.fe_results['load_case_1'].GC[-2]]\n",
     ),
 )
 
@@ -352,8 +349,8 @@ LEGACY_SCHEME_POLICIES = (
         material_type="HomogeneousMaterial",
         body_name="body",
         quickstart_method=None,
-        objective_slot="return self.fe_results[0].GC[-2]\n",
-        metrics_slot="return [self.fe_results[0].GC[-2]]\n",
+        objective_slot="return self.fe_results['load_case_1'].GC[-2]\n",
+        metrics_slot="return [self.fe_results['load_case_1'].GC[-2]]\n",
     ),
 )
 

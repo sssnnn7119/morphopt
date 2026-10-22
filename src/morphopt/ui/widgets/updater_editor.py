@@ -1,7 +1,7 @@
 """Structured Updater editor: pick objective functions / constraints.
 
 Each sub-optimizer (UpdaterBoundaryPart / UpdaterSIMPMaterial) exposes:
-* max_step_iter; material updaters also expose if_update
+* max_step_iter and max_step_length; material updaters also expose if_update
 * a list of objective functions
 * a list of geometry symmetry constraints and a list of penalty constraints
 and every item can have parameters edited in an inline form. Built-in
@@ -327,6 +327,22 @@ class UpdaterEditor(QWidget):
 
             iterations.editingFinished.connect(save_iterations)
             form.addRow(tr("ui.widgets.updater_editor.max_step_iter"), iterations)
+
+            defaults = CONSTANT.KERNEL.SHAPE_UPDATE if group == "geometry" else CONSTANT.KERNEL.SIMP_UPDATE
+            step_length = QLineEdit(str(cfg.get("max_step_length", defaults.MAX_STEP_LENGTH)))
+            step_length.setToolTip(tr("ui.widgets.updater_editor.max_step_length_help"))
+
+            def save_step_length() -> None:
+                text = step_length.text().strip()
+                if text:
+                    try:
+                        value = float(text)
+                    except ValueError:
+                        value = text
+                    self._set(cfg, "max_step_length", value)
+
+            step_length.editingFinished.connect(save_step_length)
+            form.addRow(tr("ui.widgets.updater_editor.max_step_length"), step_length)
 
             if group == "materials":
                 form.addRow(

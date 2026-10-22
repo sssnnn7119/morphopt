@@ -1,4 +1,5 @@
 """Construct mutable optimizer configurations from registered node defaults."""
+from ...constants import CONSTANT
 from .registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG, UPDATER_OBJECTIVES, UPDATER_CONSTRAINTS
 
 def symmetry_constraint_defaults(item_type: str) -> dict:
@@ -50,6 +51,7 @@ def updater_constraint(item_type: str, **overrides) -> dict:
 def geometry_updater_config(
     part_name: str = "",
     max_step_iter: int = 50,
+    max_step_length: float = CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
     objective_functions: tuple | None = None,
     constraints: tuple | None = None,
     symmetry_constraints: tuple = (),
@@ -64,6 +66,7 @@ def geometry_updater_config(
     return {
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
+        "max_step_length": float(max_step_length),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],
@@ -79,6 +82,7 @@ def geometry_updater_config(
 def materials_updater_config(
     material_name: str = "",
     max_step_iter: int = 50,
+    max_step_length: float = CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
     if_update: bool | list[bool] = True,
     objective_functions: tuple = (),
     constraints: tuple = (),
@@ -91,6 +95,7 @@ def materials_updater_config(
     return {
         "material_name": str(material_name or ""),
         "max_step_iter": int(max_step_iter),
+        "max_step_length": float(max_step_length),
         "if_update": if_update,
         "objective_functions": list(objective_functions),
         "constraints": list(constraints),

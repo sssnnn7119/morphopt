@@ -389,8 +389,8 @@ class ProblemDefinition:
 
         steps = self.steps
         if steps is not None:
-            steps.step_values = [
-                {
+            steps.step_values = {
+                name: {
                     target: list(values)
                     for key, values in step.items()
                     if (
@@ -403,8 +403,8 @@ class ProblemDefinition:
                     )
                     is not None
                 }
-                for step in steps.step_values
-            ]
+                for name, step in steps.step_values.items()
+            }
 
         objective = self.objective
         if objective is not None:
@@ -1148,7 +1148,7 @@ class ProblemDefinition:
         """Remove a component and every reference to it."""
         self._require_loads().remove_child(component)
         if self.steps is not None:
-            for values in self.steps.step_values:
+            for values in self.steps.step_values.values():
                 values.pop(component, None)
         if self.objective is not None:
             self.objective.jacobian_needed = [
@@ -1202,6 +1202,16 @@ class ProblemDefinition:
             return False
 
         component.name = new_name
+        if self.objective is not None:
+            for term in self.objective.objective_terms:
+                if term.get("type") == "workspace":
+                    if term.get("reference_point_name") == old_name:
+                        term["reference_point_name"] = new_name
+                    for entry in term.get("inputs", []):
+                        entry["parameters"] = [
+                            [new_name if name == old_name else name, index]
+                            for name, index in entry["parameters"]
+                        ]
         return True
 
     def _rename_part_node(self, part: PartNode, new_name: str) -> bool:
@@ -1428,7 +1438,7 @@ class ProblemDefinition:
     def to_dict(self) -> dict:
         self.resolve_references()
         return {
-            "version": 3,
+            "version": 4,
             "scheme": self.scheme,
             "label": self.label,
             "result_folder": self.result_folder,
@@ -1480,7 +1490,7 @@ class ProblemDefinition:
 
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
-        if data.get("version") != 3:
+        if data.get("version") != 4:
             raise ValueError(
                 localized_message(
                     "ui.errors.problem.unsupported_morph_version_value",

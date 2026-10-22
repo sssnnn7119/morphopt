@@ -132,9 +132,9 @@ class ThisController(morphopt.Controller):
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def get_force_displacement(self, stepidx):
-            self.set_step(stepidx)
+            self.set_step(f"load_case_{stepidx + 1}")
             assembly = self.fe.assembly
-            rgc = assembly._GC2RGC(self.fe_results[stepidx].GC)
+            rgc = assembly._GC2RGC(self.fe_results[f"load_case_{stepidx + 1}"].GC)
             rp = assembly.get_reference_point("RPCylinder")
             displacement = rgc[rp._RGC_index].reshape(-1)[0]
             drive = assembly.get_load("Drive")
@@ -284,10 +284,10 @@ class ThisController(morphopt.Controller):
                 )
 
             def define_steps(self):
-                self.set_step_num(len(closure_steps))
                 for stepidx, closure in enumerate(closure_steps):
+                    self.add_step(f"load_case_{stepidx + 1}")
                     self.set_step_params(
-                        step_index=stepidx,
+                        step_name=f"load_case_{stepidx + 1}",
                         load_name="Drive",
                         values=[drive_stiffness / 2, -closure],
                     )
@@ -494,7 +494,7 @@ class ThisController(morphopt.Controller):
                 params=params,
                 available_gpus=["cuda"],
                 num_process=1,
-                task_index_list=[list(range(len(closure_steps)))],
+                task_step_list=[[f"load_case_{index + 1}" for index in range(len(closure_steps))]],
             )
 
     class Updater(morphopt.Updaters):

@@ -358,45 +358,35 @@ class LoadsNode(Node):
 
 
 class StepsNode(Node):
-    """Load-step plan: total step count + per-component amplitudes per step.
-
-    Canonical parameters are explicit, typed attributes assigned in
-    ``__init__`` (``num_steps`` and ``step_values``).
-    """
+    """Named cases in registration order, with load-object keyed amplitudes."""
 
     kind = KIND_STEPS
     label_key: ClassVar[str] = "ui.widgets.model_tree.container.steps"
     backend_class: ClassVar[str] = ""
-    _FIELDS = ("num_steps", "step_values")
+    _FIELDS = ("step_values", "generated_by")
 
     def __init__(
-        self,
-        kind: str | None = None,
-        name: str = "Load steps",
-        params: dict | None = None,
-        children: Sequence[Node] | None = None,
+        self, kind: str | None = None, name: str = "Load steps",
+        params: dict | None = None, children: Sequence[Node] | None = None,
     ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
-        # ---- explicit typed parameters ----------------------------------
-        self.num_steps: int = int(data["num_steps"]) if "num_steps" in data else 1
-        self.step_values: list[dict[FEAComponentNode | str, list]] = [
-            dict(v) for v in (data.get("step_values") or [])
-        ]
+        self.generated_by: dict[str, str] = dict(data.get("generated_by", {}))
+        self.step_values: dict[str, dict[FEAComponentNode | str, list]] = {
+            name: dict(values) for name, values in data.get("step_values", {"load_case_1": {}}).items()
+        }
+
+    @property
+    def num_steps(self) -> int:
+        return len(self.step_values)
 
     def field_items(self) -> Iterator[tuple[str, object]]:
-        """Serialize object-keyed amplitudes using the referenced load names."""
-        yield "num_steps", self.num_steps
-        yield (
-            "step_values",
-            [
-                {
-                    key.name if isinstance(key, FEAComponentNode) else str(key): value
-                    for key, value in step.items()
-                }
-                for step in self.step_values
-            ],
-        )
+        yield "generated_by", dict(self.generated_by)
+        yield "step_values", {
+            name: {key.name if isinstance(key, FEAComponentNode) else str(key): value
+                   for key, value in values.items()}
+            for name, values in self.step_values.items()
+        }
 
 
 class MaterialsNode(Node):
@@ -514,11 +504,11 @@ class SolverNode(Node):
             doc_key="ui.schema.fields.gpus.help.list_of_gpu_ids_e_g_cuda_0_or_empty_for_cpu",
         ),
         FieldSpec(
-            "task_index_list",
-            "ui.schema.fields.task_index_list.label.task_index_list",
+            "task_step_list",
+            "ui.schema.fields.task_step_list.label.task_step_list",
             "vecN",
             (),
-            doc_key="ui.schema.fields.task_index_list.help.partition_of_load_steps_over_processes_empty_auto",
+            doc_key="ui.schema.fields.task_step_list.help.partition_of_load_steps_over_processes_empty_auto",
         ),
     )
 
@@ -540,7 +530,7 @@ class SolverNode(Node):
         self.gpus: list = [
             device for device in (data.get("gpus") or []) if device != "cpu"
         ]
-        self.task_index_list: list = list(data.get("task_index_list") or [])
+        self.task_step_list: list = list(data.get("task_step_list") or [])
 
 
 class UpdaterNode(Node):

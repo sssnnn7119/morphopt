@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "scheme": "shapeopt",
   "label": "BREP_BSP_Cylinder",
   "result_folder": ".results/",
@@ -145,14 +145,14 @@
         "kind": "steps",
         "name": "Load steps",
         "params": {
-          "num_steps": 1,
-          "step_values": [
-            {
+          "step_values": {
+            "load_case_1": {
               "pressure_1": [
                 0.02
               ]
             }
-          ]
+          },
+          "generated_by": {}
         },
         "children": []
       },
@@ -196,36 +196,36 @@
           "objective_terms": [
             {
               "type": "displacement",
-              "step_index": 0,
               "reference_point_name": "RP_tip",
               "component": "ux",
               "direction": "target",
               "target": 0.0,
-              "weight": 44.44444444444444
+              "weight": 44.44444444444444,
+              "step_name": "load_case_1"
             },
             {
               "type": "displacement",
-              "step_index": 0,
               "reference_point_name": "RP_tip",
               "component": "uy",
               "direction": "target",
               "target": 0.0,
-              "weight": 44.44444444444444
+              "weight": 44.44444444444444,
+              "step_name": "load_case_1"
             },
             {
               "type": "displacement",
-              "step_index": 0,
               "reference_point_name": "RP_tip",
               "component": "uz",
               "direction": "target",
               "target": 0.15,
-              "weight": 44.44444444444444
+              "weight": 44.44444444444444,
+              "step_name": "load_case_1"
             }
           ],
           "metrics_terms": [
             {
               "type": "custom",
-              "body": "return [tip_motion(self, 0)[2]]\n"
+              "body": "return [tip_motion(self, \"load_case_1\")[2]]\n"
             }
           ],
           "jacobian_needed": []
@@ -238,9 +238,9 @@
         "params": {
           "num_process": 1,
           "gpus": [],
-          "task_index_list": [
+          "task_step_list": [
             [
-              0
+              "load_case_1"
             ]
           ]
         },

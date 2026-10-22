@@ -71,7 +71,7 @@ class LoadPreviewVisitor:
             handler
         )
 
-    def build(self, geometry: PreviewGeometry, step_index: int | None) -> LoadScene:
+    def build(self, geometry: PreviewGeometry, step_name: str | None) -> LoadScene:
         scene = LoadScene(
             geometry.scene.glyph_scale,
             annotation_scale=geometry.scene.diagonal,
@@ -82,14 +82,13 @@ class LoadPreviewVisitor:
         steps = problem.steps
         if (
             steps is None
-            or not isinstance(step_index, int)
-            or not 0 <= step_index < len(steps.step_values)
+            or step_name not in steps.step_values
         ):
             return scene
         components = {
             component.name: component for component in problem.fea_components()
         }
-        for reference, raw_values in (steps.step_values[step_index] or {}).items():
+        for reference, raw_values in (steps.step_values[step_name] or {}).items():
             component = (
                 reference
                 if isinstance(reference, FEAComponentNode)

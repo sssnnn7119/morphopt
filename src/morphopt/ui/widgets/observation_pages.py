@@ -336,9 +336,9 @@ class UpdatableStructurePage(QWidget):
 class DeformationCasePage(QWidget):
     """Deformed mesh for one load case at the selected iteration."""
 
-    def __init__(self, case_index: int, parent=None):
+    def __init__(self, case_name: str, parent=None):
         super().__init__(parent)
-        self.case_index = case_index
+        self.case_name = case_name
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.viewport = PlotViewport(self)
@@ -349,7 +349,7 @@ class DeformationCasePage(QWidget):
         marker = (results.folder, iteration)
         if marker == self._last_rendered:
             return
-        mesh = results.deformation_mesh(self.case_index, iteration)
+        mesh = results.deformation_mesh(self.case_name, iteration)
 
         def build_scene(plotter) -> None:
             if mesh is not None:

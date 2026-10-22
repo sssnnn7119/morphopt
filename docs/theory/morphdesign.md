@@ -280,8 +280,10 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
 **2D 位置工作空间**（$2\text{A}0\text{R}2\text{T}$）：
 
 $$
-|\mathbb{W}_\text{2T}| = \frac{1}{2} \oint_{\partial \mathbb{P}} \left(U_2 J^{1}_{\zeta_1} - U_1 J^{2}_{\zeta_1}\right) \mathrm{d}\zeta_1
+|\mathbb{W}_\text{2T}| = \frac{1}{2} \left|\oint_{\partial \mathbb{P}} \left(U_1 J^{2}_{\zeta_1} - U_2 J^{1}_{\zeta_1}\right) \mathrm{d}\zeta_1\right|
 $$
+
+二维边界采用逆时针取向，分量按所选响应坐标的顺序排列。三维边界采用外向取向。数值实现对完整的有向边界积分取绝对值，再以负号、权重及归一化尺度构造最小化目标。
 
 **3D 位置工作空间**（$3\text{A}0\text{R}3\text{T}$）：
 

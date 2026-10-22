@@ -23,7 +23,7 @@ from .results import _cpu_torch_defaults
 class IterationModel:
     folder: str
     iteration: int
-    case: int | None = None
+    case: str | None = None
 
     @property
     def model_path(self) -> Path:
@@ -35,9 +35,10 @@ class IterationModel:
         return tuple(sorted(int(match[1]) for path in directory.glob('femodel_*.npz')
             if (match := re.fullmatch(r'femodel_(\d+)\.npz', path.name))))
 
-    def cases(self) -> tuple[int, ...]:
-        return tuple(sorted(int(match[1]) for path in self.model_path.parent.glob(f'result_*_iter_{self.iteration}.npz')
-            if (match := re.fullmatch(r'result_(\d+)_iter_\d+\.npz', path.name))))
+    def cases(self) -> tuple[str, ...]:
+        names = json.loads((self.model_path.parent / "load_cases.json").read_text())
+        return tuple(name for name in names if (self.model_path.parent / f"result_{name}_iter_{self.iteration}.npz").is_file())
+
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class FiniteElementResult:
     source: IterationModel
     model_path: Path
     result_path: Path | None
-    number: int | None = None
+    number: str | int | None = None
     created_at: datetime | None = None
     log_path: Path | None = None
 

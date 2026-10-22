@@ -23,7 +23,7 @@ ui/cad_worker.py     isolated CAD-to-boundary conversion worker
 postprocess/         physical field providers and export format registry (no Qt)
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source
-ui/widgets/          modeltree / editor / stepmatrix / codeeditor / viewer
+ui/widgets/          modeltree / editor / load_cases / codeeditor / viewer
 ui/schemes/          code-defined scheme policies + snippets
 ui/launcher.py       headless job launch / continue / result helpers
 

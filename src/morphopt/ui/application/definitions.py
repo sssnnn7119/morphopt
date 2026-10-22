@@ -27,6 +27,8 @@ from .edit_history import EditHistory, EditOperation, EditSnapshot
 def _synchronize_problem(problem: ProblemDefinition) -> None:
     problem.resolve_references()
     problem.align_surface_dependent_state()
+    from .load_cases import synchronize_workspaces
+    synchronize_workspaces(problem)
 
 
 class ProblemSession:
@@ -167,7 +169,7 @@ class ProblemLibrary:
             children=[
                 GeometryNode(),
                 LoadsNode(),
-                StepsNode(params={"num_steps": 1, "step_values": [{}]}),
+                StepsNode(params={"step_values": {"load_case_1": {}}}),
                 MaterialsNode(), ObjectiveNode(), SolverNode(), UpdaterNode(),
             ],
         )
