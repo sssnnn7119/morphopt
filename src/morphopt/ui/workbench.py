@@ -334,6 +334,7 @@ class Workbench(QWidget):
 
     def apply_theme(self) -> None:
         """Refresh theme-aware rendering and history visuals."""
+        self.tree.apply_theme()
         self.code_view.setFont(
             QFont(
                 theme_manager.palette.code_editor.font_family,

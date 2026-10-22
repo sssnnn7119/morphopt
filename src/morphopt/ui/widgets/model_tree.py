@@ -15,14 +15,20 @@ coordinator; this widget only presents the current model and selection.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QBrush, QColor, QPainter
 from PySide6.QtWidgets import (
     QMenu,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
 )
 
 from ..i18n import tr
+from ..application.validation import DefinitionValidation
+from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS
+from ..theme import theme_manager
 from ..model.problem import (
     CADOperationNode,
     CustomClassNode,
@@ -49,6 +55,7 @@ from ..presentation.labels import cad_operation_summary_text, node_type_title
 from ..presentation.navigation import (
     DefinitionNavigation,
     NavigationEntry,
+    ObjectiveItemTreeNode,
     UpdaterItemTreeNode,
     UpdaterTreeNode,
     node_at_path,
@@ -57,6 +64,35 @@ from ..presentation.navigation import (
 )
 from ..refresh import RefreshContext
 from .definition_actions import DefinitionActions
+
+
+_ERROR_ROLE = Qt.ItemDataRole.UserRole + 1
+_TOOLTIP_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+class _DefinitionDelegate(QStyledItemDelegate):
+    """Keep invalid rows visible even when the selection stylesheet is active."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        if not index.data(_ERROR_ROLE):
+            super().paint(painter, option, index)
+            return
+        view = QStyleOptionViewItem(option)
+        self.initStyleOption(view, index)
+        palette = theme_manager.palette
+        painter.save()
+        painter.fillRect(view.rect, QColor(palette.tree_error_background))
+        painter.setFont(view.font)
+        painter.setPen(QColor(palette.tree_error_text))
+        rect = view.widget.style().subElementRect(
+            QStyle.SubElement.SE_ItemViewItemText, view, view.widget,
+        ).adjusted(3, 0, -3, 0)
+        text = view.fontMetrics.elidedText(view.text, Qt.TextElideMode.ElideRight, rect.width())
+        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+        if view.state & QStyle.StateFlag.State_Selected:
+            painter.setPen(QColor(palette.accent))
+            painter.drawRect(view.rect.adjusted(0, 0, -1, -1))
+        painter.restore()
 
 
 class ModelTree(QTreeWidget):
@@ -68,6 +104,7 @@ class ModelTree(QTreeWidget):
         self.actions = actions or DefinitionActions(self)
         self.setColumnCount(1)
         self.setHeaderHidden(True)
+        self.setItemDelegate(_DefinitionDelegate(self))
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._open_menu)
         self.currentItemChanged.connect(self._on_current)
@@ -149,6 +186,7 @@ class ModelTree(QTreeWidget):
                 return
             for entry in DefinitionNavigation(self._problem).build():
                 self.addTopLevelItem(self._render_entry(entry))
+            self._refresh_validation()
             self.expandAll()
             item = next(
                 (
@@ -178,40 +216,52 @@ class ModelTree(QTreeWidget):
         projection = DefinitionNavigation(self._problem)
         for item, node in self._item_node.items():
             item.setText(0, projection.title(node))
+            item.setData(0, _TOOLTIP_ROLE, self._node_tooltip(node))
+        self._refresh_validation()
+
+    def apply_theme(self) -> None:
+        palette = theme_manager.palette
+        for item in self._item_node:
+            invalid = bool(item.data(0, _ERROR_ROLE))
+            item.setForeground(0, QBrush(QColor(palette.tree_error_text)) if invalid else QBrush())
+            item.setBackground(0, QBrush(QColor(palette.tree_error_background)) if invalid else QBrush())
+        self.viewport().update()
+
+    def _refresh_validation(self) -> None:
+        if self._problem is None:
+            return
+        diagnostics = DefinitionValidation(self._problem).collect()
+
+        def visit(item: QTreeWidgetItem) -> list[str]:
+            node = self._item_node[item]
+            owner: object | None = node
+            if isinstance(node, (ObjectiveItemTreeNode, UpdaterItemTreeNode)):
+                owner = node.item
+            elif isinstance(node, UpdaterTreeNode):
+                owner = node.config() if node.group == node.section_group else None
+            elif node.kind == "helper_code_block":
+                owner = self._problem
+            elif node.kind in {"params_class", "loads_group"}:
+                owner = CONFIGURATION_CLASS_PATHS[node.kind]
+            identity = owner if isinstance(owner, str) else id(owner)
+            messages = [f"{item.text(0)}: {message}" for message in diagnostics.get(identity, [])]
+            for index in range(item.childCount()):
+                messages.extend(visit(item.child(index)))
+            item.setData(0, _ERROR_ROLE, bool(messages))
+            tooltip = item.data(0, _TOOLTIP_ROLE) or ""
+            if messages:
+                tooltip += "\n\n" + tr("ui.validation.heading") + "\n" + "\n".join(messages)
+            item.setToolTip(0, tooltip.strip())
+            return messages
+
+        for index in range(self.topLevelItemCount()):
+            visit(self.topLevelItem(index))
+        self.apply_theme()
 
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])
-        if isinstance(node, PartNode):
-            item.setToolTip(
-                0,
-                tr(
-                    "ui.widgets.model_tree.part_instances_tooltip",
-                    value_0=node.assembly_name,
-                    value_1=", ".join(node.instance_names),
-                ),
-            )
-        elif isinstance(node, InstanceNode):
-            item.setToolTip(
-                0,
-                tr(
-                    "ui.widgets.model_tree.instance_transform_tooltip",
-                    value_0=node.translation,
-                    value_1=node.rotation,
-                ),
-            )
-        elif isinstance(node, CADOperationNode):
-            item.setToolTip(0, cad_operation_summary_text(node))
-        elif isinstance(node, MaterialNode):
-            item.setToolTip(
-                0,
-                tr(
-                    "ui.widgets.model_tree.material_assignment_tooltip",
-                    value_0=node.part_name,
-                    value_1=node.elementname
-                    or tr("ui.widgets.model_tree.all_elements"),
-                ),
-            )
+        item.setData(0, _TOOLTIP_ROLE, self._node_tooltip(node))
         if bold:
             f = item.font(0)
             f.setBold(True)
@@ -220,6 +270,28 @@ class ModelTree(QTreeWidget):
         self._item_node[item] = node
         self._node_item[node] = item
         return item
+
+    @staticmethod
+    def _node_tooltip(node: Node) -> str:
+        if isinstance(node, PartNode):
+            return tr(
+                "ui.widgets.model_tree.part_instances_tooltip",
+                value_0=node.assembly_name, value_1=", ".join(node.instance_names),
+            )
+        if isinstance(node, InstanceNode):
+            return tr(
+                "ui.widgets.model_tree.instance_transform_tooltip",
+                value_0=node.translation, value_1=node.rotation,
+            )
+        if isinstance(node, CADOperationNode):
+            return cad_operation_summary_text(node)
+        if isinstance(node, MaterialNode):
+            return tr(
+                "ui.widgets.model_tree.material_assignment_tooltip",
+                value_0=node.part_name,
+                value_1=node.elementname or tr("ui.widgets.model_tree.all_elements"),
+            )
+        return ""
 
     # -------------------------------------------------------------- events
     def _on_current(self, cur, _prev) -> None:

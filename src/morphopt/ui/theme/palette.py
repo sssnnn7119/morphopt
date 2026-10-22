@@ -364,6 +364,8 @@ class ThemePalette:
     on_accent: str
     warning: str
     error: str
+    tree_error_background: str
+    tree_error_text: str
     section_heading_size: int
     dialog_title_size: int
     code_editor: CodeEditorPalette
