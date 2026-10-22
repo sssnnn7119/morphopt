@@ -118,8 +118,12 @@ def render_surface_call(
     asset_paths: dict[int, str] | None = None,
 ) -> str:
     factory = surface.factory
-    prefix = surface.custom_class or "self.FixedSurface"
-    if factory is None:  # fixed_stl
+    if surface.type == "brep_surface":
+        prefix = surface.custom_class or "self.BREPSurface"
+        path_expression = _asset_path_expression(asset_paths[id(surface)]) if surface.data else repr("")
+        return f"{prefix}({path_expression})"
+    prefix = surface.custom_class or "self.MeshSurface"
+    if factory is None:  # mesh_surface
         path_expression = (
             _asset_path_expression(asset_paths[id(surface)])
             if surface.path_stl else repr("")
@@ -758,6 +762,7 @@ def _emit_part_classes(
                     f"                    surface_{index} = "
                     f"{render_surface_call(surface, problem, asset_paths=asset_paths)}"
                 )
+                a(f"                    surface_{index}.is_updatable = {surface.is_updatable!r}")
                 a(f"                    self.add_surface_interface(surface_{index})")
             for line in constraint_lines:
                 a(f"                    {line}")
@@ -1306,7 +1311,7 @@ def _emit_nested_updater(
             line = _render_updater_item(item, catalog_key, problem)
             body.append(f"self.{call}({line})")
 
-    if "if_update" in cfg and cfg["if_update"] is not None:
+    if base == MATERIAL_UPDATER_BASE and cfg.get("if_update") is not None:
         body.append(f"self.if_update = {cfg['if_update']!r}")
 
     if not body:

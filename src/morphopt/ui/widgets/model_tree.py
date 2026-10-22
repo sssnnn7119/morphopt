@@ -355,7 +355,7 @@ class ModelTree(QTreeWidget):
                     )
                 candidates = {
                     kind: "morphopt.BoundaryPart."
-                    + (spec.factory.split(".")[0] if spec.factory else "FixedSurface")
+                    + (spec.factory.split(".")[0] if spec.factory else spec.backend_class)
                     for kind, spec in SURFACE_TYPES.items()
                 }
                 self.actions.custom_add_menu(
@@ -388,6 +388,10 @@ class ModelTree(QTreeWidget):
                     )
                 )
                 menu.addAction(import_action)
+                menu.addAction(
+                    tr("ui.cad.convert_to_boundary"),
+                    lambda _checked=False, owner=node: self.actions.convert_cad_to_boundary(owner),
+                )
                 menu.addSeparator()
 
             act_copy = QAction(tr("ui.widgets.model_tree.copy"), menu)

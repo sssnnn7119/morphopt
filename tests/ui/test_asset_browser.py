@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout
 from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.codegen.assets import DefinitionAsset, collect_python_assets
 from morphopt.ui.model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
-from morphopt.ui.model.node_types.surfaces import FixedSTLSurfaceNode
+from morphopt.ui.model.node_types.surfaces import MeshSurfaceNode
 from morphopt.ui.model.problem import CADOperationNode
 from morphopt.ui.refresh import RefreshContext
 from morphopt.ui.visualization.assets import geometry_asset_scene
@@ -37,7 +37,7 @@ def geometry_problem(format):
     elif format == "inp":
         problem.add_part(INPPartNode(name="body", mesh_file=str(EXAMPLES / "reference-box.inp")))
     else:
-        surface = FixedSTLSurfaceNode(name="shell", path_stl=str(EXAMPLES / "reference-boundary.stl"))
+        surface = MeshSurfaceNode(name="shell", path_stl=str(EXAMPLES / "reference-boundary.stl"))
         problem.add_part(BoundaryPartNode(name="body", children=[surface]))
     return problem
 

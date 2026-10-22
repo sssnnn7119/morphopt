@@ -622,10 +622,8 @@ class ProblemDefinition:
     def align_surface_dependent_state(self) -> None:
         """Normalise updater state whose shape follows ``surfaces()``.
 
-        Existing values are retained in their current order; missing
-        ``if_update`` entries default to ``True`` and a stored Distance matrix
-        grows with the catalogue default of ``2.5``.  This is safe to call
-        after loading a problem definition.
+        Stored Distance matrices grow with the catalogue default of ``2.5``.
+        Surface update settings belong to the surfaces themselves.
         """
         updater = self.updater
         if updater is None:
@@ -637,9 +635,6 @@ class ProblemDefinition:
                 count = len(self.surfaces())
             else:
                 count = len(node.surfaces)
-            states = self._bool_list(config.get("if_update"))
-            config["if_update"] = (states[:count] + [True] * count)[:count]
-
             for parameters in self._distance_constraint_parameters(config):
                 matrix = self._square_matrix(parameters.get("min_distance"))
                 if matrix is None:
@@ -982,6 +977,25 @@ class ProblemDefinition:
         clone.name = ""
         return self.add_part(clone, index=position + 1)
 
+    def replace_part(self, source: PartNode, replacement: PartNode) -> PartNode:
+        """Replace geometry while retaining placement objects and model references."""
+        geometry = self._require_geometry()
+        index = geometry.parts.index(source)
+        replacement.name = source.name
+        replacement.instances = list(source.instances)
+        geometry.parts[index] = replacement
+        for material in self.material_nodes():
+            if material.part is source:
+                material.set_part(replacement)
+        if self.updater is not None:
+            for config in self.updater.geometry:
+                if config.get("target") is source:
+                    config["target"] = replacement
+        self.resolve_references()
+        self.align_surface_dependent_state()
+        self._refresh_surface_flags()
+        return replacement
+
     def remove_part(self, part: PartNode) -> None:
         """Remove a Part, its surfaces and the geometry updaters bound to it."""
         geometry = self._require_geometry()
@@ -1246,16 +1260,6 @@ class ProblemDefinition:
         return self.loads
 
     @staticmethod
-    def _bool_list(value: object) -> list[bool]:
-        if value is None:
-            return []
-        if isinstance(value, bool):
-            return [value]
-        if not isinstance(value, (list, tuple)):
-            return [bool(value)]
-        return [bool(item) for item in value]
-
-    @staticmethod
     def _square_matrix(value: object) -> list[list[float | str]] | None:
         if not isinstance(value, (list, tuple)) or not value:
             return None
@@ -1336,9 +1340,6 @@ class ProblemDefinition:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
-        states = self._bool_list(config.get("if_update"))
-        states.insert(index, True)
-        config["if_update"] = states
         for constraint in config.get("symmetry_constraints", []) or []:
             if not isinstance(constraint, dict) or constraint.get("type") == "Custom":
                 continue
@@ -1368,10 +1369,6 @@ class ProblemDefinition:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
-        states = self._bool_list(config.get("if_update"))
-        if index < len(states):
-            del states[index]
-        config["if_update"] = states
         constraints = []
         for constraint in config.get("symmetry_constraints", []) or []:
             if not isinstance(constraint, dict) or constraint.get("type") == "Custom":
@@ -1404,10 +1401,6 @@ class ProblemDefinition:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
-        states = self._bool_list(config.get("if_update"))
-        if first < len(states) and second < len(states):
-            states[first], states[second] = states[second], states[first]
-        config["if_update"] = states
         for constraint in config.get("symmetry_constraints", []) or []:
             if not isinstance(constraint, dict) or constraint.get("type") == "Custom":
                 continue

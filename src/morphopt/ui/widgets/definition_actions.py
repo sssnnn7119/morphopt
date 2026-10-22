@@ -6,7 +6,13 @@ and construction defaults are supplied by the application editing service.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Signal
+import base64
+import json
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from PySide6.QtCore import QObject, QProcess, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -17,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
+    QProgressDialog,
 )
 
 from ..application.edit_history import EditOperation
@@ -67,6 +74,7 @@ class DefinitionActions(QObject):
         super().__init__(parent)
         self._problem: ProblemDefinition | None = None
         self.commands: DefinitionCommands
+        self._cad_conversion: QProcess | None = None
 
     def set_problem(self, problem: ProblemDefinition) -> None:
         self._problem = problem
@@ -336,6 +344,69 @@ class DefinitionActions(QObject):
         self._select(select=copy)
         self._emit_change(copy, "added")
 
+    def convert_cad_to_boundary(self, part: CADPartNode) -> None:
+        """Convert a snapshot in a subprocess and commit one reversible edit."""
+        if self._problem is None or self._cad_conversion is not None:
+            return
+        title = tr("ui.cad.convert_to_boundary")
+        problem = self._problem
+        directory = TemporaryDirectory(prefix="morphopt_cad_conversion_")
+        request = Path(directory.name) / "request.json"
+        request.write_text(json.dumps({
+            "problem": problem.to_dict(), "part": part.name,
+        }, ensure_ascii=False), encoding="utf-8")
+        process = QProcess(self)
+        self._cad_conversion = process
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        progress = QProgressDialog(
+            tr("ui.cad.converting_to_boundary"), tr("ui.files.cancel"), 0, 0, self.parent(),
+        )
+        progress.setWindowTitle(title)
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+
+        def finish(error: str = "") -> None:
+            self._cad_conversion = None
+            progress.hide()
+            try:
+                if progress.wasCanceled():
+                    return
+                if problem is not self._problem or part not in problem.parts():
+                    return
+                if error:
+                    QMessageBox.warning(self.parent(), title, error)
+                    return
+                try:
+                    data = json.loads((Path(directory.name) / "boundary.json").read_text(encoding="utf-8"))
+                    replacement = BoundaryPartNode.from_dict(data)
+                    problem.replace_part(part, replacement)
+                except Exception as exc:
+                    QMessageBox.warning(self.parent(), title, str(exc))
+                    return
+                self._select(replacement)
+                self._emit_change(replacement, "modified")
+            finally:
+                directory.cleanup()
+                progress.deleteLater()
+                process.deleteLater()
+
+        def completed(exit_code: int, status: QProcess.ExitStatus) -> None:
+            error = ""
+            if exit_code != 0 or status != QProcess.ExitStatus.NormalExit:
+                output = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
+                error = output.splitlines()[-1] if output else tr("ui.cad.conversion_failed")
+            finish(error)
+
+        def failed(error: QProcess.ProcessError) -> None:
+            if error == QProcess.ProcessError.FailedToStart:
+                finish(process.errorString())
+
+        process.finished.connect(completed)
+        process.errorOccurred.connect(failed)
+        progress.canceled.connect(process.kill)
+        progress.show()
+        process.start(sys.executable, ["-u", "-m", "morphopt.ui.cad_worker", str(request)])
+
     def remove_part(self, part: Node) -> None:
         if self._problem is None or not isinstance(part, PartNode):
             return
@@ -573,7 +644,28 @@ class DefinitionActions(QObject):
         )
         if owner is None:
             return
+        imported_step: tuple[str, str, str] | None = None
+        if stype == "brep_surface":
+            path = choose_open_file(
+                self.parent(), tr("ui.widgets.model_tree.select_step_file"),
+                "", tr("ui.files.step"),
+            )
+            if not path:
+                return
+            try:
+                source = Path(path)
+                mapping = source.with_suffix(".faces.json")
+                face_map = json.loads(mapping.read_text(encoding="utf-8")) if mapping.exists() else {}
+                imported_step = (
+                    source.name, base64.b64encode(source.read_bytes()).decode("ascii"),
+                    json.dumps(face_map),
+                )
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self.parent(), tr("ui.widgets.model_tree.step_import_failed"), str(exc))
+                return
         node = self.commands.add_surface(stype, owner, custom_class)
+        if imported_step is not None:
+            node.filename, node.data, node.face_map = imported_step
         self._select(node)
         self._emit_change(node, "added")
 

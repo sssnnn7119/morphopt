@@ -20,7 +20,7 @@ from morphopt.ui.model.node_types.parts import (
     CADPartNode,
     INPPartNode,
 )
-from morphopt.ui.model.node_types.surfaces import FixedSTLSurfaceNode
+from morphopt.ui.model.node_types.surfaces import MeshSurfaceNode
 from morphopt.ui.model.problem import CADOperationNode
 
 
@@ -35,7 +35,7 @@ def test_python_export_copies_stl_inp_and_step_assets_without_changing_morph_dat
 
     problem = ProblemLibrary.create_blank()
     boundary = BoundaryPartNode(name="boundary")
-    stl_surface = FixedSTLSurfaceNode(name="stl_surface", path_stl=str(stl_source))
+    stl_surface = MeshSurfaceNode(name="stl_surface", path_stl=str(stl_source))
     boundary.add_surface(stl_surface)
     problem.add_part(boundary)
 

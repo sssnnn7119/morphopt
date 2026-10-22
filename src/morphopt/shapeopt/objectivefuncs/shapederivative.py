@@ -35,9 +35,6 @@ class ShapeDerivative(BaseObjective):
         """A factor to scale the shape derivative, can be set in the initialize function.
         """
 
-        self.surfaces: list[BaseSurface] = []
-        """Surfaces bound by the owning geometry updater."""
-
     def initialize(
         self,
         gradient: torch.Tensor,
@@ -62,7 +59,7 @@ class ShapeDerivative(BaseObjective):
         ptidx = 0
         self.gradient = []
         for sf_idx in range(len(sflist)):
-            cp0_sf = sflist[sf_idx]._cps.detach().clone().reshape(-1, 3)
+            cp0_sf = sflist[sf_idx].get_surface_parameters().detach().clone().reshape(-1, 3)
             self._cp0.append(cp0_sf)
             self.gradient.append(
                 gradient[ptidx : ptidx + cp0_sf.numel()].reshape_as(cp0_sf)
@@ -145,12 +142,12 @@ class ShapeDerivative(BaseObjective):
             raise ValueError("ShapeDerivative requires the updater's surfaces.")
 
         for i in range(len(self.surfaces)):
-            if self.if_update is not None and not self.if_update[i]:
+            if not self.surfaces[i].is_updatable:
                 continue
             # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
             # Compute inner product: sum over all points and dimensions
             loss_objective += (
-                (self.surfaces[i]._cps - self._cp0[i]) * self.gradient[i]
+                (self.surfaces[i].get_surface_parameters().reshape(-1, 3) - self._cp0[i]) * self.gradient[i]
             ).sum() * self.factor
 
         return loss_objective

@@ -183,7 +183,7 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
     definition = next(iter(parents.values())).definition
     # Surface factories remain reusable when the owning Part is changed to
     # an offset Part; their canonical parents do not depend on that owner.
-    for name in ("BSP", "CPGEO", "FixedSurface"):
+    for name in ("BSP", "CPGEO", "MeshSurface", "BREPSurface"):
         expression = f"morphopt.BoundaryPart.{name}"
         if expression not in parents:
             backend = _resolve(expression)
@@ -391,8 +391,9 @@ def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
         elif node.kind == "material":
             check_usage(node.custom_class, "morphopt." + node.material_type)
         elif node.kind == "surface":
-            factory = SURFACE_TYPES[node.surface_type].factory
-            check_usage(node.custom_class, "morphopt.BoundaryPart." + (factory.split(".")[0] if factory else "FixedSurface"))
+            spec = SURFACE_TYPES[node.surface_type]
+            factory = spec.factory
+            check_usage(node.custom_class, "morphopt.BoundaryPart." + (factory.split(".")[0] if factory else spec.backend_class))
         else:
             raise ValueError(localized_message("ui.errors.custom_classes.unsupported_custom_class_on_node_value", value_0=node.kind))
     if problem.updater:

@@ -243,6 +243,18 @@ UI 支持直接编辑 CAD 操作列表，十五种操作见[CAD 建模操作](#c
 | 网格设置 | 导出直接使用 CAD 历史，与有限元网格尺寸和阶次独立 |
 | 定义保存 | 继续编辑优化任务使用 `.morph`；STEP 用于保存及交换 CAD 几何 |
 
+<a id="section-cadpart-转换为-boundarypart"></a>
+
+##### 3.1.4.2 CADPart 转换为 BoundaryPart
+
+**入口：CADPart 部件卡片顶部 → 转换为 BoundaryPart；或模型树中右键 CADPart → 转换为 BoundaryPart。**
+
+转换读取当前定义生成的 CAD 部件，包含辅助常量、函数及已选择的自定义 CAD 类。最终几何应为一个实体；转换按照封闭壳体生成 BREP 曲面，第 0 项为外壳，后续项为内腔。部件名称、实例名称与位姿、材料关联及既有 `face_N` 载荷引用保留，网格尺寸与阶次保存为当前求值后的设置。
+
+转换在独立进程中执行，进度窗口提供取消操作。成功后，当前 CADPart 在原位置替换为 BoundaryPart，曲面类型为 `brep_surface`；各曲面的 STEP 数据和面映射嵌入定义，资产页可查看。转换形成一次编辑历史，撤销可恢复 CAD 操作历史；失败或取消时不替换原部件。
+
+BREP 曲面初始为固定几何，设计变量数为零。转换仅拆分几何边界；形状优化仍需配置可更新的参数曲面。保存 `.morph` 时资产保存在定义中，导出运行脚本时还原到 `morphopt_assets`。
+
 ![CADPart 的 STEP 导出文件对话框](images/ui-reference/cad/export-step-dialog.png)
 
 *保存对话框支持选择目录、修改文件名和切换 STP / STEP 筛选；覆盖已有文件时显示确认提示。*
@@ -285,7 +297,9 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 **入口：BoundaryPart / OffsetBoundaryPart → 边界曲面 → 添加。** 曲面的局部参数定义初始边界，随后由所属 Part 生成体网格。
 
-四类曲面均提供 `flip` 方向反转开关。该开关仅改变曲面方向，不改变几何位置或曲面在部件中的内外边界身份。闭合实体的定义应同时满足曲面顺序、闭合性及法向约定。默认名称按顺序生成为 `surface_0`、`surface_1` 等。
+各类曲面均提供 `flip` 方向反转开关。该开关仅改变曲面方向，不改变几何位置或曲面在部件中的内外边界身份。闭合实体的定义应同时满足曲面顺序、闭合性及法向约定。默认名称按顺序生成为 `surface_0`、`surface_1` 等。
+
+曲面编辑页的“参与形状更新”对应对象属性 `is_updatable`。BSP 和 CPGEO 曲面默认启用，可手动关闭以保持形状固定；固定 BREP 与网格曲面不提供设计变量，该项只读。该状态随曲面对象保存、复制与排序，删除几何优化器不修改曲面状态。几何优化器负责算法、目标和约束，不再保存逐曲面开关。
 
 <a id="surface_types-bsp-cylinder"></a>
 
@@ -355,11 +369,11 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 *CPGEO 球形边界：半径、球心与采样。*
 
-<a id="surface_types-fixed-stl"></a>
+<a id="surface_types-mesh-surface"></a>
 
-#### 3.2.4 fixed_stl：固定 STL 曲面
+#### 3.2.4 mesh_surface：网格曲面
 
-`fixed_stl` 以现有 STL 作为固定边界。输入文件应包含闭合且方向符合约定的曲面。该接口不产生可更新控制点，支持与可变 BSP/CPGEO 边界组合使用。导出运行 `.py` 时，STL 文件复制到脚本旁的 `morphopt_assets` 目录，生成代码按脚本位置读取副本。
+`mesh_surface` 对应内核的 `MeshSurface`，以顶点和三角面连接关系表示边界。UI 当前通过 STL 导入该网格，输入应为闭合曲面。该接口不产生可更新控制点。导出运行 `.py` 时，STL 文件复制到脚本旁的 `morphopt_assets` 目录，生成代码按脚本位置读取副本。
 
 STL 不包含物理单位声明，导入尺寸应与模型单位制一致。变形后的表面 STL 可作为显示对象或固定几何输入，其内容不包含原模型的材料、载荷及集合定义。
 
@@ -371,11 +385,27 @@ STL 不包含物理单位声明，导入尺寸应与模型单位制一致。变�
 
 *固定 STL 边界：文件路径与曲面预览。配图采用随文档提供的[STL 示例](examples/reference-boundary.stl)。*
 
+<a id="surface_types-brep-surface"></a>
+
+#### 3.2.5 brep_surface：BREP 曲面
+
+`brep_surface` 对应内核的 `BREPSurface`，以精确曲面及其拓扑关系表示封闭边界，当前采用 STEP 保存。添加曲面时选择 `.stp` 或 `.step` 文件；若同目录存在同名 `.faces.json`，同时导入面名称映射。CADPart 转换产生的外壳和内腔资产可分别作为 BoundaryPart 的各曲面输入，外壳排在第 0 项。
+
+STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成或导出运行脚本时，几何还原为 `morphopt_assets` 中的 STEP 文件，面映射保存为同名 JSON；脚本使用 `self.BREPSurface(...)` 读取资产。该曲面不提供设计变量，可以与可更新 BSP、CPGEO 边界组合。
+
+带面映射的曲面在单击时显示原始 `face_N` 及所属 `surface_i_All`。载荷可以选择其中一个几何面，也可以选择整个壳体。资产页提供 STEP 几何预览与面映射文本预览。
+
+| 字段 / 保存键 | 定义 |
+|---|---|
+| STEP 文件 / `filename` | 导入的资产文件名，只读 |
+| `data` | `.morph` 内嵌的 STEP 数据，表单隐藏 |
+| `face_map` | 原始面名称与几何特征的映射，表单隐藏 |
+
 <a id="section-instance装配位置接口"></a>
 
 ### 3.3 Instance：装配位置接口
 
-`fixed_stl` 定义 Part 在装配体中的实例及其位姿。同一 Part 可以有多个实例，材料随 Part 复用；各实例可有独立的载荷和接触关系。
+`Instance` 定义 Part 在装配体中的实例及其位姿。同一 Part 可以有多个实例，材料随 Part 复用；各实例可有独立的载荷和接触关系。
 
 | 字段 | 定义 | 填写示例 |
 |---|---|---|
@@ -1211,7 +1241,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | 目标 | `part_name`：可更新的边界 Part | `material_name`：SIMP 设计材料 |
 | `custom_class` | 默认使用边界或偏置边界 updater，也可选择兼容的重写类 | 默认使用 SIMP updater，也可选择兼容的重写类 |
 | `max_step_iter` | 每一轮形状子问题的内部优化迭代上限 | 每一轮材料子问题的内部优化迭代上限 |
-| `if_update` | 按曲面顺序填写开关，如 `[true,true]` | 控制材料场是否更新；按配置支持布尔值或开关列表 |
+| 更新开关 | 在各曲面编辑页设置 `is_updatable`，BSP 和 CPGEO 默认启用；几何更新器不保存开关列表 | `if_update` 控制材料场是否更新 |
 | `objective_functions` | 通常需要 ShapeDerivative | 通常需要 Sensitivity |
 | `constraints` | 距离、包络、平滑等几何项 | 体积分数和控制量上下界等 |
 | `symmetry_constraints` | 对指定曲面建立镜像、旋转、关联或自定义关系 | 不在材料更新器中使用 |
@@ -1250,7 +1280,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 #### 10.2.1 ShapeDerivative：结构灵敏度
 
-`ShapeDerivative` 在几何子问题中使用主目标的形状导数。添加到几何优化器 → 目标项。无独立参数；是否更新某个曲面由 if_update 控制。
+`ShapeDerivative` 在几何子问题中使用主目标的形状导数。添加到几何优化器 → 目标项。无独立参数；是否更新某个曲面由该曲面对象的 `is_updatable` 控制。
 
 几何优化器中的包络、距离等约束仅控制几何条件，主目标对应的 FE 响应由目标梯度项驱动改善。
 
@@ -1830,7 +1860,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | 组别 | 数量 | 本文接口 |
 |---|---:|---|
 | 部件 | 6 | [BoundaryPart](#part_types-boundarypart)、[INPPart](#part_types-inppart)、[BasePart](#part_types-basepart)（自定义）、[BoxPart](#part_types-boxpart)、[CADPart](#part_types-cadpart)、[OffsetBoundaryPart](#part_types-offsetboundarypart) |
-| 边界曲面 | 4 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[fixed_stl](#surface_types-fixed-stl) |
+| 边界曲面 | 5 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[mesh_surface](#surface_types-mesh-surface)、[brep_surface](#surface_types-brep-surface) |
 | CAD 操作 | 15 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Fragment](#cad_operation_types-fragment)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
 | 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |

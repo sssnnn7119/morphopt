@@ -229,6 +229,7 @@ class Actuator(morphopt.BoundaryPart):
             r0=8.0, length=80.0, seed_size=1.0,
             flip=False, maxR=0.2, maxC=1.0, maxFF=0.2,
         )
+        outer.is_updatable = True
         outer.add_constraint(outer.mirror("xz"))
         self.add_surface_interface(outer)
 
@@ -237,6 +238,7 @@ class Actuator(morphopt.BoundaryPart):
             init_location=[0.0, 0.0, 3.0], flip=True,
             maxR=0.2, maxC=1.0, maxFF=0.2,
         )
+        cavity.is_updatable = True
         cavity.add_constraint(cavity.mirror("xz"))
         self.add_surface_interface(cavity)
 ```
@@ -265,7 +267,10 @@ class Actuator(morphopt.BoundaryPart):
 | BSP 圆柱 | `self.BSP.initialize_cylinder(...)` | `r0`、`length`、`seed_size`、`flip`，可设置阶次、控制点对齐比例与初始位置 |
 | CPGEO 圆柱 | `self.CPGEO.initialize_cylinder(...)` | `r0`、`length`、`seed_size`、`flip`、`init_location`、`maxC` 等 |
 | CPGEO 球面 | `self.CPGEO.initialize_Sphere(...)` | `r0`、`seed_size`、`flip`、`init_location`、`MaxC` |
-| 固定 STL | `self.FixedSurface.initialize_from_stl_file(path_stl)` | 闭合三角表面文件；该曲面不提供可更新控制点 |
+| 网格曲面 | `self.MeshSurface(vertices, faces)` 或 `self.MeshSurface.initialize_from_stl_file(path_stl)` | 顶点坐标与三角面连接关系；文件导入采用 STL；不提供设计变量 |
+| BREP 曲面 | `self.BREPSurface(path_step)` | 精确曲面及其拓扑组成的封闭边界，当前以 STEP 保存；可附带同名 `.faces.json` 保留原始面名称；不提供设计变量 |
+
+`BREPSurface` 和 `MeshSurface` 按几何表示分类。前者在剖分时使用精确 CAD 边界，后者使用离散三角网格。STEP 和 STL 分别是当前采用的资产文件格式。两类曲面当前均为固定几何，其设计变量数为零。
 
 `initialize_Sphere` 和其 `MaxC` 参数采用当前代码中的大小写。脚本名称与 UI 中的 `cpgeo_sphere` 类型标签不同。各曲面的参数说明与示意见 [UI 曲面参考](UIreference.md#surface_types-bsp-cylinder)。
 
@@ -347,6 +352,62 @@ torchfea.cad.export_step(housing.operations, "housing.stp")
 ```
 
 导出直接调用 `torchfea.cad.export_step()`，不要求预先生成有限元网格。结果包含当前 CAD 历史的最终实体与历史中的几何变换，坐标位于部件局部坐标系；Instance 位姿属于装配声明。扩展名可使用 `.stp` 或 `.step`。脚本调用直接写入目标路径；UI 的目录选择、文件命名和覆盖确认见 [STEP 导出流程](UIreference.md#cad-step-export)。
+
+<a id="cad-to-boundary"></a>
+
+#### 4.4.2 CADPart 转换为 BoundaryPart
+
+`CADPart.to_boundary_part(asset_directory="morphopt_assets")` 将已初始化的单实体 CAD 部件转换为普通 `BoundaryPart`，按照封闭壳体导出 STEP 资产并创建 `BREPSurface`。外壳位于索引 0，内腔位于后续索引。转换保留部件名称、实例名称与位姿，以及网格尺寸和阶次。实例声明采用深拷贝；后续调用 `initialize()` 时保留已有声明。源 CAD 历史仅在转换期间使用，转换后的曲面读取 STEP 文件。
+
+```python
+class CavityPart(morphopt.CADPart):
+    def define_operations(self):
+        self.add_operation(torchfea.cad.Box("outer", dx=20, dy=20, dz=20))
+        self.add_operation(torchfea.cad.Sphere(
+            "cavity", x=10, y=10, z=10, radius=4,
+        ))
+        self.add_operation(torchfea.cad.Cut(
+            "body", object_id="outer", tool_id="cavity",
+        ))
+
+cad = CavityPart(part_name="body", mesh_size=2, mesh_order=1)
+cad.initialize()
+boundary = cad.to_boundary_part(asset_directory="morphopt_assets")
+
+# 两个接口分别对应长方体外壳与球形内腔。
+outer = boundary.surface_interface(0)
+cavity = boundary.surface_interface(1)
+print(outer.face_names)
+print(cavity.face_names)
+
+# 在 GeometryParams.define_interface() 中注册转换后的部件：
+# self.add_interface(boundary, name="body")
+```
+
+上例生成以下资产。每个 STEP 保存一个封闭壳体对应的独立实体；JSON 保存原始 `face_N` 的几何特征映射，重新导入时据此恢复面名称。
+
+```text
+morphopt_assets/body/
+├── surface_0.stp
+├── surface_0.faces.json
+├── surface_1.stp
+└── surface_1.faces.json
+```
+
+既有资产可直接通过 `self.BREPSurface("morphopt_assets/body/surface_0.stp")` 加入 `define_surfaces()`。STEP 与同名映射文件应一同移动。普通 STEP 未提供映射时，几何面由部件在剖分时统一分配 `face_N` 名称。
+
+| 集合 | 转换后的含义 |
+|---|---|
+| `face_N` | 原 CAD 的第 N 个几何面，编号和几何归属保留 |
+| `face_N_nodes` | 对应几何面上的有限元节点 |
+| `surface_0_All` | 外壳所有面的表面集与同名节点集 |
+| `surface_i_All`，i > 0 | 第 i 个内腔壳体的表面集与同名节点集 |
+
+压力可引用 `实例名.face_N` 作用于原 CAD 面，也可引用 `实例名.surface_1_All` 作用于整个内腔。上例的默认实例名为 `body`，相应引用为 `body.face_N` 和 `body.surface_1_All`。
+
+转换不生成三维有限元网格，不执行 B 样条或 CPGEO 拟合。曲面接口采用固定的 `BREPSurface`，STEP 中的精确几何用于后续剖分，显示网格在预览时生成。其设计变量数为零，形状优化前需另行建立可更新参数化；固定几何上的材料优化可独立配置。
+
+每次转换要求 CAD 历史只包含一个最终实体。多个独立实体应分别定义为 CADPart。贯通孔的孔壁通常与外表面属于同一个封闭壳体，因此可能同属 `surface_0_All`；孔壁仍可通过原来的 `face_N` 单独选择。修改源 CAD 历史后应重新转换，并核查拓扑面编号。
 
 <a id="section-inpbox-与自定义-part"></a>
 
@@ -685,7 +746,6 @@ class Updater(morphopt.Updaters):
 class Shape(morphopt.UpdaterBoundaryPart):
     def __init__(self):
         super().__init__(max_step_iter=50, max_step_length=0.2)
-        self.if_update = [True, True]
 
     def define_objective(self):
         self.add_objective_function(self.objectivefuncs.ShapeDerivative())
@@ -698,7 +758,7 @@ class Shape(morphopt.UpdaterBoundaryPart):
         ))
 ```
 
-该配置对应两个曲面。`if_update` 的顺序与目标 Part 的曲面登记顺序一致，固定表面不提供可更新自由度。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
+该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。几何更新器不保存逐曲面开关，直接读取曲面对象。固定 BREP 和网格曲面不提供设计变量。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
@@ -877,7 +937,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 | 目标无法求导 | 是否使用 `.item()`、NumPy 或 `.detach()` 切断目标计算图 |
 | 优化方向不符 | 最大化所需负号、分量与有符号响应定义 |
 | 材料参数入口错误 | 当前入口为 `MaterialsParams.models` |
-| 某对象不更新 | 更新器目标、类型、灵敏度项与 `if_update` |
+| 某对象不更新 | 更新器目标、类型、灵敏度项与曲面的 `is_updatable`；材料场检查其更新器的 `if_update` |
 | 有限元不收敛 | 约束连接、载荷单位、材料参数、网格质量及更新幅度 |
 | 雅可比缺少载荷项 | `jacobian_needed` 与已注册载荷名是否一致 |
 | 材料占比与初值不符 | 是否区分控制场 `f`、占比 `ρ` 和刚度比例 |
@@ -890,6 +950,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 | 内容 | 参考文件 |
 |---|---|
 | 入门形状优化 | [文档完整任务](examples/bending_optimization.py) |
+| 固定 STEP 外边界与 BSP 内腔优化 | [完整定义与验证记录](examples/brep-bsp-cylinder.md) |
 | 形状设计扩展 | [bendingactuator.py](../examples/bendingactuator.py) |
 | SIMP 任务结构 | [gripper.py](../examples/gripper.py) |
 | 控制器生命周期 | [controller.py](../src/morphopt/optcore/controller.py) |

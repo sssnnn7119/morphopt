@@ -48,7 +48,8 @@ from .node_types import (
     DilateOperationNode,
     DistancePenaltyNode,
     FairnessPenaltyNode,
-    FixedSTLSurfaceNode,
+    MeshSurfaceNode,
+    BREPSurfaceNode,
     FragmentOperationNode,
     FuseOperationNode,
     GeometryNode,
@@ -116,7 +117,8 @@ SURFACE_TYPES: dict[str, type[SurfaceNode]] = {
         BspCylinderSurfaceNode,
         CPGEOCylinderSurfaceNode,
         CPGEOSphereSurfaceNode,
-        FixedSTLSurfaceNode,
+        MeshSurfaceNode,
+        BREPSurfaceNode,
     )
 }
 

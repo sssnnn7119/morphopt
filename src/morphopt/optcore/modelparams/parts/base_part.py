@@ -139,10 +139,9 @@ class BasePart(BaseModelComponent):
         )
 
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Declare this Part's Instances once before assembly generation."""
+        """Declare Instances when absent, preserving existing declarations."""
         super().initialize(*args, **kwargs)
-        self._instance_definitions.clear()
-        self.define_instance()
+        self._ensure_instance_definitions()
 
     def build_part(
         self, path_result: str | None = None, pools: Pool | None = None

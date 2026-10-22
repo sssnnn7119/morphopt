@@ -47,8 +47,10 @@ def literal_call(expression):
 
 
 def backend_surface_factory(spec):
+    if spec.backend_class == "BREPSurface":
+        return morphopt.BoundaryPart.BREPSurface
     if spec.factory is None:
-        return morphopt.BoundaryPart.FixedSurface.initialize_from_stl_file
+        return morphopt.BoundaryPart.MeshSurface.initialize_from_stl_file
     family, method = spec.factory.split(".")
     return getattr(getattr(morphopt.BoundaryPart, family), method)
 
@@ -58,6 +60,12 @@ def test_surface_fields_reach_factory(kind, spec):
     surface = SurfaceNode.create(kind)
     args, kwargs = literal_call(render_surface_call(surface))
     bound = inspect.signature(backend_surface_factory(spec)).bind(*args, **kwargs)
+    if kind == "brep_surface":
+        assert bound.arguments["path_step"] == ""
+        assert surface.filename == ""
+        assert surface.data == ""
+        assert surface.face_map == "{}"
+        return
     for field in spec.fields:
         assert bound.arguments[field.key] == surface.get_field(field.key)
 
@@ -72,6 +80,7 @@ def test_surface_factories_construct_with_ui_parameters(kind):
     else:
         params["MaxC"] = 0.6
     surface = backend_surface_factory(spec)(**params, flip=True)
+    assert surface.is_updatable is True
     assert surface.MaxC == 0.6
     assert surface.init_size == 1.5
     assert surface.flip is True

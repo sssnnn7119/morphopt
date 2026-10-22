@@ -1,0 +1,324 @@
+{
+  "version": 3,
+  "scheme": "shapeopt",
+  "label": "BREP_BSP_Cylinder",
+  "result_folder": ".results/",
+  "device": "cpu",
+  "updater_device": "cpu",
+  "restart_per_iteration": 10,
+  "root": {
+    "kind": "problem",
+    "name": "BREP_BSP_Cylinder",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part",
+            "name": "body",
+            "params": {
+              "type": "BoundaryPart",
+              "fea_seed_size": 2.0,
+              "mesh_order": 1,
+              "exterior_surface": "surface_0_All"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "body-1",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "outer_cylinder",
+                "params": {
+                  "type": "brep_surface",
+                  "flip": false,
+                  "filename": "outer-cylinder.stp",
+                  "data": "SVNPLTEwMzAzLTIxOwpIRUFERVI7CkZJTEVfTkFNRSgnT3BlbiBDQVNDQURFIFNoYXBlIE1vZGVsJywnMjAyNi0xMC0yMlQxMDoxMDo1MycsKCdBdXRob3InKSwoCiAgICAnT3BlbiBDQVNDQURFJyksJ09wZW4gQ0FTQ0FERSBTVEVQIHByb2Nlc3NvciA3LjgnLCdPcGVuIENBU0NBREUgNy44JwogICwnVW5rbm93bicpOwpGSUxFX0RFU0NSSVBUSU9OKCgnT3BlbiBDQVNDQURFIE1vZGVsJyksJzI7MScpOwpGSUxFX1NDSEVNQSgoJ0FVVE9NT1RJVkVfREVTSUdOIHsgMSAwIDEwMzAzIDIxNCAxIDEgMSAxIH0nKSk7CkVORFNFQzsKREFUQTsKIzEgPSBBUFBMSUNBVElPTl9QUk9UT0NPTF9ERUZJTklUSU9OKCdpbnRlcm5hdGlvbmFsIHN0YW5kYXJkJywKICAnYXV0b21vdGl2ZV9kZXNpZ24nLDIwMDAsIzIpOwojMiA9IEFQUExJQ0FUSU9OX0NPTlRFWFQoCiAgJ2NvcmUgZGF0YSBmb3IgYXV0b21vdGl2ZSBtZWNoYW5pY2FsIGRlc2lnbiBwcm9jZXNzZXMnKTsKIzMgPSBTSEFQRV9ERUZJTklUSU9OX1JFUFJFU0VOVEFUSU9OKCM0LCMxMCk7CiM0ID0gUFJPRFVDVF9ERUZJTklUSU9OX1NIQVBFKCcnLCcnLCM1KTsKIzUgPSBQUk9EVUNUX0RFRklOSVRJT04oJ2Rlc2lnbicsJycsIzYsIzkpOwojNiA9IFBST0RVQ1RfREVGSU5JVElPTl9GT1JNQVRJT04oJycsJycsIzcpOwojNyA9IFBST0RVQ1QoJ09wZW4gQ0FTQ0FERSBTVEVQIHRyYW5zbGF0b3IgNy44IDEnLAogICdPcGVuIENBU0NBREUgU1RFUCB0cmFuc2xhdG9yIDcuOCAxJywnJywoIzgpKTsKIzggPSBQUk9EVUNUX0NPTlRFWFQoJycsIzIsJ21lY2hhbmljYWwnKTsKIzkgPSBQUk9EVUNUX0RFRklOSVRJT05fQ09OVEVYVCgncGFydCBkZWZpbml0aW9uJywjMiwnZGVzaWduJyk7CiMxMCA9IEFEVkFOQ0VEX0JSRVBfU0hBUEVfUkVQUkVTRU5UQVRJT04oJycsKCMxMSwjMTUpLCMxMTMpOwojMTEgPSBBWElTMl9QTEFDRU1FTlRfM0QoJycsIzEyLCMxMywjMTQpOwojMTIgPSBDQVJURVNJQU5fUE9JTlQoJycsKDAuLDAuLDAuKSk7CiMxMyA9IERJUkVDVElPTignJywoMC4sMC4sMS4pKTsKIzE0ID0gRElSRUNUSU9OKCcnLCgxLiwwLiwtMC4pKTsKIzE1ID0gTUFOSUZPTERfU09MSURfQlJFUCgnJywjMTYpOwojMTYgPSBDTE9TRURfU0hFTEwoJycsKCMxNywjMTA1LCMxMDkpKTsKIzE3ID0gQURWQU5DRURfRkFDRSgnJywoIzE4KSwjMzEsLlQuKTsKIzE4ID0gRkFDRV9CT1VORCgnJywjMTksLlQuKTsKIzE5ID0gRURHRV9MT09QKCcnLCgjMjAsIzU0LCM3NywjMTA0KSk7CiMyMCA9IE9SSUVOVEVEX0VER0UoJycsKiwqLCMyMSwuRi4pOwojMjEgPSBFREdFX0NVUlZFKCcnLCMyMiwjMjIsIzI0LC5ULik7CiMyMiA9IFZFUlRFWF9QT0lOVCgnJywjMjMpOwojMjMgPSBDQVJURVNJQU5fUE9JTlQoJycsKDQuLC05Ljc5NzE3NDM5MzE3OUUtMTYsMTYuKSk7CiMyNCA9IFNVUkZBQ0VfQ1VSVkUoJycsIzI1LCgjMzAsIzQyKSwuUENVUlZFX1MxLik7CiMyNSA9IENJUkNMRSgnJywjMjYsNC4pOwojMjYgPSBBWElTMl9QTEFDRU1FTlRfM0QoJycsIzI3LCMyOCwjMjkpOwojMjcgPSBDQVJURVNJQU5fUE9JTlQoJycsKDAuLDAuLDE2LikpOwojMjggPSBESVJFQ1RJT04oJycsKDAuLDAuLDEuKSk7CiMyOSA9IERJUkVDVElPTignJywoMS4sMC4sLTAuKSk7CiMzMCA9IFBDVVJWRSgnJywjMzEsIzM2KTsKIzMxID0gQ1lMSU5EUklDQUxfU1VSRkFDRSgnJywjMzIsNC4pOwojMzIgPSBBWElTMl9QTEFDRU1FTlRfM0QoJycsIzMzLCMzNCwjMzUpOwojMzMgPSBDQVJURVNJQU5fUE9JTlQoJycsKDAuLDAuLDAuKSk7CiMzNCA9IERJUkVDVElPTignJywoMC4sMC4sMS4pKTsKIzM1ID0gRElSRUNUSU9OKCcnLCgxLiwwLiwtMC4pKTsKIzM2ID0gREVGSU5JVElPTkFMX1JFUFJFU0VOVEFUSU9OKCcnLCgjMzcpLCM0MSk7CiMzNyA9IExJTkUoJycsIzM4LCMzOSk7CiMzOCA9IENBUlRFU0lBTl9QT0lOVCgnJywoMC4sMTYuKSk7CiMzOSA9IFZFQ1RPUignJywjNDAsMS4pOwojNDAgPSBESVJFQ1RJT04oJycsKDEuLDAuKSk7CiM0MSA9ICggR0VPTUVUUklDX1JFUFJFU0VOVEFUSU9OX0NPTlRFWFQoMikgClBBUkFNRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgpIFJFUFJFU0VOVEFUSU9OX0NPTlRFWFQoJzJEIFNQQUNFJywnJwogICkgKTsKIzQyID0gUENVUlZFKCcnLCM0MywjNDgpOwojNDMgPSBQTEFORSgnJywjNDQpOwojNDQgPSBBWElTMl9QTEFDRU1FTlRfM0QoJycsIzQ1LCM0NiwjNDcpOwojNDUgPSBDQVJURVNJQU5fUE9JTlQoJycsKDAuLDAuLDE2LikpOwojNDYgPSBESVJFQ1RJT04oJycsKDAuLDAuLDEuKSk7CiM0NyA9IERJUkVDVElPTignJywoMS4sMC4sLTAuKSk7CiM0OCA9IERFRklOSVRJT05BTF9SRVBSRVNFTlRBVElPTignJywoIzQ5KSwjNTMpOwojNDkgPSBDSVJDTEUoJycsIzUwLDQuKTsKIzUwID0gQVhJUzJfUExBQ0VNRU5UXzJEKCcnLCM1MSwjNTIpOwojNTEgPSBDQVJURVNJQU5fUE9JTlQoJycsKDAuLDAuKSk7CiM1MiA9IERJUkVDVElPTignJywoMS4sMC4pKTsKIzUzID0gKCBHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgyKSAKUEFSQU1FVFJJQ19SRVBSRVNFTlRBVElPTl9DT05URVhUKCkgUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgnMkQgU1BBQ0UnLCcnCiAgKSApOwojNTQgPSBPUklFTlRFRF9FREdFKCcnLCosKiwjNTUsLkYuKTsKIzU1ID0gRURHRV9DVVJWRSgnJywjNTYsIzIyLCM1OCwuVC4pOwojNTYgPSBWRVJURVhfUE9JTlQoJycsIzU3KTsKIzU3ID0gQ0FSVEVTSUFOX1BPSU5UKCcnLCg0LiwtOS43OTcxNzQzOTMxNzlFLTE2LDAuKSk7CiM1OCA9IFNFQU1fQ1VSVkUoJycsIzU5LCgjNjMsIzcwKSwuUENVUlZFX1MxLik7CiM1OSA9IExJTkUoJycsIzYwLCM2MSk7CiM2MCA9IENBUlRFU0lBTl9QT0lOVCgnJywoNC4sLTkuNzk3MTc0MzkzMTc5RS0xNiwwLikpOwojNjEgPSBWRUNUT1IoJycsIzYyLDEuKTsKIzYyID0gRElSRUNUSU9OKCcnLCgwLiwwLiwxLikpOwojNjMgPSBQQ1VSVkUoJycsIzMxLCM2NCk7CiM2NCA9IERFRklOSVRJT05BTF9SRVBSRVNFTlRBVElPTignJywoIzY1KSwjNjkpOwojNjUgPSBMSU5FKCcnLCM2NiwjNjcpOwojNjYgPSBDQVJURVNJQU5fUE9JTlQoJycsKDYuMjgzMTg1MzA3MTgsLTAuKSk7CiM2NyA9IFZFQ1RPUignJywjNjgsMS4pOwojNjggPSBESVJFQ1RJT04oJycsKDAuLDEuKSk7CiM2OSA9ICggR0VPTUVUUklDX1JFUFJFU0VOVEFUSU9OX0NPTlRFWFQoMikgClBBUkFNRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgpIFJFUFJFU0VOVEFUSU9OX0NPTlRFWFQoJzJEIFNQQUNFJywnJwogICkgKTsKIzcwID0gUENVUlZFKCcnLCMzMSwjNzEpOwojNzEgPSBERUZJTklUSU9OQUxfUkVQUkVTRU5UQVRJT04oJycsKCM3MiksIzc2KTsKIzcyID0gTElORSgnJywjNzMsIzc0KTsKIzczID0gQ0FSVEVTSUFOX1BPSU5UKCcnLCgwLiwtMC4pKTsKIzc0ID0gVkVDVE9SKCcnLCM3NSwxLik7CiM3NSA9IERJUkVDVElPTignJywoMC4sMS4pKTsKIzc2ID0gKCBHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgyKSAKUEFSQU1FVFJJQ19SRVBSRVNFTlRBVElPTl9DT05URVhUKCkgUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgnMkQgU1BBQ0UnLCcnCiAgKSApOwojNzcgPSBPUklFTlRFRF9FREdFKCcnLCosKiwjNzgsLlQuKTsKIzc4ID0gRURHRV9DVVJWRSgnJywjNTYsIzU2LCM3OSwuVC4pOwojNzkgPSBTVVJGQUNFX0NVUlZFKCcnLCM4MCwoIzg1LCM5MiksLlBDVVJWRV9TMS4pOwojODAgPSBDSVJDTEUoJycsIzgxLDQuKTsKIzgxID0gQVhJUzJfUExBQ0VNRU5UXzNEKCcnLCM4MiwjODMsIzg0KTsKIzgyID0gQ0FSVEVTSUFOX1BPSU5UKCcnLCgwLiwwLiwwLikpOwojODMgPSBESVJFQ1RJT04oJycsKDAuLDAuLDEuKSk7CiM4NCA9IERJUkVDVElPTignJywoMS4sMC4sLTAuKSk7CiM4NSA9IFBDVVJWRSgnJywjMzEsIzg2KTsKIzg2ID0gREVGSU5JVElPTkFMX1JFUFJFU0VOVEFUSU9OKCcnLCgjODcpLCM5MSk7CiM4NyA9IExJTkUoJycsIzg4LCM4OSk7CiM4OCA9IENBUlRFU0lBTl9QT0lOVCgnJywoMC4sMC4pKTsKIzg5ID0gVkVDVE9SKCcnLCM5MCwxLik7CiM5MCA9IERJUkVDVElPTignJywoMS4sMC4pKTsKIzkxID0gKCBHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgyKSAKUEFSQU1FVFJJQ19SRVBSRVNFTlRBVElPTl9DT05URVhUKCkgUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgnMkQgU1BBQ0UnLCcnCiAgKSApOwojOTIgPSBQQ1VSVkUoJycsIzkzLCM5OCk7CiM5MyA9IFBMQU5FKCcnLCM5NCk7CiM5NCA9IEFYSVMyX1BMQUNFTUVOVF8zRCgnJywjOTUsIzk2LCM5Nyk7CiM5NSA9IENBUlRFU0lBTl9QT0lOVCgnJywoMC4sMC4sMC4pKTsKIzk2ID0gRElSRUNUSU9OKCcnLCgwLiwwLiwxLikpOwojOTcgPSBESVJFQ1RJT04oJycsKDEuLDAuLC0wLikpOwojOTggPSBERUZJTklUSU9OQUxfUkVQUkVTRU5UQVRJT04oJycsKCM5OSksIzEwMyk7CiM5OSA9IENJUkNMRSgnJywjMTAwLDQuKTsKIzEwMCA9IEFYSVMyX1BMQUNFTUVOVF8yRCgnJywjMTAxLCMxMDIpOwojMTAxID0gQ0FSVEVTSUFOX1BPSU5UKCcnLCgwLiwwLikpOwojMTAyID0gRElSRUNUSU9OKCcnLCgxLiwwLikpOwojMTAzID0gKCBHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgyKSAKUEFSQU1FVFJJQ19SRVBSRVNFTlRBVElPTl9DT05URVhUKCkgUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgnMkQgU1BBQ0UnLCcnCiAgKSApOwojMTA0ID0gT1JJRU5URURfRURHRSgnJywqLCosIzU1LC5ULik7CiMxMDUgPSBBRFZBTkNFRF9GQUNFKCcnLCgjMTA2KSwjNDMsLlQuKTsKIzEwNiA9IEZBQ0VfQk9VTkQoJycsIzEwNywuVC4pOwojMTA3ID0gRURHRV9MT09QKCcnLCgjMTA4KSk7CiMxMDggPSBPUklFTlRFRF9FREdFKCcnLCosKiwjMjEsLlQuKTsKIzEwOSA9IEFEVkFOQ0VEX0ZBQ0UoJycsKCMxMTApLCM5MywuRi4pOwojMTEwID0gRkFDRV9CT1VORCgnJywjMTExLC5ULik7CiMxMTEgPSBFREdFX0xPT1AoJycsKCMxMTIpKTsKIzExMiA9IE9SSUVOVEVEX0VER0UoJycsKiwqLCM3OCwuRi4pOwojMTEzID0gKCBHRU9NRVRSSUNfUkVQUkVTRU5UQVRJT05fQ09OVEVYVCgzKSAKR0xPQkFMX1VOQ0VSVEFJTlRZX0FTU0lHTkVEX0NPTlRFWFQoKCMxMTcpKSBHTE9CQUxfVU5JVF9BU1NJR05FRF9DT05URVhUCigoIzExNCwjMTE1LCMxMTYpKSBSRVBSRVNFTlRBVElPTl9DT05URVhUKCdDb250ZXh0ICMxJywKICAnM0QgQ29udGV4dCB3aXRoIFVOSVQgYW5kIFVOQ0VSVEFJTlRZJykgKTsKIzExNCA9ICggTEVOR1RIX1VOSVQoKSBOQU1FRF9VTklUKCopIFNJX1VOSVQoLk1JTExJLiwuTUVUUkUuKSApOwojMTE1ID0gKCBOQU1FRF9VTklUKCopIFBMQU5FX0FOR0xFX1VOSVQoKSBTSV9VTklUKCQsLlJBRElBTi4pICk7CiMxMTYgPSAoIE5BTUVEX1VOSVQoKikgU0lfVU5JVCgkLC5TVEVSQURJQU4uKSBTT0xJRF9BTkdMRV9VTklUKCkgKTsKIzExNyA9IFVOQ0VSVEFJTlRZX01FQVNVUkVfV0lUSF9VTklUKExFTkdUSF9NRUFTVVJFKDEuRS0wNyksIzExNCwKICAnZGlzdGFuY2VfYWNjdXJhY3lfdmFsdWUnLCdjb25mdXNpb24gYWNjdXJhY3knKTsKIzExOCA9IFBST0RVQ1RfUkVMQVRFRF9QUk9EVUNUX0NBVEVHT1JZKCdwYXJ0JywkLCgjNykpOwpFTkRTRUM7CkVORC1JU08tMTAzMDMtMjE7Cg==",
+                  "face_map": "{\n  \"face_0\": [\n    402.1238596594935,\n    -8.881784197001252e-16,\n    -2.1925803553654968e-16,\n    8.0,\n    11795.633216678478,\n    4.893479502706108e-13,\n    -1.5631940186722204e-13,\n    4.893479502706108e-13,\n    11795.63321667847,\n    6.6269501462162895e-15,\n    -1.5631940186722204e-13,\n    6.6269501462162895e-15,\n    6433.981754551895\n  ],\n  \"face_1\": [\n    50.26548245743667,\n    0.0,\n    -2.294495359579132e-16,\n    16.0,\n    201.06192982976245,\n    2.1101604412952245e-14,\n    0.0,\n    2.1101604412952245e-14,\n    201.06192982974062,\n    0.0,\n    0.0,\n    0.0,\n    402.1238596595048\n  ],\n  \"face_2\": [\n    50.26548245743667,\n    0.0,\n    -2.294495359579132e-16,\n    0.0,\n    201.06192982976265,\n    2.1101604412952245e-14,\n    0.0,\n    2.1101604412952245e-14,\n    201.06192982974153,\n    0.0,\n    0.0,\n    0.0,\n    402.1238596595048\n  ]\n}",
+                  "is_updatable": false
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "inner_cavity",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "r0": 1.4,
+                  "length": 14.0,
+                  "seed_size": 2.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 2,
+                  "init_location": [
+                    -0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "maxR": 0.2,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": -1.0,
+                  "is_updatable": true
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "Loads",
+        "params": {},
+        "children": [
+          {
+            "kind": "fea_component",
+            "name": "pressure_1",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "body-1",
+              "surface_name": "surface_1_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "base_fixed",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "body-1",
+              "set_nodes_name": "surface_0_Bottom",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RP_tip",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                0.0,
+                0.0,
+                16.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "tip_coupling",
+            "params": {
+              "type": "Couple",
+              "rp_name": "RP_tip",
+              "instance_name": "body-1",
+              "set_nodes_name": "surface_0_Head"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "num_steps": 1,
+          "step_values": [
+            {
+              "pressure_1": [
+                0.02
+              ]
+            }
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "Materials",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "body_material",
+            "params": {
+              "type": "HomogeneousMaterial",
+              "part_name": "body",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.3,
+              "kappa": 3.0,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09,
+              "elementname": ""
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "objective_terms": [
+            {
+              "type": "displacement",
+              "step_index": 0,
+              "reference_point_name": "RP_tip",
+              "component": "ux",
+              "direction": "target",
+              "target": 0.0,
+              "weight": 44.44444444444444
+            },
+            {
+              "type": "displacement",
+              "step_index": 0,
+              "reference_point_name": "RP_tip",
+              "component": "uy",
+              "direction": "target",
+              "target": 0.0,
+              "weight": 44.44444444444444
+            },
+            {
+              "type": "displacement",
+              "step_index": 0,
+              "reference_point_name": "RP_tip",
+              "component": "uz",
+              "direction": "target",
+              "target": 0.15,
+              "weight": 44.44444444444444
+            }
+          ],
+          "metrics_terms": [
+            {
+              "type": "custom",
+              "body": "return [tip_motion(self, 0)[2]]\n"
+            }
+          ],
+          "jacobian_needed": []
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 1,
+          "gpus": [],
+          "task_index_list": [
+            [
+              0
+            ]
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [
+            {
+              "max_step_iter": 5,
+              "objective_functions": [
+                {
+                  "type": "ShapeDerivative",
+                  "params": {}
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "Fairness",
+                  "params": {}
+                },
+                {
+                  "type": "Distance",
+                  "params": {
+                    "min_distance": [
+                      [
+                        1.0,
+                        1.0
+                      ],
+                      [
+                        1.0,
+                        1.0
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "Cylinder",
+                  "params": {
+                    "radius": 4.0,
+                    "height": 16.0,
+                    "bottom": 0.0
+                  }
+                }
+              ],
+              "part_name": "body"
+            }
+          ],
+          "materials": []
+        },
+        "children": []
+      }
+    ]
+  },
+  "custom_classes": [],
+  "class_bindings": {},
+  "helper_code": "import torch\n",
+  "helper_variables": [
+    {
+      "kind": "helper_variable",
+      "name": "design_length",
+      "params": {
+        "value": "16.0"
+      },
+      "children": []
+    }
+  ],
+  "helper_functions": [
+    {
+      "kind": "helper_function",
+      "name": "tip_motion",
+      "params": {
+        "parameters": "objective, step",
+        "body": "objective.set_step(step)\nassembly = objective.fe.assembly\nstate = assembly._GC2RGC(objective.fe_results[step].GC.to(assembly.device))\nreturn state[assembly.get_reference_point(\"RP_tip\")._RGC_index].reshape(-1)\n"
+      },
+      "children": []
+    }
+  ]
+}

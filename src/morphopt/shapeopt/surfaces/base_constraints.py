@@ -59,9 +59,7 @@ class SurfaceRelationConstraint(
         self.related = related
         self.pose = np.asarray(pose, dtype=float)
         if self.pose.shape != (6,):
-            raise ValueError(
-                "pose must have six components [tx, ty, tz, rx, ry, rz]."
-            )
+            raise ValueError("pose must have six components [tx, ty, tz, rx, ry, rz].")
 
     def apply(self, surface: RelatedSurfaceT) -> None:
         source = surface.control_points.detach().cpu().numpy()

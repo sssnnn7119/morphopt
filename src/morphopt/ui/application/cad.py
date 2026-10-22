@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import base64
+import runpy
 from pathlib import Path
 
 import torchfea
 
 from ...constants import CONSTANT
 from ...optcore.modelparams.parts import CADPart
-from ..model.problem import CADOperationNode, PartNode, ProblemDefinition
+from ..model.problem import CADOperationNode, ProblemDefinition
 from ..model.registry import (
     CAD_OPERATION_TYPES,
 )
 from .expressions import DefinitionValues
-from ..model.node_types.parts import CADPartNode
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.node_types.cad import StepImportOperationNode
+from ..model.node_types.surfaces import BREPSurfaceNode
 
 
 def cad_operation_from_node(
@@ -94,3 +97,43 @@ def export_cad_step(
     namespace = DefinitionValues(problem).namespace
     operations = [cad_operation_from_node(item, namespace) for item in node.operations]
     torchfea.cad.export_step(operations, str(path))
+
+
+def convert_cad_to_boundary(
+    node: CADPartNode, problem: ProblemDefinition, asset_directory: str | Path,
+) -> BoundaryPartNode:
+    """Convert the generated CAD definition to embedded BREP boundary assets.
+
+    This function constructs the replacement without changing the problem.
+    The caller commits it through ProblemDefinition.replace_part().
+    """
+    from .definitions import ProblemLibrary
+
+    directory = Path(asset_directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    script = directory / "conversion.py"
+    ProblemLibrary.export_python(problem, script)
+    namespace = runpy.run_path(str(script), run_name="morphopt_cad_conversion")
+    geometry = namespace["ThisController"].Params.GeometryParams()
+    if not geometry.interfaces:
+        geometry.define_interface()
+    part = geometry.interface(node.name)
+    if not isinstance(part, CADPart):
+        raise TypeError("The selected definition must generate a CADPart.")
+    part.initialize()
+    boundary = part.to_boundary_part(directory / "boundaries")
+    replacement = BoundaryPartNode(
+        name=node.name,
+        fea_seed_size=boundary.mesh_size,
+        mesh_order=boundary.mesh_order,
+        exterior_surface=boundary.exterior_surface,
+    )
+    for index, surface in enumerate(boundary.surface_interfaces()):
+        path = surface.path_step
+        replacement.add_surface(BREPSurfaceNode(
+            name=f"surface_{index}", flip=index > 0,
+            filename=f"{node.name}_surface_{index}.stp",
+            data=base64.b64encode(path.read_bytes()).decode("ascii"),
+            face_map=path.with_suffix(".faces.json").read_text(encoding="utf-8"),
+        ))
+    return replacement

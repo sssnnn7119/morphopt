@@ -50,7 +50,6 @@ def updater_constraint(item_type: str, **overrides) -> dict:
 def geometry_updater_config(
     part_name: str = "",
     max_step_iter: int = 50,
-    if_update: list | None = None,
     objective_functions: tuple | None = None,
     constraints: tuple | None = None,
     symmetry_constraints: tuple = (),
@@ -65,7 +64,6 @@ def geometry_updater_config(
     return {
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
-        "if_update": list(if_update) if if_update is not None else [],
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],

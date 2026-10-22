@@ -33,6 +33,7 @@ class ThisController(morphopt.Controller):
                         maxFF=0.2,
                         perturbation_L=10.0,
                     )
+                    exterior.is_updatable = True
                     exterior.add_constraint(exterior.mirror("xz"))
                     self.add_surface_interface(exterior)
 
@@ -47,6 +48,7 @@ class ThisController(morphopt.Controller):
                         maxFF=0.2,
                         perturbation_L=10.0,
                     )
+                    cavity.is_updatable = True
                     cavity.add_constraint(cavity.mirror("xz"))
                     self.add_surface_interface(cavity)
 

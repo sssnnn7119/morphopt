@@ -121,12 +121,6 @@ class UpdaterBoundaryPart(BaseUpdater):
         The increase factor for the step length relative to the maximum step length.
         """
 
-        self.if_update: list[bool] = None
-        """
-        A list indicating whether each surface needs to be updated.
-        True means the surface needs to be updated, False means it does not.
-        """
-
     @property
     def part(self) -> BoundaryPart:
         """The boundary part interface this updater updates."""
@@ -154,6 +148,9 @@ class UpdaterBoundaryPart(BaseUpdater):
             iter_now (int): The current iteration number.
         """
 
+        if not any(surface.is_updatable and surface.num_variables for surface in self.surface_interfaces):
+            return
+
         # get the weights for the points of this Part in the optimization process
         self._weight_points = self.part.get_points_weight()
 
@@ -179,7 +176,7 @@ class UpdaterBoundaryPart(BaseUpdater):
         for i in range(len(self._max_step_length)):
             if (
                 self._max_step_length[i].shape[0]
-                != surfaces[i].control_points.flatten().shape[0] // 3
+                != surfaces[i].num_variables // 3
             ):
                 self._max_step_length[i] = (
                     self._max_step_length[i]
@@ -197,14 +194,6 @@ class UpdaterBoundaryPart(BaseUpdater):
         :class:`Updaters` collection.
         """
         surfaces = self.surface_interfaces
-        # a config may be created before (or after) its Part's surfaces change:
-        # a missing/short flag list simply means "update every surface of this Part"
-        if self.if_update is None or len(self.if_update) != len(surfaces):
-            previous = list(self.if_update or [])
-            self.if_update = [
-                previous[i] if i < len(previous) else True for i in range(len(surfaces))
-            ]
-
         if len(self._max_step_length) == 0:
             for i in range(len(surfaces)):
                 self._max_step_length.append(
@@ -212,10 +201,6 @@ class UpdaterBoundaryPart(BaseUpdater):
                     * self._max_step_length_max
                     * CONSTANT.KERNEL.SHAPE_UPDATE.INITIAL_STEP_LENGTH_RATIO
                 )
-
-        for i in range(len(self._max_step_length)):
-            if not self.if_update[i]:
-                self._max_step_length[i] *= 0.0
 
     def _initialize_objectives(
         self,
@@ -260,7 +245,6 @@ class UpdaterBoundaryPart(BaseUpdater):
                 rdu20=rdu20,
                 sensitivity=sensitivity,
                 weights=self._weight_points,
-                if_update=self.if_update,
                 surfaces=self.surface_interfaces,
                 part_interface=self.part,
             )
@@ -279,6 +263,8 @@ class UpdaterBoundaryPart(BaseUpdater):
         # update the step length based on the number of variables
         if self._delta_control_points_previous is not None:
             for i in range(len(self._max_step_length)):
+                if not surfaces[i].is_updatable or not surfaces[i].num_variables:
+                    continue
                 # check if the mesh has improved
                 if (
                     self._delta_control_points_previous[i].shape
@@ -316,10 +302,6 @@ class UpdaterBoundaryPart(BaseUpdater):
                         * self._step_length_decay,
                         min=self._max_step_length_max * self._step_length_min_ratio,
                     )
-        for i in range(len(self._max_step_length)):
-            if not self.if_update[i]:
-                self._max_step_length[i] *= 0.0
-
     def closure(self, x: torch.Tensor, return_list=False) -> float:
         """
         The closure function for the optimization process.
@@ -357,10 +339,13 @@ class UpdaterBoundaryPart(BaseUpdater):
         else:
             return sum(obj_value) + sum(constraints_value)
 
-    def update(self) -> torch.Tensor:
+    def update(self) -> None:
         """
         Update the parameters of the optimization process.
         """
+
+        if not any(surface.is_updatable and surface.num_variables for surface in self.surface_interfaces):
+            return
 
         # update the objective function
         variables = self.part.get_variables().detach().clone()

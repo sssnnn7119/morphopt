@@ -59,19 +59,6 @@ def find_spec(itype: str, category: str):
     return R.UPDATER_CATALOG[category].get(itype)
 
 
-def as_bool_list(cur, n: int, default: bool = True) -> list[bool]:
-    """Coerce an ``if_update`` value into a length-``n`` bool list.
-
-    One entry per surface (index 0, 1, …).  ``None`` / scalars are expanded;
-    a too-short list is padded with ``default``.
-    """
-    if isinstance(cur, (list, tuple)):
-        return [bool(cur[i]) if i < len(cur) else default for i in range(n)]
-    if cur is None:
-        return [default] * n
-    return [bool(cur)] * n
-
-
 from dataclasses import dataclass
 from ..model.problem import Node, ProblemDefinition, UpdaterNode
 

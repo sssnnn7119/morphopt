@@ -157,6 +157,7 @@ morphopt-ui
 
 | 字段 | 外边界 `surface_0` |
 |---|---|
+| 参与形状更新 `is_updatable` | 启用 |
 | 半径 `r0` | `8.0` |
 | 长度 `length` | `80.0` |
 | 曲面采样间距 `seed_size` | `1.0` |
@@ -405,7 +406,7 @@ MorphOpt 按部件内的曲面顺序识别边界：**第 0 个为外表面，后
 |---|---|
 | 目标 Part | `part1` |
 | 最大迭代次数 `max_step_iter` | `50` |
-| 曲面更新开关 `if_update` | `surface_0` 和 `surface_1` 都启用 |
+| 曲面属性 `is_updatable` | 在 `surface_0` 和 `surface_1` 的编辑页均启用“参与形状更新” |
 | 优化器设备 | 本例跟随 CPU；需要 GPU 时明确选择可用设备 |
 
 ![几何优化器的目标 Part 与曲面更新开关](images/ui/updaters/geometry-updater.png)

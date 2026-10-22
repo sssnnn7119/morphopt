@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 import cpgeo
 import numpy as np
 import torch
 
-import morphopt
 from ...constants import CONSTANT
 from .base_surface import ControlPointSurface
 from .cpgeo_constraints import (
@@ -11,17 +15,25 @@ from .cpgeo_constraints import (
     CPGEOSurfaceRelationConstraint,
 )
 
+if TYPE_CHECKING:
+    from multiprocessing.pool import Pool
+
+    from torchfea.cad.builder import OCCBuilder
+
+    from ...optcore.modelparams.parts.cad_part import CADPart
+
+
 class CPGEOSurface(ControlPointSurface):
     """
     Class to handle a CPGEO surface.
-    
+
     CPGEO uses triangular meshes with control points for morphology optimization,
     providing a flexible alternative to B-spline surfaces for complex geometries.
     """
+
+    is_discrete = True
     mirror: type[CPGEOMirrorConstraint] = CPGEOMirrorConstraint
-    rotate: type[CPGEORotationalSymmetryConstraint] = (
-        CPGEORotationalSymmetryConstraint
-    )
+    rotate: type[CPGEORotationalSymmetryConstraint] = CPGEORotationalSymmetryConstraint
     relate: type[CPGEOSurfaceRelationConstraint] = CPGEOSurfaceRelationConstraint
 
     def __init__(
@@ -31,16 +43,19 @@ class CPGEOSurface(ControlPointSurface):
         MaxC: float = CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
     ):
         super().__init__(surface)
+        self.is_updatable = True
 
         self.model: cpgeo.CPGEO = surface
         """The CPGEO surface model."""
 
-        self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-        
+        self._cps = torch.from_numpy(self.model.control_points).to(
+            torch.get_default_device()
+        )
+
         self.MaxC = MaxC
 
         self.init_size = init_size
-        
+
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
 
@@ -66,9 +81,11 @@ class CPGEOSurface(ControlPointSurface):
 
         weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
         indices_pts_t = torch.repeat_interleave(
-            torch.arange(uv.shape[0], dtype=torch.long,
-                         device=torch.get_default_device()),
-            weights_per_query)
+            torch.arange(
+                uv.shape[0], dtype=torch.long, device=torch.get_default_device()
+            ),
+            weights_per_query,
+        )
 
         indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
         return self._map(w, indices, num_pts=uv.shape[0])
@@ -84,9 +101,11 @@ class CPGEOSurface(ControlPointSurface):
 
         weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
         indices_pts_t = torch.repeat_interleave(
-            torch.arange(uv.shape[0], dtype=torch.long,
-                         device=torch.get_default_device()),
-            weights_per_query)
+            torch.arange(
+                uv.shape[0], dtype=torch.long, device=torch.get_default_device()
+            ),
+            weights_per_query,
+        )
 
         indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
 
@@ -97,7 +116,6 @@ class CPGEOSurface(ControlPointSurface):
         normals = normals / torch.norm(normals, dim=1, keepdim=True)
 
         return normals * (1 if self.flip else -1)
-        
 
     def initialize(self):
         """Initialize the CPGEO model and preload knot points for evaluation."""
@@ -107,11 +125,12 @@ class CPGEOSurface(ControlPointSurface):
 
     def _reconstruction_check(self):
         """Check the reconstruction accuracy of the CPGEO model."""
-        
 
         # calculate the gaussian determinant of the first fundamental form
         gaussian_points = self.model._knots[self.model._cp_faces].mean(axis=1)
-        gaussian_points = gaussian_points / np.linalg.norm(gaussian_points, axis=1, keepdims=True)
+        gaussian_points = gaussian_points / np.linalg.norm(
+            gaussian_points, axis=1, keepdims=True
+        )
 
         indices_cps, indices_pts = self.model.get_weights3(gaussian_points)[:2]
         indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
@@ -119,27 +138,45 @@ class CPGEOSurface(ControlPointSurface):
 
         weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
         indices_pts_t = torch.repeat_interleave(
-            torch.arange(gaussian_points.shape[0], dtype=torch.long,
-                         device=torch.get_default_device()),
-            weights_per_query)
-        
+            torch.arange(
+                gaussian_points.shape[0],
+                dtype=torch.long,
+                device=torch.get_default_device(),
+            ),
+            weights_per_query,
+        )
+
         # the triangular areas for each face
         r = self.model.map3(self.model._knots)
-        area = 0.5 * np.linalg.norm(np.cross(r[self.model._cp_faces][:, 1] - r[self.model._cp_faces][:, 0],
-                                            r[self.model._cp_faces][:, 2] - r[self.model._cp_faces][:, 0]), axis=1)
+        area = 0.5 * np.linalg.norm(
+            np.cross(
+                r[self.model._cp_faces][:, 1] - r[self.model._cp_faces][:, 0],
+                r[self.model._cp_faces][:, 2] - r[self.model._cp_faces][:, 0],
+            ),
+            axis=1,
+        )
 
         # influence of control points
-        area_g = torch.zeros(self.model.control_points.shape[0], device=torch.get_default_device())
-        area_g.index_add_(0, indices_cps_t, torch.from_numpy(area).to(torch.get_default_device()).flatten()[indices_pts_t])
+        area_g = torch.zeros(
+            self.model.control_points.shape[0], device=torch.get_default_device()
+        )
+        area_g.index_add_(
+            0,
+            indices_cps_t,
+            torch.from_numpy(area)
+            .to(torch.get_default_device())
+            .flatten()[indices_pts_t],
+        )
 
-        if area_g.max() / area_g.min() > CONSTANT.KERNEL.SURFACE.CPGEO_AREA_IMBALANCE_THRESHOLD:
+        if (
+            area_g.max() / area_g.min()
+            > CONSTANT.KERNEL.SURFACE.CPGEO_AREA_IMBALANCE_THRESHOLD
+        ):
             return True
         else:
             return False
 
-    def reinitialize(
-        self, iteration: int, *args: object, **kwargs: object
-    ) -> None:
+    def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
         """Reinitialize the CPGEO model if the volume change is significant."""
 
         if_reconstruct = self._reconstruction_check()
@@ -147,7 +184,7 @@ class CPGEOSurface(ControlPointSurface):
         if if_reconstruct or self._is_first_initialize:
             self._reinitialize()
             self._is_first_initialize = False
-    
+
     def _reinitialize(self):
         """Internal method to reinitialize the CPGEO model without checking."""
         self.model.refine_surface(
@@ -156,16 +193,19 @@ class CPGEOSurface(ControlPointSurface):
         )
 
         # Load control points into torch tensor
-        self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
-        
+        self._cps = torch.from_numpy(self.model.control_points).to(
+            torch.get_default_device()
+        )
+
         # Get knot points from the CPGEO model
         # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
         self._num_knots = self.model._knots.shape[0]
 
         self.pre_load()
 
-
-    def get_preloaddata(self, pre_points: torch.Tensor = None, faces: torch.Tensor = None):
+    def get_preloaddata(
+        self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
+    ):
 
         if pre_points is not None and faces is not None:
             # If external sample points are provided, use them directly.
@@ -183,39 +223,50 @@ class CPGEOSurface(ControlPointSurface):
 
             preload_uv3 = np.vstack([uv3_0, uv3_extra])
 
-            preload_uv = torch.from_numpy(self.model.reference_to_curvilinear(preload_uv3)).to(torch.get_default_device())
+            preload_uv = torch.from_numpy(
+                self.model.reference_to_curvilinear(preload_uv3)
+            ).to(torch.get_default_device())
             input_points = preload_uv.cpu().numpy()
 
-
             faces_np = cpgeo.capi.get_sphere_triangulation(preload_uv3)
-
 
         # Precompute weights for vertex evaluation points (derivative 0, 1, 2)
         result = self.model.get_weights2(input_points, derivative=2)
         indices_cps, indices_pts, w, wdu, wdu2 = result
 
-        
         indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
         indices_pts_t = torch.from_numpy(indices_pts).to(torch.get_default_device())
 
         weights_per_query = indices_pts_t[1:] - indices_pts_t[:-1]
         indices_pts_t = torch.repeat_interleave(
-            torch.arange(preload_uv.shape[0], dtype=torch.long,
-                         device=torch.get_default_device()),
-            weights_per_query)
+            torch.arange(
+                preload_uv.shape[0], dtype=torch.long, device=torch.get_default_device()
+            ),
+            weights_per_query,
+        )
 
         indices = torch.stack([indices_pts_t, indices_cps_t], dim=0).reshape(2, -1)
 
         preload_data = self.PreLoadData(
             uv=preload_uv,
             cp_weights=torch.from_numpy(w).to(torch.get_default_device()).flatten(),
-            cp_weights_du=torch.from_numpy(wdu[0]).to(torch.get_default_device()).flatten(),
-            cp_weights_dv=torch.from_numpy(wdu[1]).to(torch.get_default_device()).flatten(),
-            cp_weights_du2=torch.from_numpy(wdu2[0, 0]).to(torch.get_default_device()).flatten(),
-            cp_weights_dudv=torch.from_numpy(wdu2[0, 1]).to(torch.get_default_device()).flatten(),
-            cp_weights_dv2=torch.from_numpy(wdu2[1, 1]).to(torch.get_default_device()).flatten(),
+            cp_weights_du=torch.from_numpy(wdu[0])
+            .to(torch.get_default_device())
+            .flatten(),
+            cp_weights_dv=torch.from_numpy(wdu[1])
+            .to(torch.get_default_device())
+            .flatten(),
+            cp_weights_du2=torch.from_numpy(wdu2[0, 0])
+            .to(torch.get_default_device())
+            .flatten(),
+            cp_weights_dudv=torch.from_numpy(wdu2[0, 1])
+            .to(torch.get_default_device())
+            .flatten(),
+            cp_weights_dv2=torch.from_numpy(wdu2[1, 1])
+            .to(torch.get_default_device())
+            .flatten(),
             indices=indices,
-            faces=torch.from_numpy(faces_np).to(torch.get_default_device())
+            faces=torch.from_numpy(faces_np).to(torch.get_default_device()),
         )
 
         return preload_data
@@ -229,11 +280,10 @@ class CPGEOSurface(ControlPointSurface):
         r = self.get_r().detach()
         return self.preload_data.compute_point_weights(r)
 
-
     @staticmethod
     def output_stl_file(vertices, faces, path_output, name_output):
         """Output CPGEO mesh as STL file.
-        
+
         Args:
             vertices (np.ndarray): Vertex coordinates, shape (N, 3)
             faces (np.ndarray): Face connectivity, shape (F, 3)
@@ -241,31 +291,36 @@ class CPGEOSurface(ControlPointSurface):
             name_output (str): Output file name (without extension)
         """
         import pyvista as pv
-        
+
         # Create PyVista mesh
         faces_with_count = np.hstack([np.full((faces.shape[0], 1), 3), faces])
         mesh = pv.PolyData(vertices, faces_with_count)
-        
+
         # Output STL file
-        output_file = path_output + '/' + name_output + '.stl'
+        output_file = path_output + "/" + name_output + ".stl"
         mesh.save(output_file)
-        
+
         return output_file
 
-    def output_data(self, path_output, name_output, seed_size=-1, flip=False):
+    def output_data(
+        self,
+        path_output: str | Path,
+        name_output: str,
+        seed_size: float = -1,
+        flip: bool = False,
+        pools: Pool | None = None,
+    ) -> str:
         """Output CPGEO mesh data to STL file.
-        
+
         Args:
             path_output (str): Output directory path
             name_output (str): Output file name
             seed_size (float): Optional seed size (unused for CPGEO)
             flip (bool): Optional flip flag (unused for CPGEO)
-        
+
         Returns:
             str: Output filename with extension
         """
-        
-        pools = morphopt.controller.pools
 
         r_sphere, cpfaces = self.model.uniformly_mesh(
             seed_size=self.init_size,
@@ -276,14 +331,20 @@ class CPGEOSurface(ControlPointSurface):
         self._output_rsphere = r_sphere
         self._output_cpfaces = cpfaces
 
-        result = pools.apply_async(self.output_stl_file, args=(
-            r,
-            cpfaces,
-            path_output,
-            name_output))
-        result.get()
+        arguments = (r, cpfaces, path_output, name_output)
+        if pools is None:
+            self.output_stl_file(*arguments)
+        else:
+            pools.apply_async(self.output_stl_file, args=arguments).get()
 
-        return name_output + '.stl'
+        return name_output + ".stl"
+
+    def load_geometry(
+        self,
+        part: CADPart,
+        context: OCCBuilder,
+    ) -> list[int]:
+        return part.load_mesh_boundary(self._geometry_path)
 
     def _geofair_data(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor):
         """
@@ -305,9 +366,9 @@ class CPGEOSurface(ControlPointSurface):
         Normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
         Normal = Normal0 / torch.sqrt(torch.sum(Normal0**2, dim=1, keepdim=True))
 
-        I = torch.einsum('pim, pin->pmn', rdu, rdu)
+        I = torch.einsum("pim, pin->pmn", rdu, rdu)
         invI = I.inverse()
-        II = torch.einsum('pimn, pi->pmn', rdu2, Normal)
+        II = torch.einsum("pimn, pi->pmn", rdu2, Normal)
 
         detI = I[:, 0, 0] * I[:, 1, 1] - I[:, 0, 1] * I[:, 1, 0]
         detII = II[:, 0, 0] * II[:, 1, 1] - II[:, 0, 1] * II[:, 1, 0]
@@ -319,8 +380,14 @@ class CPGEOSurface(ControlPointSurface):
 
         return C0
 
-    def get_penalty_fairness(self, weight: torch.Tensor, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor) -> torch.Tensor:
-    
+    def get_penalty_fairness(
+        self,
+        weight: torch.Tensor,
+        r: torch.Tensor,
+        rdu: torch.Tensor,
+        rdu2: torch.Tensor,
+    ) -> torch.Tensor:
+
         C0 = self._geofair_data(r, rdu, rdu2)
 
         indexC, C = self.barrier_function(
@@ -332,7 +399,6 @@ class CPGEOSurface(ControlPointSurface):
 
         return (weight[indexC] * C).sum()
 
-
     def save(self, filename):
         """Save CPGEO model to file."""
         self.model.control_points = self._cps.detach().cpu().numpy()
@@ -340,37 +406,44 @@ class CPGEOSurface(ControlPointSurface):
 
     def load(self, filename):
         """Load CPGEO model from file."""
-        self.model = cpgeo.CPGEO.load(filename + '.npz')
-        self._cps = torch.from_numpy(self.model.control_points).to(torch.get_default_device())
+        self.model = cpgeo.CPGEO.load(filename + ".npz")
+        self._cps = torch.from_numpy(self.model.control_points).to(
+            torch.get_default_device()
+        )
         self.initialize()
-
 
     def get_mesh(self):
         """Get PyVista mesh from CPGEO model.
-        
+
         Returns:
             pv.PolyData: PyVista mesh with current control point positions
         """
         import pyvista as pv
-        
+
         # Get current control point positions
         vertices = r = self.model.map3(self.model._knots)
         faces = self.model._cp_faces
-        
+
         # Create PyVista mesh (prepend face count for each triangle)
         faces_with_count = np.hstack([np.full((faces.shape[0], 1), 3), faces])
         mesh = pv.PolyData(vertices, faces_with_count)
         mesh.compute_normals(inplace=True)
-        
+
         return mesh
 
-
     @classmethod
-    def initialize_cylinder(cls, r0: float, length: float, seed_size: float, flip: bool, 
-                          num_U_ratio: int = 1, num_V_ratio: int = 1, 
-                          init_location = [0.,0.,0.],
-                          maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
-                          perturbation_L = -1.):
+    def initialize_cylinder(
+        cls,
+        r0: float,
+        length: float,
+        seed_size: float,
+        flip: bool,
+        num_U_ratio: int = 1,
+        num_V_ratio: int = 1,
+        init_location=[0.0, 0.0, 0.0],
+        maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
+        perturbation_L=-1.0,
+    ):
         """
         Initialize the CPGEO surface for cylinder shape optimization.
 
@@ -395,12 +468,12 @@ class CPGEOSurface(ControlPointSurface):
         num_segments_circ = max(
             circ_ratio, round(num_segments_circ / circ_ratio) * circ_ratio
         )
-        
+
         num_segments_axial = max(2, round(length / seed_size))
         num_segments_axial = round(num_segments_axial / num_V_ratio) * num_V_ratio
         if num_segments_axial % 2:
             num_segments_axial += 1
-        
+
         # Generate cylinder vertices
         vertices = []
         for i in range(num_segments_axial + 1):
@@ -409,10 +482,10 @@ class CPGEOSurface(ControlPointSurface):
                 theta = 2 * np.pi * j / num_segments_circ
                 if flip:
                     theta = -theta
-                
+
                 # Base radius
                 r_val = r0
-                
+
                 # Apply perturbation if specified
                 if perturbation_L > 0:
                     r_val = r0 * (
@@ -420,15 +493,15 @@ class CPGEOSurface(ControlPointSurface):
                         + CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
                         * np.cos(2 * (z / length) * np.pi * (length / perturbation_L))
                     )
-                
+
                 x = r_val * np.cos(theta) + init_location[0]
                 y = r_val * np.sin(theta) + init_location[1]
                 z_final = z + init_location[2]
-                
+
                 vertices.append([x, y, z_final])
-        
+
         vertices = np.array(vertices)
-        
+
         # Generate faces (triangulate the cylinder surface)
         faces = []
         for i in range(num_segments_axial):
@@ -439,7 +512,7 @@ class CPGEOSurface(ControlPointSurface):
                 # Next ring
                 v10 = (i + 1) * num_segments_circ + j
                 v11 = (i + 1) * num_segments_circ + (j + 1) % num_segments_circ
-                
+
                 # Two triangles per quad
                 if flip:
                     faces.append([v00, v10, v01])
@@ -447,25 +520,29 @@ class CPGEOSurface(ControlPointSurface):
                 else:
                     faces.append([v00, v01, v10])
                     faces.append([v01, v11, v10])
-        
+
         faces = np.array(faces)
-        
+
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
-            control_points=vertices,
-            cp_faces=faces,
-            knot_influence_num=20
+            control_points=vertices, cp_faces=faces, knot_influence_num=20
         )
-        
+
         # Create interface
         output = cls(cpgeo_model, init_size=seed_size, MaxC=maxC)
         output.flip = flip
 
         return output
-    
+
     @classmethod
-    def initialize_Sphere(cls, r0: float, seed_size: float, flip: bool, init_location = [0.,0.,0.], 
-                          MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT):
+    def initialize_Sphere(
+        cls,
+        r0: float,
+        seed_size: float,
+        flip: bool,
+        init_location=[0.0, 0.0, 0.0],
+        MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
+    ):
         """
         Initialize the CPGEO surface for sphere shape optimization.
 
@@ -477,17 +554,20 @@ class CPGEOSurface(ControlPointSurface):
             MaxC (float, optional): Fairness penalty threshold for kappa_1**2 + kappa_2**2; active above 0.8 * MaxC when Fairness is registered on the geometry updater.
         Returns:
             CPGEOSurface: The initialized CPGEO surface object.
-            
+
         """
         import cpgeo.capi
 
         # Estimate number of points based on surface area and seed size
         area = 4 * np.pi * r0**2
         num_points = int(area / (seed_size**2))
-        
+
         # Generate points using Fibonacci Lattice for uniform spherical distribution
         indices = np.arange(0, num_points, dtype=float) + 0.5
-        phi = np.arccos(1 - 2*indices/num_points) + CONSTANT.KERNEL.SURFACE.SPHERE_POLE_OFFSET  # avoid the pole singularity
+        phi = (
+            np.arccos(1 - 2 * indices / num_points)
+            + CONSTANT.KERNEL.SURFACE.SPHERE_POLE_OFFSET
+        )  # avoid the pole singularity
         theta = np.pi * (1 + 5**0.5) * indices
 
         x = -r0 * np.cos(theta) * np.sin(phi) + init_location[0]
@@ -495,27 +575,30 @@ class CPGEOSurface(ControlPointSurface):
         z = r0 * np.cos(phi) + init_location[2]
 
         vertices = np.stack((x, y, z), axis=-1)
-        
+
         # Get triangulation from CAPI
-        # We pass coordinates relative to the center, as spherical triangulation 
+        # We pass coordinates relative to the center, as spherical triangulation
         # typically operates on directions or convex hull of points
         vertices_relative = (vertices - np.array(init_location)) / r0
         faces = cpgeo.capi.get_sphere_triangulation(vertices_relative.flatten())
 
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
-            control_points=vertices,
-            cp_faces=faces,
-            knot_influence_num=20
+            control_points=vertices, cp_faces=faces, knot_influence_num=20
         )
-        
+
         # Create interface
         output = cls(cpgeo_model, init_size=seed_size, MaxC=MaxC)
         output.flip = flip
 
         return output
 
-    def match_coordinates(self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray, batch_size: int | None = None):
+    def match_coordinates(
+        self,
+        surf_node_idx: np.ndarray,
+        surf_nodes: np.ndarray,
+        batch_size: int | None = None,
+    ):
         """
         Find closest (u, v) on CPGEO surface for each 3D point in `nodes` using a memory-efficient approach.
 
@@ -527,7 +610,7 @@ class CPGEOSurface(ControlPointSurface):
             np.ndarray: Array of shape (N, 2) containing the corresponding
                 (u, v) parameters on the CPGEO surface for each input node.
         """
-        
+
         nodes = surf_nodes
         self.surf_node_idx = surf_node_idx
 
@@ -542,6 +625,7 @@ class CPGEOSurface(ControlPointSurface):
         try:
             # fast & memory-friendly when scipy is available
             import scipy.spatial as sp
+
             tree = sp.KDTree(r0)
             _, min_dist_uv_idx = tree.query(nodes, k=1)
         except Exception:
@@ -550,20 +634,20 @@ class CPGEOSurface(ControlPointSurface):
             node_chunk = CONSTANT.KERNEL.SURFACE.PROJECTION_NODE_CHUNK_SIZE
             for i in range(0, N, node_chunk):
                 j = min(N, i + node_chunk)
-                nb = nodes[i:j]                                # (B, 3)
+                nb = nodes[i:j]  # (B, 3)
                 # compute squared distances in a chunk (M, B)
                 d2 = np.sum((r0[:, None, :] - nb[None, :, :]) ** 2, axis=2)
                 min_dist_uv_idx[i:j] = np.argmin(d2, axis=0)
 
-        min_dist_uv = preuv[min_dist_uv_idx]                  # (N, 2)
+        min_dist_uv = preuv[min_dist_uv_idx]  # (N, 2)
 
         # --- Newton refinement in batches (reduces peak memory) ---
         max_iter = CONSTANT.KERNEL.SURFACE.PROJECTION_ITERATIONS_CPGEO
         tol = CONSTANT.KERNEL.SURFACE.PROJECTION_TOLERANCE
-        
+
         if batch_size is None:
             batch_limit = CONSTANT.KERNEL.SURFACE.PROJECTION_BATCH_SIZE_CPGEO
-            batch_size = N if N <= batch_limit else batch_limit
+            batch_size = min(N, batch_limit)
 
         uv_out = np.empty((N, 2), dtype=float)
 
@@ -582,27 +666,29 @@ class CPGEOSurface(ControlPointSurface):
                 rvv = rdot2[:, :, 1, 1]
 
                 diff = r - pts
-                gu = np.einsum('ij,ij->i', diff, ru)
-                gv = np.einsum('ij,ij->i', diff, rv)
+                gu = np.einsum("ij,ij->i", diff, ru)
+                gv = np.einsum("ij,ij->i", diff, rv)
                 gnorm = np.sqrt(gu * gu + gv * gv)
 
                 if np.all(gnorm < tol):
                     break
 
-                A = np.einsum('ij,ij->i', ru, ru) + np.einsum('ij,ij->i', diff, ruu)
-                B = np.einsum('ij,ij->i', ru, rv) + np.einsum('ij,ij->i', diff, ruv)
-                C = np.einsum('ij,ij->i', rv, rv) + np.einsum('ij,ij->i', diff, rvv)
+                A = np.einsum("ij,ij->i", ru, ru) + np.einsum("ij,ij->i", diff, ruu)
+                B = np.einsum("ij,ij->i", ru, rv) + np.einsum("ij,ij->i", diff, ruv)
+                C = np.einsum("ij,ij->i", rv, rv) + np.einsum("ij,ij->i", diff, rvv)
 
                 det = A * C - B * B
                 det_reg = det.copy()
-                regularization = CONSTANT.KERNEL.SURFACE.PROJECTION_REGULARIZATION_TOLERANCE
+                regularization = (
+                    CONSTANT.KERNEL.SURFACE.PROJECTION_REGULARIZATION_TOLERANCE
+                )
                 det_reg[np.abs(det_reg) < regularization] = regularization
 
                 du = -(C * gu - B * gv) / det_reg
                 dv = -(-B * gu + A * gv) / det_reg
                 delta = np.stack([du, dv], axis=1)
 
-                f = np.einsum('ij,ij->i', diff, diff)
+                f = np.einsum("ij,ij->i", diff, diff)
 
                 uv_new = uv.copy()
                 f_best = f.copy()
@@ -610,7 +696,7 @@ class CPGEOSurface(ControlPointSurface):
 
                 uv_step = np.clip(uv + delta, 0.0, 1.0)
                 r_step = self.model.map2(uv_step)
-                f_step = np.einsum('ij,ij->i', (r_step - pts), (r_step - pts))
+                f_step = np.einsum("ij,ij->i", (r_step - pts), (r_step - pts))
                 improved = f_step < f_best
                 if improved.any():
                     uv_new[improved] = uv_step[improved]
@@ -622,10 +708,10 @@ class CPGEOSurface(ControlPointSurface):
                     for k in range(
                         1, CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_STEPS + 1
                     ):
-                        alpha = CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_DECAY ** k
+                        alpha = CONSTANT.KERNEL.SURFACE.PROJECTION_LINE_SEARCH_DECAY**k
                         uv_try = np.clip(uv + alpha * delta, 0.0, 1.0)
                         r_try = self.model.map2(uv_try)
-                        f_try = np.einsum('ij,ij->i', (r_try - pts), (r_try - pts))
+                        f_try = np.einsum("ij,ij->i", (r_try - pts), (r_try - pts))
 
                         improved = (f_try < f_best) & remaining
                         if improved.any():

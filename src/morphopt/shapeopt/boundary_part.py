@@ -24,24 +24,24 @@ class GeometryParams(morphopt.GeometryParams):
 
 from __future__ import annotations
 
-import multiprocessing as mp
 import os
-import sys
+from collections import defaultdict
 from collections.abc import Sequence
+from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
+import gmsh
 import pyvista as pv
 import torch
 import torchfea
+from torchfea.cad import CADHistory
+from torchfea.cad.builder import OCCBuilder
 
 from ..constants import CONSTANT
-from ..optcore.modelparams.parts import BasePart
+from ..optcore.modelparams.parts import CADPart
 from ..optcore.protocal import ProtocalUpdatable
-from .meshgenerator import MeshGenerator
-from .surfaces import (
-    BaseSurface,
-)
+from .surfaces import BaseSurface
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 __all__ = ["BoundaryPart"]
 
 
-class BoundaryPart(BasePart, ProtocalUpdatable):
+class BoundaryPart(CADPart, ProtocalUpdatable):
     """One Part whose boundary is described by parameterised surfaces.
 
     Parameters
@@ -65,11 +65,13 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
     """
 
     is_variable = True
+    cache_part = False
 
     from .surfaces import (
         BaseSurface,
         ControlPointSurface,
-        FixedSurface,
+        MeshSurface,
+        BREPSurface,
     )
     from .surfaces.bsp_surface import BspSurface as BSP
     from .surfaces.cpgeo_surface import (
@@ -84,21 +86,18 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         exterior_surface: str | None = "surface_0_All",
     ) -> None:
         super().__init__(
+            mesh_size=fea_seed_size,
+            mesh_order=mesh_order,
             part_name=part_name,
             exterior_surface=exterior_surface,
         )
-
-        self.fea_seed_size: float = float(fea_seed_size)
-        """Target element size handed to the volume mesher."""
-
-        self.mesh_order: int = int(mesh_order)
-        """Mesh order used for the finite element model (1 or 2)."""
 
         self.surfaceinterfaces: list[BaseSurface] = []
         """Boundary surfaces; index 0 is the outer boundary, 1.. are cavities."""
 
         self._surfaces_defined = False
         """Whether :meth:`define_surfaces` has completed for this Part."""
+        self._surface_groups: dict[str, list[int]] = {}
 
     # --------------------------------------------------------------- surfaces
     def define_surfaces(self) -> None:
@@ -170,136 +169,105 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         """Optional Part-level hook after surface constraints have run."""
 
     # ---------------------------------------------------------------- meshing
-    def build_part(
-        self, path_result: str | None = None, pools: Pool | None = None
-    ) -> torchfea.Part:
-        """Regenerate the volume mesh of this Part from its surfaces."""
-        part = self._mesh_part(path_result=path_result, pools=pools)
-        part = self._postprocess_part(part)
-        if self.mesh_order == 2:
-            part.convert_linear_to_quadratic_elements(
-                list(part.elems.keys()), list(part.elems.keys())
-            )
-        return part
+    @property
+    def fea_seed_size(self) -> float:
+        """Boundary terminology for the shared CADPart mesh size."""
+        return self.mesh_size
 
-    def _postprocess_part(self, part: torchfea.Part) -> torchfea.Part:
-        """Hook to add element families to the freshly meshed Part."""
-        return part
+    @fea_seed_size.setter
+    def fea_seed_size(self, value: float) -> None:
+        self.mesh_size = float(value)
 
-    def _mesh_part(
-        self, path_result: str | None = None, pools: Pool | None = None
-    ) -> torchfea.Part:
-        """Export the surfaces, run Gmsh, and map them onto the mesh nodes."""
-        path_output = self.workdir(path_result)
-
-        # synchronize the surfaces so their exported files are up to date
-        for surface in self.surfaceinterfaces:
+    def prepare_geometry(
+        self, path_result: str | None = None, pools: Pool | None = None,
+    ) -> list[BaseSurface]:
+        """Provide closed CAD shells or exported parametric/discrete boundaries."""
+        self._face_names.clear()
+        directory = self.workdir(path_result)
+        for index, surface in enumerate(self.surfaceinterfaces):
             surface.synchronize()
-
-        self.export_data(path_output)
-
-        # mesh the exported surfaces into an Abaqus part
-        inp_path = os.path.join(path_output, "TopOptRun.inp")
-        if os.path.exists(inp_path):
-            os.remove(inp_path)
-
-        if pools is None:
-            pools_now = mp.Pool(1)
-        else:
-            pools_now = pools
-
-        pool_owned = pools is None
-        try:
-            try:
-                if sys.platform.startswith("win") and not pool_owned:
-                    pools_now.apply_async(
-                        MeshGenerator.run,
-                        kwds={
-                            "seed_size": self.fea_seed_size,
-                            "output_file": inp_path,
-                            "directory": path_output,
-                            "part_name": self.part_name,
-                        },
-                    ).get()
-                else:
-                    MeshGenerator.run(
-                        seed_size=self.fea_seed_size,
-                        output_file=inp_path,
-                        directory=path_output,
-                        part_name=self.part_name,
-                    )
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to mesh boundary Part {self.name!r} ({self.part_name!r})."
-                ) from exc
-        finally:
-            if pool_owned:
-                pools_now.close()
-                pools_now.join()
-
-        if not os.path.isfile(inp_path):
-            raise RuntimeError(
-                f"Mesh generator did not create the expected Abaqus file: {inp_path}"
+            surface.prepare_geometry(
+                path_output=directory, name_output=f"__surface-{index}",
+                flip=index != 0, pools=pools,
             )
+        return list(self.surfaceinterfaces)
 
-        # read the inp file and create the Part
-        inp = torchfea.FEA_INP()
-        inp.read_inp(path=inp_path)
-        nodes = inp.part[self.part_name].nodes[:, 1:]
-        part = torchfea.Part(
-            torch.from_numpy(nodes)
-            .to(torch.get_default_device())
-            .to(torch.get_default_dtype())
+    def assemble_geometry(self, geometry: list[BaseSurface]) -> CADHistory:
+        """Declare this Part's exterior/cavity assembly operation."""
+        self._surface_groups.clear()
+        action = partial(self._assemble_surfaces, surfaces=geometry)
+        return CADHistory(
+            operations=[self._Operation("boundary", action)], mesh_size=self.mesh_size,
         )
-        for surface_name, surface in inp.part[self.part_name].surfaces.items():
-            part.add_surface_set(
-                surface_name, [(entry[0], entry[1]) for entry in surface]
+
+    def _assemble_surfaces(
+        self, context: OCCBuilder, *, surfaces: list[BaseSurface],
+    ) -> list[tuple[int, int]]:
+        """Load closed boundaries and assemble one volume with optional cavities."""
+        if not surfaces:
+            raise ValueError("A BoundaryPart requires an exterior surface.")
+        groups = [surface.load_geometry(self, context) for surface in surfaces]
+        kernel = gmsh.model.geo if any(surface.is_discrete for surface in surfaces) else context.occ
+        loops = [kernel.addSurfaceLoop(tags) for tags in groups]
+        volume = kernel.addVolume(loops)
+        kernel.synchronize()
+        used = {tag for tags in groups for tag in tags}
+        unused = [entity for entity in gmsh.model.getEntities(2) if entity[1] not in used]
+        if unused:
+            context.occ.remove(unused, recursive=True)
+            context.occ.synchronize()
+        boundary = {tag for _, tag in gmsh.model.getBoundary(
+            [(3, volume)], oriented=False, recursive=False,
+        )}
+        if boundary != used:
+            raise ValueError("Boundary assembly changed the input face topology.")
+        self._surface_groups.update({
+            f"surface_{index}_All": tags for index, tags in enumerate(groups)
+        })
+        return [(3, volume)]
+
+    def define_mesh_sets(self, part: torchfea.Part) -> None:
+        """Extend geometric face sets with this Part's closed-surface groups."""
+        super().define_mesh_sets(part)
+        for name, tags in self._surface_groups.items():
+            sides = defaultdict(list)
+            nodes = []
+            for tag in tags:
+                face = self._face_names[tag]
+                for element_ids, side in part.surfaces[face]:
+                    sides[side].append(element_ids)
+                nodes.append(part.set_nodes[f"{face}_nodes"])
+            part.add_surface_set(name, [
+                (np.unique(np.concatenate(ids)), side) for side, ids in sides.items()
+            ])
+            part.add_node_set(name, np.unique(np.concatenate(nodes)))
+        exterior = self.exterior_surface or "extern"
+        if exterior not in part.surfaces:
+            part.add_surface_set(exterior, part.surfaces["extern"])
+        part.exterior_surface = exterior
+
+    def postprocess_mesh(self, part: torchfea.Part) -> torchfea.Part:
+        """Map designable boundary nodes before element and order processing."""
+        nodes = part.nodes.detach().cpu().numpy()
+        tolerance = CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
+        outer_nodes = part.set_nodes["surface_0_All"]
+        for name, coordinate in (("Bottom", 0.0), ("Head", nodes[:, 2].max())):
+            part.add_node_set(
+                f"surface_0_{name}",
+                outer_nodes[np.abs(nodes[outer_nodes, 2] - coordinate) < tolerance],
             )
-
-        for set_name, node_indices in inp.part[self.part_name].sets_nodes.items():
-            part.set_nodes[set_name] = np.unique(np.array(list(node_indices)))
-
-        node_set_tolerance = CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
-        index_bottom = np.where(
-            np.abs(nodes[:, 2] - 0) < node_set_tolerance
-        )[0]
-        part.set_nodes["surface_0_Bottom"] = index_bottom
-        index_head = np.where(
-            np.abs(nodes[:, 2] - np.max(nodes[:, 2])) < node_set_tolerance
-        )[0]
-        part.set_nodes["surface_0_Head"] = index_head
-
-        for key in inp.part[self.part_name].elems.keys():
-            elems = inp.part[self.part_name].elems[key][:, 1:]
-            elems_index = inp.part[self.part_name].elems[key][:, 0]
-            element = torchfea.elements.initialize_element(
-                element_type=key,
-                elems_index=torch.from_numpy(elems_index).to(
-                    torch.get_default_device()
-                ),
-                elems=torch.from_numpy(elems).to(torch.get_default_device()),
-                part=part,
+        for index, surface in enumerate(self.surfaceinterfaces):
+            if not surface.num_variables:
+                continue
+            indices = np.sort(part.set_nodes[f"surface_{index}_All"])
+            surface.match_coordinates(indices, nodes[indices])
+            uv = torch.as_tensor(
+                surface.surf_node_uv, device=part.nodes.device, dtype=part.nodes.dtype,
             )
-            part.add_element(element, name=key)
+            part.nodes[surface.surf_node_idx] = surface.map(uv)
+        return super().postprocess_mesh(part)
 
-        surf_node_idx_list_order0 = [
-            np.sort(part.set_nodes[f"surface_{index}_All"])
-            for index in range(self.num_surface_interfaces)
-        ]
-
-        # match the mesh nodes of every surface with its parameterisation
-        for surface_index in range(self.num_surface_interfaces):
-            surf_node_idx = surf_node_idx_list_order0[surface_index]
-            surf_nodes = part.nodes[surf_node_idx].cpu().numpy()
-            surface_now = self.surfaceinterfaces[surface_index]
-            surface_now.match_coordinates(surf_node_idx, surf_nodes)
-
-            nodes_new = surface_now.map(torch.from_numpy(surface_now.surf_node_uv))
-            part.nodes[surface_now.surf_node_idx] = nodes_new
-
-        return part
-
-    def export_data(self, dirpath: str) -> None:
+    def export_data(self, dirpath: str, pools: Pool | None = None) -> None:
         """Export every surface to ``__surface-<index>.stp|stl``."""
         os.makedirs(dirpath, exist_ok=True)
         for index, surface in enumerate(self.surfaceinterfaces):
@@ -307,6 +275,7 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
                 path_output=dirpath,
                 name_output="__surface-%d" % index,
                 flip=(index != 0),
+                pools=pools,
             )
 
     # -------------------------------------------------------- design variables
@@ -346,6 +315,9 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
             if not size:
                 continue
             delta = x_change[start : start + size].reshape(-1, 3)
+            start += size
+            if not surface.is_updatable:
+                continue
             norm = delta.norm(dim=1, keepdim=True)
             change = (
                 2
@@ -357,7 +329,6 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
             if step is not None:
                 change = change * step
             surface.update_variables(change)
-            start += size
 
         self.apply_surface_constraints()
 
@@ -407,6 +378,7 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         """Detached control points of every surface."""
         return [
             surface.control_points.detach().clone()
+            if surface.num_variables else torch.empty((0, 3))
             for surface in self.surfaceinterfaces
         ]
 
@@ -434,7 +406,10 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         self, assembly: torchfea.Assembly
     ) -> torch.Tensor:
         """Concatenate the control points of every surface."""
-        values = [surface._cps.flatten() for surface in self.surfaceinterfaces]
+        values = [
+            surface.get_surface_parameters().flatten()
+            for surface in self.surfaceinterfaces if surface.num_variables
+        ]
         return torch.cat(values, dim=0).detach() if values else torch.zeros(0)
 
     def modify_assembly(
@@ -448,8 +423,13 @@ class BoundaryPart(BasePart, ProtocalUpdatable):
         offset = 0
         for surface in self.surfaceinterfaces:
             size = surface.num_variables
-            surface._cps = values[offset : offset + size].reshape_as(surface._cps)
+            if not size:
+                continue
+            parameters = values[offset : offset + size]
             offset += size
+            if not surface.is_updatable:
+                continue
+            surface.set_surface_parameters(parameters)
 
             node_update = surface.map(torch.from_numpy(surface.surf_node_uv))
             nodes_new[surface.surf_node_idx] = node_update

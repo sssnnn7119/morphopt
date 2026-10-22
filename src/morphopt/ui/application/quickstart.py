@@ -295,7 +295,7 @@ def _shape_geometry(options, geometry, loads, materials):
     )
     part.add_surface(SurfaceNode.create(
         "bsp_cylinder", r0=options.radius, length=options.total_length,
-        seed_size=seed, perturbation_L=-1.,
+        seed_size=seed, perturbation_L=-1., is_updatable=options.optimize_outer,
     ))
     cavities = options.geometry_layout().cavity_specs()
     for index, cavity in enumerate(cavities, 1):
@@ -309,6 +309,7 @@ def _shape_geometry(options, geometry, loads, materials):
                 "bsp_cylinder", index=index, r0=cavity.radius, length=cavity.length,
                 seed_size=seed, init_location=[cavity.x, cavity.y, cavity.z], perturbation_L=-1.,
             )
+        surface.is_updatable = True
         part.add_surface(surface)
         loads.add_component(FEAComponentNode.create(
             "Pressure", name=f"pressure_{index}", instance_name="body-1",
@@ -329,7 +330,6 @@ def _shape_geometry(options, geometry, loads, materials):
         "geometry": [{
             "part_name": "body",
             "max_step_iter": CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
-            "if_update": [options.optimize_outer]+[True]*options.chambers,
             "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
             "constraints": constraints,
         }],

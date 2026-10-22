@@ -974,7 +974,9 @@ class ThisController(morphopt.Controller):
                     shell_thickness=2.5,   # 壳厚度 2.5mm
                     num_layers=1)          # 单层壳
                 body.add_surface_interface(body.BSP.initialize_cylinder(...))
-                body.add_surface_interface(body.CPGEO.initialize_Sphere(...))
+                cavity = body.CPGEO.initialize_Sphere(...)
+                cavity.is_updatable = True
+                body.add_surface_interface(cavity)
                 self.add_interface(body, name='body')
 
         class FEAParams(morphopt.FEAParams):
@@ -1025,7 +1027,6 @@ class ThisController(morphopt.Controller):
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=...))
                 self.add_constraints(self.objectivefuncs.InwardCurvatureRadius())
                 self.add_constraints(self.objectivefuncs.OffsetSurfaceMinThickness(min_distance=2.0))
-                self.if_update = [False, True]  # 只更新气腔
 
         class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
             def __init__(self):

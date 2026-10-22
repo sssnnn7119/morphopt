@@ -1,6 +1,7 @@
 """Part-specific set catalogs for fields, independent of preview actors."""
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, TypeVar
 from ..model.problem import PartNode, ProblemDefinition
 from .cad import cad_part_from_node
 from ..model.node_types.parts import BoundaryPartNode, OffsetBoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode
+from ..model.node_types.surfaces import BREPSurfaceNode
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,14 @@ class PartSetCatalog:
             names.extend(f"surface_{index}_offset" for index in range(1, surface_count))
         if surface_count:
             names.extend(["surface_0_Bottom", "surface_0_Head"])
-        return PartSets(nodes=tuple(names), surfaces=tuple(names))
+        faces = [
+            name for surface in part.surfaces if isinstance(surface, BREPSurfaceNode)
+            for name in json.loads(surface.face_map)
+        ]
+        return PartSets(
+            nodes=tuple(names) + tuple(f"{name}_nodes" for name in faces),
+            surfaces=tuple(names) + tuple(faces),
+        )
 
     @staticmethod
     def box(part: BoxPartNode, problem: ProblemDefinition) -> PartSets:

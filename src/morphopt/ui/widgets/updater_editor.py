@@ -1,7 +1,7 @@
 """Structured Updater editor: pick objective functions / constraints.
 
 Each sub-optimizer (UpdaterBoundaryPart / UpdaterSIMPMaterial) exposes:
-* max_step_iter, if_update
+* max_step_iter; material updaters also expose if_update
 * a list of objective functions
 * a list of geometry symmetry constraints and a list of penalty constraints
 and every item can have parameters edited in an inline form. Built-in
@@ -40,7 +40,6 @@ from ..application.devices import detect_devices
 from ..application.editing import DefinitionCommands
 from ..application.updaters import (
     UpdaterItems,
-    as_bool_list,
     distance_matrix,
     editor_signature,
     updater_sections,
@@ -329,11 +328,11 @@ class UpdaterEditor(QWidget):
             iterations.editingFinished.connect(save_iterations)
             form.addRow(tr("ui.widgets.updater_editor.max_step_iter"), iterations)
 
-            cur = cfg.get("if_update")
-            form.addRow(
-                tr("ui.widgets.updater_editor.if_update"),
-                self._if_update_control(cfg, cur, group),
-            )
+            if group == "materials":
+                form.addRow(
+                    tr("ui.widgets.updater_editor.if_update"),
+                    self._material_update_control(cfg),
+                )
         elif group == "geometry" and focus_category == "geometry_symmetry":
             form.addRow(
                 tr("ui.widgets.updater_editor.target_part"),
@@ -426,27 +425,14 @@ class UpdaterEditor(QWidget):
             return len(self._problem.surfaces())
         return len(node.surfaces)
 
-    def _if_update_control(self, cfg: dict, cur, group: str) -> QWidget:
-        """Checkbox widget for ``if_update``.
-
-        * geometry sub-optimizer: one checkbox per surface (index 0, 1, …);
-          the stored value is a bool list aligned to the surface list.
-        * other sub-optimizers (materials…): a single bool checkbox.
-        """
-        if group == "geometry":
-            surfaces = []
-            if self._problem is not None:
-                node = self._problem.config_part_node(cfg)
-                surfaces = (
-                    node.surfaces if node is not None else self._problem.surfaces()
-                )
-            if surfaces:
-                return _IfUpdateDropDown(cfg, cur, surfaces, self._on_change)
+    def _material_update_control(self, cfg: dict) -> QWidget:
+        """Edit the material updater's update switch."""
+        cur = cfg.get("if_update")
         chk = QCheckBox()
         chk.setChecked(True if cur is None else bool(cur))
         chk.setToolTip(
             tr(
-                "ui.widgets.updater_editor.checked_this_surface_participates_in_the_update"
+                "ui.widgets.updater_editor.material_update_help"
             )
         )
         chk.toggled.connect(lambda v: self._set(cfg, "if_update", bool(v)))
@@ -475,111 +461,6 @@ class UpdaterEditor(QWidget):
 
     def _on_code_change(self) -> None:
         self._on_change()
-
-
-class _IfUpdateDropDown(QToolButton):
-    """Collapsible multi-select: one checkbox per surface, in a dropdown.
-
-    The button shows ``<checked>/<total>``; opening the menu lets you toggle
-    each surface (or use all / clear) while the popup stays open, so many
-    surfaces stay compact in the form.
-    """
-
-    def __init__(self, cfg: dict, cur, surfaces: list, on_change, parent=None):
-        super().__init__(parent)
-        self._cfg = cfg
-        self._on_change = on_change
-        self._checks: list[QCheckBox] = []
-
-        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.setProperty("menuButton", True)
-        self.setFixedHeight(
-            theme_manager.palette.layout.updater_editor.item_button_height
-        )
-        menu = QMenu(self)
-        self.setMenu(menu)
-
-        act = QWidgetAction(menu)
-        panel = QWidget()
-        panel.setMinimumWidth(
-            theme_manager.palette.layout.updater_editor.surface_panel_minimum_width
-        )
-        col = QVBoxLayout(panel)
-        col.setContentsMargins(
-            *deepcopy(theme_manager.palette.layout.updater_editor.surface_panel_margins)
-        )
-        col.setSpacing(
-            theme_manager.palette.layout.updater_editor.surface_panel_spacing
-        )
-
-        bar = QHBoxLayout()
-        b_all = QPushButton(tr("ui.widgets.updater_editor.all"))
-        b_none = QPushButton(tr("ui.widgets.updater_editor.none"))
-        b_all.clicked.connect(lambda: self._set_all(True))
-        b_none.clicked.connect(lambda: self._set_all(False))
-        bar.addWidget(b_all)
-        bar.addWidget(b_none)
-        bar.addStretch(1)
-        col.addLayout(bar)
-
-        states = as_bool_list(cur, len(surfaces))
-        body = QWidget()
-        vb = QVBoxLayout(body)
-        vb.setContentsMargins(*theme_manager.palette.layout.zero_margins)
-        vb.setSpacing(theme_manager.palette.layout.updater_editor.surface_check_spacing)
-        for i, srf in enumerate(surfaces):
-            cb = QCheckBox(surface_title_text(srf, i))
-            cb.setChecked(states[i])
-            vb.addWidget(cb)
-            self._checks.append(cb)
-        vb.addStretch(1)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setFixedHeight(
-            min(
-                theme_manager.palette.layout.updater_editor.surface_list_maximum_height,
-                theme_manager.palette.layout.updater_editor.surface_list_base_height
-                + theme_manager.palette.layout.updater_editor.surface_list_row_height
-                * max(len(surfaces), 1),
-            )
-        )
-        scroll.setWidget(body)
-        col.addWidget(scroll)
-
-        act.setDefaultWidget(panel)
-        menu.addAction(act)
-
-        for cb in self._checks:
-            cb.toggled.connect(self._commit)
-        self._update_text()
-
-    # ------------------------------------------------------------ helpers
-    def _set_all(self, state: bool) -> None:
-        for cb in self._checks:
-            cb.blockSignals(True)
-            cb.setChecked(state)
-            cb.blockSignals(False)
-        self._commit()
-
-    def _commit(self, *_args) -> None:
-        self._cfg["if_update"] = [c.isChecked() for c in self._checks]
-        self._update_text()
-        self._on_change()
-
-    def _update_text(self) -> None:
-        names = [c.text() for c in self._checks if c.isChecked()]
-        self.setText(f"{len(names)}/{len(self._checks)}")
-        self.setMinimumWidth(
-            theme_manager.palette.layout.updater_editor.surface_selector_minimum_width
-        )
-        self.setToolTip(
-            tr(
-                "ui.widgets.updater_editor.surfaces_to_update_value",
-                value_0=", ".join(names) or tr("ui.widgets.updater_editor.none"),
-            )
-        )
 
 
 class _DistanceMatrixDropDown(QToolButton):

@@ -493,9 +493,10 @@ class SurfaceNode(TypedNode):
     """Base of one boundary surface type (outer or cavity)."""
 
     kind = KIND_SURFACE
-    _FIELDS = ("type", "flip")
+    _FIELDS = ("type", "flip", "is_updatable")
     factory: ClassVar[str | None] = None
     flip: bool
+    is_updatable: bool
 
     def __init__(
         self,
@@ -508,6 +509,7 @@ class SurfaceNode(TypedNode):
         data = {**(params or {}), **values}
         super().__init__(kind=kind, name=name, params=data, children=children)
         self.flip = bool(data.get("flip", False))
+        self.is_updatable = bool(data.get("is_updatable", type(self).is_updatable))
 
     @property
     def surface_type(self) -> str:

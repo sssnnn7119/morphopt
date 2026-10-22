@@ -70,9 +70,7 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
         self.apply(surface)
 
 
-class BspSurfaceRelationConstraint(
-    SurfaceRelationConstraint["BspSurface"]
-):
+class BspSurfaceRelationConstraint(SurfaceRelationConstraint["BspSurface"]):
     """Copy a BSP basis and transformed control points to another BSP surface."""
 
     def validate_surface(self, surface: BspSurface) -> None:

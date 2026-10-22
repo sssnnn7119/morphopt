@@ -80,7 +80,8 @@ from .surfaces import (
     BspCylinderSurfaceNode,
     CPGEOCylinderSurfaceNode,
     CPGEOSphereSurfaceNode,
-    FixedSTLSurfaceNode,
+    MeshSurfaceNode,
+    BREPSurfaceNode,
 )
 from .symmetry import (
     BspMirrorConstraintNode,
@@ -124,7 +125,8 @@ __all__ = (
     "DilateOperationNode",
     "DistancePenaltyNode",
     "FairnessPenaltyNode",
-    "FixedSTLSurfaceNode",
+    "MeshSurfaceNode",
+    "BREPSurfaceNode",
     "FragmentOperationNode",
     "FuseOperationNode",
     "GeometryNode",

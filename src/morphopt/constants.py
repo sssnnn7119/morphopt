@@ -487,7 +487,7 @@ class _Constants:
                         DEFAULT = 1.0
                         MIN = 0.0
 
-                class FIXED_STL:
+                class MESH_SURFACE:
                     class PATH_STL:
                         DEFAULT = ""
 

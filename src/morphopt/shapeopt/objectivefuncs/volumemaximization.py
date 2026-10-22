@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
-
 import torch
 
 from ...constants import CONSTANT
 from ..surfaces import CPGEOSurface
 from .basefuncs import BaseConstraints
-
-if TYPE_CHECKING:
-    from ..surfaces import BaseSurface
-
 
 class VolumeMaximization(BaseConstraints):
     def __init__(
@@ -22,19 +15,6 @@ class VolumeMaximization(BaseConstraints):
         super().__init__()
         self._weight = weight
         self._surf_idx = surf_idx
-        self.surfaces: list[BaseSurface] = []
-
-    def initialize(
-        self,
-        *args: object,
-        surfaces: Sequence[BaseSurface] | None = None,
-        **kwargs: object,
-    ) -> None:
-        """Bind the current Part's surfaces before evaluating volume."""
-        super().initialize(*args, **kwargs)
-        if surfaces is None:
-            raise ValueError("VolumeMaximization requires the updater's surfaces.")
-        self.surfaces = list(surfaces)
 
     def __call__(
         self,

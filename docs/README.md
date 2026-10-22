@@ -33,6 +33,7 @@ MorphOpt 的使用文档分为脚本和 UI 两条路线，每条路线包含快�
 - [形状优化理论](theory/morphdesign.md)：几何表示、力学模型、目标与伴随灵敏度。
 - [协同优化理论](theory/codesign.md)：偏置层、SIMP 设计场与形状材料协同更新。
 - [代码结构](codestructure/README.md)：数值内核、UI 分层、结果分析及扩展边界的统一导览。
+- [STEP 外边界与 BSP 内腔算例](examples/brep-bsp-cylinder.md)：完整 `.morph`、混合边界形状优化及自动验证记录。
 - [配图说明](images/README.md)：截图与图示的分类、来源及命名规则。
 
 <a id="section-章节编号与文档维护"></a>

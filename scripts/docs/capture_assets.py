@@ -16,7 +16,7 @@ from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.i18n import set_locale
 from morphopt.ui.mainwindow import MainWindow
 from morphopt.ui.model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
-from morphopt.ui.model.node_types.surfaces import FixedSTLSurfaceNode
+from morphopt.ui.model.node_types.surfaces import MeshSurfaceNode
 from morphopt.ui.model.problem import CADOperationNode
 
 
@@ -40,7 +40,7 @@ def main():
     ).decode("ascii")
     problem.add_part(CADPartNode(name="cad_body", children=[operation]))
     problem.add_part(BoundaryPartNode(name="stl_boundary", children=[
-        FixedSTLSurfaceNode(
+        MeshSurfaceNode(
             name="fixed_shell", path_stl=str(examples / "reference-boundary.stl")
         )
     ]))

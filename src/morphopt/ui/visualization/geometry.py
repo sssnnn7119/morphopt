@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import Callable
 from colorsys import hsv_to_rgb
 from copy import deepcopy
@@ -30,7 +31,8 @@ from ..model.node_types.surfaces import (
     BspCylinderSurfaceNode,
     CPGEOCylinderSurfaceNode,
     CPGEOSphereSurfaceNode,
-    FixedSTLSurfaceNode,
+    MeshSurfaceNode,
+    BREPSurfaceNode,
 )
 from ..model.problem import (
     FEAComponentNode,
@@ -138,11 +140,18 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                 continue
             face_groups = np.zeros(mesh.n_cells, dtype=np.int64)
             face_names = [(f"surface_{index}_All",)]
+            if isinstance(surface, BREPSurfaceNode) and json.loads(surface.face_map):
+                ids = np.asarray(mesh.cell_data["face_index"], dtype=np.int64)
+                for face_id in np.unique(ids):
+                    face_groups[ids == face_id] = len(face_names)
+                    face_names.append((f"face_{face_id}", f"surface_{index}_All"))
             if index == 0:
                 for end in ("Bottom", "Head"):
                     cap = _boundary_end_cells(mesh, end)
-                    face_groups[cap] = len(face_names)
-                    face_names.append((f"surface_0_{end}", "surface_0_All"))
+                    for group in np.unique(face_groups[cap]):
+                        mask = cap & (face_groups == group)
+                        face_groups[mask] = len(face_names)
+                        face_names.append((*face_names[int(group)], f"surface_0_{end}"))
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
             name = instance.name if instance is not None else part.name
@@ -183,6 +192,16 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
         part: BoundaryPartNode,
         name: str,
     ) -> pv.DataSet | None:
+        if name.startswith("face_"):
+            face_id = int(name[5:])
+            for surface in part.surfaces:
+                if not isinstance(surface, BREPSurfaceNode) or name not in json.loads(surface.face_map):
+                    continue
+                mesh = context.surface_mesh(surface)
+                if mesh is not None:
+                    cells = np.flatnonzero(np.asarray(mesh.cell_data["face_index"]) == face_id)
+                    return mesh.extract_cells(cells).extract_surface(algorithm="dataset_surface")
+            return None
         index = _surface_index_from_name(name)
         surfaces = part.surfaces
         if not 0 <= index < len(surfaces):
@@ -388,7 +407,8 @@ class SurfacePreviewVisitor:
         self.register(BspCylinderSurfaceNode, self.cylinder)
         self.register(CPGEOCylinderSurfaceNode, self.cylinder)
         self.register(CPGEOSphereSurfaceNode, self.sphere)
-        self.register(FixedSTLSurfaceNode, self.stl)
+        self.register(MeshSurfaceNode, self.mesh)
+        self.register(BREPSurfaceNode, self.brep)
 
     def register(
         self,
@@ -440,14 +460,31 @@ class SurfacePreviewVisitor:
         )
 
     @staticmethod
-    def stl(
-        surface: FixedSTLSurfaceNode, values: DefinitionValues
+    def mesh(
+        surface: MeshSurfaceNode, values: DefinitionValues
     ) -> pv.DataSet | None:
         return (
             pv.read(surface.path_stl)
             if surface.path_stl and os.path.exists(surface.path_stl)
             else None
         )
+
+    @staticmethod
+    def brep(surface: BREPSurfaceNode, values: DefinitionValues) -> pv.PolyData | None:
+        """Preview the embedded STEP asset with its original geometric face IDs."""
+        import base64
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from ...shapeopt.surfaces import BREPSurface
+
+        if not surface.data:
+            return None
+        with TemporaryDirectory(prefix="morphopt_stp_preview_") as directory:
+            path = Path(directory) / surface.filename
+            path.write_bytes(base64.b64decode(surface.data, validate=True))
+            path.with_suffix(".faces.json").write_text(surface.face_map, encoding="utf-8")
+            return BREPSurface(path).get_mesh()
 
 
 class PreviewGeometry:

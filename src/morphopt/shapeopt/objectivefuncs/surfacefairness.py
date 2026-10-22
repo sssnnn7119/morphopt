@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
-
 import torch
 
 from .basefuncs import BaseConstraints
-
-if TYPE_CHECKING:
-    from ..surfaces import BaseSurface
-
 
 class Fairness(BaseConstraints):
     """Fairness penalty of the boundary surfaces of one Part.
@@ -17,24 +10,6 @@ class Fairness(BaseConstraints):
     The geometry updater binds the Part's surfaces during initialization.  The
     cached list is refreshed whenever the updater is reinitialized.
     """
-
-    def __init__(self) -> None:
-        """Initialize an unbound fairness constraint."""
-        super().__init__()
-        self.surfaces: list[BaseSurface] = []
-        """Surfaces bound by the owning geometry updater."""
-
-    def initialize(
-        self,
-        *args: object,
-        surfaces: Sequence[BaseSurface] | None = None,
-        **kwargs: object,
-    ) -> None:
-        """Bind the current Part's surfaces before evaluating fairness."""
-        super().initialize(*args, **kwargs)
-        if surfaces is None:
-            raise ValueError("Fairness requires the updater's surfaces.")
-        self.surfaces = list(surfaces)
 
     def __call__(
         self,
@@ -63,4 +38,5 @@ class Fairness(BaseConstraints):
         return sum(
             surface.get_penalty_fairness(self.scaler[i], r[i], rdu[i], rdu2[i])
             for i, surface in enumerate(self.surfaces)
+            if surface.is_updatable
         )

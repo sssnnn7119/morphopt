@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QPushButton, QSplitter,
+    QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit, QPushButton, QSplitter,
     QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -75,6 +75,20 @@ class GeometryAssetPreview(AssetPreview):
         self.viewport.apply_theme()
 
 
+class MetadataAssetPreview(AssetPreview):
+    """Display structured asset metadata as text using the application font."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        self.text = QPlainTextEdit(self)
+        self.text.setReadOnly(True)
+        layout.addWidget(self.text)
+
+    def set_asset(self, asset: DefinitionAsset, problem: ProblemDefinition) -> None:
+        self.text.setPlainText(asset.content.decode("utf-8"))
+
+
 class AssetBrowser(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +140,7 @@ class AssetBrowser(QWidget):
         splitter.setChildrenCollapsible(False)
         layout.addWidget(splitter, 1)
         self.register_preview("geometry", "ui.assets.geometry", GeometryAssetPreview)
+        self.register_preview("metadata", "ui.assets.face_map", MetadataAssetPreview)
         self.apply_language()
 
     def register_preview(

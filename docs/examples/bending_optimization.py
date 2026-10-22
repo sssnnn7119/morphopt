@@ -46,6 +46,7 @@ class ThisController(morphopt.Controller):
                             maxFF=0.2,
                             perturbation_L=10.0,
                         )
+                        surface.is_updatable = True
                         surface.add_constraint(surface.mirror("xz"))
                         self.add_surface_interface(surface)
 
@@ -117,7 +118,6 @@ class ThisController(morphopt.Controller):
         class Shape(morphopt.UpdaterBoundaryPart):
             def __init__(self):
                 super().__init__(max_step_iter=50)
-                self.if_update = [True, True]
 
             def define_objective(self):
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())

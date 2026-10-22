@@ -98,15 +98,7 @@ class ObserverLayout:
 @dataclass(frozen=True)
 class UpdaterEditorLayout:
     selection_scroll_margins: tuple[int, int] = (10, 10)
-    surface_selector_minimum_width: int = 80
     item_button_height: int = 30
-    surface_panel_minimum_width: int = 250
-    surface_panel_margins: tuple[int, int, int, int] = (8, 6, 8, 6)
-    surface_panel_spacing: int = 4
-    surface_check_spacing: int = 2
-    surface_list_maximum_height: int = 200
-    surface_list_base_height: int = 18
-    surface_list_row_height: int = 26
     distance_matrix_button_minimum_width: int = 110
     distance_matrix_panel_margins: tuple[int, int, int, int] = (8, 8, 8, 8)
     distance_matrix_panel_spacing: int = 6

@@ -13,6 +13,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
     """UI definition of BspSurface."""
 
     type_name: ClassVar[str] = "bsp_cylinder"
+    is_updatable = True
     backend_class: ClassVar[str] = "BspSurface"
     label_key: ClassVar[str] = "ui.schema.catalog.surface.bsp_cylinder.label"
     factory: ClassVar[str] = "BSP.initialize_cylinder"
@@ -122,6 +123,7 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
     """UI definition of CPGEOSurface."""
 
     type_name: ClassVar[str] = "cpgeo_cylinder"
+    is_updatable = True
     backend_class: ClassVar[str] = "CPGEOSurface"
     label_key: ClassVar[str] = "ui.schema.catalog.surface.cpgeo_cylinder.label"
     factory: ClassVar[str] = "CPGEO.initialize_cylinder"
@@ -204,6 +206,7 @@ class CPGEOSphereSurfaceNode(SurfaceNode):
     """UI definition of CPGEOSurface."""
 
     type_name: ClassVar[str] = "cpgeo_sphere"
+    is_updatable = True
     backend_class: ClassVar[str] = "CPGEOSurface"
     label_key: ClassVar[str] = "ui.schema.catalog.surface.cpgeo_sphere.label"
     factory: ClassVar[str] = "CPGEO.initialize_Sphere"
@@ -247,14 +250,14 @@ class CPGEOSphereSurfaceNode(SurfaceNode):
     )
 
 
-class FixedSTLSurfaceNode(SurfaceNode):
-    """UI definition of FixedSurface."""
+class MeshSurfaceNode(SurfaceNode):
+    """A triangular mesh boundary imported from an STL file."""
 
-    type_name: ClassVar[str] = "fixed_stl"
-    backend_class: ClassVar[str] = "FixedSurface"
-    label_key: ClassVar[str] = "ui.schema.catalog.surface.fixed_stl.label"
+    type_name: ClassVar[str] = "mesh_surface"
+    backend_class: ClassVar[str] = "MeshSurface"
+    label_key: ClassVar[str] = "ui.schema.catalog.surface.mesh_surface.label"
     factory: ClassVar[str | None] = None
-    Defaults = CONSTANT.UI.SCHEMA_FIELDS.SURFACES.FIXED_STL
+    Defaults = CONSTANT.UI.SCHEMA_FIELDS.SURFACES.MESH_SURFACE
     path_stl: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
@@ -264,4 +267,25 @@ class FixedSTLSurfaceNode(SurfaceNode):
             Defaults.PATH_STL.DEFAULT,
             doc_key="ui.schema.fields.path_stl.help.path_to_an_stl_surface",
         ),
+    )
+
+
+class BREPSurfaceNode(SurfaceNode):
+    """A BREP boundary embedded as STEP data and exported as a geometry asset."""
+
+    type_name: ClassVar[str] = "brep_surface"
+    backend_class: ClassVar[str] = "BREPSurface"
+    label_key: ClassVar[str] = "ui.schema.catalog.surface.brep_surface.label"
+    factory: ClassVar[str | None] = None
+    filename: str
+    data: str
+    face_map: str
+    fields: ClassVar[tuple[FieldSpec, ...]] = (
+        FieldSpec(
+            "filename", "ui.schema.fields.filename.label.step_file", "str", "",
+            doc_key="ui.schema.fields.filename.help.the_step_geometry_is_embedded_in_the_model",
+            read_only=True,
+        ),
+        FieldSpec("data", "ui.schema.fields.data.label.step_data", "str", "", hidden=True),
+        FieldSpec("face_map", "ui.assets.face_map", "str", "{}", hidden=True),
     )

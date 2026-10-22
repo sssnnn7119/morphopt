@@ -98,7 +98,9 @@ Params.create_feamodel()
 | `is_variable` | 标识几何或网格是否可能随优化变化 |
 | `workdir()` | 分配该接口的几何工作目录 |
 
-脚本基类默认声明一个与 Part 同名的零位姿实例；显式 `define_instance()` 可使用独立名称。位姿为 `[tx, ty, tz, rx, ry, rz]`，旋转采用指数坐标。载荷引用实例，材料引用 Part，局部更新器引用集合中的接口。
+脚本基类默认声明一个与 Part 同名的零位姿实例；显式 `define_instance()` 可使用独立名称。`initialize()` 保留已有实例声明，仅在声明为空时调用 `define_instance()`；重复初始化不清空实例名称和位姿。位姿为 `[tx, ty, tz, rx, ry, rz]`，旋转采用指数坐标。载荷引用实例，材料引用 Part，局部更新器引用集合中的接口。
+
+UI 的 `ProblemDefinition.replace_part(source: PartNode, replacement: PartNode) -> PartNode` 在原位置替换部件，沿用原有 Instance 对象并重定向材料与更新器引用。CAD 转换通过该领域方法提交结果，控件不直接修改跨对象关联。
 
 | 类型 | 实现位置 | 构建特点 |
 |---|---|---|
@@ -109,6 +111,111 @@ Params.create_feamodel()
 | `OffsetBoundaryPart` | `codesign/offset_boundary_part.py` | 在内腔边界构造偏置实体层 |
 
 CAD 的 `define_operations()` 与有限元 `build_part()` 分离。STEP 导出直接使用 `torchfea.cad.export_step(operations, path)`，保存局部 CAD 实体，不要求生成体网格；UI 的操作解析见[应用服务](ui-application.md#cad)。
+
+`CADPart.build_part()` 按 `prepare_geometry → assemble_geometry → mesh_geometry → define_mesh_sets → postprocess_mesh` 组织公共构建流程。各阶段通过实例方法调用，具体实现由子类重写。父类的默认几何描述来自 CAD 操作历史；`BoundaryPart` 重写几何准备、边界组装、曲面集合定义和节点后处理。两类部件共用 TorchFEA 的体网格提取、面集命名和二阶转换，`OffsetBoundaryPart._postprocess_part()` 在二阶转换前添加偏置单元。
+
+| 构建阶段 | `CADPart` 默认实现 | `BoundaryPart` 重写内容 |
+|---|---|---|
+| `prepare_geometry()` | 提供已声明的 CAD 操作 | 调用各 surface 的几何准备接口，返回有序曲面 |
+| `assemble_geometry()` | 从操作列表创建 `CADHistory` | 将自身边界组装方法接入同一个 `CADHistory` 执行入口 |
+| `mesh_geometry()` | 调用 `CADHistory.mesh()` | 继承公共实现 |
+| `define_mesh_sets()` | 定义几何面与节点集 | 调用父类定义面集，再增加 `surface_i_All` 分组 |
+| `postprocess_mesh()` | 执行单元扩展及网格阶次转换 | 匹配设计曲面节点后调用父类处理 |
+
+父类不根据 `BoundaryPart` 或其几何描述类型选择实现。曲面通过 `prepare_geometry()` 准备几何文件，再由 `load_geometry()` 调用 CADPart 的对应载入方法。BSP 和 `BREPSurface` 使用 STEP 载入，CPGEO 和固定 STL 使用离散网格载入。BoundaryPart 按这些方法返回的面编号组装外壳和内腔，并根据曲面的离散几何能力选择相应 Gmsh 内核。
+
+`CADPart` 集中实现 `load_step_boundary()`、`load_mesh_boundary()`、`split_shells()` 和 `export_shell_step()`。转换时，各封闭壳体分别导出为 STEP 资产，`BREPSurface` 仅持有文件路径和面名称映射。原始面身份在组装时写入部件的 `_face_names`，BoundaryPart 的曲面分组由自身 `_surface_groups` 持有。源 CAD 操作历史只参与转换，不进入曲面对象。
+
+`CADPart._Operation` 是内部执行适配器，将当前 Part 的构建或查询方法接入 TorchFEA 管理的 Gmsh 会话。它只在当前操作中使用，实际 CAD 声明、曲面状态与集合身份仍保存在 Part 和 Surface 中。`CADPart.to_boundary_part()` 直接创建普通 `BoundaryPart`，复制网格设置、名称和实例声明。实例声明采用深拷贝，并由公共初始化流程保留。
+
+```mermaid
+flowchart TB
+    B["BasePart：模型接口与实例"] --> C["CADPart：公共几何构建与剖分流程"]
+    C --> S["BoundaryPart：外壳、内腔与设计变量"]
+    S --> O["OffsetBoundaryPart：偏置层单元"]
+    classDef default fill:transparent,stroke:#808080
+```
+
+`fea_seed_size` 表达 BoundaryPart 的体网格尺寸，读写同一个 `mesh_size` 状态。普通 CADPart 继续使用 `mesh_size`。`face_N` 标识独立几何面，`surface_i_All` 标识 BoundaryPart 的第 i 个封闭曲面分组；一组可以包含多个 `face_N`。
+
+`BREPSurface` 与 `MeshSurface` 分别声明精确边界表示和离散三角网格表示，定义于 `surfaces/brep_surface.py` 和 `surfaces/mesh_surface.py`。两者均继承 `BaseSurface`；当前分别采用 STEP 和 STL 作为资产文件格式。
+
+<a id="section-公共构建接口的参数与返回值"></a>
+
+### 5.1 公共构建接口的参数与返回值
+
+`build_part()` 是有限元部件构建入口。其余阶段由该方法顺序调用，子类按阶段重写。
+
+| 方法 | 参数 | 返回值与处理内容 |
+|---|---|---|
+| `build_part(path_result, pools)` | `path_result: str \| None` 为结果目录；`pools: Pool \| None` 为曲面导出使用的进程池 | `torchfea.Part`；执行几何准备、实体组装、剖分、集合定义和网格后处理 |
+| `prepare_geometry(path_result, pools)` | 与 `build_part()` 相同 | CADPart 返回 `list[CADOperation]`；BoundaryPart 同步各曲面并准备几何输入，返回 `list[BaseSurface]` |
+| `assemble_geometry(geometry)` | CADPart 接收 CAD 操作序列；BoundaryPart 接收有序曲面列表 | `CADHistory`；声明当前部件的实体构建操作，尚未生成有限元体网格 |
+| `mesh_geometry(geometry)` | `geometry: CADHistory` | `torchfea.Part`；调用 TorchFEA 生成并提取有限元网格 |
+| `define_mesh_sets(part)` | `part: torchfea.Part` | `None`；原位定义 `face_N` 与 `face_N_nodes`，BoundaryPart 另行定义 `surface_i_All` |
+| `postprocess_mesh(part)` | `part: torchfea.Part` | `torchfea.Part`；BoundaryPart 先匹配设计曲面节点，公共实现再执行单元扩展和二阶转换 |
+
+`path_result=None` 时，BoundaryPart 通过 `workdir()` 分配临时几何目录。`pools=None` 表示同步导出曲面；CADPart 的原生 CAD 操作不使用该进程池。
+
+<a id="section-cad-载入与壳体转换接口"></a>
+
+### 5.2 CAD 载入与壳体转换接口
+
+几何载入接口在 TorchFEA 管理的 Gmsh 会话内调用。返回的面编号只在当前会话中有效，不等同于持久的 `face_N` 名称。
+
+| 方法 | 参数 | 返回值与处理内容 |
+|---|---|---|
+| `load_step_boundary(path, context)` | `path: str \| Path`；`context: OCCBuilder` 为当前 CAD 执行上下文 | `list[int]`；导入 STEP，移除导入的体而保留边界面，返回新增面的 Gmsh 编号 |
+| `load_mesh_boundary(path)` | `path: str \| Path` | `list[int]`；导入闭合 STL，返回新增离散面的 Gmsh 编号 |
+| `get_face_signature(tag)` | `tag: int` 为当前会话中的面编号 | `list[float]`；返回面积、质心和惯性矩阵，供 STEP 面名称匹配 |
+| `split_shells()` | 无参数；源 CADPart 已执行 `initialize()` | 二元组 `(operations, shells)`；复制 CAD 历史，识别外壳与内腔；当前查询使用 TorchFEA 的预览会话，显示三角网格不保留 |
+| `export_shell_step(operations, face_indices, path)` | 原始 CAD 操作元组、原始面索引元组和 `path: str \| Path` | `None`；导出指定封闭壳体的 STEP 实体与同名 `.faces.json` 面名称映射 |
+| `to_boundary_part(asset_directory)` | `asset_directory: str \| Path` 默认为 `morphopt_assets`；源 CADPart 已执行 `initialize()` | `BoundaryPart`；在资产目录的部件子目录中保存壳体文件，再创建BREP 曲面，保留源面的名称、网格设置和实例声明 |
+| `get_face_names()` | 无参数 | `list[str]`；按预览记录顺序返回几何面名称；执行面显示剖分，不生成有限元体网格 |
+
+上述壳体接口中的复合参数具有以下类型和含义：
+
+| 名称 | 类型 | 含义 |
+|---|---|---|
+| `operations` | `tuple[CADOperation, ...]` | 转换时复制的源 CAD 操作历史，仅在壳体识别和 STEP 导出期间使用 |
+| `face_indices` | `tuple[int, ...]` | 源 CAD 面排序中的零基索引；索引 `N` 对应原始 `face_N`，不表示 Gmsh 面编号 |
+| `shells` | `list[tuple[int, ...]]` | 各封闭壳体包含的原始面索引；第 0 项为外壳，其余项为内腔 |
+| `face_map` | `dict[str, list[float]]` | 原始 `face_N` 到面几何特征的映射，随 STEP 保存；重新导入后按几何特征匹配，不按新的面编号重命名 |
+
+<a id="section-曲面几何接口"></a>
+
+### 5.3 曲面几何接口
+
+| 方法 | 参数 | 返回值与处理内容 |
+|---|---|---|
+| `prepare_geometry(path_output, name_output, flip, pools)` | `path_output: str \| Path` 为目录；`name_output: str` 为无扩展名文件名；`flip: bool` 为方向请求；`pools: Pool \| None` 为导出进程池 | `None`；参数曲面导出 STEP 或 STL；BREPSurface 直接使用现有资产 |
+| `load_geometry(part, context)` | `part: CADPart`；`context: OCCBuilder` | `list[int]`；通过部件载入方法返回当前曲面的 Gmsh 面编号；BSP、CPGEO、固定 STL 和固定 STEP 分别重写该方法 |
+| `output_data(path_output, name_output, seed_size, flip, pools)` | 前述导出参数及 `seed_size: float` | `str`；返回已导出文件的名称，包含扩展名；具体曲面实现决定采样尺寸和方向参数的处理 |
+| `BREPSurface.get_mesh()` | 无参数 | `pyvista.PolyData`；从 STEP 生成显示三角网格，单元数据 `face_index` 保留面索引 |
+| `BREPSurface.face_names` | 只读属性 | `tuple[str, ...]`；返回资产中保存的原始 CAD 面名称；普通 STEP 无映射时为空 |
+
+`BREPSurface(path_step: str | Path)` 读取一个闭合壳体对应的 STEP 实体，并读取同名 `.faces.json`（若存在）。曲面对象不保存源 CAD 操作或构造阶段的预览记录。`output_data()` 复制 STEP 和面映射，不使用 `seed_size`、`flip` 或 `pools`；内腔关系由 BoundaryPart 的壳体组装顺序确定。映射按面积、质心和惯性矩阵匹配，采用 `rtol=1e-7`、`atol=1e-8` 的逐分量容差；无法唯一匹配时报告错误。
+
+UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映射。运行脚本只引用 `morphopt_assets` 中还原的 STEP 和 JSON 文件；资产页分别显示几何与映射文本。
+
+<a id="section-内部辅助方法与执行回调"></a>
+
+### 5.4 内部辅助方法与执行回调
+
+下列方法支撑公共接口，不作为用户建模时的常规调用入口。
+
+| 方法 | 参数与返回类型 | 职责 |
+|---|---|---|
+| `_complete_face_names(tags)` | `tags: Iterable[int]`；返回 `None` | 为尚未命名的 Gmsh 面分配未使用的 `face_N`，保留已有源面身份 |
+| `_name_geometry_faces(part)` | `part: torchfea.Part`；返回 `None` | 将 TorchFEA 生成的 Gmsh 面集及节点集改为稳定的面名称 |
+| `_single_solid(operations)` | `operations: Sequence[CADOperation]`；返回 `tuple[int, list[int]]` | 执行源 CAD 历史，检查最终仅有一个实体，返回体编号和排序后的面编号 |
+| `_inspect_shells(context, *, operations, shells)` | 当前执行上下文、源操作元组及输出列表；返回 `list[tuple[int, int]]` | 查询封闭壳体，以包围体积从大到小排序，将各壳体的原始面索引写入 `shells` |
+| `_build_shell(context, *, operations, face_indices, face_map)` | 当前执行上下文、源操作元组、原始面索引及面映射输出字典；返回 `list[tuple[int, int]]` | 从源 CAD 中重建指定壳体的独立实体，记录面几何特征，供 STEP 导出调用 |
+| `BoundaryPart._assemble_surfaces(context, *, surfaces)` | `context: OCCBuilder`；`surfaces: list[BaseSurface]`；返回 `list[tuple[int, int]]` | 载入全部边界，以首个壳体定义外部实体，其余壳体定义内腔，同时记录曲面分组 |
+| `_postprocess_part(part)` | `part: torchfea.Part`；返回 `torchfea.Part` | 在线性网格上扩展单元；默认原样返回，OffsetBoundaryPart 在此添加偏置层 |
+| `_Operation.apply_occ(context)` | `context: OCCBuilder`；返回 `list[tuple[int, int]]` | 执行保存的构建回调，将生成的实体交回 TorchFEA |
+
+回调返回项为 Gmsh 的 `(dimension, entity_tag)`，当前构建流程返回的体实体维度为 `3`。`_Operation.action` 的类型为 `Callable[[OCCBuilder], list[tuple[int, int]]]`。转换部件的配置复制统一由 `CADPart.to_boundary_part()` 完成。
 
 <a id="section-fea-接口与工况覆盖"></a>
 

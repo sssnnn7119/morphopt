@@ -64,7 +64,8 @@
                   "maxR": 0.2,
                   "maxC": 1.0,
                   "maxFF": 0.2,
-                  "perturbation_L": 10.0
+                  "perturbation_L": 10.0,
+                  "is_updatable": true
                 },
                 "children": []
               },
@@ -88,7 +89,8 @@
                   "maxR": 0.2,
                   "maxC": 1.0,
                   "maxFF": 0.2,
-                  "perturbation_L": 10.0
+                  "perturbation_L": 10.0,
+                  "is_updatable": true
                 },
                 "children": []
               }
@@ -244,10 +246,6 @@
           "geometry": [
             {
               "max_step_iter": 50,
-              "if_update": [
-                true,
-                true
-              ],
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",

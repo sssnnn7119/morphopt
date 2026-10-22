@@ -1,5 +1,12 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
 import torch
-import morphopt
+
+if TYPE_CHECKING:
+    from ..surfaces import BaseSurface
 
 class BaseConstraints():
     """
@@ -15,10 +22,15 @@ class BaseConstraints():
         The scaler to process the objective function.
         """
 
-        self.if_update: list[bool] = None
+        self.surfaces: list[BaseSurface] = []
 
 
-    def initialize(self, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor], weights: list[torch.Tensor], if_update: list[bool], *args, **kwargs):
+    def initialize(
+        self, r0: list[torch.Tensor], rdu0: list[torch.Tensor],
+        rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor],
+        weights: list[torch.Tensor], *args: object,
+        surfaces: Sequence[BaseSurface], **kwargs: object,
+    ) -> None:
         
         self.scaler = []
         for i in range(len(sensitivity)):
@@ -29,7 +41,7 @@ class BaseConstraints():
                 sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
             self.scaler.append(sen_now * weights[i])
 
-        self.if_update = if_update
+        self.surfaces = list(surfaces)
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
         """
@@ -91,24 +103,24 @@ class BaseObjective():
         Sensitivity of the shape derivative with respect to the contact forces.
         """
 
-        self.if_update: list[bool] = None
-        """
-        A list indicating whether each point should be updated.
-        """
+        self.surfaces: list[BaseSurface] = []
 
-    def initialize(self, gradient: torch.Tensor, r0: list[torch.Tensor], rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], if_update: list[bool], *args, **kwargs) -> None:
+    def initialize(
+        self, gradient: torch.Tensor, r0: list[torch.Tensor],
+        rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], *args: object,
+        surfaces: Sequence[BaseSurface], **kwargs: object,
+    ) -> None:
         """
         Initialize the objective function with the given parameters.
 
         Args:
             gradient (torch.Tensor): The gradient of the objective function.
             weights (list[torch.Tensor]): The weights for each point.
-            if_update (list[bool]): A list indicating whether each point should be updated.
+            surfaces (Sequence[BaseSurface]): Surfaces owned by the boundary Part.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
         """
-        self.if_update = if_update
-        pass
+        self.surfaces = list(surfaces)
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
         """

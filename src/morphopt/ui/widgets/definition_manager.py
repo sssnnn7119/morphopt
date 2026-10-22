@@ -412,6 +412,12 @@ class DefinitionManagerEditor(QWidget):
         elif isinstance(node, CADPartNode):
             row.addWidget(
                 ActionButton(
+                    tr("ui.cad.convert_to_boundary"),
+                    lambda part=node: self.actions.convert_cad_to_boundary(part),
+                )
+            )
+            row.addWidget(
+                ActionButton(
                     tr("ui.cad.export_step"),
                     lambda part=node: self._export_cad_step(part),
                 )
@@ -495,7 +501,7 @@ class DefinitionManagerEditor(QWidget):
             )
         candidates = {
             kind: "morphopt.BoundaryPart."
-            + (spec.factory.split(".")[0] if spec.factory else "FixedSurface")
+            + (spec.factory.split(".")[0] if spec.factory else spec.backend_class)
             for kind, spec in SURFACE_TYPES.items()
         }
         self.actions.custom_add_menu(

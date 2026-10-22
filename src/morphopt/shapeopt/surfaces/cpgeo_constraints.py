@@ -17,9 +17,7 @@ if TYPE_CHECKING:
     from .cpgeo_surface import CPGEOSurface
 
 
-class _CPGEOSymmetryConstraint(
-    BaseSurfaceConstraints["CPGEOSurface"]
-):
+class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
     def validate_surface(self, surface: CPGEOSurface) -> None:
         from .cpgeo_surface import CPGEOSurface
 
@@ -40,9 +38,7 @@ class _CPGEOSymmetryConstraint(
         surface.pre_load()
 
     @staticmethod
-    def _set_control_points(
-        surface: CPGEOSurface, points: torch.Tensor
-    ) -> None:
+    def _set_control_points(surface: CPGEOSurface, points: torch.Tensor) -> None:
         surface.control_points = points.reshape(-1, 3)
         surface.synchronize()
 
@@ -110,9 +106,7 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
 
     def apply(self, surface: CPGEOSurface) -> None:
         points = surface.control_points.reshape(self.order, -1, 3)[0]
-        center = torch.as_tensor(
-            self.center, dtype=points.dtype, device=points.device
-        )
+        center = torch.as_tensor(self.center, dtype=points.dtype, device=points.device)
         sectors = []
         for step in range(self.order):
             angle = 2.0 * np.pi * step / self.order
@@ -180,9 +174,7 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
         )
 
 
-class CPGEOSurfaceRelationConstraint(
-    SurfaceRelationConstraint["CPGEOSurface"]
-):
+class CPGEOSurfaceRelationConstraint(SurfaceRelationConstraint["CPGEOSurface"]):
     """Copy CPGEO topology and transformed control points to another surface."""
 
     def validate_surface(self, surface: CPGEOSurface) -> None:

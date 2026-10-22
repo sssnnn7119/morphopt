@@ -49,6 +49,8 @@
 
 该路径用于确定实现责任，完整构造示例见[脚本模块参考](../scriptreference.md)，不在架构文档中复制另一套任务定义。
 
+复用现有 Part 构建流程时，子类重写对应阶段方法，父类通过实例方法调用调度。需导出的封闭曲面可继承 `BaseSurface.prepare_geometry()`；已有 STEP 资产的 `BREPSurface` 直接使用原文件。曲面在 `load_geometry(part, context)` 中调用 CADPart 的对应载入方法，不持有源 CAD 操作历史。离散曲面通过 `is_discrete` 声明几何内核需求。类型特有的准备、组装和集合定义放在对应子类中，公共构建方法保持稳定。
+
 <a id="section-参数与数值语义契约"></a>
 
 ## 3 参数与数值语义契约

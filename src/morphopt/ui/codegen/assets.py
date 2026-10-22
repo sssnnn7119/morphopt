@@ -5,12 +5,13 @@ from __future__ import annotations
 import ast
 import base64
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..model.node_types.cad import StepImportOperationNode
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
-from ..model.node_types.surfaces import FixedSTLSurfaceNode
+from ..model.node_types.surfaces import MeshSurfaceNode, BREPSurfaceNode
 from ..model.problem import Node, ProblemDefinition
 
 PYTHON_ASSET_DIRECTORY = "morphopt_assets"
@@ -39,24 +40,28 @@ def collect_python_assets(
     """Return node paths and file contents using destination-independent names."""
     paths: dict[int, str] = {}
     files: dict[str, DefinitionAsset] = {}
+    asset_keys: dict[str, str] = {}
     constants = {constant.name: constant.value for constant in problem.helper_variables}
 
     def add_asset(
         node: Node, filename: str, content: bytes, format: str,
         reference: str, source: str | None = None,
-    ) -> None:
+        metadata: bytes = b"",
+    ) -> DefinitionAsset:
         name = Path(filename).name
-        if name in files and files[name].content != content:
+        digest = hashlib.sha256(content + metadata).hexdigest()
+        if name in files and asset_keys[name] != digest:
             path = Path(name)
-            digest = hashlib.sha256(content).hexdigest()[:16]
-            name = f"{path.stem}_{digest}{path.suffix}"
+            name = f"{path.stem}_{digest[:16]}{path.suffix}"
         if name not in files:
             files[name] = DefinitionAsset(
                 name, content, format, "geometry", source, node, []
             )
+            asset_keys[name] = digest
         asset = files[name]
         asset.references.append(reference)
         paths[id(node)] = asset.relative_path
+        return asset
 
     def add_file(node: Node, value: str, format: str, reference: str) -> None:
         paths[id(node)] = ""
@@ -83,6 +88,22 @@ def collect_python_assets(
                         )
         elif isinstance(part, BoundaryPartNode):
             for surface in part.surfaces:
-                if isinstance(surface, FixedSTLSurfaceNode):
+                if isinstance(surface, MeshSurfaceNode):
                     add_file(surface, surface.path_stl, "stl", f"{part.name}/{surface.name}")
+                elif isinstance(surface, BREPSurfaceNode) and surface.data:
+                    reference = f"{part.name}/{surface.name}"
+                    mapping = json.loads(surface.face_map)
+                    metadata = json.dumps(mapping, indent=2).encode("utf-8") if mapping else b""
+                    asset = add_asset(
+                        surface, surface.filename,
+                        base64.b64decode(surface.data, validate=True), "step", reference,
+                        metadata=metadata,
+                    )
+                    if mapping:
+                        name = str(Path(asset.name).with_suffix(".faces.json"))
+                        if name not in files:
+                            files[name] = DefinitionAsset(
+                                name, metadata, "json", "metadata", None, surface, [],
+                            )
+                        files[name].references.append(reference)
     return paths, files

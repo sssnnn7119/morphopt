@@ -866,10 +866,10 @@
       "source": "src/morphopt/ui/model/node_types/surfaces.py"
     },
     {
-      "key": "fixed_stl",
-      "class": "FixedSTLSurfaceNode",
-      "label": "固定 STL 曲面",
-      "backend": "FixedSurface",
+      "key": "mesh_surface",
+      "class": "MeshSurfaceNode",
+      "label": "网格曲面",
+      "backend": "MeshSurface",
       "hidden": false,
       "custom_only": false,
       "group": "",
@@ -892,6 +892,69 @@
           "hidden": false,
           "label": "STL 文件",
           "help": "STL 曲面文件路径。"
+        }
+      ],
+      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+    },
+    {
+      "key": "brep_surface",
+      "class": "BREPSurfaceNode",
+      "label": "BREP 曲面",
+      "backend": "BREPSurface",
+      "hidden": false,
+      "custom_only": false,
+      "group": "",
+      "factory": null,
+      "generator": "",
+      "num_values": null,
+      "fields": [
+        {
+          "key": "filename",
+          "label_key": "ui.schema.fields.filename.label.step_file",
+          "type": "str",
+          "default": "",
+          "doc_key": "ui.schema.fields.filename.help.the_step_geometry_is_embedded_in_the_model",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": true,
+          "hidden": false,
+          "label": "STEP 文件",
+          "help": "STEP 几何以文件内容嵌入模型。"
+        },
+        {
+          "key": "data",
+          "label_key": "ui.schema.fields.data.label.step_data",
+          "type": "str",
+          "default": "",
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": true,
+          "label": "STEP 几何数据",
+          "help": ""
+        },
+        {
+          "key": "face_map",
+          "label_key": "ui.assets.face_map",
+          "type": "str",
+          "default": "{}",
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": true,
+          "label": "几何面映射",
+          "help": ""
         }
       ],
       "source": "src/morphopt/ui/model/node_types/surfaces.py"
