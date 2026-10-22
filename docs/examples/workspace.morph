@@ -2,8 +2,8 @@
   "version": 4,
   "scheme": "shapeopt",
   "label": "Untitled",
-  "result_folder": "/run/media/song/SS/minedata/learning/code/projects/morphopt/ui_runs/.results/",
-  "device": "cpu",
+  "result_folder": "/run/media/song/缓存/results",
+  "device": "cuda:1",
   "updater_device": "cuda:1",
   "restart_per_iteration": 10,
   "root": {
@@ -375,7 +375,7 @@
         "params": {
           "geometry": [
             {
-              "max_step_iter": 50,
+              "max_step_iter": 300,
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",

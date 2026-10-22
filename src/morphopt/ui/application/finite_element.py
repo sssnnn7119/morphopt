@@ -36,7 +36,10 @@ class IterationModel:
             if (match := re.fullmatch(r'femodel_(\d+)\.npz', path.name))))
 
     def cases(self) -> tuple[str, ...]:
-        names = json.loads((self.model_path.parent / "load_cases.json").read_text())
+        mapping = self.model_path.parent / "load_cases.json"
+        if not mapping.is_file():
+            return ()
+        names = json.loads(mapping.read_text(encoding="utf-8"))
         return tuple(name for name in names if (self.model_path.parent / f"result_{name}_iter_{self.iteration}.npz").is_file())
 
 

@@ -67,12 +67,16 @@ class BaseParams(
     def define_interface(self) -> None:
         """Declare the interfaces owned by this parameter collection."""
 
-    def initialize(self, *args, **kwargs) -> None:
-        """Initialize every registered interface."""
+    def initialize_interfaces(self, *args: object, **kwargs: object) -> None:
+        """Declare and initialize interfaces independently of analysis tasks."""
         if not self.interfaces:
             self.define_interface()
         for interface in self.interfaces.values():
             interface.initialize(*args, **kwargs)
+
+    def initialize(self, *args: object, **kwargs: object) -> None:
+        """Initialize every registered interface."""
+        self.initialize_interfaces(*args, **kwargs)
 
     def reinitialize(self, iteration: int, *args, **kwargs) -> None:
         """Re-initialize every registered interface."""

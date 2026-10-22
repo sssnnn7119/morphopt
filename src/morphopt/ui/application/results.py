@@ -109,7 +109,9 @@ class ResultSession:
         try:
             with _cpu_torch_defaults():
                 self.params = self.controller.Params()
-                self.params.initialize()
+                self.params.geometry.initialize()
+                self.params.feamodel.initialize_interfaces()
+                self.params.materials.initialize()
         except Exception as exc:
             print(localized_message("ui.messages.parameters_init_failed", error=exc))
             self.params = None
