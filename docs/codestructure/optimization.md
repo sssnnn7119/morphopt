@@ -111,6 +111,8 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 | 曲面约束 | BSP/CPGEO 镜面、旋转或跨曲面关联 |
 | `UpdaterBoundaryPart` | 绑定单个 BoundaryPart 的形状子问题 |
 
+曲面专有节点集通过 `BaseSurface.get_node_sets(nodes)` 声明，默认返回空集合。`BspSurface` 定义 `Bottom` 与 `Head`，作为外边界时生成 `surface_0_Bottom` 和 `surface_0_Head`；CPGEO、BREP 和网格曲面不定义这些端部节点集。UI 的集合列表与拾取提示采用对应曲面类型的声明。
+
 曲面约束在曲面更新与重初始化时按登记顺序执行。局部曲面约束保存在曲面内，Part 级 `apply_surface_constraints()` 提供跨曲面扩展位置。
 
 固定曲面的几何约束采样由 `BaseSurface` 提供：缓存定向三角片，以重心作为采样点、面积作为积分权重。参数曲面重写采样接口，提供解析几何量。`BaseSurface.is_updatable` 默认为 `False`；`BspSurface` 和 `CPGEOSurface` 默认启用，可按对象手动关闭。几何更新器不保存独立开关，`BoundaryPart` 在更新和灵敏度映射时直接读取曲面属性；`ShapeDerivative` 通过统一的 `get_surface_parameters()` 读取参数。固定边界仍参与距离约束。完整混合边界验证见 [STEP 外边界与 BSP 内腔算例](../examples/brep-bsp-cylinder.md)。

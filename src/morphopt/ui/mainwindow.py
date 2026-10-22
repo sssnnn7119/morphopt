@@ -11,6 +11,7 @@ from PySide6.QtGui import QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -146,6 +147,9 @@ class MainWindow(QMainWindow):
                 self._file_menu.addSeparator()
         self._language_menu = self._settings_menu.addMenu("")
         self._theme_menu = self._settings_menu.addMenu("")
+        self._design_options_menu = self._settings_menu.addMenu("")
+        self._history_limit_action = self._design_options_menu.addAction("")
+        self._history_limit_action.triggered.connect(self._set_history_limit)
         self._start_optimization_action = self._analysis_menu.addAction("")
         self._start_optimization_action.triggered.connect(
             lambda: self._workbench.start_optimization()
@@ -165,6 +169,8 @@ class MainWindow(QMainWindow):
         self._show_finite_element_action.setText(tr("ui.workspace.analyze_iteration"))
         self._language_menu.setTitle(tr("ui.workspace.language"))
         self._theme_menu.setTitle(tr("ui.workspace.theme"))
+        self._design_options_menu.setTitle(tr("ui.workspace.design_options"))
+        self._history_limit_action.setText(tr("ui.history.maximum_nodes"))
         self._language_menu.clear()
         self._theme_menu.clear()
         for name in ("_language_group", "_theme_group"):
@@ -195,6 +201,19 @@ class MainWindow(QMainWindow):
     def _set_locale(self, code: str) -> None:
         QSettings("MorphOptUI", "ui").setValue("language", code)
         localization.set_locale(code)
+
+    def _set_history_limit(self) -> None:
+        history = self._workbench.session.history
+        limit, accepted = QInputDialog.getInt(
+            self,
+            tr("ui.history.maximum_nodes"),
+            tr("ui.history.maximum_nodes_prompt", count=history.node_count),
+            history.max_nodes,
+            1,
+            2_147_483_647,
+        )
+        if accepted:
+            self._workbench.set_history_limit(limit)
 
     def _switch_workspace(self, index: int) -> None:
         if index == 1 and not self._analysis_ready:

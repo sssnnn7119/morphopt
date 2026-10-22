@@ -73,10 +73,13 @@ UI 快速开始以 `test.morph` 为例，介绍建模、优化和结果分析的
 | 文件 → 保存 / 另存为 | 保存当前定义；另存为适合创建练习副本 |
 | 文件 → 导出运行脚本目录 | 选择目录名称，生成同名 `.py` 脚本和 `morphopt_assets` 资源目录 |
 | 设置 → 语言 / 主题 | 改变界面显示语言与配色，不改变模型物理参数 |
+| 设置 → 设计选项 → 最大历史节点数 | 设置操作历史节点上限，默认为 100；包括根节点和所有分支，并随应用设置保存 |
 | 分析 → 开始优化 | 从当前定义启动优化任务，作用同右上角开始按钮 |
 | 分析 → 查看当前迭代有限元 | 从已载入的结果进入该轮 FE 分析页 |
 
 卡片中的“添加”“删除”和“↑ / ↓”用于管理条目及其顺序。曲面顺序决定曲面索引，CAD 操作顺序决定构造历史，顺序调整后的相关引用应重新核查。左下操作历史记录定义编辑，支持撤销与重做；“优化过程”记录优化计算中的设计历史。
+
+历史节点达到上限时，界面保留全部节点并弹窗。选择“清理历史”仅保留当前状态，删除其余撤销与重做分支，模型内容及已保存状态标记不变；选择“扩大上限”按输入的新值保留全部历史，新上限须大于当前节点总数。取消操作保持历史和原上限，下次新增节点时再次提示。设置的上限小于当前节点总数时，使用同一弹窗，确认后应用清理或扩容结果。
 
 ![文件菜单中的定义、脚本与结果入口](images/ui/workspace/file-menu.png)
 
@@ -425,7 +428,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 | 部件 | 节点集 | 表面集 | 使用提示 |
 |---|---|---|---|
-| BoundaryPart | `surface_i_All`，圆柱端部有 `surface_0_Bottom` / `surface_0_Head` | `surface_i_All` | 同名节点集与表面集对应不同的接口参数 |
+| BoundaryPart | `surface_i_All`；BSP 外边界另有 `surface_0_Bottom` / `surface_0_Head`；BREP 另有 `face_N_nodes` | `surface_i_All`；BREP 另有 `face_N` | CPGEO 不定义 Head/Bottom；节点集与表面集分别对应不同的接口参数 |
 | OffsetBoundaryPart | 在边界集合外还有偏置相关集合 | 包括 `surface_i_offset`（内腔相关） | 以实际候选列表为准 |
 | BoxPart | `all`、`nodes_xmin/xmax/ymin/ymax/zmin/zmax` | `extern`、`surface_xmin/xmax/ymin/ymax/zmin/zmax` | 单元块 `design` |
 | CADPart | `all`、`surface_all`、`face_N_nodes` | `extern`、`face_N` | 改 CAD 历史后重查面编号 |

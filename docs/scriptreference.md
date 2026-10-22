@@ -305,7 +305,7 @@ class Frame(morphopt.INPPart):
 | 引用对象 | 常见名称 | 使用接口 |
 |---|---|---|
 | 边界曲面完整表面 | `surface_0_All`、`surface_1_All` | 压力、接触 |
-| 圆柱底端与顶端节点集 | `surface_0_Bottom`、`surface_0_Head` | 固定、耦合 |
+| BSP 外边界底端与顶端节点集 | `surface_0_Bottom`、`surface_0_Head` | 固定、耦合；CPGEO 和 BREP 不生成这些节点集 |
 | Box 面节点集与表面集 | `nodes_xmin`、`surface_xmax` 等 | 固定、载荷 |
 | CAD 最终面集合 | `face_N` 等 | 按实际几何检查后引用 |
 | INP 集合 | 源文件中的集合名 | 按导入后有效名称引用 |

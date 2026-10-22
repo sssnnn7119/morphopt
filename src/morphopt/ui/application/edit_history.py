@@ -1,4 +1,4 @@
-"""Bounded branching document history, independent of Qt and file IO."""
+"""Branching document history with explicit capacity management, without Qt."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
@@ -37,22 +37,19 @@ class EditHistoryNode:
 class EditHistory:
     """Edits create children; visiting an old state never removes its future.
 
-    Pruning promotes the root's child on the current path. The old root and
-    all its other branches are discarded together. The current state survives.
+    Reaching the node limit never discards snapshots. The UI asks whether to
+    clear the history or increase its capacity; clearing retains the current state.
     """
 
-    def __init__(self, *, max_nodes: int | None = None, max_bytes: int | None = None):
+    def __init__(self, *, max_nodes: int | None = None) -> None:
         max_nodes = max_nodes if max_nodes is not None else CONSTANT.UI.HISTORY.MAX_NODES
-        max_bytes = max_bytes if max_bytes is not None else CONSTANT.UI.HISTORY.MAX_SNAPSHOT_BYTES
-        if max_nodes < 1 or max_bytes < 1:
-            raise ValueError("History limits must be positive.")
+        if max_nodes < 1:
+            raise ValueError("History node limit must be positive.")
         self.max_nodes = max_nodes
-        self.max_bytes = max_bytes
         self._nodes: dict[int, EditHistoryNode] = {}
         self._root_id = 0
         self._current_id = 0
         self._next_step_id = 1
-        self._bytes = 0
         self._merge_key: object | None = None
         self._saved_digest: bytes | None = None
         self._revision = 0
@@ -76,6 +73,25 @@ class EditHistory:
     @property
     def node_count(self) -> int:
         return len(self._nodes)
+
+    @property
+    def at_capacity(self) -> bool:
+        return self.node_count >= self.max_nodes
+
+    def set_max_nodes(self, max_nodes: int) -> None:
+        """Set the capacity without deleting any history nodes."""
+        if max_nodes < 1:
+            raise ValueError("History node limit must be positive.")
+        if self.max_nodes != max_nodes:
+            self.max_nodes = max_nodes
+            self._revision += 1
+
+    def clear(self) -> None:
+        """Retain only the current snapshot and preserve its saved-state marker."""
+        self._nodes = {self._current_id: EditHistoryNode(self.current)}
+        self._root_id = self._current_id
+        self._revision += 1
+        self.break_merge()
 
     @property
     def can_undo(self) -> bool:
@@ -108,7 +124,6 @@ class EditHistory:
         self._nodes = {0: EditHistoryNode(snapshot)}
         self._root_id = self._current_id = 0
         self._next_step_id = 1
-        self._bytes = len(snapshot.state)
         self._saved_digest = snapshot.digest
         self._revision += 1
         self.break_merge()
@@ -133,7 +148,6 @@ class EditHistory:
         current = self.current_node
         if (merge_key is not None and merge_key == self._merge_key
                 and self.can_undo and not current.children):
-            self._bytes -= len(current.snapshot.state)
             current.snapshot = replace(
                 snapshot, step_id=self._current_id, created_at=self.current.created_at,
             )
@@ -146,8 +160,6 @@ class EditHistory:
                 del self._nodes[self._current_id]
                 self._current_id = parent.snapshot.step_id
                 merge_key = None
-            else:
-                self._bytes += len(snapshot.state)
         else:
             snapshot = replace(snapshot, step_id=self._next_step_id)
             self._next_step_id += 1
@@ -155,29 +167,9 @@ class EditHistory:
             current.children.append(snapshot.step_id)
             current.preferred_child = snapshot.step_id
             self._current_id = snapshot.step_id
-            self._bytes += len(snapshot.state)
         self._merge_key = merge_key
-        self._prune()
         self._revision += 1
         return True
-
-    def _prune(self) -> None:
-        while self._root_id != self._current_id and (
-            len(self._nodes) > self.max_nodes or self._bytes > self.max_bytes
-        ):
-            kept_id = self._current_id
-            while self.node(kept_id).parent_id != self._root_id:
-                parent_id = self.node(kept_id).parent_id
-                assert parent_id is not None
-                kept_id = parent_id
-            # Delete everything rooted at the old root except the chosen child.
-            pending = [self._root_id]
-            while pending:
-                old = self._nodes.pop(pending.pop())
-                self._bytes -= len(old.snapshot.state)
-                pending.extend(child for child in old.children if child != kept_id)
-            self.node(kept_id).parent_id = None
-            self._root_id = kept_id
 
     def select(self, step_id: int) -> None:
         child = self.node(step_id)

@@ -321,31 +321,21 @@ class EditHistoryPanel(QWidget):
         rows: list[tuple[int, int]] = []
         lanes: dict[int, int] = {}
 
-        def add_main(step: int) -> None:
-            rows.append((step, 0))
-            lanes[step] = 0
-            node = history.node(step)
-            main_child = next_on_main.get(step)
-            branches = [child for child in node.children if child != main_child]
-            for lane, child in enumerate(branches, start=1):
-                add_branch(child, lane)
-            if main_child is not None:
-                add_main(main_child)
-
-        def add_branch(step: int, lane: int) -> None:
+        pending = [(main_path[0], 0, True)]
+        while pending:
+            step, lane, on_main = pending.pop()
             rows.append((step, lane))
             lanes[step] = lane
             node = history.node(step)
-            primary_child = node.preferred_child
-            if primary_child not in node.children:
+            primary_child = next_on_main.get(step) if on_main else node.preferred_child
+            if not on_main and primary_child not in node.children:
                 primary_child = node.children[-1] if node.children else None
             branches = [child for child in node.children if child != primary_child]
-            for offset, child in enumerate(branches, start=1):
-                add_branch(child, lane + offset)
             if primary_child is not None:
-                add_branch(primary_child, lane)
+                pending.append((primary_child, lane, on_main))
+            for offset, child in reversed(list(enumerate(branches, start=1))):
+                pending.append((child, lane + offset, False))
 
-        add_main(main_path[0])
         if len(rows) != history.node_count or len(lanes) != history.node_count:
             raise RuntimeError(
                 "History graph layout did not include every node exactly once."

@@ -151,6 +151,10 @@ class BaseSurface(BaseModelComponent):
         """
         return torch.zeros([0], dtype=torch.float32)
 
+    def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
+        """Return surface-specific node sets as indices into ``nodes``."""
+        return {}
+
     def set_surface_parameters(self, x: torch.Tensor) -> None:
         """
         Set the design variables of the surface.

@@ -18,7 +18,6 @@ class _Constants:
 
         class HISTORY:
             MAX_NODES = 100
-            MAX_SNAPSHOT_BYTES = 67108864
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000

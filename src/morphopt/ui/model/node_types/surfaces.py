@@ -14,6 +14,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
 
     type_name: ClassVar[str] = "bsp_cylinder"
     is_updatable = True
+    end_node_set_names = ("Bottom", "Head")
     backend_class: ClassVar[str] = "BspSurface"
     label_key: ClassVar[str] = "ui.schema.catalog.surface.bsp_cylinder.label"
     factory: ClassVar[str] = "BSP.initialize_cylinder"

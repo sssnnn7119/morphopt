@@ -19,11 +19,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
+    QDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..constants import CONSTANT
 from .application import (
     EditorKind,
     EditorRoute,
@@ -67,6 +69,7 @@ from .widgets.custom_classes import (
 from .widgets.definition_actions import DefinitionActions
 from .widgets.definition_manager import DefinitionManagerEditor
 from .widgets.edit_history import EditHistoryPanel
+from .widgets.history_dialogs import HistoryCapacityDialog
 from .widgets.editor import PropertyEditor
 from .widgets.editor_pages import EditorPages
 from .widgets.helper_editor import HelperCodeEditor
@@ -91,6 +94,11 @@ class Workbench(QWidget):
         self._synchronized_for_refresh = False
         self._text_edit_key: int | None = None
         self.session = ProblemSession(problem)
+        self.session.history.set_max_nodes(QSettings("MorphOptUI", "ui").value(
+            "history/max_nodes", CONSTANT.UI.HISTORY.MAX_NODES, int,
+        ))
+        self._history_capacity_queued = False
+        self._history_capacity_dialog: HistoryCapacityDialog | None = None
         self.part_sets = PartSetCatalog(problem)
         self._last_selected: Node | None = None
         self.refresh_coordinator = RefreshCoordinator(self._prepare_refresh, self)
@@ -714,6 +722,7 @@ class Workbench(QWidget):
                 if node is not None
                 else self.problem.label
             )
+            previous_count = self.session.history.node_count
             self.session.record_edit(
                 target,
                 selection=node_path(self.problem, self._last_selected),
@@ -721,10 +730,60 @@ class Workbench(QWidget):
                 operation=operation,
             )
             self._update_history_actions()
+            if self.session.history.node_count > previous_count:
+                self._schedule_history_capacity_check()
         if structural:
             self.refresh_coordinator.refresh_now(node)
         else:
             self.refresh_coordinator.request(node)
+
+    def _schedule_history_capacity_check(self) -> None:
+        if (
+            self._history_capacity_queued
+            or self._history_capacity_dialog is not None
+            or not self.session.history.at_capacity
+        ):
+            return
+        self._history_capacity_queued = True
+        QTimer.singleShot(0, self, self._check_history_capacity)
+
+    def _check_history_capacity(self) -> None:
+        self._history_capacity_queued = False
+        if self._history_capacity_dialog is None and self.session.history.at_capacity:
+            self._resolve_history_capacity(self.session.history.max_nodes)
+
+    def set_history_limit(self, max_nodes: int) -> None:
+        """Apply a user-selected limit; ask before clearing existing history."""
+        self._finish_text_edit()
+        if max_nodes < self.session.history.node_count:
+            self._resolve_history_capacity(max_nodes)
+        else:
+            self._store_history_limit(max_nodes)
+
+    def _store_history_limit(self, max_nodes: int) -> None:
+        self.session.history.set_max_nodes(max_nodes)
+        QSettings("MorphOptUI", "ui").setValue("history/max_nodes", max_nodes)
+        self._update_history_actions()
+
+    def _resolve_history_capacity(self, requested_limit: int) -> None:
+        self._finish_text_edit()
+        history = self.session.history
+        if history.node_count < requested_limit:
+            self._store_history_limit(requested_limit)
+            return
+        dialog = HistoryCapacityDialog(history.node_count, requested_limit, self)
+        self._history_capacity_dialog = dialog
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            if dialog.choice == "clear":
+                history.clear()
+                self._store_history_limit(requested_limit)
+            elif dialog.choice == "expand":
+                self._store_history_limit(dialog.new_limit.value())
+        finally:
+            self._history_capacity_dialog = None
+            dialog.deleteLater()
 
     def _update_history_actions(self) -> None:
         history = self.session.history
@@ -788,12 +847,15 @@ class Workbench(QWidget):
     def mark_saved(self) -> None:
         # File serialization can normalize references. Keep the saved marker
         # attached to the exact state that was written, rather than an index.
+        previous_count = self.session.history.node_count
         self.session.record_edit(
             self.problem.label,
             selection=node_path(self.problem, self._last_selected),
         )
         self.session.history.mark_saved()
         self._update_history_actions()
+        if self.session.history.node_count > previous_count:
+            self._schedule_history_capacity_check()
 
     def undo(self) -> None:
         self._restore_edit(-1)
@@ -810,7 +872,7 @@ class Workbench(QWidget):
 
     def _jump_to_history_step(self, step_id: int) -> None:
         self._finish_text_edit()
-        # Input commits can prune the root. Resolve the stable ID afterwards.
+        # Input commits may trigger history-capacity choices; resolve the ID afterwards.
         if not self.session.history.contains(step_id):
             self.notify.emit(tr("ui.history.unavailable"))
             self._update_history_actions()

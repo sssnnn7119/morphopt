@@ -495,6 +495,7 @@ class SurfaceNode(TypedNode):
     kind = KIND_SURFACE
     _FIELDS = ("type", "flip", "is_updatable")
     factory: ClassVar[str | None] = None
+    end_node_set_names: ClassVar[tuple[str, ...]] = ()
     flip: bool
     is_updatable: bool
 

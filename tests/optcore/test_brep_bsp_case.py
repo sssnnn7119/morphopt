@@ -68,9 +68,10 @@ def test_mixed_boundaries_mesh_and_preserve_sets(boundary: BoundaryPart, tmp_pat
     for name in boundary.surface_interface(0).face_names:
         assert name in mesh.surfaces
         assert f"{name}_nodes" in mesh.set_nodes
+        assert len(mesh.set_nodes[f"{name}_nodes"])
     assert not any(name.startswith("gmsh_surface_") for name in mesh.surfaces.keys())
-    assert len(mesh.set_nodes["surface_0_Bottom"])
-    assert len(mesh.set_nodes["surface_0_Head"])
+    assert "surface_0_Bottom" not in mesh.set_nodes
+    assert "surface_0_Head" not in mesh.set_nodes
 
 
 def test_fixed_boundary_sampling_and_shape_derivative(boundary: BoundaryPart) -> None:

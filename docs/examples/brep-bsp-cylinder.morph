@@ -106,7 +106,7 @@
             "params": {
               "type": "BoundaryCondition",
               "instance_name": "body-1",
-              "set_nodes_name": "surface_0_Bottom",
+              "set_nodes_name": "face_2_nodes",
               "index_dof": [
                 0,
                 1,
@@ -135,7 +135,7 @@
               "type": "Couple",
               "rp_name": "RP_tip",
               "instance_name": "body-1",
-              "set_nodes_name": "surface_0_Head"
+              "set_nodes_name": "face_1_nodes"
             },
             "children": []
           }

@@ -32,6 +32,15 @@ class BspSurface(ControlPointSurface):
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
     relate: type[BspSurfaceRelationConstraint] = BspSurfaceRelationConstraint
 
+    def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
+        """Identify the bottom and head nodes of this BSP boundary."""
+        z = nodes[:, 2]
+        tolerance = CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
+        return {
+            "Bottom": np.flatnonzero(np.abs(z - z.min()) < tolerance),
+            "Head": np.flatnonzero(np.abs(z - z.max()) < tolerance),
+        }
+
     class BSplineSolidGenerator:
         def __init__(self, P0, degree_u=3, degree_v=3):
             """

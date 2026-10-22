@@ -146,7 +146,7 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                     face_groups[ids == face_id] = len(face_names)
                     face_names.append((f"face_{face_id}", f"surface_{index}_All"))
             if index == 0:
-                for end in ("Bottom", "Head"):
+                for end in surface.end_node_set_names:
                     cap = _boundary_end_cells(mesh, end)
                     for group in np.unique(face_groups[cap]):
                         mask = cap & (face_groups == group)
@@ -192,10 +192,11 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
         part: BoundaryPartNode,
         name: str,
     ) -> pv.DataSet | None:
-        if name.startswith("face_"):
-            face_id = int(name[5:])
+        face_name = _cad_face_name(name)
+        if face_name is not None:
+            face_id = int(face_name[5:])
             for surface in part.surfaces:
-                if not isinstance(surface, BREPSurfaceNode) or name not in json.loads(surface.face_map):
+                if not isinstance(surface, BREPSurfaceNode) or face_name not in json.loads(surface.face_map):
                     continue
                 mesh = context.surface_mesh(surface)
                 if mesh is not None:
@@ -211,6 +212,8 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
             return None
         end = name.rsplit("_", 1)[-1]
         if end in {"Head", "Bottom"}:
+            if index != 0 or end not in surfaces[index].end_node_set_names:
+                return None
             return _boundary_end_surface(mesh, end)
         return mesh
 
