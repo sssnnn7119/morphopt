@@ -1,4 +1,5 @@
 {
+  "ui.schema.fields.design_faces.label": "Design faces",
   "ui.assets.brep_metadata": "BREP topology and sets",
   "ui.validation.bounding_box": "Each bounding-box minimum must be smaller than its maximum.",
   "ui.validation.sequence": "{field} must be a list.",
@@ -20,7 +21,7 @@
   "ui.validation.weight": "Objective weights must be finite and nonnegative, with at least one positive weight.",
   "ui.validation.definition": "Invalid definition: {reason}",
   "ui.schema.fields.is_updatable.label": "Participate in shape updates",
-  "ui.schema.fields.is_updatable.help": "Enabled by default for BSP and CPGEO surfaces; disable to keep their shape fixed. Fixed BREP and mesh surfaces have no design variables.",
+  "ui.schema.fields.is_updatable.help": "BSP and CPGEO are enabled by default. BREP is disabled by default; enabling it optimizes interior control points on selected NURBS faces while keeping trim edges fixed. Mesh surfaces have no design variables.",
   "ui.theme.appearance": "Appearance",
   "ui.theme.dark": "Theme: Dark",
   "ui.theme.light": "Theme: Light",
@@ -770,7 +771,6 @@
   "ui.schema.catalog.surface.cpgeo_sphere.label": "CPGEO sphere",
   "ui.schema.catalog.surface.mesh_surface.label": "Mesh surface",
   "ui.schema.catalog.surface.brep_surface.label": "BREP surface",
-  "ui.assets.face_map": "Geometric face map",
   "ui.schema.catalog.component.pressure.label": "Surface pressure",
   "ui.schema.catalog.component.concentratedforce.label": "Concentrated force at RP",
   "ui.schema.catalog.component.concentratedmoment.label": "Concentrated moment at RP",

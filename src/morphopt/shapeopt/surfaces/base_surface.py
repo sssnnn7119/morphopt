@@ -162,6 +162,17 @@ class BaseSurface(BaseModelComponent):
     def bind_mesh(self, part: torchfea.Part) -> None:
         """Bind surface parameters after element-order processing is complete."""
 
+    @property
+    def uses_facewise_binding(self) -> bool:
+        """Whether a surface has multiple independent parameter domains."""
+        return False
+
+    def map_design_nodes(self) -> tuple[np.ndarray, torch.Tensor]:
+        """Return bound FE indices and differentiable updated coordinates."""
+        parameters = self.get_surface_parameters()
+        uv = torch.as_tensor(self.surf_node_uv, dtype=parameters.dtype, device=parameters.device)
+        return self.surf_node_idx, self.map(uv)
+
     def set_surface_parameters(self, x: torch.Tensor) -> None:
         """
         Set the design variables of the surface.

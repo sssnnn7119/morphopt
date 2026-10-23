@@ -73,7 +73,7 @@ class PartSetCatalog:
         ) if surface_count else ()
         faces = [
             name for surface in part.surfaces if isinstance(surface, BREPSurfaceNode)
-            for name in json.loads(surface.face_map)
+            for name in json.loads(surface.brep_metadata).get("face_map", {})
         ]
         surface_sets: list[str] = []
         node_sets: list[str] = []
@@ -82,7 +82,7 @@ class PartSetCatalog:
                 continue
             prefix = f"surface_{index}"
             metadata = json.loads(surface.brep_metadata)
-            selections = [*json.loads(surface.face_map), *metadata.get("surface_sets", {})]
+            selections = [*json.loads(surface.brep_metadata).get("face_map", {}), *metadata.get("surface_sets", {})]
             surface_sets.extend(f"{prefix}_{name}" for name in selections)
             node_sets.extend(f"{prefix}_{name}_nodes" for name in selections)
             node_sets.extend(

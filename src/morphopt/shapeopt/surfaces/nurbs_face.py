@@ -14,6 +14,7 @@ from .base_surface import ControlPointSurface
 
 if TYPE_CHECKING:
     from OCP.Geom import Geom_BSplineSurface
+    from OCP.TopoDS import TopoDS_Face, TopoDS_Shape
 
 
 class _KnotBasis(bspmap.Basis):
@@ -66,6 +67,25 @@ class NURBSFace(ControlPointSurface):
         self.surf_node_idx = np.empty(0, dtype=np.int64)
         self.surf_node_uv = np.empty((0, 2), dtype=np.float64)
         self.projection_errors = np.empty(0, dtype=np.float64)
+        self.design_mask: np.ndarray | None = None
+        self._fixed_poles: torch.Tensor | None = None
+        self._bound_basis: dict[tuple[int, int], tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def set_design_mask(self, mask: np.ndarray) -> None:
+        """Freeze poles whose basis influences a trim edge."""
+        mask = np.asarray(mask, dtype=bool).reshape(-1)
+        if len(mask) != self._cps.shape[0]:
+            raise ValueError("NURBS design mask must have one entry per pole.")
+        self.design_mask = mask.copy()
+        self._fixed_poles = self._cps.detach().clone()
+
+    def set_surface_parameters(self, x: torch.Tensor) -> None:
+        """Set poles while keeping trim-influencing poles fixed."""
+        values = x.reshape(self._cps.shape)
+        if self.design_mask is not None:
+            mask = torch.as_tensor(self.design_mask[:, None], device=values.device)
+            values = torch.where(mask, values, self._fixed_poles.to(values.device))
+        self._cps = values
 
     @classmethod
     def from_occ(cls, surface: Geom_BSplineSurface) -> NURBSFace:
@@ -81,6 +101,46 @@ class NURBSFace(ControlPointSurface):
         knots_v = np.repeat([model.VKnot(i) for i in range(1, model.NbVKnots() + 1)],
                             [model.VMultiplicity(i) for i in range(1, model.NbVKnots() + 1)])
         return cls(poles, weights, (model.UDegree(), model.VDegree()), (knots_u, knots_v))
+
+    def to_occ(self) -> Geom_BSplineSurface:
+        """Create an OCC support from the current poles and fixed knot data."""
+        from OCP import collections
+        from OCP.Geom import Geom_BSplineSurface
+        from OCP.gp import gp_Pnt
+
+        nu, nv = self.size
+        poles = collections.Array2_gp_Pnt(1, nu, 1, nv)
+        weights = collections.Array2_double(1, nu, 1, nv)
+        positions = self.control_points.detach().cpu().numpy().reshape(nu, nv, 3)
+        for u in range(nu):
+            for v in range(nv):
+                poles.SetValue(u + 1, v + 1, gp_Pnt(*map(float, positions[u, v])))
+                weights.SetValue(u + 1, v + 1, float(self.weights[u * nv + v]))
+        vectors = []
+        multiplicities = []
+        for basis in self.basis:
+            unique, counts = np.unique(basis.knots, return_counts=True)
+            values = collections.Array1_double(1, len(unique))
+            counts_occ = collections.Array1_int(1, len(unique))
+            for index, (value, count) in enumerate(zip(unique, counts, strict=True), 1):
+                values.SetValue(index, float(value))
+                counts_occ.SetValue(index, int(count))
+            vectors.append(values)
+            multiplicities.append(counts_occ)
+        return Geom_BSplineSurface(
+            poles, weights, *vectors, *multiplicities, *self.degrees,
+        )
+
+    def refine(
+        self, u_knots: tuple[float, ...] = (), v_knots: tuple[float, ...] = (),
+    ) -> NURBSFace:
+        """Insert knots without changing the represented CAD geometry."""
+        support = self.to_occ()
+        for value in u_knots:
+            support.InsertUKnot(float(value), 1, 1e-9)
+        for value in v_knots:
+            support.InsertVKnot(float(value), 1, 1e-9)
+        return type(self).from_occ(support)
 
     def get_weights(
         self, uv: np.ndarray, derivative: tuple[int, int] = (0, 0),
@@ -128,6 +188,13 @@ class NURBSFace(ControlPointSurface):
         indices_t = torch.as_tensor(indices, dtype=torch.long, device=self._cps.device)
         return (coefficients[:, :, None] * self._cps[indices_t]).sum(dim=1)
 
+    def map_bound_nodes(self, derivative: tuple[int, int] = (0, 0)) -> torch.Tensor:
+        """Evaluate cached nodal basis inside autograd and torch.func transforms."""
+        coefficients, indices = self._bound_basis[derivative]
+        coefficients = coefficients.to(dtype=self._cps.dtype, device=self._cps.device)
+        indices = indices.to(device=self._cps.device)
+        return (coefficients[:, :, None] * self._cps[indices]).sum(dim=1)
+
     def match_coordinates(
         self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray,
         initial_uv: np.ndarray | None = None, batch_size: int = 4096,
@@ -141,6 +208,10 @@ class NURBSFace(ControlPointSurface):
         if len(nodes) == 0:
             self.surf_node_idx, self.surf_node_uv = node_ids.copy(), np.empty((0, 2))
             self.projection_errors = np.empty(0)
+            self._bound_basis = {
+                order: tuple(torch.from_numpy(value) for value in self.get_weights(self.surf_node_uv, order))
+                for order in ((0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2))
+            }
             return nodes.copy()
         lower, upper = self.parameter_bounds.T
         poles = self._cps.detach().cpu().numpy()
@@ -187,6 +258,10 @@ class NURBSFace(ControlPointSurface):
         projected = evaluate(result)
         self.surf_node_idx, self.surf_node_uv = node_ids.copy(), result
         self.projection_errors = np.linalg.norm(projected - nodes, axis=1)
+        self._bound_basis = {}
+        for order in ((0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2)):
+            weights, indices = self.get_weights(result, order)
+            self._bound_basis[order] = (torch.from_numpy(weights), torch.from_numpy(indices))
         return projected
 
 
@@ -202,7 +277,9 @@ def _expanded_support(surface: Geom_BSplineSurface) -> Geom_BSplineSurface:
     return model
 
 
-def _matched_occ_faces(path: Path, probes: Mapping[str, np.ndarray]):
+def _matched_occ_faces(
+    path: Path, probes: Mapping[str, np.ndarray],
+) -> tuple[TopoDS_Shape, dict[str, tuple[TopoDS_Face, Geom_BSplineSurface]]]:
     """Return the solid and uniquely identified trimmed NURBS faces."""
     from OCP.BRep import BRep_Builder, BRep_Tool
     from OCP.BRepClass import BRepClass_FaceClassifier
@@ -259,24 +336,20 @@ def write_nurbs_faces(
     from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCP.ShapeFix import ShapeFix_Shape
     from OCP.TopAbs import TopAbs_EDGE
     from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
-    from OCP.gp import gp_Pnt
 
     shape, faces = _matched_occ_faces(source, probes)
     if models.keys() != faces.keys():
         raise ValueError("NURBS models and source faces must have identical names.")
     builder = BRep_Builder()
     for name, (face, original) in faces.items():
-        support = _expanded_support(original)
         model = models[name]
-        poles = model.control_points.detach().cpu().numpy().reshape(*model.size, 3)
-        if (support.NbUPoles(), support.NbVPoles()) != model.size:
-            raise ValueError(f"NURBS pole dimensions changed for {name}.")
-        for u in range(model.size[0]):
-            for v in range(model.size[1]):
-                support.SetPole(u + 1, v + 1, gp_Pnt(*map(float, poles[u, v])))
+        support = model.to_occ()
+        if not np.allclose(support.Bounds(), original.Bounds(), rtol=0, atol=1e-9):
+            raise ValueError(f"NURBS parameter domain changed for {name}.")
         edges = TopExp_Explorer(face, TopAbs_EDGE)
         while edges.More():
             curve = BRepAdaptor_Curve(TopoDS.Edge(edges.Current()))
@@ -287,6 +360,9 @@ def write_nurbs_faces(
                     raise ValueError(f"NURBS update moves a trim edge of {name}; keep shared and hole boundaries fixed.")
             edges.Next()
         builder.UpdateFace(face, support, face.Location(), tolerance)
+    repair = ShapeFix_Shape(shape)
+    repair.Perform()
+    shape = repair.Shape()
     if not BRepCheck_Analyzer(shape).IsValid():
         raise ValueError("Updated NURBS faces do not form a valid closed solid.")
     writer = STEPControl_Writer()

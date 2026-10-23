@@ -140,7 +140,7 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                 continue
             face_groups = np.zeros(mesh.n_cells, dtype=np.int64)
             face_names = [(f"surface_{index}_All",)]
-            if isinstance(surface, BREPSurfaceNode) and json.loads(surface.face_map):
+            if isinstance(surface, BREPSurfaceNode) and json.loads(surface.brep_metadata).get("face_map", {}):
                 ids = np.asarray(mesh.cell_data["face_index"], dtype=np.int64)
                 for face_id in np.unique(ids):
                     face_groups[ids == face_id] = len(face_names)
@@ -196,7 +196,7 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
         if face_name is not None:
             face_id = int(face_name[5:])
             for surface in part.surfaces:
-                if not isinstance(surface, BREPSurfaceNode) or face_name not in json.loads(surface.face_map):
+                if not isinstance(surface, BREPSurfaceNode) or face_name not in json.loads(surface.brep_metadata).get("face_map", {}):
                     continue
                 mesh = context.surface_mesh(surface)
                 if mesh is not None:
@@ -486,7 +486,6 @@ class SurfacePreviewVisitor:
         with TemporaryDirectory(prefix="morphopt_stp_preview_") as directory:
             path = Path(directory) / surface.filename
             path.write_bytes(base64.b64decode(surface.data, validate=True))
-            path.with_suffix(".faces.json").write_text(surface.face_map, encoding="utf-8")
             path.with_suffix(".brep.json").write_text(surface.brep_metadata, encoding="utf-8")
             return BREPSurface(path).get_mesh()
 

@@ -268,9 +268,9 @@ class Actuator(morphopt.BoundaryPart):
 | CPGEO 圆柱 | `self.CPGEO.initialize_cylinder(...)` | `r0`、`length`、`seed_size`、`flip`、`init_location`、`maxC` 等 |
 | CPGEO 球面 | `self.CPGEO.initialize_Sphere(...)` | `r0`、`seed_size`、`flip`、`init_location`、`MaxC` |
 | 网格曲面 | `self.MeshSurface(vertices, faces)` 或 `self.MeshSurface.initialize_from_stl_file(path_stl)` | 顶点坐标与三角面连接关系；文件导入采用 STL；不提供设计变量 |
-| BREP 曲面 | `self.BREPSurface(path_step)` | 精确曲面及其拓扑组成的封闭边界，当前以 STEP 保存；以同名 `.faces.json`、`.brep.json` 保存拓扑身份与集合；支持指定 face 转换为 NURBS；不提供设计变量 |
+| BREP 曲面 | `self.BREPSurface(path_step)` | 精确曲面及其拓扑组成的封闭边界，当前以 STEP 保存；以同名 `.brep.json` 保存拓扑身份与集合；指定 face 转换为 NURBS 后可启用面内控制点优化 |
 
-`BREPSurface` 和 `MeshSurface` 按几何表示分类。前者在剖分时使用精确 CAD 边界，后者使用离散三角网格。STEP 和 STL 分别是当前采用的资产文件格式。两类曲面当前均为固定几何，其设计变量数为零。
+`BREPSurface` 和 `MeshSurface` 按几何表示分类。前者在剖分时使用精确 CAD 边界，后者使用离散三角网格。STEP 和 STL 分别是当前采用的资产文件格式。BREP 默认固定，选定 NURBS 面并启用更新后提供控制点设计变量；MeshSurface 保持固定。
 
 `initialize_Sphere` 和其 `MaxC` 参数采用当前代码中的大小写。脚本名称与 UI 中的 `cpgeo_sphere` 类型标签不同。各曲面的参数说明与示意见 [UI 曲面参考](UIreference.md#surface_types-bsp-cylinder)。
 
@@ -287,21 +287,26 @@ class Actuator(morphopt.BoundaryPart):
 | `vertices` | 顶点名称到 `BREPVertex` 的映射；记录坐标与关联边 |
 | `nurbs_faces` | NURBS 面名称到 `NURBSFace` 的映射；记录控制点、固定有理权重、各方向次数及节点矢量 |
 | `convert_faces_to_nurbs(faces)` | 将指定的一个或多个逻辑面转换为 NURBS，重新组装闭合壳体并保留原始面名称 |
+| `select_design_faces(faces)` | 从已有 NURBS 面中指定参与形状更新的面；启用更新前必须显式指定，不从资产推断 |
+| `show(plotter=None)` | 交互查看面名称；单击几何面显示 `face_N` 并高亮整个面，单击空白处清除选择。传入已有 PyVista Plotter 时只配置场景，由调用者打开窗口 |
 | `add_surface_set(name, faces)` | 注册一个或多个面的并集 |
 | `add_node_set(name, entities)` | 注册面、边或顶点所包含节点的并集 |
 | `evaluate_face(name, uv)` | 在底层曲面上求值，输入形状为 `(N, 2)`，返回 `(N, 3)` 坐标 |
 | `contains_face_parameters(name, uv)` | 判断参数点是否位于裁剪后的有效面域，包括孔洞排除 |
 | `evaluate_edge(name, parameters)` | 对边的三维曲线求值，返回 `(N, 3)` 坐标 |
 | `edge_parameters_on_face(face, edge, parameters, which=0)` | 将边参数映射到关联面的 UV 坐标；周期接缝通过 `which` 选择分支 |
-| `export_step(path)` | 导出当前几何及同名 `.faces.json`、`.brep.json`，不生成有限元网格 |
+| `export_step(path)` | 导出当前几何及同名 `.brep.json`，不生成有限元网格 |
 | `bind_mesh(part)` | 在有限元单元阶次处理完成后，逐面匹配最终节点的 UV；由 `BoundaryPart` 自动调用 |
 | `map_face_nodes(name)` | 在缓存 UV 上计算指定面的有限元节点坐标，保留坐标对控制点的 PyTorch 计算图 |
+| `is_updatable = True` | 将已选 NURBS 面的控制点纳入 `BoundaryPart` 设计变量；初始值为 `False` |
 
 ```python
 class Body(morphopt.BoundaryPart):
     def define_surfaces(self) -> None:
         boundary = self.BREPSurface("morphopt_assets/body/surface_0.stp")
         boundary.convert_faces_to_nurbs(["face_0"])
+        boundary.select_design_faces(["face_0"])
+        boundary.is_updatable = True
         boundary.add_surface_set("loaded", ["face_0"])
         boundary.add_node_set("rim", ["edge_0"])
         boundary.export_step("geometry_output/body.stp")
@@ -314,7 +319,7 @@ class Body(morphopt.BoundaryPart):
 
 NURBS 转换由 TorchFEA 的 OCC 几何层执行。非平面曲面采用原生 `convertToNURBS`；平面构造精确的双线性 B 样条支撑面，并沿用原有外轮廓和孔洞。转换后重新组装壳体，后续预览、STEP 导出和体网格均使用该几何。拓扑身份通过几何特征映射保存；特征不能唯一识别或拓扑数量改变时，转换报告错误。
 
-`.faces.json` 保存面名称与几何特征，`.brep.json` 保存边与顶点身份、命名集合和 NURBS 面选择。STEP 几何及两类元数据应共同移动。读取导出结果时恢复这些定义。
+`.brep.json` 统一保存 `face_map`、`edge_map`、`vertex_map`、命名集合。STEP 几何及元数据应共同移动。读取导出结果时恢复这些定义。
 
 **有限元节点参数匹配与可微映射**
 
@@ -335,7 +340,9 @@ coordinates = boundary.map_face_nodes("face_0")
 gradient, = torch.autograd.grad(coordinates.square().sum(), parameters)
 ```
 
-节点 UV 及基函数模型属于运行期数据，不写入 `.morph` 或几何元数据。当前 `BREPSurface` 的部件级设计变量数仍为零；上述接口建立逐面的节点坐标计算图，不自动启用 BREP 形状更新。修改 `NURBSFace` 的控制点尚不回写 STEP；控制点与 CAD 的同步、裁剪边界约束及相邻面联动属于后续几何更新接口。
+节点 UV 及基函数模型属于运行期数据，不写入 `.morph` 或几何元数据。`BREPSurface` 默认固定。将 `is_updatable` 设为 `True` 后，选定 NURBS 面的控制点按面名称顺序纳入部件设计变量。初次读取时，对控制点数不超过三个的参数方向插入内部节点；插入节点保持原始几何不变，并为面内形状变化提供控制点。网格绑定时，裁剪边、孔洞边和参数域边界所涉及的控制点被固定，其他控制点可由几何优化器更新。
+
+每轮剖分前，当前控制点写入临时 STEP 实体，连同当前面映射一起载入 Gmsh。导出迭代曲面时也使用当前控制点；`.npz` 迭代归档保存各选定面的控制点。写回前检查原有裁剪边是否仍落在更新后的曲面上，修复实体并验证闭合性。会移动现有边界或使实体失效的更新报告错误。此接口支持固定边界的面内形状优化；边界移动及相邻未选面随动需要另外定义联动规则。
 
 <a id="section-曲面对称与关联"></a>
 
@@ -452,9 +459,9 @@ print(cavity.face_names)
 ```text
 morphopt_assets/body/
 ├── surface_0.stp
-├── surface_0.faces.json
+├── surface_0.brep.json
 ├── surface_1.stp
-└── surface_1.faces.json
+└── surface_1.brep.json
 ```
 
 既有资产可直接通过 `self.BREPSurface("morphopt_assets/body/surface_0.stp")` 加入 `define_surfaces()`。STEP 与同名映射文件应一同移动。普通 STEP 未提供映射时，几何面由部件在剖分时统一分配 `face_N` 名称。
@@ -468,7 +475,7 @@ morphopt_assets/body/
 
 压力可引用 `实例名.face_N` 作用于原 CAD 面，也可引用 `实例名.surface_1_All` 作用于整个内腔。上例的默认实例名为 `body`，相应引用为 `body.face_N` 和 `body.surface_1_All`。
 
-转换不生成三维有限元网格，不执行 B 样条或 CPGEO 拟合。曲面接口采用固定的 `BREPSurface`，STEP 中的精确几何用于后续剖分，显示网格在预览时生成。其设计变量数为零，形状优化前需另行建立可更新参数化；固定几何上的材料优化可独立配置。
+转换不生成三维有限元网格，不执行 B 样条或 CPGEO 拟合。曲面接口采用 `BREPSurface`，STEP 中的精确几何用于后续剖分，显示网格在预览时生成。转换结果默认固定；对所需 face 执行 NURBS 转换并设置 `is_updatable = True` 后，可优化该面的内部控制点。固定几何上的材料优化可独立配置。
 
 每次转换要求 CAD 历史只包含一个最终实体。多个独立实体应分别定义为 CADPart。贯通孔的孔壁通常与外表面属于同一个封闭壳体，因此可能同属 `surface_0_All`；孔壁仍可通过原来的 `face_N` 单独选择。修改源 CAD 历史后应重新转换，并核查拓扑面编号。
 
@@ -829,7 +836,7 @@ class Shape(morphopt.UpdaterBoundaryPart):
         ))
 ```
 
-该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。几何更新器不保存逐曲面开关，直接读取曲面对象。固定 BREP 和网格曲面不提供设计变量。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
+该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。BREP 默认关闭，选定 NURBS 面后可启用面内控制点优化；网格曲面不提供设计变量。几何更新器直接读取曲面状态。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|

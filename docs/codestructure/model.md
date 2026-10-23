@@ -124,7 +124,9 @@ CAD 的 `define_operations()` 与有限元 `build_part()` 分离。STEP 导出�
 
 `BREPSurface` 将一个闭合 CAD 壳体组织为拓扑与集合的合集。TorchFEA 的 `cad/brep.py` 负责读取面、线环、共享边、顶点及指定面的 NURBS 转换；MorphOpt 曲面对象管理逻辑身份、集合注册、资产持久化和模型接口。各 surface 的 `define_mesh_sets(part, prefix)` 在体网格提取后定义局部集合，BoundaryPart 通过多态调用扩展面集和节点集。曲线节点与顶点节点来自 TorchFEA 的 OCC 网格分类，不通过坐标邻近或面节点交集推断。
 
-BREP 拓扑检查和 STEP 导出使用与预览、剖分共享锁的 `torchfea.cad.occ_session()` 会话，拓扑检查不生成网格。面转换先解除原实体的所属关系，再将更新的面组装为闭合壳体。平面转换同时迁移外轮廓和孔洞。`.faces.json` 与 `.brep.json` 保存逻辑身份和集合，Gmsh 实体 tag 仅在当前会话中使用。接口说明见[脚本参考](../scriptreference.md#brep-topology)。
+启用 BREP 形状更新时，`BREPSurface` 将选定面的 NURBS 控制点汇总为部件设计变量，`NURBSFace` 使用 `bspmap` 基函数建立有限元节点 UV 到控制点的可微映射。边界相关控制点保持固定。每次重新剖分前，曲面将当前控制点写回 STEP，校验裁剪边与闭合实体，再由统一的 CADPart 剖分流程生成下一轮网格。优化归档保存控制点，显示预览和曲面导出读取当前形状。
+
+BREP 拓扑检查和 STEP 导出使用与预览、剖分共享锁的 `torchfea.cad.occ_session()` 会话，拓扑检查不生成网格。面转换先解除原实体的所属关系，再将更新的面组装为闭合壳体。平面转换同时迁移外轮廓和孔洞。`.brep.json` 保存逻辑身份和集合，Gmsh 实体 tag 仅在当前会话中使用。接口说明见[脚本参考](../scriptreference.md#brep-topology)。
 
 父类不根据 `BoundaryPart` 或其几何描述类型选择实现。曲面通过 `prepare_geometry()` 准备几何文件，再由 `load_geometry()` 调用 CADPart 的对应载入方法。BSP 和 `BREPSurface` 使用 STEP 载入，CPGEO 和固定 STL 使用离散网格载入。BoundaryPart 按这些方法返回的面编号组装外壳和内腔，并根据曲面的离散几何能力选择相应 Gmsh 内核。
 
@@ -173,7 +175,7 @@ flowchart TB
 | `load_mesh_boundary(path)` | `path: str \| Path` | `list[int]`；导入闭合 STL，返回新增离散面的 Gmsh 编号 |
 | `get_face_signature(tag)` | `tag: int` 为当前会话中的面编号 | `list[float]`；返回面积、质心和惯性矩阵，供 STEP 面名称匹配 |
 | `split_shells()` | 无参数；源 CADPart 已执行 `initialize()` | 二元组 `(operations, shells)`；复制 CAD 历史，识别外壳与内腔；当前查询使用 TorchFEA 的预览会话，显示三角网格不保留 |
-| `export_shell_step(operations, face_indices, path)` | 原始 CAD 操作元组、原始面索引元组和 `path: str \| Path` | `None`；导出指定封闭壳体的 STEP 实体与同名 `.faces.json` 面名称映射 |
+| `export_shell_step(operations, face_indices, path)` | 原始 CAD 操作元组、原始面索引元组和 `path: str \| Path` | `None`；导出指定封闭壳体的 STEP 实体与同名 `.brep.json` 面名称映射 |
 | `to_boundary_part(asset_directory)` | `asset_directory: str \| Path` 默认为 `morphopt_assets`；源 CADPart 已执行 `initialize()` | `BoundaryPart`；在资产目录的部件子目录中保存壳体文件，再创建BREP 曲面，保留源面的名称、网格设置和实例声明 |
 | `get_face_names()` | 无参数 | `list[str]`；按预览记录顺序返回几何面名称；执行面显示剖分，不生成有限元体网格 |
 
@@ -198,7 +200,7 @@ flowchart TB
 | `BREPSurface.get_mesh()` | 无参数 | `pyvista.PolyData`；从 STEP 生成显示三角网格，单元数据 `face_index` 保留面索引 |
 | `BREPSurface.face_names` | 只读属性 | `tuple[str, ...]`；返回资产中保存的原始 CAD 面名称；普通 STEP 无映射时为空 |
 
-`BREPSurface(path_step: str | Path)` 读取一个闭合壳体对应的 STEP 实体，并读取同名 `.faces.json`（若存在）。曲面对象不保存源 CAD 操作或构造阶段的预览记录。`output_data()` 复制 STEP 和面映射，不使用 `seed_size`、`flip` 或 `pools`；内腔关系由 BoundaryPart 的壳体组装顺序确定。映射按面积、质心和惯性矩阵匹配，采用 `rtol=1e-7`、`atol=1e-8` 的逐分量容差；无法唯一匹配时报告错误。
+`BREPSurface(path_step: str | Path)` 读取一个闭合壳体对应的 STEP 实体，并读取同名 `.brep.json`（若存在）。曲面对象不保存源 CAD 操作或构造阶段的预览记录。`output_data()` 复制 STEP 和面映射，不使用 `seed_size`、`flip` 或 `pools`；内腔关系由 BoundaryPart 的壳体组装顺序确定。映射按面积、质心和惯性矩阵匹配，采用 `rtol=1e-7`、`atol=1e-8` 的逐分量容差；无法唯一匹配时报告错误。
 
 UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映射。运行脚本只引用 `morphopt_assets` 中还原的 STEP 和 JSON 文件；资产页分别显示几何与映射文本。
 

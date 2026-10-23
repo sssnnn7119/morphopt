@@ -774,6 +774,8 @@ def _emit_part_classes(
                     f"                    surface_{index} = "
                     f"{render_surface_call(surface, problem, asset_paths=asset_paths)}"
                 )
+                if surface.type == "brep_surface" and surface.design_faces:
+                    a(f"                    surface_{index}.select_design_faces({list(surface.design_faces)!r})")
                 a(f"                    surface_{index}.is_updatable = {surface.is_updatable!r}")
                 a(f"                    self.add_surface_interface(surface_{index})")
             for line in constraint_lines:

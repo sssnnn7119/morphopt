@@ -330,7 +330,7 @@ class DefinitionValidation:
         ):
             self.add(node, "asset", field="STEP")
         if isinstance(node, BREPSurfaceNode):
-            for key in ("face_map", "brep_metadata"):
+            for key in ("brep_metadata",):
                 try:
                     if not isinstance(json.loads(node.get_field(key)), dict):
                         raise ValueError(key)

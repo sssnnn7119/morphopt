@@ -104,7 +104,7 @@ def test_selected_nurbs_conversion_export_and_reload(
     assert_same_geometry(before, surface.topology)
     output = surface.export_step(tmp_path / "export" / f"{kind}.stp")
     assert "ISO-10303-21;" in output.read_text()
-    assert output.with_suffix(".faces.json").is_file()
+    assert not output.with_suffix(".faces.json").exists()
     assert output.with_suffix(".brep.json").is_file()
     restored = BREPSurface(output)
     assert restored.faces[selected].is_nurbs
@@ -312,3 +312,34 @@ def test_named_brep_sets_support_actual_pressure_solve(
         assert float(result.GC.abs().max()) > 1e-5
     finally:
         torch.set_default_dtype(previous_dtype)
+
+
+def test_show_picks_logical_face_and_clears_background(
+    step_factory: Callable[[str], Path],
+) -> None:
+    import pyvista as pv
+
+    surface = BREPSurface(step_factory("box"))
+    plotter = pv.Plotter(off_screen=True, window_size=(600, 450))
+    try:
+        assert surface.show(plotter) is plotter
+        plotter.render()
+        actor = plotter.actors["brep_geometry"]
+        mesh = actor.mapper.dataset
+        renderer = plotter.renderer
+        renderer.SetWorldPoint(*mesh.center, 1.0)
+        renderer.WorldToDisplay()
+        x, y, _ = renderer.GetDisplayPoint()
+        picker = plotter.iren.picker
+        assert picker.Pick(x, y, 0, renderer)
+        cell = picker.GetCellId()
+        face = int(mesh.cell_data["face_index"][cell])
+        assert plotter.actors["brep_face_name"].GetText(0) == f"face_{face}"
+        selection = plotter.actors["brep_face_selection"]
+        assert selection.pickable is False
+        assert selection.mapper.dataset.n_cells == np.count_nonzero(mesh.cell_data["face_index"] == face)
+        assert not picker.Pick(-100, -100, 0, renderer)
+        assert "brep_face_selection" not in plotter.actors
+        assert plotter.actors["brep_face_name"].GetText(0).startswith("Click a face")
+    finally:
+        plotter.close()

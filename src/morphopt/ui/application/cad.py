@@ -135,7 +135,6 @@ def convert_cad_to_boundary(
             name=f"surface_{index}", flip=index > 0,
             filename=f"{node.name}_surface_{index}.stp",
             data=base64.b64encode(path.read_bytes()).decode("ascii"),
-            face_map=path.with_suffix(".faces.json").read_text(encoding="utf-8"),
             brep_metadata=json.dumps(surface.metadata()),
         ))
     return replacement

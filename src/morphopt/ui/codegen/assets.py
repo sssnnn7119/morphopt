@@ -92,10 +92,8 @@ def collect_python_assets(
                     add_file(surface, surface.path_stl, "stl", f"{part.name}/{surface.name}")
                 elif isinstance(surface, BREPSurfaceNode) and surface.data:
                     reference = f"{part.name}/{surface.name}"
-                    mapping = json.loads(surface.face_map)
                     topology = json.loads(surface.brep_metadata)
                     sidecars = {
-                        ".faces.json": json.dumps(mapping, indent=2).encode("utf-8"),
                         ".brep.json": json.dumps(topology, indent=2).encode("utf-8"),
                     }
                     asset = add_asset(

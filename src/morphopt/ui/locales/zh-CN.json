@@ -1,4 +1,5 @@
 {
+  "ui.schema.fields.design_faces.label": "参与更新的面",
   "ui.assets.brep_metadata": "BREP 拓扑与集合",
   "ui.validation.bounding_box": "包围盒各方向的下限必须小于上限。",
   "ui.validation.sequence": "{field} 必须为列表。",
@@ -20,7 +21,7 @@
   "ui.validation.weight": "目标权重必须为有限非负数，且至少一个目标的权重大于零。",
   "ui.validation.definition": "定义无效：{reason}",
   "ui.schema.fields.is_updatable.label": "参与形状更新",
-  "ui.schema.fields.is_updatable.help": "BSP 和 CPGEO 曲面默认启用，可手动关闭。启用后，该曲面的设计变量参与形状优化；固定 BREP 和网格曲面不提供设计变量。",
+  "ui.schema.fields.is_updatable.help": "BSP 和 CPGEO 默认启用；BREP 默认关闭，启用后将已选 NURBS 面的内部控制点用于形状优化，裁剪边保持固定；网格曲面不提供设计变量。",
   "ui.theme.appearance": "界面主题",
   "ui.theme.dark": "主题：深色",
   "ui.theme.light": "主题：浅色",
@@ -770,7 +771,6 @@
   "ui.schema.catalog.surface.cpgeo_sphere.label": "CPGEO 球面",
   "ui.schema.catalog.surface.mesh_surface.label": "网格曲面",
   "ui.schema.catalog.surface.brep_surface.label": "BREP 曲面",
-  "ui.assets.face_map": "几何面映射",
   "ui.schema.catalog.component.pressure.label": "表面压力",
   "ui.schema.catalog.component.concentratedforce.label": "参考点集中力",
   "ui.schema.catalog.component.concentratedmoment.label": "参考点集中力矩",

@@ -644,7 +644,7 @@ class DefinitionActions(QObject):
         )
         if owner is None:
             return
-        imported_step: tuple[str, str, str, str] | None = None
+        imported_step: tuple[str, str, str] | None = None
         if stype == "brep_surface":
             path = choose_open_file(
                 self.parent(), tr("ui.widgets.model_tree.select_step_file"),
@@ -654,13 +654,10 @@ class DefinitionActions(QObject):
                 return
             try:
                 source = Path(path)
-                mapping = source.with_suffix(".faces.json")
-                face_map = json.loads(mapping.read_text(encoding="utf-8")) if mapping.exists() else {}
                 metadata_path = source.with_suffix(".brep.json")
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
                 imported_step = (
                     source.name, base64.b64encode(source.read_bytes()).decode("ascii"),
-                    json.dumps(face_map),
                     json.dumps(metadata),
                 )
             except (OSError, ValueError) as exc:
@@ -668,7 +665,7 @@ class DefinitionActions(QObject):
                 return
         node = self.commands.add_surface(stype, owner, custom_class)
         if imported_step is not None:
-            node.filename, node.data, node.face_map, node.brep_metadata = imported_step
+            node.filename, node.data, node.brep_metadata = imported_step
         self._select(node)
         self._emit_change(node, "added")
 
