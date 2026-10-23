@@ -25,6 +25,9 @@
 | 路径 | 主要对象与责任 |
 |---|---|
 | [`ui/application/results.py`](../../src/morphopt/ui/application/results.py) | `ResultSession`、`ResultSelection` 与已完成迭代查询 |
+| [`ui/application/surface_export.py`](../../src/morphopt/ui/application/surface_export.py) | BoundaryPart 曲面清单、指定轮次参数恢复及 STEP/STL 导出 |
+| [`ui/widgets/surface_export.py`](../../src/morphopt/ui/widgets/surface_export.py) | 曲面选择、格式选择、输出目录与导出进程状态 |
+| [`ui/surface_export_worker.py`](../../src/morphopt/ui/surface_export_worker.py) | 独立的曲面导出工作进程 |
 | [`ui/application/finite_element.py`](../../src/morphopt/ui/application/finite_element.py) | `IterationModel`、`FiniteElementSession`、`FiniteElementResult` |
 | [`ui/application/result_fields.py`](../../src/morphopt/ui/application/result_fields.py) | `DisplayField`、`ResultContours` 与云图投影 |
 | [`ui/fea_worker.py`](../../src/morphopt/ui/fea_worker.py) | 独立求解及导出工作进程 |
@@ -38,7 +41,7 @@
 
 ## 2 优化结果读取
 
-`ResultSession` 绑定一个运行目录，持有读取该目录的控制器、历史与参数缓存。`load_iteration()` 和 `load_parameters()` 为所选迭代准备状态，`deformation_cases()` 与 `deformation_mesh()` 提供工况和变形数据。
+`ResultSession` 绑定一个运行目录，持有读取该目录的控制器、历史与参数缓存。 后处理初始化几何、载荷接口和材料，不执行 `FEAParams.define_steps()`；工况求解任务由优化运行阶段定义。`load_iteration()` 和 `load_parameters()` 为所选迭代准备状态，`deformation_cases()` 与 `deformation_mesh()` 提供工况和变形数据。
 
 | 读取内容 | 来源 |
 |---|---|
@@ -66,6 +69,8 @@
 
 原工况名称与下拉框行号分开记录；原始结果和独立分析结果由显式来源对象区分。
 
+迭代历史的曲面导出独立于有限元模型会话。对话框固定请求中的运行目录、轮次、曲面和格式；工作进程建立私有 `ResultSession`，恢复该轮的 BoundaryPart 参数后调用曲面原生几何输出。STEP 转 STL 时使用完整 STEP 边界三角化；文件生成完成后复制到用户指定的部件子目录。预览中的当前参数和优化进程中的模型不参与导出计算。
+
 <a id="section-私有模型与独立有限元"></a>
 
 ## 4 私有模型与独立有限元
@@ -82,6 +87,8 @@ IterationModel(folder, iteration, case)
 `FiniteElementSession` 不共享优化运行的可修改模型。`apply_loads()` 先校验全部编辑，再应用参数，并将旧解置为失效。界面保留原工况的启用状态，不额外提供一套启用开关。
 
 `solve_request()` 将私有模型和请求写入会话工作目录；Qt 页面仅管理 QProcess 的事件、输出与状态。`fea_worker` 不创建 Qt 控件，完成独立的求解或导出操作。
+
+`load_cases.json` 列出原工况的注册顺序。归档未提供该索引时，有限元页提供模型及其已保存载荷的读取和独立重算，不枚举原工况解。
 
 `select_result()` 恢复解的 `work_conditions` 后校验模型哈希，未收敛的解不作为有效场结果。停止或失败保留已导入模型，不发布新的成功结果。
 

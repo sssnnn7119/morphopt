@@ -654,18 +654,18 @@ class DefinitionActions(QObject):
                 return
             try:
                 source = Path(path)
-                mapping = source.with_suffix(".faces.json")
-                face_map = json.loads(mapping.read_text(encoding="utf-8")) if mapping.exists() else {}
+                metadata_path = source.with_suffix(".brep.json")
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
                 imported_step = (
                     source.name, base64.b64encode(source.read_bytes()).decode("ascii"),
-                    json.dumps(face_map),
+                    json.dumps(metadata),
                 )
             except (OSError, ValueError) as exc:
                 QMessageBox.warning(self.parent(), tr("ui.widgets.model_tree.step_import_failed"), str(exc))
                 return
         node = self.commands.add_surface(stype, owner, custom_class)
         if imported_step is not None:
-            node.filename, node.data, node.face_map = imported_step
+            node.filename, node.data, node.brep_metadata = imported_step
         self._select(node)
         self._emit_change(node, "added")
 

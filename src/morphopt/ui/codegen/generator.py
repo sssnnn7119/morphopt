@@ -122,7 +122,8 @@ def render_surface_call(
     if surface.type == "brep_surface":
         prefix = surface.custom_class or "self.BREPSurface"
         path_expression = _asset_path_expression(asset_paths[id(surface)]) if surface.data else repr("")
-        return f"{prefix}({path_expression})"
+        spacing = _render_value(surface.control_point_spacing, problem)
+        return f"{prefix}({path_expression}, control_point_spacing={spacing})"
     prefix = surface.custom_class or "self.MeshSurface"
     if factory is None:  # mesh_surface
         path_expression = (
@@ -774,6 +775,8 @@ def _emit_part_classes(
                     f"                    surface_{index} = "
                     f"{render_surface_call(surface, problem, asset_paths=asset_paths)}"
                 )
+                if surface.type == "brep_surface" and surface.design_faces:
+                    a(f"                    surface_{index}.select_design_faces({list(surface.design_faces)!r})")
                 a(f"                    surface_{index}.is_updatable = {surface.is_updatable!r}")
                 a(f"                    self.add_surface_interface(surface_{index})")
             for line in constraint_lines:

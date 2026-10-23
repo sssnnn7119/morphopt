@@ -261,6 +261,8 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
                 [(np.unique(np.concatenate(ids)), side) for side, ids in sides.items()],
             )
             part.add_node_set(name, np.unique(np.concatenate(nodes)))
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface.define_mesh_sets(part, f"surface_{index}")
         exterior = self.exterior_surface or "extern"
         if exterior not in part.surfaces:
             part.add_surface_set(exterior, part.surfaces["extern"])
@@ -273,7 +275,7 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
         for name, indices in self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items():
             part.add_node_set(f"surface_0_{name}", outer_nodes[indices])
         for index, surface in enumerate(self.surfaceinterfaces):
-            if not surface.num_variables:
+            if not surface.num_variables or surface.uses_facewise_binding:
                 continue
             indices = np.sort(part.set_nodes[f"surface_{index}_All"])
             surface.match_coordinates(indices, nodes[indices])
@@ -283,7 +285,10 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
                 dtype=part.nodes.dtype,
             )
             part.nodes[surface.surf_node_idx] = surface.map(uv)
-        return super().postprocess_mesh(part)
+        part = super().postprocess_mesh(part)
+        for surface in self.surfaceinterfaces:
+            surface.bind_mesh(part)
+        return part
 
     def export_data(self, dirpath: str, pools: Pool | None = None) -> None:
         """Export every surface to ``__surface-<index>.stp|stl``."""
@@ -441,6 +446,7 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
 
         values = torch.as_tensor(design_sensitivity_vars).reshape(-1)
         offset = 0
+        facewise: list[BaseSurface] = []
         for surface in self.surfaceinterfaces:
             size = surface.num_variables
             if not size:
@@ -450,15 +456,20 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
             if not surface.is_updatable:
                 continue
             surface.set_surface_parameters(parameters)
-
-            node_update = surface.map(torch.from_numpy(surface.surf_node_uv))
-            nodes_new[surface.surf_node_idx] = node_update
+            indices, node_update = surface.map_design_nodes()
+            nodes_new[indices] = node_update
+            if surface.uses_facewise_binding:
+                facewise.append(surface)
 
         if self.mesh_order == 2:
             nodes_new[part.mid_pt_idxmap_torch[:, 2]] = (
                 nodes_new[part.mid_pt_idxmap_torch[:, 0]]
                 + nodes_new[part.mid_pt_idxmap_torch[:, 1]]
             ) / 2
+
+        for surface in facewise:
+            indices, node_update = surface.map_design_nodes()
+            nodes_new[indices] = node_update
 
         part.nodes = nodes_new
 

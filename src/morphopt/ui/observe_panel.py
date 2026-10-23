@@ -33,6 +33,7 @@ from .application import (
     last_completed_iteration,
 )
 from .application.runs import RunProgress
+from .application.surface_export import boundary_surface_options
 from .i18n import tr
 from .theme import theme_manager
 from .widgets.elided_label import ElidedLabel
@@ -88,6 +89,11 @@ class ObserverPanel(QWidget):
         top.addWidget(self.btn_next)
         top.addWidget(self.iter_label)
         top.addWidget(self.chk_follow)
+        self.btn_export_surfaces = QPushButton(tr("ui.surface_export.title"))
+        self.btn_export_surfaces.setToolTip(tr("ui.surface_export.tooltip"))
+        self.btn_export_surfaces.setEnabled(False)
+        self.btn_export_surfaces.clicked.connect(self._export_surfaces)
+        top.addWidget(self.btn_export_surfaces)
         outer.addLayout(top)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -136,6 +142,9 @@ class ObserverPanel(QWidget):
             return
         self._metrics_page.update_from_history(history, iteration)
         self._discover_cases(folder)
+        self.btn_export_surfaces.setEnabled(
+            self._results.params is not None and bool(boundary_surface_options(self._results.params))
+        )
 
         max_iter = max(1, int(history.iteration or iteration))
         self.slider.blockSignals(True)
@@ -164,6 +173,16 @@ class ObserverPanel(QWidget):
         for control in (self.slider, self.btn_prev, self.btn_next, self.chk_follow):
             control.setEnabled(not locked)
 
+    def _export_surfaces(self) -> None:
+        from .widgets.surface_export import SurfaceExportDialog
+
+        dialog = SurfaceExportDialog(
+            self.path_result, self.iteration, self.slider.value(),
+            boundary_surface_options(self._results.params), self,
+        )
+        dialog.exec()
+        dialog.deleteLater()
+
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
 
@@ -171,6 +190,7 @@ class ObserverPanel(QWidget):
         no longer keeps showing the previously browsed result.
         """
         self._results.reset()
+        self.btn_export_surfaces.setEnabled(False)
         # remove dynamic load-case pages and their option rows
         for row in reversed(range(2, self.stack.count())):
             w = self.stack.widget(row)
@@ -192,6 +212,8 @@ class ObserverPanel(QWidget):
     def apply_language(self) -> None:
         """Re-apply the current language to the panel's static texts."""
         self.chk_follow.setText(tr("ui.observe_panel.follow_latest"))
+        self.btn_export_surfaces.setText(tr("ui.surface_export.title"))
+        self.btn_export_surfaces.setToolTip(tr("ui.surface_export.tooltip"))
         self.options.item(0).setText(tr("ui.observe_panel.metrics"))
         self.options.item(1).setText(tr("ui.observe_panel.updatable_structures"))
         self._metrics_page.apply_language()

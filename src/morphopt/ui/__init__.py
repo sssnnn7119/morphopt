@@ -20,6 +20,7 @@ ui/observe_panel.py  in-window observer + run/continue/stop controls
 ui/application/      definition, result and process application services
 ui/fea_worker.py     isolated one-shot FEA and data-export worker
 ui/cad_worker.py     isolated CAD-to-boundary conversion worker
+ui/surface_export_worker.py  archived BoundaryPart surface export worker
 postprocess/         physical field providers and export format registry (no Qt)
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source
