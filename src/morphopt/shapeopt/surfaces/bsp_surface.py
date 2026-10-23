@@ -854,6 +854,7 @@ class BspSurface(ControlPointSurface):
         P0 = torch.zeros(numV, numU, 3)
 
         x = torch.linspace(0, 1, numU + 1)[:-1]
+        x = torch.flip(x, dims=[0])  # flip to match the original orientation
         y = torch.linspace(0, 1, numV)
 
         [y, x] = torch.meshgrid(y, x, indexing="ij")
