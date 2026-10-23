@@ -140,7 +140,7 @@ class AssetBrowser(QWidget):
         splitter.setChildrenCollapsible(False)
         layout.addWidget(splitter, 1)
         self.register_preview("geometry", "ui.assets.geometry", GeometryAssetPreview)
-        self.register_preview("metadata", "ui.assets.face_map", MetadataAssetPreview)
+        self.register_preview("metadata", "ui.assets.brep_metadata", MetadataAssetPreview)
         self.apply_language()
 
     def register_preview(

@@ -260,7 +260,7 @@ UI 支持直接编辑 CAD 操作列表，十五种操作见[CAD 建模操作](#c
 
 转换在独立进程中执行，进度窗口提供取消操作。成功后，当前 CADPart 在原位置替换为 BoundaryPart，曲面类型为 `brep_surface`；各曲面的 STEP 数据和面映射嵌入定义，资产页可查看。转换形成一次编辑历史，撤销可恢复 CAD 操作历史；失败或取消时不替换原部件。
 
-BREP 曲面初始为固定几何，设计变量数为零。转换仅拆分几何边界；形状优化仍需配置可更新的参数曲面。保存 `.morph` 时资产保存在定义中，导出运行脚本时还原到 `morphopt_assets`。
+BREP 曲面初始为固定几何。将所需面转换为 NURBS 并启用“参与形状更新”后，该曲面的面内控制点成为设计变量；裁剪边界和共享边保持固定。保存 `.morph` 时资产保存在定义中，导出运行脚本时还原到 `morphopt_assets`。
 
 ![CADPart 的 STEP 导出文件对话框](images/ui-reference/cad/export-step-dialog.png)
 
@@ -306,7 +306,7 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 各类曲面均提供 `flip` 方向反转开关。该开关仅改变曲面方向，不改变几何位置或曲面在部件中的内外边界身份。闭合实体的定义应同时满足曲面顺序、闭合性及法向约定。默认名称按顺序生成为 `surface_0`、`surface_1` 等。
 
-曲面编辑页的“参与形状更新”对应对象属性 `is_updatable`。BSP 和 CPGEO 曲面默认启用，可手动关闭以保持形状固定；固定 BREP 与网格曲面不提供设计变量，该项只读。该状态随曲面对象保存、复制与排序，删除几何优化器不修改曲面状态。几何优化器负责算法、目标和约束，不再保存逐曲面开关。
+曲面编辑页的“参与形状更新”对应对象属性 `is_updatable`。BSP 和 CPGEO 曲面默认启用，可手动关闭；BREP 曲面默认关闭，选定 NURBS 面后可手动启用；网格曲面不提供设计变量，该项只读。该状态随曲面对象保存、复制与排序，删除几何优化器不修改曲面状态。几何优化器负责算法、目标和约束，不再保存逐曲面开关。
 
 <a id="surface_types-bsp-cylinder"></a>
 
@@ -396,17 +396,19 @@ STL 不包含物理单位声明，导入尺寸应与模型单位制一致。变�
 
 #### 3.2.5 brep_surface：BREP 曲面
 
-`brep_surface` 对应内核的 `BREPSurface`，以精确曲面及其拓扑关系表示封闭边界，当前采用 STEP 保存。添加曲面时选择 `.stp` 或 `.step` 文件；若同目录存在同名 `.faces.json`，同时导入面名称映射。CADPart 转换产生的外壳和内腔资产可分别作为 BoundaryPart 的各曲面输入，外壳排在第 0 项。
+`brep_surface` 对应内核的 `BREPSurface`，以精确曲面及其拓扑关系表示封闭边界，当前采用 STEP 保存。添加曲面时选择 `.stp` 或 `.step` 文件；若同目录存在同名 `.brep.json`，同时导入面名称映射、拓扑身份和命名集合。CADPart 转换产生的外壳和内腔资产可分别作为 BoundaryPart 的各曲面输入，外壳排在第 0 项。
 
-STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成或导出运行脚本时，几何还原为 `morphopt_assets` 中的 STEP 文件，面映射保存为同名 JSON；脚本使用 `self.BREPSurface(...)` 读取资产。该曲面不提供设计变量，可以与可更新 BSP、CPGEO 边界组合。
+STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成或导出运行脚本时，几何还原为 `morphopt_assets` 中的 STEP 文件，面映射与拓扑集合统一保存为同名 `.brep.json`；脚本使用 `self.BREPSurface(...)` 读取资产。启用形状更新的 BREP 面在每轮剖分前由当前控制点生成 STEP；裁剪边和共享边所涉及的控制点保持固定。
 
-带面映射的曲面在单击时显示原始 `face_N` 及所属 `surface_i_All`。载荷可以选择其中一个几何面，也可以选择整个壳体。资产页提供 STEP 几何预览与面映射文本预览。
+带面映射的曲面在单击时显示原始 `face_N` 及所属 `surface_i_All`。载荷可以选择其中一个几何面，也可以选择整个壳体。资产页提供 STEP 几何预览与元数据文本预览。导入资产所包含的命名集合会出现在载荷和边界条件的集合选项中。内核支持指定 face 的 NURBS 转换与几何求值，脚本接口见 [BREP 拓扑、集合与 NURBS 转换](scriptreference.md#brep-topology)。UI 当前通过导入已定义的 STEP 与元数据保留这些设置。
 
 | 字段 / 保存键 | 定义 |
 |---|---|
 | STEP 文件 / `filename` | 导入的资产文件名，只读 |
 | `data` | `.morph` 内嵌的 STEP 数据，表单隐藏 |
-| `face_map` | 原始面名称与几何特征的映射，表单隐藏 |
+| `brep_metadata` | 面、边与顶点身份、命名集合，表单隐藏 |
+| `design_faces` | 参与更新的 NURBS 面名称列表；作为任务定义保存，生成脚本时显式调用 `select_design_faces(...)` |
+| `control_point_spacing` | 控制点目标物理间距，单位与模型长度一致；数值越小，设计网格越密。不写入资产元数据 |
 
 <a id="section-instance装配位置接口"></a>
 

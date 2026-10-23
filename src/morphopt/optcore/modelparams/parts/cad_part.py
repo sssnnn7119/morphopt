@@ -333,8 +333,8 @@ class CADPart(BasePart):
             face_indices=face_indices, face_map=face_map,
         )
         torchfea_cad.export_step([CADPart._Operation("shell", action)], str(path))
-        path.with_suffix(".faces.json").write_text(
-            json.dumps(face_map, indent=2), encoding="utf-8",
+        path.with_suffix(".brep.json").write_text(
+            json.dumps({"face_map": face_map}, indent=2), encoding="utf-8",
         )
 
     def to_boundary_part(

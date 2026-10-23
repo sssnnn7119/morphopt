@@ -98,7 +98,7 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几何表面环。两种表示均构成带内腔的体，通过同一 `CADHistory.mesh()` 入口交给 TorchFEA 划分并提取有限元网格。原有独立的 INP 写入与回读管线已移除。曲面输出显式接收 `pools`，省略时同步输出，不访问全局控制器的进程池。
 
-`CADPart.to_boundary_part(asset_directory="morphopt_assets")` 将一个最终 CAD 实体拆为外壳与内腔壳体，各自保存为 STEP 与面名称映射文件，并创建引用这些资产的 `BREPSurface`。转换保留 `face_N` 和 `face_N_nodes`，另建立逐壳体的 `surface_i_All` 表面集与同名节点集。显示三角网格由 STEP 按需生成，不参与体几何重建。该接口不拟合控制点，BREP 曲面的设计变量数为零；使用方式见[CAD 转换接口](../scriptreference.md#cad-to-boundary)。
+`CADPart.to_boundary_part(asset_directory="morphopt_assets")` 将一个最终 CAD 实体拆为外壳与内腔壳体，各自保存为 STEP 与面名称映射文件，并创建引用这些资产的 `BREPSurface`。转换保留 `face_N` 和 `face_N_nodes`，另建立逐壳体的 `surface_i_All` 表面集与同名节点集。显示三角网格由 STEP 按需生成，不参与体几何重建。转换不自动拟合控制点；需要形状优化时，可将指定面转换为 NURBS 并启用内部控制点更新。使用方式见[CAD 转换接口](../scriptreference.md#cad-to-boundary)。
 
 | 层次 | 实现与职责 |
 |---|---|
@@ -107,7 +107,7 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 | `BspSurface` | B 样条曲面与圆柱工厂 |
 | `CPGEOSurface` | CPGEO 曲面、圆柱和球面工厂 |
 | `MeshSurface` | 固定三角曲面，不提供可更新控制点 |
-| `BREPSurface` | 精确 CAD 边界，当前以 STEP 资产保存，不提供设计变量 |
+| `BREPSurface` | 精确 CAD 边界，以 STEP 资产保存；选定 NURBS 面后可提供固定裁剪边的内部控制点变量 |
 | 曲面约束 | BSP/CPGEO 镜面、旋转或跨曲面关联 |
 | `UpdaterBoundaryPart` | 绑定单个 BoundaryPart 的形状子问题 |
 

@@ -32,7 +32,7 @@ def fields_for_node(
                 "bool",
                 type(node).is_updatable,
                 doc_key="ui.schema.fields.is_updatable.help",
-                read_only=node.factory is None and not node.custom_class,
+                read_only=node.factory is None and node.type != "brep_surface" and not node.custom_class,
             ),
         )
     if isinstance(node, CADOperationNode) and problem is not None:

@@ -73,11 +73,26 @@ class PartSetCatalog:
         ) if surface_count else ()
         faces = [
             name for surface in part.surfaces if isinstance(surface, BREPSurfaceNode)
-            for name in json.loads(surface.face_map)
+            for name in json.loads(surface.brep_metadata).get("face_map", {})
         ]
+        surface_sets: list[str] = []
+        node_sets: list[str] = []
+        for index, surface in enumerate(part.surfaces):
+            if not isinstance(surface, BREPSurfaceNode):
+                continue
+            prefix = f"surface_{index}"
+            metadata = json.loads(surface.brep_metadata)
+            selections = [*json.loads(surface.brep_metadata).get("face_map", {}), *metadata.get("surface_sets", {})]
+            surface_sets.extend(f"{prefix}_{name}" for name in selections)
+            node_sets.extend(f"{prefix}_{name}_nodes" for name in selections)
+            node_sets.extend(
+                f"{prefix}_{name}"
+                for name in (*metadata.get("edge_map", {}), *metadata.get("vertex_map", {}),
+                             *metadata.get("node_sets", {}))
+            )
         return PartSets(
-            nodes=tuple(names) + end_nodes + tuple(f"{name}_nodes" for name in faces),
-            surfaces=tuple(names) + tuple(faces),
+            nodes=tuple(names) + end_nodes + tuple(f"{name}_nodes" for name in faces) + tuple(node_sets),
+            surfaces=tuple(names) + tuple(faces) + tuple(surface_sets),
         )
 
     @staticmethod

@@ -330,11 +330,12 @@ class DefinitionValidation:
         ):
             self.add(node, "asset", field="STEP")
         if isinstance(node, BREPSurfaceNode):
-            try:
-                if not isinstance(json.loads(node.face_map), dict):
-                    raise ValueError("face_map")
-            except ValueError as exc:
-                self.add(node, "field", field="face_map", reason=str(exc))
+            for key in ("brep_metadata",):
+                try:
+                    if not isinstance(json.loads(node.get_field(key)), dict):
+                        raise ValueError(key)
+                except ValueError as exc:
+                    self.add(node, "field", field=key, reason=str(exc))
         if (
             isinstance(node, BoundaryPartNode)
             and not node.surfaces

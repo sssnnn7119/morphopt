@@ -64,7 +64,7 @@ def test_surface_fields_reach_factory(kind, spec):
         assert bound.arguments["path_step"] == ""
         assert surface.filename == ""
         assert surface.data == ""
-        assert surface.face_map == "{}"
+        assert surface.brep_metadata == "{}"
         return
     for field in spec.fields:
         assert bound.arguments[field.key] == surface.get_field(field.key)

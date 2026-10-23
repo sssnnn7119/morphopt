@@ -941,8 +941,8 @@
           "help": ""
         },
         {
-          "key": "face_map",
-          "label_key": "ui.assets.face_map",
+          "key": "brep_metadata",
+          "label_key": "ui.assets.brep_metadata",
           "type": "str",
           "default": "{}",
           "doc_key": "",
@@ -953,7 +953,7 @@
           "ints": false,
           "read_only": false,
           "hidden": true,
-          "label": "几何面映射",
+          "label": "BREP 拓扑与集合",
           "help": ""
         }
       ],
