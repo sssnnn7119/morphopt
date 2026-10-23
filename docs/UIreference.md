@@ -408,6 +408,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 | `data` | `.morph` 内嵌的 STEP 数据，表单隐藏 |
 | `brep_metadata` | 面、边与顶点身份、命名集合，表单隐藏 |
 | `design_faces` | 参与更新的 NURBS 面名称列表；作为任务定义保存，生成脚本时显式调用 `select_design_faces(...)` |
+| `control_point_spacing` | 控制点目标物理间距，单位与模型长度一致；数值越小，设计网格越密。不写入资产元数据 |
 
 <a id="section-instance装配位置接口"></a>
 

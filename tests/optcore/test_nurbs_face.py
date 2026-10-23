@@ -13,6 +13,13 @@ from morphopt.shapeopt.surfaces.brep_surface import BREPSurface
 from morphopt.shapeopt.surfaces.nurbs_face import NURBSFace
 
 
+def most_influential_pole(model: NURBSFace) -> int:
+    weights, indices = model.get_weights(model.surf_node_uv)
+    influence = np.bincount(indices.ravel(), weights=np.abs(weights).ravel(),
+                            minlength=model.control_points.shape[0])
+    return int(np.argmax(np.where(model.design_mask, influence, -1)))
+
+
 @pytest.fixture
 def quarter_cylinder() -> NURBSFace:
     poles = np.array([[[1, 0, 0], [1, 0, 3]],
@@ -79,7 +86,7 @@ def test_batched_kdtree_newton_matching_and_empty_input(quarter_cylinder: NURBSF
 def test_final_mesh_nodes_bind_to_trimmed_nurbs_and_have_gradients(
     kind: str, order: int, step_factory: Callable[[str], Path], tmp_path: Path,
 ) -> None:
-    brep = BREPSurface(step_factory(kind))
+    brep = BREPSurface(step_factory(kind), control_point_spacing=0.7)
     if kind == "box":
         chosen = list(brep.faces)[:2]
     elif kind == "hole":
@@ -145,7 +152,7 @@ def test_final_mesh_nodes_bind_to_trimmed_nurbs_and_have_gradients(
 def test_brep_poles_write_step_and_remesh_next_iteration(
     kind: str, order: int, step_factory: Callable[[str], Path], tmp_path: Path,
 ) -> None:
-    brep = BREPSurface(step_factory(kind))
+    brep = BREPSurface(step_factory(kind), control_point_spacing=0.7)
     if kind == "cylinder":
         name = next(name for name, face in brep.faces.items() if face.geometry_type == "Cylinder")
     elif kind == "hole":
@@ -179,7 +186,7 @@ def test_brep_poles_write_step_and_remesh_next_iteration(
     assert torch.isfinite(transformed_gradient).all()
     assert transformed_gradient.abs().max() > 0
     brep.set_surface_parameters(old)
-    free = int(np.flatnonzero(model.design_mask)[0])
+    free = most_influential_pole(model)
     component = free * 3 + (0 if kind == "cylinder" else 2)
     change = torch.zeros_like(old)
     change[component] = 0.05
@@ -225,7 +232,7 @@ def test_brep_poles_write_step_and_remesh_next_iteration(
 def test_step_export_rejects_a_moved_trim_edge(
     step_factory: Callable[[str], Path], tmp_path: Path,
 ) -> None:
-    brep = BREPSurface(step_factory("box"))
+    brep = BREPSurface(step_factory("box"), control_point_spacing=0.7)
     name = next(name for name, face in brep.faces.items() if abs(face.signature[3] - 3) < 1e-7)
     brep.convert_faces_to_nurbs(name)
     model = brep.nurbs_faces[name]
@@ -239,12 +246,12 @@ def test_step_export_rejects_a_moved_trim_edge(
 def test_native_nurbs_step_without_selection_metadata_updates_next_mesh(
     step_factory: Callable[[str], Path], tmp_path: Path,
 ) -> None:
-    source = BREPSurface(step_factory("box"))
+    source = BREPSurface(step_factory("box"), control_point_spacing=0.7)
     name = next(name for name, face in source.faces.items() if abs(face.signature[3] - 3) < 1e-7)
     source.convert_faces_to_nurbs(name)
     path = source.export_step(tmp_path / "native.stp")
     path.with_suffix(".brep.json").unlink()
-    brep = BREPSurface(path)
+    brep = BREPSurface(path, control_point_spacing=0.7)
     brep.select_design_faces(name)
     brep.is_updatable = True
     body = BoundaryPart(fea_seed_size=1.2, mesh_order=1, part_name="body")
@@ -252,7 +259,7 @@ def test_native_nurbs_step_without_selection_metadata_updates_next_mesh(
     body.initialize()
     initial = body.build_part(str(tmp_path))
     model = brep.nurbs_faces[name]
-    free = int(np.flatnonzero(model.design_mask)[0])
+    free = most_influential_pole(model)
     change = torch.zeros(brep.num_variables, dtype=brep.get_surface_parameters().dtype)
     change[free * 3 + 2] = 0.05
     brep.update_variables(change)
@@ -261,7 +268,7 @@ def test_native_nurbs_step_without_selection_metadata_updates_next_mesh(
 
 
 def test_brep_update_requires_a_nurbs_face(step_factory: Callable[[str], Path]) -> None:
-    brep = BREPSurface(step_factory("box"))
+    brep = BREPSurface(step_factory("box"), control_point_spacing=0.7)
     brep.is_updatable = True
     with pytest.raises(ValueError, match="requires select_design_faces"):
         _ = brep.num_variables
@@ -270,7 +277,7 @@ def test_brep_update_requires_a_nurbs_face(step_factory: Callable[[str], Path]) 
 def test_only_selected_nurbs_face_enters_design_vector(
     step_factory: Callable[[str], Path], tmp_path: Path,
 ) -> None:
-    brep = BREPSurface(step_factory("box"))
+    brep = BREPSurface(step_factory("box"), control_point_spacing=0.7)
     top = next(name for name, face in brep.faces.items() if abs(face.signature[3] - 3) < 1e-7)
     bottom = next(name for name, face in brep.faces.items() if abs(face.signature[3]) < 1e-7)
     brep.convert_faces_to_nurbs((top, bottom))
@@ -285,7 +292,7 @@ def test_only_selected_nurbs_face_enters_design_vector(
     assert brep.num_variables == brep.nurbs_faces[top].num_variables
     assert brep.nurbs_faces[bottom].design_mask is None
     step = torch.zeros(brep.num_variables, dtype=brep.get_surface_parameters().dtype)
-    free = int(np.flatnonzero(brep.nurbs_faces[top].design_mask)[0])
+    free = most_influential_pole(brep.nurbs_faces[top])
     step[free * 3 + 2] = 0.05
     brep.update_variables(step)
     exported = BREPSurface(brep.export_step(tmp_path / "selected.stp"))
@@ -298,3 +305,43 @@ def test_only_selected_nurbs_face_enters_design_vector(
     uv = np.asarray(brep.faces[bottom].parameter_bounds).mean(axis=1)[None, :]
     np.testing.assert_allclose(exported.evaluate_face(bottom, uv),
                                brep.evaluate_face(bottom, uv), atol=1e-8)
+
+
+def test_constructor_controls_refinement_without_changing_geometry(
+    step_factory: Callable[[str], Path],
+) -> None:
+    path = step_factory("cylinder")
+    original = BREPSurface(path)
+    name = next(name for name, face in original.faces.items() if face.geometry_type == "Cylinder")
+    original.convert_faces_to_nurbs(name)
+    original.select_design_faces(name)
+    original.is_updatable = True
+    base = original.nurbs_faces[name]
+    refined = BREPSurface(path, control_point_spacing=0.8)
+    refined.convert_faces_to_nurbs(name)
+    refined.select_design_faces(name)
+    refined.is_updatable = True
+    model = refined.nurbs_faces[name]
+    assert model.size[0] >= 17
+    assert model.size[1] >= 8
+    assert base.size[1] == 2  # Default leaves the analytic conversion unchanged.
+    u = np.linspace(*base.parameter_bounds[0], 17)
+    v = np.linspace(*base.parameter_bounds[1], 17)
+    uv = torch.from_numpy(np.column_stack((u, v)))
+    torch.testing.assert_close(model.map(uv), base.map(uv), atol=1e-10, rtol=1e-10)
+    assert "control_point_spacing" not in refined.metadata()
+    for spacing in (0, -1, float("inf"), float("nan"), True):
+        with pytest.raises(ValueError, match="control_point_spacing"):
+            BREPSurface(path, control_point_spacing=spacing)
+
+
+def test_spacing_uses_physical_lengths_and_model_scale(quarter_cylinder: NURBSFace) -> None:
+    coarse = quarter_cylinder.refine_by_spacing(0.5)
+    fine = quarter_cylinder.refine_by_spacing(0.25)
+    assert coarse.size == (5, 7)
+    assert fine.size == (8, 13)
+    uv = torch.tensor([[-2.0, 10.0], [0.2, 12.3], [5.0, 14.0]], dtype=torch.float64)
+    torch.testing.assert_close(coarse.map(uv), quarter_cylinder.map(uv), atol=1e-12, rtol=1e-12)
+    quarter_cylinder.control_points = quarter_cylinder.control_points * 2
+    scaled = quarter_cylinder.refine_by_spacing(0.5)
+    assert scaled.size == fine.size

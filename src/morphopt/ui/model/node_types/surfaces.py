@@ -282,6 +282,7 @@ class BREPSurfaceNode(SurfaceNode):
     data: str
     brep_metadata: str
     design_faces: list[str]
+    control_point_spacing: float | str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "filename", "ui.schema.fields.filename.label.step_file", "str", "",
@@ -291,4 +292,5 @@ class BREPSurfaceNode(SurfaceNode):
         FieldSpec("data", "ui.schema.fields.data.label.step_data", "str", "", hidden=True),
         FieldSpec("brep_metadata", "ui.assets.brep_metadata", "str", "{}", hidden=True),
         FieldSpec("design_faces", "ui.schema.fields.design_faces.label", "vecN", ()),
+        FieldSpec("control_point_spacing", "ui.schema.fields.control_point_spacing.label", "float", 1.0, minimum=1e-9),
     )

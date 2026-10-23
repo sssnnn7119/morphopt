@@ -142,6 +142,48 @@ class NURBSFace(ControlPointSurface):
             support.InsertVKnot(float(value), 1, 1e-9)
         return type(self).from_occ(support)
 
+    def refine_by_spacing(self, spacing: float) -> NURBSFace:
+        """Refine from physical lengths of isoparametric curves.
+
+        The longest sampled curve in each direction determines the minimum
+        pole count. Spacing is a target average design resolution, not an
+        exact distance between off-surface control poles.
+        """
+        if not np.isfinite(spacing) or spacing <= 0:
+            raise ValueError("Control point spacing must be finite and positive.")
+        counts = []
+        poles = self.control_points.detach().cpu().numpy()
+        for axis in (0, 1):
+            along = np.linspace(*self.parameter_bounds[axis], 257)
+            across = np.linspace(*self.parameter_bounds[1 - axis], 17)
+            a, b = np.meshgrid(along, across, indexing="ij")
+            uv = np.column_stack((a.ravel(), b.ravel())) if axis == 0 else np.column_stack((b.ravel(), a.ravel()))
+            weights, indices = self.get_weights(uv)
+            points = (weights[:, :, None] * poles[indices]).sum(axis=1).reshape(257, 17, 3)
+            lengths = np.linalg.norm(np.diff(points, axis=0), axis=2).sum(axis=0)
+            intervals = float(lengths.max() / spacing)
+            # Arc-length summation can put an integer ratio just above itself.
+            counts.append(max(2, int(np.ceil(intervals - 1e-10 * max(1.0, intervals))) + 1))
+        return self._refine_to(tuple(counts))
+
+    def _refine_to(self, shape: tuple[int, int]) -> NURBSFace:
+        """Reach minimum pole counts by splitting the largest native knot spans.
+
+        Existing finer supports are retained. Knot insertion preserves the
+        exact surface, including rational weights and native parameter bounds.
+        """
+        support = self.to_occ()
+        for axis, target in enumerate(shape):
+            count = support.NbUPoles if axis == 0 else support.NbVPoles
+            knot_count = support.NbUKnots if axis == 0 else support.NbVKnots
+            knot = support.UKnot if axis == 0 else support.VKnot
+            insert = support.InsertUKnot if axis == 0 else support.InsertVKnot
+            while count() < target:
+                values = np.array([knot(index) for index in range(1, knot_count() + 1)])
+                index = int(np.argmax(np.diff(values)))
+                insert(float((values[index] + values[index + 1]) / 2), 1, 1e-9)
+        return type(self).from_occ(support)
+
     def get_weights(
         self, uv: np.ndarray, derivative: tuple[int, int] = (0, 0),
     ) -> tuple[np.ndarray, np.ndarray]:

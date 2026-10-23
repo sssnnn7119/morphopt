@@ -122,7 +122,8 @@ def render_surface_call(
     if surface.type == "brep_surface":
         prefix = surface.custom_class or "self.BREPSurface"
         path_expression = _asset_path_expression(asset_paths[id(surface)]) if surface.data else repr("")
-        return f"{prefix}({path_expression})"
+        spacing = _render_value(surface.control_point_spacing, problem)
+        return f"{prefix}({path_expression}, control_point_spacing={spacing})"
     prefix = surface.custom_class or "self.MeshSurface"
     if factory is None:  # mesh_surface
         path_expression = (

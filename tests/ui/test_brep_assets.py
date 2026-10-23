@@ -127,6 +127,7 @@ def test_design_faces_are_emitted_in_script_not_asset(
 ) -> None:
     selected = json.loads(brep_node.brep_metadata)["surface_sets"]["loaded"]
     brep_node.design_faces = selected
+    brep_node.control_point_spacing = 0.8
     brep_node.is_updatable = True
     problem = ProblemLibrary.create_blank()
     part = BoundaryPartNode(name="body")
@@ -134,9 +135,11 @@ def test_design_faces_are_emitted_in_script_not_asset(
     problem.add_part(part)
     script = Path(ProblemLibrary.export_python_bundle(problem, tmp_path / "bundle"))
     assert f"select_design_faces({selected!r})" in script.read_text()
+    assert "control_point_spacing=0.8" in script.read_text()
     metadata_files = list(script.parent.rglob("*.brep.json"))
     assert metadata_files
     for path in metadata_files:
         metadata = json.loads(path.read_text())
         assert "design_faces" not in metadata
         assert "nurbs_faces" not in metadata
+        assert "control_point_spacing" not in metadata

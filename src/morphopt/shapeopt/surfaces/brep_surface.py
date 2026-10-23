@@ -35,8 +35,18 @@ class BREPSurface(BaseSurface):
     Topology inspection does not generate a display or finite-element mesh.
     """
 
-    def __init__(self, path_step: str | Path) -> None:
+    def __init__(
+        self, path_step: str | Path,
+        control_point_spacing: float | None = None,
+    ) -> None:
         super().__init__()
+        if control_point_spacing is not None:
+            if isinstance(control_point_spacing, bool) or not np.isscalar(control_point_spacing):
+                raise ValueError("control_point_spacing must be a finite positive length.")
+            control_point_spacing = float(control_point_spacing)
+            if not np.isfinite(control_point_spacing) or control_point_spacing <= 0:
+                raise ValueError("control_point_spacing must be a finite positive length.")
+        self.control_point_spacing = control_point_spacing
         self.path_step = Path(path_step).resolve()
         self._geometry_path = self.path_step
         metadata_path = self.path_step.with_suffix(".brep.json")
@@ -101,10 +111,8 @@ class BREPSurface(BaseSurface):
                 if name in self._models_refined:
                     continue
                 model = self._nurbs_models[name]
-                knots = [tuple(np.linspace(*bounds, 5)[1:-1]) if count <= 3 else ()
-                         for bounds, count in zip(model.parameter_bounds, model.size, strict=True)]
-                if any(knots):
-                    self._nurbs_models[name] = model.refine(*knots)
+                if self.control_point_spacing is not None:
+                    self._nurbs_models[name] = model.refine_by_spacing(self.control_point_spacing)
                 self._models_refined.add(name)
         return self._nurbs_models
 

@@ -268,7 +268,7 @@ class Actuator(morphopt.BoundaryPart):
 | CPGEO 圆柱 | `self.CPGEO.initialize_cylinder(...)` | `r0`、`length`、`seed_size`、`flip`、`init_location`、`maxC` 等 |
 | CPGEO 球面 | `self.CPGEO.initialize_Sphere(...)` | `r0`、`seed_size`、`flip`、`init_location`、`MaxC` |
 | 网格曲面 | `self.MeshSurface(vertices, faces)` 或 `self.MeshSurface.initialize_from_stl_file(path_stl)` | 顶点坐标与三角面连接关系；文件导入采用 STL；不提供设计变量 |
-| BREP 曲面 | `self.BREPSurface(path_step)` | 精确曲面及其拓扑组成的封闭边界，当前以 STEP 保存；以同名 `.brep.json` 保存拓扑身份与集合；指定 face 转换为 NURBS 后可启用面内控制点优化 |
+| BREP 曲面 | `self.BREPSurface(path_step, control_point_spacing=None)` | 精确曲面及其拓扑组成的封闭边界，当前以 STEP 保存；以同名 `.brep.json` 保存拓扑身份与集合；指定 face 转换为 NURBS 后可启用面内控制点优化 |
 
 `BREPSurface` 和 `MeshSurface` 按几何表示分类。前者在剖分时使用精确 CAD 边界，后者使用离散三角网格。STEP 和 STL 分别是当前采用的资产文件格式。BREP 默认固定，选定 NURBS 面并启用更新后提供控制点设计变量；MeshSurface 保持固定。
 
@@ -303,7 +303,7 @@ class Actuator(morphopt.BoundaryPart):
 ```python
 class Body(morphopt.BoundaryPart):
     def define_surfaces(self) -> None:
-        boundary = self.BREPSurface("morphopt_assets/body/surface_0.stp")
+        boundary = self.BREPSurface("morphopt_assets/body/surface_0.stp", control_point_spacing=0.8)
         boundary.convert_faces_to_nurbs(["face_0"])
         boundary.select_design_faces(["face_0"])
         boundary.is_updatable = True
@@ -340,7 +340,7 @@ coordinates = boundary.map_face_nodes("face_0")
 gradient, = torch.autograd.grad(coordinates.square().sum(), parameters)
 ```
 
-节点 UV 及基函数模型属于运行期数据，不写入 `.morph` 或几何元数据。`BREPSurface` 默认固定。将 `is_updatable` 设为 `True` 后，选定 NURBS 面的控制点按面名称顺序纳入部件设计变量。初次读取时，对控制点数不超过三个的参数方向插入内部节点；插入节点保持原始几何不变，并为面内形状变化提供控制点。网格绑定时，裁剪边、孔洞边和参数域边界所涉及的控制点被固定，其他控制点可由几何优化器更新。
+节点 UV 及基函数模型属于运行期数据，不写入 `.morph` 或几何元数据。`BREPSurface` 默认固定。将 `is_updatable` 设为 `True` 后，选定 NURBS 面的控制点按面名称顺序纳入部件设计变量。构造参数 `control_point_spacing=0.8` 指定控制点的目标物理间距，单位与模型长度一致。沿两个参数方向分别采样等参数曲线，以各方向最长采样曲线的弧长除以间距，向上取整后加一，确定最小控制点数；通过精确插入节点实现加密。间距表示平均设计分辨率，不要求位于曲面外部的控制点彼此等距，也不构成局部间距上限。已有更密的控制网格保持原状。默认 `None` 保留原始网格。该配置属于任务定义，不写入资产元数据。网格绑定时，裁剪边、孔洞边和参数域边界所涉及的控制点被固定，其他控制点可由几何优化器更新。
 
 每轮剖分前，当前控制点写入临时 STEP 实体，连同当前面映射一起载入 Gmsh。导出迭代曲面时也使用当前控制点；`.npz` 迭代归档保存各选定面的控制点。写回前检查原有裁剪边是否仍落在更新后的曲面上，修复实体并验证闭合性。会移动现有边界或使实体失效的更新报告错误。此接口支持固定边界的面内形状优化；边界移动及相邻未选面随动需要另外定义联动规则。
 

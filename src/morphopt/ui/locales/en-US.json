@@ -1,4 +1,5 @@
 {
+  "ui.schema.fields.control_point_spacing.label": "Target control point spacing",
   "ui.schema.fields.design_faces.label": "Design faces",
   "ui.assets.brep_metadata": "BREP topology and sets",
   "ui.validation.bounding_box": "Each bounding-box minimum must be smaller than its maximum.",

@@ -25,7 +25,7 @@ class ThisController(morphopt.Controller):
         class GeometryParams(morphopt.GeometryParams):
             class Body(morphopt.BoundaryPart):
                 def define_surfaces(self) -> None:
-                    boundary = self.BREPSurface(ASSET_PATH)
+                    boundary = self.BREPSurface(ASSET_PATH, control_point_spacing=0.8)
                     # face_0 is the cylindrical side; face_1/face_2 are end caps.
                     boundary.select_design_faces(["face_0"])
                     boundary.is_updatable = True
