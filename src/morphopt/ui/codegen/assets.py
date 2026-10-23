@@ -93,17 +93,21 @@ def collect_python_assets(
                 elif isinstance(surface, BREPSurfaceNode) and surface.data:
                     reference = f"{part.name}/{surface.name}"
                     mapping = json.loads(surface.face_map)
-                    metadata = json.dumps(mapping, indent=2).encode("utf-8") if mapping else b""
+                    topology = json.loads(surface.brep_metadata)
+                    sidecars = {
+                        ".faces.json": json.dumps(mapping, indent=2).encode("utf-8"),
+                        ".brep.json": json.dumps(topology, indent=2).encode("utf-8"),
+                    }
                     asset = add_asset(
                         surface, surface.filename,
                         base64.b64decode(surface.data, validate=True), "step", reference,
-                        metadata=metadata,
+                        metadata=b"".join(sidecars.values()),
                     )
-                    if mapping:
-                        name = str(Path(asset.name).with_suffix(".faces.json"))
+                    for suffix, content in sidecars.items():
+                        name = str(Path(asset.name).with_suffix(suffix))
                         if name not in files:
                             files[name] = DefinitionAsset(
-                                name, metadata, "json", "metadata", None, surface, [],
+                                name, content, "json", "metadata", None, surface, [],
                             )
                         files[name].references.append(reference)
     return paths, files

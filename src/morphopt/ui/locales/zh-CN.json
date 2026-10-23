@@ -1,4 +1,5 @@
 {
+  "ui.assets.brep_metadata": "BREP 拓扑与集合",
   "ui.validation.bounding_box": "包围盒各方向的下限必须小于上限。",
   "ui.validation.sequence": "{field} 必须为列表。",
   "ui.validation.invalid_constant": "{field} 引用的常量 {name} 存在定义错误。",

@@ -261,6 +261,8 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
                 [(np.unique(np.concatenate(ids)), side) for side, ids in sides.items()],
             )
             part.add_node_set(name, np.unique(np.concatenate(nodes)))
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface.define_mesh_sets(part, f"surface_{index}")
         exterior = self.exterior_surface or "extern"
         if exterior not in part.surfaces:
             part.add_surface_set(exterior, part.surfaces["extern"])
@@ -283,7 +285,10 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
                 dtype=part.nodes.dtype,
             )
             part.nodes[surface.surf_node_idx] = surface.map(uv)
-        return super().postprocess_mesh(part)
+        part = super().postprocess_mesh(part)
+        for surface in self.surfaceinterfaces:
+            surface.bind_mesh(part)
+        return part
 
     def export_data(self, dirpath: str, pools: Pool | None = None) -> None:
         """Export every surface to ``__surface-<index>.stp|stl``."""

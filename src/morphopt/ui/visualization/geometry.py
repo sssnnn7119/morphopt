@@ -487,6 +487,7 @@ class SurfacePreviewVisitor:
             path = Path(directory) / surface.filename
             path.write_bytes(base64.b64decode(surface.data, validate=True))
             path.with_suffix(".faces.json").write_text(surface.face_map, encoding="utf-8")
+            path.with_suffix(".brep.json").write_text(surface.brep_metadata, encoding="utf-8")
             return BREPSurface(path).get_mesh()
 
 

@@ -396,17 +396,18 @@ STL 不包含物理单位声明，导入尺寸应与模型单位制一致。变�
 
 #### 3.2.5 brep_surface：BREP 曲面
 
-`brep_surface` 对应内核的 `BREPSurface`，以精确曲面及其拓扑关系表示封闭边界，当前采用 STEP 保存。添加曲面时选择 `.stp` 或 `.step` 文件；若同目录存在同名 `.faces.json`，同时导入面名称映射。CADPart 转换产生的外壳和内腔资产可分别作为 BoundaryPart 的各曲面输入，外壳排在第 0 项。
+`brep_surface` 对应内核的 `BREPSurface`，以精确曲面及其拓扑关系表示封闭边界，当前采用 STEP 保存。添加曲面时选择 `.stp` 或 `.step` 文件；若同目录存在同名 `.faces.json`、`.brep.json`，同时导入面名称映射、拓扑身份和命名集合。CADPart 转换产生的外壳和内腔资产可分别作为 BoundaryPart 的各曲面输入，外壳排在第 0 项。
 
-STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成或导出运行脚本时，几何还原为 `morphopt_assets` 中的 STEP 文件，面映射保存为同名 JSON；脚本使用 `self.BREPSurface(...)` 读取资产。该曲面不提供设计变量，可以与可更新 BSP、CPGEO 边界组合。
+STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成或导出运行脚本时，几何还原为 `morphopt_assets` 中的 STEP 文件，面映射与拓扑集合分别保存为同名 `.faces.json`、`.brep.json`；脚本使用 `self.BREPSurface(...)` 读取资产。该曲面不提供设计变量，可以与可更新 BSP、CPGEO 边界组合。
 
-带面映射的曲面在单击时显示原始 `face_N` 及所属 `surface_i_All`。载荷可以选择其中一个几何面，也可以选择整个壳体。资产页提供 STEP 几何预览与面映射文本预览。
+带面映射的曲面在单击时显示原始 `face_N` 及所属 `surface_i_All`。载荷可以选择其中一个几何面，也可以选择整个壳体。资产页提供 STEP 几何预览与元数据文本预览。导入资产所包含的命名集合会出现在载荷和边界条件的集合选项中。内核支持指定 face 的 NURBS 转换与几何求值，脚本接口见 [BREP 拓扑、集合与 NURBS 转换](scriptreference.md#brep-topology)。UI 当前通过导入已定义的 STEP 与元数据保留这些设置。
 
 | 字段 / 保存键 | 定义 |
 |---|---|
 | STEP 文件 / `filename` | 导入的资产文件名，只读 |
 | `data` | `.morph` 内嵌的 STEP 数据，表单隐藏 |
 | `face_map` | 原始面名称与几何特征的映射，表单隐藏 |
+| `brep_metadata` | 边与顶点身份、命名集合和 NURBS 面选择，表单隐藏 |
 
 <a id="section-instance装配位置接口"></a>
 

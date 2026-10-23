@@ -17,6 +17,7 @@ from .base_constraints import BaseSurfaceConstraints
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
 
+    import torchfea
     from torchfea.cad.builder import OCCBuilder
 
     from ...optcore.modelparams.parts.cad_part import CADPart
@@ -154,6 +155,12 @@ class BaseSurface(BaseModelComponent):
     def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
         """Return surface-specific node sets as indices into ``nodes``."""
         return {}
+
+    def define_mesh_sets(self, part: torchfea.Part, prefix: str) -> None:
+        """Add topology-owned sets after the Part's mesh has been extracted."""
+
+    def bind_mesh(self, part: torchfea.Part) -> None:
+        """Bind surface parameters after element-order processing is complete."""
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
         """

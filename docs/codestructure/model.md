@@ -122,6 +122,10 @@ CAD 的 `define_operations()` 与有限元 `build_part()` 分离。STEP 导出�
 | `define_mesh_sets()` | 定义几何面与节点集 | 调用父类定义面集，再增加 `surface_i_All` 分组 |
 | `postprocess_mesh()` | 执行单元扩展及网格阶次转换 | 匹配设计曲面节点后调用父类处理 |
 
+`BREPSurface` 将一个闭合 CAD 壳体组织为拓扑与集合的合集。TorchFEA 的 `cad/brep.py` 负责读取面、线环、共享边、顶点及指定面的 NURBS 转换；MorphOpt 曲面对象管理逻辑身份、集合注册、资产持久化和模型接口。各 surface 的 `define_mesh_sets(part, prefix)` 在体网格提取后定义局部集合，BoundaryPart 通过多态调用扩展面集和节点集。曲线节点与顶点节点来自 TorchFEA 的 OCC 网格分类，不通过坐标邻近或面节点交集推断。
+
+BREP 拓扑检查和 STEP 导出使用与预览、剖分共享锁的 `torchfea.cad.occ_session()` 会话，拓扑检查不生成网格。面转换先解除原实体的所属关系，再将更新的面组装为闭合壳体。平面转换同时迁移外轮廓和孔洞。`.faces.json` 与 `.brep.json` 保存逻辑身份和集合，Gmsh 实体 tag 仅在当前会话中使用。接口说明见[脚本参考](../scriptreference.md#brep-topology)。
+
 父类不根据 `BoundaryPart` 或其几何描述类型选择实现。曲面通过 `prepare_geometry()` 准备几何文件，再由 `load_geometry()` 调用 CADPart 的对应载入方法。BSP 和 `BREPSurface` 使用 STEP 载入，CPGEO 和固定 STL 使用离散网格载入。BoundaryPart 按这些方法返回的面编号组装外壳和内腔，并根据曲面的离散几何能力选择相应 Gmsh 内核。
 
 `CADPart` 集中实现 `load_step_boundary()`、`load_mesh_boundary()`、`split_shells()` 和 `export_shell_step()`。转换时，各封闭壳体分别导出为 STEP 资产，`BREPSurface` 仅持有文件路径和面名称映射。原始面身份在组装时写入部件的 `_face_names`，BoundaryPart 的曲面分组由自身 `_surface_groups` 持有。源 CAD 操作历史只参与转换，不进入曲面对象。

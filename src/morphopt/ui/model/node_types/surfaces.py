@@ -281,6 +281,7 @@ class BREPSurfaceNode(SurfaceNode):
     filename: str
     data: str
     face_map: str
+    brep_metadata: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "filename", "ui.schema.fields.filename.label.step_file", "str", "",
@@ -289,4 +290,5 @@ class BREPSurfaceNode(SurfaceNode):
         ),
         FieldSpec("data", "ui.schema.fields.data.label.step_data", "str", "", hidden=True),
         FieldSpec("face_map", "ui.assets.face_map", "str", "{}", hidden=True),
+        FieldSpec("brep_metadata", "ui.assets.brep_metadata", "str", "{}", hidden=True),
     )
