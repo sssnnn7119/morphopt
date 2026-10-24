@@ -152,7 +152,20 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
         if isinstance(node, FEAComponentNode) and key in {*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS}:
             return problem.set_component_reference(node, key, value)
         if key == "part_name" and isinstance(node, MaterialNode):
-            return problem.set_material_part(node, value)
+            previous_part = node.part
+            if not problem.set_material_part(node, value):
+                return False
+            if node.is_updatable and node.part is not previous_part:
+                from ..visualization.geometry import PreviewGeometry
+                from ..visualization.scene import MessageItem
+
+                scene = PreviewGeometry().build(problem, "part", node.part)
+                bounds = (
+                    None if any(isinstance(item, MessageItem) for item in scene.items)
+                    else scene.bounds
+                )
+                node.bounding_box = list(bounds) if bounds is not None else [0.0] * 6
+            return True
     node.set_field(key, value)
     return True
 
@@ -266,13 +279,26 @@ class CustomClassSession:
         self._replace_uses(old, name)
         return True
 
+    def dependent_classes(self, node: CustomClassNode) -> list[CustomClassNode]:
+        """Classes whose inheritance chain includes the selected custom class."""
+        names = {node.name}
+        while True:
+            children = {custom.name for custom in self.problem.custom_classes
+                        if custom.base_class in names}
+            if children <= names:
+                break
+            names.update(children)
+        return [custom for custom in self.problem.custom_classes
+                if custom is not node and custom.name in names]
+
     def remove(
         self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
     ) -> CustomClassNode | None:
         from ..model.problem import CustomClassNode
         if isinstance(node, CustomClassNode):
-            self.problem.custom_classes.remove(node)
-            self._replace_uses(node.name, "")
+            for custom in [node, *self.dependent_classes(node)]:
+                self.problem.custom_classes.remove(custom)
+                self._replace_uses(custom.name, "")
             return None
         owner = next(custom for custom in self.problem.custom_classes if node in custom.members)
         owner.remove_child(node)

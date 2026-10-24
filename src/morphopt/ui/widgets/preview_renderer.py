@@ -90,12 +90,11 @@ class PreviewRenderer:
         configure_plotter(self.plotter)
         self._overlay_actors.clear()
         self._callout_ranges.clear()
-        bounds = [mesh.bounds for _, mesh, _item in scene.base_meshes if mesh.n_points]
-        if bounds:
+        bounds = scene.bounds
+        if bounds is not None:
             bounds = np.asarray(bounds, dtype=float)
             self._geometry_bounds = (
-                np.array([bounds[:, 0].min(), bounds[:, 2].min(), bounds[:, 4].min()]),
-                np.array([bounds[:, 1].max(), bounds[:, 3].max(), bounds[:, 5].max()]),
+                bounds[::2], bounds[1::2],
             )
             self._annotation_scale = scene.diagonal
         else:
@@ -108,7 +107,26 @@ class PreviewRenderer:
                 self._face_picker.AddPickList(actor)
                 self._face_items[actor.GetAddressAsString("")] = item
         self._apply_section()
+        if scene.show_bounding_box and self._geometry_bounds is not None:
+            self._draw_bounding_box()
         self._draw_instance_legend(scene.instance_legend)
+
+    def _draw_bounding_box(self) -> None:
+        """Draw the full Part bounds outside the picking and clipping pipelines."""
+        lower, upper = self._geometry_bounds
+        bounds = tuple(value for pair in zip(lower, upper) for value in pair)
+        color = theme_manager.palette.viewer.render.annotation_text_color
+        self.plotter.add_mesh(
+            pv.Box(bounds=bounds).outline(), name="part-bounding-box",
+            color=color, line_width=1, pickable=False, lighting=False,
+        )
+        self.plotter.show_bounds(
+            bounds=bounds, color=color, location="outer", ticks="outside",
+            n_xlabels=2, n_ylabels=2, n_zlabels=2,
+            xtitle="X", ytitle="Y", ztitle="Z", fmt="%.6g",
+            font_size=theme_manager.palette.viewer.render.label_font_size,
+            use_3d_text=False,
+        )
 
     @property
     def section_position(self) -> float | None:

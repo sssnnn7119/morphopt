@@ -104,7 +104,7 @@ UI 的 `ProblemDefinition.replace_part(source: PartNode, replacement: PartNode) 
 
 | 类型 | 实现位置 | 构建特点 |
 |---|---|---|
-| `BoxPart` | `parts/box_part.py` | 结构化长方体，单元块 `design` 及坐标面集合 |
+| `BoxPart` | `parts/box_part.py` | 结构化长方体，单元块 `C3D8` 及坐标面集合 |
 | `CADPart` | `parts/cad_part.py` | 有序 `torchfea.cad` 操作历史及网格化 |
 | `INPPart` | `parts/inp_part.py` | 从支持的 INP 内容选择并导入 Part |
 | `BoundaryPart` | `shapeopt/boundary_part.py` | 参数化外边界与内腔，具体设计实现见[形状更新](optimization.md#shape) |
@@ -247,7 +247,7 @@ UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映�
 `MaterialsParams.set_materials()` 按注册顺序执行各材料接口的分配。`BaseMaterial` 用 `part_name` 与可选 `elementname` 确定目标，`target_elements()` 解析 `Part.elems` 中的实际单元块。
 
 - `elementname=""` 选择该 Part 的全部单元块。
-- 具体名称是块键，不必等于单元公式名；例如 Box 的块键为 `design`。
+- 默认块键按一阶单元类型命名：CADPart 和 BoundaryPart 使用 `C3D4`，OffsetBoundaryPart 的附加层使用 `C3D6`，BoxPart 使用 `C3D8`。升为二阶网格后块键保持不变；导入网格保留文件中的显式分组名。
 - 多个材料覆盖同一块时，应检查分配顺序与最终材料状态。
 
 `HomogeneousMaterial` 不提供材料设计变量；`SIMP_BSPFieldMaterials` 同时提供材料分配和可更新设计场。两者共享类型化的 `MaterialModels` 参数对象，集合通过 `MaterialsParams.models` 暴露入口。

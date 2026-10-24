@@ -84,21 +84,29 @@ def materials_updater_config(
     max_step_iter: int = 50,
     max_step_length: float = CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
     if_update: bool | list[bool] = True,
-    objective_functions: tuple = (),
-    constraints: tuple = (),
+    objective_functions: tuple | None = None,
+    constraints: tuple | None = None,
 ) -> dict:
     """Config of one material sub-optimizer.
 
     ``material_name`` is the material definition it updates; an empty name
     means "the only design-carrying material in the model".
+    New configs include sensitivity, variable bounds and volume fraction.
+    Explicitly empty collections remain empty.
     """
     return {
         "material_name": str(material_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
         "if_update": if_update,
-        "objective_functions": list(objective_functions),
-        "constraints": list(constraints),
+        "objective_functions": list(objective_functions) if objective_functions is not None else [
+            updater_objective("Sensitivity"),
+        ],
+        "constraints": list(constraints) if constraints is not None else [
+            updater_constraint("MinValue"),
+            updater_constraint("MaxValue"),
+            updater_constraint("VolFrac"),
+        ],
     }
 
 

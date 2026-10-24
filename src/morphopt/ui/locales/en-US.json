@@ -1,4 +1,6 @@
 {
+  "ui.component.delete_dependencies_title": "Delete bound objects",
+  "ui.component.delete_dependencies_message": "Deleting “{component}” will also delete these bound objects:\n{dependencies}\nContinue?",
   "ui.schema.fields.control_point_spacing.label": "Target control point spacing",
   "ui.schema.fields.design_faces.label": "Design faces",
   "ui.assets.brep_metadata": "BREP topology and sets",

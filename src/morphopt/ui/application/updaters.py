@@ -135,6 +135,18 @@ class UpdaterItems:
         ) if custom.name not in taken)
         return choices
 
+    def default_element_name(self) -> str:
+        """Use the material's block, or the sole block of its owning Part."""
+        from .part_sets import PartSetCatalog
+
+        material = self.problem.config_material_node(self.config)
+        if material is None:
+            return ""
+        if material.elementname:
+            return material.elementname
+        elements = PartSetCatalog(self.problem).for_part(material.part).elements
+        return elements[0] if len(elements) == 1 else ""
+
     def add(self, item_type: str, custom_class: str = "") -> bool:
         item = symmetry_item(item_type, self.surfaces) if self.category == "geometry_symmetry" else updater_item(
             item_type,
@@ -143,6 +155,8 @@ class UpdaterItems:
         )
         if item is None:
             return False
+        if self.group == "materials" and item_type == "VolFrac":
+            item["params"]["elementname"] = self.default_element_name()
         self.config.setdefault(self.key, []).append(item)
         return True
 

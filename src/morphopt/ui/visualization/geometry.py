@@ -526,6 +526,7 @@ class PreviewGeometry:
         self._instance_colors = {}
         self.values = DefinitionValues(problem)
         if mode == "part":
+            self.scene.show_bounding_box = True
             parts = [selected] if selected is not None else []
         elif mode == "assembly":
             parts = problem.parts()

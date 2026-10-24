@@ -578,7 +578,7 @@ def _topology(options, geometry, loads, materials):
     loads.add_component(FEAComponentNode.create("ConcentratedForce", name="tip_force", rp_name="RP_tip"))
     materials.add_material(MaterialNode.create(
         "SIMP_BSPFieldMaterials", name="density", part_name="body",
-        elementname="design", material_model="NeoHookeanLnJ", mu=options.mu,
+        elementname="C3D8", material_model="NeoHookeanLnJ", mu=options.mu,
         kappa=options.kappa, mumax=options.mu, kappamax=options.kappa,
         bounding_box=[0., options.total_length, 0., options.height, 0., options.depth],
         degree=CONSTANT.UI.QUICKSTART.GENERATION.SIMP_DEGREE,
@@ -604,7 +604,7 @@ def _topology(options, geometry, loads, materials):
                 {"type": "VolFrac", "params": {
                     "volfrac_min": options.volume_fraction, "volfrac_max": options.volume_fraction,
                     "penalty": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VOLUME_FRACTION_PENALTY,
-                    "elementname": "design",
+                    "elementname": "C3D8",
                 }},
             ],
         }],
@@ -693,8 +693,6 @@ class ObjectiveDraft:
         return len(self.objectives) - 1
 
     def remove(self, index: int) -> None:
-        if len(self.objectives) <= CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MIN_COUNT:
-            raise ValueError(localized_message("ui.errors.quickstart.keep_at_least_one_objective_term"))
         self.objectives.pop(index)
 
     def set_method(self, method: str) -> None:

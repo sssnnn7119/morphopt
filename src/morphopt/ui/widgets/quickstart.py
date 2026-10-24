@@ -526,7 +526,7 @@ class ObjectiveListEditor(QWidget):
             len(self.draft.objectives)
             < CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT
         )
-        self.remove_button.setEnabled(len(self.draft.objectives) > 1)
+        self.remove_button.setEnabled(bool(self.draft.objectives))
 
     def _save_current(self):
         if not 0 <= self._current_index < len(self.draft.objectives):
@@ -636,7 +636,7 @@ class ObjectiveListEditor(QWidget):
         self.changed.emit()
 
     def _remove(self):
-        if len(self.draft.objectives) <= 1 or not 0 <= self.list.currentRow() < len(
+        if not 0 <= self.list.currentRow() < len(
             self.draft.objectives
         ):
             return
@@ -646,6 +646,7 @@ class ObjectiveListEditor(QWidget):
         self._current_index = -1
         self._refresh_list()
         self.list.setCurrentRow(min(index, len(self.draft.objectives) - 1))
+        self._load_current()
         self._update_buttons()
         self.changed.emit()
 

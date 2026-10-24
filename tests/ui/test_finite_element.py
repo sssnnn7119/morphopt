@@ -31,7 +31,7 @@ def iteration_model(tmp_path):
         part = BoxPart(
             length=1, height=1, depth=1, mesh_size=1, mesh_order=1
         ).build_part()
-        part.elems["design"].set_materials(
+        part.elems["C3D8"].set_materials(
             torchfea.materials.NeoHookean(mu=1.0, kappa=10.0)
         )
         controller = torchfea.FEAController()
@@ -42,7 +42,7 @@ def iteration_model(tmp_path):
             torchfea.boundarys.Boundary_Condition("body-1", "nodes_xmin"), "fixed"
         )
         controller.assembly.add_load(
-            torchfea.loads.BodyForce("body-1", "design", [0.002, 0.0, 0.0]),
+            torchfea.loads.BodyForce("body-1", "C3D8", [0.002, 0.0, 0.0]),
             "body_force",
         )
         controller.solver = torchfea.solver.StaticImplicitSolver(tol_error=1e-8)
@@ -189,7 +189,7 @@ def test_elements_without_gauss_points_export_only_element_data(
     iteration_model, tmp_path, monkeypatch
 ):
     _, controller, result = iteration_model
-    element = controller.assembly._instances["body-1"].part.elems["design"]
+    element = controller.assembly._instances["body-1"].part.elems["C3D8"]
 
     def no_gauss(_self, _nodes):
         raise NotImplementedError
@@ -369,7 +369,7 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         original_entry = page.cases.currentData()
         assert original_entry.is_original
         assert page.loads.rowCount() == 1
-        assert page.loads.item(0, 2).text() == "body-1 · design"
+        assert page.loads.item(0, 2).text() == "body-1 · C3D8"
         page.loads.item(0, 3).setText("0.004, 0, 0")
         assert page.session.result is None
         # Returning from the observer at the same iteration must retain edits.

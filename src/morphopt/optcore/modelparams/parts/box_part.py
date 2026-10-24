@@ -80,10 +80,10 @@ class BoxPart(BasePart):
                 elems_index=torch.arange(len(cells), device=part.nodes.device),
                 elems=torch.as_tensor(cells, device=part.nodes.device),
             ),
-            name="design",
+            name="C3D8",
         )
         if self.mesh_order == 2:
-            part.convert_linear_to_quadratic_elements(["design"], ["design"])
+            part.convert_linear_to_quadratic_elements(["C3D8"], ["C3D8"])
 
         node_coordinates = part.nodes.detach().cpu().numpy()
         bounds = np.array(

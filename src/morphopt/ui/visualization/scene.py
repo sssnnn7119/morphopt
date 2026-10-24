@@ -55,6 +55,7 @@ class PreviewScene:
     items: list[MeshItem | LabelItem | MessageItem] = field(default_factory=list)
     base_meshes: list[tuple[str, pv.DataSet, MeshItem]] = field(default_factory=list)
     instance_legend: list[tuple[str, str]] = field(default_factory=list)
+    show_bounding_box: bool = False
 
     def add_mesh(self, mesh: pv.DataSet, **options: Any) -> MeshItem:
         item = MeshItem(mesh, options)
@@ -78,14 +79,23 @@ class PreviewScene:
         return item
 
     @property
-    def diagonal(self) -> float:
+    def bounds(self) -> tuple[float, float, float, float, float, float] | None:
+        """Bounds of the complete geometry, excluding annotations and overlays."""
         bounds = [mesh.bounds for _, mesh, _ in self.base_meshes if mesh.n_points]
         if not bounds:
-            return theme_manager.palette.viewer.scene_fallback_diagonal
+            return None
         lo = np.min([[b[0], b[2], b[4]] for b in bounds], axis=0)
         hi = np.max([[b[1], b[3], b[5]] for b in bounds], axis=0)
+        return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]),
+                float(lo[2]), float(hi[2]))
+
+    @property
+    def diagonal(self) -> float:
+        bounds = self.bounds
+        if bounds is None:
+            return theme_manager.palette.viewer.scene_fallback_diagonal
         return (
-            float(np.linalg.norm(hi - lo))
+            float(np.linalg.norm(np.asarray(bounds)[1::2] - np.asarray(bounds)[::2]))
             or theme_manager.palette.viewer.scene_fallback_diagonal
         )
 
