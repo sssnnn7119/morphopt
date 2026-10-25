@@ -181,13 +181,6 @@ class _Constants:
                     class TOOL_ID:
                         DEFAULT = ""
 
-                class FRAGMENT:
-                    class OBJECT_ID:
-                        DEFAULT = ""
-
-                    class TOOL_ID:
-                        DEFAULT = ""
-
                 class TRANSLATE:
                     class INPUT_ID:
                         DEFAULT = ""

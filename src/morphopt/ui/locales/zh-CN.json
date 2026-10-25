@@ -1,4 +1,6 @@
 {
+  "ui.component.delete_dependencies_title": "删除绑定对象",
+  "ui.component.delete_dependencies_message": "删除“{component}”将同时删除以下绑定对象：\n{dependencies}\n是否继续？",
   "ui.schema.fields.control_point_spacing.label": "控制点目标间距",
   "ui.schema.fields.design_faces.label": "参与更新的面",
   "ui.assets.brep_metadata": "BREP 拓扑与集合",
@@ -762,7 +764,6 @@
   "ui.schema.catalog.cad_operation.fuse.label": "融合",
   "ui.schema.catalog.cad_operation.cut.label": "切除",
   "ui.schema.catalog.cad_operation.intersect.label": "相交",
-  "ui.schema.catalog.cad_operation.fragment.label": "碎片分割",
   "ui.schema.catalog.cad_operation.translate.label": "平移",
   "ui.schema.catalog.cad_operation.rotate.label": "旋转",
   "ui.schema.catalog.cad_operation.dilate.label": "缩放",

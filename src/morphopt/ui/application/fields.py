@@ -119,11 +119,15 @@ class SnippetInputs:
         self.problem = problem
 
     def values(self, source: str) -> list:
+        catalog = PartSetCatalog(self.problem)
         providers = {
             "load_steps": lambda: list(self.problem.steps.step_values) if self.problem.steps else [],
             "instances": self.problem.instance_names,
             "reference_points": self.problem.reference_point_names,
-            "elements": self.problem.element_names,
+            "elements": lambda: list(dict.fromkeys(
+                name for part in self.problem.parts()
+                for name in catalog.for_part(part).elements
+            )),
             "force_loads": lambda: [
                 node.name
                 for node in self.problem.fea_components()

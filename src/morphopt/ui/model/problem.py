@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from copy import deepcopy
+import re
 
 from ...constants import CONSTANT
 from ..i18n import localized_message
@@ -715,6 +716,26 @@ class ProblemDefinition:
                 )
             )
         position = owner.surfaces.index(surface)
+        for component in self.fea_components():
+            for field, attr in INSTANCE_REFERENCE_FIELDS.items():
+                if getattr(component, attr) not in owner.instances:
+                    continue
+                suffix = field.removeprefix("instance_name")
+                for key in ("surface_name" + suffix, "set_nodes_name" + suffix):
+                    if not component.has_field(key):
+                        continue
+                    name = component.get_field(key) or ""
+                    if re.fullmatch(r"face_\d+(_nodes)?", name):
+                        component.set_field(key, "")
+                        continue
+                    match = re.fullmatch(r"surface_(\d+)_(.+)", name)
+                    if match is None:
+                        continue
+                    index = int(match[1])
+                    if index == position:
+                        component.set_field(key, "")
+                    elif index > position:
+                        component.set_field(key, f"surface_{index - 1}_{match[2]}")
         self._remove_surface_state(owner, position)
         owner.remove_child(surface)
         self.align_surface_dependent_state()
@@ -799,7 +820,7 @@ class ProblemDefinition:
         return added
 
     def remove_instance(self, instance: InstanceNode) -> None:
-        """Remove one Instance, keeping a Part's first identity Instance."""
+        """Remove an Instance and clear its optional references."""
         owner = self.owner_of_instance(instance)
         if owner is None:
             raise ValueError(
@@ -807,17 +828,20 @@ class ProblemDefinition:
                     "ui.errors.problem.the_instance_is_not_part_of_this_problem"
                 )
             )
-        if len(owner.instances) <= 1:
-            raise ValueError(
-                localized_message(
-                    "ui.errors.problem.a_part_must_keep_at_least_one_instance"
-                )
-            )
         owner.remove_child(instance)
         for component in self.fea_components():
+            if (component.has_field("obj_name") and component.obj_name == instance.name
+                    and component.obj_type in ("auto", "instance")):
+                component.obj_name = ""
             for field, attr in INSTANCE_REFERENCE_FIELDS.items():
                 if getattr(component, attr) is instance:
                     component.set_reference(field, None)
+                    suffix = field.removeprefix("instance_name")
+                    for key in ("surface_name" + suffix, "set_nodes_name" + suffix,
+                                "element_name" + suffix):
+                        if component.has_field(key):
+                            component.set_field(key, "")
+        self._clear_objective_reference("instance_name", instance.name)
 
     def move_instance(self, instance: InstanceNode, offset: int) -> bool:
         """Move an Instance in its Part's declaration order."""
@@ -850,8 +874,8 @@ class ProblemDefinition:
             )
         return part.add_cad_operation(operation)
 
-    def remove_cad_operation(self, operation: CADOperationNode) -> None:
-        """Remove one CAD feature from its owning Part."""
+    def cad_operation_dependents(self, operation: CADOperationNode) -> list[CADOperationNode]:
+        """Return all features transitively dependent on this operation."""
         owner = self.owner_of_cad_operation(operation)
         if owner is None:
             raise ValueError(
@@ -859,22 +883,34 @@ class ProblemDefinition:
                     "ui.errors.problem.the_cad_operation_is_not_part_of_this_problem"
                 )
             )
-        dependents = [
-            item
-            for item in owner.operations
-            if item is not operation
-            and operation.operation_id in (item.object_id, item.tool_id, item.input_id)
-        ]
-        if dependents:
-            names = ", ".join(item.operation_id for item in dependents)
-            raise ValueError(
-                localized_message(
-                    "ui.errors.problem.cannot_remove_value_it_is_used_by_value",
-                    value_0=operation.operation_id,
-                    value_1=names,
-                )
-            )
-        owner.remove_child(operation)
+        removed = {operation.operation_id}
+        while True:
+            dependent_ids = {
+                item.operation_id for item in owner.operations
+                if removed.intersection((item.object_id, item.tool_id, item.input_id))
+            }
+            if dependent_ids <= removed:
+                break
+            removed.update(dependent_ids)
+        return [item for item in owner.operations
+                if item is not operation and item.operation_id in removed]
+
+    def remove_cad_operation(self, operation: CADOperationNode) -> None:
+        """Remove a CAD feature and its dependent features after UI confirmation."""
+        dependents = self.cad_operation_dependents(operation)
+        owner = self.owner_of_cad_operation(operation)
+        for item in [operation, *dependents]:
+            owner.remove_child(item)
+        for component in self.fea_components():
+            for field, attr in INSTANCE_REFERENCE_FIELDS.items():
+                if getattr(component, attr) not in owner.instances:
+                    continue
+                suffix = field.removeprefix("instance_name")
+                for key in ("surface_name" + suffix, "set_nodes_name" + suffix):
+                    if component.has_field(key) and re.fullmatch(
+                        r"face_\d+(_nodes)?", component.get_field(key) or ""
+                    ):
+                        component.set_field(key, "")
 
     def move_cad_operation(self, operation: CADOperationNode, offset: int) -> bool:
         """Move one CAD feature without disturbing other Part children."""
@@ -1007,17 +1043,21 @@ class ProblemDefinition:
             if material.part is part:
                 material.part = None
                 material._part_name = ""
+                material.elementname = ""
+                if self.updater is not None:
+                    for config in self.updater.materials:
+                        if config.get("target") is material:
+                            for item in config.get("constraints", []):
+                                if "elementname" in item.get("params", {}):
+                                    item["params"]["elementname"] = ""
         if self.updater is not None:
             self.updater.geometry[:] = [
                 config
                 for config in self.updater.geometry
                 if config.get("target") is not part
             ]
-        for instance in part.instances:
-            for load in self.fea_components():
-                for field, attr in INSTANCE_REFERENCE_FIELDS.items():
-                    if getattr(load, attr) is instance:
-                        load.set_reference(field, None)
+        for instance in list(part.instances):
+            self.remove_instance(instance)
         geometry.remove_child(part)
         self.align_surface_dependent_state()
         self._refresh_surface_flags()
@@ -1088,12 +1128,6 @@ class ProblemDefinition:
                     "ui.errors.problem.material_is_not_part_of_this_problem"
                 )
             )
-        if len(section.assignments) <= 1:
-            raise ValueError(
-                localized_message(
-                    "ui.errors.problem.a_problem_must_keep_at_least_one_material"
-                )
-            )
         section.remove_child(material)
         if self.updater is not None:
             self.updater.materials[:] = [
@@ -1155,9 +1189,33 @@ class ProblemDefinition:
                 item for item in self.objective.jacobian_needed if item is not component
             ]
         for load in self.fea_components():
+            if load.has_field("obj_name") and load.obj_name == component.name:
+                load.obj_name = ""
             for field, attr in REFERENCE_POINT_FIELDS.items():
                 if getattr(load, attr) is component:
                     load.set_reference(field, None)
+        if component.type == "ReferencePoint":
+            self._clear_objective_reference("reference_point_name", component.name)
+        else:
+            for key in ("force_load_name", "moment_load_name"):
+                self._clear_objective_reference(key, component.name)
+            if self.objective is not None:
+                for term in self.objective.objective_terms:
+                    if term.get("type") != "workspace":
+                        continue
+                    for entry in term.get("inputs", []):
+                        entry["parameters"] = [pair for pair in entry["parameters"]
+                                               if pair[0] != component.name]
+                    term["inputs"] = [entry for entry in term.get("inputs", [])
+                                      if entry["parameters"]]
+
+    def _clear_objective_reference(self, key: str, name: str) -> None:
+        """Clear explicit objective and metric references to a deleted object."""
+        if self.objective is None:
+            return
+        for term in [*self.objective.objective_terms, *self.objective.metrics_terms]:
+            if term.get(key) == name:
+                term[key] = ""
 
     def rename_definition(
         self,

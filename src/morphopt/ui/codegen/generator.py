@@ -562,8 +562,8 @@ def generate_base_source(
 
     Code-launched runs never open an observer window; results are watched by
     the MorphOpt UI's in-window observer (disk polling per iteration).
-    ``for_class_catalog`` emits inert objective methods so editor class discovery
-    also works while the user is still defining objective and metric terms.
+    ``for_class_catalog`` emits inert objective methods and updater classes so
+    editor class discovery also works while terms are still being defined.
     """
     if asset_paths is None:
         asset_paths, _ = collect_python_assets(problem)
@@ -672,7 +672,7 @@ def generate_base_source(
     a("")
 
     # -------- Updater -----------------------------------------------------
-    _emit_updater(a, problem, template, upd_device)
+    _emit_updater(a, problem, template, upd_device, for_class_catalog=for_class_catalog)
 
     # -------- main --------------------------------------------------------
     a("")
@@ -800,7 +800,7 @@ def _emit_part_classes(
         a("                def define_instance(self) -> None:")
         instances = part.instances
         if not instances:
-            a("                    super().define_instance()")
+            a("                    pass")
         for instance in instances:
             a("")
             pose = (
@@ -1155,6 +1155,8 @@ def _emit_updater(
     problem: ProblemDefinition,
     template: SchemeTemplate,
     device: str,
+    *,
+    for_class_catalog: bool = False,
 ) -> None:
     from .custom_classes import updater_class_name
 
@@ -1203,10 +1205,10 @@ def _emit_updater(
             if target.type == "OffsetBoundaryPart"
             else GEOMETRY_UPDATER_BASE
         )
-        _emit_nested_updater(a, class_name, base, config, problem)
+        _emit_nested_updater(a, class_name, base, config, problem, for_class_catalog=for_class_catalog)
         a("")
     for class_name, config in zip(material_classes, mat_cfgs):
-        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config, problem)
+        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config, problem, for_class_catalog=for_class_catalog)
         a("")
 
 
@@ -1272,6 +1274,8 @@ def _emit_nested_updater(
     base: str,
     cfg,
     problem: ProblemDefinition,
+    *,
+    for_class_catalog: bool = False,
 ) -> None:
     """Emit one sub-updater class.
 
@@ -1298,6 +1302,12 @@ def _emit_nested_updater(
         f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)}, "
         f"max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)})"
     )
+
+    if for_class_catalog:
+        a("")
+        a("            def define_objective(self) -> None:")
+        a("                pass")
+        return
 
     body: list[str] = []
     # NOTE: the model stores the lists under ``objective_functions`` / ``constraints``

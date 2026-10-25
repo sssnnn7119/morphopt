@@ -7,9 +7,13 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+import logging
+
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -41,12 +45,28 @@ class PlotViewport(QWidget):
         layout.addWidget(self.plotter.interactor)
         configure_plotter(self.plotter)
         self._theme_pending = False
+        self._pending_scene: Callable[[QtInteractor], None] | None = None
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         if self._theme_pending:
             self._theme_pending = False
             apply_plotter_theme(self.plotter)
+        # The embedded GL context is ready after the widget is exposed.
+        QTimer.singleShot(0, self._refresh_visible_scene)
+
+    def _refresh_visible_scene(self) -> None:
+        if not self.isVisible():
+            return
+        build_scene = self._pending_scene
+        self._pending_scene = None
+        if build_scene is not None:
+            try:
+                self._rebuild_scene(build_scene)
+            except Exception:
+                self._pending_scene = build_scene
+                logging.getLogger(__name__).exception("Result viewport scene rebuild failed")
+        else:
             self.plotter.render()
 
     def apply_theme(self) -> None:
@@ -56,8 +76,15 @@ class PlotViewport(QWidget):
         apply_plotter_theme(self.plotter)
         self.plotter.render()
 
-    def rebuild(self, build_scene) -> None:
+    def rebuild(self, build_scene: Callable[[QtInteractor], None]) -> None:
         """Clear the scene, call ``build_scene(plotter)``, then render it."""
+        if not self.isVisible():
+            self._pending_scene = build_scene
+            return
+        self._pending_scene = None
+        self._rebuild_scene(build_scene)
+
+    def _rebuild_scene(self, build_scene: Callable[[QtInteractor], None]) -> None:
         self.plotter.clear()
         configure_plotter(self.plotter)
         build_scene(self.plotter)

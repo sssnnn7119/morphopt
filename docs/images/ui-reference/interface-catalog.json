@@ -1832,53 +1832,6 @@
       "source": "src/morphopt/ui/model/node_types/cad.py"
     },
     {
-      "key": "Fragment",
-      "class": "FragmentOperationNode",
-      "label": "碎片分割",
-      "backend": "Fragment",
-      "hidden": false,
-      "custom_only": false,
-      "group": "boolean",
-      "factory": "",
-      "generator": "",
-      "num_values": null,
-      "fields": [
-        {
-          "key": "object_id",
-          "label_key": "ui.schema.fields.object_id.label.object_id",
-          "type": "combo",
-          "default": "",
-          "doc_key": "",
-          "choices": [],
-          "size": 6,
-          "minimum": null,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "对象 ID",
-          "help": ""
-        },
-        {
-          "key": "tool_id",
-          "label_key": "ui.schema.fields.tool_id.label.tool_id",
-          "type": "combo",
-          "default": "",
-          "doc_key": "",
-          "choices": [],
-          "size": 6,
-          "minimum": null,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "工具 ID",
-          "help": ""
-        }
-      ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
-    },
-    {
       "key": "Translate",
       "class": "TranslateOperationNode",
       "label": "平移",

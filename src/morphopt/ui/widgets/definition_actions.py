@@ -163,7 +163,12 @@ class DefinitionActions(QObject):
     ) -> None:
         if self._problem is None:
             return
-        selected = CustomClassSession(self._problem).remove(node)
+        session = CustomClassSession(self._problem)
+        if isinstance(node, CustomClassNode) and not self._confirm_remove_dependencies(
+            node.name, [custom.name for custom in session.dependent_classes(node)]
+        ):
+            return
+        selected = session.remove(node)
         self._select(selected if selected is not None else CustomClassesTreeNode())
         self._emit_change(node, "deleted")
 
@@ -222,7 +227,11 @@ class DefinitionActions(QObject):
             self._problem.add_geometry_updater(target)
             group, index = "geometry", len(self._problem.updater.geometry) - 1
         else:
-            self._problem.add_material_updater(target)
+            config = self._problem.add_material_updater(target)
+            items = UpdaterItems(config, "materials", "constraints", self._problem)
+            for item in items.items:
+                if item["type"] == "VolFrac":
+                    item["params"]["elementname"] = items.default_element_name()
             group, index = "materials", len(self._problem.updater.materials) - 1
         updater = UpdaterTreeNode(self._problem.updater, group, index)
         self._select(updater)
@@ -416,6 +425,17 @@ class DefinitionActions(QObject):
         self._select(select=self._problem.geometry)
         self._emit_change(part, "deleted")
 
+    def _confirm_remove_dependencies(self, name: str, dependencies: list[str]) -> bool:
+        if not dependencies:
+            return True
+        return QMessageBox.warning(
+            self.parent(), tr("ui.component.delete_dependencies_title"),
+            tr("ui.component.delete_dependencies_message", component=name,
+               dependencies="\n".join(f"• {item}" for item in dependencies)),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) == QMessageBox.StandardButton.Yes
+
     def _confirm_remove_bound_updaters(
         self, component: PartNode | MaterialNode, group: str
     ) -> bool:
@@ -472,10 +492,9 @@ class DefinitionActions(QObject):
         if self._problem is None or not isinstance(instance, InstanceNode):
             return
         owner = self._problem.owner_of_instance(instance)
-        try:
-            self._problem.remove_instance(instance)
-        except ValueError:
+        if owner is None:
             return
+        self._problem.remove_instance(instance)
         self._select(select=owner)
         self._emit_change(instance, "deleted")
 
@@ -619,15 +638,12 @@ class DefinitionActions(QObject):
         owner = self._problem.owner_of_cad_operation(operation)
         if owner is None:
             return
-        try:
-            self._problem.remove_cad_operation(operation)
-        except ValueError as exc:
-            QMessageBox.information(
-                self.parent(),
-                tr("ui.widgets.model_tree.cad_operation"),
-                tr("ui.widgets.model_tree.cannot_delete_value", value_0=exc),
-            )
+        dependents = self._problem.cad_operation_dependents(operation)
+        if not self._confirm_remove_dependencies(
+            operation.operation_id, [item.operation_id for item in dependents]
+        ):
             return
+        self._problem.remove_cad_operation(operation)
         self._select(select=owner)
         self._emit_change(operation, "deleted")
 
@@ -680,10 +696,19 @@ class DefinitionActions(QObject):
         if self._problem is None or not isinstance(srf, SurfaceNode):
             return
         owner = self._problem.owner_of_surface(srf)
-        try:
-            self._problem.remove_surface(srf)
-        except ValueError:
-            return  # keep at least one surface
+        if owner is None:
+            return
+        index = owner.surfaces.index(srf)
+        dependencies = [
+            item["type"] for config in (self._problem.updater.geometry if self._problem.updater else [])
+            if self._problem.config_part_node(config) is owner
+            for item in config.get("symmetry_constraints", [])
+            if item.get("type") != "Custom"
+            and index in (item.get("surface_index"), item.get("related_surface_index"))
+        ]
+        if not self._confirm_remove_dependencies(srf.name, dependencies):
+            return
+        self._problem.remove_surface(srf)
         self._select(select=owner)
         self._emit_change(srf, "deleted")
 
@@ -726,8 +751,6 @@ class DefinitionActions(QObject):
 
     def remove_material(self, material: Node) -> None:
         if self._problem is None or not isinstance(material, MaterialNode):
-            return
-        if len(self._problem.material_nodes()) <= 1:
             return
         if not self._confirm_remove_bound_updaters(material, "materials"):
             return

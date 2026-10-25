@@ -200,7 +200,7 @@ class ParamForm(QWidget):
     def _combo(self, spec, value, choices):
         key = spec.key
         combo = QComboBox()
-        combo.setEditable(True)
+        combo.setEditable(spec.editable)
         for choice in choices:
             combo.addItem(self._choice_label(key, choice), choice)
         index = combo.findData(value)

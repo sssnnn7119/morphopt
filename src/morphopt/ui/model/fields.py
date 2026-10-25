@@ -29,6 +29,7 @@ class FieldSpec:
     ints: bool = False
     read_only: bool = False
     hidden: bool = False
+    editable: bool = True
 
     def new_default(self) -> Any:
         return _mutable_value(self.default)

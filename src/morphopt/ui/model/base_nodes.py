@@ -427,7 +427,7 @@ class PartNode(TypedNode):
         super().__init__(
             kind=kind, name=name, params=data, children=children
         )
-        if not self.instances:
+        if not self.instances and children is None:
             from .node_types.structural import InstanceNode
 
             self.add_instance(InstanceNode(name=f"{self.assembly_name or 'part'}-1"))

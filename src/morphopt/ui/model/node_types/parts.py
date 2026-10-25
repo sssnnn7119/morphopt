@@ -87,6 +87,7 @@ class BoundaryPartNode(PartNode):
             Defaults.MESH_ORDER.DEFAULT,
             doc_key="ui.schema.fields.mesh_order.help.element_order_of_the_generated_mesh",
             choices=Defaults.MESH_ORDER.CHOICES,
+            editable=False,
         ),
         FieldSpec(
             "exterior_surface",
@@ -210,6 +211,7 @@ class BoxPartNode(PartNode):
             Defaults.MESH_ORDER.DEFAULT,
             doc_key="ui.schema.fields.mesh_order.help.text",
             choices=Defaults.MESH_ORDER.CHOICES,
+            editable=False,
         ),
         FieldSpec(
             "exterior_surface",
@@ -308,6 +310,7 @@ class CADPartNode(PartNode):
             Defaults.MESH_ORDER.DEFAULT,
             doc_key="ui.schema.fields.mesh_order.help.text",
             choices=Defaults.MESH_ORDER.CHOICES,
+            editable=False,
         ),
         FieldSpec(
             "exterior_surface",

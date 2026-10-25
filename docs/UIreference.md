@@ -100,9 +100,9 @@ UI 快速开始以 `test.morph` 为例，介绍建模、优化和结果分析的
 | `step_name` | 目标、模板和任务分组使用的具名工况键 | 例如 `load_case_1` |
 | 节点集 | 一组节点，用于固定、耦合等 | `surface_0_Bottom` |
 | 表面集 | 带面片与方向的集合，用于压力、接触等 | `surface_1_All` |
-| 单元块 / `Part.elems` | Part 中按名称保存的单元对象 | BoxPart 的 `design` |
+| 单元块 / `Part.elems` | Part 中按名称保存的单元对象 | BoxPart 的 `C3D8` |
 
-名称区分大小写。下拉框提供模型中已有的集合，手动输入名称不创建新集合。`C3D4` 等单元公式名称与 `design` 等单元块名称属于不同概念；要求填写 `Part.elems` 键名的字段，以导入信息或候选列表中的实际名称为准。
+名称区分大小写。下拉框提供模型中已有的集合，手动输入名称不创建新集合。内置 Part 默认以一阶单元类型命名单元块，例如 `C3D4`、`C3D6`、`C3D8`；升为二阶网格后块名保持不变。要求填写 `Part.elems` 键名的字段，以导入信息或候选列表中的实际名称为准。
 
 部件名称与实例名称分别在各自卡片中定义。程序在创建部件时提供默认实例名，部件后续改名不修改已有实例名称。材料和几何优化器通过对象引用跟随部件改名，实例载荷通过对象引用跟随实例改名。
 
@@ -199,7 +199,7 @@ Box、CAD 及导入部件支持有限元分析与材料设计场定义，普通 
 
 `BoxPart` 建立轴对齐长方体实体。 X、Y、Z 方向尺寸分别由 length、height、depth 定义。初始长方体从原点沿三个坐标轴正方向延伸，其装配位置由 Instance 设置。
 
-内置单元块名是 `design`；常用固定面节点集为 `nodes_xmin` 等，常用受力表面为 `surface_xmax` 等。该部件适用于基础 FE 建模与材料分布优化。
+内置单元块名是 `C3D8`；常用固定面节点集为 `nodes_xmin` 等，常用受力表面为 `surface_xmax` 等。该部件适用于基础 FE 建模与材料分布优化。
 
 | 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
 |---|---|---|
@@ -436,7 +436,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 |---|---|---|---|
 | BoundaryPart | `surface_i_All`；BSP 外边界另有 `surface_0_Bottom` / `surface_0_Head`；BREP 另有 `face_N_nodes` | `surface_i_All`；BREP 另有 `face_N` | CPGEO 不定义 Head/Bottom；节点集与表面集分别对应不同的接口参数 |
 | OffsetBoundaryPart | 在边界集合外还有偏置相关集合 | 包括 `surface_i_offset`（内腔相关） | 以实际候选列表为准 |
-| BoxPart | `all`、`nodes_xmin/xmax/ymin/ymax/zmin/zmax` | `extern`、`surface_xmin/xmax/ymin/ymax/zmin/zmax` | 单元块 `design` |
+| BoxPart | `all`、`nodes_xmin/xmax/ymin/ymax/zmin/zmax` | `extern`、`surface_xmin/xmax/ymin/ymax/zmin/zmax` | 单元块 `C3D8` |
 | CADPart | `all`、`surface_all`、`face_N_nodes` | `extern`、`face_N` | 改 CAD 历史后重查面编号 |
 | INPPart | 来自导入模型 | 来自导入模型 | 集合名称以源文件或导入信息为准 |
 
@@ -587,20 +587,9 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 | 对象 ID / `object_id` | `空` | 选择此前仍有效的主体操作 ID。 |
 | 工具 ID / `tool_id` | `空` | 选择此前仍有效的工具操作 ID。 |
 
-<a id="cad_operation_types-fragment"></a>
-
-### 4.11 Fragment：碎片分割
-
-`Fragment` 在相交位置对输入实体进行一致分割，建立共形的几何分区。该操作适用于保留几何分区的模型，分割后的体与面数量应符合建模要求。
-
-| 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
-|---|---|---|
-| 对象 ID / `object_id` | `空` | 选择此前仍有效的主体操作 ID。 |
-| 工具 ID / `tool_id` | `空` | 选择此前仍有效的工具操作 ID。 |
-
 <a id="cad_operation_types-translate"></a>
 
-### 4.12 Translate：平移
+### 4.11 Translate：平移
 
 `Translate` 将输入实体平移。`dx,dy,dz` 定义平移向量。CAD 平移会改变 Part 本身的坐标；Instance 平移改变它在装配体中的放置。
 
@@ -613,7 +602,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-rotate"></a>
 
-### 4.13 Rotate：旋转
+### 4.12 Rotate：旋转
 
 `Rotate` 绕通过 `(x,y,z)`、方向为 `(ax,ay,az)` 的轴旋转输入实体。角度用 rad。
 
@@ -630,7 +619,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-dilate"></a>
 
-### 4.14 Dilate：缩放
+### 4.13 Dilate：缩放
 
 `Dilate` 以 `(x,y,z)` 为中心对输入实体进行方向缩放。三个方向的比例分别定义几何缩放量，该操作不改变材料的各向同性或各向异性属性。
 
@@ -646,7 +635,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-mirror"></a>
 
-### 4.15 Mirror：镜像
+### 4.14 Mirror：镜像
 
 `Mirror` 将输入实体关于平面 `a*x+b*y+c*z+d=0` 镜像。例如 `[a,b,c,d]=[0,1,0,0]` 是关于 xz 平面镜像。此操作改变 CAD 实体，不会建立优化过程中持续施加的曲面对称约束。
 
@@ -975,7 +964,9 @@ RP 仅定义参考位置及其运动自由度，不创建实体材料或自动�
 
 `SIMP_BSPFieldMaterials` 在一个有限元部件内建立可优化的 B 样条材料设计场。材料设计变量描述空间刚度比例，体网格可保持固定。以该材料为目标的材料优化器执行设计场更新。
 
-目标 Part 和单元块确定材料分配范围，`bounding_box` 定义覆盖设计区域的包围盒，其三个方向均应具有正跨度。例如，BoxPart 的 40×16×8 设计域可使用 `[0,40,0,16,0,8]`，目标单元块为 `design`。较小的分辨率通常对应较多设计变量。
+目标 Part 和单元块确定材料分配范围，`bounding_box` 定义覆盖设计区域的包围盒，其三个方向均应具有正跨度。例如，BoxPart 的 40×16×8 设计域可使用 `[0,40,0,16,0,8]`，目标单元块为 `C3D8`。较小的分辨率通常对应较多设计变量。
+
+选择或切换目标 Part 时，界面按该部件完整预览几何的局部坐标范围自动填写 `bounding_box`，顺序为 `[xmin, xmax, ymin, ymax, zmin, zmax]`。该范围与部件视图的包围盒一致，不包含实例平移和旋转。自动填写后可手动修改；再次切换 Part 时重新填写。目标部件尚无有效预览几何时，范围置为零，需完成几何定义后重新选择 Part 或手动填写。
 
 NeoHookean 与 NeoHookeanLnJ 在此使用 `mumax/kappamax` 表示实体材料模量；其他本构使用对应的普通参数字段。材料计算仅使用当前本构对应的有效参数，其他本构的隐藏字段不同时生效。
 
@@ -1239,7 +1230,11 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 **入口：模型树 → 优化器。** 每个优化器配置对应一个可更新的几何 Part 或 SIMP 材料，配置内容包括目标项、约束和曲面关系。一个模型支持多个更新对象及其对应配置。
 
-删除已绑定优化器的部件或材料时，界面列出关联优化器并要求确认。确认后，组件及其关联优化器同时删除，优化器内的目标项、约束和曲面关系随配置一并移除；取消操作保持定义不变。未绑定优化器的组件按普通删除流程处理。部件列表允许为空，后续可重新添加部件。
+部件、材料、实例、曲面、载荷工况和目标项列表均允许删除至空。保存和重新打开时保留空列表，生成脚本不为已删除的实例补建默认实例。完整性要求在开始优化前检查，编辑阶段允许保留尚未完成的定义。
+
+删除已绑定优化器的部件或材料时，界面列出关联优化器并要求确认。确认后，组件及其关联优化器同时删除，优化器内的目标项、约束和曲面关系随配置一并移除；取消操作保持定义不变。CAD 特征的后续依赖特征、曲面绑定的对称约束、自定义类的派生类采用相同的确认后级联删除规则。
+
+弱引用在目标删除后置空。例如，删除部件后，材料的 Part 和单元块选择置空；删除实例后，载荷和边界条件中的实例及其集合选择置空；删除参考点后，目标函数、指标和载荷中的参考点选择置空。删除曲面时，指向该曲面的集合引用置空，保留曲面的 `surface_N_*` 引用同步调整编号。CAD 拓扑修改可能重新分配全局面编号，因此删除 CAD 特征或边界曲面后，相关的 `face_N` 集合引用置空，需重新选择。
 
 <a id="section-优化计算流程与更新配置"></a>
 
@@ -1550,11 +1545,13 @@ MinRadius 约束径向距离，不约束局部曲率半径。Fairness 控制曲�
 
 **入口：材料优化器 → 约束 → 添加。** 材料优化器指定 SIMP 材料目标，并对其设置体积分数与控制量边界。材料约束作用于材料设计场，不直接限制边界曲面的几何体积。
 
+新建材料优化器默认包含 `Sensitivity` 目标，以及 `MinValue`、`MaxValue`、`VolFrac` 约束。变量上下限初始为 −15 和 15，体积分数允许区间初始为 0 至 0.6。体积分数约束优先使用材料指定的单元块；材料未指定且所属 Part 仅含一个单元块时，自动选用该块。存在多个候选块时需显式选择。编辑过程允许暂时留空，导出和运行脚本仍要求填写有效单元块名。
+
 <a id="updater_constraints-volfrac"></a>
 
 #### 10.5.1 VolFrac：体积分数约束
 
-`VolFrac` 控制指定单元块内 SIMP 材料占比的允许区间。 elementname 指定目标单元块，BoxPart 通常使用 design。
+`VolFrac` 控制指定单元块内 SIMP 材料占比的允许区间。 elementname 指定目标单元块，BoxPart 通常使用 C3D8。
 
 当前占比是积分点 `sigmoid(f)` 的体积加权平均，不是 RAMP 后刚度比例。超出 `[volfrac_min,volfrac_max]` 后施加 penalty 倍的平方罚项。elementname 应明确指定，并与当前材料的目标单元块一致。
 
@@ -1726,6 +1723,8 @@ Updater → 按目标注册更新项、约束与曲面关系
 
 面名称通过鼠标单击查询，不常驻显示编号。单击表面后，该面高亮，视口下方显示部件名称、面名称及装配实例名称；单击空白处清除选择。CAD 显示 `face_N`，Box 显示 `surface_xmin` 等方向面，BoundaryPart 和 OffsetBoundaryPart 显示 `surface_N_All` 及外表面端面名称。INPPart 显示原文件中的表面集合名称，同一显示三角形属于多个集合时同时列出相应名称。提示文本可选中复制，拖动旋转不触发面选择。
 
+部件视图在三维图中绘制当前 Part 的长方体包围盒线框，并沿 X、Y、Z 轴分别标注最小、最大坐标。坐标采用部件局部坐标和模型单位，由完整预览几何计算，随几何修改更新，不受剖视影响。
+
 勾选视口上方的“剖视”后，可选择 X、Y 或 Z 坐标轴，并拖动滑条移动剖切平面。“反向”切换保留侧，右侧显示当前剖切坐标。装配视图采用装配全局坐标，部件视图采用部件局部坐标。剖视仅裁剪几何显示，保持原有面名称；被裁去的几何不参与选面。移动剖切平面后清除当前选择，单击保留的表面可继续查询。关闭“剖视”恢复完整几何显示。
 
 预览不是非线性 FE 解。载荷箭头或参考点图标用于检查输入，不能据此判断收敛、应力或优化效果。部分导入模型需要源文件可访问才能完成预览。
@@ -1880,7 +1879,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 |---|---:|---|
 | 部件 | 6 | [BoundaryPart](#part_types-boundarypart)、[INPPart](#part_types-inppart)、[BasePart](#part_types-basepart)（自定义）、[BoxPart](#part_types-boxpart)、[CADPart](#part_types-cadpart)、[OffsetBoundaryPart](#part_types-offsetboundarypart) |
 | 边界曲面 | 5 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[mesh_surface](#surface_types-mesh-surface)、[brep_surface](#surface_types-brep-surface) |
-| CAD 操作 | 15 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Fragment](#cad_operation_types-fragment)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
+| CAD 操作 | 14 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
 | 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
 | 更新目标 | 3 | [ShapeDerivative](#updater_objectives-shapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |

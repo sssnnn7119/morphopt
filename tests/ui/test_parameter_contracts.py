@@ -219,7 +219,7 @@ UPDATER_ITEMS = [
 def test_updater_term_fields_reach_backend(category, kind, spec):
     params = field_defaults(spec.fields)
     if kind == "VolFrac":
-        params["elementname"] = "design"
+        params["elementname"] = "C3D8"
     expression = _render_updater_item({"type": kind, "params": params}, category)
     root = (morphopt.UpdaterBoundaryPart if spec.group == "geometry"
             else morphopt.UpdaterSIMPMaterial)

@@ -406,7 +406,7 @@ class Housing(morphopt.CADPart):
 |---|---|
 | 基本体 | `Box`、`Wedge`、`Cylinder`、`Sphere`、`Cone`、`Torus` |
 | 文件导入 | `StepImport` |
-| 布尔运算 | `Fuse`、`Cut`、`Intersect`、`Fragment` |
+| 布尔运算 | `Fuse`、`Cut`、`Intersect` |
 | 几何变换 | `Translate`、`Rotate`、`Dilate`、`Mirror` |
 
 各操作参数及顺序引用示意见 [CAD 接口参考](UIreference.md#cad)。布尔操作改变几何拓扑后，面编号与相关载荷分配应重新核查。
@@ -497,7 +497,7 @@ self.add_interface(
 
 `INPPart` 的 `inp_part_name` 选择源文件中的部件，`part_name` 表示当前装配体内的部件名，两者分别定义。只有一个源 Part 时可按导入器约定省略源选择。导入范围限于当前 MorphOpt/TorchFEA 支持的网格、集合、材料和截面内容，不执行完整 Abaqus 求解流程。占位材料与截面格式见[网格示例](examples/reference-box.inp)。
 
-`BoxPart` 的内置单元块名为 `design`。`elementname="design"` 选择该块，不能仅凭单元公式为 C3D8 就将块名填写为 `C3D8`。
+`BoxPart` 的默认单元块名为 `C3D8`，通过 `elementname="C3D8"` 选择该块。二阶网格使用 C3D20 单元，单元块名仍为 `C3D8`。
 
 自定义 Part 继承 `morphopt.BasePart`，重写 `build_part(path_result=None, pools=None)` 并返回 `torchfea.Part`。`define_instance()` 管理装配声明，`cache_part=True` 表示固定几何可缓存。几何或网格随优化变化时设置 `is_variable=True`；固定网格上的材料优化不要求将该标记设为 True。
 
@@ -650,7 +650,7 @@ self.add_interface(
         simp_field_resolution=2.0, degree=2,
         initial_ratio=0.5, materialpenalty=8,
         density=1.08e-9,
-        part_name="block", elementname="design",
+        part_name="block", elementname="C3D8",
     ),
     name="solid",
 )
@@ -868,7 +868,7 @@ class Updater(morphopt.Updaters):
                 normalize_gradient=False,
             ))
             self.add_constraints(self.objectivefuncs.VolFrac(
-                volfrac_min=0.2, volfrac_max=0.5, elementname="design",
+                volfrac_min=0.2, volfrac_max=0.5, elementname="C3D8",
             ))
 ```
 

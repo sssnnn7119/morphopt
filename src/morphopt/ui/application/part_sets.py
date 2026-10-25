@@ -91,8 +91,11 @@ class PartSetCatalog:
                              *metadata.get("node_sets", {}))
             )
         return PartSets(
-            nodes=tuple(names) + end_nodes + tuple(f"{name}_nodes" for name in faces) + tuple(node_sets),
-            surfaces=tuple(names) + tuple(faces) + tuple(surface_sets),
+            nodes=("all", "surface_all") + tuple(names) + end_nodes + tuple(f"{name}_nodes" for name in faces) + tuple(node_sets),
+            surfaces=tuple(dict.fromkeys([
+                "extern", part.exterior_surface or "extern", *names, *faces, *surface_sets,
+            ])),
+            elements=("C3D4", "C3D6") if isinstance(part, OffsetBoundaryPartNode) else ("C3D4",),
         )
 
     @staticmethod
@@ -100,7 +103,7 @@ class PartSetCatalog:
         return PartSets(
             nodes=("all",) + tuple(f"nodes_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
             surfaces=(part.exterior_surface or "extern",) + tuple(f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
-            elements=("design",),
+            elements=("C3D8",),
         )
 
     @staticmethod
@@ -109,6 +112,8 @@ class PartSetCatalog:
         return PartSets(
             nodes=("all", "surface_all") + tuple(f"{name}_nodes" for name in names),
             surfaces=tuple(dict.fromkeys([part.exterior_surface or "extern", *names])),
+            # Quadratic conversion preserves the element block's name.
+            elements=("C3D4",),
         )
 
     @staticmethod
