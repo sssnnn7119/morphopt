@@ -406,7 +406,7 @@ class Housing(morphopt.CADPart):
 |---|---|
 | 基本体 | `Box`、`Wedge`、`Cylinder`、`Sphere`、`Cone`、`Torus` |
 | 文件导入 | `StepImport` |
-| 布尔运算 | `Fuse`、`Cut`、`Intersect`、`Fragment` |
+| 布尔运算 | `Fuse`、`Cut`、`Intersect` |
 | 几何变换 | `Translate`、`Rotate`、`Dilate`、`Mirror` |
 
 各操作参数及顺序引用示意见 [CAD 接口参考](UIreference.md#cad)。布尔操作改变几何拓扑后，面编号与相关载荷分配应重新核查。

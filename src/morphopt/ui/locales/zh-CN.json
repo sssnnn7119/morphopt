@@ -764,7 +764,6 @@
   "ui.schema.catalog.cad_operation.fuse.label": "融合",
   "ui.schema.catalog.cad_operation.cut.label": "切除",
   "ui.schema.catalog.cad_operation.intersect.label": "相交",
-  "ui.schema.catalog.cad_operation.fragment.label": "碎片分割",
   "ui.schema.catalog.cad_operation.translate.label": "平移",
   "ui.schema.catalog.cad_operation.rotate.label": "旋转",
   "ui.schema.catalog.cad_operation.dilate.label": "缩放",

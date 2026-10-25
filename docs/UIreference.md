@@ -587,20 +587,9 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 | 对象 ID / `object_id` | `空` | 选择此前仍有效的主体操作 ID。 |
 | 工具 ID / `tool_id` | `空` | 选择此前仍有效的工具操作 ID。 |
 
-<a id="cad_operation_types-fragment"></a>
-
-### 4.11 Fragment：碎片分割
-
-`Fragment` 在相交位置对输入实体进行一致分割，建立共形的几何分区。该操作适用于保留几何分区的模型，分割后的体与面数量应符合建模要求。
-
-| 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
-|---|---|---|
-| 对象 ID / `object_id` | `空` | 选择此前仍有效的主体操作 ID。 |
-| 工具 ID / `tool_id` | `空` | 选择此前仍有效的工具操作 ID。 |
-
 <a id="cad_operation_types-translate"></a>
 
-### 4.12 Translate：平移
+### 4.11 Translate：平移
 
 `Translate` 将输入实体平移。`dx,dy,dz` 定义平移向量。CAD 平移会改变 Part 本身的坐标；Instance 平移改变它在装配体中的放置。
 
@@ -613,7 +602,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-rotate"></a>
 
-### 4.13 Rotate：旋转
+### 4.12 Rotate：旋转
 
 `Rotate` 绕通过 `(x,y,z)`、方向为 `(ax,ay,az)` 的轴旋转输入实体。角度用 rad。
 
@@ -630,7 +619,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-dilate"></a>
 
-### 4.14 Dilate：缩放
+### 4.13 Dilate：缩放
 
 `Dilate` 以 `(x,y,z)` 为中心对输入实体进行方向缩放。三个方向的比例分别定义几何缩放量，该操作不改变材料的各向同性或各向异性属性。
 
@@ -646,7 +635,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 <a id="cad_operation_types-mirror"></a>
 
-### 4.15 Mirror：镜像
+### 4.14 Mirror：镜像
 
 `Mirror` 将输入实体关于平面 `a*x+b*y+c*z+d=0` 镜像。例如 `[a,b,c,d]=[0,1,0,0]` 是关于 xz 平面镜像。此操作改变 CAD 实体，不会建立优化过程中持续施加的曲面对称约束。
 
@@ -1890,7 +1879,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 |---|---:|---|
 | 部件 | 6 | [BoundaryPart](#part_types-boundarypart)、[INPPart](#part_types-inppart)、[BasePart](#part_types-basepart)（自定义）、[BoxPart](#part_types-boxpart)、[CADPart](#part_types-cadpart)、[OffsetBoundaryPart](#part_types-offsetboundarypart) |
 | 边界曲面 | 5 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[mesh_surface](#surface_types-mesh-surface)、[brep_surface](#surface_types-brep-surface) |
-| CAD 操作 | 15 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Fragment](#cad_operation_types-fragment)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
+| CAD 操作 | 14 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
 | 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
 | 更新目标 | 3 | [ShapeDerivative](#updater_objectives-shapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |

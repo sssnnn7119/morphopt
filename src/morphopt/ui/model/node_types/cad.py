@@ -418,33 +418,6 @@ class IntersectOperationNode(CADOperationNode):
     )
 
 
-class FragmentOperationNode(CADOperationNode):
-    """UI definition of Fragment."""
-
-    type_name: ClassVar[str] = "Fragment"
-    backend_class: ClassVar[str] = "Fragment"
-    label_key: ClassVar[str] = "ui.schema.catalog.cad_operation.fragment.label"
-    group: ClassVar[str] = "boolean"
-    operation_kind: ClassVar[str] = "fragment"
-    Defaults = CONSTANT.UI.SCHEMA_FIELDS.CAD_OPERATIONS.FRAGMENT
-    object_id: str
-    tool_id: str
-    fields: ClassVar[tuple[FieldSpec, ...]] = (
-        FieldSpec(
-            "object_id",
-            "ui.schema.fields.object_id.label.object_id",
-            "combo",
-            Defaults.OBJECT_ID.DEFAULT,
-        ),
-        FieldSpec(
-            "tool_id",
-            "ui.schema.fields.tool_id.label.tool_id",
-            "combo",
-            Defaults.TOOL_ID.DEFAULT,
-        ),
-    )
-
-
 class TranslateOperationNode(CADOperationNode):
     """UI definition of Translate."""
 

@@ -764,7 +764,6 @@
   "ui.schema.catalog.cad_operation.fuse.label": "Fuse",
   "ui.schema.catalog.cad_operation.cut.label": "Cut",
   "ui.schema.catalog.cad_operation.intersect.label": "Intersect",
-  "ui.schema.catalog.cad_operation.fragment.label": "Fragment",
   "ui.schema.catalog.cad_operation.translate.label": "Translate",
   "ui.schema.catalog.cad_operation.rotate.label": "Rotate",
   "ui.schema.catalog.cad_operation.dilate.label": "Scale",
