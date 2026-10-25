@@ -60,8 +60,8 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
       "source": "src/morphopt/ui/model/node_types/parts.py"
@@ -97,7 +97,7 @@
         {
           "key": "inp_part_name",
           "label_key": "ui.schema.fields.inp_part_name.label.part_in_file",
-          "type": "str",
+          "type": "combo",
           "default": "",
           "doc_key": "ui.schema.fields.inp_part_name.help.part_name_inside_the_inp_empty_selects_the_only_part",
           "choices": [],
@@ -108,14 +108,15 @@
           "read_only": false,
           "hidden": false,
           "label": "INP 中的 Part",
-          "help": "INP 文件内的 Part 名称；留空时取唯一 Part。"
+          "help": "从 INP 文件中选择 Part；仅有一个 Part 时可自动选择。",
+          "editable": false
         },
         {
           "key": "exterior_surface",
           "label_key": "ui.schema.fields.exterior_surface.label.exterior_surface",
-          "type": "str",
+          "type": "combo",
           "default": "",
-          "doc_key": "ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
+          "doc_key": "ui.schema.fields.exterior_surface.help.select_inp_surface",
           "choices": [],
           "size": 6,
           "minimum": null,
@@ -123,8 +124,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "从所选 Part 中选择可视化时绘制的表面集合；默认使用导入模型的显示表面。",
+          "editable": false
         }
       ],
       "source": "src/morphopt/ui/model/node_types/parts.py"
@@ -154,8 +156,8 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
       "source": "src/morphopt/ui/model/node_types/parts.py"
@@ -268,8 +270,8 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
       "source": "src/morphopt/ui/model/node_types/parts.py"
@@ -334,8 +336,8 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
       "source": "src/morphopt/ui/model/node_types/parts.py"
@@ -400,8 +402,8 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "外表面集合",
-          "help": "作为 Part 外表面的表面集合名称。"
+          "label": "显示表面集合",
+          "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         },
         {
           "key": "shell_thickness",

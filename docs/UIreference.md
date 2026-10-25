@@ -167,11 +167,13 @@ Box、CAD 及导入部件支持有限元分析与材料设计场定义，普通 
 |---|---|---|
 | FEA 网格种子尺寸 / `fea_seed_size` | `2.5` | 全局 Gmsh 网格种子尺寸。 |
 | 网格阶次 / `mesh_order` | `1` | 网格阶次。可选：`1`、`2`。 |
-| 外表面集合 / `exterior_surface` | `"surface_0_All"` | 作为 Part 外表面的表面集合名称。 |
+| 显示表面集合 / `exterior_surface` | `"surface_0_All"` | 部件网格和变形结果可视化时默认绘制的表面集合名称。 |
 
 ![BoundaryPart 的部件参数与体网格设置](images/ui/geometry/boundary-part.png)
 
 *BoundaryPart 的部件参数与体网格设置。*
+
+每个部件卡片的“集合”列表列出其表面集合和节点集。点击集合后，右侧自动切换到对应部件视图，按局部坐标高亮表面集合的面片或节点集的实际网格节点。集合高亮仅在部件视图中显示，切换到装配体视图时清除。所需有限元网格在首次选择时生成，并随几何修改更新；尚未完成的定义会在视图下方显示原因。
 
 <a id="part_types-offsetboundarypart"></a>
 
@@ -185,7 +187,7 @@ Box、CAD 及导入部件支持有限元分析与材料设计场定义，普通 
 |---|---|---|
 | FEA 网格种子尺寸 / `fea_seed_size` | `2.5` | 全局 Gmsh 网格种子尺寸。 |
 | 网格阶次 / `mesh_order` | `1` | 网格阶次。可选：`1`、`2`。 |
-| 外表面集合 / `exterior_surface` | `"surface_0_All"` | 作为 Part 外表面的表面集合名称。 |
+| 显示表面集合 / `exterior_surface` | `"surface_0_All"` | 部件网格和变形结果可视化时默认绘制的表面集合名称。 |
 | 偏置层厚度 / `shell_thickness` | `0.5` | 由设计边界向材料侧生成的偏置层厚度，使用模型长度单位。 |
 | 偏置层数 / `num_layers` | `1` | 偏置层厚度方向的离散层数；增加层数不等于增大总厚度。 |
 
@@ -208,7 +210,7 @@ Box、CAD 及导入部件支持有限元分析与材料设计场定义，普通 
 | 厚度 / `depth` | `8.0` | Box 的 Z 方向尺寸 depth。 |
 | 网格尺寸 / `mesh_size` | `2.0` | 体有限元网格的目标尺寸；越小通常单元越多。 |
 | 网格阶次 / `mesh_order` | `2` | 网格阶次。可选：`1`、`2`。 |
-| 外表面集合 / `exterior_surface` | `"extern"` | 作为 Part 外表面的表面集合名称。 |
+| 显示表面集合 / `exterior_surface` | `"extern"` | 部件网格和变形结果可视化时默认绘制的表面集合名称。 |
 
 ![BoxPart 的实体尺寸与装配预览](images/ui-reference/geometry/box-part.png)
 
@@ -226,7 +228,7 @@ UI 支持直接编辑 CAD 操作列表，十五种操作见[CAD 建模操作](#c
 |---|---|---|
 | 网格尺寸 / `mesh_size` | `2.0` | 体有限元网格的目标尺寸；越小通常单元越多。 |
 | 网格阶次 / `mesh_order` | `1` | 网格阶次。可选：`1`、`2`。 |
-| 外表面集合 / `exterior_surface` | `"extern"` | 作为 Part 外表面的表面集合名称。 |
+| 显示表面集合 / `exterior_surface` | `"extern"` | 部件网格和变形结果可视化时默认绘制的表面集合名称。 |
 
 ![CADPart：长方体减去圆柱后的实体预览](images/ui-reference/geometry/cad-part.png)
 
@@ -279,8 +281,8 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 | 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
 |---|---|---|
 | INP 网格文件 / `mesh_file` | `空` | 包含网格的 Abaqus .inp 文件。 |
-| INP 中的 Part / `inp_part_name` | `空` | INP 文件内的 Part 名称；留空时取唯一 Part。 |
-| 外表面集合 / `exterior_surface` | `空` | 作为 Part 外表面的表面集合名称。 |
+| INP 中的 Part / `inp_part_name` | `空` | 从 INP 文件中选择 Part；仅有一个 Part 时可自动选择。 |
+| 显示表面集合 / `exterior_surface` | `空` | 从所选 Part 中选择可视化时绘制的表面集合；默认使用导入模型的显示表面。 |
 
 ![INPPart 的文件与部件选择](images/ui-reference/geometry/inp-part.png)
 
@@ -292,11 +294,11 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 `BasePart` 提供自定义部件的基础接口。 BasePart 用于编程扩展，不属于普通 Part 菜单中的现成建模类型。其建模逻辑由已绑定的自定义类实现。
 
-自定义类按框架方法签名实现节点、单元和集合的构建逻辑。基类及可重写方法由自定义类目录提供，生成代码显示其注册位置。部件名称和外表面集合仅定义对象标识与集合引用，不包含实体构建逻辑。
+自定义类按框架方法签名实现节点、单元和集合的构建逻辑。基类及可重写方法由自定义类目录提供，生成代码显示其注册位置。部件名称和显示表面集合仅定义对象标识与集合引用，不包含实体构建逻辑。
 
 | 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
 |---|---|---|
-| 外表面集合 / `exterior_surface` | `空` | 作为 Part 外表面的表面集合名称。 |
+| 显示表面集合 / `exterior_surface` | `空` | 部件网格和变形结果可视化时默认绘制的表面集合名称。 |
 
 <a id="section-四种边界曲面"></a>
 

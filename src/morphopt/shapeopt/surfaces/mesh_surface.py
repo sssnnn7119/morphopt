@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from torchfea.cad.builder import OCCBuilder
 
-    from ...optcore.modelparams.parts.cad_part import CADPart
+    from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
 
 
 class MeshSurface(BaseSurface):
@@ -72,7 +72,7 @@ class MeshSurface(BaseSurface):
 
     def load_geometry(
         self,
-        part: CADPart,
+        part: CADMeshingMixin,
         context: OCCBuilder,
     ) -> list[int]:
         return part.load_mesh_boundary(self._geometry_path)

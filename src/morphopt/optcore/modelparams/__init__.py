@@ -8,6 +8,7 @@ from .materialsparams import MaterialsParams
 from .params import Params
 from .parts import (
     BasePart,
+    FixedPart,
     CADPart,
     BoxPart,
     INPPart,
@@ -16,12 +17,13 @@ from .parts import (
 __all__ = [
     "BaseModelComponent",
     "BaseParams",
+    "BasePart",
+    "BoxPart",
+    "CADPart",
     "FEAParams",
+    "FixedPart",
     "GeometryParams",
+    "INPPart",
     "MaterialsParams",
     "Params",
-    "BasePart",
-    "CADPart",
-    "BoxPart",
-    "INPPart",
 ]

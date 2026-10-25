@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..model.fields import FieldSpec
+from ..model.node_types.parts import INPPartNode
 from ..model.material_models import MATERIAL_MODEL_PARAMETERS
 from ..model.problem import (
     CADOperationNode,
@@ -35,7 +36,12 @@ def fields_for_node(
                 read_only=node.factory is None and node.type != "brep_surface" and not node.custom_class,
             ),
         )
-    if isinstance(node, CADOperationNode) and problem is not None:
+    if isinstance(node, INPPartNode):
+        choices["inp_part_name"] = list(PartSetCatalog.inp_parts(node.mesh_file))
+        catalog = sets or (PartSetCatalog(problem) if problem is not None else None)
+        part_sets = catalog.for_part(node) if catalog else PartSetCatalog.inp(node)
+        choices["exterior_surface"] = list(part_sets.surfaces)
+    elif isinstance(node, CADOperationNode) and problem is not None:
         owner = problem.owner_of_cad_operation(node)
         operations = owner.operations if owner is not None else []
         index = operations.index(node) if node in operations else 0

@@ -2,6 +2,7 @@ from .modelparams import (
     BaseModelComponent,
     BaseParams,
     BasePart,
+    FixedPart,
     CADPart,
     BoxPart,
     FEAParams,

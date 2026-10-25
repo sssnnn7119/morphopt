@@ -56,6 +56,7 @@ from .collection_controls import (
 from .editor import PropertyEditor
 from .file_dialogs import choose_save_file
 from .helper_editor import HelperCodeEditor
+from .part_set_list import PartSetList
 
 if TYPE_CHECKING:
     from .definition_actions import DefinitionActions
@@ -66,6 +67,7 @@ class DefinitionManagerEditor(QWidget):
 
     changed = Signal(object)
     activated = Signal(object)
+    partSetSelected = Signal(object, str, str)
 
     def __init__(
         self,
@@ -88,6 +90,7 @@ class DefinitionManagerEditor(QWidget):
         self._node_editors: dict[Node, tuple[PropertyEditor, set[str] | None]] = {}
         self._helper_editors: dict[Node, HelperCodeEditor] = {}
         self._updater_buttons: dict[Node, ActionButton] = {}
+        self._part_set_lists: dict[PartNode, PartSetList] = {}
         self._cad_export_directory = "."
 
         outer = QVBoxLayout(self)
@@ -164,6 +167,7 @@ class DefinitionManagerEditor(QWidget):
             for node, editor in self._helper_editors.items():
                 editor.edit_node(node, problem)
         self._update_titles()
+        self._refresh_part_sets()
         self._focus_selection(scroll=scroll_to_focus)
 
     def refresh_ui(self, context: RefreshContext) -> None:
@@ -181,7 +185,18 @@ class DefinitionManagerEditor(QWidget):
             self.sets.invalidate()
         for editor, _ in self._node_editors.values():
             editor.refresh_choices()
+        self._refresh_part_sets()
         self.changed.emit(node)
+
+    def _refresh_part_sets(self) -> None:
+        if self._problem is None:
+            return
+        catalog = self.sets or PartSetCatalog(self._problem)
+        for part, listing in self._part_set_lists.items():
+            try:
+                listing.set_sets(catalog.for_part(part))
+            except Exception as exc:
+                listing.set_error(exc)
 
     def invalidate(self) -> None:
         """Refresh node forms the next time this manager page is selected."""
@@ -292,6 +307,7 @@ class DefinitionManagerEditor(QWidget):
         self._node_editors.clear()
         self._helper_editors.clear()
         self._updater_buttons.clear()
+        self._part_set_lists.clear()
         items = managed_nodes(self._problem, self.mode, self._focus)
         all_items = self._all_items()
         for node in items:
@@ -329,6 +345,13 @@ class DefinitionManagerEditor(QWidget):
             tr("ui.widgets.definition_manager.delete_part"),
         )
         col.addWidget(self._node_editor(node))
+
+        listing = PartSetList()
+        listing.selected.connect(
+            lambda kind, name, part=node: self.partSetSelected.emit(part, kind, name)
+        )
+        self._part_set_lists[node] = listing
+        col.addWidget(listing)
 
         col.addWidget(
             self._child_collection(

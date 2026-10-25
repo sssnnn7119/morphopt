@@ -53,6 +53,17 @@ class OffsetBoundaryPart(BoundaryPart):
             raise ValueError("num_layers must be at least one.")
 
     # ------------------------------------------------------------- shell mesh
+    @property
+    def surface_set_names(self) -> tuple[str, ...]:
+        return (*super().surface_set_names, *self._offset_set_names())
+
+    @property
+    def node_set_names(self) -> tuple[str, ...]:
+        return (*super().node_set_names, *self._offset_set_names())
+
+    def _offset_set_names(self) -> tuple[str, ...]:
+        return tuple(f"surface_{index}_offset" for index in range(1, self.num_surface_interfaces))
+
     def _compute_normals(self, base_nodes: torch.Tensor) -> torch.Tensor:
         """Cavity-surface normals evaluated on the current control points."""
         normals = []

@@ -226,6 +226,9 @@ class Workbench(QWidget):
         self.geometry_editor = DefinitionManagerEditor(
             "geometry", self.actions, parent=stack, sets=self.part_sets
         )
+        self.geometry_editor.partSetSelected.connect(
+            lambda part, kind, name: self.viewer.show_part_set(part, kind, name)
+        )
         self.loads_editor = DefinitionManagerEditor(
             "loads", self.actions, parent=stack, sets=self.part_sets
         )

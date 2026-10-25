@@ -9,7 +9,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 import gmsh
 import torchfea
@@ -17,7 +17,7 @@ from torchfea import cad as torchfea_cad
 from torchfea.cad.builder import OCCBuilder
 
 from ....constants import CONSTANT
-from .base_part import BasePart
+from .fixed_part import FixedPart
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
     from ....shapeopt.boundary_part import BoundaryPart
 
 
-class CADPart(BasePart):
-    """Build a Part from an ordered sequence of TorchFEA CAD operations.
+class CADMeshingMixin:
+    """Shared CAD construction for fixed and boundary-described geometry.
 
     Subclasses override :meth:`define_operations` and add native TorchFEA CAD
     objects with :meth:`add_operation`::
@@ -52,8 +52,6 @@ class CADPart(BasePart):
     history order. Every OCC face and its nodes are named automatically as
     ``face_N`` and ``face_N_nodes`` after meshing.
     """
-
-    cache_part = True
 
     @dataclass
     class _Operation(torchfea_cad.CADOperation):
@@ -86,7 +84,7 @@ class CADPart(BasePart):
     def define_operations(self) -> None:
         """Override to declare CAD operations in their execution order."""
 
-    def add_operation(self, operation: torchfea_cad.CADOperation) -> CADPart:
+    def add_operation(self, operation: torchfea_cad.CADOperation) -> Self:
         """Append one native TorchFEA CAD operation to the history."""
         if not isinstance(operation, torchfea_cad.CADOperation):
             raise TypeError("operation must be a TorchFEA CADOperation.")
@@ -262,7 +260,7 @@ class CADPart(BasePart):
         shells: list[tuple[int, ...]],
     ) -> list[tuple[int, int]]:
         """Fill shell face indices in exterior-first order inside a CAD session."""
-        volume, faces = CADPart._single_solid(operations)
+        volume, faces = CADMeshingMixin._single_solid(operations)
         indices = {tag: index for index, tag in enumerate(faces)}
         loops, shell_faces = context.occ.getSurfaceLoops(volume)
         ordered = []
@@ -303,7 +301,7 @@ class CADPart(BasePart):
         face_map: dict[str, list[float]],
     ) -> list[tuple[int, int]]:
         """Reconstruct one shell as a solid for standalone STEP export."""
-        volume, faces = CADPart._single_solid(operations)
+        volume, faces = CADMeshingMixin._single_solid(operations)
         context.occ.remove([(3, volume)], recursive=False)
         selected = [faces[index] for index in face_indices]
         loop = context.occ.addSurfaceLoop(selected)
@@ -314,7 +312,7 @@ class CADPart(BasePart):
             context.occ.remove(unused, recursive=True)
             context.occ.synchronize()
         face_map.update({
-            f"face_{index}": CADPart.get_face_signature(tag)
+            f"face_{index}": CADMeshingMixin.get_face_signature(tag)
             for index, tag in zip(face_indices, selected)
         })
         return [(3, solid)]
@@ -329,10 +327,10 @@ class CADPart(BasePart):
         path = Path(path)
         face_map: dict[str, list[float]] = {}
         action = partial(
-            CADPart._build_shell, operations=operations,
+            CADMeshingMixin._build_shell, operations=operations,
             face_indices=face_indices, face_map=face_map,
         )
-        torchfea_cad.export_step([CADPart._Operation("shell", action)], str(path))
+        torchfea_cad.export_step([CADMeshingMixin._Operation("shell", action)], str(path))
         path.with_suffix(".brep.json").write_text(
             json.dumps({"face_map": face_map}, indent=2), encoding="utf-8",
         )
@@ -368,3 +366,10 @@ class CADPart(BasePart):
             boundary.add_surface_interface(surface)
         boundary.initialize()
         return boundary
+
+
+class CADPart(CADMeshingMixin, FixedPart):
+    """A fixed CAD Part with shared CAD construction and cached FE mesh sets."""
+
+    def _mesh_cache_key(self) -> object:
+        return (self.mesh_size, self.mesh_order, self.exterior_surface, tuple(map(repr, self.operations)))

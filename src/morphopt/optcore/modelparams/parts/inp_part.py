@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torchfea
 
-from .base_part import BasePart
+from .fixed_part import FixedPart
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 __all__ = ["INPPart"]
 
 
-class INPPart(BasePart):
+class INPPart(FixedPart):
     """One fixed Part read from an Abaqus ``.inp`` mesh.
 
     Parameters
@@ -29,8 +30,6 @@ class INPPart(BasePart):
         Name of the Part inside the ``.inp`` file.  ``None`` selects the only
         Part in the file.
     """
-
-    cache_part = True
 
     def __init__(
         self,
@@ -52,6 +51,14 @@ class INPPart(BasePart):
             raise FileNotFoundError(
                 f"Abaqus mesh file does not exist: {self.mesh_file}")
 
+    def _mesh_cache_key(self) -> object:
+        try:
+            stat = os.stat(self.mesh_file)
+            stamp = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            stamp = None
+        return (os.path.abspath(self.mesh_file), stamp, self.inp_part_name, self.exterior_surface)
+
     def build_part(self, path_result: str | None = None,
                    pools: Pool | None = None) -> torchfea.Part:
         """Read the ``.inp`` file and return the selected Part."""
@@ -68,5 +75,9 @@ class INPPart(BasePart):
                     "pass inp_part_name to select one.")
             part_name = names[0]
         part = imported.get_part(part_name)
+        part.set_elements.update({
+            name: np.asarray(sorted(indices), dtype=int)
+            for name, indices in inp.part[part_name].sets_elems.items()
+        })
         part.exterior_surface = self.exterior_surface or part.exterior_surface
         return part

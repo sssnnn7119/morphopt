@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     import torchfea
     from torchfea.cad.builder import OCCBuilder
 
-    from ...optcore.modelparams.parts.cad_part import CADPart
+    from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
 
 
 class BaseSurface(BaseModelComponent):
@@ -137,7 +137,7 @@ class BaseSurface(BaseModelComponent):
 
     def load_geometry(
         self,
-        part: CADPart,
+        part: CADMeshingMixin,
         context: OCCBuilder,
     ) -> list[int]:
         """Load this boundary inside the Part's active geometry session."""

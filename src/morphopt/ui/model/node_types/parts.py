@@ -121,16 +121,18 @@ class INPPartNode(PartNode):
         FieldSpec(
             "inp_part_name",
             "ui.schema.fields.inp_part_name.label.part_in_file",
-            "str",
+            "combo",
             Defaults.INP_PART_NAME.DEFAULT,
             doc_key="ui.schema.fields.inp_part_name.help.part_name_inside_the_inp_empty_selects_the_only_part",
+            editable=False,
         ),
         FieldSpec(
             "exterior_surface",
             "ui.schema.fields.exterior_surface.label.exterior_surface",
-            "str",
+            "combo",
             Defaults.EXTERIOR_SURFACE.DEFAULT,
-            doc_key="ui.schema.fields.exterior_surface.help.surface_set_used_as_the_part_exterior_surface_empty_none",
+            doc_key="ui.schema.fields.exterior_surface.help.select_inp_surface",
+            editable=False,
         ),
     )
 

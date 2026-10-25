@@ -159,6 +159,7 @@ class PreviewViewer(QWidget):
         self.host = _PlotHost(self)
         outer.addWidget(self.host, 1)
         self._picked_face: FaceSelection | None = None
+        self._set_selection: tuple[PartNode, str, str] | None = None
         self.face_info = QLabel(tr("ui.widgets.viewer.pick_face_hint"))
         self.face_info.setWordWrap(True)
         self.face_info.setTextFormat(Qt.TextFormat.PlainText)
@@ -213,6 +214,10 @@ class PreviewViewer(QWidget):
         )
 
     def _show_picked_face(self, selection: FaceSelection | None) -> None:
+        if selection is None and self.renderer.has_set_selection:
+            self._show_set_info()
+            return
+        self._set_selection = None
         self._picked_face = selection
         if selection is None:
             text = tr("ui.widgets.viewer.pick_face_hint")
@@ -229,10 +234,57 @@ class PreviewViewer(QWidget):
                 )
         self.face_info.setText(text)
 
+    def _show_set_info(self) -> None:
+        if self._set_selection is not None:
+            part, kind, name = self._set_selection
+            self.face_info.setText(tr(
+                f"ui.part_sets.selected_{kind}", part=part.name, name=name,
+            ))
+
+    def show_part_set(self, part: PartNode, kind: str, name: str) -> None:
+        """Show a named set in its owning Part's local view."""
+        if self._problem is None:
+            return
+        if name and (
+            self.view_combo.currentData() != "part"
+            or self.part_combo.currentData() is not part
+        ):
+            self._set_selection = None
+            with QSignalBlocker(self.view_combo):
+                self.view_combo.setCurrentIndex(self.view_combo.findData("part"))
+            self._sync_part_combo(part)
+            self._sync_view_controls()
+            self._rebuild_all(reset_camera=True)
+        if self._render_pending:
+            self._set_selection = (part, kind, name) if name else None
+            return
+        self._draw_part_set(part, kind, name)
+
+    def _draw_part_set(self, part: PartNode, kind: str, name: str) -> None:
+        self.renderer.clear_set_selection(render=False)
+        self.renderer.clear_face_selection(render=False)
+        if (
+            not name
+            or part not in self._problem.parts()
+            or self.view_combo.currentData() != "part"
+            or self.part_combo.currentData() is not part
+        ):
+            self.host.plotter.render()
+            return
+        try:
+            mesh = self.geometry.mesh_for_set(part, kind, name)
+            self.renderer.highlight_set([mesh], nodes=kind == "nodes")
+            self._set_selection = (part, kind, name)
+            self._show_set_info()
+        except Exception as exc:
+            self.host.plotter.render()
+            self.face_info.setText(tr("ui.part_sets.highlight_failed", error=exc))
+
     def set_problem(self, problem: ProblemDefinition) -> None:
         reset_camera = problem is not self._problem
         if reset_camera:
             self._selected_step = None
+            self._set_selection = None
         self._problem = problem
         self._rebuild_all(reset_camera=reset_camera)
 
@@ -322,6 +374,9 @@ class PreviewViewer(QWidget):
             self._language_pending = False
 
     def _on_view_changed(self, *_args) -> None:
+        if self.view_combo.currentData() != "part":
+            self._set_selection = None
+            self.renderer.clear_set_selection(render=False)
         self._sync_view_controls()
         self._rebuild_all(reset_camera=True)
 
@@ -410,6 +465,7 @@ class PreviewViewer(QWidget):
         # Prepare geometry and loads before replacing any actors. Incomplete
         # definitions must not erase a working viewport during data preparation.
         loads = self._load_scene()
+        selection = self._set_selection
         self.renderer.draw_scene(scene)
         self._update_section_coordinate()
         self.host.plotter.show_axes()
@@ -423,6 +479,8 @@ class PreviewViewer(QWidget):
             # Callout spacing is measured in screen pixels. Reflow against
             # the fitted camera after including load glyphs in the bounds.
             self.renderer.draw_loads(loads)
+        if selection is not None:
+            self._draw_part_set(*selection)
 
     def _load_scene(self) -> LoadScene | None:
         if self._problem is not None and self.view_combo.currentData() == "assembly":

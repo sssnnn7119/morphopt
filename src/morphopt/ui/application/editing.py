@@ -6,7 +6,7 @@ from ..model.problem import (
     CADOperationNode, HelperFunctionNode, HelperVariableNode, FEAComponentNode,
     MaterialNode, Node, PartNode, ProblemDefinition, SurfaceNode,
 )
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
 from ..model.registry import (
     LOAD_TYPES,
     PART_TYPES,
@@ -16,6 +16,7 @@ from ..model.problem import (
 )
 from ..schemes.base import get_template
 from .updaters import symmetry_item, updater_item
+from .part_sets import PartSetCatalog
 
 
 class DefinitionCommands:
@@ -167,6 +168,12 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
                 node.bounding_box = list(bounds) if bounds is not None else [0.0] * 6
             return True
     node.set_field(key, value)
+    if isinstance(node, INPPartNode) and key in {"mesh_file", "inp_part_name"}:
+        parts = PartSetCatalog.inp_parts(node.mesh_file)
+        if node.inp_part_name not in parts:
+            node.inp_part_name = next(iter(parts)) if len(parts) == 1 else ""
+        if node.exterior_surface not in PartSetCatalog.inp(node).surfaces:
+            node.exterior_surface = ""
     return True
 
 

@@ -390,8 +390,18 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
         return context.cad_face_mesh(part, face_name)
 
 
+class KernelPreviewAdapter(INPPreviewAdapter):
+    """Custom Parts use their kernel mesh for geometry and named sets."""
+
+    def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part:
+        from ..application.part_mesh import build_part_mesh
+
+        return context.cached_part(part, lambda: build_part_mesh(part, context.problem))
+
+
 def default_part_visitor() -> PartPreviewVisitor:
     visitor = PartPreviewVisitor()
+    visitor.register(PartNode, KernelPreviewAdapter())
     visitor.register(BoundaryPartNode, BoundaryPreviewAdapter())
     visitor.register(BoxPartNode, BoxPreviewAdapter())
     visitor.register(CADPartNode, CADPreviewAdapter())
@@ -768,6 +778,22 @@ class PreviewGeometry:
             )
         except (KeyError, IndexError, ValueError, NotImplementedError):
             return None
+
+    def mesh_for_set(self, part: PartNode, kind: str, name: str) -> pv.DataSet:
+        """Extract an actual mesh set in Part coordinates, meshing only on demand."""
+        from ..application.part_mesh import build_part_mesh
+
+        model = self._part_cache.get(id(part))
+        if model is None:
+            model = self.parts.adapter(part).model_part(self, part)
+        if model is None:
+            model = self.cached_part(part, lambda: build_part_mesh(part, self.problem))
+        if kind == "nodes":
+            indices = np.asarray(model.set_nodes[name], dtype=int)
+            return pv.PolyData(model.nodes.detach().cpu().numpy()[indices])
+        if kind == "surfaces":
+            return model.get_mesh(surf_name=name).clean()
+        raise ValueError(f"Unknown mesh set kind: {kind}")
 
     def _draw_material_boxes(self) -> None:
         scene = self.scene

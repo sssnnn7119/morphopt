@@ -84,7 +84,7 @@ Params.create_feamodel()
 
 ## 5 Part、Instance 与几何缓存
 
-一个 `BasePart` 接口构建一个 `torchfea.Part`，并声明该部件的一个或多个 Instance。
+一个 `BasePart` 接口构建一个 `torchfea.Part`，并声明该部件的一个或多个 Instance。固定几何继承 `FixedPart`，由它统一持有网格缓存和集合访问属性；通用 `BasePart` 每次构建当前网格。
 
 | 成员 | 责任 |
 |---|---|
@@ -92,15 +92,20 @@ Params.create_feamodel()
 | `part_name` | 装配体 Part 名，未显式设置时取注册名 |
 | `define_instance()`、`add_instance()` | 声明实例名与六维位姿 |
 | `build_part(path_result, pools)` | 具体几何构建或导入 |
-| `get_part()` | 按缓存策略获取 Part |
+| `get_part()` | BasePart 构建当前网格；FixedPart 复用固定网格 |
 | `add_to_assembly()` | 添加 Part、外表面和已声明实例 |
-| `cache_part` | 控制固定几何是否复用 `_part` |
+| `FixedPart` | 固定几何的基类，统一管理 `_part` 和缓存失效 |
+| `FixedPart.node_sets`、`surface_sets`、`element_sets` | 直接访问缓存的 `torchfea.Part` 内部集合，不复制数据 |
+| `surface_set_names`、`node_set_names` | 集合名称；边界几何从曲面定义和拓扑描述名称，不缓存网格索引 |
+| `clear_mesh_cache()` | 清除固定几何的网格缓存，供下一次查询重新生成 |
 | `is_variable` | 标识几何或网格是否可能随优化变化 |
 | `workdir()` | 分配该接口的几何工作目录 |
 
 脚本基类默认声明一个与 Part 同名的零位姿实例；显式 `define_instance()` 可使用独立名称。`initialize()` 保留已有实例声明，仅在声明为空时调用 `define_instance()`；重复初始化不清空实例名称和位姿。位姿为 `[tx, ty, tz, rx, ry, rz]`，旋转采用指数坐标。载荷引用实例，材料引用 Part，局部更新器引用集合中的接口。
 
 UI 的 `ProblemDefinition.replace_part(source: PartNode, replacement: PartNode) -> PartNode` 在原位置替换部件，沿用原有 Instance 对象并重定向材料与更新器引用。CAD 转换通过该领域方法提交结果，控件不直接修改跨对象关联。
+
+BoxPart、CADPart、INPPart 均继承 FixedPart，仅持有一份 `_part` 网格。Box 尺寸、CAD 操作或 INP 文件及源 Part 改变后，下一次 `get_part()` 按输入重新生成。自定义固定几何同样继承 `morphopt.FixedPart` 并实现 `build_part()`。BoundaryPart 与 OffsetBoundaryPart 继承通用 BasePart，不提供固定网格的集合属性；它们每轮生成的节点编号和面片编号可能改变，具体集合索引应从当前装配体的 `assembly.get_part(part_name)` 读取。INP 导入同时保留源节点集、表面集合及单元集。
 
 | 类型 | 实现位置 | 构建特点 |
 |---|---|---|
@@ -112,7 +117,7 @@ UI 的 `ProblemDefinition.replace_part(source: PartNode, replacement: PartNode) 
 
 CAD 的 `define_operations()` 与有限元 `build_part()` 分离。STEP 导出直接使用 `torchfea.cad.export_step(operations, path)`，保存局部 CAD 实体，不要求生成体网格；UI 的操作解析见[应用服务](ui-application.md#cad)。
 
-`CADPart.build_part()` 按 `prepare_geometry → assemble_geometry → mesh_geometry → define_mesh_sets → postprocess_mesh` 组织公共构建流程。各阶段通过实例方法调用，具体实现由子类重写。父类的默认几何描述来自 CAD 操作历史；`BoundaryPart` 重写几何准备、边界组装、曲面集合定义和节点后处理。两类部件共用 TorchFEA 的体网格提取、面集命名和二阶转换，`OffsetBoundaryPart._postprocess_part()` 在二阶转换前添加偏置单元。
+`CADMeshingMixin.build_part()` 按 `prepare_geometry → assemble_geometry → mesh_geometry → define_mesh_sets → postprocess_mesh` 组织公共构建流程。CADPart 与 BoundaryPart 通过该 mixin 共用建模流程，固定网格缓存仅由 CADPart 的 FixedPart 基类提供。各阶段通过实例方法调用，具体实现由子类重写。默认几何描述来自 CAD 操作历史；`BoundaryPart` 重写几何准备、边界组装、曲面集合定义和节点后处理。两类部件共用 TorchFEA 的体网格提取、面集命名和二阶转换，`OffsetBoundaryPart._postprocess_part()` 在二阶转换前添加偏置单元。
 
 | 构建阶段 | `CADPart` 默认实现 | `BoundaryPart` 重写内容 |
 |---|---|---|
@@ -195,7 +200,7 @@ flowchart TB
 | 方法 | 参数 | 返回值与处理内容 |
 |---|---|---|
 | `prepare_geometry(path_output, name_output, flip, pools)` | `path_output: str \| Path` 为目录；`name_output: str` 为无扩展名文件名；`flip: bool` 为方向请求；`pools: Pool \| None` 为导出进程池 | `None`；参数曲面导出 STEP 或 STL；BREPSurface 直接使用现有资产 |
-| `load_geometry(part, context)` | `part: CADPart`；`context: OCCBuilder` | `list[int]`；通过部件载入方法返回当前曲面的 Gmsh 面编号；BSP、CPGEO、固定 STL 和固定 STEP 分别重写该方法 |
+| `load_geometry(part, context)` | `part: CADMeshingMixin`；`context: OCCBuilder` | `list[int]`；通过部件载入方法返回当前曲面的 Gmsh 面编号；BSP、CPGEO、固定 STL 和固定 STEP 分别重写该方法 |
 | `output_data(path_output, name_output, seed_size, flip, pools)` | 前述导出参数及 `seed_size: float` | `str`；返回已导出文件的名称，包含扩展名；具体曲面实现决定采样尺寸和方向参数的处理 |
 | `BREPSurface.get_mesh()` | 无参数 | `pyvista.PolyData`；从 STEP 生成显示三角网格，单元数据 `face_index` 保留面索引 |
 | `BREPSurface.face_names` | 只读属性 | `tuple[str, ...]`；返回资产中保存的原始 CAD 面名称；普通 STEP 无映射时为空 |

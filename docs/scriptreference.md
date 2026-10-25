@@ -215,6 +215,7 @@ class GeometryParams(morphopt.GeometryParams):
 | `CADPart` | `define_operations()` | CAD 操作历史与实体网格 |
 | `INPPart` | INP 路径与源 Part 选择 | 已有网格及集合导入 |
 | `BasePart` 子类 | `build_part()` | 自定义 TorchFEA Part 构建逻辑 |
+| `FixedPart` 子类 | `build_part()` | 自定义固定几何，复用网格并直接访问其中的节点集、表面集合及单元集 |
 
 <a id="section-geometryparams-定义要点一个-part-接口"></a>
 
@@ -249,7 +250,7 @@ class Actuator(morphopt.BoundaryPart):
 |---|---|
 | `fea_seed_size` | Part 体有限元网格的目标尺寸 |
 | `mesh_order` | 网格阶次，`1` 或 `2` |
-| `exterior_surface` | Part 外表面集合名，边界部件默认 `surface_0_All` |
+| `exterior_surface` | 显示表面集合名，用于部件网格和变形结果的默认可视化；边界部件默认 `surface_0_All` |
 | 曲面 `seed_size` | 曲面控制网格和初始采样尺度，与体网格尺寸独立 |
 | `flip` | 曲面方向反转设置；外边界与内腔按实体法向约定配置 |
 | `init_location` | 曲面初始位置 |
@@ -499,7 +500,7 @@ self.add_interface(
 
 `BoxPart` 的默认单元块名为 `C3D8`，通过 `elementname="C3D8"` 选择该块。二阶网格使用 C3D20 单元，单元块名仍为 `C3D8`。
 
-自定义 Part 继承 `morphopt.BasePart`，重写 `build_part(path_result=None, pools=None)` 并返回 `torchfea.Part`。`define_instance()` 管理装配声明，`cache_part=True` 表示固定几何可缓存。几何或网格随优化变化时设置 `is_variable=True`；固定网格上的材料优化不要求将该标记设为 True。
+自定义固定几何继承 `morphopt.FixedPart`，重写 `build_part(path_result=None, pools=None)` 并返回 `torchfea.Part`；基类负责复用网格，并通过属性直接访问其中的集合。需要逐轮构建网格的通用几何继承 `morphopt.BasePart`。`define_instance()` 管理装配声明。几何或网格随优化变化时设置 `is_variable=True`；固定网格上的材料优化不要求将该标记设为 True。
 
 <a id="section-feaparams-定义要点"></a>
 

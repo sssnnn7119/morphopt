@@ -66,6 +66,8 @@ class PreviewRenderer:
         self._face_picker.PickFromListOn()
         self._face_items: dict[str, MeshItem] = {}
         self._selection_actor = None
+        self._set_actors: list = []
+        self._set_opacities: list = []
         self._press_position: tuple[int, int] | None = None
         self._dragged = False
         self._geometry_actors: list = []
@@ -80,6 +82,7 @@ class PreviewRenderer:
             plotter.iren.add_observer("LeftButtonReleaseEvent", self._face_release)
 
     def draw_scene(self, scene: PreviewScene) -> None:
+        self.clear_set_selection(render=False)
         self.clear_face_selection(render=False)
         self._face_picker.InitializePickList()
         self._face_items.clear()
@@ -166,7 +169,7 @@ class PreviewRenderer:
             normal[self._section_axis] = -1 if self._section_reverse else 1
             self._section_plane.SetOrigin(*origin)
             self._section_plane.SetNormal(*normal)
-        for actor in self._geometry_actors:
+        for actor in [*self._geometry_actors, *self._set_actors]:
             actor.mapper.RemoveAllClippingPlanes()
             if position is not None:
                 actor.mapper.AddClippingPlane(self._section_plane)
@@ -202,6 +205,7 @@ class PreviewRenderer:
 
     def pick_face(self, x: int, y: int) -> FaceSelection | None:
         """Pick base geometry only; load glyphs and highlights cannot intercept it."""
+        self.clear_set_selection(render=False)
         self.clear_face_selection(render=False)
         self._face_picker.Pick(x, y, 0, self.plotter.renderer)
         actor = self._face_picker.GetActor()
@@ -245,6 +249,44 @@ class PreviewRenderer:
             self._on_face_picked(selection)
         self.plotter.render()
         return selection
+
+    @property
+    def has_set_selection(self) -> bool:
+        return bool(self._set_actors)
+
+    def clear_set_selection(self, *, render: bool = True) -> None:
+        for actor in self._set_actors:
+            self.plotter.remove_actor(actor, render=False)
+        self._set_actors.clear()
+        for actor, opacity in self._set_opacities:
+            actor.prop.opacity = opacity
+        self._set_opacities.clear()
+        if render:
+            self.plotter.render()
+
+    def highlight_set(self, meshes: list[pv.DataSet], *, nodes: bool = False) -> None:
+        """Show set faces or actual mesh nodes independently of load overlays."""
+        self.clear_set_selection(render=False)
+        self.clear_face_selection(render=False)
+        meshes = [mesh for mesh in meshes if mesh.n_points]
+        if meshes:
+            for actor in self._geometry_actors:
+                self._set_opacities.append((actor, actor.prop.opacity))
+                actor.prop.opacity = min(actor.prop.opacity, 0.18)
+        for index, mesh in enumerate(meshes):
+            actor = self.plotter.add_mesh(
+                mesh, name=f"selected-part-set-{index}",
+                color=theme_manager.palette.viewer.geometry.picked_face_color,
+                style="points" if nodes else "surface",
+                point_size=9, render_points_as_spheres=nodes,
+                opacity=1.0, lighting=False, pickable=False, render=False,
+                reset_camera=False,
+            )
+            actor.mapper.SetResolveCoincidentTopologyToPolygonOffset()
+            actor.mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-2, -2)
+            self._set_actors.append(actor)
+        self._apply_section()
+        self.plotter.render()
 
     def draw_loads(self, scene: LoadScene | None) -> None:
         for actor in self._overlay_actors:

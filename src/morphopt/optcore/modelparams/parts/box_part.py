@@ -9,7 +9,7 @@ import torch
 import torchfea
 
 from ....constants import CONSTANT
-from .base_part import BasePart
+from .fixed_part import FixedPart
 
 
 def _positive(**values: float) -> None:
@@ -18,10 +18,8 @@ def _positive(**values: float) -> None:
             raise ValueError(f"{name} must be finite and positive.")
 
 
-class BoxPart(BasePart):
+class BoxPart(FixedPart):
     """Structured hexahedral box with node and surface sets for each face."""
-
-    cache_part = True
 
     def __init__(
         self,
@@ -38,6 +36,9 @@ class BoxPart(BasePart):
             raise ValueError("mesh_order must be 1 or 2.")
         self.length, self.height, self.depth = length, height, depth
         self.mesh_size, self.mesh_order = mesh_size, mesh_order
+
+    def _mesh_cache_key(self) -> object:
+        return (self.length, self.height, self.depth, self.mesh_size, self.mesh_order, self.exterior_surface)
 
     def build_part(self, path_result=None, pools=None) -> torchfea.Part:
         dimensions = [self.length, self.height, self.depth]
