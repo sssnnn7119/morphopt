@@ -32,7 +32,7 @@ class _PlotHost(QWidget):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
-        self.plotter = QtInteractor(self)
+        self.plotter = QtInteractor(self, auto_update=False)
         lay.addWidget(self.plotter.interactor)
 
 
@@ -340,8 +340,8 @@ class PreviewViewer(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if self._render_pending or self._language_pending or self._theme_pending:
-            QTimer.singleShot(0, self._render_pending_view)
+        # Exposing the native GL window needs a redraw even without new data.
+        QTimer.singleShot(0, self._render_pending_view)
 
     def _render_pending_view(self) -> None:
         if not self.isVisible():
@@ -367,6 +367,8 @@ class PreviewViewer(QWidget):
                 self.host.plotter.render()
             else:
                 self._rebuild_all(reset_camera=False)
+        elif not rebuilt:
+            self.host.plotter.render()
 
     def _refresh_load_language(self) -> None:
         if self._language_pending and self.isVisible():

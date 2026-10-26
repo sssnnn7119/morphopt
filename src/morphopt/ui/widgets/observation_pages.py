@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pyvista import Actor
 from pyvistaqt import QtInteractor
 
 from ..application.results import ResultSession
@@ -41,23 +42,26 @@ class PlotViewport(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         layout.setSpacing(theme_manager.palette.layout.zero_spacing)
-        self.plotter = QtInteractor(self)
+        self.plotter = QtInteractor(self, auto_update=False)
         layout.addWidget(self.plotter.interactor)
         configure_plotter(self.plotter)
         self._theme_pending = False
         self._pending_scene: Callable[[QtInteractor], None] | None = None
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh_visible_scene)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if self._theme_pending:
-            self._theme_pending = False
-            apply_plotter_theme(self.plotter)
         # The embedded GL context is ready after the widget is exposed.
-        QTimer.singleShot(0, self._refresh_visible_scene)
+        self._refresh_timer.start(0)
 
     def _refresh_visible_scene(self) -> None:
         if not self.isVisible():
             return
+        if self._theme_pending:
+            self._theme_pending = False
+            apply_plotter_theme(self.plotter)
         build_scene = self._pending_scene
         self._pending_scene = None
         if build_scene is not None:
@@ -70,19 +74,15 @@ class PlotViewport(QWidget):
             self.plotter.render()
 
     def apply_theme(self) -> None:
-        if not self.isVisible():
-            self._theme_pending = True
-            return
-        apply_plotter_theme(self.plotter)
-        self.plotter.render()
+        self._theme_pending = True
+        if self.isVisible():
+            self._refresh_timer.start(0)
 
     def rebuild(self, build_scene: Callable[[QtInteractor], None]) -> None:
-        """Clear the scene, call ``build_scene(plotter)``, then render it."""
-        if not self.isVisible():
-            self._pending_scene = build_scene
-            return
-        self._pending_scene = None
-        self._rebuild_scene(build_scene)
+        """Replace the pending scene and draw after native window transitions."""
+        self._pending_scene = build_scene
+        if self.isVisible():
+            self._refresh_timer.start(0)
 
     def _rebuild_scene(self, build_scene: Callable[[QtInteractor], None]) -> None:
         self.plotter.clear()
@@ -287,7 +287,8 @@ class UpdatableStructurePage(QWidget):
                 style = theme_manager.palette.viewer
                 surface_count = int(getattr(selected, "num_surface_interfaces", 0) or 0)
                 for name, actor in plotter.actors.items():
-                    if name in existing:
+                    # The collection also contains scalar bars and text props.
+                    if name in existing or not isinstance(actor, Actor):
                         continue
                     mapper = actor.mapper
                     if mapper is not None and mapper.scalar_visibility:
@@ -361,22 +362,21 @@ class UpdatableStructurePage(QWidget):
 
 
 class DeformationCasePage(QWidget):
-    """Deformed mesh for one load case at the selected iteration."""
+    """One persistent viewport shared by all load cases and result tasks."""
 
-    def __init__(self, case_name: str, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.case_name = case_name
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
-        self._last_rendered: tuple[str, int] | None = None
+        self._last_rendered: tuple[str, int, str] | None = None
 
-    def build(self, results: ResultSession, iteration: int) -> None:
-        marker = (results.folder, iteration)
+    def build(self, results: ResultSession, iteration: int, case_name: str) -> None:
+        marker = (results.folder, iteration, case_name)
         if marker == self._last_rendered:
             return
-        mesh = results.deformation_mesh(self.case_name, iteration)
+        mesh = results.deformation_mesh(case_name, iteration)
 
         def build_scene(plotter) -> None:
             if mesh is not None:
@@ -392,6 +392,11 @@ class DeformationCasePage(QWidget):
         self.viewport.rebuild(build_scene)
         if mesh is not None:
             self._last_rendered = marker
+
+    def clear_view(self) -> None:
+        """Drop old task data without destroying the native rendering window."""
+        self._last_rendered = None
+        self.viewport.rebuild(lambda _plotter: None)
 
     def apply_theme(self) -> None:
         self.viewport.apply_theme()

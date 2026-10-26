@@ -1,4 +1,5 @@
 {
+  "ui.workspace.optimization_running": "优化正在运行",
   "ui.part_sets.click_to_highlight": "集合（点击以高亮显示）",
   "ui.part_sets.surfaces": "表面集合（{count}）",
   "ui.part_sets.nodes": "节点集（{count}）",

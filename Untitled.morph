@@ -1,0 +1,308 @@
+{
+  "version": 4,
+  "scheme": "shapeopt",
+  "label": "Untitled",
+  "result_folder": ".results/",
+  "device": "cuda:0",
+  "updater_device": null,
+  "restart_per_iteration": 10,
+  "root": {
+    "kind": "problem",
+    "name": "Untitled",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part",
+            "name": "part1",
+            "params": {
+              "type": "CADPart",
+              "mesh_size": 0.3,
+              "mesh_order": 2,
+              "exterior_surface": "extern"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "part1-1",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              },
+              {
+                "kind": "cad_operation",
+                "name": "Torus-1",
+                "params": {
+                  "operation_type": "Torus",
+                  "operation_id": "Torus-1",
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0,
+                  "major_radius": 8.0,
+                  "minor_radius": 2.0
+                },
+                "children": []
+              },
+              {
+                "kind": "cad_operation",
+                "name": "Box-1",
+                "params": {
+                  "operation_type": "Box",
+                  "operation_id": "Box-1",
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0,
+                  "dx": 20.0,
+                  "dy": 10.0,
+                  "dz": 5.0
+                },
+                "children": []
+              },
+              {
+                "kind": "cad_operation",
+                "name": "Intersect-1",
+                "params": {
+                  "operation_type": "Intersect",
+                  "operation_id": "Intersect-1",
+                  "object_id": "Torus-1",
+                  "tool_id": "Box-1"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "fea_component",
+            "name": "bc_1",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "part1-1",
+              "set_nodes_name": "face_3_nodes",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RP_1",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                8.0,
+                0.0,
+                0.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "couple_1",
+            "params": {
+              "type": "Couple",
+              "rp_name": "RP_1",
+              "instance_name": "part1-1",
+              "set_nodes_name": "face_2_nodes"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "force_1",
+            "params": {
+              "type": "ConcentratedForce",
+              "rp_name": "RP_1"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "generated_by": {},
+          "step_values": {
+            "load_case_1": {
+              "force_1": [
+                0.0,
+                0.0,
+                0.01
+              ]
+            }
+          }
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "material_1",
+            "params": {
+              "type": "SIMP_BSPFieldMaterials",
+              "part_name": "part1",
+              "material_model": "NeoHookeanLnJ",
+              "mumax": 10.0,
+              "kappamax": 100.0,
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.482,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "simp_ratio_min": 1e-07,
+              "bounding_box": [
+                0.0,
+                10.0,
+                -2.4492935982947065e-15,
+                10.0,
+                -8.070177151279666e-14,
+                1.9999979541389836
+              ],
+              "simp_field_resolution": 0.3,
+              "degree": 2,
+              "density": 1.08e-09,
+              "initial_ratio": 0.5,
+              "voidpenalfactor": 0.01,
+              "materialpenalty": 8,
+              "elementname": ""
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "objective_terms": [
+            {
+              "type": "displacement",
+              "weight": 1.0,
+              "reference_point_name": "RP_1",
+              "step_name": "load_case_1",
+              "component": "uz",
+              "direction": "target",
+              "target": 0.0
+            }
+          ],
+          "metrics_terms": [
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_1",
+              "step_name": "load_case_1",
+              "component": "uz"
+            }
+          ],
+          "jacobian_needed": []
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 1,
+          "gpus": [
+            "cuda:0"
+          ],
+          "task_step_list": []
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [],
+          "materials": [
+            {
+              "max_step_iter": 50,
+              "max_step_length": 1.0,
+              "if_update": true,
+              "objective_functions": [
+                {
+                  "type": "Sensitivity",
+                  "params": {
+                    "normalize_gradient": false
+                  }
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "MinValue",
+                  "params": {
+                    "xmin": -15.0,
+                    "threshold": 0.0,
+                    "p": 2
+                  }
+                },
+                {
+                  "type": "MaxValue",
+                  "params": {
+                    "xmax": 15.0,
+                    "threshold": 0.0,
+                    "p": 2
+                  }
+                },
+                {
+                  "type": "VolFrac",
+                  "params": {
+                    "volfrac_min": 0.6,
+                    "volfrac_max": 0.6,
+                    "penalty": 10000.0,
+                    "elementname": "C3D4"
+                  }
+                }
+              ],
+              "material_name": "material_1"
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
+  },
+  "custom_classes": [],
+  "class_bindings": {},
+  "helper_code": "",
+  "helper_variables": [],
+  "helper_functions": []
+}

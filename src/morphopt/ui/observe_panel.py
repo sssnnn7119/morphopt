@@ -57,7 +57,7 @@ class ObserverPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._results = ResultSession()
-        self._case_pages: dict[str, DeformationCasePage] = {}
+        self._case_names: list[str] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -109,8 +109,10 @@ class ObserverPanel(QWidget):
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
         self._updatable_structure_page = UpdatableStructurePage()
+        self._deformation_page = DeformationCasePage()
         self.stack.addWidget(self._metrics_page)
         self.stack.addWidget(self._updatable_structure_page)
+        self.stack.addWidget(self._deformation_page)
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
@@ -191,15 +193,16 @@ class ObserverPanel(QWidget):
         """
         self._results.reset()
         self.btn_export_surfaces.setEnabled(False)
-        # remove dynamic load-case pages and their option rows
-        for row in reversed(range(2, self.stack.count())):
-            w = self.stack.widget(row)
-            self.stack.removeWidget(w)
-            w.deleteLater()
-        self._case_pages = {}
-        while self.options.count() > 2:
-            self.options.takeItem(self.options.count() - 1)
-        self.options.setCurrentRow(0)
+        # Keep native GL windows alive across tasks; only their scenes change.
+        self._case_names.clear()
+        self.options.blockSignals(True)
+        try:
+            while self.options.count() > 2:
+                self.options.takeItem(self.options.count() - 1)
+            self.options.setCurrentRow(0)
+        finally:
+            self.options.blockSignals(False)
+        self.stack.setCurrentWidget(self._metrics_page)
         self.slider.blockSignals(True)
         self.slider.setMaximum(1)
         self.slider.setValue(1)
@@ -207,6 +210,7 @@ class ObserverPanel(QWidget):
         self.iter_label.setText("0 / 1")
         self._metrics_page.clear()
         self._updatable_structure_page.clear_view()
+        self._deformation_page.clear_view()
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
@@ -218,7 +222,7 @@ class ObserverPanel(QWidget):
         self.options.item(1).setText(tr("ui.observe_panel.updatable_structures"))
         self._metrics_page.apply_language()
         self._updatable_structure_page.apply_language()
-        for row, case in enumerate(list(self._case_pages.keys())):
+        for row, case in enumerate(self._case_names):
             if self.options.count() > row + 2:
                 self.options.item(row + 2).setText(
                     tr("ui.observe_panel.case_value", case=case)
@@ -231,14 +235,13 @@ class ObserverPanel(QWidget):
         """Refresh chart and viewport palettes while retaining loaded results."""
         self._metrics_page.apply_theme()
         self._updatable_structure_page.apply_theme()
-        for page in self._case_pages.values():
-            page.apply_theme()
+        self._deformation_page.apply_theme()
 
     # -------------------------------------------------------------- options
     def _on_option(self, row: int) -> None:
-        if row < 0 or row >= self.stack.count():
+        if row < 0 or row >= self.options.count():
             return
-        self.stack.setCurrentIndex(row)
+        self.stack.setCurrentIndex(min(row, 2))
         if row == 1:
             self._refresh_updatable_structure()
         elif row >= 2:
@@ -258,9 +261,8 @@ class ObserverPanel(QWidget):
             self._updatable_structure_page.build(self._results, self.slider.value())
 
     def _refresh_case(self, case: str) -> None:
-        page = self._case_pages.get(case)
-        if self.isVisible() and page is not None and self.path_result:
-            page.build(self._results, self.slider.value())
+        if self.isVisible() and self.path_result and case in self._case_names:
+            self._deformation_page.build(self._results, self.slider.value(), case)
 
     def _nudge(self, delta: int) -> None:
         self.slider.setValue(self.slider.value() + delta)
@@ -284,10 +286,9 @@ class ObserverPanel(QWidget):
 
     def _discover_cases(self, folder: str) -> None:
         found = self._results.deformation_cases()
-        existing = set(self._case_pages)
+        existing = set(self._case_names)
         for case in (name for name in found if name not in existing):
-            self._case_pages[case] = DeformationCasePage(case)
-            self.stack.addWidget(self._case_pages[case])
+            self._case_names.append(case)
             self.options.addItem(tr("ui.observe_panel.case_value", case=case))
             self.options.item(self.options.count() - 1).setData(
                 Qt.ItemDataRole.UserRole, case
