@@ -107,10 +107,11 @@ class OptimizationRunSession:
         iteration = last_completed_iteration(self.folder) if self.folder else 0
         changed = previous != self.folder or iteration != self.last_iteration
         self.last_iteration = iteration
-        finished = self.has_exited()
+        exit_code = self.process.poll() if self.process is not None else None
+        finished = exit_code is not None
         if finished:
             self.release_finished()
-        return RunProgress(self.folder, iteration, changed, finished)
+        return RunProgress(self.folder, iteration, changed, finished, exit_code)
 
     def stream_output(self, callback) -> None:
         """Read the worker pipe off the UI thread; callback receives run id and text."""
@@ -263,6 +264,7 @@ class RunProgress:
     iteration: int
     changed: bool
     finished: bool = False
+    exit_code: int | None = None
 
 
 class RunLog:

@@ -8,9 +8,13 @@ import sys
 
 def configure_environment() -> None:
     """Qt / VTK friendly defaults (call before creating QApplication)."""
-    if sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux") and not os.environ.get("QT_QPA_PLATFORM"):
         session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
-        if session_type == "x11":
+        ssh_session = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY")
+        if ssh_session and os.environ.get("DISPLAY"):
+            # SSH forwards X11, even when either desktop uses Wayland.
+            platform = "xcb"
+        elif session_type == "x11":
             platform = "xcb"
         elif session_type == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
             platform = "wayland"

@@ -1,4 +1,6 @@
 {
+  "ui.observe_panel.optimization_failed": "优化失败（退出码 {code}），详见运行输出",
+  "ui.observe_panel.stop_failed": "停止优化失败",
   "ui.workspace.optimization_running": "优化正在运行",
   "ui.part_sets.click_to_highlight": "集合（点击以高亮显示）",
   "ui.part_sets.surfaces": "表面集合（{count}）",

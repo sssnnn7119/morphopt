@@ -721,7 +721,9 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._observer is not None:
-            self._observer.close_cleanup()
+            if not self._observer.close_cleanup():
+                event.ignore()
+                return
         if self._finite_element is not None:
             self._finite_element.close_cleanup()
         event.accept()

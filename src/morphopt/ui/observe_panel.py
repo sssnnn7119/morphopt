@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
@@ -497,7 +498,8 @@ class ObserverControls(QWidget):
         return True
 
     def _stop(self) -> None:
-        self._stop_job()
+        if not self._stop_job():
+            return
         if (
             self._run.source is not None
             and self._run.source.kind is RunSourceKind.CONTINUE
@@ -514,12 +516,17 @@ class ObserverControls(QWidget):
             )
         self._update_buttons()
 
-    def _stop_job(self) -> None:
+    def _stop_job(self) -> bool:
         if self._run.active:
-            self._run.stop()
+            try:
+                self._run.stop()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                QMessageBox.warning(self, tr("ui.observe_panel.stop_failed"), str(exc))
+                return False
             self._timer.stop()
             self._show_progress(self._run.poll())
         self._update_buttons()
+        return True
 
     # ------------------------------------------------------------ run output
     def _clear_output(self) -> None:
@@ -549,7 +556,10 @@ class ObserverControls(QWidget):
                     path=self._run.folder,
                     label=Path(self._run.folder).name,
                 )
-            self.status.setText(tr("ui.observe_panel.optimization_finished"))
+            self.status.setText(
+                tr("ui.observe_panel.optimization_failed", code=progress.exit_code)
+                if progress.exit_code else tr("ui.observe_panel.optimization_finished")
+            )
             self._update_buttons()
         elif progress.changed and progress.iteration:
             self.status.setText(
@@ -632,5 +642,5 @@ class ObserverControls(QWidget):
     def apply_theme(self) -> None:
         self.panel.apply_theme()
 
-    def close_cleanup(self) -> None:
-        self._stop_job()
+    def close_cleanup(self) -> bool:
+        return self._stop_job()

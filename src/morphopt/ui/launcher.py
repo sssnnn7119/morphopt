@@ -39,11 +39,15 @@ def _start_headless_process(
     # A pipe is not a terminal, so make Python flush progress messages as
     # they are produced instead of waiting for its normal block buffer.
     environment.setdefault("PYTHONUNBUFFERED", "1")
+    process_options = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if os.name == "nt" else {"start_new_session": True}
+    )
     return subprocess.Popen(
         list(command),
         cwd=working_directory,
         env=environment,
-        start_new_session=True,
+        **process_options,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         bufsize=0,
@@ -151,8 +155,18 @@ def run_py_definition(
 
 
 def stop_job(proc: subprocess.Popen | None) -> None:
-    """Terminate a launched job and its whole process group (best effort)."""
+    """Terminate the launched task's process tree using the platform API."""
     if proc is None or proc.poll() is not None:
+        return
+    if os.name == "nt":
+        result = subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            capture_output=True, text=True, errors="replace", timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode and proc.poll() is None:
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+        proc.wait(timeout=3)
         return
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -166,6 +180,7 @@ def stop_job(proc: subprocess.Popen | None) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             proc.kill()
+        proc.wait(timeout=3)
 
 
 def latest_result_dir(run_root: str, label: str) -> str | None:

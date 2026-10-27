@@ -1,4 +1,6 @@
 {
+  "ui.observe_panel.optimization_failed": "Optimization failed (exit code {code}); see run output",
+  "ui.observe_panel.stop_failed": "Failed to stop optimization",
   "ui.workspace.optimization_running": "Optimization running",
   "ui.part_sets.click_to_highlight": "Sets (select to highlight)",
   "ui.part_sets.surfaces": "Surface sets ({count})",

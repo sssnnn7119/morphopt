@@ -85,6 +85,10 @@ morphopt-ui
 
 安装与启动应使用同一 Python 环境；模块入口 `python -m morphopt.ui` 与 `morphopt-ui` 等效。从源码安装时，在仓库根目录执行 `python -m pip install -e .`。MorphOpt 使用自身的模型格式和 TorchFEA 求解，无需安装 Abaqus。
 
+通过 SSH 显示远端窗口时，在本地执行 `ssh -X user@remote-host`，进入远端 Python 环境后执行 `QT_QPA_PLATFORM=xcb morphopt-ui`。本地为 Wayland 桌面时，需要可用的 XWayland；SSH 的 X11 转发仍使用 X11 协议。远端 `DISPLAY` 由 SSH 设置，不应手动改为 `:0`。参见 [OpenSSH 的 X11 转发说明](https://man.openbsd.org/ssh.1)。
+
+程序保留显式设置的 `QT_QPA_PLATFORM`。未指定该变量时，检测到 SSH 会话且存在 `DISPLAY` 则优先选择 `xcb`；本地启动仍按桌面会话选择后端。Qt 的后端选择规则见 [Qt Platform Abstraction](https://doc.qt.io/qt-6/qpa.html)。若窗口能够出现而三维视口存在 OpenGL 错误，可尝试 `LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb morphopt-ui`，软件渲染的显示性能通常较低。
+
 - **从空白定义建模**：选择 **文件 → 新建**，从空白模型树开始。
 - **对照检查或直接运行**：选择 **文件 → 打开 .morph…**，打开文档示例 `docs/examples/test.morph`。修改示例前可通过 **另存为…** 保存独立副本。
 
@@ -593,6 +597,8 @@ MorphOpt 按部件内的曲面顺序识别边界：**第 0 个为外表面，后
 ### 11.5 停止、打开旧结果和继续优化
 
 运行时点击 **停止优化** 可停止当前任务。已完整写入的步骤可以保留和查看；正在计算但尚未保存的步骤可能不在历史中。
+
+尚未完整保存第一轮迭代时，工作进程报错将结束当前任务，界面显示失败状态，不反复创建新任务目录。已有完整迭代结果时，保留自动重启逻辑，从已保存结果继续。Windows 使用任务进程的 PID 终止对应进程树；停止失败时保留运行状态并显示错误信息。
 
 返回“优化定义”不会停止当前任务。运行期间，该页的启动按钮显示“优化正在运行”并禁用，分析菜单的启动入口同步禁用。修改定义后启动新任务，应先返回“优化过程”停止当前任务，待停止完成后再开始优化。
 

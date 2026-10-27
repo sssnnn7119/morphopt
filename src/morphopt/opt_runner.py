@@ -50,6 +50,10 @@ def start_optimization(
     )
     process_optimization.start()
     process_optimization.join()
+    exitcode = process_optimization.exitcode
+    process_optimization.close()
+    if exitcode != 0:
+        raise ChildProcessError(f"Optimization task failed with exit code {exitcode}.")
 
 
 def debug_optimization(

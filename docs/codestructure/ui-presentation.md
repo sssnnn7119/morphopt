@@ -151,6 +151,10 @@ Boundary、Box、CAD 和 INP 各有适配器，视口不按类型堆积建模分
 
 Part 视图使用局部坐标，装配视图应用 Instance 位姿。CAD 将全部显示三角形合并为一个面网格，并将 `face_N` 编号写入单元数据；全部拓扑边合并为一个线网格。载荷和节点集查询按需从该面网格提取指定 `face_N`，不按每个拓扑面或边创建 actor。单个 Part 预览失败记录场景错误，不生成替代优化几何。
 
+CAD 预览由 TorchFEA 重放 OCC 操作历史，再通过 OpenCASCADE 原生三角化生成显示面及拓扑边线，不调用 Gmsh 网格生成接口。边线直接引用对应面的三角化边界节点。显示面和边通过面积或长度、质心和惯性矩匹配原有 Gmsh 拓扑标识。该路径保留周期面的裁剪边界及 `face_N` 选择关系；Gmsh 继续负责建模历史和拓扑查询，有限元体网格仍由其独立生成。预览层统一将底层异常转换为 `RuntimeError`，由界面记录为对应部件的预览错误。
+
+体网格生成前，TorchFEA 使用 OCC 拆分闭合周期面，使裁剪后的周期边界适于 Gmsh 剖分。拆分仅作用于剖分拓扑，不改变几何形状；面、边、顶点及体的网格数据按来源映射回原实体标识，因此 UI 的 `face_N`、节点集和载荷引用保持一致。
+
 各 Part 适配器在基础网格的 `MeshItem.faces` 中提供 `MeshFaces`，记录部件、实例、显示单元分组和对应表面集合名称。`PreviewRenderer` 使用限定基础几何 actor 的 `vtkCellPicker` 识别点击单元，以单个临时 actor 高亮选中分组，并将 `FaceSelection` 交给 `PreviewViewer` 显示可复制的面名称。CAD、Box、Boundary、OffsetBoundary 和 INP 共用这一流程；载荷图元、拓扑边和选择高亮不参与拾取，鼠标拖动不触发选择。常驻面编号标签已移除。
 
 Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗口尺寸转换为 VTK 像素坐标，并翻转纵轴。显示网格携带原始单元 ID，拾取结果经该 ID 映射回 `MeshFaces`，允许渲染管线调整单元顺序。剖视滑条调用 `PreviewRenderer.set_section()` 更新共享 `vtkPlane`，几何 mapper 和选择高亮共用该裁剪平面；平面移动不重建 CAD，不修改模型定义与原始网格，拾取遵循相同裁剪范围。
