@@ -35,11 +35,13 @@ def create_application(argv: list[str] | None = None):
         configure_application_identity,
         prepare_application_identity,
     )
+    from .theme.fonts import font_manager
     from .theme import theme_manager
 
     prepare_application_identity()
     app = QApplication.instance() or QApplication(argv or sys.argv)
     configure_application_identity(app)
+    font_manager.restore(app)
     theme_manager.restore(app)
     return app
 

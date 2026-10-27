@@ -175,7 +175,7 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 
 ## 9 主题、本地化与平台资源
 
-`ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`styles/*.qss` 管理共用控件状态。组件读取同一主题对象，主题切换后刷新外观并保留相机等展示状态。
+`ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`theme/styles/*.qss` 管理共用控件状态，`theme/fonts.py` 管理各文字类别的字体设置和变更通知。字体设置独立于配色主题保存；主题切换后刷新外观并保留相机等展示状态。
 
 `constants.py` 保存业务默认值、运行限制和数值配置，窗口尺寸、间距与分栏比例由 `LayoutStyle` 管理。应用显示文本使用 `locales/zh-CN.json` 与 `en-US.json` 的稳定 key；领域身份仍使用原始名称和枚举值。
 

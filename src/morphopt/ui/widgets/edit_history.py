@@ -26,6 +26,7 @@ from .collection_controls import ActionButton
 
 _STEP_ID_ROLE = Qt.ItemDataRole.UserRole
 _GRAPH_LANE_ROLE = Qt.ItemDataRole.UserRole + 1
+_CURRENT_ROLE = Qt.ItemDataRole.UserRole + 2
 _GraphEdge = tuple[int, int, int, int]
 _GraphSegment = tuple[int, int, bool, bool]
 
@@ -72,6 +73,7 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
     ) -> None:
         view_option = QStyleOptionViewItem(option)
         self.initStyleOption(view_option, index)
+        view_option.font.setBold(bool(index.data(_CURRENT_ROLE)))
         text = view_option.text
         view_option.text = ""
         style = view_option.widget.style() if view_option.widget is not None else None
@@ -286,9 +288,7 @@ class EditHistoryPanel(QWidget):
                     )
                 )
                 if step_id == current_id:
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
+                    item.setData(_CURRENT_ROLE, True)
                     item.setForeground(QColor(theme_manager.palette.accent_hover))
                 self.history_list.addItem(item)
                 self._items[step_id] = item

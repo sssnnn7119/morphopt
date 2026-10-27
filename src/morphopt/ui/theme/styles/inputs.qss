@@ -14,10 +14,15 @@ QComboBox QAbstractItemView {
 }
 QCheckBox { color: @text@; }
 QScrollBar:vertical, QScrollBar:horizontal { background: @panel@; }
-QScrollBar:vertical { width: 10px; }
-QScrollBar:horizontal { height: 10px; }
+QScrollBar:vertical { width: 12px; }
+QScrollBar:horizontal { height: 12px; }
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-    background: @border@;
+    background: @muted_text@;
     border-radius: 5px;
 }
+QScrollBar::handle:vertical { min-height: 28px; }
+QScrollBar::handle:horizontal { min-width: 28px; }
+QScrollBar::handle:hover { background: @accent_hover@; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QSplitter::handle { background: @border@; }

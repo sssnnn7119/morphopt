@@ -20,7 +20,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from PySide6.QtCore import QEvent, QObject, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeyEvent, QKeySequence
+from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
@@ -59,6 +59,7 @@ from .presentation.navigation import ObjectiveItemTreeNode, node_at_path, node_p
 from .refresh import Refreshable, RefreshContext, RefreshCoordinator
 from .schemes.base import scheme_label
 from .theme import theme_manager
+from .theme.fonts import font_manager
 from .widgets.collection_controls import CollectionHeader
 from .widgets.controller_editor import ControllerSettingsEditor
 from .widgets.custom_classes import (
@@ -166,12 +167,8 @@ class Workbench(QWidget):
 
         self.code_view = GeneratedSourceView()
         self.code_view.setReadOnly(True)
-        self.code_view.setFont(
-            QFont(
-                theme_manager.palette.code_editor.font_family,
-                theme_manager.palette.code_editor.font_size,
-            )
-        )
+        self.code_view.setFont(font_manager.font("code"))
+        font_manager.changed.connect(self._font_changed)
         center.addTab(self.code_view, tr("ui.workbench.code_read_only"))
         self.asset_view = AssetBrowser()
         center.addTab(self.asset_view, tr("ui.workbench.assets"))
@@ -338,15 +335,14 @@ class Workbench(QWidget):
     def apply_theme(self) -> None:
         """Refresh theme-aware rendering and history visuals."""
         self.tree.apply_theme()
-        self.code_view.setFont(
-            QFont(
-                theme_manager.palette.code_editor.font_family,
-                theme_manager.palette.code_editor.font_size,
-            )
-        )
+        self.code_view.setFont(font_manager.font("code"))
         self.viewer.apply_theme()
         self.asset_view.apply_theme()
         self.history_panel.apply_theme()
+
+    def _font_changed(self, role: str) -> None:
+        if role == "code":
+            self.code_view.setFont(font_manager.font("code"))
 
     # -------------------------------------------- name / output-path slots
 

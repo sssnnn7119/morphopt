@@ -38,6 +38,7 @@ from .widgets.file_dialogs import (
     create_file_dialog,
 )
 from .widgets.quickstart import QuickstartDialog
+from .widgets.font_settings import FontSettingsDialog
 from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
 
@@ -151,6 +152,8 @@ class MainWindow(QMainWindow):
                 self._file_menu.addSeparator()
         self._language_menu = self._settings_menu.addMenu("")
         self._theme_menu = self._settings_menu.addMenu("")
+        self._font_settings_action = self._settings_menu.addAction("")
+        self._font_settings_action.triggered.connect(self._show_font_settings)
         self._design_options_menu = self._settings_menu.addMenu("")
         self._history_limit_action = self._design_options_menu.addAction("")
         self._history_limit_action.triggered.connect(self._set_history_limit)
@@ -172,6 +175,7 @@ class MainWindow(QMainWindow):
         self._show_finite_element_action.setText(tr("ui.workspace.analyze_iteration"))
         self._language_menu.setTitle(tr("ui.workspace.language"))
         self._theme_menu.setTitle(tr("ui.workspace.theme"))
+        self._font_settings_action.setText(tr("ui.appearance.fonts"))
         self._design_options_menu.setTitle(tr("ui.workspace.design_options"))
         self._history_limit_action.setText(tr("ui.history.maximum_nodes"))
         self._language_menu.clear()
@@ -201,6 +205,9 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, name=name: theme_manager.set_theme(name)
             )
         self._update_analysis_actions()
+
+    def _show_font_settings(self) -> None:
+        FontSettingsDialog(self).exec()
 
     def _set_locale(self, code: str) -> None:
         QSettings("MorphOptUI", "ui").setValue("language", code)

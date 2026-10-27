@@ -69,14 +69,13 @@ QToolButton::menu-indicator {
 }
 QToolButton[menuButton="true"] { padding-right: 20px; }
 QLabel[textRole="sectionHeading"] {
-    font-size: @section_heading_size@px;
     font-weight: 700;
     color: @heading_text@;
 }
 QLabel[textRole="muted"] { color: @muted_text@; }
 QLabel[toolbarContext="true"] { max-width: 320px; padding-right: 10px; }
 QLabel[textRole="accent"] { color: @accent_hover@; }
-QLabel[textRole="dialogTitle"] { font-size: @dialog_title_size@px; font-weight: 700; }
+QLabel[textRole="dialogTitle"] { font-weight: 700; }
 QLabel[textRole="warning"] { color: @warning@; }
 QLabel[textRole="error"] { color: @error@; }
 QToolButton[buttonLayout="navigation"] { padding: 2px; min-width: 30px; min-height: 30px; }

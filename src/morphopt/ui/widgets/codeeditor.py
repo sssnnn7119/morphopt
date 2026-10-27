@@ -29,6 +29,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QCompleter, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..application.completion import CompletionItem, completion_items
+from ..theme.fonts import font_manager
 from ..i18n import tr
 from ..theme import theme_manager
 
@@ -376,6 +377,7 @@ class CodeEditor(QWidget):
             theme_manager.palette.layout.widgets.code_editor_minimum_height
         )
         self._apply_theme(theme_manager.name)
+        font_manager.changed.connect(self._font_changed)
         unsubscribe = theme_manager.subscribe(self._apply_theme)
         self.destroyed.connect(lambda *_args: unsubscribe())
         self._edit.set_completion_context(completion_context, completion_problem)
@@ -383,11 +385,14 @@ class CodeEditor(QWidget):
         self.highlighter = _PythonHighlighter(self._edit.document())
 
     def _apply_theme(self, _name: str) -> None:
-        font_style = theme_manager.palette.code_editor
-        mono = QFont(font_style.font_family, font_style.font_size)
+        mono = font_manager.font("code")
         self._edit.setFont(mono)
         metrics = QFontMetrics(mono)
         self._edit.setTabStopDistance(4 * metrics.horizontalAdvance(" "))
+
+    def _font_changed(self, role: str) -> None:
+        if role == "code":
+            self._apply_theme(theme_manager.name)
 
     # ------------------------------------------------------------- public
     def set_body(self, text: str) -> None:

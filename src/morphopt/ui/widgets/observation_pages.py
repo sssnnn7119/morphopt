@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable
 import logging
 
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtCore import QTimer
@@ -27,6 +26,7 @@ from pyvista import Actor
 from pyvistaqt import QtInteractor
 
 from ..application.results import ResultSession
+from ..theme.fonts import chart_font, font_manager
 from ..i18n import tr
 from ..presentation.history import history_table
 from ..presentation.labels import typed_title
@@ -101,11 +101,12 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
         layout.addWidget(self.table, 3)
-        self.figure = Figure(facecolor=theme_manager.palette.chart.background)
+        self.figure = Figure(facecolor=theme_manager.palette.chart.background, layout="constrained")
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas, 2)
         self._last_history = None
         self._last_iteration = 0
+        font_manager.changed.connect(self._font_changed)
 
     def update_from_history(self, history, iteration: int) -> None:
         """Render all available history records up to ``iteration``."""
@@ -123,15 +124,6 @@ class MetricsPage(QWidget):
         self._draw_objectives(table.objectives)
 
     def _draw_objectives(self, objectives: list[float]) -> None:
-        # Prefer an installed CJK font so translated chart labels do not turn
-        # into tofu boxes on Linux; Matplotlib silently falls back elsewhere.
-        plt.rcParams["font.sans-serif"] = [
-            "Noto Sans CJK SC",
-            "Noto Sans CJK TC",
-            "DejaVu Sans",
-            "sans-serif",
-        ]
-        plt.rcParams["axes.unicode_minus"] = False
         self.figure.clear()
         self.figure.set_facecolor(theme_manager.palette.chart.background)
         axes = self.figure.add_subplot(111)
@@ -159,7 +151,22 @@ class MetricsPage(QWidget):
             linestyle="--",
             linewidth=theme_manager.palette.chart.grid_width,
         )
+        labels = [
+            axes.title, axes.xaxis.label, axes.yaxis.label,
+            *axes.get_xticklabels(), *axes.get_yticklabels(),
+            axes.xaxis.get_offset_text(), axes.yaxis.get_offset_text(),
+        ]
+        font = chart_font()
+        point_size = font_manager.font("chart").pointSizeF()
+        for label in labels:
+            size = label.get_fontsize() * (point_size if point_size > 0 else 10) / 10
+            label.set_fontproperties(font)
+            label.set_fontsize(size)
         self.canvas.draw()
+
+    def _font_changed(self, role: str) -> None:
+        if role == "chart" and self._last_history is not None:
+            self._draw_objectives(history_table(self._last_history).objectives)
 
     def apply_language(self) -> None:
         """Refresh translated table headers and chart labels."""
