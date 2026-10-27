@@ -815,14 +815,14 @@ class Workbench(QWidget):
                 "undo",
                 history.can_undo or pending_input,
                 undo_description,
-                "Ctrl+Z",
+                QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText),
             ),
             (
                 self._redo_button,
                 "redo",
                 history.can_redo,
                 redo_description,
-                "Ctrl+Shift+Z",
+                QKeySequence(QKeySequence.StandardKey.Redo).toString(QKeySequence.SequenceFormat.NativeText),
             ),
         ):
             button.setText(tr(f"ui.history.{key}"))

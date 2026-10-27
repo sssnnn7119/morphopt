@@ -6,7 +6,7 @@ generator when the final module is produced.
 Editing behaviour (via the internal :class:`_CodeEdit`):
 * ``Tab`` indents with 4 spaces, ``Shift+Tab`` outdents, ``Enter`` starts a new
   line and keeps the current indentation (one extra level after ``:``).
-* ``Ctrl+Z`` undo / ``Ctrl+Shift+Z`` (or ``Ctrl+Y``) redo are bound explicitly.
+* Undo and redo use Qt's platform-standard key bindings.
 * :meth:`CodeEditor.set_body` does nothing when the text is unchanged, so a
   parent refresh never resets the caret or clears the undo history while the
   user is typing.

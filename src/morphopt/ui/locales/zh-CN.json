@@ -1,4 +1,5 @@
 {
+  "ui.validation.portable_name": "名称“{name}”不能用作 Windows/Linux 文件名：请移除非法字符、结尾的点或空格，并避开 CON、NUL、COM1 等保留名称。",
   "ui.observe_panel.optimization_failed": "优化失败（退出码 {code}），详见运行输出",
   "ui.observe_panel.stop_failed": "停止优化失败",
   "ui.workspace.optimization_running": "优化正在运行",

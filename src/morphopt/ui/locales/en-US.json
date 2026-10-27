@@ -1,4 +1,5 @@
 {
+  "ui.validation.portable_name": "Name “{name}” is not a portable Windows/Linux filename: remove invalid characters and trailing dots or spaces, and avoid reserved names such as CON, NUL and COM1.",
   "ui.observe_panel.optimization_failed": "Optimization failed (exit code {code}); see run output",
   "ui.observe_panel.stop_failed": "Failed to stop optimization",
   "ui.workspace.optimization_running": "Optimization running",

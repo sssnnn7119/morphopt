@@ -19,6 +19,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .model.problem import ProblemDefinition
+from ..paths import sanitize_name
+from .worker_environment import worker_environment
 
 #: where UI-launched runs are written by default (job cwd)
 UI_RUN_DIR = os.path.join(os.getcwd(), "ui_runs")
@@ -34,11 +36,7 @@ def _start_headless_process(
     imports visualization-adjacent dependencies.  The job's combined output
     is piped back to :class:`ObserverControls` for display in the UI.
     """
-    environment = dict(os.environ)
-    environment.setdefault("PYVISTA_QT_BINDING", "pyside6")
-    # A pipe is not a terminal, so make Python flush progress messages as
-    # they are produced instead of waiting for its normal block buffer.
-    environment.setdefault("PYTHONUNBUFFERED", "1")
+    environment = worker_environment()
     process_options = (
         {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         if os.name == "nt" else {"start_new_session": True}
@@ -52,12 +50,6 @@ def _start_headless_process(
         stderr=subprocess.STDOUT,
         bufsize=0,
     )
-
-
-def sanitize_name(name: str) -> str:
-    """Return a filesystem- and module-friendly problem label."""
-    out = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in name)
-    return out or "problem"
 
 
 def run_root_for(problem: ProblemDefinition, base: str | None = None) -> str:
@@ -134,7 +126,7 @@ def parse_job_location(py_path: str) -> tuple[str, str]:
     py_dir = os.path.dirname(os.path.abspath(py_path))
     if not os.path.isabs(folder):
         folder = os.path.join(py_dir, folder)
-    return os.path.normpath(folder), label
+    return os.path.normpath(folder), sanitize_name(label)
 
 
 def run_py_definition(
@@ -185,20 +177,13 @@ def stop_job(proc: subprocess.Popen | None) -> None:
 
 def latest_result_dir(run_root: str, label: str) -> str | None:
     """Newest ``<run_root>/<label>_T*`` folder (for auto-discovering a run)."""
-    if not run_root or not label:
+    if not run_root or not label or not Path(run_root).is_dir():
         return None
-    matches = sorted(glob_dirs(os.path.join(run_root, label + "_T*")))
+    matches = sorted(
+        str(path) for path in Path(run_root).iterdir()
+        if path.is_dir() and path.name.startswith(label + "_T")
+    )
     return matches[-1] if matches else None
-
-
-def glob_dirs(pattern: str):
-    import glob
-
-    out = []
-    for p in glob.glob(pattern):
-        if os.path.isdir(p):
-            out.append(p)
-    return out
 
 
 def parse_run_options(scripts_main: str) -> tuple[str, int]:

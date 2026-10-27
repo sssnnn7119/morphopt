@@ -19,6 +19,7 @@ import torch
 import morphopt
 
 from ..constants import CONSTANT
+from ..paths import sanitize_name
 from .history import History
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ class Controller:
         self.path_result = (
             self.path_result_folder
             + "/"
-            + self.opt_label
+            + sanitize_name(self.opt_label)
             + "_"
             + "T"
             + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

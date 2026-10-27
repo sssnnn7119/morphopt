@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..application.surface_export import BoundarySurfaceExport
 from ..i18n import tr
+from ..worker_environment import configure_worker_process
 from .file_dialogs import choose_save_directory, confirm_overwrite
 
 
@@ -38,6 +39,7 @@ class SurfaceExportDialog(QDialog):
         self._destination = ""
         self._surface_count = 0
         self._process = QProcess(self)
+        configure_worker_process(self._process)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._process.finished.connect(self._completed)
         self._process.errorOccurred.connect(self._failed)
