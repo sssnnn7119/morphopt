@@ -13,15 +13,13 @@ from .protocal import ProtocalInitializable, ProtocalSavable
 
 
 class Solver(ProtocalInitializable, ProtocalSavable):
-    """
-    This class is responsible for solving the FEA and get the displacement of the soft robot.
-    """
+    """Schedule ordered load-case groups across the FEA worker pool."""
 
     def __init__(
         self,
         params: Params,
         num_process: int = CONSTANT.KERNEL.SOLVER.NUM_PROCESS,
-        available_gpus: list[str] | None = None,
+        process_devices: list[str] | None = None,
         task_step_list: list[list[str]] | None = None,
     ) -> None:
         """
@@ -31,8 +29,8 @@ class Solver(ProtocalInitializable, ProtocalSavable):
             params (Params):
             num_process (int): The number of processes to use for parallel computation.
                 Defaults to one process.
-            available_gpus (list[str] | None): GPU devices to use. Defaults to
-                CPU execution when omitted or empty.
+            process_devices (list[str] | None): One device name for each process.
+                Defaults to CPU for every process.
         """
 
         super().__init__()
@@ -47,11 +45,16 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         int: The number of processes to use for parallel computation.
         """
 
-        self.available_gpus = list(available_gpus or [])
+        self.process_devices = list(process_devices or [])
+        if len(self.process_devices) > num_process:
+            raise ValueError(
+                "process_devices cannot contain more entries than num_process"
+            )
+        self.process_devices.extend(["cpu"] * (num_process - len(self.process_devices)))
 
         self.task_step_list = task_step_list
         """
-        list[list[str]]: Named load cases grouped for sequential execution.
+        list[list[str]]: Ordered task groups; load cases run sequentially per group.
         """
 
     def initialize(self) -> None:
@@ -62,6 +65,8 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         registered = [name for group in groups for name in group]
         if len(set(registered)) != len(registered) or not set(registered) <= set(names):
             raise ValueError("Solver task groups must reference existing load cases without duplicates.")
+        # Each nested list is one pool task; unassigned cases default to
+        # separate singleton tasks in load-case registration order.
         self.task_step_list = [*groups, *[[name] for name in names if name not in registered]]
 
     def reinitialize(self, iteration: int) -> None:
@@ -83,6 +88,12 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         if U_guess is None:
             U_guess = self._previous_solution()
 
+        pool = morphopt.controller.pools
+        process_devices = {
+            worker.name: self.process_devices[index]
+            for index, worker in enumerate(pool._pool)
+        }
+
         # multiprocess FEA
 
         fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
@@ -93,13 +104,12 @@ class Solver(ProtocalInitializable, ProtocalSavable):
                 fe=fe_cpu,
                 feamodel=self.params.feamodel,
                 step_names=self.task_step_list[0],
-                available_gpus=self.available_gpus,
+                process_devices={mp.current_process().name: self.process_devices[0]},
                 U_guess=[U_guess[step] for step in self.task_step_list[0]]
                 if U_guess is not None else None,
                 path_result=morphopt.controller.path_result,
             )
 
-        pools = morphopt.controller.pools
         # pools.close()
         # pools.join()
         # pools = mp.Pool(processes=self.num_process)
@@ -107,13 +117,13 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         result = []
         for i in range(len(self.task_step_list)):
             result.append(
-                pools.apply_async(
+                pool.apply_async(
                     self._solve_FEA,
                     kwds={
                         "fe": fe_cpu,
                         "feamodel": self.params.feamodel,
                         "step_names": self.task_step_list[i],
-                        "available_gpus": self.available_gpus,
+                        "process_devices": process_devices,
                         "U_guess": [U_guess[step] for step in self.task_step_list[i]]
                         if U_guess is not None
                         else None,
@@ -175,7 +185,7 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         fe: torchfea.FEAController,
         feamodel: FEAParams,
         step_names: list[str],
-        available_gpus: list[str],
+        process_devices: dict[str, str],
         U_guess: list[np.ndarray | None] | None = None,
         path_result: str | None = None,
     ) -> list[torchfea.solver.StaticResult]:
@@ -195,23 +205,9 @@ class Solver(ProtocalInitializable, ProtocalSavable):
         )
 
         current_process_name = mp.current_process().name
-        try:
-            pool_id = int(current_process_name[-1])
-        except:
-            pool_id = 0
-
-        if len(available_gpus) > 0:
-            cuda_now = (pool_id + 1) % len(available_gpus)
-            torch.set_default_device(available_gpus[cuda_now])
-            device_now = available_gpus[cuda_now]
-            print(
-                "Process %s use GPU: %s"
-                % (current_process_name, available_gpus[cuda_now])
-            )
-        else:
-            torch.set_default_device("cpu")
-            device_now = "cpu"
-            print("Process %s use CPU" % (current_process_name))
+        device_now = process_devices[current_process_name]
+        torch.set_default_device(device_now)
+        print(f"Process {current_process_name} uses device: {device_now}")
 
         # torch.set_default_device(torch.device('cuda:0'))
         torch.set_default_dtype(torch.float64)

@@ -2,7 +2,7 @@
 
 [脚本快速开始](scriptguide.md) · [UI 快速开始](UIguide.md) · [UI 模块与接口参考](UIreference.md)
 
-本文按控制器、模型参数、几何、载荷工况、材料、目标函数、求解器和更新器说明脚本定义。各节包括模块职责、注册位置、主要接口、输入约定和扩展示例。完整可执行任务见 [bending_optimization.py](examples/bending_optimization.py)；本文中的局部代码用于替换或扩展该任务内的对应模块。
+本文按控制器、模型参数、几何、载荷工况、材料、目标函数、求解器和更新器说明脚本定义。各节包括模块职责、注册位置、主要接口、输入约定和扩展示例。完整可执行任务见 [bending_actuator.py](../examples/bending_actuator/bending_actuator.py)；本文中的局部代码用于替换或扩展该任务内的对应模块。
 
 脚本与 UI 采用同一计算内核。UI 字段、模型树与预览的对应关系见 [UI 模块参考](UIreference.md)，具体类与参数以当前源码为准。
 
@@ -125,7 +125,7 @@ class ThisController(morphopt.Controller):
         )
 ```
 
-控制器中的 `Params`、`Solver`、`Updater` 和 `ObjectiveFunction` 嵌套类在同一 `ThisController` 内定义，完整结构见[快速开始任务](examples/bending_optimization.py)。
+控制器中的 `Params`、`Solver`、`Updater` 和 `ObjectiveFunction` 嵌套类在同一 `ThisController` 内定义，完整结构见[快速开始任务](../examples/bending_actuator/bending_actuator.py)。
 
 | 参数或属性 | 含义 |
 |---|---|
@@ -496,7 +496,7 @@ self.add_interface(
 )
 ```
 
-`INPPart` 的 `inp_part_name` 选择源文件中的部件，`part_name` 表示当前装配体内的部件名，两者分别定义。只有一个源 Part 时可按导入器约定省略源选择。导入范围限于当前 MorphOpt/TorchFEA 支持的网格、集合、材料和截面内容，不执行完整 Abaqus 求解流程。占位材料与截面格式见[网格示例](examples/reference-box.inp)。
+`INPPart` 的 `inp_part_name` 选择源文件中的部件，`part_name` 表示当前装配体内的部件名，两者分别定义。只有一个源 Part 时可按导入器约定省略源选择。导入范围限于当前 MorphOpt/TorchFEA 支持的网格、集合、材料和截面内容，不执行完整 Abaqus 求解流程。占位材料与截面格式见[网格示例](assets/ui_reference/reference-box.inp)。
 
 `BoxPart` 的默认单元块名为 `C3D8`，通过 `elementname="C3D8"` 选择该块。二阶网格使用 C3D20 单元，单元块名仍为 `C3D8`。
 
@@ -744,10 +744,10 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
 ```python
 class Solver(morphopt.Solver):
     def __init__(self, params):
-        super().__init__(params=params, num_process=1, available_gpus=[])
+        super().__init__(params=params, num_process=1, process_devices=["cpu"])
 ```
 
-`num_process=1` 与 `available_gpus=[]` 对应默认的一个 CPU 求解进程。优化侧 `device` 与有限元侧 `available_gpus` 分别设置，CUDA 配置应同时核查两处。
+`process_devices` 按进程顺序指定设备，每个进程对应一个设备名。优化侧 `device` 与有限元求解进程的设备分别设置，CUDA 配置应同时核查两处。
 
 <a id="section-多工况调度与-gpu"></a>
 
@@ -759,14 +759,14 @@ class Solver(morphopt.Solver):
         super().__init__(
             params=params,
             num_process=2,
-            available_gpus=["cuda:0", "cuda:1"],
+            process_devices=["cuda:0", "cuda:1"],
             task_step_list=[["load_case_1", "load_case_2"], ["load_case_3"]],
         )
 ```
 
-该示例要求三个已定义的工况及两张可用 GPU，任务 `[0, 1]` 表示在同一任务中顺序求解工况 0 和 1。任务组的数量与进程数并非同一概念；进程池调度各组任务。所有待求解工况应包含在配置中，GPU 并发数量应与模型显存占用匹配。
+该示例要求三个已定义的工况、两个求解进程及两张可用 GPU；第一个进程使用 `cuda:0`，第二个进程使用 `cuda:1`。`task_step_list` 中的每一组是一个任务，组内工况按列表顺序连续求解；进程池将各组任务调度给可用工作进程，组数与进程数不要求相同。所有待求解工况应包含在配置中，GPU 并发数量应与模型显存占用匹配。
 
-未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务。分组名称须有效且不重复，单进程仍可依次完成多个任务。
+`task_step_list` 中每组列表的排列顺序就是该组工况的执行顺序。UI 以进程组为行，在工况序列中调整组内顺序，也可移动工况或将其拆为独立组。未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务；工况名称须有效且不得重复。单进程仍可依次完成多个任务。
 
 工况以字符串名称作为键，顺序由 `add_step()` 的注册顺序确定。结果通过 `self.fe_results["load_case_1"]` 访问。归档使用 `result_<工况名>_iter_<轮次>.npz`，`load_cases.json` 保存注册顺序。
 
@@ -1028,10 +1028,11 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 
 | 内容 | 参考文件 |
 |---|---|
-| 入门形状优化 | [文档完整任务](examples/bending_optimization.py) |
-| 固定 STEP 外边界与 BSP 内腔优化 | [完整定义与验证记录](examples/brep-bsp-cylinder.md) |
-| 形状设计扩展 | [bendingactuator.py](../examples/bendingactuator.py) |
-| SIMP 任务结构 | [gripper.py](../examples/gripper.py) |
+| 入门形状优化 | [完整任务](../examples/bending_actuator/bending_actuator.py) |
+| 固定 STEP 外边界与 BSP 内腔优化 | [完整定义与验证记录](../examples/hybrid_cylinder/hybrid_cylinder.md) |
+| STEP 单面设计 | [step_face.py](../examples/step_face/step_face.py) |
+| SIMP 夹爪任务 | [simp_gripper.py](../examples/simp_gripper/simp_gripper.py) |
+| 恒力夹爪任务 | [force_gripper.py](../examples/force_gripper/force_gripper.py) |
 | 控制器生命周期 | [controller.py](../src/morphopt/optcore/controller.py) |
 | 任务入口 | [opt_runner.py](../src/morphopt/opt_runner.py) |
 | 参数集合 | [modelparams](../src/morphopt/optcore/modelparams) |

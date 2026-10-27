@@ -1,12 +1,12 @@
 {
-  "definition": "test.morph",
+  "definition": "bending_actuator.morph",
   "definition_sha256": "663982379d94280d529cee5460f8eb0111f32b542734d98f5f2da4a73b4ee738",
   "result_folder": "results/example-run",
   "platform": "wayland",
   "images": [
     {
       "file": "custom-code/framework-overrides.png",
-      "description": "可选的重写类入口；test.morph 未使用自定义类",
+      "description": "可选的重写类入口；bending_actuator.morph 未使用自定义类",
       "pixels": [
         3230,
         1836
@@ -16,7 +16,7 @@
     },
     {
       "file": "custom-code/helper-code.png",
-      "description": "可选的自由代码块；test.morph 本身未使用辅助代码",
+      "description": "可选的自由代码块；bending_actuator.morph 本身未使用辅助代码",
       "pixels": [
         3230,
         1836
@@ -560,6 +560,6 @@
   "naming": "module/meaningful-name.png; no sequence numbers",
   "font_unification": "All documentation screenshots retaken with explicit Simplified Chinese font selection for Qt, Matplotlib and VTK.",
   "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
-  "portable_definition": "../../examples/test.morph",
-  "portable_definition_sha256": "798481b86ead74c1941ddeed4fbe675b0da64ea63fff6d34c9302a4959b5ae03"
+  "portable_definition": "../../../examples/bending_actuator/bending_actuator.morph",
+  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479"
 }

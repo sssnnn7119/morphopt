@@ -15,8 +15,8 @@ from copy import copy
 from numbers import Real
 from pathlib import Path
 from typing import Any
-from ...paths import sanitize_name
 
+from ...paths import sanitize_name
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,
@@ -188,8 +188,8 @@ class DefinitionValidation:
                 else:
                     self.add(owner, "vector", field=label, size=size)
                 return
-            # GPU names and solver task groups are string sequences.
-            if spec.key in {"gpus", "task_step_list"}:
+            # Device names and solver task groups are string sequences.
+            if spec.key in {"process_devices", "task_step_list"}:
                 return
             for entry in value:
                 if spec.type == "mat":
@@ -229,7 +229,9 @@ class DefinitionValidation:
         )
 
     def names(self, nodes: list[Node], *, identifiers: bool = False) -> None:
-        counts = Counter(node.name if identifiers else node.name.casefold() for node in nodes)
+        counts = Counter(
+            node.name if identifiers else node.name.casefold() for node in nodes
+        )
         for node in nodes:
             if not node.name.strip():
                 self.add(node, "required", field="name")

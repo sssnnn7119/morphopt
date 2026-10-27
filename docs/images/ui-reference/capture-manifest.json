@@ -498,6 +498,6 @@
     "svg_diagrams": 4
   },
   "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
-  "portable_definition": "../../examples/test.morph",
-  "portable_definition_sha256": "798481b86ead74c1941ddeed4fbe675b0da64ea63fff6d34c9302a4959b5ae03"
+  "portable_definition": "../../../examples/bending_actuator/bending_actuator.morph",
+  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479"
 }

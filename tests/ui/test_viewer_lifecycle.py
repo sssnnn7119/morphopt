@@ -119,7 +119,7 @@ def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, m
     from morphopt.ui.widgets.plot_style import configure_plotter
 
     app = QApplication.instance() or QApplication([])
-    definition = ProblemLibrary.load(Path(__file__).resolve().parents[2] / "docs/examples/test.morph")
+    definition = ProblemLibrary.load(Path(__file__).resolve().parents[2] / "examples/bending_actuator/bending_actuator.morph")
     script = ProblemLibrary.export_python_bundle(definition, tmp_path / "case")
     namespace = runpy.run_path(str(script), run_name="result_surface_regression")
 

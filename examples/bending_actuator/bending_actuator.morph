@@ -1,14 +1,14 @@
 {
   "version": 4,
   "scheme": "shapeopt",
-  "label": "Untitled",
-  "result_folder": "/run/media/song/缓存/results",
-  "device": "cuda:1",
-  "updater_device": "cuda:1",
+  "label": "BendingActuator",
+  "result_folder": ".results/",
+  "device": "cpu",
+  "updater_device": null,
   "restart_per_iteration": 10,
   "root": {
     "kind": "problem",
-    "name": "Untitled",
+    "name": "BendingActuator",
     "params": {},
     "children": [
       {
@@ -21,9 +21,10 @@
             "name": "part1",
             "params": {
               "type": "BoundaryPart",
-              "fea_seed_size": 2.0,
-              "mesh_order": 2,
-              "exterior_surface": "surface_0_All"
+              "fea_seed_size": 1.0,
+              "mesh_order": 1,
+              "exterior_surface": "surface_0_All",
+              "part_name": ""
             },
             "children": [
               {
@@ -49,9 +50,8 @@
                 "params": {
                   "type": "bsp_cylinder",
                   "flip": false,
-                  "is_updatable": true,
                   "r0": 8.0,
-                  "length": 100.0,
+                  "length": 80.0,
                   "seed_size": 1.0,
                   "num_U_ratio": 1,
                   "num_V_ratio": 1,
@@ -62,9 +62,10 @@
                     0.0
                   ],
                   "maxR": 0.2,
-                  "maxC": 2.0,
+                  "maxC": 1.0,
                   "maxFF": 0.2,
-                  "perturbation_L": 10.0
+                  "perturbation_L": 10.0,
+                  "is_updatable": true
                 },
                 "children": []
               },
@@ -74,9 +75,8 @@
                 "params": {
                   "type": "bsp_cylinder",
                   "flip": true,
-                  "is_updatable": true,
                   "r0": 4.0,
-                  "length": 44.0,
+                  "length": 74.0,
                   "seed_size": 1.0,
                   "num_U_ratio": 1,
                   "num_V_ratio": 1,
@@ -87,34 +87,10 @@
                     3.0
                   ],
                   "maxR": 0.2,
-                  "maxC": 2.0,
+                  "maxC": 1.0,
                   "maxFF": 0.2,
-                  "perturbation_L": 10.0
-                },
-                "children": []
-              },
-              {
-                "kind": "surface",
-                "name": "",
-                "params": {
-                  "type": "bsp_cylinder",
-                  "flip": true,
-                  "is_updatable": true,
-                  "r0": 4.0,
-                  "length": 44.0,
-                  "seed_size": 1.0,
-                  "num_U_ratio": 1,
-                  "num_V_ratio": 1,
-                  "degree": 3,
-                  "init_location": [
-                    0.0,
-                    0.0,
-                    53.0
-                  ],
-                  "maxR": 0.2,
-                  "maxC": 2.0,
-                  "maxFF": 0.2,
-                  "perturbation_L": 10.0
+                  "perturbation_L": 10.0,
+                  "is_updatable": true
                 },
                 "children": []
               }
@@ -145,7 +121,7 @@
               "rp_location": [
                 0.0,
                 0.0,
-                100.0
+                80.0
               ]
             },
             "children": []
@@ -175,16 +151,6 @@
               ]
             },
             "children": []
-          },
-          {
-            "kind": "fea_component",
-            "name": "pressure_2",
-            "params": {
-              "type": "Pressure",
-              "instance_name": "part1-1",
-              "surface_name": "surface_2_All"
-            },
-            "children": []
           }
         ]
       },
@@ -192,82 +158,14 @@
         "kind": "steps",
         "name": "Load steps",
         "params": {
-          "generated_by": {
-            "workspace_1_case_1": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_2": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_3": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_4": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_5": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_6": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_7": "b346c95f9eb94480ad5d2c467d03a972",
-            "workspace_1_case_8": "b346c95f9eb94480ad5d2c467d03a972"
-          },
           "step_values": {
-            "workspace_1_case_1": {
+            "load_case_1": {
               "pressure_1": [
-                0.0
-              ],
-              "pressure_2": [
-                0.01267949192431123
-              ]
-            },
-            "workspace_1_case_2": {
-              "pressure_1": [
-                0.0
-              ],
-              "pressure_2": [
-                0.04732050807568877
-              ]
-            },
-            "workspace_1_case_3": {
-              "pressure_1": [
-                0.06
-              ],
-              "pressure_2": [
-                0.01267949192431123
-              ]
-            },
-            "workspace_1_case_4": {
-              "pressure_1": [
-                0.06
-              ],
-              "pressure_2": [
-                0.04732050807568877
-              ]
-            },
-            "workspace_1_case_5": {
-              "pressure_1": [
-                0.01267949192431123
-              ],
-              "pressure_2": [
-                0.0
-              ]
-            },
-            "workspace_1_case_6": {
-              "pressure_1": [
-                0.04732050807568877
-              ],
-              "pressure_2": [
-                0.0
-              ]
-            },
-            "workspace_1_case_7": {
-              "pressure_1": [
-                0.01267949192431123
-              ],
-              "pressure_2": [
-                0.06
-              ]
-            },
-            "workspace_1_case_8": {
-              "pressure_1": [
-                0.04732050807568877
-              ],
-              "pressure_2": [
                 0.06
               ]
             }
-          }
+          },
+          "generated_by": {}
         },
         "children": []
       },
@@ -310,48 +208,23 @@
         "params": {
           "objective_terms": [
             {
-              "type": "workspace",
+              "type": "displacement",
               "weight": 1.0,
-              "kind": "workspace_plane",
               "reference_point_name": "RP_1",
-              "inputs": [
-                {
-                  "parameters": [
-                    [
-                      "pressure_1",
-                      0
-                    ]
-                  ],
-                  "upper": 0.06
-                },
-                {
-                  "parameters": [
-                    [
-                      "pressure_2",
-                      0
-                    ]
-                  ],
-                  "upper": 0.06
-                }
-              ],
-              "gauss_order": 2,
-              "normalization": 1.0,
-              "case_names": [
-                "workspace_1_case_1",
-                "workspace_1_case_2",
-                "workspace_1_case_3",
-                "workspace_1_case_4",
-                "workspace_1_case_5",
-                "workspace_1_case_6",
-                "workspace_1_case_7",
-                "workspace_1_case_8"
-              ],
-              "id": "b346c95f9eb94480ad5d2c467d03a972",
-              "name": "workspace_1",
-              "case_signature": "40856c313f1371920a145139115dcecc895f4674c3c92d90e61fbe733157c9bf"
+              "component": "ry",
+              "direction": "maximize",
+              "target": 0.0,
+              "step_name": "load_case_1"
             }
           ],
-          "metrics_terms": [],
+          "metrics_terms": [
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_1",
+              "component": "ry",
+              "step_name": "load_case_1"
+            }
+          ],
           "jacobian_needed": []
         },
         "children": []
@@ -360,10 +233,9 @@
         "kind": "solver",
         "name": "Solver",
         "params": {
-          "num_process": 2,
-          "gpus": [
-            "cuda:0",
-            "cuda:1"
+          "num_process": 1,
+          "process_devices": [
+            "cpu"
           ],
           "task_step_list": []
         },
@@ -375,7 +247,7 @@
         "params": {
           "geometry": [
             {
-              "max_step_iter": 300,
+              "max_step_iter": 50,
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",
@@ -393,16 +265,9 @@
                     "min_distance": [
                       [
                         2.5,
-                        2.5,
                         2.5
                       ],
                       [
-                        2.5,
-                        2.5,
-                        2.5
-                      ],
-                      [
-                        2.5,
                         2.5,
                         2.5
                       ]
@@ -412,8 +277,8 @@
                 {
                   "type": "Cylinder",
                   "params": {
-                    "radius": 15.0,
-                    "height": 100.0,
+                    "radius": 10.0,
+                    "height": 80.0,
                     "bottom": 0.0
                   }
                 }
@@ -434,14 +299,6 @@
                     "offset": 0.0
                   },
                   "surface_index": 1
-                },
-                {
-                  "type": "BspMirror",
-                  "params": {
-                    "plane": "xz",
-                    "offset": 0.0
-                  },
-                  "surface_index": 2
                 }
               ],
               "part_name": "part1"

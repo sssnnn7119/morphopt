@@ -366,14 +366,18 @@ class StepsNode(Node):
     _FIELDS = ("step_values", "generated_by")
 
     def __init__(
-        self, kind: str | None = None, name: str = "Load steps",
-        params: dict | None = None, children: Sequence[Node] | None = None,
+        self,
+        kind: str | None = None,
+        name: str = "Load steps",
+        params: dict | None = None,
+        children: Sequence[Node] | None = None,
     ) -> None:
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         self.generated_by: dict[str, str] = dict(data.get("generated_by", {}))
         self.step_values: dict[str, dict[FEAComponentNode | str, list]] = {
-            name: dict(values) for name, values in data.get("step_values", {"load_case_1": {}}).items()
+            name: dict(values)
+            for name, values in data.get("step_values", {"load_case_1": {}}).items()
         }
 
     @property
@@ -382,11 +386,16 @@ class StepsNode(Node):
 
     def field_items(self) -> Iterator[tuple[str, object]]:
         yield "generated_by", dict(self.generated_by)
-        yield "step_values", {
-            name: {key.name if isinstance(key, FEAComponentNode) else str(key): value
-                   for key, value in values.items()}
-            for name, values in self.step_values.items()
-        }
+        yield (
+            "step_values",
+            {
+                name: {
+                    key.name if isinstance(key, FEAComponentNode) else str(key): value
+                    for key, value in values.items()
+                }
+                for name, values in self.step_values.items()
+            },
+        )
 
 
 class MaterialsNode(Node):
@@ -478,7 +487,7 @@ class ObjectiveNode(Node):
 
 
 class SolverNode(Node):
-    """FEA solver settings (process count, gpu devices, task partitioning).
+    """FEA solver settings (process count, per-process devices, task partitioning).
 
     Canonical parameters are explicit, typed attributes assigned in
     ``__init__``.
@@ -497,11 +506,11 @@ class SolverNode(Node):
             minimum=1,
         ),
         FieldSpec(
-            "gpus",
-            "ui.schema.fields.gpus.label.gpu_devices",
+            "process_devices",
+            "ui.schema.fields.process_devices.label.process_devices",
             "vecN",
-            (),
-            doc_key="ui.schema.fields.gpus.help.list_of_gpu_ids_e_g_cuda_0_or_empty_for_cpu",
+            ("cpu",),
+            doc_key="ui.schema.fields.process_devices.help.one_device_per_process",
         ),
         FieldSpec(
             "task_step_list",
@@ -525,12 +534,27 @@ class SolverNode(Node):
         self.num_process: int | str = data.get(
             "num_process", CONSTANT.KERNEL.SOLVER.NUM_PROCESS
         )
-        # CPU is represented by an empty GPU selection. Read older quickstart
-        # definitions that explicitly stored ["cpu"] using the same convention.
-        self.gpus: list = [
-            device for device in (data.get("gpus") or []) if device != "cpu"
-        ]
+        process_count = self.num_process if isinstance(self.num_process, int) else None
+        devices = data.get("process_devices")
+        if devices is None:
+            # Older definitions stored the available GPU list; expand that
+            # selection into the same round-robin assignment for each process.
+            gpus = list(data.get("gpus") or [])
+            if gpus and process_count is None:
+                devices = gpus
+            elif gpus:
+                devices = [gpus[index % len(gpus)] for index in range(process_count)]
+            else:
+                devices = ["cpu"] * (process_count or 1)
+        self.process_devices: list[str] = list(devices)
+        if process_count is not None:
+            self.resize_process_devices(process_count)
         self.task_step_list: list = list(data.get("task_step_list") or [])
+
+    def resize_process_devices(self, count: int) -> None:
+        """Keep one device entry per process, defaulting added entries to CPU."""
+        count = max(0, count)
+        self.process_devices = (self.process_devices + ["cpu"] * count)[:count]
 
 
 class UpdaterNode(Node):

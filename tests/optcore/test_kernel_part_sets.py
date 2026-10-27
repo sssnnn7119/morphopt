@@ -10,7 +10,7 @@ import torchfea
 from morphopt import BasePart, BoxPart, CADPart, FixedPart, INPPart
 
 
-REFERENCE = Path(__file__).resolve().parents[2] / "docs/examples/reference-box.inp"
+REFERENCE = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
 
 
 def test_box_build_caches_actual_sets_and_rebuilds_after_dimensions_change():

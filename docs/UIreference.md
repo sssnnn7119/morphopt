@@ -2,7 +2,7 @@
 
 [UI 快速开始](UIguide.md) · [脚本快速开始](scriptguide.md) · [脚本模块与接口参考](scriptreference.md)
 
-UI 快速开始以 `test.morph` 为例，介绍建模、优化和结果分析的完整流程。本篇为模块与接口参考，系统说明**模块职责、对象定义、参数含义、引用关系及适用条件**。本文适用于无 Abaqus 使用经验的读者。
+UI 快速开始以 `bending_actuator.morph` 为例，介绍建模、优化和结果分析的完整流程。本篇为模块与接口参考，系统说明**模块职责、对象定义、参数含义、引用关系及适用条件**。本文适用于无 Abaqus 使用经验的读者。
 
 本篇的“接口”指添加菜单中的部件、曲面、载荷、材料、优化目标和约束对象，以及目标编辑器和自定义代码的输入接口。覆盖当前注册的 **59 类对象、8 种材料本构模型和 12 个有限元数据代码模板**。`BasePart` 由自定义类实现，两类偏置约束属于普通添加菜单中隐藏的高级接口，相关章节均注明其使用条件。
 
@@ -286,7 +286,7 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 ![INPPart 的文件与部件选择](images/ui-reference/geometry/inp-part.png)
 
-*INPPart 导入 [随文档提供的网格示例](examples/reference-box.inp)：包含几何、集合及用于导入的占位超弹性材料；正式材料与载荷在主定义中复核设置。*
+*INPPart 导入仓库示例中的[网格文件](assets/ui_reference/reference-box.inp)：包含几何、集合及用于导入的占位超弹性材料；正式材料与载荷在主定义中复核设置。*
 
 <a id="part_types-basepart"></a>
 
@@ -392,7 +392,7 @@ STL 不包含物理单位声明，导入尺寸应与模型单位制一致。变�
 
 ![固定 STL 边界：路径与真实曲面预览](images/ui-reference/geometry/fixed-stl.png)
 
-*固定 STL 边界：文件路径与曲面预览。配图采用随文档提供的[STL 示例](examples/reference-boundary.stl)。*
+*固定 STL 边界：文件路径与曲面预览。配图采用仓库示例中的[STL 文件](assets/ui_reference/reference-boundary.stl)。*
 
 <a id="surface_types-brep-surface"></a>
 
@@ -1215,16 +1215,16 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | 字段 | 参数定义与输入格式 |
 |---|---|
 | `num_process` | FE 任务使用的工作进程数量，默认为 1；不是优化轮数或网格划分数量 |
-| `gpus` | 可用 GPU 编号列表，默认为空列表并使用 CPU；GPU 编号应对应实际可用设备 |
-| `task_step_list` | 具名工况分组，例如 `[["load_case_1", "load_case_2"], ["load_case_3"]]`；同组依次求解 |
+| `process_devices` | 按进程顺序指定设备，例如 `['cpu', 'cuda:0']`；列表长度应与 `num_process` 相同 |
+| `task_step_list` | 有序的具名工况任务组，例如 `[["load_case_1", "load_case_2"], ["load_case_3"]]`；UI 以进程组为行、工况序列为组内列表，可分别调整组顺序和组内工况顺序；为空时每个工况单独成组 |
 
-未手动指定分组时，框架可将各工况分别作为任务。显式分组使用有效且不重复的工况名称；未分配的工况按注册顺序各自建立任务；最终结果按工况名称访问，并保持注册顺序。同组的后续工况可利用前一状态作为初值，跨优化轮复用初值还取决于几何是否固定等条件。
+`num_process` 是有限元工作进程池的大小；`task_step_list` 的每一组是提交给进程池的一个任务，并不绑定固定进程编号。进程池按可用工作进程调度各组，组内工况依照列表顺序连续求解，后续工况可利用前一状态作为初值。未分配的工况按注册顺序各自建立任务；最终结果按工况名称访问，并保持注册顺序。跨优化轮复用初值还取决于几何是否固定等条件。
 
-主设备、GPU 列表与更新器设备分别控制不同环节。进程数过多并不保证更快，多个任务共用内存与显存资源。当前普通 UI 未提供全部 Newton 容差、步长和线搜索参数，此类设置通过对应求解器的自定义类方法扩展。
+优化主设备、有限元求解进程设备与更新器设备分别控制不同环节。进程设备表为每个进程单独指定 CPU 或 GPU；同一 GPU 可分配给多个进程。进程数过多并不保证更快，多个任务共用内存与显存资源。当前普通 UI 未提供全部 Newton 容差、步长和线搜索参数，此类设置通过对应求解器的自定义类方法扩展。
 
-![求解器进程数、GPU 和工况任务分组](images/ui/solver/task-configuration.png)
+![求解器进程数、逐进程设备分配和工况任务分组](images/ui/solver/task-configuration.png)
 
-*求解器进程数、GPU 和工况任务分组。*
+*求解器进程数、逐进程设备分配和工况任务分组。*
 
 <a id="updaters"></a>
 
@@ -1343,7 +1343,7 @@ normalize_gradient 开启后改变梯度缩放，可能影响它与约束罚项�
 
 `BspMirror` 维持 BSP 曲面在更新过程中的镜面对称。选择当前 Part 内的 BSP 曲面索引。xz 表示 y=0，要求 offset=0；xy 表示 z=offset。
 
-例如 test.morph 对曲面 0 和 1 分别添加 BspMirror(xz,0)。每个条目仅作用于指定曲面，各曲面的对称关系分别定义。
+例如 bending_actuator.morph 对曲面 0 和 1 分别添加 BspMirror(xz,0)。每个条目仅作用于指定曲面，各曲面的对称关系分别定义。
 
 | 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
 |---|---|---|

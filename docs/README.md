@@ -7,7 +7,9 @@ MorphOpt 的使用文档分为脚本和 UI 两条路线，每条路线包含快�
 | Python 脚本 | [脚本快速开始](scriptguide.md)：安装、完整任务、启动、结果与继续计算 | [脚本模块与接口参考](scriptreference.md)：各模块的类定义、注册方式、参数和扩展约定 |
 | 图形界面 | [UI 快速开始](UIguide.md)：运行已有定义、从空白建模、优化及有限元查看 | [UI 模块与接口参考](UIreference.md)：模型树、表单字段、接口类型、可视化和自定义类 |
 
-两条路线采用同一圆柱内腔加压算例。脚本任务为 [bending_optimization.py](examples/bending_optimization.py)，UI 定义为 [test.morph](examples/test.morph)。部件、实例、参考点、压力、材料和目标的名称保持对应；新的计算不保证与已有截图具有相同迭代轨迹。
+两条路线采用同一圆柱内腔加压算例。脚本任务为 [bending_actuator.py](../examples/bending_actuator/bending_actuator.py)，UI 定义为 [bending_actuator.morph](../examples/bending_actuator/bending_actuator.morph)。二者保存在仓库唯一的 `examples/` 目录中；部件、实例、参考点、压力、材料和目标的名称保持对应，新的计算不保证与已有截图具有相同迭代轨迹。
+
+可运行脚本、UI 定义、CAD/网格输入文件及其算例说明统一收录于 [`examples/`](../examples/README.md)，文档页通过相对链接引用这些文件。
 
 <a id="section-阅读顺序"></a>
 
@@ -33,7 +35,7 @@ MorphOpt 的使用文档分为脚本和 UI 两条路线，每条路线包含快�
 - [形状优化理论](theory/morphdesign.md)：几何表示、力学模型、目标与伴随灵敏度。
 - [协同优化理论](theory/codesign.md)：偏置层、SIMP 设计场与形状材料协同更新。
 - [代码结构](codestructure/README.md)：数值内核、UI 分层、结果分析及扩展边界的统一导览。
-- [STEP 外边界与 BSP 内腔算例](examples/brep-bsp-cylinder.md)：完整 `.morph`、混合边界形状优化及自动验证记录。
+- [STEP 外边界与 BSP 内腔算例](../examples/hybrid_cylinder/hybrid_cylinder.md)：配套 Python 脚本、`.morph` 定义和资产文件。
 - [配图说明](images/README.md)：截图与图示的分类、来源及命名规则。
 
 <a id="section-章节编号与文档维护"></a>

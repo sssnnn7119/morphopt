@@ -1,0 +1,540 @@
+{
+  "version": 4,
+  "scheme": "shapeopt",
+  "label": "ForceGripper",
+  "result_folder": ".results/",
+  "device": "cpu",
+  "updater_device": "cpu",
+  "restart_per_iteration": 20,
+  "root": {
+    "kind": "problem",
+    "name": "ForceGripper",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part",
+            "name": "finger",
+            "params": {
+              "type": "BasePart",
+              "exterior_surface": "extern",
+              "custom_class": "FingerPartBuilder"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "finger",
+                "params": {
+                  "translation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ]
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "kind": "part",
+            "name": "cylinder",
+            "params": {
+              "type": "BasePart",
+              "exterior_surface": "extern",
+              "custom_class": "CylinderPartBuilder"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "cylinder",
+                "params": {
+                  "translation": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ]
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "Loads",
+        "params": {},
+        "children": [
+          {
+            "kind": "fea_component",
+            "name": "Root",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "finger",
+              "set_nodes_name": "root",
+              "index_dof": [
+                0,
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "BC_PlaneStrain",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "finger",
+              "set_nodes_name": "all",
+              "index_dof": [
+                1
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "BC_SymmetryZ",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "finger",
+              "set_nodes_name": "symmetry",
+              "index_dof": [
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RPCylinder",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                56.0,
+                0.0,
+                0.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RigidCylinder",
+            "params": {
+              "type": "Couple",
+              "rp_name": "RPCylinder",
+              "instance_name": "cylinder",
+              "set_nodes_name": "all"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "CylinderGuide",
+            "params": {
+              "type": "BoundaryConditionRP",
+              "rp_name": "RPCylinder",
+              "index_dof": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "Drive",
+            "params": {
+              "type": "PenaltyDoF",
+              "obj_name": "RPCylinder",
+              "s": 0
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "Contact",
+            "params": {
+              "type": "Contact",
+              "instance_name1": "finger",
+              "surface_name1": "contact",
+              "instance_name2": "cylinder",
+              "surface_name2": "extern",
+              "penalty_threshold_h": 3.0
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "step_values": {
+            "load_case_1": {
+              "Drive": [
+                500.0,
+                -4.0
+              ]
+            },
+            "load_case_2": {
+              "Drive": [
+                500.0,
+                -5.0
+              ]
+            },
+            "load_case_3": {
+              "Drive": [
+                500.0,
+                -6.0
+              ]
+            },
+            "load_case_4": {
+              "Drive": [
+                500.0,
+                -7.0
+              ]
+            },
+            "load_case_5": {
+              "Drive": [
+                500.0,
+                -8.0
+              ]
+            },
+            "load_case_6": {
+              "Drive": [
+                500.0,
+                -9.0
+              ]
+            },
+            "load_case_7": {
+              "Drive": [
+                500.0,
+                -10.0
+              ]
+            },
+            "load_case_8": {
+              "Drive": [
+                500.0,
+                -11.0
+              ]
+            },
+            "load_case_9": {
+              "Drive": [
+                500.0,
+                -12.0
+              ]
+            },
+            "load_case_10": {
+              "Drive": [
+                500.0,
+                -13.0
+              ]
+            },
+            "load_case_11": {
+              "Drive": [
+                500.0,
+                -14.0
+              ]
+            },
+            "load_case_12": {
+              "Drive": [
+                500.0,
+                -15.0
+              ]
+            }
+          },
+          "generated_by": {}
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "Materials",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "body",
+            "params": {
+              "type": "SIMP_BSPFieldMaterials",
+              "part_name": "finger",
+              "elementname": "design",
+              "mumax": 0.482,
+              "kappamax": 4.8,
+              "simp_ratio_min": 1e-05,
+              "initial_ratio": -0.6190392084062235,
+              "bounding_box": [
+                2.0,
+                35.0,
+                -1.0,
+                1.0,
+                0.0,
+                36.0
+              ],
+              "simp_field_resolution": 1.0,
+              "degree": 2,
+              "voidpenalfactor": 0.0001,
+              "materialpenalty": 8,
+              "custom_class": "ForceMaterial",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.482,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09
+            },
+            "children": []
+          },
+          {
+            "kind": "material",
+            "name": "solid",
+            "params": {
+              "type": "HomogeneousMaterial",
+              "part_name": "finger",
+              "elementname": "solid",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.482,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "objective_terms": [],
+          "metrics_terms": [],
+          "jacobian_needed": [],
+          "custom_class": "ForceObjective"
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 1,
+          "process_devices": [
+            "cpu"
+          ],
+          "task_step_list": [
+            [
+              "load_case_1",
+              "load_case_2",
+              "load_case_3",
+              "load_case_4",
+              "load_case_5",
+              "load_case_6",
+              "load_case_7",
+              "load_case_8",
+              "load_case_9",
+              "load_case_10",
+              "load_case_11",
+              "load_case_12"
+            ]
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [],
+          "materials": [
+            {
+              "material_name": "body",
+              "max_step_iter": 100,
+              "max_step_length": 1.0,
+              "if_update": true,
+              "objective_functions": [
+                {
+                  "type": "Sensitivity",
+                  "params": {
+                    "normalize_gradient": false
+                  }
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "MinValue",
+                  "params": {
+                    "xmin": -15.0,
+                    "threshold": 0.0,
+                    "p": 4
+                  }
+                },
+                {
+                  "type": "MaxValue",
+                  "params": {
+                    "xmax": 15.0,
+                    "threshold": 0.0,
+                    "p": 4
+                  }
+                },
+                {
+                  "type": "VolFrac",
+                  "params": {
+                    "volfrac_min": 0.7,
+                    "volfrac_max": 0.7,
+                    "penalty": 1000000.0,
+                    "elementname": "design"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
+  },
+  "custom_classes": [
+    {
+      "kind": "custom_class",
+      "name": "FingerPartBuilder",
+      "params": {
+        "base_class": "morphopt.BasePart",
+        "class_type": "override"
+      },
+      "children": [
+        {
+          "kind": "method_override",
+          "name": "define_instance",
+          "params": {
+            "body": "self.add_instance(self.part_name, \"finger\", [0, 0, 0, 0, 0, 0])"
+          },
+          "children": []
+        },
+        {
+          "kind": "method_override",
+          "name": "build_part",
+          "params": {
+            "body": "return _build_finger_part()"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "custom_class",
+      "name": "CylinderPartBuilder",
+      "params": {
+        "base_class": "morphopt.BasePart",
+        "class_type": "override"
+      },
+      "children": [
+        {
+          "kind": "method_override",
+          "name": "build_part",
+          "params": {
+            "body": "cad = torchfea.cad.CADModel()\nhistory = cad.add_part(self.part_name)\nhalf_thickness = finger_width / 2\nhistory.add_cylinder(\n    x=finger_depth + initial_gap / 2,\n    y=-half_thickness,\n    z=0.0,\n    dx=0.0,\n    dy=2 * half_thickness,\n    dz=0.0,\n    radius=object_diameter / 2,\n)\nreturn cad.mesh_part(self.part_name, mesh_size=mesh_size)"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "custom_class",
+      "name": "ForceObjective",
+      "params": {
+        "base_class": "morphopt.ObjectiveFunction",
+        "class_type": "override"
+      },
+      "children": [
+        {
+          "kind": "method_override",
+          "name": "objective_function",
+          "params": {
+            "body": "start = closure_steps.index(working_stroke_start)\nforces = torch.stack([_force_displacement(self, index)[0] for index in range(start, len(closure_steps))])\nclosures = forces.new_tensor(closure_steps[start:])\nerror = ((forces - target_force) / target_force).square()\nreturn torch.trapezoid(error, closures) / (closures[-1] - closures[0])"
+          },
+          "children": []
+        },
+        {
+          "kind": "method_override",
+          "name": "get_metrics",
+          "params": {
+            "body": "forces = []\nerrors = []\nfor index, commanded_closure in enumerate(closure_steps):\n    force, closure = _force_displacement(self, index)\n    forces.append(force)\n    errors.append(commanded_closure - closure)\nreturn forces + errors + [_volume_fraction(self)]"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "kind": "custom_class",
+      "name": "ForceMaterial",
+      "params": {
+        "base_class": "morphopt.SIMP_BSPFieldMaterials",
+        "class_type": "override"
+      },
+      "children": [
+        {
+          "kind": "method_override",
+          "name": "update_variables",
+          "params": {
+            "body": "nx, ny, nz = self._bsp_size\nchange = x_change.reshape(nx, ny, nz)\nchange = change.mean(dim=1, keepdim=True).expand(nx, ny, nz)\nif isinstance(max_step_length, list):\n    max_step_length = max_step_length[0]\nif max_step_length is not None and max_step_length.numel() > 1:\n    max_step_length = max_step_length.reshape(nx, ny, nz)\n    max_step_length = max_step_length.mean(dim=1, keepdim=True).expand(nx, ny, nz)\nif max_step_length is None:\n    max_step_length = torch.ones_like(self._cps)\nif max_step_length.numel() > 1:\n    max_step_length = max_step_length.reshape_as(self._cps)\nmax_step_length = max_step_length.to(self._cps.device)\nself._cps = self._cps.detach() + (2.0 / torch.pi) * torch.atan(change.reshape_as(self._cps)) * max_step_length"
+          },
+          "children": []
+        },
+        {
+          "kind": "method_override",
+          "name": "reinitialize",
+          "params": {
+            "body": "nx, ny, nz = self._bsp_size\ncontrol_points = self._cps.reshape(nx, ny, nz)\ncontrol_points = control_points.mean(dim=1, keepdim=True).expand(nx, ny, nz).clone()\nself._cps = control_points.reshape_as(self._cps)\nreturn super().reinitialize(iteration, *args, **kwargs)"
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "class_bindings": {
+    "ThisController.ObjectiveFunction": "ForceObjective"
+  },
+  "helper_code": "import numpy as np\nimport torch\nimport torchfea\n\n\nmu_material = 0.482\n\nkappa_material = 4.8\n\nminratio = 1e-5\n\nmesh_size = 1.0\n\nfield_resolution = 1.0\n\nsimp_degree = 2\n\nfinger_depth = 36.0\n\nfinger_height = 72.0\n\nfinger_width = (\n    1.0  # Keep the single-layer physical thickness fixed as the mesh is refined.\n)\n\nsimp_field_thickness = max(finger_width, simp_degree * field_resolution)\n\nroot_depth = 2 * finger_width\n\nskin_depth = finger_width\n\ninitial_gap = 40.0\n\nobject_diameter = 32.0\n\nclosure_steps = np.arange(4.0, 15.0 + 0.5, 1.0).tolist()\n\nworking_stroke_start = 10.0\n\ntarget_force = 5.0\n\ninitial_density = 0.35\n\nvoid_penalty_factor = 1e-4\n\nvolume_fraction_max = (\n    0.7  # Existing fixed-volume setting (min=max); design region only.\n)\n\ndrive_stiffness = 1e3\n\ncontact_distance = 3.0\n\ndef _build_finger_part():\n    \"\"\"Conforming C3D20 bricks with shared solid/design interface nodes.\"\"\"\n\n    def coordinates(start, end):\n        return np.linspace(\n            start, end, max(1, int(np.ceil((end - start) / mesh_size))) + 1\n        )\n\n    x = np.concatenate(\n        [\n            coordinates(0.0, root_depth)[:-1],\n            coordinates(root_depth, finger_depth - skin_depth)[:-1],\n            coordinates(finger_depth - skin_depth, finger_depth),\n        ]\n    )\n    # Build one linear brick layer, then add shared midside nodes below.\n    y = np.array([-finger_width / 2, finger_width / 2])\n    z = coordinates(0.0, finger_height / 2)\n    nodes = np.stack(np.meshgrid(x, y, z, indexing=\"ij\"), axis=-1).reshape(-1, 3)\n    node_ids = np.arange(len(nodes)).reshape(len(x), len(y), len(z))\n    offsets = [\n        (0, 0, 0),\n        (1, 0, 0),\n        (1, 1, 0),\n        (0, 1, 0),\n        (0, 0, 1),\n        (1, 0, 1),\n        (1, 1, 1),\n        (0, 1, 1),\n    ]\n    cells = np.array(\n        [\n            [node_ids[i + di, j + dj, k + dk] for di, dj, dk in offsets]\n            for i in range(len(x) - 1)\n            for j in range(len(y) - 1)\n            for k in range(len(z) - 1)\n        ]\n    )\n    tags = np.arange(len(cells))\n    centres = nodes[cells].mean(axis=1)\n    design = (centres[:, 0] > root_depth) & (centres[:, 0] < finger_depth - skin_depth)\n    part = torchfea.Part(torch.as_tensor(nodes, dtype=torch.get_default_dtype()))\n    # Construct the exterior before splitting, so internal interfaces are not\n    # accidentally exposed as contact surfaces. Element tags remain unique.\n    whole = torchfea.elements.C3D8(\n        elems_index=torch.as_tensor(tags), elems=torch.as_tensor(cells)\n    )\n    exterior = whole.extract_boundary_surface_set()\n    contact = []\n    for ids, side in exterior:\n        face_nodes = cells[ids][:, whole.surfaceid_map[side]]\n        selected = np.all(np.isclose(nodes[face_nodes, 0], finger_depth), axis=1)\n        if selected.any():\n            contact.append((ids[selected], side))\n    for name, mask in [(\"design\", design), (\"solid\", ~design)]:\n        part.add_element(\n            torchfea.elements.C3D8(\n                elems_index=torch.as_tensor(tags[mask]),\n                elems=torch.as_tensor(cells[mask]),\n            ),\n            name=name,\n        )\n    part.add_node_set(\"all\", np.arange(len(nodes)))\n    part.add_node_set(\"root\", np.flatnonzero(np.isclose(nodes[:, 0], 0.0)))\n    part.add_node_set(\"symmetry\", np.flatnonzero(np.isclose(nodes[:, 2], 0.0)))\n    part.add_surface_set(\"extern\", exterior)\n    part.add_surface_set(\"contact\", contact)\n    # Convert both regions together so interface midside nodes are shared.\n    # Node sets also gain midside nodes for all boundary conditions.\n    part.convert_linear_to_quadratic_elements([\"design\", \"solid\"], [\"design\", \"solid\"])\n    return part\n\n\ndef _force_displacement(objective, step_index):\n    step = f\"load_case_{step_index + 1}\"\n    objective.set_step(step)\n    assembly = objective.fe.assembly\n    rgc = assembly._GC2RGC(objective.fe_results[step].GC)\n    reference_point = assembly.get_reference_point(\"RPCylinder\")\n    displacement = rgc[reference_point._RGC_index].reshape(-1)[0]\n    drive = assembly.get_load(\"Drive\")\n    force = 2 * drive.k * (displacement - drive.target)\n    return force, -displacement\n\ndef _volume_fraction(objective):\n    elements = objective.fe.assembly._parts[\"finger\"].elems[\"design\"]\n    ratio = elements.materials[\"material-0\"].scale\n    weights = elements.gaussian_weight\n    return (weights * ratio).sum() / weights.sum()\n",
+  "helper_variables": [],
+  "helper_functions": []
+}

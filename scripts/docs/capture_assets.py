@@ -31,21 +31,21 @@ def main():
     fonts = CaptureFonts(app)
     set_locale("zh-CN")
     root = Path(__file__).resolve().parents[2]
-    examples = root / "docs/examples"
+    ui_assets = root / "docs" / "assets" / "ui_reference"
     problem = ProblemLibrary.create_blank("资产预览示例")
     operation = CADOperationNode.create("StepImport", operation_id="import_body")
     operation.filename = "PartDesignExample-Body.step"
     operation.data = base64.b64encode(
-        (examples / operation.filename).read_bytes()
+        (ui_assets / operation.filename).read_bytes()
     ).decode("ascii")
     problem.add_part(CADPartNode(name="cad_body", children=[operation]))
     problem.add_part(BoundaryPartNode(name="stl_boundary", children=[
         MeshSurfaceNode(
-            name="fixed_shell", path_stl=str(examples / "reference-boundary.stl")
+            name="fixed_shell", path_stl=str(ui_assets / "reference-boundary.stl")
         )
     ]))
     problem.add_part(INPPartNode(
-        name="inp_mesh", mesh_file=str(examples / "reference-box.inp")
+        name="inp_mesh", mesh_file=str(ui_assets / "reference-box.inp")
     ))
     window = CaptureWindow()
     window.set_problem(problem)
@@ -65,7 +65,7 @@ def main():
         manifest = {
             "file": "geometry-assets.png",
             "description": "资产清单与 STEP 原始几何预览，右侧保留定义的装配预览",
-            "sources": [f"../../../examples/{name}" for name in (
+            "sources": [f"../../../../docs/assets/ui_reference/{name}" for name in (
                 operation.filename, "reference-boundary.stl", "reference-box.inp"
             )],
             "capture": "QWidget.grab() from the running MorphOpt UI",

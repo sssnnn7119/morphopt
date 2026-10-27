@@ -2,9 +2,9 @@
   "file": "geometry-assets.png",
   "description": "资产清单与 STEP 原始几何预览，右侧保留定义的装配预览",
   "sources": [
-    "../../../examples/PartDesignExample-Body.step",
-    "../../../examples/reference-boundary.stl",
-    "../../../examples/reference-box.inp"
+    "../../../../docs/assets/ui_reference/PartDesignExample-Body.step",
+    "../../../../docs/assets/ui_reference/reference-boundary.stl",
+    "../../../../docs/assets/ui_reference/reference-box.inp"
   ],
   "capture": "QWidget.grab() from the running MorphOpt UI",
   "platform": "wayland",

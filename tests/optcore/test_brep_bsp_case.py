@@ -15,7 +15,7 @@ from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.codegen.assets import collect_python_assets
 
-CASE = Path(__file__).resolve().parents[2] / "docs/examples/brep-bsp-cylinder.morph"
+CASE = Path(__file__).resolve().parents[2] / "examples/hybrid_cylinder/hybrid_cylinder.morph"
 
 
 @pytest.fixture

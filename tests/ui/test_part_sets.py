@@ -122,7 +122,7 @@ def test_selecting_another_parts_set_switches_to_its_local_view(window):
 
 def test_inp_highlight_uses_actual_node_sets():
     problem = ProblemLibrary.create_blank()
-    part = INPPartNode(name="imported", mesh_file=str(Path(__file__).resolve().parents[2] / "docs/examples/reference-box.inp"))
+    part = INPPartNode(name="imported", mesh_file=str(Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"))
     problem.add_part(part)
     geometry = PreviewGeometry()
     geometry.build(problem, "part", part)

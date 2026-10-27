@@ -281,7 +281,14 @@ class Node:
                 )
             )
         legacy_fields = {"part_name"} if issubclass(node_type, PartNode) else set()
-        unknown = set(params) - set(node_type.field_names()) - {"custom_class"} - legacy_fields
+        if node_type.kind == KIND_SOLVER and "gpus" in params:
+            legacy_fields.add("gpus")
+        unknown = (
+            set(params)
+            - set(node_type.field_names())
+            - {"custom_class"}
+            - legacy_fields
+        )
         if unknown:
             raise ValueError(
                 localized_message(
@@ -424,9 +431,7 @@ class PartNode(TypedNode):
         legacy_name = str(data.pop("part_name", "") or "").strip()
         if legacy_name:
             name = legacy_name
-        super().__init__(
-            kind=kind, name=name, params=data, children=children
-        )
+        super().__init__(kind=kind, name=name, params=data, children=children)
         if not self.instances and children is None:
             from .node_types.structural import InstanceNode
 

@@ -18,7 +18,7 @@ from morphopt.ui.widgets import asset_browser
 from morphopt.ui.widgets.asset_browser import AssetBrowser, AssetPreview
 
 
-EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
+EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "assets" / "ui_reference"
 
 
 @pytest.fixture

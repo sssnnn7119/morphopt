@@ -59,7 +59,7 @@
 |---|---|
 | 字段 key | 节点、保存数据、生成调用与后端签名 |
 | 材料模型 | `MaterialsParams.models` 参数类型与可见字段 |
-| GPU 列表 | UI 配置到 `Solver.available_gpus` 的映射，空列表为 CPU |
+| 进程设备 | UI 按进程顺序配置并传递到 `Solver.process_devices`，每个进程对应一个设备 |
 | 实例位姿 | 三平移加三旋转向量，单位与排列一致 |
 | 曲面尺寸 | `seed_size` 与体网格尺寸分别定义 |
 | Fairness 阈值 | 曲率、第一基本形式及非正交度量，不作为控制点位移上限 |
