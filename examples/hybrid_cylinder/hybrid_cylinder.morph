@@ -1,14 +1,14 @@
 {
   "version": 4,
   "scheme": "shapeopt",
-  "label": "BREP_BSP_Cylinder",
+  "label": "HybridCylinder",
   "result_folder": ".results/",
   "device": "cpu",
   "updater_device": "cpu",
   "restart_per_iteration": 10,
   "root": {
     "kind": "problem",
-    "name": "BREP_BSP_Cylinder",
+    "name": "HybridCylinder",
     "params": {},
     "children": [
       {
@@ -238,7 +238,9 @@
         "name": "Solver",
         "params": {
           "num_process": 1,
-          "gpus": [],
+          "process_devices": [
+            "cpu"
+          ],
           "task_step_list": [
             [
               "load_case_1"

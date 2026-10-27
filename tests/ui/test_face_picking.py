@@ -95,7 +95,7 @@ def test_cad_remains_merged_without_static_face_labels(monkeypatch):
 
 
 def test_inp_face_names_come_from_original_surface_sets():
-    source = Path(__file__).resolve().parents[2] / "docs/examples/reference-box.inp"
+    source = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
     part = INPPartNode(name="imported", mesh_file=str(source))
     scene = scene_for(part)
     assert len(scene.base_meshes) == 1

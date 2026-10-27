@@ -151,13 +151,17 @@ Boundary、Box、CAD 和 INP 各有适配器，视口不按类型堆积建模分
 
 Part 视图使用局部坐标，装配视图应用 Instance 位姿。CAD 将全部显示三角形合并为一个面网格，并将 `face_N` 编号写入单元数据；全部拓扑边合并为一个线网格。载荷和节点集查询按需从该面网格提取指定 `face_N`，不按每个拓扑面或边创建 actor。单个 Part 预览失败记录场景错误，不生成替代优化几何。
 
+CAD 预览由 TorchFEA 重放 OCC 操作历史，再通过 OpenCASCADE 原生三角化生成显示面及拓扑边线，不调用 Gmsh 网格生成接口。边线直接引用对应面的三角化边界节点。显示面和边通过面积或长度、质心和惯性矩匹配原有 Gmsh 拓扑标识。该路径保留周期面的裁剪边界及 `face_N` 选择关系；Gmsh 继续负责建模历史和拓扑查询，有限元体网格仍由其独立生成。预览层统一将底层异常转换为 `RuntimeError`，由界面记录为对应部件的预览错误。
+
+体网格生成前，TorchFEA 使用 OCC 拆分闭合周期面，使裁剪后的周期边界适于 Gmsh 剖分。拆分仅作用于剖分拓扑，不改变几何形状；面、边、顶点及体的网格数据按来源映射回原实体标识，因此 UI 的 `face_N`、节点集和载荷引用保持一致。
+
 各 Part 适配器在基础网格的 `MeshItem.faces` 中提供 `MeshFaces`，记录部件、实例、显示单元分组和对应表面集合名称。`PreviewRenderer` 使用限定基础几何 actor 的 `vtkCellPicker` 识别点击单元，以单个临时 actor 高亮选中分组，并将 `FaceSelection` 交给 `PreviewViewer` 显示可复制的面名称。CAD、Box、Boundary、OffsetBoundary 和 INP 共用这一流程；载荷图元、拓扑边和选择高亮不参与拾取，鼠标拖动不触发选择。常驻面编号标签已移除。
 
 Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗口尺寸转换为 VTK 像素坐标，并翻转纵轴。显示网格携带原始单元 ID，拾取结果经该 ID 映射回 `MeshFaces`，允许渲染管线调整单元顺序。剖视滑条调用 `PreviewRenderer.set_section()` 更新共享 `vtkPlane`，几何 mapper 和选择高亮共用该裁剪平面；平面移动不重建 CAD，不修改模型定义与原始网格，拾取遵循相同裁剪范围。
 
 场景数据可以包含 PyVista 网格、标签和载荷图元，但不拥有 plotter 或 VTK actor。`PreviewRenderer` 负责 actor 的创建、替换与清理；新载荷可注册 visitor 并返回已有图元，新图元在 renderer 的分派入口扩展。
 
-载荷符号尺寸根据场景和部件典型宽度计算，显示尺寸与物理幅值分开。标注模板由语言资源提供，包含目标实例、集合或参考点。`plot_style.py` 统一视口背景、光照、透明渲染及方向轴设置，重建场景后恢复这些配置。
+载荷符号尺寸根据场景和部件典型宽度计算，显示尺寸与物理幅值分开。标注模板由语言资源提供，包含目标实例、集合或参考点。`ui/visualization/rendering.py` 统一视口背景、光照、透明渲染、方向轴和结果场景绘制，重建场景后恢复这些配置。
 
 <a id="section-观察页的展示边界"></a>
 
@@ -171,7 +175,7 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 
 ## 9 主题、本地化与平台资源
 
-`ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`styles/*.qss` 管理共用控件状态。组件读取同一主题对象，主题切换后刷新外观并保留相机等展示状态。
+`ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`theme/styles/*.qss` 管理共用控件状态，`theme/fonts.py` 管理各文字类别的字体设置和变更通知。字体设置独立于配色主题保存；主题切换后刷新外观并保留相机等展示状态。
 
 `constants.py` 保存业务默认值、运行限制和数值配置，窗口尺寸、间距与分栏比例由 `LayoutStyle` 管理。应用显示文本使用 `locales/zh-CN.json` 与 `en-US.json` 的稳定 key；领域身份仍使用原始名称和枚举值。
 

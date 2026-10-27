@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -14,26 +16,27 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSlider,
     QSplitter,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ..constants import CONSTANT
+from ..postprocess import boundary_surface_options, last_completed_iteration
 from .application import (
     OptimizationRunSession,
     ResultSession,
     RunSource,
     RunSourceKind,
-    last_completed_iteration,
 )
 from .application.runs import RunProgress
-from .application.surface_export import boundary_surface_options
 from .i18n import tr
 from .theme import theme_manager
 from .widgets.elided_label import ElidedLabel
@@ -57,7 +60,7 @@ class ObserverPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._results = ResultSession()
-        self._case_pages: dict[str, DeformationCasePage] = {}
+        self._case_names: list[str] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -89,11 +92,35 @@ class ObserverPanel(QWidget):
         top.addWidget(self.btn_next)
         top.addWidget(self.iter_label)
         top.addWidget(self.chk_follow)
-        self.btn_export_surfaces = QPushButton(tr("ui.surface_export.title"))
-        self.btn_export_surfaces.setToolTip(tr("ui.surface_export.tooltip"))
-        self.btn_export_surfaces.setEnabled(False)
-        self.btn_export_surfaces.clicked.connect(self._export_surfaces)
-        top.addWidget(self.btn_export_surfaces)
+        self.export_menu = QMenu(self)
+        self.action_export_surfaces = self.export_menu.addAction(
+            tr("ui.surface_export.title")
+        )
+        self.action_export_surfaces.triggered.connect(self._export_surfaces)
+        self.action_export_surfaces.setEnabled(False)
+        self.action_export_design_gif = self.export_menu.addAction(
+            tr("ui.history_gif.design_title")
+        )
+        self.action_export_design_gif.triggered.connect(
+            lambda _checked=False: self._export_history_gif("design")
+        )
+        self.action_export_design_gif.setEnabled(False)
+        self.action_export_deformation_gif = self.export_menu.addAction(
+            tr("ui.history_gif.deformation_title")
+        )
+        self.action_export_deformation_gif.triggered.connect(
+            lambda _checked=False: self._export_history_gif("deformation")
+        )
+        self.action_export_deformation_gif.setEnabled(False)
+        self.btn_export_history = QToolButton()
+        self.btn_export_history.setText(tr("ui.observe_panel.export_history"))
+        self.btn_export_history.setToolTip(tr("ui.observe_panel.export_history_hint"))
+        self.btn_export_history.setMenu(self.export_menu)
+        self.btn_export_history.setEnabled(False)
+        self.btn_export_history.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
+        )
+        top.addWidget(self.btn_export_history)
         outer.addLayout(top)
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -109,8 +136,11 @@ class ObserverPanel(QWidget):
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
         self._updatable_structure_page = UpdatableStructurePage()
+        self._deformation_page = DeformationCasePage()
+        self._last_3d_page: str | None = None
         self.stack.addWidget(self._metrics_page)
         self.stack.addWidget(self._updatable_structure_page)
+        self.stack.addWidget(self._deformation_page)
         split.addWidget(self.stack)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
@@ -142,8 +172,21 @@ class ObserverPanel(QWidget):
             return
         self._metrics_page.update_from_history(history, iteration)
         self._discover_cases(folder)
-        self.btn_export_surfaces.setEnabled(
-            self._results.params is not None and bool(boundary_surface_options(self._results.params))
+        self.action_export_surfaces.setEnabled(
+            self._results.params is not None
+            and bool(boundary_surface_options(self._results.params))
+        )
+        has_iterations = int(history.iteration or iteration) > 0
+        self.action_export_design_gif.setEnabled(
+            has_iterations and bool(self._results.fea_components())
+        )
+        self.action_export_deformation_gif.setEnabled(
+            has_iterations and bool(self._results.deformation_cases())
+        )
+        self.btn_export_history.setEnabled(
+            self.action_export_surfaces.isEnabled()
+            or self.action_export_design_gif.isEnabled()
+            or self.action_export_deformation_gif.isEnabled()
         )
 
         max_iter = max(1, int(history.iteration or iteration))
@@ -177,11 +220,75 @@ class ObserverPanel(QWidget):
         from .widgets.surface_export import SurfaceExportDialog
 
         dialog = SurfaceExportDialog(
-            self.path_result, self.iteration, self.slider.value(),
-            boundary_surface_options(self._results.params), self,
+            self.path_result,
+            self.iteration,
+            self.slider.value(),
+            boundary_surface_options(self._results.params),
+            self,
         )
         dialog.exec()
         dialog.deleteLater()
+
+    def _export_history_gif(self, mode: str) -> None:
+        from .widgets.history_gif_export import HistoryGifExportDialog
+
+        if not self.path_result:
+            return
+        latest = last_completed_iteration(self.path_result)
+        if latest < 1:
+            return
+        dialog = HistoryGifExportDialog(
+            self.path_result,
+            latest,
+            mode,
+            self._results.deformation_cases() if mode == "deformation" else (),
+            self._results.fea_components() if mode == "design" else (),
+            *self._history_gif_view(),
+            self,
+        )
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _history_gif_view(
+        self,
+    ) -> tuple[dict[str, Any], tuple[int, int], dict[str, Any]]:
+        """Snapshot the active 3D camera, viewport size, and visual palette."""
+        page = (
+            self._deformation_page
+            if self._last_3d_page == "deformation"
+            else self._updatable_structure_page
+        )
+        viewport = page.viewport
+        plotter = viewport.plotter
+        camera = plotter.camera
+        position = plotter.camera_position
+        camera_state = {
+            "position": [[float(value) for value in point] for point in position],
+            "parallel_projection": bool(camera.GetParallelProjection()),
+            "parallel_scale": float(camera.GetParallelScale()),
+            "view_angle": float(camera.GetViewAngle()),
+        }
+        size = viewport.size()
+        palette = theme_manager.palette
+        viewer = palette.viewer
+        geometry = viewer.geometry
+        render = viewer.render
+        style = {
+            "background": palette.viewer_background,
+            "text_color": palette.text,
+            "geometry_color": (
+                geometry.instance_colors[0]
+                if geometry.instance_colors
+                else geometry.uninstanced_color
+            ),
+            "deformation_color": palette.deformation_mesh_color,
+            "mesh_ambient": render.mesh_ambient,
+            "mesh_diffuse": render.mesh_diffuse,
+            "mesh_specular": render.mesh_specular,
+            "mesh_specular_power": render.mesh_specular_power,
+            "boundary_shell_opacity": geometry.boundary_shell_opacity,
+        }
+        return camera_state, (max(1, size.width()), max(1, size.height())), style
 
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
@@ -190,16 +297,21 @@ class ObserverPanel(QWidget):
         no longer keeps showing the previously browsed result.
         """
         self._results.reset()
-        self.btn_export_surfaces.setEnabled(False)
-        # remove dynamic load-case pages and their option rows
-        for row in reversed(range(2, self.stack.count())):
-            w = self.stack.widget(row)
-            self.stack.removeWidget(w)
-            w.deleteLater()
-        self._case_pages = {}
-        while self.options.count() > 2:
-            self.options.takeItem(self.options.count() - 1)
-        self.options.setCurrentRow(0)
+        self.action_export_surfaces.setEnabled(False)
+        self.action_export_design_gif.setEnabled(False)
+        self.action_export_deformation_gif.setEnabled(False)
+        self.btn_export_history.setEnabled(False)
+        self._last_3d_page = None
+        # Keep native GL windows alive across tasks; only their scenes change.
+        self._case_names.clear()
+        self.options.blockSignals(True)
+        try:
+            while self.options.count() > 2:
+                self.options.takeItem(self.options.count() - 1)
+            self.options.setCurrentRow(0)
+        finally:
+            self.options.blockSignals(False)
+        self.stack.setCurrentWidget(self._metrics_page)
         self.slider.blockSignals(True)
         self.slider.setMaximum(1)
         self.slider.setValue(1)
@@ -207,18 +319,24 @@ class ObserverPanel(QWidget):
         self.iter_label.setText("0 / 1")
         self._metrics_page.clear()
         self._updatable_structure_page.clear_view()
+        self._deformation_page.clear_view()
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
         """Re-apply the current language to the panel's static texts."""
         self.chk_follow.setText(tr("ui.observe_panel.follow_latest"))
-        self.btn_export_surfaces.setText(tr("ui.surface_export.title"))
-        self.btn_export_surfaces.setToolTip(tr("ui.surface_export.tooltip"))
+        self.action_export_surfaces.setText(tr("ui.surface_export.title"))
+        self.action_export_design_gif.setText(tr("ui.history_gif.design_title"))
+        self.action_export_deformation_gif.setText(
+            tr("ui.history_gif.deformation_title")
+        )
+        self.btn_export_history.setText(tr("ui.observe_panel.export_history"))
+        self.btn_export_history.setToolTip(tr("ui.observe_panel.export_history_hint"))
         self.options.item(0).setText(tr("ui.observe_panel.metrics"))
         self.options.item(1).setText(tr("ui.observe_panel.updatable_structures"))
         self._metrics_page.apply_language()
         self._updatable_structure_page.apply_language()
-        for row, case in enumerate(list(self._case_pages.keys())):
+        for row, case in enumerate(self._case_names):
             if self.options.count() > row + 2:
                 self.options.item(row + 2).setText(
                     tr("ui.observe_panel.case_value", case=case)
@@ -231,14 +349,13 @@ class ObserverPanel(QWidget):
         """Refresh chart and viewport palettes while retaining loaded results."""
         self._metrics_page.apply_theme()
         self._updatable_structure_page.apply_theme()
-        for page in self._case_pages.values():
-            page.apply_theme()
+        self._deformation_page.apply_theme()
 
     # -------------------------------------------------------------- options
     def _on_option(self, row: int) -> None:
-        if row < 0 or row >= self.stack.count():
+        if row < 0 or row >= self.options.count():
             return
-        self.stack.setCurrentIndex(row)
+        self.stack.setCurrentIndex(min(row, 2))
         if row == 1:
             self._refresh_updatable_structure()
         elif row >= 2:
@@ -255,12 +372,13 @@ class ObserverPanel(QWidget):
 
     def _refresh_updatable_structure(self) -> None:
         if self.isVisible() and self.path_result and self._results.params is not None:
+            self._last_3d_page = "design"
             self._updatable_structure_page.build(self._results, self.slider.value())
 
     def _refresh_case(self, case: str) -> None:
-        page = self._case_pages.get(case)
-        if self.isVisible() and page is not None and self.path_result:
-            page.build(self._results, self.slider.value())
+        if self.isVisible() and self.path_result and case in self._case_names:
+            self._last_3d_page = "deformation"
+            self._deformation_page.build(self._results, self.slider.value(), case)
 
     def _nudge(self, delta: int) -> None:
         self.slider.setValue(self.slider.value() + delta)
@@ -284,10 +402,9 @@ class ObserverPanel(QWidget):
 
     def _discover_cases(self, folder: str) -> None:
         found = self._results.deformation_cases()
-        existing = set(self._case_pages)
+        existing = set(self._case_names)
         for case in (name for name in found if name not in existing):
-            self._case_pages[case] = DeformationCasePage(case)
-            self.stack.addWidget(self._case_pages[case])
+            self._case_names.append(case)
             self.options.addItem(tr("ui.observe_panel.case_value", case=case))
             self.options.item(self.options.count() - 1).setData(
                 Qt.ItemDataRole.UserRole, case
@@ -496,7 +613,8 @@ class ObserverControls(QWidget):
         return True
 
     def _stop(self) -> None:
-        self._stop_job()
+        if not self._stop_job():
+            return
         if (
             self._run.source is not None
             and self._run.source.kind is RunSourceKind.CONTINUE
@@ -513,12 +631,17 @@ class ObserverControls(QWidget):
             )
         self._update_buttons()
 
-    def _stop_job(self) -> None:
+    def _stop_job(self) -> bool:
         if self._run.active:
-            self._run.stop()
+            try:
+                self._run.stop()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                QMessageBox.warning(self, tr("ui.observe_panel.stop_failed"), str(exc))
+                return False
             self._timer.stop()
             self._show_progress(self._run.poll())
         self._update_buttons()
+        return True
 
     # ------------------------------------------------------------ run output
     def _clear_output(self) -> None:
@@ -548,7 +671,11 @@ class ObserverControls(QWidget):
                     path=self._run.folder,
                     label=Path(self._run.folder).name,
                 )
-            self.status.setText(tr("ui.observe_panel.optimization_finished"))
+            self.status.setText(
+                tr("ui.observe_panel.optimization_failed", code=progress.exit_code)
+                if progress.exit_code
+                else tr("ui.observe_panel.optimization_finished")
+            )
             self._update_buttons()
         elif progress.changed and progress.iteration:
             self.status.setText(
@@ -631,5 +758,5 @@ class ObserverControls(QWidget):
     def apply_theme(self) -> None:
         self.panel.apply_theme()
 
-    def close_cleanup(self) -> None:
-        self._stop_job()
+    def close_cleanup(self) -> bool:
+        return self._stop_job()

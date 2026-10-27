@@ -31,6 +31,7 @@ from ..application.editing import CustomClassSession, DefinitionCommands
 from ..application.updaters import UpdaterItems
 from ..codegen.custom_classes import custom_options
 from ..i18n import localized_message, tr
+from ..worker_environment import configure_worker_process
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.problem import (
     CADOperationNode,
@@ -365,6 +366,7 @@ class DefinitionActions(QObject):
             "problem": problem.to_dict(), "part": part.name,
         }, ensure_ascii=False), encoding="utf-8")
         process = QProcess(self)
+        configure_worker_process(process)
         self._cad_conversion = process
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         progress = QProgressDialog(

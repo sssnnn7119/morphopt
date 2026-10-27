@@ -35,9 +35,6 @@ class BasePart(BaseModelComponent):
     the Part class with :meth:`add_instance`.
     """
 
-    cache_part: bool = False
-    """Whether :meth:`build_part` may be called only once and cached."""
-
     is_variable: bool = False
     """Whether optimization may change this Part's geometry or mesh.
 
@@ -63,13 +60,10 @@ class BasePart(BaseModelComponent):
         self.exterior_surface: str | None = (
             str(exterior_surface).strip() if exterior_surface else None
         )
-        """Surface set used as the Part exterior surface, if any."""
+        """Surface set drawn by default for Part mesh and deformation visualization."""
 
         self._instance_definitions: list[tuple[str, str, list[float]]] = []
         """Declared ``(part_name, instance_name, pose)`` triples."""
-
-        self._part: torchfea.Part | None = None
-        """Cached Part for fixed geometries."""
 
     @property
     def name(self) -> str:
@@ -90,7 +84,6 @@ class BasePart(BaseModelComponent):
     @part_name.setter
     def part_name(self, value: str | None) -> None:
         self._part_name = str(value).strip() if value else ""
-        self._part = None
 
     @property
     def instance_names(self) -> list[str]:
@@ -152,13 +145,8 @@ class BasePart(BaseModelComponent):
     def get_part(
         self, path_result: str | None = None, pools: Pool | None = None
     ) -> torchfea.Part:
-        """Return the Part, using the cache for fixed geometries."""
-        if self.cache_part and self._part is not None:
-            return self._part
-        part = self.build_part(path_result=path_result, pools=pools)
-        if self.cache_part:
-            self._part = part
-        return part
+        """Build the current geometry; FixedPart supplies mesh reuse separately."""
+        return self.build_part(path_result=path_result, pools=pools)
 
     def add_to_assembly(
         self,

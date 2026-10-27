@@ -55,7 +55,7 @@ MorphOpt 按职责组织模块，通过明确的输入、输出和状态所有�
 | 字段、引用、增删排序与改名 | `ui/model/`、`ui/application/editing.py` | [UI 领域模型](ui-model.md) |
 | 历史、脚本生成、类选择、任务来源 | `ui/application/`、`ui/codegen/`、`ui/schemes/` | [UI 应用服务](ui-application.md) |
 | 控件、树、卡片、刷新与预览 | `ui/widgets/`、`ui/presentation/`、`ui/visualization/`、`ui/refresh.py` | [UI 展示](ui-presentation.md) |
-| 独立求解、场量与数据导出 | `ui/application/finite_element.py`、`result_fields.py`、`ui/fea_worker.py`、`postprocess/` | [结果分析](results.md) |
+| 历史浏览、独立求解、场量与数据导出 | `ui/observe_panel.py`、`ui/application/finite_element.py`、`ui/fea_worker.py`、`postprocess/` | [结果分析](results.md) |
 
 <a id="section-文档组织约定"></a>
 

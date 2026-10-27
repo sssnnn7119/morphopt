@@ -10,8 +10,8 @@ from .expressions import DefinitionValues
 from .definitions import ProblemLibrary, ProblemSession
 from .quickstart import QuickstartObjective, QuickstartOptions, build_quickstart
 from .editor_routing import EditorKind, EditorRoute, route_editor
-from .finite_element import FiniteElementSession, IterationModel
-from .results import ResultSession, last_completed_iteration
+from .finite_element import FiniteElementSession
+from .results import ResultSession
 from .runs import (
     OptimizationRunSession,
     RunMode,
@@ -25,7 +25,6 @@ __all__ = [
     "EditorKind",
     "EditorRoute",
     "FiniteElementSession",
-    "IterationModel",
     "OptimizationRunSession",
     "ProblemLibrary",
     "ProblemSession",
@@ -36,6 +35,5 @@ __all__ = [
     "RunMode",
     "RunSource",
     "RunSourceKind",
-    "last_completed_iteration",
     "route_editor",
 ]

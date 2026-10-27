@@ -14,7 +14,7 @@ import pyvista as pv
 import torch
 from torchfea import cad
 
-from ...optcore.modelparams.parts import CADPart
+from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
 from .base_surface import BaseSurface
 from .nurbs_face import NURBSFace, read_nurbs_faces, write_nurbs_faces
 
@@ -412,7 +412,7 @@ class BREPSurface(BaseSurface):
     ) -> str:
         return self.export_step(Path(path_output) / f"{name_output}.stp").name
 
-    def load_geometry(self, part: CADPart, context: OCCBuilder) -> list[int]:
+    def load_geometry(self, part: CADMeshingMixin, context: OCCBuilder) -> list[int]:
         """Bind topology names to this Part's active OCC and finite-element model."""
         tags = part.load_step_boundary(self._geometry_path, context)
         prepared_map = self._geometry_path.with_suffix(".brep.json")
@@ -683,7 +683,7 @@ class BREPSurface(BaseSurface):
                 names.update({tag: name for name, tag in topology.face_tags.items()})
                 return volumes
 
-            records = cad.preview_brep([CADPart._Operation("brep_preview", preview)])
+            records = cad.preview_brep([CADMeshingMixin._Operation("brep_preview", preview)])
         triangles = np.concatenate([record["triangles"] for record in records])
         nodes, local = np.unique(triangles, return_inverse=True)
         cells = np.column_stack((np.full(len(triangles), 3), local.reshape(-1, 3)))

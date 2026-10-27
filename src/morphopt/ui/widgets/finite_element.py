@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import codecs
 import re
 import sys
 from pathlib import Path
@@ -28,20 +29,28 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...postprocess import EXPORTERS, RESULT_FIELDS, ResultLocation, available_fields
-from ...postprocess.native import normalize_export_name
+from ...postprocess import (
+    CONTOUR_FIELDS,
+    EXPORTERS,
+    RESULT_FIELDS,
+    IterationModel,
+    ResultContours,
+    ResultLocation,
+    available_fields,
+    cpu_torch_defaults,
+    normalize_export_name,
+)
 from ..application.finite_element import (
     FiniteElementResult,
     FiniteElementSession,
-    IterationModel,
 )
-from ..application.result_fields import DISPLAY_FIELDS, ResultContours
-from ..application.results import _cpu_torch_defaults
 from ..i18n import tr
+from ..presentation.result_fields import contour_label_key, export_format_label, field_label
+from ..worker_environment import configure_worker_process
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_save_file
 from .observation_pages import PlotViewport
-from .plot_style import add_orientation_axes
+from ..visualization.rendering import add_orientation_axes
 
 
 class FiniteElementPage(QWidget):
@@ -60,6 +69,8 @@ class FiniteElementPage(QWidget):
         self._folder = ""
         self._contours = None
         self._process = QProcess(self)
+        configure_worker_process(self._process)
+        self._output_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_output)
         self._process.finished.connect(self._finished)
@@ -137,9 +148,8 @@ class FiniteElementPage(QWidget):
         row.addWidget(self.export_location, 1)
         export_layout.addLayout(row)
         self.field_checks = {}
-        for key, provider in RESULT_FIELDS.items():
+        for key in RESULT_FIELDS:
             check = QCheckBox()
-            self._texts.append((check, provider.label_key))
             check.setChecked(True)
             self.field_checks[key] = check
             export_layout.addWidget(check)
@@ -406,15 +416,16 @@ class FiniteElementPage(QWidget):
     def _start_worker(self, job: str, request: Path) -> None:
         self._job, self._cancelled = job, False
         self.output.clear()
+        self._output_decoder.reset()
         self._set_status("solving" if job == "solve" else "exporting")
         self._process.start(
             sys.executable, ["-u", "-m", "morphopt.ui.fea_worker", str(request)]
         )
         self._update_buttons()
 
-    def _read_output(self) -> None:
-        text = bytes(self._process.readAllStandardOutput()).decode(
-            "utf-8", errors="replace"
+    def _read_output(self, *, final: bool = False) -> None:
+        text = self._output_decoder.decode(
+            bytes(self._process.readAllStandardOutput()), final=final,
         )
         cursor = self.output.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
@@ -422,7 +433,7 @@ class FiniteElementPage(QWidget):
         self.output.setTextCursor(cursor)
 
     def _finished(self, code: int, *_args) -> None:
-        self._read_output()
+        self._read_output(final=True)
         try:
             if self._cancelled:
                 self._set_status("stopped")
@@ -480,10 +491,10 @@ class FiniteElementPage(QWidget):
             or self._contours.result is not result
         ):
             self._contours = ResultContours(controller, result)
-        fields = self._contours.fields if self._contours is not None else DISPLAY_FIELDS
+        fields = self._contours.fields if self._contours is not None else CONTOUR_FIELDS
         selected = self.display_field.currentData()
         items = tuple(
-            (tr(field.label_key, component=field.key), field.key) for field in fields
+            (tr(contour_label_key(field), component=field.key), field.key) for field in fields
         )
         current = tuple(
             (self.display_field.itemText(index), self.display_field.itemData(index))
@@ -595,7 +606,7 @@ class FiniteElementPage(QWidget):
             tr("ui.fea.export"),
             self._folder,
             name,
-            {key: tr(exporter.label_key) for key, exporter in EXPORTERS.items()},
+            {key: export_format_label(key) for key in EXPORTERS},
         )
         if selection is None:
             return
@@ -646,7 +657,7 @@ class FiniteElementPage(QWidget):
         if not self.isVisible() or self.session.controller is None:
             return
         try:
-            with _cpu_torch_defaults():
+            with cpu_torch_defaults():
                 controller, result = self.session.controller, self.session.result
                 gc = (
                     result.GC
@@ -743,6 +754,8 @@ class FiniteElementPage(QWidget):
                 widget.setTitle(tr(key))
             else:
                 widget.setText(tr(key))
+        for key, check in self.field_checks.items():
+            check.setText(field_label(key, RESULT_FIELDS[key].description))
         self.native_export_button.setToolTip(tr("ui.fea.export_native_hint"))
         self.loads.setHorizontalHeaderLabels(
             [tr("ui.fea." + key) for key in ("name", "type", "target", "values")]

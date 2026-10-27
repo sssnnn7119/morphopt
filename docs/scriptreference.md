@@ -2,7 +2,7 @@
 
 [脚本快速开始](scriptguide.md) · [UI 快速开始](UIguide.md) · [UI 模块与接口参考](UIreference.md)
 
-本文按控制器、模型参数、几何、载荷工况、材料、目标函数、求解器和更新器说明脚本定义。各节包括模块职责、注册位置、主要接口、输入约定和扩展示例。完整可执行任务见 [bending_optimization.py](examples/bending_optimization.py)；本文中的局部代码用于替换或扩展该任务内的对应模块。
+本文按控制器、模型参数、几何、载荷工况、材料、目标函数、求解器和更新器说明脚本定义。各节包括模块职责、注册位置、主要接口、输入约定和扩展示例。完整可执行任务见 [bending_actuator.py](../examples/bending_actuator/bending_actuator.py)；本文中的局部代码用于替换或扩展该任务内的对应模块。
 
 脚本与 UI 采用同一计算内核。UI 字段、模型树与预览的对应关系见 [UI 模块参考](UIreference.md)，具体类与参数以当前源码为准。
 
@@ -51,7 +51,8 @@
 - [12 迭代、保存与继续计算](#section-迭代与重启机制)
 - [13 输出归档与问题诊断](#section-输出与问题诊断)
     - [13.1 主要输出](#section-主要输出)
-    - [13.2 配置诊断](#section-配置诊断)
+    - [13.2 后处理脚本接口](#section-后处理脚本接口)
+    - [13.3 配置诊断](#section-配置诊断)
 - [14 源码与示例索引](#section-参考实现)
 
 <!-- /docs:toc -->
@@ -125,7 +126,7 @@ class ThisController(morphopt.Controller):
         )
 ```
 
-控制器中的 `Params`、`Solver`、`Updater` 和 `ObjectiveFunction` 嵌套类在同一 `ThisController` 内定义，完整结构见[快速开始任务](examples/bending_optimization.py)。
+控制器中的 `Params`、`Solver`、`Updater` 和 `ObjectiveFunction` 嵌套类在同一 `ThisController` 内定义，完整结构见[快速开始任务](../examples/bending_actuator/bending_actuator.py)。
 
 | 参数或属性 | 含义 |
 |---|---|
@@ -215,6 +216,7 @@ class GeometryParams(morphopt.GeometryParams):
 | `CADPart` | `define_operations()` | CAD 操作历史与实体网格 |
 | `INPPart` | INP 路径与源 Part 选择 | 已有网格及集合导入 |
 | `BasePart` 子类 | `build_part()` | 自定义 TorchFEA Part 构建逻辑 |
+| `FixedPart` 子类 | `build_part()` | 自定义固定几何，复用网格并直接访问其中的节点集、表面集合及单元集 |
 
 <a id="section-geometryparams-定义要点一个-part-接口"></a>
 
@@ -249,7 +251,7 @@ class Actuator(morphopt.BoundaryPart):
 |---|---|
 | `fea_seed_size` | Part 体有限元网格的目标尺寸 |
 | `mesh_order` | 网格阶次，`1` 或 `2` |
-| `exterior_surface` | Part 外表面集合名，边界部件默认 `surface_0_All` |
+| `exterior_surface` | 显示表面集合名，用于部件网格和变形结果的默认可视化；边界部件默认 `surface_0_All` |
 | 曲面 `seed_size` | 曲面控制网格和初始采样尺度，与体网格尺寸独立 |
 | `flip` | 曲面方向反转设置；外边界与内腔按实体法向约定配置 |
 | `init_location` | 曲面初始位置 |
@@ -495,11 +497,11 @@ self.add_interface(
 )
 ```
 
-`INPPart` 的 `inp_part_name` 选择源文件中的部件，`part_name` 表示当前装配体内的部件名，两者分别定义。只有一个源 Part 时可按导入器约定省略源选择。导入范围限于当前 MorphOpt/TorchFEA 支持的网格、集合、材料和截面内容，不执行完整 Abaqus 求解流程。占位材料与截面格式见[网格示例](examples/reference-box.inp)。
+`INPPart` 的 `inp_part_name` 选择源文件中的部件，`part_name` 表示当前装配体内的部件名，两者分别定义。只有一个源 Part 时可按导入器约定省略源选择。导入范围限于当前 MorphOpt/TorchFEA 支持的网格、集合、材料和截面内容，不执行完整 Abaqus 求解流程。占位材料与截面格式见[网格示例](assets/ui_reference/reference-box.inp)。
 
 `BoxPart` 的默认单元块名为 `C3D8`，通过 `elementname="C3D8"` 选择该块。二阶网格使用 C3D20 单元，单元块名仍为 `C3D8`。
 
-自定义 Part 继承 `morphopt.BasePart`，重写 `build_part(path_result=None, pools=None)` 并返回 `torchfea.Part`。`define_instance()` 管理装配声明，`cache_part=True` 表示固定几何可缓存。几何或网格随优化变化时设置 `is_variable=True`；固定网格上的材料优化不要求将该标记设为 True。
+自定义固定几何继承 `morphopt.FixedPart`，重写 `build_part(path_result=None, pools=None)` 并返回 `torchfea.Part`；基类负责复用网格，并通过属性直接访问其中的集合。需要逐轮构建网格的通用几何继承 `morphopt.BasePart`。`define_instance()` 管理装配声明。几何或网格随优化变化时设置 `is_variable=True`；固定网格上的材料优化不要求将该标记设为 True。
 
 <a id="section-feaparams-定义要点"></a>
 
@@ -743,10 +745,10 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
 ```python
 class Solver(morphopt.Solver):
     def __init__(self, params):
-        super().__init__(params=params, num_process=1, available_gpus=[])
+        super().__init__(params=params, num_process=1, process_devices=["cpu"])
 ```
 
-`num_process=1` 与 `available_gpus=[]` 对应默认的一个 CPU 求解进程。优化侧 `device` 与有限元侧 `available_gpus` 分别设置，CUDA 配置应同时核查两处。
+`process_devices` 按进程顺序指定设备，每个进程对应一个设备名。优化侧 `device` 与有限元求解进程的设备分别设置，CUDA 配置应同时核查两处。
 
 <a id="section-多工况调度与-gpu"></a>
 
@@ -758,14 +760,14 @@ class Solver(morphopt.Solver):
         super().__init__(
             params=params,
             num_process=2,
-            available_gpus=["cuda:0", "cuda:1"],
+            process_devices=["cuda:0", "cuda:1"],
             task_step_list=[["load_case_1", "load_case_2"], ["load_case_3"]],
         )
 ```
 
-该示例要求三个已定义的工况及两张可用 GPU，任务 `[0, 1]` 表示在同一任务中顺序求解工况 0 和 1。任务组的数量与进程数并非同一概念；进程池调度各组任务。所有待求解工况应包含在配置中，GPU 并发数量应与模型显存占用匹配。
+该示例要求三个已定义的工况、两个求解进程及两张可用 GPU；第一个进程使用 `cuda:0`，第二个进程使用 `cuda:1`。`task_step_list` 中的每一组是一个任务，组内工况按列表顺序连续求解；进程池将各组任务调度给可用工作进程，组数与进程数不要求相同。所有待求解工况应包含在配置中，GPU 并发数量应与模型显存占用匹配。
 
-未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务。分组名称须有效且不重复，单进程仍可依次完成多个任务。
+`task_step_list` 中每组列表的排列顺序就是该组工况的执行顺序。UI 以进程组为行，在工况序列中调整组内顺序，也可移动工况或将其拆为独立组。未配置 `task_step_list` 时，框架为每个工况建立一个任务。部分工况已分组时，其余工况按注册顺序各自建立任务；工况名称须有效且不得重复。单进程仍可依次完成多个任务。
 
 工况以字符串名称作为键，顺序由 `add_step()` 的注册顺序确定。结果通过 `self.fe_results["load_case_1"]` 访问。归档使用 `result_<工况名>_iter_<轮次>.npz`，`load_cases.json` 保存注册顺序。
 
@@ -1002,9 +1004,79 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 
 结果由 `morphopt-ui` 的 **文件 → 打开优化结果** 读取。独立有限元分析固定已选设计，调整工况后重新求解，不会自动更新优化任务的设计变量；操作和导出范围见 [UI 结果参考](UIreference.md#results)。
 
+<a id="section-后处理脚本接口"></a>
+
+### 13.2 后处理脚本接口
+
+`morphopt.postprocess` 提供归档读取、场量计算和导出接口。下例中的运行目录、迭代号、工况名和部件名需要与实际归档一致。
+
+```python
+from morphopt.postprocess import (
+    IterationModel, OptimizationArchive,
+    export_boundary_surfaces, export_saved_results,
+)
+
+run = "path/to/optimization_run"
+archive = OptimizationArchive(run)
+iteration = archive.completed_iteration
+model = IterationModel(run, iteration, "load_case_1")
+
+# 模型和解来自同一迭代；输出全局坐标系中的节点位移。
+export_saved_results(
+    model.model_path, model.result_path, "displacement.npz",
+    location="nodes", fields=["displacement"], format="npz",
+)
+
+# 按部件和曲面编号导出保存的设计边界。
+export_boundary_surfaces(
+    run, iteration, "exported_surfaces",
+    [{"part": "part1", "index": 0, "format": "stp"}],
+)
+```
+
+`export_saved_results()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。曲面格式按曲面类型选择，BSP 和 BREP 支持 `stp`、`stl`，离散曲面支持 `stl`。
+
+| 接口 | 输入与结果 |
+|---|---|
+| `OptimizationArchive(folder)` | 查询已完成轮次、工况及有限元归档路径，恢复设计参数与变形网格 |
+| `IterationModel(folder, iteration, case)` | 定位指定轮次的模型文件和指定工况的解文件 |
+| `export_results(controller, result, path, ...)` | 从已载入且工况匹配的模型与解导出物理量 |
+| `ResultContours(controller, result)` | 提供可显示字段及按实例组织的节点云图数值 |
+| `export_boundary_surfaces(folder, iteration, destination, selections, overwrite=False)` | 将选定 BoundaryPart 曲面输出到部件子目录 |
+| `export_native_results(...)` | 按 `NativeResultSnapshot` 清单复制模型与结果归档 |
+| `export_history_gif(...)` | 按设计组件或变形工况、迭代范围及显式相机与样式设置导出动画 |
+
+`export_history_gif()` 的 `mode` 为 `design` 或 `deformation`。前者的 `target` 使用 `{"category": "Part", "name": "part1"}` 等组件标识，后者使用 `{"case": "load_case_1"}`。调用方同时提供 `camera`、`window_size` 和 `style`；UI 从最近一次三维视口取得这些设置。变形网格缺失的轮次不生成帧，GIF 的帧间隔按格式允许的时间精度记录。
+
+```python
+from morphopt.postprocess import export_history_gif
+
+export_history_gif(
+    folder=run, destination="design.gif", mode="design",
+    target={"category": "Part", "name": "part1"},
+    first_iteration=1, last_iteration=iteration, fps=8,
+    camera={
+        "position": [[30, 30, 20], [0, 0, 8], [0, 0, 1]],
+        "parallel_projection": True, "parallel_scale": 12,
+    },
+    window_size=(800, 600),
+    style={
+        "background": "#101820", "text_color": "white",
+        "geometry_color": "lightblue", "deformation_color": "lightblue",
+        "mesh_ambient": 0.3, "mesh_diffuse": 0.7,
+        "mesh_specular": 0.1, "mesh_specular_power": 10.0,
+        "boundary_shell_opacity": 0.3,
+    },
+)
+```
+
+`camera.position` 依次给出相机位置、焦点和向上方向；上述坐标与平行投影尺度应根据模型尺寸调整。动画帧显示迭代编号，函数返回实际写入的帧数。
+
+新增场量通过 `ResultField` 注册计算接口，新增表格格式实现 `ResultExporter.write()` 并注册到 `EXPORTERS`。界面翻译属于 UI 展示层，扩展字段和格式未配置翻译时分别使用字段描述和扩展名。
+
 <a id="section-配置诊断"></a>
 
-### 13.2 配置诊断
+### 13.3 配置诊断
 
 | 现象 | 核查项目 |
 |---|---|
@@ -1027,10 +1099,11 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 
 | 内容 | 参考文件 |
 |---|---|
-| 入门形状优化 | [文档完整任务](examples/bending_optimization.py) |
-| 固定 STEP 外边界与 BSP 内腔优化 | [完整定义与验证记录](examples/brep-bsp-cylinder.md) |
-| 形状设计扩展 | [bendingactuator.py](../examples/bendingactuator.py) |
-| SIMP 任务结构 | [gripper.py](../examples/gripper.py) |
+| 入门形状优化 | [完整任务](../examples/bending_actuator/bending_actuator.py) |
+| 固定 STEP 外边界与 BSP 内腔优化 | [完整定义与验证记录](../examples/hybrid_cylinder/hybrid_cylinder.md) |
+| STEP 单面设计 | [step_face.py](../examples/step_face/step_face.py) |
+| SIMP 夹爪任务 | [simp_gripper.py](../examples/simp_gripper/simp_gripper.py) |
+| 恒力夹爪任务 | [force_gripper.py](../examples/force_gripper/force_gripper.py) |
 | 控制器生命周期 | [controller.py](../src/morphopt/optcore/controller.py) |
 | 任务入口 | [opt_runner.py](../src/morphopt/opt_runner.py) |
 | 参数集合 | [modelparams](../src/morphopt/optcore/modelparams) |

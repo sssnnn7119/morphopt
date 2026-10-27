@@ -8,6 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from ...paths import sanitize_name
 
 from ..model.node_types.cad import StepImportOperationNode
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
@@ -48,9 +49,12 @@ def collect_python_assets(
         reference: str, source: str | None = None,
         metadata: bytes = b"",
     ) -> DefinitionAsset:
-        name = Path(filename).name
+        name = sanitize_name(Path(filename).name)
         digest = hashlib.sha256(content + metadata).hexdigest()
-        if name in files and asset_keys[name] != digest:
+        existing = next((key for key in files if key.casefold() == name.casefold()), None)
+        if existing is not None and asset_keys[existing] == digest:
+            name = existing
+        elif existing is not None:
             path = Path(name)
             name = f"{path.stem}_{digest[:16]}{path.suffix}"
         if name not in files:

@@ -17,13 +17,11 @@ from ..i18n import localized_message
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.problem import (
     CADOperationNode,
-    FEAComponentNode,
     Node,
     ObjectiveNode,
     PartNode,
     ProblemDefinition,
     SolverNode,
-    StepsNode,
     UpdaterNode,
 )
 from ..model.registry import (
@@ -121,14 +119,19 @@ def render_surface_call(
     factory = surface.factory
     if surface.type == "brep_surface":
         prefix = surface.custom_class or "self.BREPSurface"
-        path_expression = _asset_path_expression(asset_paths[id(surface)]) if surface.data else repr("")
+        path_expression = (
+            _asset_path_expression(asset_paths[id(surface)])
+            if surface.data
+            else repr("")
+        )
         spacing = _render_value(surface.control_point_spacing, problem)
         return f"{prefix}({path_expression}, control_point_spacing={spacing})"
     prefix = surface.custom_class or "self.MeshSurface"
     if factory is None:  # mesh_surface
         path_expression = (
             _asset_path_expression(asset_paths[id(surface)])
-            if surface.path_stl else repr("")
+            if surface.path_stl
+            else repr("")
         )
         return f"{prefix}.initialize_from_stl_file({path_expression})"
     kwargs = []
@@ -403,26 +406,35 @@ def _objective_function_body(
                 weighted_terms.append(f"({weight!r}) * {function_name}()")
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE:
             from ..application.load_cases import workspace_spec
+
             spec = workspace_spec(term, problem)
-            if (len(term.get("case_names", [])) != len(spec["points"])
-                    or any(name not in steps.step_values for name in term.get("case_names", []))):
-                raise ValueError(localized_message("ui.workspace_objective.generate_required"))
+            if len(term.get("case_names", [])) != len(spec["points"]) or any(
+                name not in steps.step_values for name in term.get("case_names", [])
+            ):
+                raise ValueError(
+                    localized_message("ui.workspace_objective.generate_required")
+                )
             scale = float(term.get("normalization", 1.0))
             if not math.isfinite(scale) or scale <= 0:
                 raise ValueError("Workspace normalization must be positive.")
             body = workspace_integral_body(
                 reference_point_name=term["reference_point_name"],
                 axes=spec["axes"],
-                load_groups=[[(name, component) for name, component in entry["parameters"]] for entry in term["inputs"]],
+                load_groups=[
+                    [(name, component) for name, component in entry["parameters"]]
+                    for entry in term["inputs"]
+                ],
                 case_names=term["case_names"],
                 weights=spec["weights"],
                 tangents=spec["tangents"],
                 orientations=spec["orientations"],
             )
-            functions.extend([
-                f"def {function_name}() -> Any:",
-                indent_block(body, 4),
-            ])
+            functions.extend(
+                [
+                    f"def {function_name}() -> Any:",
+                    indent_block(body, 4),
+                ]
+            )
             weighted_terms.append(f"-({weight!r}) * {function_name}() / {scale!r}")
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS:
             body = str(term.get("body") or "").strip()
@@ -596,10 +608,18 @@ def generate_base_source(
 
     # -------- ObjectiveFunction ------------------------------------------
     objective = problem.objective or ObjectiveNode()
-    jac = list(dict.fromkeys([item.name for item in objective.jacobian_needed] + [
-        name for term in objective.objective_terms if term.get("type") == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
-        for entry in term.get("inputs", []) for name, _component in entry["parameters"]
-    ]))
+    jac = list(
+        dict.fromkeys(
+            [item.name for item in objective.jacobian_needed]
+            + [
+                name
+                for term in objective.objective_terms
+                if term.get("type") == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
+                for entry in term.get("inputs", [])
+                for name, _component in entry["parameters"]
+            ]
+        )
+    )
     if for_class_catalog:
         obj_body = "return 0.0"
         met_body = "return []"
@@ -662,9 +682,13 @@ def generate_base_source(
     a("        def __init__(self, params: Any) -> None:")
     solver = problem.solver or SolverNode()
     np_ = _render_value(solver.num_process, problem)
-    gpus = list(solver.gpus)
+    process_devices = list(solver.process_devices)
     tasklist = list(solver.task_step_list)
-    args = ["params=params", f"num_process={np_}", f"available_gpus={gpus!r}"]
+    args = [
+        "params=params",
+        f"num_process={np_}",
+        f"process_devices={process_devices!r}",
+    ]
     if tasklist:
         args.append(f"task_step_list={tasklist!r}")
     a("")
@@ -776,8 +800,12 @@ def _emit_part_classes(
                     f"{render_surface_call(surface, problem, asset_paths=asset_paths)}"
                 )
                 if surface.type == "brep_surface" and surface.design_faces:
-                    a(f"                    surface_{index}.select_design_faces({list(surface.design_faces)!r})")
-                a(f"                    surface_{index}.is_updatable = {surface.is_updatable!r}")
+                    a(
+                        f"                    surface_{index}.select_design_faces({list(surface.design_faces)!r})"
+                    )
+                a(
+                    f"                    surface_{index}.is_updatable = {surface.is_updatable!r}"
+                )
                 a(f"                    self.add_surface_interface(surface_{index})")
             for line in constraint_lines:
                 a(f"                    {line}")
@@ -987,8 +1015,10 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
         a(f"                self.add_step({name!r})")
         for component in problem.amplitude_components():
             stored = amplitudes.get(component, [0.0] * component.num_values)
-            a(f"                self.set_step_params({name!r}, {component.name!r}, "
-              f"{_render_value(stored, problem)})")
+            a(
+                f"                self.set_step_params({name!r}, {component.name!r}, "
+                f"{_render_value(stored, problem)})"
+            )
 
 
 def _emit_material_init(
@@ -1205,10 +1235,19 @@ def _emit_updater(
             if target.type == "OffsetBoundaryPart"
             else GEOMETRY_UPDATER_BASE
         )
-        _emit_nested_updater(a, class_name, base, config, problem, for_class_catalog=for_class_catalog)
+        _emit_nested_updater(
+            a, class_name, base, config, problem, for_class_catalog=for_class_catalog
+        )
         a("")
     for class_name, config in zip(material_classes, mat_cfgs):
-        _emit_nested_updater(a, class_name, MATERIAL_UPDATER_BASE, config, problem, for_class_catalog=for_class_catalog)
+        _emit_nested_updater(
+            a,
+            class_name,
+            MATERIAL_UPDATER_BASE,
+            config,
+            problem,
+            for_class_catalog=for_class_catalog,
+        )
         a("")
 
 
@@ -1297,7 +1336,11 @@ def _emit_nested_updater(
     a(f"        class {cls_name}({base}):")
     a("")
     a("            def __init__(self) -> None:")
-    defaults = CONSTANT.KERNEL.SIMP_UPDATE if base == MATERIAL_UPDATER_BASE else CONSTANT.KERNEL.SHAPE_UPDATE
+    defaults = (
+        CONSTANT.KERNEL.SIMP_UPDATE
+        if base == MATERIAL_UPDATER_BASE
+        else CONSTANT.KERNEL.SHAPE_UPDATE
+    )
     a(
         f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)}, "
         f"max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)})"

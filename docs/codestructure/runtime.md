@@ -94,9 +94,9 @@ Controller.opt_loop()
 
 ## 5 求解调度与初始解
 
-`Solver` 默认 `num_process=1`，GPU 列表省略或为空时使用 CPU。`Controller.optdevice` 与 `Solver.available_gpus` 分别控制优化侧和有限元侧的设备配置。
+`Solver` 默认 `num_process=1`，`process_devices` 按进程顺序指定计算设备，默认进程使用 CPU。`Controller.optdevice` 与 `Solver.process_devices` 分别控制优化侧和有限元侧的设备配置。
 
-`task_step_list` 以字符串工况名称分为若干顺序执行的任务，进程池调度这些任务。未指定分组时，每个工况构成单独任务。一个任务内的后续工况可使用上一工况的解作为初值，因此分组还影响初值延续关系。
+`task_step_list` 的每个子列表构成一个调度任务，子列表中的工况按给定顺序连续求解；后续工况可使用上一工况的解作为初值。进程池将任务分配给可用工作进程，任务组数量不要求等于工作进程数量。未指定分组时，框架按注册顺序为每个工况建立一个单独任务。
 
 当模型中全部 Part 均为 `is_variable=False` 且未显式提供 `U_guess` 时，求解器尝试读取最近保存结果作为初值。不存在对应解时使用 `None`。形状或网格随迭代变化的 Part 应声明为可变；固定网格上的材料优化不改变这一几何标记。
 

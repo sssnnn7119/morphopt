@@ -48,13 +48,13 @@
 python -m pip install morphopt
 ```
 
-完整任务文件为 [bending_optimization.py](examples/bending_optimization.py)。在仓库根目录可直接执行：
+完整任务文件为 [bending_actuator.py](../examples/bending_actuator/bending_actuator.py)。在仓库根目录可直接执行：
 
 ```bash
-python docs/examples/bending_optimization.py
+python examples/bending_actuator/bending_actuator.py
 ```
 
-独立使用时，将该文件保存到任务目录，在该目录执行 `python bending_optimization.py`。从源码运行时，在仓库根目录以 `python -m pip install -e .` 安装，再执行同一任务文件。
+独立使用时，将该文件保存到任务目录，在该目录执行 `python bending_actuator.py`。从源码运行时，在仓库根目录以 `python -m pip install -e .` 安装，再执行同一任务文件。
 
 该任务使用 CPU 和一个求解进程，不要求配置 CUDA。首次迭代依次完成曲面初始化、体网格生成、非线性有限元求解、灵敏度计算与设计更新。首轮完成前尚无完整历史曲线；计算时间由网格规模、材料非线性和计算资源共同决定。
 
@@ -62,7 +62,7 @@ python docs/examples/bending_optimization.py
 
 ## 3 完整任务脚本
 
-以下代码与随文档提供的任务文件一致，可整体保存为 `bending_optimization.py` 后运行。
+以下代码与随文档提供的任务文件一致，可整体保存为 `bending_actuator.py` 后运行。
 
 ```python
 """脚本与 UI 快速开始共用的气动弯曲优化算例。"""
@@ -176,7 +176,7 @@ class ThisController(morphopt.Controller):
 
     class Solver(morphopt.Solver):
         def __init__(self, params):
-            super().__init__(params=params, num_process=1, available_gpus=[])
+            super().__init__(params=params, num_process=1, process_devices=["cpu"])
 
     class Updater(morphopt.Updaters):
         def define_updater(self):

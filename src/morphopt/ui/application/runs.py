@@ -1,7 +1,6 @@
 """Optimization-process lifecycle independent from observer widgets."""
 
 from __future__ import annotations
-from ..i18n import localized_message
 
 import subprocess
 import time
@@ -10,9 +9,10 @@ from enum import Enum
 from pathlib import Path
 
 from .. import launcher
+from ..i18n import localized_message
 from ..model.problem import ProblemDefinition
+from ...postprocess import last_completed_iteration
 from .definitions import ProblemLibrary
-from .results import last_completed_iteration
 
 
 class RunMode(str, Enum):
@@ -107,10 +107,11 @@ class OptimizationRunSession:
         iteration = last_completed_iteration(self.folder) if self.folder else 0
         changed = previous != self.folder or iteration != self.last_iteration
         self.last_iteration = iteration
-        finished = self.has_exited()
+        exit_code = self.process.poll() if self.process is not None else None
+        finished = exit_code is not None
         if finished:
             self.release_finished()
-        return RunProgress(self.folder, iteration, changed, finished)
+        return RunProgress(self.folder, iteration, changed, finished, exit_code)
 
     def stream_output(self, callback) -> None:
         """Read the worker pipe off the UI thread; callback receives run id and text."""
@@ -263,6 +264,7 @@ class RunProgress:
     iteration: int
     changed: bool
     finished: bool = False
+    exit_code: int | None = None
 
 
 class RunLog:

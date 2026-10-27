@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 from pathlib import Path
-import re
 import shutil
 from tempfile import TemporaryDirectory
 
@@ -14,34 +13,8 @@ import numpy as np
 import torch
 import torchfea
 
-from ...postprocess.native import normalize_export_name
+from ...postprocess import IterationModel, cpu_torch_defaults, normalize_export_name
 from ..i18n import localized_message
-from .results import _cpu_torch_defaults
-
-
-@dataclass(frozen=True)
-class IterationModel:
-    folder: str
-    iteration: int
-    case: str | None = None
-
-    @property
-    def model_path(self) -> Path:
-        return Path(self.folder) / 'log' / 'femodel&results' / f'femodel_{self.iteration}.npz'
-
-    @staticmethod
-    def iterations(folder: str) -> tuple[int, ...]:
-        directory = Path(folder) / 'log' / 'femodel&results'
-        return tuple(sorted(int(match[1]) for path in directory.glob('femodel_*.npz')
-            if (match := re.fullmatch(r'femodel_(\d+)\.npz', path.name))))
-
-    def cases(self) -> tuple[str, ...]:
-        mapping = self.model_path.parent / "load_cases.json"
-        if not mapping.is_file():
-            return ()
-        names = json.loads(mapping.read_text(encoding="utf-8"))
-        return tuple(name for name in names if (self.model_path.parent / f"result_{name}_iter_{self.iteration}.npz").is_file())
-
 
 
 @dataclass(frozen=True)
@@ -76,9 +49,9 @@ class FiniteElementSession:
     @staticmethod
     def _original_result(source: IterationModel) -> FiniteElementResult:
         source = IterationModel(str(Path(source.folder).resolve()), source.iteration, source.case)
-        result_path = (source.model_path.parent / f'result_{source.case}_iter_{source.iteration}.npz'
-                       if source.case is not None else None)
-        return FiniteElementResult(f'original_{source.case}', source, source.model_path, result_path)
+        return FiniteElementResult(
+            f'original_{source.case}', source, source.model_path, source.result_path
+        )
 
     def result_options(self, folder: str, iteration: int) -> tuple[FiniteElementResult, ...]:
         """List original cases and all completed analyses for this exact model."""
@@ -98,7 +71,7 @@ class FiniteElementSession:
         """Load a fresh private model so edits never mutate stored results."""
         if not entry.model_path.is_file():
             raise FileNotFoundError(localized_message('ui.fea.missing_iteration_model', iteration=entry.source.iteration))
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             controller = torchfea.load_model(str(entry.model_path))
             result = None
             if entry.result_path is not None:
@@ -142,7 +115,7 @@ class FiniteElementSession:
         self.result = None
 
     def solve_request(self) -> Path:
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             self.controller.save_model(str(self.directory / 'analysis.npz'), if_save_source_code=False)
         return self._write_request({'action': 'solve'})
 
@@ -150,7 +123,7 @@ class FiniteElementSession:
                        overwrite: bool = False) -> Path:
         if self.result is None:
             raise ValueError(localized_message('ui.fea.result_required'))
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             self.controller.save_model(str(self.directory / 'export_model.npz'), if_save_source_code=False)
             self.result.save(str(self.directory / 'export_result.npz'))
         provenance = {'folder': self.source.folder, 'iteration': self.source.iteration, 'case': self.source.case}
@@ -193,7 +166,7 @@ class FiniteElementSession:
         """Archive a successful solve before publishing it to the result selector."""
         if self.source is None:
             raise ValueError(localized_message('ui.fea.result_required'))
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             controller = torchfea.load_model(str(self.directory / 'solved_model.npz'))
             result = torchfea.solver.StaticResult.load(str(self.directory / 'result.npz'))
             if not result.converged or result.model_hash != controller.get_model_hash():

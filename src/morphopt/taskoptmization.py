@@ -18,34 +18,54 @@ class TaskOptimization:
 
         warnings.filterwarnings("ignore", category=UserWarning)
 
+        from queue import Empty
+        from .optcore.history import History
+
+        completed = 0
+        if path_result is not None:
+            history = History()
+            history.load(foldpath=path_result + "/log/", iteration=target_iteration)
+            completed = history.iteration
         path_queue = mp.Queue()
-        while True:
-            process = mp.Process(
-                target=cls.optmain,
-                kwargs={
-                    "device": device,
-                    "target_iteration": target_iteration,
-                    "path_result": path_result,
-                    "restart_per_iteration": restart_per_iteration,
-                    "main_filepath": main_filepath,
-                    "pathqueue": path_queue,
-                },
-            )
-            process.start()
-            try:
-                process.join()  # Wait for process to finish
-                if process.exitcode != 0:
-                    print(
-                        f"Process failed with exit code {process.exitcode}, continuing..."
-                    )
-                    continue
-                path_result = path_queue.get()
-            except Exception as e:
-                print(f"Error in process or queue: {e}, continuing...")
-                continue
-            target_iteration = (
-                None  # after first restart, always continue to the latest iteration
-            )
+        try:
+            while True:
+                process = mp.Process(
+                    target=cls.optmain,
+                    kwargs={
+                        "device": device,
+                        "target_iteration": target_iteration,
+                        "path_result": path_result,
+                        "restart_per_iteration": restart_per_iteration,
+                        "main_filepath": main_filepath,
+                        "pathqueue": path_queue,
+                    },
+                )
+                process.start()
+                # Drain completed-checkpoint notifications while the worker is
+                # alive, so its queue feeder cannot block process shutdown.
+                while True:
+                    try:
+                        progress = path_queue.get(timeout=0.1)
+                    except Empty:
+                        if process.is_alive():
+                            continue
+                        break
+                    path_result = progress["path_result"]
+                    completed = progress["iteration"]
+                process.join()
+                exitcode = process.exitcode
+                process.close()
+                if exitcode != 0:
+                    if completed == 0:
+                        raise ChildProcessError(
+                            f"Optimization failed before the first completed iteration "
+                            f"(exit code {exitcode}). See the worker traceback."
+                        )
+                    print(f"Process failed with exit code {exitcode}, continuing...")
+                target_iteration = None
+        finally:
+            path_queue.close()
+            path_queue.join_thread()
 
     @classmethod
     def optmain(
@@ -84,6 +104,7 @@ class TaskOptimization:
         controller: morphopt.Controller = Controller()
         controller.restart_per_iteration = restart_per_iteration
         controller.optdevice = device
+        controller.dataqueue = pathqueue
 
         if target_iteration == 0 or path_result is None:
             controller.start_optimization(main_filepath=main_filepath)
@@ -92,6 +113,4 @@ class TaskOptimization:
                 path_result=path_result, target_iteration=target_iteration
             )
 
-        if pathqueue is not None:
-            pathqueue.put(controller.path_result)
         return controller.path_result

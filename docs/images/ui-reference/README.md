@@ -9,11 +9,11 @@
 - 截图来自基于 PySide6 / Qt 的 MorphOpt 图形界面；安装与启动方式见UI 快速开始。
 - 截图保留原始像素尺寸，支持放大查看。
 - 截图没有重采样、锐化或替换文字。
-- [示例定义](../../examples/test.morph)提供圆柱边界、压力、RP、耦合、目标和优化器参数；[STL 示例](../../examples/reference-boundary.stl)来源于已保存第 36 轮的变形表面。
+- [示例定义](../../../examples/bending_actuator/bending_actuator.morph)提供圆柱边界、压力、RP、耦合、目标和优化器参数；[STL 示例](../../../docs/assets/ui_reference/reference-boundary.stl)来源于已保存第 36 轮的变形表面。
 - Box、CAD、CPGEO、弹簧、接触、SIMP、曲面关联与自定义代码属于接口表单和预览演示。未把这些演示配置宣称为已求解或已优化算例。
-- INP 演示使用 [`reference-box.inp`](../../examples/reference-box.inp)，包含当前导入器需要的显式集合、截面与占位 Neo-Hookean 材料。正式模型仍需复核材料分配并定义边界、载荷和目标。
+- INP 演示使用 [`reference-box.inp`](../../../docs/assets/ui_reference/reference-box.inp)，包含当前导入器需要的显式集合、截面与占位 Neo-Hookean 材料。正式模型仍需复核材料分配并定义边界、载荷和目标。
 - `cad/export-step-dialog.png` 展示真实 STEP 保存对话框及 STP 文件筛选，截图后取消保存。`geometry/cad-part.png` 已包含卡片顶部的“导出 STEP…”入口。
-- 截图采用独立的示例定义与运行副本；可移植定义位于 `docs/examples/test.morph`，结果目录使用相对路径。
+- 截图采用独立的示例定义与运行副本；可移植定义位于 `examples/bending_actuator/bending_actuator.morph`，结果目录使用相对路径。
 - 新增[资产页截图](../ui/assets/geometry-assets.png)展示随文档提供的 STEP、STL 和 INP 文件，采用下述统一简体中文字体设置；来源、尺寸与实际字形记录在[资产页截图清单](../ui/assets/capture-manifest.json)。
 
 <a id="section-统一简体中文字体"></a>

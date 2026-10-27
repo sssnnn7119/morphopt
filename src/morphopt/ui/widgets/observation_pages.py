@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable
 import logging
 
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtCore import QTimer
@@ -25,12 +24,18 @@ from PySide6.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from ..application.results import ResultSession
 from ..i18n import tr
+from ..application.results import ResultSession
 from ..presentation.history import history_table
 from ..presentation.labels import typed_title
 from ..theme import theme_manager
-from .plot_style import apply_plotter_theme, configure_plotter
+from ..theme.fonts import chart_font, font_manager
+from ..visualization.rendering import (
+    add_deformation_mesh,
+    add_design_component,
+    apply_plotter_theme,
+    configure_plotter,
+)
 
 
 class PlotViewport(QWidget):
@@ -41,23 +46,26 @@ class PlotViewport(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         layout.setSpacing(theme_manager.palette.layout.zero_spacing)
-        self.plotter = QtInteractor(self)
+        self.plotter = QtInteractor(self, auto_update=False)
         layout.addWidget(self.plotter.interactor)
         configure_plotter(self.plotter)
         self._theme_pending = False
         self._pending_scene: Callable[[QtInteractor], None] | None = None
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh_visible_scene)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if self._theme_pending:
-            self._theme_pending = False
-            apply_plotter_theme(self.plotter)
         # The embedded GL context is ready after the widget is exposed.
-        QTimer.singleShot(0, self._refresh_visible_scene)
+        self._refresh_timer.start(0)
 
     def _refresh_visible_scene(self) -> None:
         if not self.isVisible():
             return
+        if self._theme_pending:
+            self._theme_pending = False
+            apply_plotter_theme(self.plotter)
         build_scene = self._pending_scene
         self._pending_scene = None
         if build_scene is not None:
@@ -70,19 +78,15 @@ class PlotViewport(QWidget):
             self.plotter.render()
 
     def apply_theme(self) -> None:
-        if not self.isVisible():
-            self._theme_pending = True
-            return
-        apply_plotter_theme(self.plotter)
-        self.plotter.render()
+        self._theme_pending = True
+        if self.isVisible():
+            self._refresh_timer.start(0)
 
     def rebuild(self, build_scene: Callable[[QtInteractor], None]) -> None:
-        """Clear the scene, call ``build_scene(plotter)``, then render it."""
-        if not self.isVisible():
-            self._pending_scene = build_scene
-            return
-        self._pending_scene = None
-        self._rebuild_scene(build_scene)
+        """Replace the pending scene and draw after native window transitions."""
+        self._pending_scene = build_scene
+        if self.isVisible():
+            self._refresh_timer.start(0)
 
     def _rebuild_scene(self, build_scene: Callable[[QtInteractor], None]) -> None:
         self.plotter.clear()
@@ -101,11 +105,12 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
         layout.addWidget(self.table, 3)
-        self.figure = Figure(facecolor=theme_manager.palette.chart.background)
+        self.figure = Figure(facecolor=theme_manager.palette.chart.background, layout="constrained")
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas, 2)
         self._last_history = None
         self._last_iteration = 0
+        font_manager.changed.connect(self._font_changed)
 
     def update_from_history(self, history, iteration: int) -> None:
         """Render all available history records up to ``iteration``."""
@@ -123,15 +128,6 @@ class MetricsPage(QWidget):
         self._draw_objectives(table.objectives)
 
     def _draw_objectives(self, objectives: list[float]) -> None:
-        # Prefer an installed CJK font so translated chart labels do not turn
-        # into tofu boxes on Linux; Matplotlib silently falls back elsewhere.
-        plt.rcParams["font.sans-serif"] = [
-            "Noto Sans CJK SC",
-            "Noto Sans CJK TC",
-            "DejaVu Sans",
-            "sans-serif",
-        ]
-        plt.rcParams["axes.unicode_minus"] = False
         self.figure.clear()
         self.figure.set_facecolor(theme_manager.palette.chart.background)
         axes = self.figure.add_subplot(111)
@@ -159,7 +155,22 @@ class MetricsPage(QWidget):
             linestyle="--",
             linewidth=theme_manager.palette.chart.grid_width,
         )
+        labels = [
+            axes.title, axes.xaxis.label, axes.yaxis.label,
+            *axes.get_xticklabels(), *axes.get_yticklabels(),
+            axes.xaxis.get_offset_text(), axes.yaxis.get_offset_text(),
+        ]
+        font = chart_font()
+        point_size = font_manager.font("chart").pointSizeF()
+        for label in labels:
+            size = label.get_fontsize() * (point_size if point_size > 0 else 10) / 10
+            label.set_fontproperties(font)
+            label.set_fontsize(size)
         self.canvas.draw()
+
+    def _font_changed(self, role: str) -> None:
+        if role == "chart" and self._last_history is not None:
+            self._draw_objectives(history_table(self._last_history).objectives)
 
     def apply_language(self) -> None:
         """Refresh translated table headers and chart labels."""
@@ -281,30 +292,21 @@ class UpdatableStructurePage(QWidget):
             return
 
         def build_scene(plotter) -> None:
-            if selected is not None:
-                existing = set(plotter.actors)
-                selected.plot(plotter=plotter)
-                style = theme_manager.palette.viewer
-                surface_count = int(getattr(selected, "num_surface_interfaces", 0) or 0)
-                for name, actor in plotter.actors.items():
-                    if name in existing:
-                        continue
-                    mapper = actor.mapper
-                    if mapper is not None and mapper.scalar_visibility:
-                        # Density and other scalar maps encode result data.
-                        continue
-                    actor.prop.color = (
-                        style.geometry.instance_colors[0]
-                        if style.geometry.instance_colors
-                        else style.geometry.uninstanced_color
-                    )
-                    actor.prop.ambient = style.render.mesh_ambient
-                    actor.prop.diffuse = style.render.mesh_diffuse
-                    actor.prop.specular = style.render.mesh_specular
-                    actor.prop.specular_power = style.render.mesh_specular_power
-                    if surface_count > 1 and str(name).endswith("surface-0"):
-                        actor.prop.opacity = style.geometry.boundary_shell_opacity
-            plotter.show_axes()
+            style = theme_manager.palette.viewer
+            add_design_component(
+                plotter,
+                selected,
+                geometry_color=(
+                    style.geometry.instance_colors[0]
+                    if style.geometry.instance_colors
+                    else style.geometry.uninstanced_color
+                ),
+                ambient=style.render.mesh_ambient,
+                diffuse=style.render.mesh_diffuse,
+                specular=style.render.mesh_specular,
+                specular_power=style.render.mesh_specular_power,
+                boundary_shell_opacity=style.geometry.boundary_shell_opacity,
+            )
 
         try:
             self._results.load_parameters(self._iteration)
@@ -361,37 +363,36 @@ class UpdatableStructurePage(QWidget):
 
 
 class DeformationCasePage(QWidget):
-    """Deformed mesh for one load case at the selected iteration."""
+    """One persistent viewport shared by all load cases and result tasks."""
 
-    def __init__(self, case_name: str, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.case_name = case_name
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
-        self._last_rendered: tuple[str, int] | None = None
+        self._last_rendered: tuple[str, int, str] | None = None
 
-    def build(self, results: ResultSession, iteration: int) -> None:
-        marker = (results.folder, iteration)
+    def build(self, results: ResultSession, iteration: int, case_name: str) -> None:
+        marker = (results.folder, iteration, case_name)
         if marker == self._last_rendered:
             return
-        mesh = results.deformation_mesh(self.case_name, iteration)
+        mesh = results.deformation_mesh(case_name, iteration)
 
         def build_scene(plotter) -> None:
             if mesh is not None:
-                plotter.add_mesh(
-                    mesh,
-                    color=theme_manager.palette.deformation_mesh_color,
-                    opacity=1.0,
-                    show_edges=True,
-                    name="deformation-mesh",
+                add_deformation_mesh(
+                    plotter, mesh, theme_manager.palette.deformation_mesh_color
                 )
-                plotter.show_axes()
 
         self.viewport.rebuild(build_scene)
         if mesh is not None:
             self._last_rendered = marker
+
+    def clear_view(self) -> None:
+        """Drop old task data without destroying the native rendering window."""
+        self._last_rendered = None
+        self.viewport.rebuild(lambda _plotter: None)
 
     def apply_theme(self) -> None:
         self.viewport.apply_theme()

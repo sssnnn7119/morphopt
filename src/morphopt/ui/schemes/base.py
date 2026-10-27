@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from ...constants import CONSTANT
-from ..i18n import localized_message, localization, tr
+from ..i18n import localization, localized_message, tr
 from ..model import registry as R
 from ..model.problem import (
-    GeometryNode,
     FEAComponentNode,
+    GeometryNode,
     LoadsNode,
     MaterialNode,
     MaterialsNode,
@@ -72,7 +72,9 @@ class SchemeTemplate:
         selected_type = material_type or self.material_type
         if selected_type not in self.available_material_types():
             raise ValueError(
-                localized_message("ui.errors.base.unknown_material_type_value", value_0=selected_type)
+                localized_message(
+                    "ui.errors.base.unknown_material_type_value", value_0=selected_type
+                )
             )
         mat = MaterialNode.create(selected_type, **overrides)
         return mat
@@ -93,7 +95,10 @@ class SchemeTemplate:
         """Concrete material class used by this scheme."""
         if not self.MATERIAL_TYPE:
             raise NotImplementedError(
-                localized_message("ui.errors.base.value_must_declare_material_type", value_0=type(self).__name__)
+                localized_message(
+                    "ui.errors.base.value_must_declare_material_type",
+                    value_0=type(self).__name__,
+                )
             )
         return self.MATERIAL_TYPE
 
@@ -112,7 +117,9 @@ class SchemeTemplate:
         selected = part_type or self.default_part_type()
         if selected not in self.available_geometry_types():
             raise ValueError(
-                localized_message("ui.errors.base.unknown_part_type_value", value_0=selected)
+                localized_message(
+                    "ui.errors.base.unknown_part_type_value", value_0=selected
+                )
             )
         return PartNode.create(selected, name=name or "", **overrides)
 
@@ -133,7 +140,10 @@ class SchemeTemplate:
         types = self.available_geometry_types()
         if not types:
             raise NotImplementedError(
-                localized_message("ui.errors.base.value_declares_no_geometry_parts", value_0=type(self).__name__)
+                localized_message(
+                    "ui.errors.base.value_declares_no_geometry_parts",
+                    value_0=type(self).__name__,
+                )
             )
         return types[0]
 
@@ -141,9 +151,7 @@ class SchemeTemplate:
         """Default geometry section holding one empty boundary part."""
         geometry = self.make_geometry()
         geometry.add_part(
-            self.make_part(
-                self.default_part_type(), name=self.body_name, **overrides
-            )
+            self.make_part(self.default_part_type(), name=self.body_name, **overrides)
         )
         return geometry
 
@@ -178,15 +186,19 @@ class SchemeTemplate:
         return ObjectiveNode(
             name="Objective Function",
             params={
-                "objective_terms": [{
-                    "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
-                    "body": objective or self.default_objective_slot(),
-                    "weight": CONSTANT.UI.OBJECTIVE.DEFAULT_WEIGHT,
-                }],
-                "metrics_terms": [{
-                    "type": CONSTANT.UI.METRIC.TYPE_CUSTOM,
-                    "body": metrics or self.default_metrics_slot(),
-                }],
+                "objective_terms": [
+                    {
+                        "type": CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS,
+                        "body": objective or self.default_objective_slot(),
+                        "weight": CONSTANT.UI.OBJECTIVE.DEFAULT_WEIGHT,
+                    }
+                ],
+                "metrics_terms": [
+                    {
+                        "type": CONSTANT.UI.METRIC.TYPE_CUSTOM,
+                        "body": metrics or self.default_metrics_slot(),
+                    }
+                ],
                 "jacobian_needed": (
                     list(jacobian_needed)
                     if jacobian_needed is not None
@@ -196,14 +208,17 @@ class SchemeTemplate:
         )
 
     def make_solver(
-        self, num_process: int = 1, gpus=None, task_step_list=None
+        self,
+        num_process: int = 1,
+        process_devices: list[str] | None = None,
+        task_step_list=None,
     ) -> SolverNode:
-        """Solver section: FEA process count, gpus and task partitioning."""
+        """Solver section: process count, per-process devices and task groups."""
         return SolverNode(
             name="Solver",
             params={
                 "num_process": int(num_process),
-                "gpus": list(gpus or []),
+                "process_devices": list(process_devices or ["cpu"] * num_process),
                 "task_step_list": list(task_step_list or []),
             },
         )
@@ -373,7 +388,11 @@ def available_templates() -> tuple[SchemeTemplate, ...]:
 
 def get_template(scheme: str) -> SchemeTemplate:
     if scheme not in SCHEME_REGISTRY:
-        raise KeyError(localized_message("ui.errors.base.no_scheme_template_registered_for_value", value_0=scheme))
+        raise KeyError(
+            localized_message(
+                "ui.errors.base.no_scheme_template_registered_for_value", value_0=scheme
+            )
+        )
     return SCHEME_REGISTRY[scheme]
 
 

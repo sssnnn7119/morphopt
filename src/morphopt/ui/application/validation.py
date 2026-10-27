@@ -16,6 +16,7 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
+from ...paths import sanitize_name
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,
@@ -187,8 +188,8 @@ class DefinitionValidation:
                 else:
                     self.add(owner, "vector", field=label, size=size)
                 return
-            # GPU names and solver task groups are string sequences.
-            if spec.key in {"gpus", "task_step_list"}:
+            # Device names and solver task groups are string sequences.
+            if spec.key in {"process_devices", "task_step_list"}:
                 return
             for entry in value:
                 if spec.type == "mat":
@@ -228,7 +229,9 @@ class DefinitionValidation:
         )
 
     def names(self, nodes: list[Node], *, identifiers: bool = False) -> None:
-        counts = Counter(node.name for node in nodes)
+        counts = Counter(
+            node.name if identifiers else node.name.casefold() for node in nodes
+        )
         for node in nodes:
             if not node.name.strip():
                 self.add(node, "required", field="name")
@@ -236,7 +239,9 @@ class DefinitionValidation:
                 not node.name.isidentifier() or keyword.iskeyword(node.name)
             ):
                 self.add(node, "identifier", name=node.name)
-            if counts[node.name] > 1:
+            elif not identifiers and node.name != sanitize_name(node.name):
+                self.add(node, "portable_name", name=node.name)
+            if counts[node.name if identifiers else node.name.casefold()] > 1:
                 self.add(node, "duplicate", name=node.name)
 
     def custom_class(self, owner: object, name: str) -> None:
@@ -431,9 +436,14 @@ class DefinitionValidation:
         if not steps.step_values:
             self.add(steps, "required", field="load_cases")
         loads = {node.name: node for node in self.problem.amplitude_components()}
+        counts = Counter(name.casefold() for name in steps.step_values)
         for name, values in steps.step_values.items():
             if not name.strip():
                 self.add(steps, "required", field="name")
+            elif name != sanitize_name(name):
+                self.add(steps, "portable_name", name=name)
+            if counts[name.casefold()] > 1:
+                self.add(steps, "duplicate", name=name)
             for key, value in values.items():
                 load_name = key.name if isinstance(key, Node) else key
                 load = loads.get(load_name)

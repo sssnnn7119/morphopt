@@ -34,6 +34,7 @@ class GeometryParams(BaseParams):
 
     from .parts import (
         BasePart,
+        FixedPart,
         CADPart,
         BoxPart,
         INPPart,

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypeVar
 from ..model.problem import PartNode, ProblemDefinition
@@ -17,6 +18,54 @@ class PartSets:
     nodes: tuple[str, ...] = ()
     surfaces: tuple[str, ...] = ()
     elements: tuple[str, ...] = ()
+
+
+@lru_cache(maxsize=16)
+def _read_inp_sets(path: str, modified_ns: int, size: int) -> dict[str, PartSets]:
+    """Read selection names without constructing elements or importing materials.
+
+    The file stamp keeps cached names current when an INP is replaced in place.
+    Only declarations inside a Part belong to its catalog; assembly sets do not.
+    """
+    declarations: dict[str, dict[str, list[str]]] = {}
+    current = None
+    with open(path, encoding="utf-8-sig") as source:
+        for line in source:
+            line = line.strip()
+            if not line.startswith("*") or line.startswith("**"):
+                continue
+            keyword, *options = (item.strip() for item in line.split(","))
+            keyword = keyword.lower()
+            parameters = {}
+            for option in options:
+                key, separator, value = option.partition("=")
+                if separator:
+                    parameters[key.strip().lower()] = value.strip().strip('"')
+            if keyword == "*part":
+                name = parameters.get("name")
+                current = declarations.setdefault(
+                    name, {"nodes": [], "surfaces": [], "elements": []}
+                ) if name else None
+            elif keyword == "*end part":
+                current = None
+            elif current is not None:
+                target = {
+                    "*nset": ("nodes", "nset"),
+                    "*surface": ("surfaces", "name"),
+                    "*element": ("elements", "type"),
+                }.get(keyword)
+                if target is not None:
+                    kind, key = target
+                    name = parameters.get(key)
+                    if name:
+                        current[kind].append(name.upper() if kind == "elements" else name)
+    return {
+        name: PartSets(**{
+            kind: tuple(dict.fromkeys(names)) for kind, names in sets.items()
+        })
+        for name, sets in declarations.items()
+    }
+
 
 PartT = TypeVar("PartT", bound=PartNode)
 SetProvider = Callable[[Any, ProblemDefinition], PartSets]
@@ -59,7 +108,15 @@ class PartSetCatalog:
             return PartSets()
         if part not in self._cache:
             provider = next((self._providers[cls] for cls in type(part).__mro__ if cls in self._providers), None)
-            self._cache[part] = provider(part, self.problem) if provider else PartSets()
+            if part.custom_class:
+                from .part_mesh import build_part_mesh
+
+                model = build_part_mesh(part, self.problem)
+                self._cache[part] = PartSets(
+                    tuple(model.set_nodes), tuple(model.surfaces.keys()), tuple(model.elems)
+                )
+            else:
+                self._cache[part] = provider(part, self.problem) if provider else PartSets()
         return self._cache[part]
 
     @staticmethod
@@ -117,15 +174,21 @@ class PartSetCatalog:
         )
 
     @staticmethod
-    def inp(part: INPPartNode, problem: ProblemDefinition) -> PartSets:
-        if not part.mesh_file or not Path(part.mesh_file).is_file():
-            return PartSets()
-        from ...optcore.modelparams.parts import INPPart
-        model = INPPart(
-            mesh_file=part.mesh_file,
-            part_name=part.assembly_name,
-            inp_part_name=part.inp_part_name or None,
-            exterior_surface=part.exterior_surface or None,
-        ).get_part()
-        model.initialize()
-        return PartSets(tuple(model.set_nodes), tuple(model.surfaces), tuple(model.elems))
+    def inp_parts(mesh_file: str) -> dict[str, PartSets]:
+        if not mesh_file:
+            return {}
+        try:
+            path = Path(mesh_file).resolve()
+            stat = path.stat()
+            return _read_inp_sets(str(path), stat.st_mtime_ns, stat.st_size)
+        except (OSError, UnicodeError):
+            # Missing or unreadable imports remain editable unfinished definitions.
+            return {}
+
+    @staticmethod
+    def inp(part: INPPartNode, problem: ProblemDefinition | None = None) -> PartSets:
+        parts = PartSetCatalog.inp_parts(part.mesh_file)
+        name = part.inp_part_name
+        if not name and len(parts) == 1:
+            name = next(iter(parts))
+        return parts.get(name, PartSets())

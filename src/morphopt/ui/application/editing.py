@@ -6,7 +6,7 @@ from ..model.problem import (
     CADOperationNode, HelperFunctionNode, HelperVariableNode, FEAComponentNode,
     MaterialNode, Node, PartNode, ProblemDefinition, SurfaceNode,
 )
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
 from ..model.registry import (
     LOAD_TYPES,
     PART_TYPES,
@@ -16,6 +16,7 @@ from ..model.problem import (
 )
 from ..schemes.base import get_template
 from .updaters import symmetry_item, updater_item
+from .part_sets import PartSetCatalog
 
 
 class DefinitionCommands:
@@ -167,6 +168,12 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
                 node.bounding_box = list(bounds) if bounds is not None else [0.0] * 6
             return True
     node.set_field(key, value)
+    if isinstance(node, INPPartNode) and key in {"mesh_file", "inp_part_name"}:
+        parts = PartSetCatalog.inp_parts(node.mesh_file)
+        if node.inp_part_name not in parts:
+            node.inp_part_name = next(iter(parts)) if len(parts) == 1 else ""
+        if node.exterior_surface not in PartSetCatalog.inp(node).surfaces:
+            node.exterior_surface = ""
     return True
 
 
@@ -406,22 +413,52 @@ class LoadCaseSession:
 
 
 class SolverTasks:
-    """Translate solver task groups into row assignments and back."""
+    """Read and write ordered load-case sequences for each process group."""
     def __init__(self, solver: SolverNode, problem: ProblemDefinition):
         self.solver, self.problem = solver, problem
 
-    def assignments(self) -> list[int]:
-        names = list(self.problem.steps.step_values) if self.problem.steps is not None else []
-        assigned = {step: group for group, steps in enumerate(self.solver.task_step_list) for step in steps}
-        next_group = len(self.solver.task_step_list)
+    def groups(self) -> list[list[str]]:
+        """Return each group's ordered cases; an empty definition means one per case."""
+        names = (
+            list(self.problem.steps.step_values)
+            if self.problem.steps is not None
+            else []
+        )
+        registered = set(names)
+        included: set[str] = set()
+        groups: list[list[str]] = []
+        for steps in self.solver.task_step_list:
+            group = []
+            for name in steps:
+                if name in registered and name not in included:
+                    group.append(name)
+                    included.add(name)
+            if group:
+                groups.append(group)
+        if not self.solver.task_step_list:
+            return [[name] for name in names]
         for name in names:
-            if name not in assigned:
-                assigned[name] = next_group
-                next_group += 1
-        return [assigned[name] for name in names]
+            if name not in included:
+                groups.append([name])
+        return groups
 
-    def assign(self, assignments: list[int]) -> None:
-        groups: dict[int, list[str]] = {}
-        for name, group in zip(self.problem.steps.step_values, assignments):
-            groups.setdefault(max(0, group), []).append(name)
-        self.solver.task_step_list = [groups[index] for index in sorted(groups)]
+    def assign_groups(self, groups: list[list[str]]) -> None:
+        """Store groups in display order and cases in their solve order."""
+        names = (
+            list(self.problem.steps.step_values)
+            if self.problem.steps is not None
+            else []
+        )
+        registered = set(names)
+        included: set[str] = set()
+        ordered: list[list[str]] = []
+        for source in groups:
+            group = []
+            for name in source:
+                if name in registered and name not in included:
+                    group.append(name)
+                    included.add(name)
+            if group:
+                ordered.append(group)
+        ordered.extend([[name] for name in names if name not in included])
+        self.solver.task_step_list = ordered

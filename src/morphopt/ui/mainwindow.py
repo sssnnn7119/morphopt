@@ -32,11 +32,12 @@ from .observe_panel import ObserverControls
 from .schemes.base import scheme_label
 from .theme import theme_manager
 from .widgets.file_dialogs import (
-    choose_save_directory,
     choose_directory,
+    choose_save_directory,
     confirm_overwrite,
     create_file_dialog,
 )
+from .widgets.font_settings import FontSettingsDialog
 from .widgets.quickstart import QuickstartDialog
 from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
         self._analysis_ready = False
         self._result_selection: ResultSelection | None = None
         self._has_analysis_model = False
+        self._starting_optimization = False
         self._syncing_selection = False
         self._unsubscribe_theme = theme_manager.subscribe(self._apply_theme)
         self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
@@ -74,7 +76,7 @@ class MainWindow(QMainWindow):
         self.start_button = QPushButton(tr("ui.workspace.start_optimization"))
         self.start_button.setProperty("actionRole", "primary")
         self.start_button.setProperty("buttonLayout", "prominent")
-        self.start_button.clicked.connect(lambda: self._workbench.start_optimization())
+        self.start_button.clicked.connect(self._request_start_optimization)
         workspace_header.addWidget(self.start_button)
         layout.addLayout(workspace_header)
         self.analysis_header = QWidget()
@@ -123,9 +125,12 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ language
     def _build_menus(self) -> None:
-        self._file_menu = self.menuBar().addMenu("")
-        self._settings_menu = self.menuBar().addMenu("")
-        self._analysis_menu = self.menuBar().addMenu("")
+        menu_bar = self.menuBar()
+        # Keep navigation inside the window even with a desktop global menu.
+        menu_bar.setNativeMenuBar(False)
+        self._file_menu = menu_bar.addMenu("")
+        self._settings_menu = menu_bar.addMenu("")
+        self._analysis_menu = menu_bar.addMenu("")
         self._menu_actions = {}
         for key, slot, shortcut in (
             ("new", self.new_problem, QKeySequence.StandardKey.New),
@@ -147,12 +152,14 @@ class MainWindow(QMainWindow):
                 self._file_menu.addSeparator()
         self._language_menu = self._settings_menu.addMenu("")
         self._theme_menu = self._settings_menu.addMenu("")
+        self._font_settings_action = self._settings_menu.addAction("")
+        self._font_settings_action.triggered.connect(self._show_font_settings)
         self._design_options_menu = self._settings_menu.addMenu("")
         self._history_limit_action = self._design_options_menu.addAction("")
         self._history_limit_action.triggered.connect(self._set_history_limit)
         self._start_optimization_action = self._analysis_menu.addAction("")
         self._start_optimization_action.triggered.connect(
-            lambda: self._workbench.start_optimization()
+            self._request_start_optimization
         )
         self._show_finite_element_action = self._analysis_menu.addAction("")
         self._show_finite_element_action.triggered.connect(self.show_finite_element)
@@ -165,10 +172,10 @@ class MainWindow(QMainWindow):
         for key, action in self._menu_actions.items():
             action.setText(tr("ui.workspace." + key))
         self._start_optimization_action.setText(tr("ui.workspace.start_optimization"))
-        self.start_button.setText(tr("ui.workspace.start_optimization"))
         self._show_finite_element_action.setText(tr("ui.workspace.analyze_iteration"))
         self._language_menu.setTitle(tr("ui.workspace.language"))
         self._theme_menu.setTitle(tr("ui.workspace.theme"))
+        self._font_settings_action.setText(tr("ui.appearance.fonts"))
         self._design_options_menu.setTitle(tr("ui.workspace.design_options"))
         self._history_limit_action.setText(tr("ui.history.maximum_nodes"))
         self._language_menu.clear()
@@ -197,6 +204,10 @@ class MainWindow(QMainWindow):
             action.triggered.connect(
                 lambda _checked=False, name=name: theme_manager.set_theme(name)
             )
+        self._update_analysis_actions()
+
+    def _show_font_settings(self) -> None:
+        FontSettingsDialog(self).exec()
 
     def _set_locale(self, code: str) -> None:
         QSettings("MorphOptUI", "ui").setValue("language", code)
@@ -227,6 +238,7 @@ class MainWindow(QMainWindow):
         else:
             self._switch_analysis_page(self.analysis_navigation.currentIndex())
         self._set_titles()
+        self._update_analysis_actions()
 
     def _switch_analysis_page(self, index: int) -> None:
         if not self._analysis_ready or self.navigation.currentIndex() != 1:
@@ -421,11 +433,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     tr("ui.workspace.save_failed"),
-                    tr("ui.mainwindow.export_folder_not_directory_value", value_0=folder),
+                    tr(
+                        "ui.mainwindow.export_folder_not_directory_value",
+                        value_0=folder,
+                    ),
                 )
                 return
             if not confirm_overwrite(
-                self, output_directory,
+                self,
+                output_directory,
                 message_key="ui.mainwindow.export_folder_exists_value",
             ):
                 return
@@ -512,21 +528,34 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------ analysis workspace
     def _can_replace_task(self) -> bool:
-        if (self._observer is not None and self._observer.is_running()) or (
-            self._finite_element is not None and self._finite_element.is_running()
+        if (
+            self._starting_optimization
+            or (self._observer is not None and self._observer.is_running())
+            or (self._finite_element is not None and self._finite_element.is_running())
         ):
             self.statusBar().showMessage(tr("ui.workspace.task_busy"))
             return False
         return True
 
+    def _request_start_optimization(self) -> None:
+        """Reject busy requests before flushing or validating definition widgets."""
+        if self._can_replace_task():
+            self._workbench.start_optimization()
+
     def start_optimization(self, problem: ProblemDefinition) -> None:
         """Start the validated definition and enter the live analysis workspace."""
         if not self._can_replace_task():
             return
-        self._ensure_observer()
-        if self._observer.start_definition(problem):
-            self._begin_analysis_task()
-            self._show_analysis()
+        self._starting_optimization = True
+        self._update_analysis_actions()
+        try:
+            self._ensure_observer()
+            if self._observer.start_definition(problem):
+                self._begin_analysis_task()
+                self._show_analysis()
+        finally:
+            self._starting_optimization = False
+            self._update_analysis_actions()
 
     def open_python_optimization(self) -> None:
         if not self._can_replace_task():
@@ -616,12 +645,15 @@ class MainWindow(QMainWindow):
 
     def _refresh_analysis_model(self) -> None:
         """Recheck the selected task's archive even if its iteration is unchanged."""
-        from .application.finite_element import IterationModel
+        from ..postprocess import IterationModel
 
         selection = self._result_selection
-        self._has_analysis_model = selection is not None and IterationModel(
-            selection.folder, selection.iteration
-        ).model_path.is_file()
+        self._has_analysis_model = (
+            selection is not None
+            and IterationModel(
+                selection.folder, selection.iteration
+            ).model_path.is_file()
+        )
         self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
         self._show_finite_element_action.setEnabled(self._has_analysis_model)
 
@@ -651,13 +683,24 @@ class MainWindow(QMainWindow):
         self._set_titles()
 
     def _update_analysis_actions(self) -> None:
-        busy = (self._observer is not None and self._observer.is_running()) or (
-            self._finite_element is not None and self._finite_element.is_running()
+        running = self._observer is not None and self._observer.is_running()
+        busy = (
+            self._starting_optimization
+            or running
+            or (self._finite_element is not None and self._finite_element.is_running())
         )
         for key in ("open_result", "open_python"):
             self._menu_actions[key].setEnabled(not busy)
         self._start_optimization_action.setEnabled(not busy)
         self.start_button.setEnabled(not busy)
+        self.start_button.setText(
+            tr(
+                "ui.workspace.optimization_running"
+                if running
+                else "ui.workspace.start_optimization"
+            )
+        )
+        self.start_button.setToolTip(tr("ui.workspace.task_busy") if busy else "")
         self._show_finite_element_action.setEnabled(self._has_analysis_model)
 
     def _finite_element_busy_changed(self, busy: bool) -> None:
@@ -700,7 +743,9 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._observer is not None:
-            self._observer.close_cleanup()
+            if not self._observer.close_cleanup():
+                event.ignore()
+                return
         if self._finite_element is not None:
             self._finite_element.close_cleanup()
         event.accept()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from ...paths import sanitize_name
 
 from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
 from ..codegen.generator import generate_source
@@ -98,6 +99,22 @@ class ProblemSession:
 
     def validate_references(self) -> None:
         """Check required model references before the runnable script is generated."""
+        problem = self._problem
+        groups = [
+            [node.name for node in nodes] for nodes in (
+                problem.parts(), problem.material_nodes(), problem.fea_components(),
+                [instance for part in problem.parts() for instance in part.instances],
+            )
+        ]
+        groups.append(list(problem.steps.step_values) if problem.steps is not None else [])
+        for names in groups:
+            seen = set()
+            for name in names:
+                if name != sanitize_name(name):
+                    raise ValueError(localized_message("ui.validation.portable_name", name=name))
+                if name.casefold() in seen:
+                    raise ValueError(localized_message("ui.validation.duplicate", name=name))
+                seen.add(name.casefold())
         reference_fields = {
             "instance_name", "instance_name1", "instance_name2", "rp_name",
             "rp_name1", "rp_name2", "surface_name", "surface_name1",

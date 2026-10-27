@@ -27,10 +27,10 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
 
    ```bash
    # Shape optimization (pneumatic bending actuator)
-   python examples/bendingactuator.py
+   python examples/bending_actuator/bending_actuator.py
 
    # SIMP topology optimization (compliant gripper)
-   python examples/gripper.py
+   python examples/simp_gripper/simp_gripper.py
    ```
 
 2. **Run a custom job** — copy an example as a starting point, configure the geometry, material, loads, updater, and objective, and launch it as a script:
@@ -73,7 +73,7 @@ The [documentation index](docs/README.md) includes the reading order and automat
   - `simp/` — SIMP topology optimization
   - `codesign/` — Shell co-design (shape + material)
   - `ui/` — PySide6 graphical UI (definition + observer in one window)
-- `examples/` — Example tasks (bending actuator, gripper, etc.)
+- [`examples/`](examples/README.md) — Runnable tasks, UI definitions, input geometry assets, and case notes
 - `docs/` — Usage guides, API reference, theory papers
 - `tests/` — Gradient checks, geometry tests, UI tests
 - `ui_runs/` — runs launched from the UI and their results (`<label>_T<timestamp>/`)

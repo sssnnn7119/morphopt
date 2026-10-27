@@ -14,6 +14,8 @@ _CHOICE_LABELS = {
     ("obj_type", "element"): "ui.widgets.values.choice.element",
     ("obj_type", "part"): "ui.widgets.values.choice.part",
     ("elementname", ""): "ui.widgets.values.choice.all",
+    ("inp_part_name", ""): "ui.widgets.values.choice.only_inp_part",
+    ("exterior_surface", ""): "ui.widgets.values.choice.default_exterior",
 }
 
 

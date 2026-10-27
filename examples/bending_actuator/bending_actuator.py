@@ -5,7 +5,7 @@ import morphopt
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder="./results/", opt_label="BendingExample")
+        super().__init__(path_result_folder=".results/", opt_label="BendingActuator")
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def reference_point_motion(self, step_name="load_case_1"):
@@ -18,7 +18,6 @@ class ThisController(morphopt.Controller):
             return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
         def objective_function(self):
-            # 最小化 -ry，对应最大化绕全局 Y 轴的有符号转角。
             return -self.reference_point_motion()[4]
 
         def get_metrics(self):
@@ -109,7 +108,7 @@ class ThisController(morphopt.Controller):
 
     class Solver(morphopt.Solver):
         def __init__(self, params):
-            super().__init__(params=params, num_process=1, available_gpus=[])
+            super().__init__(params=params, num_process=1, process_devices=["cpu"])
 
     class Updater(morphopt.Updaters):
         def define_updater(self):
@@ -123,9 +122,7 @@ class ThisController(morphopt.Controller):
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())
                 self.add_constraints(self.objectivefuncs.Fairness())
                 self.add_constraints(
-                    self.objectivefuncs.Distance(
-                        min_distance=[[2.5, 2.5], [2.5, 2.5]]
-                    )
+                    self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])
                 )
                 self.add_constraints(
                     self.objectivefuncs.boundarys.Cylinder(

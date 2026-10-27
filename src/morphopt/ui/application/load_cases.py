@@ -8,6 +8,7 @@ import json
 import math
 import tokenize
 from uuid import uuid4
+from ...paths import sanitize_name
 
 from ...optcore.quadrature import actuation_boundary_gauss_points
 from ..model.problem import ProblemDefinition
@@ -137,7 +138,8 @@ def remove_case(problem: ProblemDefinition, name: str, remove_terms: bool, remov
 
 def rename_case(problem: ProblemDefinition, old: str, new: str) -> None:
     new = new.strip()
-    if not new or any(character in new for character in ("/", "\\", "\0")) or new in problem.steps.step_values and new != old:
+    if (not new or new != sanitize_name(new)
+            or any(name != old and name.casefold() == new.casefold() for name in problem.steps.step_values)):
         raise ValueError(localized_message("ui.load_cases.invalid_name"))
     if new == old:
         return

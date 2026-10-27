@@ -39,7 +39,8 @@ from torchfea.cad import CADHistory
 from torchfea.cad.builder import OCCBuilder
 
 from ..constants import CONSTANT
-from ..optcore.modelparams.parts import CADPart
+from ..optcore.modelparams.parts import BasePart
+from ..optcore.modelparams.parts.cad_part import CADMeshingMixin
 from ..optcore.protocal import ProtocalUpdatable
 from .surfaces import BaseSurface
 
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
 __all__ = ["BoundaryPart"]
 
 
-class BoundaryPart(CADPart, ProtocalUpdatable):
+class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     """One Part whose boundary is described by parameterised surfaces.
 
     Parameters
@@ -61,12 +62,11 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
     part_name:
         Name of the Part inside the assembly.
     exterior_surface:
-        Surface set used as the Part exterior surface (default ``surface_0_All``).
+        Surface set drawn by default for mesh and deformation visualization
+        (default ``surface_0_All``).
     """
 
     is_variable = True
-    cache_part = False
-
     from .surfaces import (
         BaseSurface,
         BREPSurface,
@@ -131,6 +131,45 @@ class BoundaryPart(CADPart, ProtocalUpdatable):
     def surface_interface(self, index: int) -> BaseSurface:
         """One boundary surface by index."""
         return self.surfaceinterfaces[index]
+
+    @property
+    def surface_set_names(self) -> tuple[str, ...]:
+        """Names known from geometry; no FE mesh or element indices are cached."""
+        names = ["extern", self.exterior_surface or "extern"]
+        names.extend(self._face_names.values())
+        for index, surface in enumerate(self.surfaceinterfaces):
+            names.append(f"surface_{index}_All")
+            if isinstance(surface, self.BREPSurface):
+                metadata = surface.metadata()
+                names.extend(metadata["face_map"])
+                names.extend(
+                    f"surface_{index}_{name}"
+                    for name in (*metadata["face_map"], *metadata["surface_sets"])
+                )
+        return tuple(dict.fromkeys(names))
+
+    @property
+    def node_set_names(self) -> tuple[str, ...]:
+        """Describe geometric selections; their node indices depend on the mesh."""
+        names = ["all", "surface_all"]
+        names.extend(f"{name}_nodes" for name in self._face_names.values())
+        for index, surface in enumerate(self.surfaceinterfaces):
+            prefix = f"surface_{index}"
+            names.append(f"{prefix}_All")
+            if isinstance(surface, self.BREPSurface):
+                metadata = surface.metadata()
+                names.extend(f"{name}_nodes" for name in metadata["face_map"])
+                names.extend(
+                    f"{prefix}_{name}_nodes"
+                    for name in (*metadata["face_map"], *metadata["surface_sets"])
+                )
+                names.extend(
+                    f"{prefix}_{name}"
+                    for name in (*metadata["edge_map"], *metadata["vertex_map"], *metadata["node_sets"])
+                )
+            elif index == 0 and isinstance(surface, self.BSP):
+                names.extend((f"{prefix}_Bottom", f"{prefix}_Head"))
+        return tuple(dict.fromkeys(names))
 
     @property
     def num_variables(self) -> int:

@@ -15,7 +15,7 @@ coordinator; this widget only presents the current model and selection.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QPainter
+from PySide6.QtGui import QAction, QBrush, QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
     QMenu,
     QStyle,
@@ -29,6 +29,7 @@ from ..i18n import tr
 from ..application.validation import DefinitionValidation
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS
 from ..theme import theme_manager
+from ..theme.fonts import font_manager
 from ..model.problem import (
     CADOperationNode,
     CustomClassNode,
@@ -68,10 +69,18 @@ from .definition_actions import DefinitionActions
 
 _ERROR_ROLE = Qt.ItemDataRole.UserRole + 1
 _TOOLTIP_ROLE = Qt.ItemDataRole.UserRole + 2
+_BOLD_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 class _DefinitionDelegate(QStyledItemDelegate):
     """Keep invalid rows visible even when the selection stylesheet is active."""
+
+    def initStyleOption(self, option, index) -> None:
+        super().initStyleOption(option, index)
+        option.font = font_manager.font("tree")
+        if index.data(_BOLD_ROLE):
+            option.font.setBold(True)
+        option.fontMetrics = QFontMetrics(option.font)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
         if not index.data(_ERROR_ROLE):
@@ -105,12 +114,19 @@ class ModelTree(QTreeWidget):
         self.setColumnCount(1)
         self.setHeaderHidden(True)
         self.setItemDelegate(_DefinitionDelegate(self))
+        self.setFont(font_manager.font("tree"))
+        font_manager.changed.connect(self._font_changed)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._open_menu)
         self.currentItemChanged.connect(self._on_current)
         self._problem: ProblemDefinition | None = None
         self._item_node: dict[QTreeWidgetItem, Node] = {}
         self._node_item: dict[Node, QTreeWidgetItem] = {}
+
+    def _font_changed(self, role: str) -> None:
+        if role == "tree":
+            self.setFont(font_manager.font("tree"))
+            self.viewport().update()
 
     # ------------------------------------------------------------------ api
     def set_problem(self, problem: ProblemDefinition) -> None:
@@ -262,10 +278,7 @@ class ModelTree(QTreeWidget):
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
         item = QTreeWidgetItem([text])
         item.setData(0, _TOOLTIP_ROLE, self._node_tooltip(node))
-        if bold:
-            f = item.font(0)
-            f.setBold(True)
-            item.setFont(0, f)
+        item.setData(0, _BOLD_ROLE, bold)
         item.setData(0, Qt.ItemDataRole.UserRole, node)
         self._item_node[item] = node
         self._node_item[node] = item
