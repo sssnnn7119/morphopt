@@ -16,10 +16,16 @@ import torch
 import torchfea
 
 from morphopt import BoxPart
-from morphopt.postprocess import available_fields, export_results
+from morphopt.postprocess import (
+    IterationModel,
+    available_fields,
+    cpu_torch_defaults,
+    export_results,
+    export_saved_results,
+)
 from morphopt.ui.application import OptimizationRunSession, ProblemLibrary
-from morphopt.ui.application.finite_element import FiniteElementSession, IterationModel
-from morphopt.ui.application.results import ResultSelection, _cpu_torch_defaults
+from morphopt.ui.application.finite_element import FiniteElementSession
+from morphopt.ui.application.results import ResultSelection
 
 
 @pytest.fixture
@@ -27,7 +33,7 @@ def iteration_model(tmp_path):
     folder = tmp_path / "optimization"
     saved = folder / "log" / "femodel&results"
     saved.mkdir(parents=True)
-    with _cpu_torch_defaults():
+    with cpu_torch_defaults():
         part = BoxPart(
             length=1, height=1, depth=1, mesh_size=1, mesh_order=1
         ).build_part()
@@ -51,7 +57,8 @@ def iteration_model(tmp_path):
         assert result.converged
         controller.save_model(str(saved / "femodel_3.npz"), if_save_source_code=False)
         result.save(str(saved / "result_0_iter_3.npz"))
-    return IterationModel(str(folder), 3, 0), controller, result
+    (saved / "load_cases.json").write_text(json.dumps(["0", "7"]), encoding="utf-8")
+    return IterationModel(str(folder), 3, "0"), controller, result
 
 
 def test_analysis_worker_changes_loads_without_changing_optimization(iteration_model):
@@ -61,7 +68,7 @@ def test_analysis_worker_changes_loads_without_changing_optimization(iteration_m
     try:
         session.import_iteration(source)
         assert IterationModel.iterations(source.folder) == (3,)
-        assert source.cases() == (0,)
+        assert source.cases() == ("0",)
         session.apply_loads({"body_force": (True, [0.004, 0.0, 0.0])})
         request = session.solve_request()
         process = subprocess.run(
@@ -185,6 +192,32 @@ def test_exports_merge_selected_quantities_into_one_file(iteration_model, tmp_pa
     assert not (tmp_path / "mixed.csv").exists()
 
 
+def test_saved_result_export_restores_its_load_case(iteration_model, tmp_path):
+    source, _, _ = iteration_model
+    with cpu_torch_defaults():
+        controller = torchfea.load_model(str(source.model_path))
+        controller.assembly._loads["body_force"]._parameters *= 2
+        result = controller.solve(if_initialize=False)
+        result_path = tmp_path / "different_case.npz"
+        result.save(str(result_path))
+        instance = controller.assembly._instances["body-1"]
+        expected = controller.GC2RGC(result.GC)[instance._RGC_index].detach().cpu().numpy()
+
+    output = export_saved_results(
+        source.model_path, result_path, tmp_path / "fields.npz",
+        location="nodes", fields=["displacement"],
+    )
+    with np.load(output) as data:
+        np.testing.assert_allclose(data["U1"], expected[:, 0])
+
+
+def test_extension_labels_use_field_descriptions_and_format_names():
+    from morphopt.ui.presentation.result_fields import export_format_label, field_label
+
+    assert field_label("custom_field", "Custom physical field") == "Custom physical field"
+    assert export_format_label("xyz") == "XYZ (*.xyz)"
+
+
 def test_elements_without_gauss_points_export_only_element_data(
     iteration_model, tmp_path, monkeypatch
 ):
@@ -196,7 +229,7 @@ def test_elements_without_gauss_points_export_only_element_data(
 
     monkeypatch.setattr(type(element), "get_gaussian_points", no_gauss)
     assert available_fields(controller, result, "elements") == ("element_coordinates",)
-    from morphopt.ui.application.result_fields import ResultContours
+    from morphopt.postprocess import ResultContours
 
     assert {field.key for field in ResultContours(controller, result).fields} == {
         "U", "U1", "U2", "U3"
@@ -236,14 +269,14 @@ def test_result_options_keep_sparse_original_cases_and_separate_model_contexts(
     source, _, original_result = iteration_model
     session = FiniteElementSession()
     try:
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             controller = torchfea.load_model(str(source.model_path))
             controller.assembly._loads["body_force"]._parameters *= 2
             another_case = controller.solve(if_initialize=False)
             assert another_case.converged
             another_case.save(str(source.model_path.parent / "result_7_iter_3.npz"))
         options = session.result_options(source.folder, source.iteration)
-        assert [entry.source.case for entry in options] == [0, 7]
+        assert [entry.source.case for entry in options] == ["0", "7"]
         session.select_result(options[1])
         assert session.load_values()[0][-1].reshape(-1)[0] == pytest.approx(0.004)
         assert torch.allclose(session.result.GC, another_case.GC)
@@ -263,7 +296,7 @@ def test_result_options_keep_sparse_original_cases_and_separate_model_contexts(
             for item in session.result_options(str(tmp_path / "other"), 3)
         )
         # An invalid or unconverged worker result must not create a new option.
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             rejected = torchfea.solver.StaticResult.load(str(entry.result_path))
             rejected.converged = False
             rejected.save(str(session.directory / "result.npz"))
@@ -305,7 +338,7 @@ def test_staging_another_definition_does_not_stop_or_mutate_active_run(
 def test_gauss_strain_uses_global_axes_for_rotated_instances(iteration_model, tmp_path):
     _, controller, _ = iteration_model
     extension = 0.01
-    with _cpu_torch_defaults():
+    with cpu_torch_defaults():
         instance = torchfea.Instance(
             "body", translation=[2.0, 3.0, 4.0], rotation=[0.0, 0.0, math.pi / 2]
         )
@@ -478,7 +511,7 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         assert page.cases.count() == 3
         assert page.cases.currentData() == first_entry
         expected_results = (original_result.GC, first_gc, second_gc)
-        with _cpu_torch_defaults():
+        with cpu_torch_defaults():
             for entry, expected in zip(native_manifest['results'], expected_results, strict=True):
                 model = torchfea.load_model(str(archive / entry['model']))
                 result = torchfea.solver.StaticResult.load(str(archive / entry['result']))
@@ -608,7 +641,6 @@ def test_failed_export_preserves_existing_file_and_cleans_temporary_files(
         "broken",
         ResultField(
             "broken",
-            "unused",
             "Test provider",
             ResultLocation.NODES,
             lambda context: ResultTable(
@@ -638,7 +670,7 @@ def test_reference_point_exports_use_solved_six_dof_state(
     from morphopt.ui.widgets.file_dialogs import SaveFileSelection
 
     source, controller, _ = iteration_model
-    with _cpu_torch_defaults():
+    with cpu_torch_defaults():
         for name, position in [
             ("RP_tip", [1.0, 0.5, 0.5]),
             ("RP_base", [0.0, 0.5, 0.5]),
@@ -886,7 +918,7 @@ def test_analysis_views_share_selection_and_keep_fea_edits_during_navigation(
 
 
 def test_contours_match_exported_gauss_fields_and_cache_by_group(iteration_model, tmp_path):
-    from morphopt.ui.application.result_fields import ResultContours
+    from morphopt.postprocess import ResultContours
 
     _, controller, result = iteration_model
     path = export_results(controller, result, tmp_path / 'contours.npz',
@@ -921,10 +953,10 @@ def test_contours_match_exported_gauss_fields_and_cache_by_group(iteration_model
 
 
 def test_contour_strain_rotates_into_global_axes(iteration_model):
-    from morphopt.ui.application.result_fields import ResultContours
+    from morphopt.postprocess import ResultContours
 
     _, controller, _ = iteration_model
-    with _cpu_torch_defaults():
+    with cpu_torch_defaults():
         instance = torchfea.Instance('body', rotation=[0., 0., math.pi / 2])
         controller.assembly._instances['body-1'] = instance
         controller.initialize()
@@ -945,7 +977,7 @@ def test_contour_strain_rotates_into_global_axes(iteration_model):
 def test_contour_average_handles_weights_missing_nodes_and_sparse_element_ids():
     from types import SimpleNamespace
 
-    from morphopt.ui.application.result_fields import ResultContours
+    from morphopt.postprocess import ResultContours
 
     class IntegratedElement:
         _elems = torch.tensor([[0, 1], [1, 2]])
@@ -1041,7 +1073,7 @@ def test_fea_contours_rebuild_with_axes_and_follow_selected_solution(iteration_m
 
 
 def test_native_export_keeps_sparse_cases_and_filters_other_iterations(iteration_model, tmp_path):
-    from morphopt.postprocess.native import NativeResultSnapshot, export_native_results
+    from morphopt.postprocess import NativeResultSnapshot, export_native_results
 
     source, _, result = iteration_model
     # Sparse original case numbers must survive; unrelated iteration 4 is excluded.
@@ -1060,8 +1092,8 @@ def test_native_export_keeps_sparse_cases_and_filters_other_iterations(iteration
         assert {path.name for path in archive.iterdir()} == {
             'actuator_femodel.npz', 'actuator_case0.npz', 'actuator_case7.npz', 'actuator_manifest.json'}
         manifest = json.loads((archive / 'actuator_manifest.json').read_text())
-        assert [entry['case'] for entry in manifest['results']] == [0, 7]
-        with _cpu_torch_defaults():
+        assert [entry['case'] for entry in manifest['results']] == ['0', '7']
+        with cpu_torch_defaults():
             loaded = torchfea.solver.StaticResult.load(str(archive / 'actuator_case7.npz'))
             assert torch.allclose(loaded.GC, result.GC)
         assert source.model_path.read_bytes() == (archive / 'actuator_femodel.npz').read_bytes()

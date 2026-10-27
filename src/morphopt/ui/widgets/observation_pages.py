@@ -22,16 +22,20 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from pyvista import Actor
 from pyvistaqt import QtInteractor
 
-from ..application.results import ResultSession
-from ..theme.fonts import chart_font, font_manager
 from ..i18n import tr
+from ..application.results import ResultSession
 from ..presentation.history import history_table
 from ..presentation.labels import typed_title
 from ..theme import theme_manager
-from .plot_style import apply_plotter_theme, configure_plotter
+from ..theme.fonts import chart_font, font_manager
+from ..visualization.rendering import (
+    add_deformation_mesh,
+    add_design_component,
+    apply_plotter_theme,
+    configure_plotter,
+)
 
 
 class PlotViewport(QWidget):
@@ -288,31 +292,21 @@ class UpdatableStructurePage(QWidget):
             return
 
         def build_scene(plotter) -> None:
-            if selected is not None:
-                existing = set(plotter.actors)
-                selected.plot(plotter=plotter)
-                style = theme_manager.palette.viewer
-                surface_count = int(getattr(selected, "num_surface_interfaces", 0) or 0)
-                for name, actor in plotter.actors.items():
-                    # The collection also contains scalar bars and text props.
-                    if name in existing or not isinstance(actor, Actor):
-                        continue
-                    mapper = actor.mapper
-                    if mapper is not None and mapper.scalar_visibility:
-                        # Density and other scalar maps encode result data.
-                        continue
-                    actor.prop.color = (
-                        style.geometry.instance_colors[0]
-                        if style.geometry.instance_colors
-                        else style.geometry.uninstanced_color
-                    )
-                    actor.prop.ambient = style.render.mesh_ambient
-                    actor.prop.diffuse = style.render.mesh_diffuse
-                    actor.prop.specular = style.render.mesh_specular
-                    actor.prop.specular_power = style.render.mesh_specular_power
-                    if surface_count > 1 and str(name).endswith("surface-0"):
-                        actor.prop.opacity = style.geometry.boundary_shell_opacity
-            plotter.show_axes()
+            style = theme_manager.palette.viewer
+            add_design_component(
+                plotter,
+                selected,
+                geometry_color=(
+                    style.geometry.instance_colors[0]
+                    if style.geometry.instance_colors
+                    else style.geometry.uninstanced_color
+                ),
+                ambient=style.render.mesh_ambient,
+                diffuse=style.render.mesh_diffuse,
+                specular=style.render.mesh_specular,
+                specular_power=style.render.mesh_specular_power,
+                boundary_shell_opacity=style.geometry.boundary_shell_opacity,
+            )
 
         try:
             self._results.load_parameters(self._iteration)
@@ -387,14 +381,9 @@ class DeformationCasePage(QWidget):
 
         def build_scene(plotter) -> None:
             if mesh is not None:
-                plotter.add_mesh(
-                    mesh,
-                    color=theme_manager.palette.deformation_mesh_color,
-                    opacity=1.0,
-                    show_edges=True,
-                    name="deformation-mesh",
+                add_deformation_mesh(
+                    plotter, mesh, theme_manager.palette.deformation_mesh_color
                 )
-                plotter.show_axes()
 
         self.viewport.rebuild(build_scene)
         if mesh is not None:

@@ -51,7 +51,8 @@
 - [12 迭代、保存与继续计算](#section-迭代与重启机制)
 - [13 输出归档与问题诊断](#section-输出与问题诊断)
     - [13.1 主要输出](#section-主要输出)
-    - [13.2 配置诊断](#section-配置诊断)
+    - [13.2 后处理脚本接口](#section-后处理脚本接口)
+    - [13.3 配置诊断](#section-配置诊断)
 - [14 源码与示例索引](#section-参考实现)
 
 <!-- /docs:toc -->
@@ -1003,9 +1004,79 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 
 结果由 `morphopt-ui` 的 **文件 → 打开优化结果** 读取。独立有限元分析固定已选设计，调整工况后重新求解，不会自动更新优化任务的设计变量；操作和导出范围见 [UI 结果参考](UIreference.md#results)。
 
+<a id="section-后处理脚本接口"></a>
+
+### 13.2 后处理脚本接口
+
+`morphopt.postprocess` 提供归档读取、场量计算和导出接口。下例中的运行目录、迭代号、工况名和部件名需要与实际归档一致。
+
+```python
+from morphopt.postprocess import (
+    IterationModel, OptimizationArchive,
+    export_boundary_surfaces, export_saved_results,
+)
+
+run = "path/to/optimization_run"
+archive = OptimizationArchive(run)
+iteration = archive.completed_iteration
+model = IterationModel(run, iteration, "load_case_1")
+
+# 模型和解来自同一迭代；输出全局坐标系中的节点位移。
+export_saved_results(
+    model.model_path, model.result_path, "displacement.npz",
+    location="nodes", fields=["displacement"], format="npz",
+)
+
+# 按部件和曲面编号导出保存的设计边界。
+export_boundary_surfaces(
+    run, iteration, "exported_surfaces",
+    [{"part": "part1", "index": 0, "format": "stp"}],
+)
+```
+
+`export_saved_results()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。曲面格式按曲面类型选择，BSP 和 BREP 支持 `stp`、`stl`，离散曲面支持 `stl`。
+
+| 接口 | 输入与结果 |
+|---|---|
+| `OptimizationArchive(folder)` | 查询已完成轮次、工况及有限元归档路径，恢复设计参数与变形网格 |
+| `IterationModel(folder, iteration, case)` | 定位指定轮次的模型文件和指定工况的解文件 |
+| `export_results(controller, result, path, ...)` | 从已载入且工况匹配的模型与解导出物理量 |
+| `ResultContours(controller, result)` | 提供可显示字段及按实例组织的节点云图数值 |
+| `export_boundary_surfaces(folder, iteration, destination, selections, overwrite=False)` | 将选定 BoundaryPart 曲面输出到部件子目录 |
+| `export_native_results(...)` | 按 `NativeResultSnapshot` 清单复制模型与结果归档 |
+| `export_history_gif(...)` | 按设计组件或变形工况、迭代范围及显式相机与样式设置导出动画 |
+
+`export_history_gif()` 的 `mode` 为 `design` 或 `deformation`。前者的 `target` 使用 `{"category": "Part", "name": "part1"}` 等组件标识，后者使用 `{"case": "load_case_1"}`。调用方同时提供 `camera`、`window_size` 和 `style`；UI 从最近一次三维视口取得这些设置。变形网格缺失的轮次不生成帧，GIF 的帧间隔按格式允许的时间精度记录。
+
+```python
+from morphopt.postprocess import export_history_gif
+
+export_history_gif(
+    folder=run, destination="design.gif", mode="design",
+    target={"category": "Part", "name": "part1"},
+    first_iteration=1, last_iteration=iteration, fps=8,
+    camera={
+        "position": [[30, 30, 20], [0, 0, 8], [0, 0, 1]],
+        "parallel_projection": True, "parallel_scale": 12,
+    },
+    window_size=(800, 600),
+    style={
+        "background": "#101820", "text_color": "white",
+        "geometry_color": "lightblue", "deformation_color": "lightblue",
+        "mesh_ambient": 0.3, "mesh_diffuse": 0.7,
+        "mesh_specular": 0.1, "mesh_specular_power": 10.0,
+        "boundary_shell_opacity": 0.3,
+    },
+)
+```
+
+`camera.position` 依次给出相机位置、焦点和向上方向；上述坐标与平行投影尺度应根据模型尺寸调整。动画帧显示迭代编号，函数返回实际写入的帧数。
+
+新增场量通过 `ResultField` 注册计算接口，新增表格格式实现 `ResultExporter.write()` 并注册到 `EXPORTERS`。界面翻译属于 UI 展示层，扩展字段和格式未配置翻译时分别使用字段描述和扩展名。
+
 <a id="section-配置诊断"></a>
 
-### 13.2 配置诊断
+### 13.3 配置诊断
 
 | 现象 | 核查项目 |
 |---|---|

@@ -72,7 +72,8 @@ def test_result_viewport_keeps_latest_scene_until_visible_and_redraws_on_return(
     events = []
 
     class Plotter:
-        def __init__(self, parent):
+        def __init__(self, parent, *, auto_update):
+            assert auto_update is False
             self.interactor = QWidget(parent)
 
         def clear(self):
@@ -116,7 +117,7 @@ def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, m
     import numpy as np
     import pyvista as pv
     from morphopt.ui.widgets import observation_pages as pages
-    from morphopt.ui.widgets.plot_style import configure_plotter
+    from morphopt.ui.visualization.rendering import configure_plotter
 
     app = QApplication.instance() or QApplication([])
     definition = ProblemLibrary.load(Path(__file__).resolve().parents[2] / "examples/bending_actuator/bending_actuator.morph")

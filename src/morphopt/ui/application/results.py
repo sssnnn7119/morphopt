@@ -1,17 +1,12 @@
-"""Read-only access to an optimization result directory."""
+"""UI session for selecting and displaying archived optimization results."""
 
 from __future__ import annotations
 
-import json
-
-import hashlib
-import importlib.util
-import re
-import sys
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from ...postprocess import OptimizationArchive
 from ..i18n import localized_message
 
 
@@ -23,149 +18,67 @@ class ResultSelection:
     iteration: int
 
 
-@contextmanager
-def _cpu_torch_defaults():
-    """Create result-view objects on CPU without leaking process defaults."""
-    import torch
-
-    previous_dtype = torch.get_default_dtype()
-    previous_device = torch.get_default_device()
-    torch.set_default_dtype(torch.float64)
-    torch.set_default_device("cpu")
-    try:
-        yield
-    finally:
-        torch.set_default_dtype(previous_dtype)
-        torch.set_default_device(previous_device)
-
-
-def controller_class_from_folder(path_result: str):
-    """Import ``ThisController`` from a result folder's frozen main script."""
-    main = Path(path_result) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py"
-    if not main.exists():
-        return None
-
-    resolved = str(Path(path_result).resolve())
-    key = re.sub(r"[^A-Za-z0-9_]", "_", Path(resolved).name)
-    digest = hashlib.sha1(resolved.encode("utf-8")).hexdigest()[:12]
-    module_name = f"morphopt_run_{key}_{digest}"
-    module = sys.modules.get(module_name)
-    if module is None:
-        spec = importlib.util.spec_from_file_location(module_name, main)
-        if spec is None or spec.loader is None:
-            return None
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        try:
-            with _cpu_torch_defaults():
-                spec.loader.exec_module(module)
-        except Exception as exc:  # pragma: no cover - best-effort result browsing
-            sys.modules.pop(module_name, None)
-            print(localized_message("ui.messages.controller_import_failed", folder=path_result, error=exc))
-            return None
-    return getattr(module, "ThisController", None)
-
-
-def last_completed_iteration(path_result: str) -> int:
-    """Return the latest persisted iteration, or zero for an empty result."""
-    try:
-        from ...optcore.history import History
-
-        history = History()
-        history.load(foldpath=str(Path(path_result) / "log"))
-        return int(history.iteration or 0)
-    except Exception:
-        return 0
-
-
 class ResultSession:
-    """Stateful reader for one result directory.
+    """Stateful UI reader for one result directory.
 
-    Controller imports and parameter initialization happen once per folder;
-    histories are loaded per selected iteration.  Views receive ready-to-render
-    objects and do not need to know the on-disk layout.
+    Archive layout and data restoration live in :mod:`morphopt.postprocess`;
+    this session keeps the selected folder, iteration, and loaded history while
+    the composed archive service owns initialized model objects.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
     def reset(self) -> None:
         self.folder: str | None = None
-        self.controller = None
-        self.params = None
-        self.history = None
+        self._archive: OptimizationArchive | None = None
+        self.history: Any | None = None
         self.iteration = 0
-        self._parameters_iteration: int | None = None
+
+    @property
+    def controller(self) -> type[Any] | None:
+        return self._archive.controller_class if self._archive is not None else None
+
+    @property
+    def params(self) -> Any | None:
+        return self._archive.params if self._archive is not None else None
 
     def bind(self, folder: str) -> bool:
-        folder = str(Path(folder).resolve())
-        if self.folder == folder and self.controller is not None:
+        normalized = str(Path(folder).resolve())
+        if self.folder == normalized and self.controller is not None:
             return True
         self.reset()
-        self.folder = folder
-        self.controller = controller_class_from_folder(folder)
-        if self.controller is None:
+        self.folder = normalized
+        archive = OptimizationArchive(normalized)
+        self._archive = archive
+        if archive.controller_class is None:
             return False
         try:
-            with _cpu_torch_defaults():
-                self.params = self.controller.Params()
-                self.params.geometry.initialize()
-                self.params.feamodel.initialize_interfaces()
-                self.params.materials.initialize()
+            archive.initialize_params()
         except Exception as exc:
             print(localized_message("ui.messages.parameters_init_failed", error=exc))
-            self.params = None
         return True
 
-    def load_iteration(self, folder: str, iteration: int):
+    def load_iteration(self, folder: str, iteration: int) -> Any:
         normalized = str(Path(folder).resolve())
         if normalized != self.folder:
-            self.bind(folder)
-        from ...optcore.history import History
-
-        history = History()
-        history.load(
-            foldpath=str(Path(folder) / "log"), iteration=int(iteration)
-        )
+            self.bind(normalized)
+        if self._archive is None:
+            self._archive = OptimizationArchive(normalized)
+        history = self._archive.load_history(int(iteration))
         self.folder = normalized
         self.iteration = int(iteration)
         self.history = history
         return history
 
-    def load_parameters(self, iteration: int):
-        if self.params is not None and self._parameters_iteration != iteration:
-            with _cpu_torch_defaults():
-                self.params.load(foldpath=str(Path(self.folder) / "log"), iteration=iteration)
-            self._parameters_iteration = iteration
-        return self.params
+    def load_parameters(self, iteration: int) -> Any | None:
+        return self._archive.load_parameters(iteration) if self._archive else None
 
-    def fea_components(self) -> tuple[tuple[str, object], ...]:
-        return visualizable_components(self.params)
+    def fea_components(self) -> tuple[tuple[str, Any], ...]:
+        return self._archive.visualizable_components() if self._archive else ()
 
-    def deformation_mesh(self, case: str, iteration: int):
-        import pyvista as pv
-        if self.folder is None:
-            return None
-        path = Path(self.folder) / "log" / "deformation" / f"task_{case}_iter_{iteration}.stl"
-        return pv.read(path) if path.is_file() else None
+    def deformation_mesh(self, case: str, iteration: int) -> Any | None:
+        return self._archive.deformation_mesh(case, iteration) if self._archive else None
 
     def deformation_cases(self) -> tuple[str, ...]:
-        if not self.folder:
-            return ()
-        mapping = Path(self.folder) / "log" / "femodel&results" / "load_cases.json"
-        if not mapping.is_file():
-            return ()
-        return tuple(json.loads(mapping.read_text(encoding="utf-8")))
-
-
-def visualizable_components(parameters) -> tuple[tuple[str, object], ...]:
-    """Discover result structures by protocol, independently of a Qt selector."""
-    from ...optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
-    if parameters is None:
-        return ()
-    return tuple(
-        (category, component)
-        for category, collection in (("Part", parameters.geometry), ("FEA", parameters.feamodel), ("Material", parameters.materials))
-        for component in collection.interfaces.values()
-        if isinstance(component, ProtocalUpdatable) and isinstance(component, ProtocalVisualizable)
-    )
+        return self._archive.deformation_cases() if self._archive else ()

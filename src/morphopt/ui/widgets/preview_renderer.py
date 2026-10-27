@@ -28,7 +28,7 @@ from ..visualization.scene import (
     PreviewScene,
     SpringLoad,
 )
-from .plot_style import configure_plotter
+from ..visualization.rendering import configure_plotter
 
 _SOURCE_CELL_ID = "morphopt_source_cell_id"
 

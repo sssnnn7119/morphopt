@@ -15,6 +15,7 @@
 - [7 物理量与格式注册](#section-物理量与格式注册)
 - [8 CSV 与 NPZ 单文件导出](#section-csv-与-npz-单文件导出)
 - [9 原生模型与全部结果导出](#section-原生模型与全部结果导出)
+- [10 历史动画导出](#section-历史动画导出)
 
 <!-- /docs:toc -->
 
@@ -24,24 +25,57 @@
 
 | 路径 | 主要对象与责任 |
 |---|---|
-| [`ui/application/results.py`](../../src/morphopt/ui/application/results.py) | `ResultSession`、`ResultSelection` 与已完成迭代查询 |
-| [`ui/application/surface_export.py`](../../src/morphopt/ui/application/surface_export.py) | BoundaryPart 曲面清单、指定轮次参数恢复及 STEP/STL 导出 |
+| [`postprocess/__init__.py`](../../src/morphopt/postprocess/__init__.py) | 后处理公共入口，显式导出数据类型与处理接口 |
+| [`postprocess/archive.py`](../../src/morphopt/postprocess/archive.py) | `OptimizationArchive`、`IterationModel`：读取运行归档并缓存恢复状态 |
+| [`postprocess/context.py`](../../src/morphopt/postprocess/context.py) | 保存并恢复 Torch 的数据类型与设备默认值 |
+| [`postprocess/contours.py`](../../src/morphopt/postprocess/contours.py) | `ResultContours` 与有限元场量的节点云图投影 |
+| [`postprocess/rendering.py`](../../src/morphopt/postprocess/rendering.py) | UI 视口和后处理导出共享的 PyVista 绘制与视角设置 |
+| [`postprocess/history_gif.py`](../../src/morphopt/postprocess/history_gif.py) | 历史设计状态和有限元变形结果的 GIF 渲染与写入 |
+| [`postprocess/surface_export.py`](../../src/morphopt/postprocess/surface_export.py) | 指定归档轮次的 BoundaryPart 曲面 STEP/STL 导出 |
+| [`ui/application/results.py`](../../src/morphopt/ui/application/results.py) | UI 结果会话与共享选择状态，复用后处理归档读取 |
 | [`ui/widgets/surface_export.py`](../../src/morphopt/ui/widgets/surface_export.py) | 曲面选择、格式选择、输出目录与导出进程状态 |
-| [`ui/surface_export_worker.py`](../../src/morphopt/ui/surface_export_worker.py) | 独立的曲面导出工作进程 |
-| [`ui/application/finite_element.py`](../../src/morphopt/ui/application/finite_element.py) | `IterationModel`、`FiniteElementSession`、`FiniteElementResult` |
-| [`ui/application/result_fields.py`](../../src/morphopt/ui/application/result_fields.py) | `DisplayField`、`ResultContours` 与云图投影 |
+| [`ui/surface_export_worker.py`](../../src/morphopt/ui/surface_export_worker.py) | 独立调用后处理曲面导出服务的工作进程 |
+| [`ui/application/finite_element.py`](../../src/morphopt/ui/application/finite_element.py) | `FiniteElementSession`、`FiniteElementResult` 与独立分析请求 |
+| [`ui/presentation/result_fields.py`](../../src/morphopt/ui/presentation/result_fields.py) | 有限元字段和文件格式的界面文本 |
 | [`ui/fea_worker.py`](../../src/morphopt/ui/fea_worker.py) | 独立求解及导出工作进程 |
 | [`ui/widgets/finite_element.py`](../../src/morphopt/ui/widgets/finite_element.py) | 结果/工况选择、载荷编辑、QProcess 与显示 |
-| [`ui/widgets/observation_pages.py`](../../src/morphopt/ui/widgets/observation_pages.py) | 历史、设计与变形页面 |
+| [`ui/widgets/observation_pages.py`](../../src/morphopt/ui/widgets/observation_pages.py) | 历史、设计与变形页面，复用后处理场景绘制 |
+| [`ui/widgets/history_gif_export.py`](../../src/morphopt/ui/widgets/history_gif_export.py) | GIF 导出选项、进程状态与结果提示 |
+| [`ui/history_gif_worker.py`](../../src/morphopt/ui/history_gif_worker.py) | 独立调用后处理 GIF 服务的工作进程 |
 | [`postprocess/fields.py`](../../src/morphopt/postprocess/fields.py) | 场量提供者、记录位置与组合表 |
-| [`postprocess/exporters.py`](../../src/morphopt/postprocess/exporters.py) | CSV/NPZ 单文件导出 |
+| [`postprocess/exporters.py`](../../src/morphopt/postprocess/exporters.py) | 已载入或已保存的有限元结果的 CSV/NPZ 导出 |
 | [`postprocess/native.py`](../../src/morphopt/postprocess/native.py) | 原生 TorchFEA 模型与结果归档 |
+
+<a id="section-后处理服务的组合结构"></a>
+
+### 1.1 后处理服务的组合结构
+
+后处理按输出任务拆分实现，由 `morphopt.postprocess` 提供统一公共入口。归档型任务组合 `OptimizationArchive`，场量导出和原生文件归档使用各自所需的数据接口；不共享归档生命周期的任务不继承通用空基类。
+
+```mermaid
+flowchart TB
+    UI["UI 工作进程与分析界面"] --> API["postprocess 公共入口"]
+    API --> FIELDS["场量计算与表格导出"]
+    API --> CONTOURS["有限元云图投影"]
+    API --> GIF["历史 GIF 导出"]
+    API --> SURFACE["BoundaryPart 曲面导出"]
+    API --> NATIVE["TorchFEA 原生文件归档"]
+    GIF --> ARCHIVE["OptimizationArchive<br/>运行目录、控制器、参数与历史"]
+    SURFACE --> ARCHIVE
+    GIF --> RENDER["共享 PyVista 绘制函数"]
+    FIELDS --> CONTEXT["FieldContext<br/>有限元模型与解"]
+    CONTOURS --> CONTEXT
+```
+
+`OptimizationArchive` 缓存控制器和参数对象，并统一迭代状态、有限元模型路径、工况列表与变形网格的读取。GIF 导出组合归档读取和绘制函数；曲面导出组合归档恢复与几何输出。`FieldContext` 提供模型与解的共同计算上下文，字段导出和 `ResultContours` 共用其中的物理量计算。原生归档复制已保存文件及来源清单。
 
 <a id="section-优化结果读取"></a>
 
 ## 2 优化结果读取
 
-`ResultSession` 绑定一个运行目录，持有读取该目录的控制器、历史与参数缓存。 后处理初始化几何、载荷接口和材料，不执行 `FEAParams.define_steps()`；工况求解任务由优化运行阶段定义。`load_iteration()` 和 `load_parameters()` 为所选迭代准备状态，`deformation_cases()` 与 `deformation_mesh()` 提供工况和变形数据。
+`ResultSession` 绑定一个运行目录，维护页面共享的迭代与历史选择，并组合 `OptimizationArchive` 读取参数和几何。后处理初始化几何、载荷接口和材料，不执行 `FEAParams.define_steps()`；工况求解任务由优化运行阶段定义。`load_iteration()` 和 `load_parameters()` 为所选迭代准备状态，`deformation_cases()` 与 `deformation_mesh()` 提供工况和变形数据。
+
+归档目录布局、控制器载入、参数状态恢复、历史、变形网格和可视对象读取集中在 `OptimizationArchive`。UI 的 `ResultSession` 组合该对象，仅维护页面共享的选择状态；GIF 与曲面导出也使用同一归档对象读取设计状态。
 
 | 读取内容 | 来源 |
 |---|---|
@@ -69,7 +103,7 @@
 
 原工况名称与下拉框行号分开记录；原始结果和独立分析结果由显式来源对象区分。
 
-迭代历史的曲面导出独立于有限元模型会话。对话框固定请求中的运行目录、轮次、曲面和格式；工作进程建立私有 `ResultSession`，恢复该轮的 BoundaryPart 参数后调用曲面原生几何输出。STEP 转 STL 时使用完整 STEP 边界三角化；文件生成完成后复制到用户指定的部件子目录。预览中的当前参数和优化进程中的模型不参与导出计算。
+迭代历史的曲面导出独立于有限元模型会话。对话框固定请求中的运行目录、轮次、曲面和格式；`postprocess.surface_export` 恢复该轮的 BoundaryPart 参数后调用曲面原生几何输出。STEP 转 STL 时使用完整 STEP 边界三角化；文件生成完成后复制到用户指定的部件子目录。预览中的当前参数和优化进程中的模型不参与导出计算。
 
 <a id="section-私有模型与独立有限元"></a>
 
@@ -117,7 +151,7 @@ IterationModel(folder, iteration, case)
 | 应变 | Green–Lagrange 张量应变，剪切为张量分量 |
 | 应变能 | 高斯点能量密度、参考积分体积及积分能量 |
 
-`ResultContours` 按解缓存物理量。应力、应变和能量密度先按参考积分体积求单元平均，再对相邻单元做节点平均。该投影用于云图，不是节点应力外推；导出保留逐高斯点值。
+后处理层的 `ResultContours` 按解缓存物理量。应力、应变和能量密度先按参考积分体积求单元平均，再对相邻单元做节点平均。该投影用于云图，不是节点应力外推；导出保留逐高斯点值。UI 按字段标识提供翻译和控件，不参与数值投影。
 
 缺少支持数据的节点使用 NaN，无高斯点的模型只提供适用的位移等量。切换结果替换缓存，编辑载荷清除旧解与旧场量。相机、变形倍率和显示分量不改变物理结果。
 
@@ -137,13 +171,15 @@ IterationModel(folder, iteration, case)
 
 节点、单元及积分点编号从 1 开始，保留实例和单元块名称。参考点有独立编号和名称，每个 RP 一行，禁用 RP 不输出。
 
-新增物理量注册 `ResultField`，新增文件格式实现 `ResultExporter`，两条扩展路径互不复制计算逻辑。UI 从注册表取得可选项。
+新增物理量注册 `ResultField`，新增文件格式实现 `ResultExporter`，两条扩展路径互不复制计算逻辑。UI 从注册表取得可选项；内置字段和格式的翻译键分别按 `ui.fea.field_<字段标识>` 与 `ui.files.<格式标识>` 查找。未配置翻译的扩展字段使用其描述，扩展格式使用文件扩展名生成筛选文本。
 
 <a id="section-csv-与-npz-单文件导出"></a>
 
 ## 8 CSV 与 NPZ 单文件导出
 
 `export_results()` 检查收敛状态、模型哈希、记录位置与字段可用性，再生成组合表。
+
+`export_saved_results()` 读取保存的 TorchFEA 模型与解，恢复解中的工况后调用场量导出。独立工作进程将路径和所选字段传给该接口。
 
 | 格式 | 文件内容 |
 |---|---|
@@ -169,3 +205,11 @@ IterationModel(folder, iteration, case)
 一份迭代模型与各结果共用，结果各自保存 `work_conditions`。载入后先恢复所选结果的工况，再检查配对。目录重名时生成新编号目录；本次导出失败只清理本次新建目录。
 
 原生模型通过 `torchfea.load_model()` 读取，解通过 `StaticResult.load()` 读取。原生归档、单表物理量导出和 CAD STEP 几何导出分别保留各自格式与数据范围。
+
+<a id="section-历史动画导出"></a>
+
+## 10 历史动画导出
+
+优化历史 GIF 的数值读取、逐帧场景生成和 GIF 文件写入属于 `postprocess`。`export_history_gif()` 接收运行目录、导出范围、目标对象或工况、相机和显示样式；`OptimizationArchive` 恢复每一轮的设计状态或读取变形网格，`rendering` 使用调用方提供的颜色和相机绘制帧。
+
+UI 对话框负责收集目标、迭代范围、帧率和输出文件名，并从当前视口读取相机、尺寸与颜色配置。独立工作进程调用后处理服务并将完成或失败状态返回界面。STEP/STL 曲面导出采用相同边界：UI 负责收集轮次、曲面、格式和目录，后处理服务负责恢复归档设计并写出文件。服务模块通过 `morphopt.postprocess` 公共入口访问，不导入 Qt 控件、UI 会话或界面主题管理器。

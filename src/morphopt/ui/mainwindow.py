@@ -32,13 +32,13 @@ from .observe_panel import ObserverControls
 from .schemes.base import scheme_label
 from .theme import theme_manager
 from .widgets.file_dialogs import (
-    choose_save_directory,
     choose_directory,
+    choose_save_directory,
     confirm_overwrite,
     create_file_dialog,
 )
-from .widgets.quickstart import QuickstartDialog
 from .widgets.font_settings import FontSettingsDialog
+from .widgets.quickstart import QuickstartDialog
 from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
 
@@ -433,11 +433,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     tr("ui.workspace.save_failed"),
-                    tr("ui.mainwindow.export_folder_not_directory_value", value_0=folder),
+                    tr(
+                        "ui.mainwindow.export_folder_not_directory_value",
+                        value_0=folder,
+                    ),
                 )
                 return
             if not confirm_overwrite(
-                self, output_directory,
+                self,
+                output_directory,
                 message_key="ui.mainwindow.export_folder_exists_value",
             ):
                 return
@@ -524,8 +528,10 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------ analysis workspace
     def _can_replace_task(self) -> bool:
-        if self._starting_optimization or (self._observer is not None and self._observer.is_running()) or (
-            self._finite_element is not None and self._finite_element.is_running()
+        if (
+            self._starting_optimization
+            or (self._observer is not None and self._observer.is_running())
+            or (self._finite_element is not None and self._finite_element.is_running())
         ):
             self.statusBar().showMessage(tr("ui.workspace.task_busy"))
             return False
@@ -639,12 +645,15 @@ class MainWindow(QMainWindow):
 
     def _refresh_analysis_model(self) -> None:
         """Recheck the selected task's archive even if its iteration is unchanged."""
-        from .application.finite_element import IterationModel
+        from ..postprocess import IterationModel
 
         selection = self._result_selection
-        self._has_analysis_model = selection is not None and IterationModel(
-            selection.folder, selection.iteration
-        ).model_path.is_file()
+        self._has_analysis_model = (
+            selection is not None
+            and IterationModel(
+                selection.folder, selection.iteration
+            ).model_path.is_file()
+        )
         self.analysis_navigation.setTabEnabled(1, self._has_analysis_model)
         self._show_finite_element_action.setEnabled(self._has_analysis_model)
 
@@ -675,16 +684,22 @@ class MainWindow(QMainWindow):
 
     def _update_analysis_actions(self) -> None:
         running = self._observer is not None and self._observer.is_running()
-        busy = self._starting_optimization or running or (
-            self._finite_element is not None and self._finite_element.is_running()
+        busy = (
+            self._starting_optimization
+            or running
+            or (self._finite_element is not None and self._finite_element.is_running())
         )
         for key in ("open_result", "open_python"):
             self._menu_actions[key].setEnabled(not busy)
         self._start_optimization_action.setEnabled(not busy)
         self.start_button.setEnabled(not busy)
-        self.start_button.setText(tr(
-            "ui.workspace.optimization_running" if running else "ui.workspace.start_optimization"
-        ))
+        self.start_button.setText(
+            tr(
+                "ui.workspace.optimization_running"
+                if running
+                else "ui.workspace.start_optimization"
+            )
+        )
         self.start_button.setToolTip(tr("ui.workspace.task_busy") if busy else "")
         self._show_finite_element_action.setEnabled(self._has_analysis_model)
 

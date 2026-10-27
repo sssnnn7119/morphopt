@@ -17,7 +17,7 @@ from ..refresh import RefreshContext
 from ..theme import theme_manager
 from ..visualization.assets import geometry_asset_scene
 from .observation_pages import PlotViewport
-from .plot_style import add_orientation_axes
+from ..visualization.rendering import add_orientation_axes
 from .preview_renderer import PreviewRenderer
 
 

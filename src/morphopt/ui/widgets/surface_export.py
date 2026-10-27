@@ -13,9 +13,9 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..application.surface_export import BoundarySurfaceExport
 from ..i18n import tr
 from ..worker_environment import configure_worker_process
+from ...postprocess import BoundarySurfaceExport
 from .file_dialogs import choose_save_directory, confirm_overwrite
 
 

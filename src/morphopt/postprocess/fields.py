@@ -3,26 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import cached_property
 from enum import Enum
+from functools import cached_property
+from typing import Any
 
 import numpy as np
 import torch
 
-
-@contextmanager
-def evaluation_defaults(result):
-    """TorchFEA allocates working arrays using defaults; match and then restore them."""
-    dtype, device = torch.get_default_dtype(), torch.get_default_device()
-    torch.set_default_dtype(result.GC.dtype)
-    torch.set_default_device(result.GC.device)
-    try:
-        yield
-    finally:
-        torch.set_default_dtype(dtype)
-        torch.set_default_device(device)
+from .context import evaluation_defaults
 
 
 def array(value) -> np.ndarray:
@@ -37,9 +26,9 @@ class ResultTable:
 
 
 class FieldContext:
-    """Per-export cache shared by field providers; never changes the solver state."""
+    """Per-result cache used for field extraction and contour projection."""
 
-    def __init__(self, controller, result):
+    def __init__(self, controller: Any, result: Any) -> None:
         self.controller, self.result = controller, result
 
     @cached_property
@@ -247,8 +236,9 @@ def gauss_table(context: FieldContext, kind: str) -> ResultTable:
 
 @dataclass(frozen=True)
 class ResultField:
+    """Physical field provider independent of display labels and file formats."""
+
     key: str
-    label_key: str
     description: str
     location: ResultLocation
     extract: Callable[[FieldContext], ResultTable]
@@ -257,47 +247,89 @@ class ResultField:
     def available(self, context: FieldContext) -> bool:
         if self.location is ResultLocation.REFERENCE_POINTS:
             return next(context.reference_points(), None) is not None
-        return self.gauss_kind is None or next(context.gauss_blocks(self.gauss_kind), None) is not None
+        return (
+            self.gauss_kind is None
+            or next(context.gauss_blocks(self.gauss_kind), None) is not None
+        )
 
 
 # Adding a physical quantity requires only a provider for one record location.
 RESULT_FIELDS: dict[str, ResultField] = {
-    'coordinates': ResultField('coordinates', 'ui.fea.field_coordinates', 'Global reference node coordinates.',
-        ResultLocation.NODES, lambda context: nodal_table(context, 'coordinates')),
-    'displacement': ResultField('displacement', 'ui.fea.field_displacement', 'Global nodal displacement components and magnitude.',
-        ResultLocation.NODES, lambda context: nodal_table(context, 'displacement')),
-    'deformed_coordinates': ResultField('deformed_coordinates', 'ui.fea.field_deformed_coordinates', 'Global deformed node coordinates.',
-        ResultLocation.NODES, lambda context: nodal_table(context, 'deformed_coordinates')),
-    'rp_coordinates': ResultField('rp_coordinates', 'ui.fea.field_rp_coordinates', 'Global reference-point coordinates.',
-        ResultLocation.REFERENCE_POINTS, lambda context: reference_point_table(context, 'coordinates')),
-    'rp_displacement': ResultField('rp_displacement', 'ui.fea.field_rp_displacement', 'Global reference-point translation components and magnitude.',
-        ResultLocation.REFERENCE_POINTS, lambda context: reference_point_table(context, 'displacement')),
-    'rp_rotation': ResultField('rp_rotation', 'ui.fea.field_rp_rotation', 'Global reference-point rotation vector components and magnitude in radians (axis-angle, not Euler angles).',
-        ResultLocation.REFERENCE_POINTS, lambda context: reference_point_table(context, 'rotation')),
-    'rp_deformed_coordinates': ResultField('rp_deformed_coordinates', 'ui.fea.field_rp_deformed_coordinates', 'Global translated reference-point coordinates.',
-        ResultLocation.REFERENCE_POINTS, lambda context: reference_point_table(context, 'deformed_coordinates')),
-    'element_coordinates': ResultField('element_coordinates', 'ui.fea.field_element_coordinates', "Mean global reference coordinates of an element's nodes.",
-        ResultLocation.ELEMENTS, element_coordinate_table),
-    'gauss_coordinates': ResultField('gauss_coordinates', 'ui.fea.field_gauss_coordinates', 'Global reference integration-point coordinates.',
-        ResultLocation.ELEMENTS, lambda context: gauss_table(context, 'gauss_coordinates'), 'gauss_coordinates'),
-    'energy': ResultField('energy', 'ui.fea.field_energy', 'Strain energy per reference volume, reference integration volume and their product.',
-        ResultLocation.ELEMENTS, lambda context: gauss_table(context, 'energy'), 'energy'),
-    'stress': ResultField('stress', 'ui.fea.field_stress', 'Cauchy stress in global axes, evaluated separately at each integration point.',
-        ResultLocation.ELEMENTS, lambda context: gauss_table(context, 'stress'), 'stress'),
-    'strain': ResultField('strain', 'ui.fea.field_strain', 'Green-Lagrange tensor strain in global reference axes; shear components are tensor shear.',
-        ResultLocation.ELEMENTS, lambda context: gauss_table(context, 'strain'), 'strain'),
+    "coordinates": ResultField(
+        "coordinates", "Global reference node coordinates.", ResultLocation.NODES,
+        lambda context: nodal_table(context, "coordinates"),
+    ),
+    "displacement": ResultField(
+        "displacement", "Global nodal displacement components and magnitude.",
+        ResultLocation.NODES, lambda context: nodal_table(context, "displacement"),
+    ),
+    "deformed_coordinates": ResultField(
+        "deformed_coordinates", "Global deformed node coordinates.",
+        ResultLocation.NODES, lambda context: nodal_table(context, "deformed_coordinates"),
+    ),
+    "rp_coordinates": ResultField(
+        "rp_coordinates", "Global reference-point coordinates.",
+        ResultLocation.REFERENCE_POINTS,
+        lambda context: reference_point_table(context, "coordinates"),
+    ),
+    "rp_displacement": ResultField(
+        "rp_displacement", "Global reference-point translation components and magnitude.",
+        ResultLocation.REFERENCE_POINTS,
+        lambda context: reference_point_table(context, "displacement"),
+    ),
+    "rp_rotation": ResultField(
+        "rp_rotation",
+        "Global reference-point rotation vector components and magnitude in radians "
+        "(axis-angle, not Euler angles).",
+        ResultLocation.REFERENCE_POINTS,
+        lambda context: reference_point_table(context, "rotation"),
+    ),
+    "rp_deformed_coordinates": ResultField(
+        "rp_deformed_coordinates", "Global translated reference-point coordinates.",
+        ResultLocation.REFERENCE_POINTS,
+        lambda context: reference_point_table(context, "deformed_coordinates"),
+    ),
+    "element_coordinates": ResultField(
+        "element_coordinates", "Mean global reference coordinates of an element's nodes.",
+        ResultLocation.ELEMENTS, element_coordinate_table,
+    ),
+    "gauss_coordinates": ResultField(
+        "gauss_coordinates", "Global reference integration-point coordinates.",
+        ResultLocation.ELEMENTS, lambda context: gauss_table(context, "gauss_coordinates"),
+        "gauss_coordinates",
+    ),
+    "energy": ResultField(
+        "energy", "Strain energy per reference volume, reference integration volume and their product.",
+        ResultLocation.ELEMENTS, lambda context: gauss_table(context, "energy"), "energy",
+    ),
+    "stress": ResultField(
+        "stress", "Cauchy stress in global axes, evaluated separately at each integration point.",
+        ResultLocation.ELEMENTS, lambda context: gauss_table(context, "stress"), "stress",
+    ),
+    "strain": ResultField(
+        "strain", "Green-Lagrange tensor strain in global reference axes; shear components are tensor shear.",
+        ResultLocation.ELEMENTS, lambda context: gauss_table(context, "strain"), "strain",
+    ),
 }
 
 
-def available_fields(controller, result, location: ResultLocation | str) -> tuple[str, ...]:
+def available_fields(
+    controller: Any, result: Any, location: ResultLocation | str
+) -> tuple[str, ...]:
     location = ResultLocation(location)
     with evaluation_defaults(result):
         context = FieldContext(controller, result)
-        return tuple(key for key, field in RESULT_FIELDS.items()
-                     if field.location is location and field.available(context))
+        return tuple(
+            key for key, field in RESULT_FIELDS.items()
+            if field.location is location and field.available(context)
+        )
 
 
-def combined_table(context: FieldContext, location: ResultLocation, providers: tuple[ResultField, ...]) -> ResultTable:
+def combined_table(
+    context: FieldContext,
+    location: ResultLocation,
+    providers: tuple[ResultField, ...],
+) -> ResultTable:
     """Join provider columns onto stable record IDs without materializing the full table."""
     keys = record_keys(location)
     # Omit the integration-point identifier completely when no block has Gauss points.

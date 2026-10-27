@@ -23,7 +23,7 @@ from ..theme import theme_manager
 from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
 from ..visualization.scene import FaceSelection, LoadScene
-from .plot_style import apply_plotter_theme
+from ..visualization.rendering import apply_plotter_theme
 from .preview_renderer import PreviewRenderer
 
 

@@ -1,7 +1,6 @@
 """Optimization-process lifecycle independent from observer widgets."""
 
 from __future__ import annotations
-from ..i18n import localized_message
 
 import subprocess
 import time
@@ -10,9 +9,10 @@ from enum import Enum
 from pathlib import Path
 
 from .. import launcher
+from ..i18n import localized_message
 from ..model.problem import ProblemDefinition
+from ...postprocess import last_completed_iteration
 from .definitions import ProblemLibrary
-from .results import last_completed_iteration
 
 
 class RunMode(str, Enum):
