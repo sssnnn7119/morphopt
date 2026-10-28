@@ -175,6 +175,12 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 
 ## 9 主题、本地化与平台资源
 
+`widgets/history_export.py` 集中曲面与 GIF 导出窗口，公共基类管理工作进程和对话框状态，具体类提供各自的表单与完成文本。`widgets/labels.py` 集中可截断标签及支持复制路径的结果标签。对象标题、表单选项名称和可视对象名称统一由 `presentation/labels.py` 生成；数值解析继续由 `application/values.py` 处理，表单控件的取值由 `widgets/param_form.py` 处理。
+
+语言和主题通过主窗口菜单选择；启动时由 `app.py` 恢复保存的配置。
+
+`widgets/viewport.py` 是定义预览、资产和结果页共用的三维视口。该控件持有 QtInteractor、预设视角选择和适应窗口按钮；场景替换时保留已建立的相机。隐藏视口推迟渲染及外观更新，显示后处理最新请求。`theme/visualization.py` 保存应用级投影与光照参数并发送变更信号；`widgets/visualization_settings.py` 维护独立草稿和预览，应用后才通知业务视口。`visualization/rendering.py` 将这些设置传给无 Qt 的共用绘制函数，光照调整保持光源之间的比例，不修改标量颜色映射或无光照的标记图元。
+
 `ThemePalette` 组合 Qt、代码、图表、预览、PyVista 与布局样式；`theme/themes/` 注册完整主题，`theme/styles/*.qss` 管理共用控件状态，`theme/fonts.py` 管理各文字类别的字体设置和变更通知。字体设置独立于配色主题保存；主题切换后刷新外观并保留相机等展示状态。
 
 `constants.py` 保存业务默认值、运行限制和数值配置，窗口尺寸、间距与分栏比例由 `LayoutStyle` 管理。应用显示文本使用 `locales/zh-CN.json` 与 `en-US.json` 的稳定 key；领域身份仍使用原始名称和枚举值。

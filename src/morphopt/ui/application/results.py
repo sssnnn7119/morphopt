@@ -78,7 +78,9 @@ class ResultSession:
         return self._archive.visualizable_components() if self._archive else ()
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
-        return self._archive.deformation_mesh(case, iteration) if self._archive else None
+        return (
+            self._archive.deformation_mesh(case, iteration) if self._archive else None
+        )
 
     def deformation_cases(self) -> tuple[str, ...]:
         return self._archive.deformation_cases() if self._archive else ()

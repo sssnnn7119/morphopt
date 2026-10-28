@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .context import cpu_torch_defaults
+from ._runtime import cpu_torch_defaults
 
 _LOGGER = logging.getLogger(__name__)
 

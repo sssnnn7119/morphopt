@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 import json
-import shutil
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import imageio.v2 as imageio
 import pyvista as pv
 import pytest
-import torch
 from PIL import Image
 
-from morphopt.optcore.history import History
 from morphopt.postprocess import (
     IterationModel,
     OptimizationArchive,
-    cpu_torch_defaults,
     export_boundary_surfaces,
     export_history_gif,
 )
@@ -89,28 +86,6 @@ def test_iteration_model_reads_named_cases_in_registered_order(tmp_path):
     assert model.result_path == folder / "result_case_b_iter_3.npz"
 
 
-@pytest.fixture
-def design_archive(tmp_path):
-    example = Path(__file__).resolve().parents[2] / "examples" / "hybrid_cylinder"
-    folder = tmp_path / "run"
-    scripts = folder / "scripts"
-    scripts.mkdir(parents=True)
-    shutil.copyfile(example / "hybrid_cylinder.py", scripts / "MAIN_SCRIPT_FOR_RESTART.py")
-    shutil.copytree(example / "assets", scripts / "assets")
-    archive = OptimizationArchive(folder)
-    params = archive.initialize_params()
-    part = params.geometry.interfaces["body"]
-    archive.log_folder.mkdir()
-    with cpu_torch_defaults():
-        part.save(foldpath=str(archive.log_folder), iteration=1)
-        inner = part.surface_interfaces()[1]
-        inner.update_variables(torch.full_like(inner.control_points, 0.2))
-        part.save(foldpath=str(archive.log_folder), iteration=2)
-    history = History()
-    history.append("objective", 1.0)
-    history.append("objective", 0.9)
-    history.save(foldpath=str(archive.log_folder))
-    return archive
 
 
 def test_boundary_export_restores_archived_step_and_stl_surfaces(design_archive, tmp_path):
@@ -165,3 +140,45 @@ def test_history_gif_exports_design_and_deformation_frames(design_archive, tmp_p
         assert len(imageio.mimread(destination)) == 2
         with Image.open(destination) as gif:
             assert gif.info["duration"] == 200
+
+
+def test_failed_gif_write_closes_renderer_and_preserves_existing_file(
+    design_archive, tmp_path, monkeypatch
+):
+    deformation = design_archive.log_folder / "deformation"
+    deformation.mkdir()
+    pv.Cube().triangulate().save(deformation / "task_case_iter_1.stl")
+    output = tmp_path / "history.gif"
+    output.write_bytes(b"existing animation")
+    closed = []
+    original_close = pv.Plotter.close
+
+    def close(plotter):
+        closed.append(plotter)
+        original_close(plotter)
+
+    def fail_write(_frame):
+        raise OSError("disk full")
+
+    @contextmanager
+    def writer(path, **_kwargs):
+        Path(path).write_bytes(b"incomplete animation")
+        yield SimpleNamespace(append_data=fail_write)
+
+    monkeypatch.setattr(pv.Plotter, "close", close)
+    monkeypatch.setattr(imageio, "get_writer", writer)
+    with pytest.raises(OSError, match="disk full"):
+        export_history_gif(
+            folder=str(design_archive.folder), destination=str(output),
+            mode="deformation", target={"case": "case"},
+            first_iteration=1, last_iteration=1, fps=5,
+            camera={"position": [[3, 3, 3], [0, 0, 0], [0, 0, 1]]},
+            window_size=(100, 100),
+            style={"background": "white", "text_color": "black",
+                   "deformation_color": "blue", "mesh_ambient": 0.17,
+                   "mesh_diffuse": 0.78, "mesh_specular": 0.24,
+                   "mesh_specular_power": 30},
+        )
+    assert closed
+    assert output.read_bytes() == b"existing animation"
+    assert not list(tmp_path.glob(".*.partial.gif"))

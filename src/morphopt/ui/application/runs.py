@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from ...postprocess import last_completed_iteration
 from .. import launcher
 from ..i18n import localized_message
 from ..model.problem import ProblemDefinition
-from ...postprocess import last_completed_iteration
 from .definitions import ProblemLibrary
 
 
@@ -69,7 +69,11 @@ class OptimizationRunSession:
         self._ensure_idle()
         if source.kind is RunSourceKind.CONTINUE:
             if not self.is_result_folder(source.path):
-                raise ValueError(localized_message("ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"
+                    )
+                )
             self.adopt(source.path)
         else:
             self.clear_result()
@@ -79,16 +83,24 @@ class OptimizationRunSession:
     def start_selected(self, target_iteration: int | None = None) -> subprocess.Popen:
         source = self.source
         if source is None:
-            raise ValueError(localized_message("ui.errors.runs.select_a_task_source_first"))
+            raise ValueError(
+                localized_message("ui.errors.runs.select_a_task_source_first")
+            )
         if source.kind is RunSourceKind.DEFINITION:
             if self.definition is None:
-                raise ValueError(localized_message("ui.errors.runs.no_definition_is_bound_to_this_run"))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.runs.no_definition_is_bound_to_this_run"
+                    )
+                )
             process = self.start_definition(self.definition)
         elif source.kind is RunSourceKind.PYTHON:
             process = self.start_python(source.path)
         else:
             process = self.start_continue(source.path, target_iteration)
-        self.last_iteration = (target_iteration or 0) if source.kind is RunSourceKind.CONTINUE else 0
+        self.last_iteration = (
+            (target_iteration or 0) if source.kind is RunSourceKind.CONTINUE else 0
+        )
         self.source = None
         return process
 
@@ -96,12 +108,21 @@ class OptimizationRunSession:
         previous = self.folder
         if self.mode is RunMode.FRESH:
             self.discover_folder()
-        if self.active and self.folder and self._save_definition and self._running_definition is not None and self.folder not in self._saved_folders:
+        if (
+            self.active
+            and self.folder
+            and self._save_definition
+            and self._running_definition is not None
+            and self.folder not in self._saved_folders
+        ):
             try:
                 ProblemLibrary.save_result_copy(self._running_definition, self.folder)
             except (OSError, ValueError, TypeError) as exc:
                 import logging
-                logging.getLogger(__name__).warning("Cannot save the result definition: %s", exc)
+
+                logging.getLogger(__name__).warning(
+                    "Cannot save the result definition: %s", exc
+                )
             else:
                 self._saved_folders.add(self.folder)
         iteration = last_completed_iteration(self.folder) if self.folder else 0
@@ -116,19 +137,24 @@ class OptimizationRunSession:
     def stream_output(self, callback) -> None:
         """Read the worker pipe off the UI thread; callback receives run id and text."""
         import threading
+
         self.output_id += 1
         self.log.clear()
         process, output_id = self.process, self.output_id
         if process is None or process.stdout is None:
             return
         stream = process.stdout
+
         def read() -> None:
             try:
                 for raw in iter(stream.readline, b""):
                     callback(output_id, raw.decode("utf-8", errors="replace"))
             finally:
                 stream.close()
-        threading.Thread(target=read, name="morphopt-ui-output-reader", daemon=True).start()
+
+        threading.Thread(
+            target=read, name="morphopt-ui-output-reader", daemon=True
+        ).start()
 
     def consume_output(self, output_id: int, text: str) -> str | None:
         return self.log.consume(text) if output_id == self.output_id else None
@@ -242,8 +268,14 @@ class OptimizationRunSession:
             self.discover_folder()
         self.process = None
         self.mode = None
-        self.last_iteration = last_completed_iteration(self.folder) if self.folder else 0
-        if self.folder and self.is_result_folder(self.folder) and self.last_iteration > 0:
+        self.last_iteration = (
+            last_completed_iteration(self.folder) if self.folder else 0
+        )
+        if (
+            self.folder
+            and self.is_result_folder(self.folder)
+            and self.last_iteration > 0
+        ):
             # Selecting via adopt() would reset progress for the displayed result.
             self.source = RunSource(
                 RunSourceKind.CONTINUE,
@@ -255,7 +287,11 @@ class OptimizationRunSession:
 
     def _ensure_idle(self) -> None:
         if self.active:
-            raise RuntimeError(localized_message("ui.errors.runs.an_optimization_process_is_already_active"))
+            raise RuntimeError(
+                localized_message(
+                    "ui.errors.runs.an_optimization_process_is_already_active"
+                )
+            )
 
 
 @dataclass(frozen=True)
@@ -269,6 +305,7 @@ class RunProgress:
 
 class RunLog:
     """Normalize terminal redraws into a text log with stable table headers."""
+
     def __init__(self):
         self.headers: set[str] = set()
 
@@ -277,8 +314,11 @@ class RunLog:
 
     def consume(self, text: str) -> str | None:
         import re
+
         redraw = bool(re.search(r"\x1b\[[0-9;]*[ABEFG]", text))
-        line = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])", "", text).replace("\r\n", "\n")
+        line = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])", "", text).replace(
+            "\r\n", "\n"
+        )
         line = line.rsplit("\r", 1)[-1].rstrip("\n")
         if not line:
             return None

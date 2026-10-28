@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from ...paths import sanitize_name
 
+from ...paths import sanitize_name
 from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
 from ..codegen.generator import generate_source
 from ..i18n import localized_message
@@ -29,6 +29,7 @@ def _synchronize_problem(problem: ProblemDefinition) -> None:
     problem.resolve_references()
     problem.align_surface_dependent_state()
     from .load_cases import synchronize_workspaces
+
     synchronize_workspaces(problem)
 
 
@@ -60,7 +61,9 @@ class ProblemSession:
         operation: EditOperation = "modified",
     ) -> EditSnapshot:
         state = json.dumps(
-            self._problem.to_dict(), ensure_ascii=False, separators=(",", ":"),
+            self._problem.to_dict(),
+            ensure_ascii=False,
+            separators=(",", ":"),
         ).encode("utf-8")
         return EditSnapshot(state, description, selection, operation=operation)
 
@@ -68,7 +71,10 @@ class ProblemSession:
         self.history.reset(self.snapshot())
 
     def record_edit(
-        self, description: str, *, selection: tuple[int, ...] | None = None,
+        self,
+        description: str,
+        *,
+        selection: tuple[int, ...] | None = None,
         merge_key: object | None = None,
         operation: EditOperation = "modified",
     ) -> bool:
@@ -101,40 +107,64 @@ class ProblemSession:
         """Check required model references before the runnable script is generated."""
         problem = self._problem
         groups = [
-            [node.name for node in nodes] for nodes in (
-                problem.parts(), problem.material_nodes(), problem.fea_components(),
+            [node.name for node in nodes]
+            for nodes in (
+                problem.parts(),
+                problem.material_nodes(),
+                problem.fea_components(),
                 [instance for part in problem.parts() for instance in part.instances],
             )
         ]
-        groups.append(list(problem.steps.step_values) if problem.steps is not None else [])
+        groups.append(
+            list(problem.steps.step_values) if problem.steps is not None else []
+        )
         for names in groups:
             seen = set()
             for name in names:
                 if name != sanitize_name(name):
-                    raise ValueError(localized_message("ui.validation.portable_name", name=name))
+                    raise ValueError(
+                        localized_message("ui.validation.portable_name", name=name)
+                    )
                 if name.casefold() in seen:
-                    raise ValueError(localized_message("ui.validation.duplicate", name=name))
+                    raise ValueError(
+                        localized_message("ui.validation.duplicate", name=name)
+                    )
                 seen.add(name.casefold())
         reference_fields = {
-            "instance_name", "instance_name1", "instance_name2", "rp_name",
-            "rp_name1", "rp_name2", "surface_name", "surface_name1",
-            "surface_name2", "set_nodes_name", "element_name", "obj_name",
+            "instance_name",
+            "instance_name1",
+            "instance_name2",
+            "rp_name",
+            "rp_name1",
+            "rp_name2",
+            "surface_name",
+            "surface_name1",
+            "surface_name2",
+            "set_nodes_name",
+            "element_name",
+            "obj_name",
         }
 
         for component in self._problem.fea_components():
             for field in component.fields:
                 key = field.key
                 if key in reference_fields and not component.get_field(key):
-                    raise ValueError(localized_message(
-                        "ui.errors.generator.component_value_must_select_value",
-                        value_0=component.name, value_1=key,
-                    ))
+                    raise ValueError(
+                        localized_message(
+                            "ui.errors.generator.component_value_must_select_value",
+                            value_0=component.name,
+                            value_1=key,
+                        )
+                    )
         for material in self._problem.material_nodes():
             if material.part is None:
-                raise ValueError(localized_message(
-                    "ui.errors.generator.component_value_must_select_value",
-                    value_0=material.name, value_1="part_name",
-                ))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.generator.component_value_must_select_value",
+                        value_0=material.name,
+                        value_1="part_name",
+                    )
+                )
 
     def set_label(self, value: str) -> bool:
         value = value.strip()
@@ -187,7 +217,10 @@ class ProblemLibrary:
                 GeometryNode(),
                 LoadsNode(),
                 StepsNode(params={"step_values": {"load_case_1": {}}}),
-                MaterialsNode(), ObjectiveNode(), SolverNode(), UpdaterNode(),
+                MaterialsNode(),
+                ObjectiveNode(),
+                SolverNode(),
+                UpdaterNode(),
             ],
         )
         return problem

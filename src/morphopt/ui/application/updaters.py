@@ -1,10 +1,11 @@
 """Updater item construction and normalization, without Qt controls."""
+
 from __future__ import annotations
 
-from ..model.node_types.parts import BoundaryPartNode
-from ..model.configuration import symmetry_constraint, updater_item_defaults
 from ...constants import CONSTANT
 from ..model import registry as R
+from ..model.configuration import symmetry_constraint, updater_item_defaults
+from ..model.node_types.parts import BoundaryPartNode
 from ..model.problem import SurfaceNode
 
 
@@ -12,7 +13,11 @@ def symmetry_item(item_type: str, surfaces: list[SurfaceNode]) -> dict | None:
     item = symmetry_constraint(item_type)
     if item_type != "Custom":
         spec = R.SURFACE_SYMMETRY_CONSTRAINTS[item_type]
-        compatible = [index for index, surface in enumerate(surfaces) if R.surface_factory_for_type(surface.surface_type) == spec.factory]
+        compatible = [
+            index
+            for index, surface in enumerate(surfaces)
+            if R.surface_factory_for_type(surface.surface_type) == spec.factory
+        ]
         if not compatible or (spec.related_surface and len(compatible) < 2):
             return None
         if spec.related_surface:
@@ -21,10 +26,15 @@ def symmetry_item(item_type: str, surfaces: list[SurfaceNode]) -> dict | None:
 
 
 def updater_item(item_type: str, category: str, custom_class: str = "") -> dict:
-    item = {"type": item_type, "params": {} if item_type == "Custom" else updater_item_defaults(
-        item_type,
-        category,
-    )}
+    item = {
+        "type": item_type,
+        "params": {}
+        if item_type == "Custom"
+        else updater_item_defaults(
+            item_type,
+            category,
+        ),
+    }
     if custom_class:
         item["custom_class"] = custom_class
     return item
@@ -39,7 +49,9 @@ def distance_matrix(
     if isinstance(stored, (list, tuple)):
         for row in stored:
             if isinstance(row, (list, tuple)):
-                rows.append([value if isinstance(value, str) else float(value) for value in row])
+                rows.append(
+                    [value if isinstance(value, str) else float(value) for value in row]
+                )
             elif isinstance(row, (int, float)):
                 rows.append([float(row)])
     out = []
@@ -48,9 +60,11 @@ def distance_matrix(
         out.append(row[:size] + [default] * (size - len(row)))
     return out
 
+
 def specs_for(group: str, category: str):
     return tuple(
-        node for node in R.UPDATER_CATALOG[category].values()
+        node
+        for node in R.UPDATER_CATALOG[category].values()
         if node.group == group and not node.hidden
     )
 
@@ -60,6 +74,7 @@ def find_spec(itype: str, category: str):
 
 
 from dataclasses import dataclass
+
 from ..model.problem import Node, ProblemDefinition, UpdaterNode
 
 
@@ -85,18 +100,38 @@ def updater_sections(
     ):
         if group is not None and kind != group:
             continue
-        selected = min(max(index, 0), len(configs) - 1) if index is not None and configs else None
+        selected = (
+            min(max(index, 0), len(configs) - 1)
+            if index is not None and configs
+            else None
+        )
         for position, config in enumerate(configs):
             if selected is None or position == selected:
-                sections.append(UpdaterSection(kind, config, position, len(configs), target_for(config)))
+                sections.append(
+                    UpdaterSection(
+                        kind, config, position, len(configs), target_for(config)
+                    )
+                )
     return sections
 
 
 class UpdaterItems:
     """Shared ordered-item policy for objectives, penalties and symmetries."""
-    def __init__(self, config: dict, group: str, category: str, problem: ProblemDefinition):
-        self.config, self.group, self.category, self.problem = config, group, category, problem
-        self.key = {"objectives": "objective_functions", "geometry_symmetry": "symmetry_constraints", "constraints": "constraints"}[category]
+
+    def __init__(
+        self, config: dict, group: str, category: str, problem: ProblemDefinition
+    ):
+        self.config, self.group, self.category, self.problem = (
+            config,
+            group,
+            category,
+            problem,
+        )
+        self.key = {
+            "objectives": "objective_functions",
+            "geometry_symmetry": "symmetry_constraints",
+            "constraints": "constraints",
+        }[category]
 
     @property
     def items(self) -> list[dict]:
@@ -104,13 +139,25 @@ class UpdaterItems:
 
     @property
     def surfaces(self):
-        target = self.problem.config_part_node(self.config) if self.group == "geometry" else None
+        target = (
+            self.problem.config_part_node(self.config)
+            if self.group == "geometry"
+            else None
+        )
         return target.surfaces if isinstance(target, BoundaryPartNode) else []
 
     def specs(self) -> dict[str, type[Node]]:
         if self.category == "geometry_symmetry":
-            allowed = set(R.available_surface_symmetry_types(surface.surface_type for surface in self.surfaces)) | {"Custom"}
-            return {name: spec for name, spec in R.SURFACE_SYMMETRY_CONSTRAINTS.items() if name in allowed}
+            allowed = set(
+                R.available_surface_symmetry_types(
+                    surface.surface_type for surface in self.surfaces
+                )
+            ) | {"Custom"}
+            return {
+                name: spec
+                for name, spec in R.SURFACE_SYMMETRY_CONSTRAINTS.items()
+                if name in allowed
+            }
         return {spec.type_name: spec for spec in specs_for(self.group, self.category)}
 
     def spec(self, item: dict) -> type[Node] | None:
@@ -119,20 +166,36 @@ class UpdaterItems:
         return find_spec(item["type"], self.category)
 
     def compatible_surfaces(self, spec: type[Node]):
-        return [(index, surface) for index, surface in enumerate(self.surfaces) if R.surface_factory_for_type(surface.surface_type) == spec.factory]
+        return [
+            (index, surface)
+            for index, surface in enumerate(self.surfaces)
+            if R.surface_factory_for_type(surface.surface_type) == spec.factory
+        ]
 
     def custom_choices(self):
         from ..codegen.custom_classes import custom_options, updater_item_base
-        candidates = {name: expression for name in self.specs() if (expression := updater_item_base(
-            name,
-            self.category,
-        )) is not None}
+
+        candidates = {
+            name: expression
+            for name in self.specs()
+            if (
+                expression := updater_item_base(
+                    name,
+                    self.category,
+                )
+            )
+            is not None
+        }
         choices = custom_options(self.problem, candidates)
         taken = {custom.name for _, custom in choices}
-        choices.extend((name, custom) for name, custom in custom_options(
-            self.problem,
-            {"Custom": updater_item_base("Custom", self.category, self.group)},
-        ) if custom.name not in taken)
+        choices.extend(
+            (name, custom)
+            for name, custom in custom_options(
+                self.problem,
+                {"Custom": updater_item_base("Custom", self.category, self.group)},
+            )
+            if custom.name not in taken
+        )
         return choices
 
     def default_element_name(self) -> str:
@@ -148,10 +211,14 @@ class UpdaterItems:
         return elements[0] if len(elements) == 1 else ""
 
     def add(self, item_type: str, custom_class: str = "") -> bool:
-        item = symmetry_item(item_type, self.surfaces) if self.category == "geometry_symmetry" else updater_item(
-            item_type,
-            self.category,
-            custom_class,
+        item = (
+            symmetry_item(item_type, self.surfaces)
+            if self.category == "geometry_symmetry"
+            else updater_item(
+                item_type,
+                self.category,
+                custom_class,
+            )
         )
         if item is None:
             return False
@@ -161,11 +228,15 @@ class UpdaterItems:
         return True
 
     def remove(self, item: dict) -> None:
-        index = next(index for index, candidate in enumerate(self.items) if candidate is item)
+        index = next(
+            index for index, candidate in enumerate(self.items) if candidate is item
+        )
         self.items.pop(index)
 
     def move(self, item: dict, offset: int) -> bool:
-        source = next(index for index, candidate in enumerate(self.items) if candidate is item)
+        source = next(
+            index for index, candidate in enumerate(self.items) if candidate is item
+        )
         target = source + offset
         if not 0 <= target < len(self.items):
             return False
@@ -173,16 +244,38 @@ class UpdaterItems:
         return True
 
 
-def editor_signature(problem: ProblemDefinition, sections: list[UpdaterSection], category: str | None) -> tuple:
+def editor_signature(
+    problem: ProblemDefinition, sections: list[UpdaterSection], category: str | None
+) -> tuple:
     """Structural changes which require rebuilding an updater page, excluding values."""
     records = []
     for section in sections:
-        surfaces = section.target.surfaces if isinstance(section.target, BoundaryPartNode) else []
+        surfaces = (
+            section.target.surfaces
+            if isinstance(section.target, BoundaryPartNode)
+            else []
+        )
         item_order = tuple(
-            tuple((id(item), item["type"], item.get("custom_class")) for item in section.config.get(key, []))
+            tuple(
+                (id(item), item["type"], item.get("custom_class"))
+                for item in section.config.get(key, [])
+            )
             for key in ("objective_functions", "constraints", "symmetry_constraints")
         )
-        records.append((section.group, id(section.config), section.config.get("custom_class"), section.target.name if section.target else None,
-                        tuple(id(surface) for surface in surfaces), item_order))
-    return (id(problem), category, tuple(records), tuple(helper.name for helper in problem.helper_variables),
-            tuple((custom.name, custom.base_class) for custom in problem.custom_classes))
+        records.append(
+            (
+                section.group,
+                id(section.config),
+                section.config.get("custom_class"),
+                section.target.name if section.target else None,
+                tuple(id(surface) for surface in surfaces),
+                item_order,
+            )
+        )
+    return (
+        id(problem),
+        category,
+        tuple(records),
+        tuple(helper.name for helper in problem.helper_variables),
+        tuple((custom.name, custom.base_class) for custom in problem.custom_classes),
+    )

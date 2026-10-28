@@ -1,4 +1,5 @@
 """Part-specific set catalogs for fields, independent of preview actors."""
+
 from __future__ import annotations
 
 import json
@@ -7,10 +8,17 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypeVar
+
+from ..model.node_types.parts import (
+    BoundaryPartNode,
+    BoxPartNode,
+    CADPartNode,
+    INPPartNode,
+    OffsetBoundaryPartNode,
+)
+from ..model.node_types.surfaces import BREPSurfaceNode
 from ..model.problem import PartNode, ProblemDefinition
 from .cad import cad_part_from_node
-from ..model.node_types.parts import BoundaryPartNode, OffsetBoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode
-from ..model.node_types.surfaces import BREPSurfaceNode
 
 
 @dataclass(frozen=True)
@@ -43,9 +51,13 @@ def _read_inp_sets(path: str, modified_ns: int, size: int) -> dict[str, PartSets
                     parameters[key.strip().lower()] = value.strip().strip('"')
             if keyword == "*part":
                 name = parameters.get("name")
-                current = declarations.setdefault(
-                    name, {"nodes": [], "surfaces": [], "elements": []}
-                ) if name else None
+                current = (
+                    declarations.setdefault(
+                        name, {"nodes": [], "surfaces": [], "elements": []}
+                    )
+                    if name
+                    else None
+                )
             elif keyword == "*end part":
                 current = None
             elif current is not None:
@@ -58,11 +70,13 @@ def _read_inp_sets(path: str, modified_ns: int, size: int) -> dict[str, PartSets
                     kind, key = target
                     name = parameters.get(key)
                     if name:
-                        current[kind].append(name.upper() if kind == "elements" else name)
+                        current[kind].append(
+                            name.upper() if kind == "elements" else name
+                        )
     return {
-        name: PartSets(**{
-            kind: tuple(dict.fromkeys(names)) for kind, names in sets.items()
-        })
+        name: PartSets(
+            **{kind: tuple(dict.fromkeys(names)) for kind, names in sets.items()}
+        )
         for name, sets in declarations.items()
     }
 
@@ -91,7 +105,11 @@ class PartSetCatalog:
     def invalidate(self) -> None:
         self._cache.clear()
 
-    def register(self, node_type: type[PartT], provider: Callable[[PartT, ProblemDefinition], PartSets]) -> None:
+    def register(
+        self,
+        node_type: type[PartT],
+        provider: Callable[[PartT, ProblemDefinition], PartSets],
+    ) -> None:
         self._providers[node_type] = provider
         self.invalidate()
 
@@ -107,16 +125,27 @@ class PartSetCatalog:
         if part is None:
             return PartSets()
         if part not in self._cache:
-            provider = next((self._providers[cls] for cls in type(part).__mro__ if cls in self._providers), None)
+            provider = next(
+                (
+                    self._providers[cls]
+                    for cls in type(part).__mro__
+                    if cls in self._providers
+                ),
+                None,
+            )
             if part.custom_class:
                 from .part_mesh import build_part_mesh
 
                 model = build_part_mesh(part, self.problem)
                 self._cache[part] = PartSets(
-                    tuple(model.set_nodes), tuple(model.surfaces.keys()), tuple(model.elems)
+                    tuple(model.set_nodes),
+                    tuple(model.surfaces.keys()),
+                    tuple(model.elems),
                 )
             else:
-                self._cache[part] = provider(part, self.problem) if provider else PartSets()
+                self._cache[part] = (
+                    provider(part, self.problem) if provider else PartSets()
+                )
         return self._cache[part]
 
     @staticmethod
@@ -125,11 +154,15 @@ class PartSetCatalog:
         names = [f"surface_{index}_All" for index in range(surface_count)]
         if isinstance(part, OffsetBoundaryPartNode):
             names.extend(f"surface_{index}_offset" for index in range(1, surface_count))
-        end_nodes = tuple(
-            f"surface_0_{name}" for name in part.surfaces[0].end_node_set_names
-        ) if surface_count else ()
+        end_nodes = (
+            tuple(f"surface_0_{name}" for name in part.surfaces[0].end_node_set_names)
+            if surface_count
+            else ()
+        )
         faces = [
-            name for surface in part.surfaces if isinstance(surface, BREPSurfaceNode)
+            name
+            for surface in part.surfaces
+            if isinstance(surface, BREPSurfaceNode)
             for name in json.loads(surface.brep_metadata).get("face_map", {})
         ]
         surface_sets: list[str] = []
@@ -139,27 +172,51 @@ class PartSetCatalog:
                 continue
             prefix = f"surface_{index}"
             metadata = json.loads(surface.brep_metadata)
-            selections = [*json.loads(surface.brep_metadata).get("face_map", {}), *metadata.get("surface_sets", {})]
+            selections = [
+                *json.loads(surface.brep_metadata).get("face_map", {}),
+                *metadata.get("surface_sets", {}),
+            ]
             surface_sets.extend(f"{prefix}_{name}" for name in selections)
             node_sets.extend(f"{prefix}_{name}_nodes" for name in selections)
             node_sets.extend(
                 f"{prefix}_{name}"
-                for name in (*metadata.get("edge_map", {}), *metadata.get("vertex_map", {}),
-                             *metadata.get("node_sets", {}))
+                for name in (
+                    *metadata.get("edge_map", {}),
+                    *metadata.get("vertex_map", {}),
+                    *metadata.get("node_sets", {}),
+                )
             )
         return PartSets(
-            nodes=("all", "surface_all") + tuple(names) + end_nodes + tuple(f"{name}_nodes" for name in faces) + tuple(node_sets),
-            surfaces=tuple(dict.fromkeys([
-                "extern", part.exterior_surface or "extern", *names, *faces, *surface_sets,
-            ])),
-            elements=("C3D4", "C3D6") if isinstance(part, OffsetBoundaryPartNode) else ("C3D4",),
+            nodes=("all", "surface_all")
+            + tuple(names)
+            + end_nodes
+            + tuple(f"{name}_nodes" for name in faces)
+            + tuple(node_sets),
+            surfaces=tuple(
+                dict.fromkeys(
+                    [
+                        "extern",
+                        part.exterior_surface or "extern",
+                        *names,
+                        *faces,
+                        *surface_sets,
+                    ]
+                )
+            ),
+            elements=("C3D4", "C3D6")
+            if isinstance(part, OffsetBoundaryPartNode)
+            else ("C3D4",),
         )
 
     @staticmethod
     def box(part: BoxPartNode, problem: ProblemDefinition) -> PartSets:
         return PartSets(
-            nodes=("all",) + tuple(f"nodes_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
-            surfaces=(part.exterior_surface or "extern",) + tuple(f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
+            nodes=("all",)
+            + tuple(f"nodes_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
+            surfaces=(part.exterior_surface or "extern",)
+            + tuple(
+                f"surface_{axis}{side}" for axis in "xyz" for side in ("min", "max")
+            ),
             elements=("C3D8",),
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pyvista as pv
 import pytest
 from PySide6.QtTest import QSignalSpy
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
 from morphopt.ui.application import ProblemLibrary
@@ -94,13 +95,14 @@ def workbench_with_vtk(app, monkeypatch):
     from morphopt.ui.widgets import viewer
 
     class OffscreenHost(QWidget):
+        viewChanged = Signal()
         """Use real PyVista actors without requiring a Qt OpenGL widget."""
 
         def __init__(self, parent=None):
             super().__init__(parent)
             self.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
 
-    monkeypatch.setattr(viewer, "_PlotHost", OffscreenHost)
+    monkeypatch.setattr(viewer, "PlotViewport", OffscreenHost)
     problem = ProblemLibrary.create("shapeopt")
     window = workbench.Workbench(problem)
     failures = []
@@ -145,10 +147,11 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
     problem, viewer = window.problem, window.viewer
     pressure = next(n for n in problem.fea_components() if n.type == "Pressure")
     couple = next(n for n in problem.fea_components() if n.type == "Couple")
-    problem.steps.num_steps = 2
-    problem.steps.step_values.append({pressure: [0.04]})
+    first_case = next(iter(problem.steps.step_values))
+    second_case = "load_case_2"
+    problem.steps.step_values[second_case] = {pressure: [0.04]}
     window.refresh_coordinator.refresh_now(problem.steps)
-    viewer.step_combo.setCurrentIndex(viewer.step_combo.findData(1))
+    viewer.step_combo.setCurrentIndex(viewer.step_combo.findData(second_case))
     viewer.host.plotter.camera_position = [(150, -100, 80), (0, 0, 35), (0, 0, 1)]
     camera = viewer.host.plotter.camera_position
     base_actors = {
@@ -156,7 +159,7 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
         for _, _, item in viewer.geometry.scene.base_meshes
     }
     assert viewer.renderer._overlay_actors
-    assert any(isinstance(item, CouplingLoad) for item in viewer.loads.build(viewer.geometry, 1).items)
+    assert any(isinstance(item, CouplingLoad) for item in viewer.loads.build(viewer.geometry, second_case).items)
     rendered = []
     draw_loads = viewer.renderer.draw_loads
 
@@ -171,9 +174,9 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
 
     assert not failures
     assert couple not in problem.fea_components()
-    assert pressure in problem.steps.step_values[0]
-    assert pressure in problem.steps.step_values[1]
-    assert viewer.step_combo.currentData() == 1
+    assert pressure in problem.steps.step_values[first_case]
+    assert pressure in problem.steps.step_values[second_case]
+    assert viewer.step_combo.currentData() == second_case
     assert viewer.host.plotter.camera_position == camera
     assert all(viewer.host.plotter.renderer.actors[name] is actor for name, actor in base_actors.items())
     items = rendered[-1].items
@@ -187,7 +190,7 @@ def test_deleting_couple_preserves_other_loads_step_and_camera(workbench_with_vt
     # after drawing geometry and prevent every load from being drawn.
     window.refresh_coordinator.refresh_now()
     assert not failures
-    assert viewer.step_combo.currentData() == 1
+    assert viewer.step_combo.currentData() == second_case
     assert viewer.host.plotter.camera_position == camera
     assert any(isinstance(item, ArrowLoad) for item in rendered[-1].items)
     assert viewer.renderer._overlay_actors

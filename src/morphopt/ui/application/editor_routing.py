@@ -1,11 +1,11 @@
 """Pure routing from model-tree nodes to definition editor pages."""
 
 from __future__ import annotations
-from ..i18n import localized_message
 
 from dataclasses import dataclass
 from enum import Enum, auto
 
+from ..i18n import localized_message
 from ..model.problem import Node, ProblemDefinition
 from ..presentation.navigation import ObjectiveItemTreeNode
 
@@ -80,7 +80,9 @@ def route_editor(node: Node | None) -> EditorRoute:
     return EditorRoute(EditorKind.PROPERTIES, node)
 
 
-def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | None) -> list[Node]:
+def managed_nodes(
+    problem: ProblemDefinition | None, mode: str, focus: Node | None
+) -> list[Node]:
     """Return the items owned by a definition page, in model order."""
     from ..model.problem import (
         CADOperationNode,
@@ -112,5 +114,14 @@ def managed_nodes(problem: ProblemDefinition | None, mode: str, focus: Node | No
     if mode == "helper_functions":
         return list(problem.helper_functions)
     if mode == "materials":
-        return [focus] if isinstance(focus, MaterialNode) and focus in problem.material_nodes() else []
-    raise ValueError(localized_message("ui.errors.editor_routing.unknown_definition_manager_mode_value", value_0=mode))
+        return (
+            [focus]
+            if isinstance(focus, MaterialNode) and focus in problem.material_nodes()
+            else []
+        )
+    raise ValueError(
+        localized_message(
+            "ui.errors.editor_routing.unknown_definition_manager_mode_value",
+            value_0=mode,
+        )
+    )

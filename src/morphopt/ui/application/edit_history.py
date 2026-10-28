@@ -1,4 +1,5 @@
 """Branching document history with explicit capacity management, without Qt."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
@@ -42,7 +43,9 @@ class EditHistory:
     """
 
     def __init__(self, *, max_nodes: int | None = None) -> None:
-        max_nodes = max_nodes if max_nodes is not None else CONSTANT.UI.HISTORY.MAX_NODES
+        max_nodes = (
+            max_nodes if max_nodes is not None else CONSTANT.UI.HISTORY.MAX_NODES
+        )
         if max_nodes < 1:
             raise ValueError("History node limit must be positive.")
         self.max_nodes = max_nodes
@@ -142,21 +145,31 @@ class EditHistory:
     def remember_selection(self, selection: tuple[int, ...] | None) -> None:
         self.current_node.snapshot = replace(self.current, selection=selection)
 
-    def commit(self, snapshot: EditSnapshot, *, merge_key: object | None = None) -> bool:
+    def commit(
+        self, snapshot: EditSnapshot, *, merge_key: object | None = None
+    ) -> bool:
         if snapshot.state == self.current.state:
             return False
         current = self.current_node
-        if (merge_key is not None and merge_key == self._merge_key
-                and self.can_undo and not current.children):
+        if (
+            merge_key is not None
+            and merge_key == self._merge_key
+            and self.can_undo
+            and not current.children
+        ):
             current.snapshot = replace(
-                snapshot, step_id=self._current_id, created_at=self.current.created_at,
+                snapshot,
+                step_id=self._current_id,
+                created_at=self.current.created_at,
             )
             parent_id = current.parent_id
             assert parent_id is not None
             parent = self.node(parent_id)
             if snapshot.state == parent.snapshot.state:
                 parent.children.remove(self._current_id)
-                parent.preferred_child = parent.children[-1] if parent.children else None
+                parent.preferred_child = (
+                    parent.children[-1] if parent.children else None
+                )
                 del self._nodes[self._current_id]
                 self._current_id = parent.snapshot.step_id
                 merge_key = None

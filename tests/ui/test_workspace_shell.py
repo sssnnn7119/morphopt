@@ -33,6 +33,8 @@ def test_analysis_is_unavailable_until_a_task_is_opened(monkeypatch):
 
     app = QApplication.instance() or QApplication([])
     window = shell(monkeypatch)
+    assert window._visualization_action in window._theme_menu.actions()
+    assert window._visualization_action.text() == tr("ui.visualization.title")
     assert window.navigation.count() == 2
     assert not window.navigation.isTabEnabled(1)
     assert window._observer is None
@@ -49,6 +51,51 @@ def test_analysis_is_unavailable_until_a_task_is_opened(monkeypatch):
     assert window._observer is None
     window.deleteLater()
     app.processEvents()
+
+
+def test_history_export_actions_are_owned_and_do_not_depend_on_add_action_return(monkeypatch):
+    import gc
+
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QMenu
+
+    from morphopt.ui.observe_panel import ObserverPanel
+
+    app = QApplication.instance() or QApplication([])
+    add_action = QMenu.addAction
+    calls = []
+
+    def insert_action(menu, action):
+        assert isinstance(action, QAction)
+        add_action(menu, action)
+        # The QAction overload need not return the inserted action.
+        return None
+
+    monkeypatch.setattr(QMenu, "addAction", insert_action)
+    monkeypatch.setattr(ObserverPanel, "_export_surfaces", lambda self: calls.append("surfaces"))
+    monkeypatch.setattr(
+        ObserverPanel, "_export_history_gif", lambda self, mode: calls.append(mode)
+    )
+    window = shell(monkeypatch)
+    try:
+        window._ensure_observer()
+        panel = window._observer.panel
+        gc.collect()
+        panel.apply_language()
+        actions = (
+            panel.action_export_surfaces, panel.action_export_design_gif,
+            panel.action_export_deformation_gif,
+        )
+        assert panel.export_menu.actions() == list(actions)
+        for action in actions:
+            assert isinstance(action, QAction)
+            assert action.parent() is panel.export_menu
+            action.setEnabled(True)
+            action.trigger()
+        assert calls == ["surfaces", "design", "deformation"]
+    finally:
+        window.deleteLater()
+        app.processEvents()
 
 
 @pytest.mark.parametrize('entry', ['definition_button', 'analysis_menu'])

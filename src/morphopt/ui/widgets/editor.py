@@ -30,13 +30,12 @@ from ..application.editing import rename_node, set_node_field
 from ..application.fields import fields_for_node
 from ..i18n import tr
 from ..model.problem import Node
-from ..presentation.labels import node_title, reference_choice_title
+from ..presentation.labels import display_choice, node_title, reference_choice_title
 from ..refresh import RefreshContext
 from ..theme import theme_manager
 from .codeeditor import CodeEditor
 from .collection_controls import ActionButton
 from .param_form import ParamForm
-from .values import display_choice
 
 
 class PropertyEditor(QWidget):

@@ -1,22 +1,31 @@
 """Definition construction and editing policies shared by all UI entry points."""
-from __future__ import annotations
-from ..i18n import localized_message
 
-from ..model.problem import (
-    CADOperationNode, HelperFunctionNode, HelperVariableNode, FEAComponentNode,
-    MaterialNode, Node, PartNode, ProblemDefinition, SurfaceNode,
-)
+from __future__ import annotations
+
+from ..i18n import localized_message
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
+from ..model.problem import (
+    CADOperationNode,
+    CustomClassNode,
+    CustomFunctionNode,
+    FEAComponentNode,
+    HelperFunctionNode,
+    HelperVariableNode,
+    MaterialNode,
+    MethodOverrideNode,
+    Node,
+    PartNode,
+    ProblemDefinition,
+    SolverNode,
+    StepsNode,
+    SurfaceNode,
+)
 from ..model.registry import (
-    LOAD_TYPES,
     PART_TYPES,
 )
-from ..model.problem import (
-    CustomClassNode, CustomFunctionNode, MethodOverrideNode, StepsNode, SolverNode,
-)
 from ..schemes.base import get_template
-from .updaters import symmetry_item, updater_item
 from .part_sets import PartSetCatalog
+from .updaters import symmetry_item, updater_item
 
 
 class DefinitionCommands:
@@ -32,25 +41,48 @@ class DefinitionCommands:
     def add_helper(self, kind: str) -> Node:
         types = {
             "helper_variable": (HelperVariableNode, "constant", {"value": "None"}),
-            "helper_function": (HelperFunctionNode, "helper", {"parameters": "", "body": "pass"}),
+            "helper_function": (
+                HelperFunctionNode,
+                "helper",
+                {"parameters": "", "body": "pass"},
+            ),
         }
         node_type, base, params = types[kind]
-        taken = {item.name for item in self.problem.helper_variables + self.problem.helper_functions}
+        taken = {
+            item.name
+            for item in self.problem.helper_variables + self.problem.helper_functions
+        }
         index = 1
         while f"{base}_{index}" in taken:
             index += 1
         node = node_type(name=f"{base}_{index}", params=params)
-        entries = self.problem.helper_variables if kind == "helper_variable" else self.problem.helper_functions
+        entries = (
+            self.problem.helper_variables
+            if kind == "helper_variable"
+            else self.problem.helper_functions
+        )
         entries.append(node)
         return node
 
     def remove_helper(self, node: Node) -> str:
-        entries = self.problem.helper_variables if node.kind == "helper_variable" else self.problem.helper_functions
+        entries = (
+            self.problem.helper_variables
+            if node.kind == "helper_variable"
+            else self.problem.helper_functions
+        )
         entries.remove(node)
-        return "helper_variables_group" if node.kind == "helper_variable" else "helper_functions_group"
+        return (
+            "helper_variables_group"
+            if node.kind == "helper_variable"
+            else "helper_functions_group"
+        )
 
     def move_helper(self, node: Node, delta: int) -> bool:
-        entries = self.problem.helper_variables if node.kind == "helper_variable" else self.problem.helper_functions
+        entries = (
+            self.problem.helper_variables
+            if node.kind == "helper_variable"
+            else self.problem.helper_functions
+        )
         index = entries.index(node)
         target = index + delta
         if not 0 <= target < len(entries):
@@ -62,7 +94,12 @@ class DefinitionCommands:
         name = self.problem.suggest_part_name()
         if PART_TYPES[part_type].custom_only:
             if not custom_class:
-                raise ValueError(localized_message("ui.errors.editing.value_requires_a_custom_class", value_0=part_type))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.editing.value_requires_a_custom_class",
+                        value_0=part_type,
+                    )
+                )
             node = PartNode.create(part_type, name=name)
         else:
             node = get_template(self.problem.scheme).make_part(part_type, name=name)
@@ -76,12 +113,16 @@ class DefinitionCommands:
         owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
-        node = get_template(self.problem.scheme).make_surface(surface_type, len(owner.surfaces))
+        node = get_template(self.problem.scheme).make_surface(
+            surface_type, len(owner.surfaces)
+        )
         node.custom_class = custom_class
         self.problem.add_surface(node, part=owner)
         return node
 
-    def add_component(self, component_type: str, custom_class: str = "") -> FEAComponentNode:
+    def add_component(
+        self, component_type: str, custom_class: str = ""
+    ) -> FEAComponentNode:
         node = get_template(self.problem.scheme).make_component(component_type)
         node.custom_class = custom_class
         node.name = self.problem.suggest_component_name(node.name_hint)
@@ -89,7 +130,9 @@ class DefinitionCommands:
         return node
 
     def add_material(self, material_type: str, custom_class: str = "") -> MaterialNode:
-        node = get_template(self.problem.scheme).make_material(material_type=material_type)
+        node = get_template(self.problem.scheme).make_material(
+            material_type=material_type
+        )
         names = {material.name for material in self.problem.material_nodes()}
         index = 1
         while f"material_{index}" in names:
@@ -122,12 +165,19 @@ class DefinitionCommands:
         if self.problem.updater is None:
             return []
         candidates = [
-            node for node in self.problem.parts() + self.problem.material_nodes()
+            node
+            for node in self.problem.parts() + self.problem.material_nodes()
             if node.is_updatable
         ]
         taken = {
-            *(self.problem.config_part_node(config) for config in self.problem.updater.geometry),
-            *(self.problem.config_material_node(config) for config in self.problem.updater.materials),
+            *(
+                self.problem.config_part_node(config)
+                for config in self.problem.updater.geometry
+            ),
+            *(
+                self.problem.config_material_node(config)
+                for config in self.problem.updater.materials
+            ),
         }
         return [node for node in candidates if node not in taken]
 
@@ -146,11 +196,17 @@ class DefinitionCommands:
         return True
 
 
-def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | None = None) -> bool:
+def set_node_field(
+    node: Node, key: str, value, problem: ProblemDefinition | None = None
+) -> bool:
     """Apply fields through aggregate reference/rename rules, never through widgets."""
     from ..model.problem import INSTANCE_REFERENCE_FIELDS, REFERENCE_POINT_FIELDS
+
     if problem is not None:
-        if isinstance(node, FEAComponentNode) and key in {*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS}:
+        if isinstance(node, FEAComponentNode) and key in {
+            *INSTANCE_REFERENCE_FIELDS,
+            *REFERENCE_POINT_FIELDS,
+        }:
             return problem.set_component_reference(node, key, value)
         if key == "part_name" and isinstance(node, MaterialNode):
             previous_part = node.part
@@ -162,7 +218,8 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
 
                 scene = PreviewGeometry().build(problem, "part", node.part)
                 bounds = (
-                    None if any(isinstance(item, MessageItem) for item in scene.items)
+                    None
+                    if any(isinstance(item, MessageItem) for item in scene.items)
                     else scene.bounds
                 )
                 node.bounding_box = list(bounds) if bounds is not None else [0.0] * 6
@@ -177,7 +234,9 @@ def set_node_field(node: Node, key: str, value, problem: ProblemDefinition | Non
     return True
 
 
-def rename_node(node: Node, name: str, problem: ProblemDefinition | None = None) -> bool:
+def rename_node(
+    node: Node, name: str, problem: ProblemDefinition | None = None
+) -> bool:
     name = name.strip()
     if not name or name == node.name:
         return False
@@ -191,6 +250,7 @@ def rename_node(node: Node, name: str, problem: ProblemDefinition | None = None)
 
 class HelperCodeSession:
     """Bind and validate an editable helper definition without UI state."""
+
     def __init__(self, problem: ProblemDefinition, node: Node | None):
         self.problem, self.node = problem, node
 
@@ -212,6 +272,7 @@ class HelperCodeSession:
         import ast
         import keyword
         from textwrap import indent
+
         node = self.node
         if node is None:
             return
@@ -219,7 +280,11 @@ class HelperCodeSession:
             compile(self.problem.helper_code, "<helper code>", "exec")
         elif node.kind in {"helper_variable", "helper_function"}:
             if not node.name.isidentifier() or keyword.iskeyword(node.name):
-                raise ValueError(localized_message("ui.errors.editing.helper_names_must_be_valid_python_identifiers"))
+                raise ValueError(
+                    localized_message(
+                        "ui.errors.editing.helper_names_must_be_valid_python_identifiers"
+                    )
+                )
             if node.kind == "helper_variable":
                 ast.parse(node.value, mode="eval")
             else:
@@ -232,21 +297,34 @@ class HelperCodeSession:
 
 class CustomClassSession:
     """Edit reusable classes and update every use through one reference policy."""
+
     def __init__(self, problem: ProblemDefinition):
         self.problem = problem
 
     def catalog(self):
         from ..codegen.custom_classes import framework_class_catalog
+
         return framework_class_catalog(self.problem)
 
     def validate_name(self, name: str, current: CustomClassNode | None = None) -> None:
         from ..codegen.custom_classes import validate_custom_name
-        validate_custom_name(name, self.catalog())
-        if any(node is not current and node.name == name for node in self.problem.custom_classes):
-            raise ValueError(localized_message("ui.errors.editing.class_name_already_exists_value", value_0=name))
 
-    def add_class(self, name: str, base: str = "", class_type: str = "override") -> CustomClassNode:
+        validate_custom_name(name, self.catalog())
+        if any(
+            node is not current and node.name == name
+            for node in self.problem.custom_classes
+        ):
+            raise ValueError(
+                localized_message(
+                    "ui.errors.editing.class_name_already_exists_value", value_0=name
+                )
+            )
+
+    def add_class(
+        self, name: str, base: str = "", class_type: str = "override"
+    ) -> CustomClassNode:
         from ..model.problem import CustomClassNode
+
         if class_type not in {"new", "override"}:
             raise ValueError(f"Unsupported custom class type: {class_type}")
         self.validate_name(name)
@@ -259,7 +337,11 @@ class CustomClassSession:
 
     def _replace_uses(self, old: str, new: str) -> None:
         problem = self.problem
-        problem.class_bindings = {path: new if name == old else name for path, name in problem.class_bindings.items() if new or name != old}
+        problem.class_bindings = {
+            path: new if name == old else name
+            for path, name in problem.class_bindings.items()
+            if new or name != old
+        }
         for node in problem.root.iter_nodes():
             if node.custom_class == old:
                 node.custom_class = new
@@ -290,30 +372,40 @@ class CustomClassSession:
         """Classes whose inheritance chain includes the selected custom class."""
         names = {node.name}
         while True:
-            children = {custom.name for custom in self.problem.custom_classes
-                        if custom.base_class in names}
+            children = {
+                custom.name
+                for custom in self.problem.custom_classes
+                if custom.base_class in names
+            }
             if children <= names:
                 break
             names.update(children)
-        return [custom for custom in self.problem.custom_classes
-                if custom is not node and custom.name in names]
+        return [
+            custom
+            for custom in self.problem.custom_classes
+            if custom is not node and custom.name in names
+        ]
 
     def remove(
         self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
     ) -> CustomClassNode | None:
         from ..model.problem import CustomClassNode
+
         if isinstance(node, CustomClassNode):
             for custom in [node, *self.dependent_classes(node)]:
                 self.problem.custom_classes.remove(custom)
                 self._replace_uses(custom.name, "")
             return None
-        owner = next(custom for custom in self.problem.custom_classes if node in custom.members)
+        owner = next(
+            custom for custom in self.problem.custom_classes if node in custom.members
+        )
         owner.remove_child(node)
         return owner
 
     @staticmethod
     def add_override(custom: CustomClassNode, spec) -> MethodOverrideNode:
         from ..model.problem import MethodOverrideNode
+
         override = MethodOverrideNode(name=spec.name, params={"body": spec.body})
         custom.add_child(override)
         return override
@@ -341,19 +433,25 @@ class CustomClassSession:
     @staticmethod
     def validate_body(override: MethodOverrideNode, spec) -> None:
         from textwrap import indent
+
         compile(
-            spec.header + "\n" + indent(override.body if override.body.strip() else "pass", "    "),
+            spec.header
+            + "\n"
+            + indent(override.body if override.body.strip() else "pass", "    "),
             "<method body>",
             "exec",
         )
 
     @staticmethod
     def validate_function(function: CustomFunctionNode) -> None:
-        from textwrap import indent
         import keyword
+        from textwrap import indent
+
         if not function.name.isidentifier() or keyword.iskeyword(function.name):
             raise ValueError(
-                localized_message("ui.errors.custom_classes.invalid_custom_function_name")
+                localized_message(
+                    "ui.errors.custom_classes.invalid_custom_function_name"
+                )
             )
         compile(
             f"def {function.name}({function.parameters}):\n"
@@ -379,6 +477,7 @@ class LoadCaseSession:
 
     def rename(self, name: str, new_name: str) -> None:
         from .load_cases import rename_case
+
         rename_case(self.problem, name, new_name)
 
     def move(self, name: str, delta: int) -> bool:
@@ -391,8 +490,11 @@ class LoadCaseSession:
         self.steps.step_values = {key: self.steps.step_values[key] for key in names}
         return True
 
-    def remove(self, name: str, *, remove_objectives: bool, remove_unused: bool) -> None:
+    def remove(
+        self, name: str, *, remove_objectives: bool, remove_unused: bool
+    ) -> None:
         from .load_cases import remove_case
+
         remove_case(self.problem, name, remove_objectives, remove_unused)
 
     def set_value(self, name: str, component: FEAComponentNode, text: str) -> bool:
@@ -414,6 +516,7 @@ class LoadCaseSession:
 
 class SolverTasks:
     """Read and write ordered load-case sequences for each process group."""
+
     def __init__(self, solver: SolverNode, problem: ProblemDefinition):
         self.solver, self.problem = solver, problem
 

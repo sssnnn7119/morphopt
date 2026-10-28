@@ -165,7 +165,7 @@ def test_selected_constructor_receives_ui_options_and_hooks_take_priority():
         "ThisController.Solver",
         "MySolver",
         "__init__",
-        "super().__init__(params, num_process, available_gpus, task_index_list)\nself.custom_init = True",
+        "super().__init__(params, num_process, process_devices, task_step_list)\nself.custom_init = True",
     )
     customize(
         problem,

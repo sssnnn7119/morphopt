@@ -17,7 +17,7 @@ from ..i18n import tr
 from ..model.problem import ProblemDefinition
 from ..presentation.labels import reference_choice_title
 from ..schemes.snippets import CodeSnippet, SnippetParameter
-from .values import combo_value
+from .param_form import combo_value
 
 
 class TemplateInsertDialog(QDialog):

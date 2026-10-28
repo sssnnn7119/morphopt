@@ -3,20 +3,28 @@
 from dataclasses import replace
 
 from ..palette import (
-    ChartStyle,
-    CodeEditorPalette,
     DEFAULT_LAYOUT_STYLE,
     DEFAULT_VIEWER_STYLE,
+    ChartStyle,
+    CodeEditorPalette,
     QuickstartPreviewStyle,
     ThemePalette,
 )
-
 
 _viewer = replace(
     DEFAULT_VIEWER_STYLE,
     geometry=replace(
         DEFAULT_VIEWER_STYLE.geometry,
-        instance_colors=("#347da5", "#a95e48", "#39866a", "#765b9d", "#a07927", "#63843b", "#a44c72", "#526f91"),
+        instance_colors=(
+            "#347da5",
+            "#a95e48",
+            "#39866a",
+            "#765b9d",
+            "#a07927",
+            "#63843b",
+            "#a44c72",
+            "#526f91",
+        ),
         uninstanced_color="#687783",
         cad_edge_color="#293746",
         cad_label_shape_color="#f1f4f7",
@@ -110,7 +118,12 @@ LIGHT = ThemePalette(
     ),
     deformation_mesh_color="#397da5",
     history_branch_colors=(
-        "#147db5", "#a33c98", "#9a6500", "#168052", "#b53b3b", "#455bb5",
+        "#147db5",
+        "#a33c98",
+        "#9a6500",
+        "#168052",
+        "#b53b3b",
+        "#455bb5",
     ),
     layout=DEFAULT_LAYOUT_STYLE,
 )

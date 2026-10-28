@@ -32,13 +32,16 @@ def geometry_asset_scene(asset: DefinitionAsset) -> PreviewScene:
             if asset.format == "stl":
                 scene = PreviewScene()
                 scene.add_base(
-                    asset.name, pv.read(path),
+                    asset.name,
+                    pv.read(path),
                     color=theme_manager.palette.viewer.geometry.uninstanced_color,
-                    show_edges=False, smooth_shading=True,
+                    show_edges=False,
+                    smooth_shading=True,
                 )
             elif asset.format == "inp":
                 part = INPPartNode(
-                    name=asset.name, mesh_file=str(path),
+                    name=asset.name,
+                    mesh_file=str(path),
                     inp_part_name=asset.node.inp_part_name,
                 )
                 scene = PreviewGeometry().build(problem, "part", part)

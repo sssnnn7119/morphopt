@@ -1,7 +1,7 @@
 """Shared naming for navigation, editor cards, menus and object selectors."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ..codegen.custom_classes import class_path_for_node
 from ..i18n import tr
@@ -18,10 +18,6 @@ from ..model.problem import (
 )
 from ..model.registry import (
     NODE_TYPES,
-    CAD_OPERATION_TYPES,
-    LOAD_TYPES,
-    MATERIAL_TYPES,
-    SURFACE_TYPES,
     UPDATER_CATALOG,
     SURFACE_SYMMETRY_CONSTRAINTS,
 )
@@ -328,3 +324,41 @@ def quickstart_summary(options) -> str:
         ))
     parts.append(tr('ui.widgets.quickstart.preview_save_or_run_the_generated_model_or_expand_its_tree_for_further_e'))
     return "<br><br>".join(parts)
+
+
+#: labels for degree-of-freedom check boxes (dof index -> short name)
+DOF_LABELS = {0: "X", 1: "Y", 2: "Z", 3: "Rx", 4: "Ry", 5: "Rz"}
+
+_CHOICE_LABELS = {
+    ("obj_type", "auto"): "ui.widgets.values.choice.auto",
+    ("obj_type", "node"): "ui.widgets.values.choice.node",
+    ("obj_type", "element"): "ui.widgets.values.choice.element",
+    ("obj_type", "part"): "ui.widgets.values.choice.part",
+    ("elementname", ""): "ui.widgets.values.choice.all",
+    ("inp_part_name", ""): "ui.widgets.values.choice.only_inp_part",
+    ("exterior_surface", ""): "ui.widgets.values.choice.default_exterior",
+}
+
+
+def display_choice(key: str, value) -> str:
+    """Return a localized label while retaining the backend choice value."""
+    labels = _CHOICE_LABELS.get((key, str(value)))
+    return tr(labels) if labels else str(value)
+
+
+
+def component_selection_title(category: str, component: Any) -> str:
+    """Label a visualizable component consistently in views and export forms."""
+    name = component.name
+    part_name = getattr(component, "part_name", None)
+    if part_name and part_name != name:
+        name = tr("ui.observation.component_name_with_part", name=name, part=part_name)
+    category_key = {
+        "Part": "ui.widgets.model_tree.container.geometry",
+        "FEA": "ui.widgets.model_tree.container.loads_group",
+        "Material": "ui.widgets.model_tree.container.materials",
+    }[category]
+    return tr(
+        "ui.observation.component_title", category=tr(category_key),
+        title=typed_title(name, type(component).__name__),
+    )

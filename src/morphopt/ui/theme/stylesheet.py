@@ -1,12 +1,11 @@
 """Load and render the modular Qt stylesheets used by every theme."""
 
+import re
 from dataclasses import fields
 from importlib.resources import files
-import re
 
 from .palette import ThemePalette
 from .styles import STYLESHEET_FILES
-
 
 _TOKEN_PATTERN = re.compile(r"@([a-z_]+)@")
 

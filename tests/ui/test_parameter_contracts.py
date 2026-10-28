@@ -299,19 +299,22 @@ def test_every_visible_material_field_reaches_its_constructor(material_type, mod
         assert material_parameters == {"mu": material.mumax, "kappa": material.kappamax}
 
 
-@pytest.mark.parametrize("gpus", [[], ["cuda:1"]])
-def test_solver_device_selection_and_task_groups_reach_backend(gpus, monkeypatch):
+@pytest.mark.parametrize("devices", [["cpu"] * 3, ["cpu", "cuda:1", "cpu"]])
+def test_solver_device_selection_and_task_groups_reach_backend(devices):
     problem = ProblemLibrary.create("shapeopt")
-    problem.solver.gpus = gpus
     problem.solver.num_process = 3
-    problem.solver.task_index_list = [[0, 1], [2]]
-    monkeypatch.setattr(torch.cuda, "device_count", lambda: 8)
+    problem.solver.process_devices = devices
+    first = next(iter(problem.steps.step_values))
+    for name in ("second", "third"):
+        problem.steps.step_values[name] = dict(problem.steps.step_values[first])
+    groups = [["second", first], ["third"]]
+    problem.solver.task_step_list = groups
     namespace = {"__name__": "parameter_contract"}
     exec(ProblemSession(problem).source(), namespace)
     solver = namespace["ThisController"].Solver(None)
-    assert solver.available_gpus == gpus
+    assert solver.process_devices == devices
     assert solver.num_process == 3
-    assert solver.task_index_list == [[0, 1], [2]]
+    assert solver.task_step_list == groups
 
 
 def test_surface_helper_variable_is_emitted_as_an_expression():

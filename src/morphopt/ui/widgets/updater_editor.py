@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -328,8 +327,14 @@ class UpdaterEditor(QWidget):
             iterations.editingFinished.connect(save_iterations)
             form.addRow(tr("ui.widgets.updater_editor.max_step_iter"), iterations)
 
-            defaults = CONSTANT.KERNEL.SHAPE_UPDATE if group == "geometry" else CONSTANT.KERNEL.SIMP_UPDATE
-            step_length = QLineEdit(str(cfg.get("max_step_length", defaults.MAX_STEP_LENGTH)))
+            defaults = (
+                CONSTANT.KERNEL.SHAPE_UPDATE
+                if group == "geometry"
+                else CONSTANT.KERNEL.SIMP_UPDATE
+            )
+            step_length = QLineEdit(
+                str(cfg.get("max_step_length", defaults.MAX_STEP_LENGTH))
+            )
             step_length.setToolTip(tr("ui.widgets.updater_editor.max_step_length_help"))
 
             def save_step_length() -> None:
@@ -446,11 +451,7 @@ class UpdaterEditor(QWidget):
         cur = cfg.get("if_update")
         chk = QCheckBox()
         chk.setChecked(True if cur is None else bool(cur))
-        chk.setToolTip(
-            tr(
-                "ui.widgets.updater_editor.material_update_help"
-            )
-        )
+        chk.setToolTip(tr("ui.widgets.updater_editor.material_update_help"))
         chk.toggled.connect(lambda v: self._set(cfg, "if_update", bool(v)))
         return chk
 

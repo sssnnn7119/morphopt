@@ -8,12 +8,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
-from pyvistaqt import QtInteractor
 
 from ..i18n import tr
 from ..model.problem import PartNode, ProblemDefinition
@@ -22,18 +20,10 @@ from ..refresh import RefreshContext
 from ..theme import theme_manager
 from ..visualization.geometry import PreviewGeometry
 from ..visualization.loads import LoadPreviewVisitor
-from ..visualization.scene import FaceSelection, LoadScene
 from ..visualization.rendering import apply_plotter_theme
+from ..visualization.scene import FaceSelection, LoadScene
 from .preview_renderer import PreviewRenderer
-
-
-class _PlotHost(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
-        self.plotter = QtInteractor(self, auto_update=False)
-        lay.addWidget(self.plotter.interactor)
+from .viewport import PlotViewport
 
 
 def _qt_to_vtk_position(
@@ -131,9 +121,6 @@ class PreviewViewer(QWidget):
         self.step_combo.currentIndexChanged.connect(self._on_step_changed)
         bar.addWidget(self.step_combo)
         bar.addStretch(1)
-        self._btn_reset = QPushButton(tr("ui.widgets.viewer.reset_view"))
-        self._btn_reset.clicked.connect(self._reset_view)
-        bar.addWidget(self._btn_reset)
         outer.addLayout(bar)
 
         section_bar = QHBoxLayout()
@@ -156,7 +143,8 @@ class PreviewViewer(QWidget):
         for control in (self.section_axis, self.section_slider, self.section_reverse):
             control.setEnabled(False)
 
-        self.host = _PlotHost(self)
+        self.host = PlotViewport(self)
+        self.host.viewChanged.connect(self._redraw_loads)
         outer.addWidget(self.host, 1)
         self._picked_face: FaceSelection | None = None
         self._set_selection: tuple[PartNode, str, str] | None = None
@@ -237,9 +225,13 @@ class PreviewViewer(QWidget):
     def _show_set_info(self) -> None:
         if self._set_selection is not None:
             part, kind, name = self._set_selection
-            self.face_info.setText(tr(
-                f"ui.part_sets.selected_{kind}", part=part.name, name=name,
-            ))
+            self.face_info.setText(
+                tr(
+                    f"ui.part_sets.selected_{kind}",
+                    part=part.name,
+                    name=name,
+                )
+            )
 
     def show_part_set(self, part: PartNode, kind: str, name: str) -> None:
         """Show a named set in its owning Part's local view."""
@@ -303,7 +295,6 @@ class PreviewViewer(QWidget):
         self._lbl_view.setText(tr("ui.widgets.viewer.view"))
         self._lbl_part.setText(tr("ui.widgets.viewer.part_2eacf781"))
         self._lbl_step.setText(tr("ui.widgets.viewer.step"))
-        self._btn_reset.setText(tr("ui.widgets.viewer.reset_view"))
         self.section_enabled.setText(tr("ui.widgets.viewer.section"))
         self.section_reverse.setText(tr("ui.widgets.viewer.section_reverse"))
         self.section_slider.setToolTip(tr("ui.widgets.viewer.section_position"))
@@ -420,15 +411,11 @@ class PreviewViewer(QWidget):
 
     def _sync_step_combo(self) -> None:
         steps = self._problem.steps if self._problem is not None else None
-        n = (
-            len(steps.step_values)
-            if steps is not None
-            else 0
-        )
+        n = len(steps.step_values) if steps is not None else 0
         with QSignalBlocker(self.step_combo):
             self.step_combo.clear()
             self.step_combo.addItem(tr("ui.widgets.viewer.no_load_step"), None)
-            for step in (steps.step_values if steps is not None else ()):
+            for step in steps.step_values if steps is not None else ():
                 self.step_combo.addItem(step, step)
             selected = self.step_combo.findData(self._selected_step)
             self.step_combo.setCurrentIndex(
@@ -443,10 +430,6 @@ class PreviewViewer(QWidget):
         index = combo.findData(value)
         if index >= 0:
             combo.setCurrentIndex(index)
-
-    def _reset_view(self) -> None:
-        self.host.plotter.reset_camera()
-        self._redraw_loads()
 
     def _rebuild_all(self, *, reset_camera: bool = False) -> None:
         if isinstance(self.host.plotter, QWidget) and not self.isVisible():

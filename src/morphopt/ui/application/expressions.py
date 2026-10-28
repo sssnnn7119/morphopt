@@ -15,16 +15,24 @@ class DefinitionValues:
     @property
     def namespace(self) -> dict[str, object]:
         if self._namespace is None:
-            import morphopt
             import numpy as np
             import torch
             import torchfea
 
-            namespace = {"morphopt": morphopt, "torchfea": torchfea, "np": np, "torch": torch}
+            import morphopt
+
+            namespace = {
+                "morphopt": morphopt,
+                "torchfea": torchfea,
+                "np": np,
+                "torch": torch,
+            }
             blocks = []
             if self.problem is not None:
                 blocks.append(self.problem.helper_code)
-                blocks.extend(f"{v.name} = {v.value}" for v in self.problem.helper_variables)
+                blocks.extend(
+                    f"{v.name} = {v.value}" for v in self.problem.helper_variables
+                )
                 blocks.extend(
                     f"def {f.name}({f.parameters}):\n{indent(f.body or 'pass', '    ')}"
                     for f in self.problem.helper_functions

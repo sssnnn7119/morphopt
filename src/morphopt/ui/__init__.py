@@ -18,9 +18,9 @@ ui/mainwindow.py     File/Settings menus, document path and workspace navigation
 ui/workbench.py      definition workspace
 ui/observe_panel.py  in-window observer + run/continue/stop controls
 ui/application/      definition, result and process application services
-ui/fea_worker.py     isolated one-shot FEA and data-export worker
-ui/cad_worker.py     isolated CAD-to-boundary conversion worker
-ui/surface_export_worker.py  archived BoundaryPart surface export worker
+ui/worker.py         one-shot CAD, FEA, and export task dispatcher (no Qt widgets)
+ui/processes.py      shared worker launch and UTF-8 process environment
+ui/widgets/history_export.py  shared history export forms and task lifecycle
 postprocess/         archive reading, history GIF and surface export, and result analysis (no Qt)
 ui/model/            data model (ProblemDefinition tree)
 ui/codegen/          ProblemDefinition -> ThisController source

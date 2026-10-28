@@ -60,6 +60,7 @@ from .refresh import Refreshable, RefreshContext, RefreshCoordinator
 from .schemes.base import scheme_label
 from .theme import theme_manager
 from .theme.fonts import font_manager
+from .widgets.asset_browser import AssetBrowser
 from .widgets.collection_controls import CollectionHeader
 from .widgets.controller_editor import ControllerSettingsEditor
 from .widgets.custom_classes import (
@@ -70,16 +71,15 @@ from .widgets.custom_classes import (
 from .widgets.definition_actions import DefinitionActions
 from .widgets.definition_manager import DefinitionManagerEditor
 from .widgets.edit_history import EditHistoryPanel
-from .widgets.history_dialogs import HistoryCapacityDialog
 from .widgets.editor import PropertyEditor
 from .widgets.editor_pages import EditorPages
 from .widgets.helper_editor import HelperCodeEditor
+from .widgets.history_dialogs import HistoryCapacityDialog
+from .widgets.load_cases import LoadCaseEditor
 from .widgets.model_tree import ModelTree
 from .widgets.objective_editor import ObjectiveEditor
 from .widgets.solver_editor import SolverEditor
 from .widgets.source_view import GeneratedSourceView
-from .widgets.asset_browser import AssetBrowser
-from .widgets.load_cases import LoadCaseEditor
 from .widgets.updater_editor import UpdaterEditor
 from .widgets.viewer import PreviewViewer
 
@@ -95,9 +95,13 @@ class Workbench(QWidget):
         self._synchronized_for_refresh = False
         self._text_edit_key: int | None = None
         self.session = ProblemSession(problem)
-        self.session.history.set_max_nodes(QSettings("MorphOptUI", "ui").value(
-            "history/max_nodes", CONSTANT.UI.HISTORY.MAX_NODES, int,
-        ))
+        self.session.history.set_max_nodes(
+            QSettings("MorphOptUI", "ui").value(
+                "history/max_nodes",
+                CONSTANT.UI.HISTORY.MAX_NODES,
+                int,
+            )
+        )
         self._history_capacity_queued = False
         self._history_capacity_dialog: HistoryCapacityDialog | None = None
         self.part_sets = PartSetCatalog(problem)
@@ -811,14 +815,18 @@ class Workbench(QWidget):
                 "undo",
                 history.can_undo or pending_input,
                 undo_description,
-                QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText),
+                QKeySequence(QKeySequence.StandardKey.Undo).toString(
+                    QKeySequence.SequenceFormat.NativeText
+                ),
             ),
             (
                 self._redo_button,
                 "redo",
                 history.can_redo,
                 redo_description,
-                QKeySequence(QKeySequence.StandardKey.Redo).toString(QKeySequence.SequenceFormat.NativeText),
+                QKeySequence(QKeySequence.StandardKey.Redo).toString(
+                    QKeySequence.SequenceFormat.NativeText
+                ),
             ),
         ):
             button.setText(tr(f"ui.history.{key}"))

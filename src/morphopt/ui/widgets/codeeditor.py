@@ -29,9 +29,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QCompleter, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..application.completion import CompletionItem, completion_items
-from ..theme.fonts import font_manager
 from ..i18n import tr
 from ..theme import theme_manager
+from ..theme.fonts import font_manager
 
 
 class _PythonHighlighter(QSyntaxHighlighter):

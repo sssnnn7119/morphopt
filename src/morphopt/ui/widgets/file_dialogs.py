@@ -162,9 +162,7 @@ def choose_save_directory(
     """Choose a new or existing output directory by entering its name."""
     dialog = create_file_dialog(parent, title, directory, save=True)
     dialog.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
-    dialog.setLabelText(
-        QFileDialog.DialogLabel.FileName, tr("ui.files.directory_name")
-    )
+    dialog.setLabelText(QFileDialog.DialogLabel.FileName, tr("ui.files.directory_name"))
     dialog.selectFile(name)
     if dialog.exec() != QFileDialog.DialogCode.Accepted:
         return ""

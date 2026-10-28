@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
 )
 
 from ...constants import CONSTANT
-from ..codegen.generator import generate_source
 from ..application.quickstart import (
     GOALS,
     ObjectiveDraft,
@@ -41,6 +40,7 @@ from ..application.quickstart import (
     build_quickstart,
     select_workspace_channels,
 )
+from ..codegen.generator import generate_source
 from ..i18n import tr
 from ..model.chamberlayout import ChamberLayer
 from ..presentation.labels import quickstart_summary
@@ -636,9 +636,7 @@ class ObjectiveListEditor(QWidget):
         self.changed.emit()
 
     def _remove(self):
-        if not 0 <= self.list.currentRow() < len(
-            self.draft.objectives
-        ):
+        if not 0 <= self.list.currentRow() < len(self.draft.objectives):
             return
         index = self.list.currentRow()
         self._save_current()

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QObject, QProcess, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -31,7 +31,6 @@ from ..application.editing import CustomClassSession, DefinitionCommands
 from ..application.updaters import UpdaterItems
 from ..codegen.custom_classes import custom_options
 from ..i18n import localized_message, tr
-from ..worker_environment import configure_worker_process
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
 from ..model.problem import (
     CADOperationNode,
@@ -63,6 +62,7 @@ from ..presentation.navigation import (
     UpdaterItemTreeNode,
     UpdaterTreeNode,
 )
+from ..processes import start_worker
 from ..theme import theme_manager
 from .file_dialogs import choose_open_file
 
@@ -210,12 +210,14 @@ class DefinitionActions(QObject):
             else []
         )
         for target in targets:
-            action = menu.addAction(node_title(self._problem, target))
+            action = QAction(node_title(self._problem, target), menu)
+            menu.addAction(action)
             action.triggered.connect(
                 lambda _checked=False, target=target: self.add_updater(target)
             )
         if not targets:
-            action = menu.addAction(tr("ui.component.no_available_targets"))
+            action = QAction(tr("ui.component.no_available_targets"), menu)
+            menu.addAction(action)
             action.setEnabled(False)
 
     def add_updater(self, target: PartNode | MaterialNode) -> None:
@@ -318,16 +320,18 @@ class DefinitionActions(QObject):
             if custom.name in shown:
                 continue
             shown.add(custom.name)
-            action = sub.addAction(
-                typed_title(custom.name, candidates[kind].rsplit(".", 1)[-1])
+            action = QAction(
+                typed_title(custom.name, candidates[kind].rsplit(".", 1)[-1]), sub
             )
+            sub.addAction(action)
             action.triggered.connect(
                 lambda _=False, kind=kind, name=custom.name: add(kind, name)
             )
         if not options:
-            action = sub.addAction(
-                tr("ui.widgets.model_tree.create_a_compatible_custom_class_first")
+            action = QAction(
+                tr("ui.widgets.model_tree.create_a_compatible_custom_class_first"), sub
             )
+            sub.addAction(action)
             action.setEnabled(False)
 
     def set_objective_class(self, custom_class):
@@ -362,15 +366,25 @@ class DefinitionActions(QObject):
         problem = self._problem
         directory = TemporaryDirectory(prefix="morphopt_cad_conversion_")
         request = Path(directory.name) / "request.json"
-        request.write_text(json.dumps({
-            "problem": problem.to_dict(), "part": part.name,
-        }, ensure_ascii=False), encoding="utf-8")
+        request.write_text(
+            json.dumps(
+                {
+                    "action": "convert_cad",
+                    "problem": problem.to_dict(),
+                    "part": part.name,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
         process = QProcess(self)
-        configure_worker_process(process)
         self._cad_conversion = process
-        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         progress = QProgressDialog(
-            tr("ui.cad.converting_to_boundary"), tr("ui.files.cancel"), 0, 0, self.parent(),
+            tr("ui.cad.converting_to_boundary"),
+            tr("ui.files.cancel"),
+            0,
+            0,
+            self.parent(),
         )
         progress.setWindowTitle(title)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
@@ -388,7 +402,11 @@ class DefinitionActions(QObject):
                     QMessageBox.warning(self.parent(), title, error)
                     return
                 try:
-                    data = json.loads((Path(directory.name) / "boundary.json").read_text(encoding="utf-8"))
+                    data = json.loads(
+                        (Path(directory.name) / "boundary.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
                     replacement = BoundaryPartNode.from_dict(data)
                     problem.replace_part(part, replacement)
                 except Exception as exc:
@@ -404,8 +422,16 @@ class DefinitionActions(QObject):
         def completed(exit_code: int, status: QProcess.ExitStatus) -> None:
             error = ""
             if exit_code != 0 or status != QProcess.ExitStatus.NormalExit:
-                output = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
-                error = output.splitlines()[-1] if output else tr("ui.cad.conversion_failed")
+                output = (
+                    bytes(process.readAllStandardOutput())
+                    .decode("utf-8", errors="replace")
+                    .strip()
+                )
+                error = (
+                    output.splitlines()[-1]
+                    if output
+                    else tr("ui.cad.conversion_failed")
+                )
             finish(error)
 
         def failed(error: QProcess.ProcessError) -> None:
@@ -416,7 +442,7 @@ class DefinitionActions(QObject):
         process.errorOccurred.connect(failed)
         progress.canceled.connect(process.kill)
         progress.show()
-        process.start(sys.executable, ["-u", "-m", "morphopt.ui.cad_worker", str(request)])
+        start_worker(process, request)
 
     def remove_part(self, part: Node) -> None:
         if self._problem is None or not isinstance(part, PartNode):
@@ -430,13 +456,20 @@ class DefinitionActions(QObject):
     def _confirm_remove_dependencies(self, name: str, dependencies: list[str]) -> bool:
         if not dependencies:
             return True
-        return QMessageBox.warning(
-            self.parent(), tr("ui.component.delete_dependencies_title"),
-            tr("ui.component.delete_dependencies_message", component=name,
-               dependencies="\n".join(f"• {item}" for item in dependencies)),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
-        ) == QMessageBox.StandardButton.Yes
+        return (
+            QMessageBox.warning(
+                self.parent(),
+                tr("ui.component.delete_dependencies_title"),
+                tr(
+                    "ui.component.delete_dependencies_message",
+                    component=name,
+                    dependencies="\n".join(f"• {item}" for item in dependencies),
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            == QMessageBox.StandardButton.Yes
+        )
 
     def _confirm_remove_bound_updaters(
         self, component: PartNode | MaterialNode, group: str
@@ -665,21 +698,32 @@ class DefinitionActions(QObject):
         imported_step: tuple[str, str, str] | None = None
         if stype == "brep_surface":
             path = choose_open_file(
-                self.parent(), tr("ui.widgets.model_tree.select_step_file"),
-                "", tr("ui.files.step"),
+                self.parent(),
+                tr("ui.widgets.model_tree.select_step_file"),
+                "",
+                tr("ui.files.step"),
             )
             if not path:
                 return
             try:
                 source = Path(path)
                 metadata_path = source.with_suffix(".brep.json")
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+                metadata = (
+                    json.loads(metadata_path.read_text(encoding="utf-8"))
+                    if metadata_path.exists()
+                    else {}
+                )
                 imported_step = (
-                    source.name, base64.b64encode(source.read_bytes()).decode("ascii"),
+                    source.name,
+                    base64.b64encode(source.read_bytes()).decode("ascii"),
                     json.dumps(metadata),
                 )
             except (OSError, ValueError) as exc:
-                QMessageBox.warning(self.parent(), tr("ui.widgets.model_tree.step_import_failed"), str(exc))
+                QMessageBox.warning(
+                    self.parent(),
+                    tr("ui.widgets.model_tree.step_import_failed"),
+                    str(exc),
+                )
                 return
         node = self.commands.add_surface(stype, owner, custom_class)
         if imported_step is not None:
@@ -702,7 +746,10 @@ class DefinitionActions(QObject):
             return
         index = owner.surfaces.index(srf)
         dependencies = [
-            item["type"] for config in (self._problem.updater.geometry if self._problem.updater else [])
+            item["type"]
+            for config in (
+                self._problem.updater.geometry if self._problem.updater else []
+            )
             if self._problem.config_part_node(config) is owner
             for item in config.get("symmetry_constraints", [])
             if item.get("type") != "Custom"

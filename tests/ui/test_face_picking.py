@@ -13,7 +13,7 @@ from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.model.node_types.parts import (
     BoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, OffsetBoundaryPartNode,
 )
-from morphopt.ui.model.node_types.surfaces import CPGEOCylinderSurfaceNode
+from morphopt.ui.model.node_types.surfaces import BspCylinderSurfaceNode, CPGEOCylinderSurfaceNode
 from morphopt.ui.visualization.geometry import PreviewGeometry
 from morphopt.ui.visualization.scene import LabelItem, PreviewScene
 from morphopt.ui.widgets.preview_renderer import PreviewRenderer, _SOURCE_CELL_ID
@@ -44,16 +44,30 @@ def test_box_faces_keep_local_names_after_instance_rotation():
 
 
 @pytest.mark.parametrize("part_type", [BoundaryPartNode, OffsetBoundaryPartNode])
-def test_boundary_faces_distinguish_wall_and_caps(part_type):
+def test_bsp_boundary_faces_distinguish_wall_and_caps(part_type):
     part = part_type(name="tube")
-    part.add_surface(CPGEOCylinderSurfaceNode(name="outer", r0=2, length=10))
+    part.add_surface(BspCylinderSurfaceNode(name="outer", r0=2, length=10))
     scene = scene_for(part)
     _, mesh, item = scene.base_meshes[0]
-    names = [item.faces.group_names[group][0] for group in item.faces.cell_groups]
-    assert set(names) == {"surface_0_All", "surface_0_Bottom", "surface_0_Head"}
+    groups = [item.faces.group_names[group] for group in item.faces.cell_groups]
+    assert {name for names in groups for name in names} == {
+        "surface_0_All", "surface_0_Bottom", "surface_0_Head",
+    }
     centers = mesh.cell_centers().points
-    assert np.allclose(centers[np.array(names) == "surface_0_Bottom", 2], 0)
-    assert np.allclose(centers[np.array(names) == "surface_0_Head", 2], 10)
+    for name, height in (("surface_0_Bottom", 0), ("surface_0_Head", 10)):
+        mask = [name in names for names in groups]
+        assert any(mask)
+        assert np.allclose(centers[mask, 2], height)
+
+
+@pytest.mark.parametrize("part_type", [BoundaryPartNode, OffsetBoundaryPartNode])
+def test_cpgeo_boundary_has_no_bsp_end_sets(part_type):
+    part = part_type(name="tube")
+    part.add_surface(CPGEOCylinderSurfaceNode(name="outer", r0=2, length=10))
+    _, mesh, item = scene_for(part).base_meshes[0]
+    names = {name for group in item.faces.group_names for name in group}
+    assert names == {"surface_0_All"}
+    assert mesh.n_cells > 0
 
 
 def test_cad_remains_merged_without_static_face_labels(monkeypatch):

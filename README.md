@@ -52,6 +52,32 @@ The GUI opens directly into the full definition workbench with its standard sect
 
 The [UI quick start](docs/UIguide.md) covers the complete example from model definition to optimization and result inspection. The [script quick start](docs/scriptguide.md) provides the equivalent runnable Python task.
 
+### Run the UI in a virtual environment
+
+Create and activate a Conda environment, then install and launch MorphOpt:
+
+```bash
+conda create -n morphopt python=3.12
+conda activate morphopt
+python -m pip install morphopt
+morphopt-ui
+```
+
+For an existing environment, activate it instead. To run the source checkout, install the project in editable mode from its root directory:
+
+```bash
+conda activate morphopt
+cd /path/to/morphopt
+python -m pip install -e .
+morphopt-ui
+```
+
+Replace the environment name and project path as appropriate. Installation is required once per environment; subsequent launches require only environment activation and the launch command. The equivalent module entry point uses the active environment's Python interpreter:
+
+```bash
+python -m morphopt.ui
+```
+
 ### Numeric configuration
 
 Shared UI defaults and tunable kernel parameters live in [`src/morphopt/constants.py`](src/morphopt/constants.py), grouped under `CONSTANT.UI` and `CONSTANT.KERNEL`. Code accesses them directly, for example `CONSTANT.UI.VIEWER.RENDER.LABEL_FONT_SIZE` or `CONSTANT.KERNEL.SOLVER.NUM_PROCESS`. Edit a value there to change its default; restart MorphOpt for the change to take effect. Coordinate indices, tensor dimensions, and coefficients that define mathematical formulas remain in code. UI translations remain in JSON files under `src/morphopt/ui/locales/`.
