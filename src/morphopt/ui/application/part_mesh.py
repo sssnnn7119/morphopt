@@ -1,13 +1,13 @@
 """Build the selected kernel Part with the same definitions as script export."""
 
-from pathlib import Path
 import runpy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import torchfea
 
-from .definitions import ProblemLibrary
 from ..model.problem import PartNode, ProblemDefinition
+from .definitions import ProblemLibrary
 
 
 def build_part_mesh(node: PartNode, problem: ProblemDefinition) -> torchfea.Part:
@@ -24,8 +24,12 @@ def build_part_mesh(node: PartNode, problem: ProblemDefinition) -> torchfea.Part
     definition.class_bindings = dict(problem.class_bindings)
     definition.add_part(node.clone())
     with TemporaryDirectory(prefix="morphopt-part-sets-") as directory:
-        path = Path(ProblemLibrary.export_python(definition, Path(directory) / "part.py"))
+        path = Path(
+            ProblemLibrary.export_python(definition, Path(directory) / "part.py")
+        )
         namespace = runpy.run_path(str(path), run_name="morphopt_part_sets")
         geometry = namespace["ThisController"].Params.GeometryParams()
         geometry.initialize()
-        return geometry.interface(node.name).get_part(path_result=str(Path(directory) / "mesh"))
+        return geometry.interface(node.name).get_part(
+            path_result=str(Path(directory) / "mesh")
+        )

@@ -1,9 +1,9 @@
 """Application typography preferences shared by widgets and charts."""
 
-from functools import lru_cache
 import hashlib
-from pathlib import Path
 import sys
+from functools import lru_cache
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fontTools.ttLib import TTCollection, TTFont
@@ -13,7 +13,9 @@ from PySide6.QtGui import QFont, QFontDatabase, QFontInfo
 from PySide6.QtWidgets import QApplication, QLabel
 
 ROLES = ("body", "tree", "heading", "code", "chart")
-_font_directory = TemporaryDirectory(prefix="morphopt-fonts-", ignore_cleanup_errors=True)
+_font_directory = TemporaryDirectory(
+    prefix="morphopt-fonts-", ignore_cleanup_errors=True
+)
 
 
 def _face_metadata(font: TTFont) -> tuple[set[str], int]:
@@ -100,9 +102,11 @@ def _western_family(family: str, chinese: str) -> str:
         return family
     try:
         cmap_tables = [
-            table for table in font["cmap"].tables
+            table
+            for table in font["cmap"].tables
             if table.isUnicode() and isinstance(getattr(table, "cmap", None), dict)
         ]
+
         def is_han(code: int) -> bool:
             return (
                 0x3400 <= code <= 0x9FFF
@@ -111,13 +115,17 @@ def _western_family(family: str, chinese: str) -> str:
             )
 
         for table in cmap_tables:
-            table.cmap = {code: glyph for code, glyph in table.cmap.items() if not is_han(code)}
-        digest = hashlib.sha1(f"{path}\0{index}\0{chinese}".encode("utf-8")).hexdigest()[:16]
+            table.cmap = {
+                code: glyph for code, glyph in table.cmap.items() if not is_han(code)
+            }
+        digest = hashlib.sha1(f"{path}\0{index}\0{chinese}".encode()).hexdigest()[:16]
         alias = f"MorphOpt Western {digest}"
         for record in font["name"].names:
             if record.nameID in (1, 4, 6, 16, 21):
                 value = alias.replace(" ", "-") if record.nameID == 6 else alias
-                record.string = value.encode(record.getEncoding() or "utf-16-be", errors="replace")
+                record.string = value.encode(
+                    record.getEncoding() or "utf-16-be", errors="replace"
+                )
         output = Path(_font_directory.name) / f"western-{digest}.ttf"
         font.save(output)
     except Exception:
@@ -154,7 +162,9 @@ class FontManager(QObject):
             font = QFont()
             saved = settings.value(f"fonts/{role}/western", "", str)
             self._western[role] = (
-                font if saved and font.fromString(saved) else QFont(self._defaults[role])
+                font
+                if saved and font.fromString(saved)
+                else QFont(self._defaults[role])
             )
             self._chinese[role] = settings.value(f"fonts/{role}/chinese", "", str)
         app.installEventFilter(self)
@@ -249,9 +259,16 @@ font_manager = FontManager()
 @lru_cache(maxsize=32)
 def _chart_families(preferred: tuple[str, ...]) -> tuple[str, ...]:
     windows = ("Microsoft YaHei UI", "Microsoft YaHei", "DengXian", "SimHei", "SimSun")
-    others = ("Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "PingFang SC")
+    others = (
+        "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        "WenQuanYi Micro Hei",
+        "PingFang SC",
+    )
     fallback = windows + others if sys.platform == "win32" else others + windows
-    installed = {entry.name.casefold(): entry.name for entry in mpl_fonts.fontManager.ttflist}
+    installed = {
+        entry.name.casefold(): entry.name for entry in mpl_fonts.fontManager.ttflist
+    }
     families = (
         installed[name.casefold()]
         for name in (*preferred, "DejaVu Sans", *fallback)
@@ -262,4 +279,6 @@ def _chart_families(preferred: tuple[str, ...]) -> tuple[str, ...]:
 
 def chart_font() -> mpl_fonts.FontProperties:
     font = font_manager.font("chart")
-    return mpl_fonts.FontProperties(family=list(_chart_families(tuple(font.families()))))
+    return mpl_fonts.FontProperties(
+        family=list(_chart_families(tuple(font.families())))
+    )

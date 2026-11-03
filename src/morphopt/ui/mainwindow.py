@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
-from PySide6.QtGui import QActionGroup, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -38,8 +38,8 @@ from .widgets.file_dialogs import (
     create_file_dialog,
 )
 from .widgets.font_settings import FontSettingsDialog
+from .widgets.labels import ResultPathLabel
 from .widgets.quickstart import QuickstartDialog
-from .widgets.result_path import ResultPathLabel
 from .workbench import Workbench
 
 
@@ -143,7 +143,8 @@ class MainWindow(QMainWindow):
             ("export_python", self.export_run_py, None),
             ("exit", self.close, QKeySequence.StandardKey.Quit),
         ):
-            action = self._file_menu.addAction("")
+            action = QAction("", self._file_menu)
+            self._file_menu.addAction(action)
             action.triggered.connect(slot)
             if shortcut is not None:
                 action.setShortcut(shortcut)
@@ -152,16 +153,20 @@ class MainWindow(QMainWindow):
                 self._file_menu.addSeparator()
         self._language_menu = self._settings_menu.addMenu("")
         self._theme_menu = self._settings_menu.addMenu("")
-        self._font_settings_action = self._settings_menu.addAction("")
+        self._font_settings_action = QAction("", self._settings_menu)
+        self._settings_menu.addAction(self._font_settings_action)
         self._font_settings_action.triggered.connect(self._show_font_settings)
         self._design_options_menu = self._settings_menu.addMenu("")
-        self._history_limit_action = self._design_options_menu.addAction("")
+        self._history_limit_action = QAction("", self._design_options_menu)
+        self._design_options_menu.addAction(self._history_limit_action)
         self._history_limit_action.triggered.connect(self._set_history_limit)
-        self._start_optimization_action = self._analysis_menu.addAction("")
+        self._start_optimization_action = QAction("", self._analysis_menu)
+        self._analysis_menu.addAction(self._start_optimization_action)
         self._start_optimization_action.triggered.connect(
             self._request_start_optimization
         )
-        self._show_finite_element_action = self._analysis_menu.addAction("")
+        self._show_finite_element_action = QAction("", self._analysis_menu)
+        self._analysis_menu.addAction(self._show_finite_element_action)
         self._show_finite_element_action.triggered.connect(self.show_finite_element)
         self._refresh_menu_text()
 
@@ -187,9 +192,10 @@ class MainWindow(QMainWindow):
         self._language_group = QActionGroup(self)
         self._theme_group = QActionGroup(self)
         for code in SUPPORTED_LOCALES:
-            action = self._language_menu.addAction(
-                localization.load_locale(code)["locale.name"]
+            action = QAction(
+                localization.load_locale(code)["locale.name"], self._language_menu
             )
+            self._language_menu.addAction(action)
             action.setCheckable(True)
             action.setChecked(localization.locale == code)
             self._language_group.addAction(action)
@@ -197,17 +203,31 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, code=code: self._set_locale(code)
             )
         for name in theme_manager.names:
-            action = self._theme_menu.addAction(tr("ui.theme." + name))
+            action = QAction(tr("ui.theme." + name), self._theme_menu)
+            self._theme_menu.addAction(action)
             action.setCheckable(True)
             action.setChecked(theme_manager.name == name)
             self._theme_group.addAction(action)
             action.triggered.connect(
                 lambda _checked=False, name=name: theme_manager.set_theme(name)
             )
+        self._theme_menu.addSeparator()
+        self._visualization_action = QAction(
+            tr("ui.visualization.title"), self._theme_menu
+        )
+        self._theme_menu.addAction(self._visualization_action)
+        self._visualization_action.triggered.connect(self._show_visualization_settings)
         self._update_analysis_actions()
 
     def _show_font_settings(self) -> None:
         FontSettingsDialog(self).exec()
+
+    def _show_visualization_settings(self) -> None:
+        from .widgets.visualization_settings import VisualizationSettingsDialog
+
+        dialog = VisualizationSettingsDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
 
     def _set_locale(self, code: str) -> None:
         QSettings("MorphOptUI", "ui").setValue("language", code)

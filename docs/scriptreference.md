@@ -1013,7 +1013,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 ```python
 from morphopt.postprocess import (
     IterationModel, OptimizationArchive,
-    export_boundary_surfaces, export_saved_results,
+    export_boundary_surfaces, export_saved_fields,
 )
 
 run = "path/to/optimization_run"
@@ -1022,7 +1022,7 @@ iteration = archive.completed_iteration
 model = IterationModel(run, iteration, "load_case_1")
 
 # 模型和解来自同一迭代；输出全局坐标系中的节点位移。
-export_saved_results(
+export_saved_fields(
     model.model_path, model.result_path, "displacement.npz",
     location="nodes", fields=["displacement"], format="npz",
 )
@@ -1034,17 +1034,34 @@ export_boundary_surfaces(
 )
 ```
 
-`export_saved_results()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。曲面格式按曲面类型选择，BSP 和 BREP 支持 `stp`、`stl`，离散曲面支持 `stl`。
+`export_saved_fields()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。曲面格式按曲面类型选择，BSP 和 BREP 支持 `stp`、`stl`，离散曲面支持 `stl`。
 
 | 接口 | 输入与结果 |
 |---|---|
 | `OptimizationArchive(folder)` | 查询已完成轮次、工况及有限元归档路径，恢复设计参数与变形网格 |
 | `IterationModel(folder, iteration, case)` | 定位指定轮次的模型文件和指定工况的解文件 |
-| `export_results(controller, result, path, ...)` | 从已载入且工况匹配的模型与解导出物理量 |
-| `ResultContours(controller, result)` | 提供可显示字段及按实例组织的节点云图数值 |
+| `export_fields(controller, result, path, ...)` | 从已载入且工况匹配的模型与解导出物理量 |
+| `FiniteElementResults(controller, result)` | 查询可用字段、提取组合记录表、计算各实例的节点云图数值 |
 | `export_boundary_surfaces(folder, iteration, destination, selections, overwrite=False)` | 将选定 BoundaryPart 曲面输出到部件子目录 |
 | `export_native_results(...)` | 按 `NativeResultSnapshot` 清单复制模型与结果归档 |
 | `export_history_gif(...)` | 按设计组件或变形工况、迭代范围及显式相机与样式设置导出动画 |
+
+已载入模型与解的场量计算由同一个 `FiniteElementResults` 对象管理。下例中的 `controller` 和 `result` 应来自配对且已恢复工况的有限元模型与解。
+
+```python
+from morphopt.postprocess import FiniteElementResults
+
+values = FiniteElementResults(controller, result)
+fields = values.available_fields("nodes")
+table = values.table("nodes", ["displacement"])
+for row in table.rows:
+    print(row)
+
+mises = next(field for field in values.contour_fields if field.key == "S_Mises")
+nodal_mises = values.contour_values(mises)  # 按实例名称索引的节点数组
+```
+
+记录表保留逐高斯点物理量；云图采用参考积分体积加权的单元平均与相邻单元节点平均。两者共用物理量计算，投影不改变导出的高斯点值。
 
 `export_history_gif()` 的 `mode` 为 `design` 或 `deformation`。前者的 `target` 使用 `{"category": "Part", "name": "part1"}` 等组件标识，后者使用 `{"case": "load_case_1"}`。调用方同时提供 `camera`、`window_size` 和 `style`；UI 从最近一次三维视口取得这些设置。变形网格缺失的轮次不生成帧，GIF 的帧间隔按格式允许的时间精度记录。
 
@@ -1072,7 +1089,7 @@ export_history_gif(
 
 `camera.position` 依次给出相机位置、焦点和向上方向；上述坐标与平行投影尺度应根据模型尺寸调整。动画帧显示迭代编号，函数返回实际写入的帧数。
 
-新增场量通过 `ResultField` 注册计算接口，新增表格格式实现 `ResultExporter.write()` 并注册到 `EXPORTERS`。界面翻译属于 UI 展示层，扩展字段和格式未配置翻译时分别使用字段描述和扩展名。
+新增场量通过 `ResultField` 注册计算接口，新增表格格式实现 `TableWriter.write()` 并注册到 `TABLE_WRITERS`。界面翻译属于 UI 展示层，扩展字段和格式未配置翻译时分别使用字段描述和扩展名。
 
 <a id="section-配置诊断"></a>
 

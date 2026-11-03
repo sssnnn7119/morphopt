@@ -11,14 +11,14 @@ import torchfea
 
 from ...constants import CONSTANT
 from ...optcore.modelparams.parts import CADPart
+from ..model.node_types.cad import StepImportOperationNode
+from ..model.node_types.parts import BoundaryPartNode, CADPartNode
+from ..model.node_types.surfaces import BREPSurfaceNode
 from ..model.problem import CADOperationNode, ProblemDefinition
 from ..model.registry import (
     CAD_OPERATION_TYPES,
 )
 from .expressions import DefinitionValues
-from ..model.node_types.parts import BoundaryPartNode, CADPartNode
-from ..model.node_types.cad import StepImportOperationNode
-from ..model.node_types.surfaces import BREPSurfaceNode
 
 
 def cad_operation_from_node(
@@ -41,11 +41,7 @@ def cad_operation_from_node(
     for field in spec.fields:
         key = field.key
         value = operation.get_field(key)
-        if (
-            field.type == "float"
-            and isinstance(value, str)
-            and namespace is not None
-        ):
+        if field.type == "float" and isinstance(value, str) and namespace is not None:
             value = eval(compile(value, "<CAD parameter>", "eval"), namespace)
         if value is not None:
             kwargs[key] = value
@@ -63,9 +59,7 @@ def cad_part_from_node(
     class PreviewCADPart(CADPart):
         def define_operations(self) -> None:
             for operation_node in operations:
-                self.add_operation(
-                    cad_operation_from_node(operation_node, namespace)
-                )
+                self.add_operation(cad_operation_from_node(operation_node, namespace))
 
     part = PreviewCADPart(
         mesh_size=(
@@ -73,7 +67,9 @@ def cad_part_from_node(
             if node.mesh_size is not None
             else CONSTANT.UI.SCHEMA_FIELDS.PARTS.CADPART.MESH_SIZE.DEFAULT
         ),
-        mesh_order=values.resolve(node.mesh_order) if node.mesh_order is not None else 1,
+        mesh_order=values.resolve(node.mesh_order)
+        if node.mesh_order is not None
+        else 1,
         exterior_surface=node.exterior_surface or "extern",
         part_name=node.assembly_name or "CADPreview",
     )
@@ -101,7 +97,9 @@ def export_cad_step(
 
 
 def convert_cad_to_boundary(
-    node: CADPartNode, problem: ProblemDefinition, asset_directory: str | Path,
+    node: CADPartNode,
+    problem: ProblemDefinition,
+    asset_directory: str | Path,
 ) -> BoundaryPartNode:
     """Convert the generated CAD definition to embedded BREP boundary assets.
 
@@ -131,10 +129,13 @@ def convert_cad_to_boundary(
     )
     for index, surface in enumerate(boundary.surface_interfaces()):
         path = surface.path_step
-        replacement.add_surface(BREPSurfaceNode(
-            name=f"surface_{index}", flip=index > 0,
-            filename=f"{node.name}_surface_{index}.stp",
-            data=base64.b64encode(path.read_bytes()).decode("ascii"),
-            brep_metadata=json.dumps(surface.metadata()),
-        ))
+        replacement.add_surface(
+            BREPSurfaceNode(
+                name=f"surface_{index}",
+                flip=index > 0,
+                filename=f"{node.name}_surface_{index}.stp",
+                data=base64.b64encode(path.read_bytes()).decode("ascii"),
+                brep_metadata=json.dumps(surface.metadata()),
+            )
+        )
     return replacement

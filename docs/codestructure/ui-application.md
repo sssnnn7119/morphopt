@@ -29,7 +29,7 @@
 | [`application/edit_history.py`](../../src/morphopt/ui/application/edit_history.py) | 不可变编辑快照与分支历史 |
 | [`application/fields.py`](../../src/morphopt/ui/application/fields.py)、[`values.py`](../../src/morphopt/ui/application/values.py) | 可编辑字段、选项及数值文本 |
 | [`application/expressions.py`](../../src/morphopt/ui/application/expressions.py)、[`part_sets.py`](../../src/morphopt/ui/application/part_sets.py) | 表达式上下文与 Part 集合查询 |
-| [`application/cad.py`](../../src/morphopt/ui/application/cad.py)、[`cad_worker.py`](../../src/morphopt/ui/cad_worker.py) | CAD 几何预览、STEP 导出与部件转换进程 |
+| [`application/cad.py`](../../src/morphopt/ui/application/cad.py)、[`worker.py`](../../src/morphopt/ui/worker.py) | CAD 几何预览、STEP 导出与部件转换进程 |
 | [`application/updaters.py`](../../src/morphopt/ui/application/updaters.py) | 子优化器分节及有序条目编辑 |
 | [`application/quickstart.py`](../../src/morphopt/ui/application/quickstart.py)、[`schemes/`](../../src/morphopt/ui/schemes) | 起始问题构造与方案策略 |
 | [`codegen/`](../../src/morphopt/ui/codegen) | Python 生成及自定义类投影 |
@@ -159,7 +159,7 @@
 
 `convert_cad_to_boundary(node: CADPartNode, problem: ProblemDefinition, asset_directory: str | Path) -> BoundaryPartNode` 通过同一 `ProblemLibrary.export_python()` 生成任务源码和资产，载入已启用自定义类的几何定义，只初始化目标 CADPart，再调用内核的 `to_boundary_part()`。各封闭壳体生成 STEP 与面映射，应用服务将其嵌入 `BREPSurfaceNode`，返回待提交的 BoundaryPart。服务不修改源问题。
 
-`DefinitionActions.convert_cad_to_boundary(part: CADPartNode) -> None` 为编辑卡片和树菜单提供共同入口。动作冻结当前问题，使用 `QProcess` 启动 `cad_worker.py`；工作进程读取快照并生成替换节点。成功后，主线程通过 `ProblemDefinition.replace_part()` 保留实例对象并重定向模型关联，再提交一次可撤销的编辑。进度窗口可取消；失败、取消或源问题已切换时不提交转换结果。临时源码和资产在转换结束后清理，当前定义通过内嵌数据持有 BREP 资产。
+`DefinitionActions.convert_cad_to_boundary(part: CADPartNode) -> None` 为编辑卡片和树菜单提供共同入口。动作冻结当前问题，使用 `QProcess` 启动统一 `worker.py` 的 `convert_cad` 任务；工作进程读取快照并生成替换节点。成功后，主线程通过 `ProblemDefinition.replace_part()` 保留实例对象并重定向模型关联，再提交一次可撤销的编辑。进度窗口可取消；失败、取消或源问题已切换时不提交转换结果。临时源码和资产在转换结束后清理，当前定义通过内嵌数据持有 BREP 资产。
 
 <a id="runs"></a>
 

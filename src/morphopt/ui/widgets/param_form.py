@@ -19,9 +19,9 @@ from PySide6.QtWidgets import (
 
 from ..application.values import field_text, parse_field
 from ..i18n import localized_message, tr
+from ..presentation.labels import DOF_LABELS, display_choice
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_open_file
-from .values import DOF_LABELS, combo_value, display_choice
 
 
 class ParamForm(QWidget):
@@ -280,3 +280,11 @@ class ParamForm(QWidget):
         self.dof_groups[key] = boxes
         self.controls[key] = host
         return host
+
+
+def combo_value(combo: QComboBox) -> object:
+    """Read a combo's backend value, or custom text when it was edited."""
+    index = combo.currentIndex()
+    if index >= 0 and combo.currentText() == combo.itemText(index):
+        return combo.itemData(index)
+    return combo.currentText()

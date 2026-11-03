@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -100,7 +101,8 @@ class CustomClassOverview(QWidget):
             ]
         )
         for class_type, label_key in choices:
-            action = self.add_menu.addAction(tr(label_key))
+            action = QAction(tr(label_key), self.add_menu)
+            self.add_menu.addAction(action)
             action.triggered.connect(
                 lambda _checked=False, class_type=class_type: (
                     self.actions.add_custom_class(class_type)

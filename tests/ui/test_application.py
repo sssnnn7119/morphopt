@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,9 @@ def test_shape_starter_can_combine_a_simp_material_and_updater() -> None:
     assert density.part is None
     assert density.part_name == ""
     assert problem.set_material_part(density, part)
-    problem.add_material_updater(density)
+    config = problem.add_material_updater(density)
+    volume = next(item for item in config["constraints"] if item["type"] == "VolFrac")
+    volume["params"]["elementname"] = "C3D4"
 
     source = ProblemSession(problem).source()
 
@@ -178,7 +181,8 @@ def test_cross_node_links_are_objects_and_survive_renames() -> None:
     assert pressure.instance is problem.parts()[0].instances[0]
     assert couple.reference_point is reference_point
     assert problem.steps is not None
-    assert pressure in problem.steps.step_values[0]
+    case_name = next(iter(problem.steps.step_values))
+    assert pressure in problem.steps.step_values[case_name]
     assert problem.updater is not None
     assert "part_name" not in problem.updater.geometry[0]
     assert problem.config_part_node(problem.updater.geometry[0]) is problem.parts()[0]
@@ -189,12 +193,12 @@ def test_cross_node_links_are_objects_and_survive_renames() -> None:
     assert problem.rename_definition(pressure, "actuation_pressure")
     assert problem.rename_definition(reference_point, "actuation_rp")
 
-    assert pressure in problem.steps.step_values[0]
+    assert pressure in problem.steps.step_values[case_name]
     assert problem.objective.jacobian_needed == [pressure]
     assert couple.reference_point is reference_point
     persisted = problem.to_dict()
     steps = persisted["root"]["children"][2]["params"]["step_values"]
-    assert "actuation_pressure" in steps[0]
+    assert "actuation_pressure" in steps[case_name]
     assert persisted["root"]["children"][4]["params"]["jacobian_needed"] == [
         "actuation_pressure"
     ]
@@ -228,21 +232,18 @@ def test_editor_routes_are_independent_from_widgets() -> None:
     assert route_editor(None).kind is EditorKind.PROPERTIES
 
 
-def test_result_session_discovers_deformation_cases(tmp_path: Path) -> None:
-    deformation = tmp_path / "log" / "deformation"
-    deformation.mkdir(parents=True)
-    for name in (
-        "task_2_iter_1.stl",
-        "task_0_iter_3.stl",
-        "task_2_iter_4.stl",
-        "unrelated.stl",
-    ):
-        (deformation / name).touch()
-
+def test_result_session_reads_named_cases_in_recorded_order(tmp_path: Path) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    ProblemLibrary.export_python(
+        ProblemLibrary.create_blank(), scripts / "MAIN_SCRIPT_FOR_RESTART.py"
+    )
+    folder = tmp_path / "log" / "femodel&results"
+    folder.mkdir(parents=True)
+    (folder / "load_cases.json").write_text(json.dumps(["actuation", "baseline"]))
     session = ResultSession()
-    session.folder = str(tmp_path)
-
-    assert session.deformation_cases() == (0, 2)
+    assert session.bind(str(tmp_path))
+    assert session.deformation_cases() == ("actuation", "baseline")
 
 
 def test_run_session_owns_fresh_process_state(

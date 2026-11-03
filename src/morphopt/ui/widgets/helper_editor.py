@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QVBoxLayout, QWidget
 
 from ..application.editing import HelperCodeSession
@@ -44,12 +45,12 @@ class HelperCodeEditor(QWidget):
         self._loading = False
         layout = QVBoxLayout(self)
         self._add_menu = QMenu(self)
-        self._variable_action = self._add_menu.addAction(
-            "", lambda: actions.add_helper("helper_variable")
-        )
-        self._function_action = self._add_menu.addAction(
-            "", lambda: actions.add_helper("helper_function")
-        )
+        self._variable_action = QAction("", self._add_menu)
+        self._variable_action.triggered.connect(lambda: actions.add_helper("helper_variable"))
+        self._add_menu.addAction(self._variable_action)
+        self._function_action = QAction("", self._add_menu)
+        self._function_action.triggered.connect(lambda: actions.add_helper("helper_function"))
+        self._add_menu.addAction(self._function_action)
         self.header = CollectionHeader("", menu=self._add_menu)
         layout.addWidget(self.header)
         self.hint = QLabel()

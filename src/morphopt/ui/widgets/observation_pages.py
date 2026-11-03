@@ -7,12 +7,8 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-import logging
-
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -22,78 +18,18 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from pyvistaqt import QtInteractor
 
-from ..i18n import tr
-from ..application.results import ResultSession
-from ..presentation.history import history_table
-from ..presentation.labels import typed_title
-from ..theme import theme_manager
-from ..theme.fonts import chart_font, font_manager
-from ..visualization.rendering import (
+from ...postprocess.visualization import (
     add_deformation_mesh,
     add_design_component,
-    apply_plotter_theme,
-    configure_plotter,
 )
-
-
-class PlotViewport(QWidget):
-    """A PyVista viewport with a resettable scene."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
-        layout.setSpacing(theme_manager.palette.layout.zero_spacing)
-        self.plotter = QtInteractor(self, auto_update=False)
-        layout.addWidget(self.plotter.interactor)
-        configure_plotter(self.plotter)
-        self._theme_pending = False
-        self._pending_scene: Callable[[QtInteractor], None] | None = None
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.setSingleShot(True)
-        self._refresh_timer.timeout.connect(self._refresh_visible_scene)
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        # The embedded GL context is ready after the widget is exposed.
-        self._refresh_timer.start(0)
-
-    def _refresh_visible_scene(self) -> None:
-        if not self.isVisible():
-            return
-        if self._theme_pending:
-            self._theme_pending = False
-            apply_plotter_theme(self.plotter)
-        build_scene = self._pending_scene
-        self._pending_scene = None
-        if build_scene is not None:
-            try:
-                self._rebuild_scene(build_scene)
-            except Exception:
-                self._pending_scene = build_scene
-                logging.getLogger(__name__).exception("Result viewport scene rebuild failed")
-        else:
-            self.plotter.render()
-
-    def apply_theme(self) -> None:
-        self._theme_pending = True
-        if self.isVisible():
-            self._refresh_timer.start(0)
-
-    def rebuild(self, build_scene: Callable[[QtInteractor], None]) -> None:
-        """Replace the pending scene and draw after native window transitions."""
-        self._pending_scene = build_scene
-        if self.isVisible():
-            self._refresh_timer.start(0)
-
-    def _rebuild_scene(self, build_scene: Callable[[QtInteractor], None]) -> None:
-        self.plotter.clear()
-        configure_plotter(self.plotter)
-        build_scene(self.plotter)
-        self.plotter.reset_camera()
-        self.plotter.render()
+from ..application.results import ResultSession
+from ..i18n import tr
+from ..presentation.history import history_table
+from ..presentation.labels import component_selection_title
+from ..theme import theme_manager
+from ..theme.fonts import chart_font, font_manager
+from .viewport import PlotViewport
 
 
 class MetricsPage(QWidget):
@@ -105,7 +41,9 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
         layout.addWidget(self.table, 3)
-        self.figure = Figure(facecolor=theme_manager.palette.chart.background, layout="constrained")
+        self.figure = Figure(
+            facecolor=theme_manager.palette.chart.background, layout="constrained"
+        )
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout.addWidget(self.canvas, 2)
         self._last_history = None
@@ -156,9 +94,13 @@ class MetricsPage(QWidget):
             linewidth=theme_manager.palette.chart.grid_width,
         )
         labels = [
-            axes.title, axes.xaxis.label, axes.yaxis.label,
-            *axes.get_xticklabels(), *axes.get_yticklabels(),
-            axes.xaxis.get_offset_text(), axes.yaxis.get_offset_text(),
+            axes.title,
+            axes.xaxis.label,
+            axes.yaxis.label,
+            *axes.get_xticklabels(),
+            *axes.get_yticklabels(),
+            axes.xaxis.get_offset_text(),
+            axes.yaxis.get_offset_text(),
         ]
         font = chart_font()
         point_size = font_manager.font("chart").pointSizeF()
@@ -233,26 +175,6 @@ class UpdatableStructurePage(QWidget):
         self._last_rendered = None
         self._render_selected()
 
-    @staticmethod
-    def _component_label(category: str, component) -> str:
-        """Return an unambiguous label for one updateable component."""
-        name = component.name
-        part_name = getattr(component, "part_name", None)
-        if part_name and part_name != component.name:
-            name = tr(
-                "ui.observation.component_name_with_part", name=name, part=part_name
-            )
-        category_key = {
-            "Part": "ui.widgets.model_tree.container.geometry",
-            "FEA": "ui.widgets.model_tree.container.loads_group",
-            "Material": "ui.widgets.model_tree.container.materials",
-        }[category]
-        return tr(
-            "ui.observation.component_title",
-            category=tr(category_key),
-            title=typed_title(name, type(component).__name__),
-        )
-
     def _sync_component_selector(self) -> None:
         components = self._results.fea_components() if self._results else ()
         current = self.component_selector.currentData()
@@ -261,7 +183,7 @@ class UpdatableStructurePage(QWidget):
             self.component_selector.clear()
             for category, component in components:
                 self.component_selector.addItem(
-                    self._component_label(category, component), component
+                    component_selection_title(category, component), component
                 )
             if not components:
                 self.component_selector.addItem(

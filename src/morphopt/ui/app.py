@@ -29,30 +29,33 @@ def create_application(argv: list[str] | None = None):
     """Create the shared QApplication with MorphOpt's process-wide settings."""
     configure_environment()
 
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from .application_icon import (
         configure_application_identity,
         prepare_application_identity,
     )
-    from .theme.fonts import font_manager
+    from .i18n import localization
     from .theme import theme_manager
+    from .theme.fonts import font_manager
+    from .theme.visualization import visualization_manager
 
     prepare_application_identity()
     app = QApplication.instance() or QApplication(argv or sys.argv)
     configure_application_identity(app)
+    localization.set_locale(
+        QSettings("MorphOptUI", "ui").value("language", "zh-CN", str)
+    )
     font_manager.restore(app)
     theme_manager.restore(app)
+    visualization_manager.restore()
     return app
 
 
 def main() -> int:
     """Launch the definition page in the main application window."""
     app = create_application()
-
-    from .widgets.language_selector import restore_locale
-
-    restore_locale()
 
     from .mainwindow import MainWindow
 

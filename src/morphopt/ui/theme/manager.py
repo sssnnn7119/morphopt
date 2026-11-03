@@ -1,7 +1,7 @@
 """Theme registration, persistence, and application-wide change events."""
 
-from collections.abc import Callable
 import weakref
+from collections.abc import Callable
 
 from .palette import ThemePalette
 from .stylesheet import theme_stylesheet

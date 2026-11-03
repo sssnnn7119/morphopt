@@ -80,10 +80,7 @@ class LoadPreviewVisitor:
         for component in problem.fea_components():
             self.visit(geometry, scene, component, [], boundary=True)
         steps = problem.steps
-        if (
-            steps is None
-            or step_name not in steps.step_values
-        ):
+        if steps is None or step_name not in steps.step_values:
             return scene
         components = {
             component.name: component for component in problem.fea_components()

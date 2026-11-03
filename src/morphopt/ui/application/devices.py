@@ -6,6 +6,7 @@ def detect_devices() -> list[str]:
     devs = ["cpu"]
     try:
         import torch
+
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 devs.append(f"cuda:{i}")

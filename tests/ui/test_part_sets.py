@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pyvista as pv
 import pytest
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
 from morphopt.ui.application import ProblemLibrary
@@ -23,11 +24,12 @@ def window(monkeypatch):
     app = QApplication.instance() or QApplication([])
 
     class Host(QWidget):
+        viewChanged = Signal()
         def __init__(self, parent=None):
             super().__init__(parent)
             self.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
 
-    monkeypatch.setattr(viewer, "_PlotHost", Host)
+    monkeypatch.setattr(viewer, "PlotViewport", Host)
     problem = ProblemLibrary.create_blank()
     part = BoxPartNode(name="box", length=2, height=2, depth=2, mesh_size=1, mesh_order=1)
     part.instances[0].translation = [10, 20, 30]

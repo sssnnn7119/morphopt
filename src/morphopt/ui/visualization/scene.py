@@ -62,8 +62,14 @@ class PreviewScene:
         self.items.append(item)
         return item
 
-    def add_base(self, instance_name: str, mesh: pv.DataSet, *,
-                 faces: MeshFaces | None = None, **options: Any) -> None:
+    def add_base(
+        self,
+        instance_name: str,
+        mesh: pv.DataSet,
+        *,
+        faces: MeshFaces | None = None,
+        **options: Any,
+    ) -> None:
         item = self.add_mesh(mesh, **options)
         item.faces = faces
         self.base_meshes.append((instance_name, mesh, item))
@@ -86,8 +92,14 @@ class PreviewScene:
             return None
         lo = np.min([[b[0], b[2], b[4]] for b in bounds], axis=0)
         hi = np.max([[b[1], b[3], b[5]] for b in bounds], axis=0)
-        return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]),
-                float(lo[2]), float(hi[2]))
+        return (
+            float(lo[0]),
+            float(hi[0]),
+            float(lo[1]),
+            float(hi[1]),
+            float(lo[2]),
+            float(hi[2]),
+        )
 
     @property
     def diagonal(self) -> float:

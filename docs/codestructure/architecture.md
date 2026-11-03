@@ -93,7 +93,7 @@ flowchart TB
 | [`shapeopt/`](../../src/morphopt/shapeopt) | 边界曲面部件、曲面约束、体网格与形状更新 |
 | [`simp/`](../../src/morphopt/simp) | 材料设计场、材料与单元缩放、密度场更新 |
 | [`codesign/`](../../src/morphopt/codesign) | 内腔偏置实体层及其专用更新器和约束 |
-| [`postprocess/`](../../src/morphopt/postprocess) | 无 Qt 的归档上下文、物理量提取、结果导出和后处理服务 |
+| [`postprocess/`](../../src/morphopt/postprocess) | 无 Qt 的归档读取、有限元场量、统一文件导出与场景绘制 |
 | [`ui/`](../../src/morphopt/ui) | 编辑、生成、任务管理、预览与结果界面 |
 | [`utils/`](../../src/morphopt/utils) | 历史控制器读取与灵敏度检查工具 |
 | [`constants.py`](../../src/morphopt/constants.py) | 业务默认值、运行参数与数值配置 |

@@ -30,7 +30,8 @@
 | 新预览类型 | Part/Surface/Load visitor | 节点类注册及必要的渲染图元 |
 | 新编辑页面 | widget | `route_editor()`、`EditorPages` 和刷新注册 |
 | 新结果量 | `postprocess.fields.ResultField` | `RESULT_FIELDS` 与必要的云图分量 |
-| 新导出格式 | `ResultExporter` | `EXPORTERS`，不复制物理提取逻辑 |
+| 新导出格式 | `TableWriter` | `TABLE_WRITERS`，不复制物理提取逻辑 |
+| 新一次性后台任务 | `ui/worker.py` | `processes.start_worker()`，通过请求与响应文件交付数据 |
 | 新运行模式 | `OptimizationRunSession` | 明确来源对象、进程状态和进度快照 |
 
 领域身份由对象与稳定 key 表达，显示文字由展示层本地化。文件、进程、物理计算和渲染各自在所属层处理。

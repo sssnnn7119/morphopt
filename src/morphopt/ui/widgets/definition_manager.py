@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -236,7 +237,8 @@ class DefinitionManagerEditor(QWidget):
         if self.mode == "geometry":
             for part_type in template.available_geometry_types():
                 spec = PART_TYPES[part_type]
-                action = self._add_menu.addAction(node_type_title(spec, part_type))
+                action = QAction(node_type_title(spec, part_type), self._add_menu)
+                self._add_menu.addAction(action)
                 action.triggered.connect(
                     lambda _checked=False, kind=part_type: self.actions.add_part(kind)
                 )
@@ -253,7 +255,8 @@ class DefinitionManagerEditor(QWidget):
             )
         elif self.mode == "loads":
             for component_type, spec in LOAD_TYPES.items():
-                action = self._add_menu.addAction(node_type_title(spec, component_type))
+                action = QAction(node_type_title(spec, component_type), self._add_menu)
+                self._add_menu.addAction(action)
                 action.triggered.connect(
                     lambda _checked=False, kind=component_type: (
                         self.actions.add_component(kind)
@@ -283,7 +286,8 @@ class DefinitionManagerEditor(QWidget):
             )
         else:
             for material_type, spec in MATERIAL_TYPES.items():
-                action = self._add_menu.addAction(node_type_title(spec, material_type))
+                action = QAction(node_type_title(spec, material_type), self._add_menu)
+                self._add_menu.addAction(action)
                 action.triggered.connect(
                     lambda _checked=False, kind=material_type: (
                         self.actions.add_material(kind)
@@ -516,7 +520,8 @@ class DefinitionManagerEditor(QWidget):
     def _surface_add_menu(self, owner: BoundaryPartNode) -> QMenu:
         menu = QMenu(self)
         for surface_type, spec in SURFACE_TYPES.items():
-            action = menu.addAction(node_type_title(spec, surface_type))
+            action = QAction(node_type_title(spec, surface_type), menu)
+            menu.addAction(action)
             action.triggered.connect(
                 lambda _checked=False, kind=surface_type, part=owner: (
                     self.actions.add_surface(kind, part)

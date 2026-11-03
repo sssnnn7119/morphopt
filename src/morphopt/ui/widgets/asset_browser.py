@@ -6,8 +6,17 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit, QPushButton, QSplitter,
-    QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ..codegen.assets import DefinitionAsset, collect_python_assets
@@ -16,9 +25,9 @@ from ..model.problem import ProblemDefinition
 from ..refresh import RefreshContext
 from ..theme import theme_manager
 from ..visualization.assets import geometry_asset_scene
-from .observation_pages import PlotViewport
 from ..visualization.rendering import add_orientation_axes
 from .preview_renderer import PreviewRenderer
+from .viewport import PlotViewport
 
 
 class AssetPreview(QWidget):
@@ -42,9 +51,6 @@ class GeometryAssetPreview(AssetPreview):
         header = QHBoxLayout()
         self.summary = QLabel()
         header.addWidget(self.summary, 1)
-        self.reset_button = QPushButton()
-        self.reset_button.clicked.connect(self._reset_camera)
-        header.addWidget(self.reset_button)
         layout.addLayout(header)
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport, 1)
@@ -54,22 +60,22 @@ class GeometryAssetPreview(AssetPreview):
 
     def set_asset(self, asset: DefinitionAsset, problem: ProblemDefinition) -> None:
         scene = geometry_asset_scene(asset)
-        self.renderer.draw_scene(scene)
-        add_orientation_axes(self.viewport.plotter)
         self._counts = (
             sum(mesh.n_points for _, mesh, _ in scene.base_meshes),
             sum(mesh.n_cells for _, mesh, _ in scene.base_meshes),
         )
         self.apply_language()
-        self._reset_camera()
 
-    def _reset_camera(self) -> None:
-        self.viewport.plotter.reset_camera()
-        self.viewport.plotter.render()
+        def build_scene(plotter) -> None:
+            self.renderer.draw_scene(scene)
+            add_orientation_axes(plotter)
+
+        self.viewport.rebuild(build_scene)
 
     def apply_language(self) -> None:
-        self.reset_button.setText(tr("ui.widgets.viewer.reset_view"))
-        self.summary.setText(tr("ui.assets.mesh_counts", points=self._counts[0], cells=self._counts[1]))
+        self.summary.setText(
+            tr("ui.assets.mesh_counts", points=self._counts[0], cells=self._counts[1])
+        )
 
     def apply_theme(self) -> None:
         self.viewport.apply_theme()
@@ -117,7 +123,9 @@ class AssetBrowser(QWidget):
         self.tree.setColumnCount(3)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for column in (1, 2):
-            self.tree.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+            self.tree.header().setSectionResizeMode(
+                column, QHeaderView.ResizeMode.ResizeToContents
+            )
         self.tree.itemSelectionChanged.connect(self._show_selected)
         splitter.addWidget(self.tree)
         details = QWidget()
@@ -140,11 +148,15 @@ class AssetBrowser(QWidget):
         splitter.setChildrenCollapsible(False)
         layout.addWidget(splitter, 1)
         self.register_preview("geometry", "ui.assets.geometry", GeometryAssetPreview)
-        self.register_preview("metadata", "ui.assets.brep_metadata", MetadataAssetPreview)
+        self.register_preview(
+            "metadata", "ui.assets.brep_metadata", MetadataAssetPreview
+        )
         self.apply_language()
 
     def register_preview(
-        self, category: str, title_key: str,
+        self,
+        category: str,
+        title_key: str,
         factory: Callable[[QWidget], AssetPreview],
     ) -> None:
         """Register a category's title and lazily constructed preview component."""
@@ -183,20 +195,28 @@ class AssetBrowser(QWidget):
                 if asset.category not in groups:
                     title = (
                         tr(self._factories[asset.category][0])
-                        if asset.category in self._factories else asset.category
+                        if asset.category in self._factories
+                        else asset.category
                     )
                     group = QTreeWidgetItem(self.tree, [title])
                     group.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     group.setExpanded(True)
                     groups[asset.category] = group
-                item = QTreeWidgetItem(groups[asset.category], [
-                    asset.name, asset.format.upper(), f"{len(asset.content):,} B",
-                ])
+                item = QTreeWidgetItem(
+                    groups[asset.category],
+                    [
+                        asset.name,
+                        asset.format.upper(),
+                        f"{len(asset.content):,} B",
+                    ],
+                )
                 item.setData(0, Qt.ItemDataRole.UserRole, asset.name)
                 item.setToolTip(0, asset.relative_path)
                 items[asset.name] = item
             if items:
-                self.tree.setCurrentItem(items.get(selected, next(iter(items.values()))))
+                self.tree.setCurrentItem(
+                    items.get(selected, next(iter(items.values())))
+                )
         self._show_selected()
 
     def _show_selected(self) -> None:
@@ -209,18 +229,25 @@ class AssetBrowser(QWidget):
             self.stack.setCurrentWidget(self.message)
             return
         asset = self._assets[name]
-        self.info.setText(tr(
-            "ui.assets.details", path=asset.relative_path,
-            source=asset.source or tr("ui.assets.embedded"),
-            references=", ".join(asset.references),
-        ))
+        self.info.setText(
+            tr(
+                "ui.assets.details",
+                path=asset.relative_path,
+                source=asset.source or tr("ui.assets.embedded"),
+                references=", ".join(asset.references),
+            )
+        )
         if asset.category not in self._factories:
             self._selected_signature = None
             self.message.setText(tr("ui.assets.no_preview", category=asset.category))
             self.stack.setCurrentWidget(self.message)
             return
         signature = (
-            id(self._problem), asset.name, asset.category, asset.format, asset.content,
+            id(self._problem),
+            asset.name,
+            asset.category,
+            asset.format,
+            asset.content,
             asset.node.to_dict(),
         )
         if signature == self._selected_signature:
@@ -244,7 +271,9 @@ class AssetBrowser(QWidget):
     def apply_language(self) -> None:
         self.hint.setText(tr("ui.assets.hint"))
         self.reload_button.setText(tr("ui.assets.reload"))
-        self.tree.setHeaderLabels([tr("ui.assets.name"), tr("ui.assets.format"), tr("ui.assets.size")])
+        self.tree.setHeaderLabels(
+            [tr("ui.assets.name"), tr("ui.assets.format"), tr("ui.assets.size")]
+        )
         for preview in self._previews.values():
             preview.apply_language()
         if self.isVisible():

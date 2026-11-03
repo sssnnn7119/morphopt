@@ -158,8 +158,6 @@ class LayoutStyle:
     zero_margins: tuple[int, int, int, int] = (0, 0, 0, 0)
     zero_spacing: int = 0
     toolbar_icon_size: tuple[int, int] = (20, 20)
-    language_selector_width: int = 110
-    theme_selector_width: int = 100
     helper_code_minimum_height: int = 220
     workbench: WorkbenchLayout = WorkbenchLayout()
     history: HistoryLayout = HistoryLayout()
@@ -235,10 +233,15 @@ class ViewerLoadsStyle:
 @dataclass(frozen=True)
 class ViewerRenderStyle:
     background: str
-    result_colormap: str = 'viridis'
+    result_colormap: str = "viridis"
     minimum_scalar_span: float = 1e-12
-    orientation_axes_viewport: tuple[float, float, float, float] = (0.0, 0.0, 0.18, 0.18)
-    orientation_axis_colors: tuple[str, str, str] = ('#df624f', '#53a76a', '#518bd4')
+    orientation_axes_viewport: tuple[float, float, float, float] = (
+        0.0,
+        0.0,
+        0.18,
+        0.18,
+    )
+    orientation_axis_colors: tuple[str, str, str] = ("#df624f", "#53a76a", "#518bd4")
     depth_peels: int = 8
     depth_peeling_occlusion_ratio: float = 0.0
     mesh_ambient: float = 0.17
@@ -331,7 +334,16 @@ class ViewerStyle:
 
 DEFAULT_VIEWER_STYLE = ViewerStyle(
     geometry=ViewerGeometryStyle(
-        instance_colors=("#71899a", "#a77b6d", "#6f8e83", "#887e9d", "#aa905f", "#82916a", "#a47787", "#718397"),
+        instance_colors=(
+            "#71899a",
+            "#a77b6d",
+            "#6f8e83",
+            "#887e9d",
+            "#aa905f",
+            "#82916a",
+            "#a47787",
+            "#718397",
+        ),
         uninstanced_color="#77838c",
     ),
     loads=ViewerLoadsStyle(),
@@ -375,8 +387,3 @@ class ThemePalette:
     deformation_mesh_color: str
     history_branch_colors: tuple[str, ...]
     layout: LayoutStyle
-
-    @property
-    def viewer_background(self) -> str:
-        """Compatibility shortcut for code that needs only the viewport clear color."""
-        return self.viewer.render.background

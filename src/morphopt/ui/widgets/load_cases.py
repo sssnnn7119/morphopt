@@ -1,17 +1,31 @@
 """Ordered named load-case cards with one row per parameterized load."""
+
 from __future__ import annotations
 
 from html import escape
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFormLayout, QGroupBox, QLabel, QLineEdit, QMessageBox, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..application.editing import LoadCaseSession
-from ..application.load_cases import case_objectives, unused_cases, workspace_case_status
+from ..application.load_cases import (
+    case_objectives,
+    unused_cases,
+    workspace_case_status,
+)
 from ..i18n import tr
 from ..model.problem import FEAComponentNode, ProblemDefinition, StepsNode
-from ..presentation.navigation import ObjectiveItemTreeNode
 from ..presentation.labels import component_title_text
+from ..presentation.navigation import ObjectiveItemTreeNode
 from ..refresh import RefreshContext
 from ..theme import theme_manager
 from .case_deletion import confirm_case_cleanup
@@ -58,7 +72,11 @@ class LoadCaseEditor(QWidget):
         self._workspace_status.setText("<br>".join(summaries))
         self._workspace_status.setVisible(bool(summaries))
         loads = problem.amplitude_components()
-        structure = (id(node), tuple(node.step_values), tuple((id(load), load.name, load.num_values) for load in loads))
+        structure = (
+            id(node),
+            tuple(node.step_values),
+            tuple((id(load), load.name, load.num_values) for load in loads),
+        )
         if structure != self._structure:
             self._structure = structure
             self._fields.clear()
@@ -70,30 +88,52 @@ class LoadCaseEditor(QWidget):
             for index, name in enumerate(names):
                 card = QGroupBox(name)
                 layout = QVBoxLayout(card)
-                layout.addWidget(ItemActions(index, len(names), lambda key=name: self._remove(key), lambda delta, key=name: self._move(key, delta)))
+                layout.addWidget(
+                    ItemActions(
+                        index,
+                        len(names),
+                        lambda key=name: self._remove(key),
+                        lambda delta, key=name: self._move(key, delta),
+                    )
+                )
                 form = QFormLayout()
                 title = QLineEdit(name)
-                title.editingFinished.connect(lambda key=name, edit=title: self._rename(key, edit))
+                title.editingFinished.connect(
+                    lambda key=name, edit=title: self._rename(key, edit)
+                )
                 form.addRow(tr("ui.load_cases.name"), title)
                 for component in loads:
                     edit = QLineEdit()
-                    edit.setPlaceholderText(", ".join("0" for _ in range(component.num_values)))
-                    edit.editingFinished.connect(lambda key=name, load=component, field=edit: self._save(key, load, field))
+                    edit.setPlaceholderText(
+                        ", ".join("0" for _ in range(component.num_values))
+                    )
+                    edit.editingFinished.connect(
+                        lambda key=name, load=component, field=edit: self._save(
+                            key, load, field
+                        )
+                    )
                     self._fields[name, component] = edit
                     form.addRow(component_title_text(component), edit)
                 layout.addLayout(form)
                 self._cards.insertWidget(self._cards.count() - 1, card)
         for (name, component), edit in self._fields.items():
             if not edit.hasFocus():
-                values = node.step_values[name].get(component, [0.0] * component.num_values)
+                values = node.step_values[name].get(
+                    component, [0.0] * component.num_values
+                )
                 edit.setText(", ".join(str(value) for value in values))
 
     def _open_workspace(self, link: str) -> None:
         index = int(link)
         objective = self._problem.objective
-        self.objectiveRequested.emit(ObjectiveItemTreeNode(
-            objective, "objective", index, objective.objective_terms[index],
-        ))
+        self.objectiveRequested.emit(
+            ObjectiveItemTreeNode(
+                objective,
+                "objective",
+                index,
+                objective.objective_terms[index],
+            )
+        )
 
     def refresh_ui(self, context: RefreshContext) -> None:
         if context.problem.steps is not None:
@@ -131,23 +171,42 @@ class LoadCaseEditor(QWidget):
             dialog = QMessageBox(self)
             dialog.setIcon(QMessageBox.Icon.Question)
             dialog.setWindowTitle(tr("ui.load_cases.title"))
-            dialog.setText(tr("ui.load_cases.remove_references", name=name, count=len(terms)))
-            dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-            dialog.button(QMessageBox.StandardButton.Yes).setText(tr("ui.load_cases.delete_objectives"))
-            dialog.button(QMessageBox.StandardButton.No).setText(tr("ui.load_cases.clear_references"))
+            dialog.setText(
+                tr("ui.load_cases.remove_references", name=name, count=len(terms))
+            )
+            dialog.setStandardButtons(
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel
+            )
+            dialog.button(QMessageBox.StandardButton.Yes).setText(
+                tr("ui.load_cases.delete_objectives")
+            )
+            dialog.button(QMessageBox.StandardButton.No).setText(
+                tr("ui.load_cases.clear_references")
+            )
             dialog.setDefaultButton(QMessageBox.StandardButton.No)
             reply = dialog.exec()
-            if reply not in (QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No):
+            if reply not in (
+                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.No,
+            ):
                 return
             remove_terms = reply == QMessageBox.StandardButton.Yes
             if remove_terms:
-                siblings = [case for case in unused_cases(self._problem, terms) if case != name]
+                siblings = [
+                    case for case in unused_cases(self._problem, terms) if case != name
+                ]
                 remove_unused = confirm_case_cleanup(self, siblings)
                 if remove_unused is None:
                     return
-        self.session.remove(name, remove_objectives=remove_terms, remove_unused=remove_unused)
+        self.session.remove(
+            name, remove_objectives=remove_terms, remove_unused=remove_unused
+        )
         self._emit()
 
     def _save(self, name: str, component: FEAComponentNode, edit: QLineEdit) -> None:
-        if name in self._node.step_values and self.session.set_value(name, component, edit.text()):
+        if name in self._node.step_values and self.session.set_value(
+            name, component, edit.text()
+        ):
             self.changed.emit(self._node)

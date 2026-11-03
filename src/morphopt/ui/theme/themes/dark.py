@@ -3,14 +3,13 @@
 from dataclasses import replace
 
 from ..palette import (
-    ChartStyle,
-    CodeEditorPalette,
     DEFAULT_LAYOUT_STYLE,
     DEFAULT_VIEWER_STYLE,
+    ChartStyle,
+    CodeEditorPalette,
     QuickstartPreviewStyle,
     ThemePalette,
 )
-
 
 _viewer = replace(
     DEFAULT_VIEWER_STYLE,
@@ -82,7 +81,12 @@ DARK = ThemePalette(
     ),
     deformation_mesh_color="#2878b5",
     history_branch_colors=(
-        "#48a9e8", "#d08bda", "#e3a44b", "#63bd91", "#dd7373", "#8e9ee8",
+        "#48a9e8",
+        "#d08bda",
+        "#e3a44b",
+        "#63bd91",
+        "#dd7373",
+        "#8e9ee8",
     ),
     layout=DEFAULT_LAYOUT_STYLE,
 )

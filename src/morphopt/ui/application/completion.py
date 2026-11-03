@@ -10,8 +10,8 @@ be added behind the same completion protocol later.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,10 +51,27 @@ _OBJECTIVE_ITEMS = (
 )
 
 _TENSOR_MEMBERS = (
-    "abs()", "backward()", "clone()", "cpu()", "detach()", "device",
-    "dtype", "flatten()", "item()", "max()", "mean()", "min()", "norm()",
-    "numpy()", "reshape()", "shape", "squeeze()", "sum()", "to()",
-    "unsqueeze()", "view()",
+    "abs()",
+    "backward()",
+    "clone()",
+    "cpu()",
+    "detach()",
+    "device",
+    "dtype",
+    "flatten()",
+    "item()",
+    "max()",
+    "mean()",
+    "min()",
+    "norm()",
+    "numpy()",
+    "reshape()",
+    "shape",
+    "squeeze()",
+    "sum()",
+    "to()",
+    "unsqueeze()",
+    "view()",
 )
 
 _SURFACE_CONSTRAINT_ITEMS = (
@@ -65,10 +82,12 @@ _SURFACE_CONSTRAINT_ITEMS = (
     CompletionItem("pass", "pass"),
 )
 
-def completion_items(slot_key: str,
-                     problem: "ProblemDefinition | None" = None,
-                     member_expression: str | None = None,
-                     ) -> list[CompletionItem]:
+
+def completion_items(
+    slot_key: str,
+    problem: ProblemDefinition | None = None,
+    member_expression: str | None = None,
+) -> list[CompletionItem]:
     """Return completions appropriate for one hand-written code slot.
 
     ``slot_key`` intentionally accepts editor contexts (for example
@@ -99,48 +118,55 @@ def _is_tensor_expression(expression: str | None) -> bool:
 
 def _tensor_items(expression: str) -> list[CompletionItem]:
     """Return Tensor members as full paths for the current GC expression."""
-    return [CompletionItem(member, f"{expression}.{member}")
-            for member in _TENSOR_MEMBERS]
+    return [
+        CompletionItem(member, f"{expression}.{member}") for member in _TENSOR_MEMBERS
+    ]
 
 
-def _objective_reference_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
+def _objective_reference_items(
+    problem: ProblemDefinition | None,
+) -> list[CompletionItem]:
     if problem is None:
         return []
     items: list[CompletionItem] = []
     names = [component.name for component in problem.amplitude_components()]
     for step_name in _result_names(problem):
         for name in names:
-            items.append(CompletionItem(
-                f"result[{step_name!r}].jacobian[{name!r}]",
-                f"self.fe_results[{step_name!r}].jacobian[{name!r}]",
-            ))
-    items.extend(CompletionItem(repr(name), repr(name))
-                 for name in names)
+            items.append(
+                CompletionItem(
+                    f"result[{step_name!r}].jacobian[{name!r}]",
+                    f"self.fe_results[{step_name!r}].jacobian[{name!r}]",
+                )
+            )
+    items.extend(CompletionItem(repr(name), repr(name)) for name in names)
     return items
 
 
-def _objective_result_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
+def _objective_result_items(problem: ProblemDefinition | None) -> list[CompletionItem]:
     """Build result candidates from the current number of load steps."""
     items: list[CompletionItem] = []
     for step_name in _result_names(problem):
         result = f"self.fe_results[{step_name!r}]"
-        items.extend((
-            CompletionItem(result, result),
-            CompletionItem(f"{result}.GC", f"{result}.GC"),
-            CompletionItem(f"{result}.GC[-2]", f"{result}.GC[-2]"),
-            CompletionItem(f"{result}.jacobian", f"{result}.jacobian"),
-            CompletionItem(f"return {result}.GC[-2]",
-                           f"return {result}.GC[-2]"),
-        ))
+        items.extend(
+            (
+                CompletionItem(result, result),
+                CompletionItem(f"{result}.GC", f"{result}.GC"),
+                CompletionItem(f"{result}.GC[-2]", f"{result}.GC[-2]"),
+                CompletionItem(f"{result}.jacobian", f"{result}.jacobian"),
+                CompletionItem(f"return {result}.GC[-2]", f"return {result}.GC[-2]"),
+            )
+        )
     return items
 
 
-def _result_names(problem: "ProblemDefinition | None") -> list[str]:
+def _result_names(problem: ProblemDefinition | None) -> list[str]:
     """Registered result names available to objective code."""
-    return list(problem.steps.step_values) if problem is not None and problem.steps else []
+    return (
+        list(problem.steps.step_values) if problem is not None and problem.steps else []
+    )
 
 
-def _surface_items(problem: "ProblemDefinition | None") -> list[CompletionItem]:
+def _surface_items(problem: ProblemDefinition | None) -> list[CompletionItem]:
     if problem is None:
         return []
     items: list[CompletionItem] = []

@@ -15,6 +15,7 @@ from vtkmodules.vtkRenderingCore import vtkCellPicker
 
 from ..i18n import localized_message
 from ..theme import theme_manager
+from ..visualization.rendering import apply_visualization, configure_plotter
 from ..visualization.scene import (
     ArrowLoad,
     CouplingLoad,
@@ -28,7 +29,6 @@ from ..visualization.scene import (
     PreviewScene,
     SpringLoad,
 )
-from ..visualization.rendering import configure_plotter
 
 _SOURCE_CELL_ID = "morphopt_source_cell_id"
 
@@ -97,7 +97,8 @@ class PreviewRenderer:
         if bounds is not None:
             bounds = np.asarray(bounds, dtype=float)
             self._geometry_bounds = (
-                bounds[::2], bounds[1::2],
+                bounds[::2],
+                bounds[1::2],
             )
             self._annotation_scale = scene.diagonal
         else:
@@ -113,6 +114,7 @@ class PreviewRenderer:
         if scene.show_bounding_box and self._geometry_bounds is not None:
             self._draw_bounding_box()
         self._draw_instance_legend(scene.instance_legend)
+        apply_visualization(self.plotter)
 
     def _draw_bounding_box(self) -> None:
         """Draw the full Part bounds outside the picking and clipping pipelines."""
@@ -120,13 +122,25 @@ class PreviewRenderer:
         bounds = tuple(value for pair in zip(lower, upper) for value in pair)
         color = theme_manager.palette.viewer.render.annotation_text_color
         self.plotter.add_mesh(
-            pv.Box(bounds=bounds).outline(), name="part-bounding-box",
-            color=color, line_width=1, pickable=False, lighting=False,
+            pv.Box(bounds=bounds).outline(),
+            name="part-bounding-box",
+            color=color,
+            line_width=1,
+            pickable=False,
+            lighting=False,
         )
         self.plotter.show_bounds(
-            bounds=bounds, color=color, location="outer", ticks="outside",
-            n_xlabels=2, n_ylabels=2, n_zlabels=2,
-            xtitle="X", ytitle="Y", ztitle="Z", fmt="%.6g",
+            bounds=bounds,
+            color=color,
+            location="outer",
+            ticks="outside",
+            n_xlabels=2,
+            n_ylabels=2,
+            n_zlabels=2,
+            xtitle="X",
+            ytitle="Y",
+            ztitle="Z",
+            fmt="%.6g",
             font_size=theme_manager.palette.viewer.render.label_font_size,
             use_3d_text=False,
         )
@@ -275,11 +289,16 @@ class PreviewRenderer:
                 actor.prop.opacity = min(actor.prop.opacity, 0.18)
         for index, mesh in enumerate(meshes):
             actor = self.plotter.add_mesh(
-                mesh, name=f"selected-part-set-{index}",
+                mesh,
+                name=f"selected-part-set-{index}",
                 color=theme_manager.palette.viewer.geometry.picked_face_color,
                 style="points" if nodes else "surface",
-                point_size=9, render_points_as_spheres=nodes,
-                opacity=1.0, lighting=False, pickable=False, render=False,
+                point_size=9,
+                render_points_as_spheres=nodes,
+                opacity=1.0,
+                lighting=False,
+                pickable=False,
+                render=False,
                 reset_camera=False,
             )
             actor.mapper.SetResolveCoincidentTopologyToPolygonOffset()
@@ -300,6 +319,7 @@ class PreviewRenderer:
                 actor = self.draw(item)
                 if actor is not None:
                     self._overlay_actors.append(actor)
+        apply_visualization(self.plotter)
         self.plotter.render()
 
     def _draw_instance_legend(self, entries: list[tuple[str, str]]) -> None:

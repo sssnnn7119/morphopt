@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ..model.fields import FieldSpec
-from ..model.node_types.parts import INPPartNode
 from ..model.material_models import MATERIAL_MODEL_PARAMETERS
+from ..model.node_types.parts import INPPartNode
 from ..model.problem import (
     CADOperationNode,
     FEAComponentNode,
@@ -33,7 +33,9 @@ def fields_for_node(
                 "bool",
                 type(node).is_updatable,
                 doc_key="ui.schema.fields.is_updatable.help",
-                read_only=node.factory is None and node.type != "brep_surface" and not node.custom_class,
+                read_only=node.factory is None
+                and node.type != "brep_surface"
+                and not node.custom_class,
             ),
         )
     if isinstance(node, INPPartNode):
@@ -127,13 +129,18 @@ class SnippetInputs:
     def values(self, source: str) -> list:
         catalog = PartSetCatalog(self.problem)
         providers = {
-            "load_steps": lambda: list(self.problem.steps.step_values) if self.problem.steps else [],
+            "load_steps": lambda: (
+                list(self.problem.steps.step_values) if self.problem.steps else []
+            ),
             "instances": self.problem.instance_names,
             "reference_points": self.problem.reference_point_names,
-            "elements": lambda: list(dict.fromkeys(
-                name for part in self.problem.parts()
-                for name in catalog.for_part(part).elements
-            )),
+            "elements": lambda: list(
+                dict.fromkeys(
+                    name
+                    for part in self.problem.parts()
+                    for name in catalog.for_part(part).elements
+                )
+            ),
             "force_loads": lambda: [
                 node.name
                 for node in self.problem.fea_components()

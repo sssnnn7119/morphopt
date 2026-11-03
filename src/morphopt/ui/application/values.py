@@ -1,9 +1,14 @@
 """Numeric text parsing shared by forms and non-Qt definition tools."""
+
 from __future__ import annotations
+
 import ast
 import re
+
 from ..model.fields import FieldSpec
+
 _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+
 
 def _normalize(v, ints: bool = False):
     """Convert values to float, or keep integral as int when ``ints``."""
@@ -78,7 +83,13 @@ def parse_field(text: str, spec: FieldSpec, helper_names=()):
             expression = ast.parse(stripped, mode="eval")
         except SyntaxError:
             expression = None
-        if expression is not None and any(isinstance(node, ast.Name) for node in ast.walk(expression)):
+        if expression is not None and any(
+            isinstance(node, ast.Name) for node in ast.walk(expression)
+        ):
             return stripped
-        return parse_mat(text) if kind == "mat" else parse_vec_text(text, ints=bool(spec.ints))
+        return (
+            parse_mat(text)
+            if kind == "mat"
+            else parse_vec_text(text, ints=bool(spec.ints))
+        )
     return text

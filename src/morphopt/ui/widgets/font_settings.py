@@ -138,7 +138,8 @@ class FontSettingsDialog(QDialog):
         for combo, chinese in ((self.western, False), (self.chinese, True)):
             family = chinese_family if chinese else font.family()
             if (chinese and not chinese_family) or (
-                not chinese and font.family() == font_manager.default_font(role).family()
+                not chinese
+                and font.family() == font_manager.default_font(role).family()
             ):
                 family = ""
             with QSignalBlocker(combo):
@@ -179,7 +180,9 @@ class FontSettingsDialog(QDialog):
     def _set_style(self, _index: int) -> None:
         role = self._role()
         current, chinese = self._draft[role]
-        font = QFontDatabase.font(current.family(), self.style.currentText(), current.pointSize())
+        font = QFontDatabase.font(
+            current.family(), self.style.currentText(), current.pointSize()
+        )
         if current.pointSizeF() > 0:
             font.setPointSizeF(current.pointSizeF())
         self._draft[role] = font, chinese

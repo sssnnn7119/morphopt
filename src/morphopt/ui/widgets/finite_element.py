@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import codecs
 import re
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -31,12 +30,11 @@ from PySide6.QtWidgets import (
 
 from ...postprocess import (
     CONTOUR_FIELDS,
-    EXPORTERS,
+    TABLE_WRITERS,
     RESULT_FIELDS,
+    FiniteElementResults,
     IterationModel,
-    ResultContours,
     ResultLocation,
-    available_fields,
     cpu_torch_defaults,
     normalize_export_name,
 )
@@ -46,10 +44,10 @@ from ..application.finite_element import (
 )
 from ..i18n import tr
 from ..presentation.result_fields import contour_label_key, export_format_label, field_label
-from ..worker_environment import configure_worker_process
+from ..processes import start_worker
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_save_file
-from .observation_pages import PlotViewport
+from .viewport import PlotViewport
 from ..visualization.rendering import add_orientation_axes
 
 
@@ -67,11 +65,9 @@ class FiniteElementPage(QWidget):
         self._render_pending = False
         self._loading = False
         self._folder = ""
-        self._contours = None
+        self._result_fields = None
         self._process = QProcess(self)
-        configure_worker_process(self._process)
         self._output_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        self._process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self._process.readyReadStandardOutput.connect(self._read_output)
         self._process.finished.connect(self._finished)
         self._process.errorOccurred.connect(self._process_error)
@@ -161,7 +157,7 @@ class FiniteElementPage(QWidget):
         self.no_reference_points.setWordWrap(True)
         self.no_reference_points.setProperty("textRole", "muted")
         export_layout.addWidget(self.no_reference_points)
-        self.export_button = self._button("ui.fea.export_data", self.export_results)
+        self.export_button = self._button("ui.fea.export_data", self.export_fields)
         export_layout.addWidget(self.export_button)
         hint = self._label("ui.fea.export_hint")
         hint.setWordWrap(True)
@@ -418,9 +414,7 @@ class FiniteElementPage(QWidget):
         self.output.clear()
         self._output_decoder.reset()
         self._set_status("solving" if job == "solve" else "exporting")
-        self._process.start(
-            sys.executable, ["-u", "-m", "morphopt.ui.fea_worker", str(request)]
-        )
+        start_worker(self._process, request)
         self._update_buttons()
 
     def _read_output(self, *, final: bool = False) -> None:
@@ -477,21 +471,24 @@ class FiniteElementPage(QWidget):
         )
         self.export_location.setEnabled(not busy)
         self.native_export_button.setEnabled(not busy and has_model)
-        self._update_export_fields()
         self._update_display_fields()
+        self._update_export_fields()
         self.busyChanged.emit(busy)
 
     def _update_display_fields(self) -> None:
         controller, result = self.session.controller, self.session.result
         if controller is None or result is None:
-            self._contours = None
+            self._result_fields = None
         elif (
-            self._contours is None
-            or self._contours.controller is not controller
-            or self._contours.result is not result
+            self._result_fields is None
+            or self._result_fields.controller is not controller
+            or self._result_fields.result is not result
         ):
-            self._contours = ResultContours(controller, result)
-        fields = self._contours.fields if self._contours is not None else CONTOUR_FIELDS
+            self._result_fields = FiniteElementResults(controller, result)
+        fields = (
+            self._result_fields.contour_fields
+            if self._result_fields is not None else CONTOUR_FIELDS
+        )
         selected = self.display_field.currentData()
         items = tuple(
             (tr(contour_label_key(field), component=field.key), field.key) for field in fields
@@ -520,11 +517,11 @@ class FiniteElementPage(QWidget):
                 self.display_field.setCurrentIndex(max(index, 0))
             finally:
                 self.display_field.blockSignals(False)
-        self.display_field.setEnabled(self._contours is not None)
+        self.display_field.setEnabled(self._result_fields is not None)
         field = next(
             item for item in fields if item.key == self.display_field.currentData()
         )
-        projected = self._contours is not None and field.source != "displacement"
+        projected = self._result_fields is not None and field.source != "displacement"
         hint = tr(
             "ui.fea.contour_average_hint" if projected else "ui.fea.contour_nodal_hint"
         )
@@ -540,11 +537,7 @@ class FiniteElementPage(QWidget):
         )
         if has_result:
             try:
-                available = set(
-                    available_fields(
-                        self.session.controller, self.session.result, location
-                    )
-                )
+                available = set(self._result_fields.available_fields(location))
             except Exception as exc:
                 available = set()
                 self.output.appendPlainText(str(exc))
@@ -579,7 +572,7 @@ class FiniteElementPage(QWidget):
             and self.cases.currentData() == self.session.selected_result
         )
 
-    def export_results(self) -> None:
+    def export_fields(self) -> None:
         if self.is_running():
             return
         if not self._has_selected_model() or self.session.result is None:
@@ -606,7 +599,7 @@ class FiniteElementPage(QWidget):
             tr("ui.fea.export"),
             self._folder,
             name,
-            {key: export_format_label(key) for key in EXPORTERS},
+            {key: export_format_label(key) for key in TABLE_WRITERS},
         )
         if selection is None:
             return
@@ -668,11 +661,11 @@ class FiniteElementPage(QWidget):
                 field = self.display_field.currentData()
                 render_style = theme_manager.palette.viewer.render
                 values_by_instance = {}
-                if self._contours is not None:
+                if self._result_fields is not None:
                     descriptor = next(
-                        item for item in self._contours.fields if item.key == field
+                        item for item in self._result_fields.contour_fields if item.key == field
                     )
-                    values_by_instance = self._contours.values(descriptor)
+                    values_by_instance = self._result_fields.contour_values(descriptor)
                 scalar_range = None
                 finite_values = [
                     values[np.isfinite(values)]
@@ -764,8 +757,8 @@ class FiniteElementPage(QWidget):
             self.export_location.setItemText(
                 index, tr("ui.fea.location_" + location.value)
             )
-        self._update_export_fields()
         self._update_display_fields()
+        self._update_export_fields()
         self._update_cases()
         if self._status_key:
             self._set_status(self._status_key, **self._status_values)

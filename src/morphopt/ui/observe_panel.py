@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -39,7 +40,7 @@ from .application import (
 from .application.runs import RunProgress
 from .i18n import tr
 from .theme import theme_manager
-from .widgets.elided_label import ElidedLabel
+from .widgets.labels import ElidedLabel
 from .widgets.observation_pages import (
     DeformationCasePage,
     MetricsPage,
@@ -93,21 +94,24 @@ class ObserverPanel(QWidget):
         top.addWidget(self.iter_label)
         top.addWidget(self.chk_follow)
         self.export_menu = QMenu(self)
-        self.action_export_surfaces = self.export_menu.addAction(
-            tr("ui.surface_export.title")
+        self.action_export_surfaces = QAction(
+            tr("ui.surface_export.title"), self.export_menu
         )
+        self.export_menu.addAction(self.action_export_surfaces)
         self.action_export_surfaces.triggered.connect(self._export_surfaces)
         self.action_export_surfaces.setEnabled(False)
-        self.action_export_design_gif = self.export_menu.addAction(
-            tr("ui.history_gif.design_title")
+        self.action_export_design_gif = QAction(
+            tr("ui.history_gif.design_title"), self.export_menu
         )
+        self.export_menu.addAction(self.action_export_design_gif)
         self.action_export_design_gif.triggered.connect(
             lambda _checked=False: self._export_history_gif("design")
         )
         self.action_export_design_gif.setEnabled(False)
-        self.action_export_deformation_gif = self.export_menu.addAction(
-            tr("ui.history_gif.deformation_title")
+        self.action_export_deformation_gif = QAction(
+            tr("ui.history_gif.deformation_title"), self.export_menu
         )
+        self.export_menu.addAction(self.action_export_deformation_gif)
         self.action_export_deformation_gif.triggered.connect(
             lambda _checked=False: self._export_history_gif("deformation")
         )
@@ -217,7 +221,7 @@ class ObserverPanel(QWidget):
             control.setEnabled(not locked)
 
     def _export_surfaces(self) -> None:
-        from .widgets.surface_export import SurfaceExportDialog
+        from .widgets.history_export import SurfaceExportDialog
 
         dialog = SurfaceExportDialog(
             self.path_result,
@@ -230,7 +234,7 @@ class ObserverPanel(QWidget):
         dialog.deleteLater()
 
     def _export_history_gif(self, mode: str) -> None:
-        from .widgets.history_gif_export import HistoryGifExportDialog
+        from .widgets.history_export import HistoryGifExportDialog
 
         if not self.path_result:
             return
@@ -268,13 +272,13 @@ class ObserverPanel(QWidget):
             "parallel_scale": float(camera.GetParallelScale()),
             "view_angle": float(camera.GetViewAngle()),
         }
-        size = viewport.size()
+        size = plotter.window_size
         palette = theme_manager.palette
         viewer = palette.viewer
         geometry = viewer.geometry
-        render = viewer.render
+        settings = viewport.settings
         style = {
-            "background": palette.viewer_background,
+            "background": palette.viewer.render.background,
             "text_color": palette.text,
             "geometry_color": (
                 geometry.instance_colors[0]
@@ -282,13 +286,15 @@ class ObserverPanel(QWidget):
                 else geometry.uninstanced_color
             ),
             "deformation_color": palette.deformation_mesh_color,
-            "mesh_ambient": render.mesh_ambient,
-            "mesh_diffuse": render.mesh_diffuse,
-            "mesh_specular": render.mesh_specular,
-            "mesh_specular_power": render.mesh_specular_power,
+            "mesh_ambient": settings.ambient,
+            "mesh_diffuse": settings.diffuse,
+            "mesh_specular": settings.specular,
+            "mesh_specular_power": settings.specular_power,
+            "light_intensity": settings.light_intensity,
+            "smooth_shading": settings.smooth_shading,
             "boundary_shell_opacity": geometry.boundary_shell_opacity,
         }
-        return camera_state, (max(1, size.width()), max(1, size.height())), style
+        return camera_state, (max(1, size[0]), max(1, size[1])), style
 
     def reset(self) -> None:
         """Drop every result-dependent piece of content.

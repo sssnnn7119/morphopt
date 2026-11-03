@@ -18,9 +18,9 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from .model.problem import ProblemDefinition
 from ..paths import sanitize_name
-from .worker_environment import worker_environment
+from .model.problem import ProblemDefinition
+from .processes import worker_environment
 
 #: where UI-launched runs are written by default (job cwd)
 UI_RUN_DIR = os.path.join(os.getcwd(), "ui_runs")
@@ -39,7 +39,8 @@ def _start_headless_process(
     environment = worker_environment()
     process_options = (
         {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt" else {"start_new_session": True}
+        if os.name == "nt"
+        else {"start_new_session": True}
     )
     return subprocess.Popen(
         list(command),
@@ -153,7 +154,10 @@ def stop_job(proc: subprocess.Popen | None) -> None:
     if os.name == "nt":
         result = subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-            capture_output=True, text=True, errors="replace", timeout=10,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=10,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode and proc.poll() is None:
@@ -180,7 +184,8 @@ def latest_result_dir(run_root: str, label: str) -> str | None:
     if not run_root or not label or not Path(run_root).is_dir():
         return None
     matches = sorted(
-        str(path) for path in Path(run_root).iterdir()
+        str(path)
+        for path in Path(run_root).iterdir()
         if path.is_dir() and path.name.startswith(label + "_T")
     )
     return matches[-1] if matches else None

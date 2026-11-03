@@ -25,11 +25,9 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from ..i18n import tr
 from ..application.validation import DefinitionValidation
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS
-from ..theme import theme_manager
-from ..theme.fonts import font_manager
+from ..i18n import tr
 from ..model.problem import (
     CADOperationNode,
     CustomClassNode,
@@ -64,8 +62,9 @@ from ..presentation.navigation import (
     node_path,
 )
 from ..refresh import RefreshContext
+from ..theme import theme_manager
+from ..theme.fonts import font_manager
 from .definition_actions import DefinitionActions
-
 
 _ERROR_ROLE = Qt.ItemDataRole.UserRole + 1
 _TOOLTIP_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -93,11 +92,21 @@ class _DefinitionDelegate(QStyledItemDelegate):
         painter.fillRect(view.rect, QColor(palette.tree_error_background))
         painter.setFont(view.font)
         painter.setPen(QColor(palette.tree_error_text))
-        rect = view.widget.style().subElementRect(
-            QStyle.SubElement.SE_ItemViewItemText, view, view.widget,
-        ).adjusted(3, 0, -3, 0)
-        text = view.fontMetrics.elidedText(view.text, Qt.TextElideMode.ElideRight, rect.width())
-        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+        rect = (
+            view.widget.style()
+            .subElementRect(
+                QStyle.SubElement.SE_ItemViewItemText,
+                view,
+                view.widget,
+            )
+            .adjusted(3, 0, -3, 0)
+        )
+        text = view.fontMetrics.elidedText(
+            view.text, Qt.TextElideMode.ElideRight, rect.width()
+        )
+        painter.drawText(
+            rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text
+        )
         if view.state & QStyle.StateFlag.State_Selected:
             painter.setPen(QColor(palette.accent))
             painter.drawRect(view.rect.adjusted(0, 0, -1, -1))
@@ -239,8 +248,13 @@ class ModelTree(QTreeWidget):
         palette = theme_manager.palette
         for item in self._item_node:
             invalid = bool(item.data(0, _ERROR_ROLE))
-            item.setForeground(0, QBrush(QColor(palette.tree_error_text)) if invalid else QBrush())
-            item.setBackground(0, QBrush(QColor(palette.tree_error_background)) if invalid else QBrush())
+            item.setForeground(
+                0, QBrush(QColor(palette.tree_error_text)) if invalid else QBrush()
+            )
+            item.setBackground(
+                0,
+                QBrush(QColor(palette.tree_error_background)) if invalid else QBrush(),
+            )
         self.viewport().update()
 
     def _refresh_validation(self) -> None:
@@ -260,13 +274,18 @@ class ModelTree(QTreeWidget):
             elif node.kind in {"params_class", "loads_group"}:
                 owner = CONFIGURATION_CLASS_PATHS[node.kind]
             identity = owner if isinstance(owner, str) else id(owner)
-            messages = [f"{item.text(0)}: {message}" for message in diagnostics.get(identity, [])]
+            messages = [
+                f"{item.text(0)}: {message}"
+                for message in diagnostics.get(identity, [])
+            ]
             for index in range(item.childCount()):
                 messages.extend(visit(item.child(index)))
             item.setData(0, _ERROR_ROLE, bool(messages))
             tooltip = item.data(0, _TOOLTIP_ROLE) or ""
             if messages:
-                tooltip += "\n\n" + tr("ui.validation.heading") + "\n" + "\n".join(messages)
+                tooltip += (
+                    "\n\n" + tr("ui.validation.heading") + "\n" + "\n".join(messages)
+                )
             item.setToolTip(0, tooltip.strip())
             return messages
 
@@ -289,12 +308,14 @@ class ModelTree(QTreeWidget):
         if isinstance(node, PartNode):
             return tr(
                 "ui.widgets.model_tree.part_instances_tooltip",
-                value_0=node.assembly_name, value_1=", ".join(node.instance_names),
+                value_0=node.assembly_name,
+                value_1=", ".join(node.instance_names),
             )
         if isinstance(node, InstanceNode):
             return tr(
                 "ui.widgets.model_tree.instance_transform_tooltip",
-                value_0=node.translation, value_1=node.rotation,
+                value_0=node.translation,
+                value_1=node.rotation,
             )
         if isinstance(node, CADOperationNode):
             return cad_operation_summary_text(node)
@@ -440,7 +461,11 @@ class ModelTree(QTreeWidget):
                     )
                 candidates = {
                     kind: "morphopt.BoundaryPart."
-                    + (spec.factory.split(".")[0] if spec.factory else spec.backend_class)
+                    + (
+                        spec.factory.split(".")[0]
+                        if spec.factory
+                        else spec.backend_class
+                    )
                     for kind, spec in SURFACE_TYPES.items()
                 }
                 self.actions.custom_add_menu(
@@ -475,7 +500,9 @@ class ModelTree(QTreeWidget):
                 menu.addAction(import_action)
                 menu.addAction(
                     tr("ui.cad.convert_to_boundary"),
-                    lambda _checked=False, owner=node: self.actions.convert_cad_to_boundary(owner),
+                    lambda _checked=False, owner=node: (
+                        self.actions.convert_cad_to_boundary(owner)
+                    ),
                 )
                 menu.addSeparator()
 
@@ -573,7 +600,8 @@ class ModelTree(QTreeWidget):
             self.actions.populate_updater_menu(sub)
 
         if isinstance(node, (PartNode, MaterialNode)) and node.is_updatable:
-            action = menu.addAction(tr("ui.component.create_updater"))
+            action = QAction(tr("ui.component.create_updater"), menu)
+            menu.addAction(action)
             action.setEnabled(
                 node in self.actions.commands.available_optimizer_targets()
             )
@@ -639,7 +667,8 @@ class ModelTree(QTreeWidget):
             for item_type, spec in catalog.items():
                 if spec.group != section or spec.hidden:
                     continue
-                action = sub.addAction(node_type_title(spec, item_type))
+                action = QAction(node_type_title(spec, item_type), sub)
+                sub.addAction(action)
                 action.triggered.connect(
                     lambda _checked=False, entry=node, kind=item_type, cat=category: (
                         self.actions.add_updater_item(entry, kind, cat)
@@ -667,7 +696,8 @@ class ModelTree(QTreeWidget):
             for item_type, spec in SURFACE_SYMMETRY_CONSTRAINTS.items():
                 if item_type != "Custom" and item_type not in available:
                     continue
-                action = sub.addAction(node_type_title(spec, item_type))
+                action = QAction(node_type_title(spec, item_type), sub)
+                sub.addAction(action)
                 action.triggered.connect(
                     lambda _checked=False, entry=node, kind=item_type: (
                         self.actions.add_symmetry_constraint(entry, kind)

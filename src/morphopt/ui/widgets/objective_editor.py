@@ -34,11 +34,11 @@ from ..refresh import RefreshContext
 from ..schemes.base import get_template
 from ..schemes.snippets import CodeSnippet
 from ..theme import theme_manager
-from .workspace_objective import WorkspaceObjectiveEditor
 from .case_deletion import confirm_case_cleanup
 from .codeeditor import CodeEditor
 from .collection_controls import CollectionHeader, ItemActions, set_card_selected
 from .template_insert_dialog import TemplateInsertDialog
+from .workspace_objective import WorkspaceObjectiveEditor
 
 
 class JacobianLoadSelector(QToolButton):
@@ -152,9 +152,10 @@ class ObjectiveEditor(QWidget):
             ("custom_loss_term", CONSTANT.UI.OBJECTIVE.TYPE_CUSTOM_LOSS),
             ("workspace_term", CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE),
         ):
-            action = self._add_menu.addAction(
-                tr(f"ui.widgets.objective_editor.{label_key}")
+            action = QAction(
+                tr(f"ui.widgets.objective_editor.{label_key}"), self._add_menu
             )
+            self._add_menu.addAction(action)
             self._add_actions.append((action, label_key))
             action.triggered.connect(
                 lambda _checked=False, selected_type=term_type: self._add_term(
@@ -191,9 +192,10 @@ class ObjectiveEditor(QWidget):
             ("displacement_metric", CONSTANT.UI.METRIC.TYPE_DISPLACEMENT),
             ("custom_metric", CONSTANT.UI.METRIC.TYPE_CUSTOM),
         ):
-            action = self._metric_menu.addAction(
-                tr(f"ui.widgets.objective_editor.{label_key}")
+            action = QAction(
+                tr(f"ui.widgets.objective_editor.{label_key}"), self._metric_menu
             )
+            self._metric_menu.addAction(action)
             self._metric_actions.append((action, label_key))
             action.triggered.connect(
                 lambda _checked=False, selected_type=metric_type: self._add_metric(
@@ -276,7 +278,8 @@ class ObjectiveEditor(QWidget):
             if self._obj is not None:
                 amplitude_components = problem.amplitude_components()
                 workspace_loads = {
-                    name for term in self._obj.objective_terms
+                    name
+                    for term in self._obj.objective_terms
                     if term.get("type") == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
                     for entry in term.get("inputs", [])
                     for name, _index in entry["parameters"]
@@ -361,8 +364,15 @@ class ObjectiveEditor(QWidget):
             id(self._obj),
             localization.locale,
             tuple(point.name for point in self._reference_points()),
-            tuple((load.name, load.num_values) for load in self._problem.amplitude_components()) if self._problem else (),
-            tuple(self._problem.steps.step_values) if self._problem and self._problem.steps else (),
+            tuple(
+                (load.name, load.num_values)
+                for load in self._problem.amplitude_components()
+            )
+            if self._problem
+            else (),
+            tuple(self._problem.steps.step_values)
+            if self._problem and self._problem.steps
+            else (),
             tuple(
                 (
                     term.get("type"),
@@ -398,8 +408,15 @@ class ObjectiveEditor(QWidget):
             id(self._obj),
             localization.locale,
             tuple(point.name for point in self._reference_points()),
-            tuple((load.name, load.num_values) for load in self._problem.amplitude_components()) if self._problem else (),
-            tuple(self._problem.steps.step_values) if self._problem and self._problem.steps else (),
+            tuple(
+                (load.name, load.num_values)
+                for load in self._problem.amplitude_components()
+            )
+            if self._problem
+            else (),
+            tuple(self._problem.steps.step_values)
+            if self._problem and self._problem.steps
+            else (),
             tuple(metric.get("type") for metric in metrics),
         )
         self._metric_header.add_button.setEnabled(self._obj is not None)
@@ -475,9 +492,7 @@ class ObjectiveEditor(QWidget):
             step_combo = QComboBox()
             step_combo.addItem(tr("ui.widgets.objective_editor.select_load_case"), None)
             for step_name in self._problem.steps.step_values:
-                step_combo.addItem(
-                    step_name, step_name
-                )
+                step_combo.addItem(step_name, step_name)
             self._set_combo_value(step_combo, metric.get("step_name"))
             form.addRow(tr("ui.widgets.objective_editor.load_case"), step_combo)
             fields["step_name"] = step_combo
@@ -676,9 +691,7 @@ class ObjectiveEditor(QWidget):
             step_combo = QComboBox()
             step_combo.addItem(tr("ui.widgets.objective_editor.select_load_case"), None)
             for step_name in self._problem.steps.step_values:
-                step_combo.addItem(
-                    step_name, step_name
-                )
+                step_combo.addItem(step_name, step_name)
             self._set_combo_value(step_combo, term.get("step_name"))
             form.addRow(tr("ui.widgets.objective_editor.load_case"), step_combo)
             fields["step_name"] = step_combo
@@ -726,7 +739,10 @@ class ObjectiveEditor(QWidget):
         fields["weight"] = weight
         layout.addLayout(form)
 
-        if term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE and self._problem is not None:
+        if (
+            term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE
+            and self._problem is not None
+        ):
             workspace = WorkspaceObjectiveEditor(term, self._problem)
             workspace.changed.connect(lambda: self.changed.emit(self._obj))
             layout.addWidget(workspace)
@@ -885,7 +901,14 @@ class ObjectiveEditor(QWidget):
                 }
             )
         elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE:
-            term.update(kind="workspace_plane", reference_point_name="", inputs=[], gauss_order=2, normalization=1.0, case_names=[])
+            term.update(
+                kind="workspace_plane",
+                reference_point_name="",
+                inputs=[],
+                gauss_order=2,
+                normalization=1.0,
+                case_names=[],
+            )
         else:
             term["body"] = ""
         self._obj.objective_terms.append(term)
