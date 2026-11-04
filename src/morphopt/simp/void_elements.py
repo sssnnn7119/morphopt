@@ -390,7 +390,7 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
                 U[self._elems[:, i]],
             )
 
-        Er = self.potential_Energy(U)
+        # Er = self.potential_Energy(U)
 
         EmdUgrad2 = Ugrad2
         for i in range(3):

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from morphopt.optcore.quadrature import actuation_boundary_gauss_points
+from morphopt.utils.quadrature import actuation_boundary_gauss_points
 from morphopt.ui.codegen.workspace import workspace_integral_body
 from morphopt.ui.codegen.generator import _objective_function_body
 

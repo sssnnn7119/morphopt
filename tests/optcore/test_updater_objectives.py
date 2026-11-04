@@ -12,6 +12,7 @@ from morphopt.optcore.controller import Controller
 from morphopt.optcore.modelparams import FEAParams, GeometryParams, MaterialsParams, Params
 from morphopt.optcore.modelparams.materials import MaterialModels
 from morphopt.optcore.objfunc import ObjectiveFunction
+from morphopt.optcore.protocal import ProtocalSavable
 from morphopt.optcore.updaters import BaseUpdater, QuadraticHistory, Updaters
 from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
@@ -103,10 +104,12 @@ def test_snapshot_restores_anchor_and_next_secant(tmp_path: Path):
     for value in (0.0, 0.2, 0.5):
         point = torch.tensor([value, 2 * value])
         uninterrupted.observe(point, 3 * point)
-    path = tmp_path / "history.npz"
-    uninterrupted.save(path)
+    assert isinstance(uninterrupted, ProtocalSavable)
+    saved: ProtocalSavable = uninterrupted
+    saved.save(foldpath=str(tmp_path), iteration=3)
+    assert (tmp_path / "surrogate_3.npz").is_file()
     resumed = QuadraticHistory(2)
-    resumed.load(path)
+    resumed.load(foldpath=str(tmp_path), iteration=3)
     for model in (uninterrupted, resumed):
         model.observe(torch.tensor([0.7, 1.4]), torch.tensor([2.1, 4.2]))
     assert resumed.history_size == 2
@@ -116,11 +119,10 @@ def test_snapshot_restores_anchor_and_next_secant(tmp_path: Path):
 
 
 def test_unobserved_model_checkpoint(tmp_path: Path):
-    path = tmp_path / "unused.npz"
     model = QuadraticHistory()
-    model.save(path)
+    model.save(foldpath=str(tmp_path), iteration=0)
     model.observe(torch.ones(2), torch.ones(2))
-    model.load(path)
+    model.load(foldpath=str(tmp_path), iteration=0)
     assert model.point is None
     assert model.history_size == 0
     model.observe(torch.ones(2), torch.ones(2))

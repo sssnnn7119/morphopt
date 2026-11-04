@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
-from ..paths import sanitize_name
+from ..utils.paths import sanitize_name
 from ._runtime import cpu_torch_defaults
 from .archive import OptimizationArchive
 from .fields import RESULT_FIELDS, FiniteElementResults, ResultLocation, ResultTable

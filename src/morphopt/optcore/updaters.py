@@ -24,7 +24,7 @@ UpdaterTargetType: TypeAlias = type[UpdaterTarget] | tuple[type[UpdaterTarget], 
 """Accepted class specification for an updater target."""
 
 
-class QuadraticHistory:
+class QuadraticHistory(ProtocalSavable):
     """Limited-memory BFGS pairs shared by objectives and optimizers.
 
     Each consumer owns an independent instance in its parameter coordinates.
@@ -168,9 +168,13 @@ class QuadraticHistory:
         delta = point.flatten() - self.point
         return self.gradient @ delta + 0.5 * (delta @ self.hessian_product(delta))
 
-    def save(self, path: str | Path) -> None:
+    def _state_path(self, foldpath: str, iteration: int) -> Path:
+        """Locate this iteration inside the owner's history directory."""
+        return Path(foldpath) / f"surrogate_{iteration}.npz"
+
+    def save(self, foldpath: str, iteration: int) -> None:
         """Persist the latest observation and retained curvature pairs."""
-        path = Path(path)
+        path = self._state_path(foldpath, iteration)
         path.parent.mkdir(parents=True, exist_ok=True)
         size = self.point.numel() if self.point is not None else 0
         np.savez_compressed(
@@ -195,9 +199,9 @@ class QuadraticHistory:
             ),
         )
 
-    def load(self, path: str | Path) -> None:
+    def load(self, foldpath: str, iteration: int) -> None:
         """Restore observations on the active default device and rebuild B."""
-        with np.load(path, allow_pickle=False) as state:
+        with np.load(self._state_path(foldpath, iteration), allow_pickle=False) as state:
             observed = state["observed"].item()
             self.point = torch.tensor(state["point"]) if observed else None
             self.gradient = torch.tensor(state["gradient"]) if observed else None

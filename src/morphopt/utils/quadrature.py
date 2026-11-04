@@ -1,11 +1,15 @@
 """Boundary quadrature for workspace integrals in actuation space."""
 
+from collections.abc import Sequence
 from itertools import product
 
 import numpy as np
 
 
-def actuation_boundary_gauss_points(bounds, order):
+def actuation_boundary_gauss_points(
+    bounds: Sequence[Sequence[float]] | np.ndarray,
+    order: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Return Gauss points, weights, oriented tangents, and signs on a box boundary.
 
     ``bounds`` contains one finite ``(lower, upper)`` pair per actuation input.

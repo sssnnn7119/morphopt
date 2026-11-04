@@ -19,7 +19,7 @@ import torch
 import morphopt
 
 from ..constants import CONSTANT
-from ..paths import sanitize_name
+from ..utils.paths import sanitize_name
 from .history import History
 
 logger = logging.getLogger(__name__)

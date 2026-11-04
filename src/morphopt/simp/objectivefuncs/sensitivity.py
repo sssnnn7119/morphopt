@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import torch
 
 from .basefuncs import BaseObjective
@@ -82,7 +80,7 @@ class QuadraticSensitivity(Sensitivity):
         return self.history(cps) * self.factor
 
     def save(self, foldpath: str, iteration: int) -> None:
-        self.history.save(Path(foldpath) / f"surrogate_{iteration}.npz")
+        self.history.save(foldpath=foldpath, iteration=iteration)
 
     def load(self, foldpath: str, iteration: int) -> None:
-        self.history.load(Path(foldpath) / f"surrogate_{iteration}.npz")
+        self.history.load(foldpath=foldpath, iteration=iteration)

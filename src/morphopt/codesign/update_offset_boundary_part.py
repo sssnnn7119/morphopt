@@ -1,9 +1,9 @@
 """Geometry updates for one cavity offset Part."""
 
-from ..shapeopt.update_boundary_part import UpdaterBoundaryPart
 from ..shapeopt import objectivefuncs as shape_objectivefuncs
-from .offset_boundary_part import OffsetBoundaryPart
+from ..shapeopt.update_boundary_part import UpdaterBoundaryPart
 from .constraints import InwardCurvatureRadius, OffsetSurfaceMinThickness
+from .offset_boundary_part import OffsetBoundaryPart
 
 
 class UpdaterOffsetBoundaryPart(UpdaterBoundaryPart):

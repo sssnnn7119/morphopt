@@ -10,8 +10,8 @@ import math
 import tokenize
 from uuid import uuid4
 
-from ...optcore.quadrature import actuation_boundary_gauss_points
-from ...paths import sanitize_name
+from ...utils.quadrature import actuation_boundary_gauss_points
+from ...utils.paths import sanitize_name
 from ..i18n import localized_message, tr
 from ..model.problem import ProblemDefinition
 

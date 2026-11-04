@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -256,7 +255,7 @@ class QuadraticShapeDerivative(ShapeDerivative):
         return self.history(self._active_parameters()) * self.factor
 
     def save(self, foldpath: str, iteration: int) -> None:
-        self.history.save(Path(foldpath) / f"surrogate_{iteration}.npz")
+        self.history.save(foldpath=foldpath, iteration=iteration)
 
     def load(self, foldpath: str, iteration: int) -> None:
-        self.history.load(Path(foldpath) / f"surrogate_{iteration}.npz")
+        self.history.load(foldpath=foldpath, iteration=iteration)
