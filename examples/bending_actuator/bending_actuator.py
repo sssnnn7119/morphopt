@@ -18,7 +18,7 @@ class ThisController(morphopt.Controller):
             return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
         def objective_function(self):
-            return -self.reference_point_motion()[4]
+            return (1 - self.reference_point_motion()[4]) ** 2
 
         def get_metrics(self):
             return [self.reference_point_motion()[4].detach().cpu().item()]
@@ -108,7 +108,7 @@ class ThisController(morphopt.Controller):
 
     class Solver(morphopt.Solver):
         def __init__(self, params):
-            super().__init__(params=params, num_process=1, process_devices=["cpu"])
+            super().__init__(params=params, num_process=1, process_devices=["cuda:0"])
 
     class Updater(morphopt.Updaters):
         def define_updater(self):
@@ -132,4 +132,4 @@ class ThisController(morphopt.Controller):
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device="cpu", restart_per_iteration=20)
+    morphopt.start_optimization(device="cuda:0", restart_per_iteration=20)

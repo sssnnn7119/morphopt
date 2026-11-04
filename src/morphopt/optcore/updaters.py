@@ -1,7 +1,9 @@
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import TypeAlias
 
+import numpy as np
 import torch
 
 import morphopt
@@ -20,6 +22,193 @@ UpdaterTarget: TypeAlias = BasePart | BaseMaterial
 
 UpdaterTargetType: TypeAlias = type[UpdaterTarget] | tuple[type[UpdaterTarget], ...]
 """Accepted class specification for an updater target."""
+
+
+class QuadraticHistory:
+    """Limited-memory BFGS pairs shared by objectives and optimizers.
+
+    Each consumer owns an independent instance in its parameter coordinates.
+    Only positive curvature pairs are retained. Without a pair the physical
+    model is linear and the optimizer uses the identity preconditioner.
+    Products require O(memory_size * num_parameters) work and storage;
+    no dense Hessian or inverse Hessian is constructed.
+    """
+
+    def __init__(
+        self,
+        memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
+    ) -> None:
+        if (
+            isinstance(memory_size, bool)
+            or not isinstance(memory_size, int)
+            or memory_size < 1
+        ):
+            raise ValueError("memory_size must be a positive integer.")
+        self.memory_size = memory_size
+        self.clear()
+
+    def clear(self) -> None:
+        """Discard observations and matrix factors, preserving the memory limit."""
+        self.point: torch.Tensor | None = None
+        self.gradient: torch.Tensor | None = None
+        self._layout: tuple[int, ...] = ()
+        self._steps: list[torch.Tensor] = []
+        self._changes: list[torch.Tensor] = []
+        self._products: list[torch.Tensor] = []
+        self._step_products: list[torch.Tensor] = []
+        self._curvatures: list[torch.Tensor] = []
+        self._scale: torch.Tensor | None = None
+
+    @property
+    def history_size(self) -> int:
+        """Number of retained positive-curvature observation pairs."""
+        return len(self._steps)
+
+    def observe(
+        self,
+        point: torch.Tensor,
+        gradient: torch.Tensor,
+        layout: tuple[int, ...] = (),
+    ) -> None:
+        """Record one point and the gradient of the consumer's objective.
+
+        A changed parameter count or block layout discards previous pairs.
+        Zero steps and gradient differences that fail the relative curvature
+        condition are skipped; the latest point and gradient still replace
+        the anchor. Physical objectives supply unscaled FEA gradients;
+        optimizers supply gradients of the complete inner objective.
+        """
+        point = point.detach().clone().flatten()
+        gradient = gradient.detach().clone().flatten().to(point)
+        if point.shape != gradient.shape:
+            raise ValueError(
+                "Surrogate parameters and gradient must have the same size."
+            )
+        if not torch.isfinite(point).all() or not torch.isfinite(gradient).all():
+            raise ValueError("Surrogate parameters and gradient must be finite.")
+        if self.point is not None and (
+            self.point.shape != point.shape or self._layout != layout
+        ):
+            self.clear()
+        if self.point is not None:
+            step = point - self.point
+            change = gradient - self.gradient
+            curvature = step @ change
+            threshold = (
+                CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_CURVATURE_TOLERANCE
+                * step.norm()
+                * change.norm()
+            )
+            if curvature > threshold:
+                self._steps.append(step)
+                self._changes.append(change)
+                self._steps = self._steps[-self.memory_size :]
+                self._changes = self._changes[-self.memory_size :]
+        self.point, self.gradient, self._layout = point, gradient, layout
+        self._build_hessian()
+
+    def _build_hessian(self) -> None:
+        """Cache direct BFGS rank-update factors at the current anchor."""
+        self._products = []
+        self._step_products = []
+        self._curvatures = []
+        self._scale = None
+        if not self._steps:
+            return
+        step, change = self._steps[-1], self._changes[-1]
+        self._scale = (change @ change) / (step @ change)
+        for step, change in zip(self._steps, self._changes):
+            product = self.hessian_product(step)
+            self._products.append(product)
+            self._step_products.append(step @ product)
+            self._curvatures.append(step @ change)
+
+    def hessian_product(self, vector: torch.Tensor) -> torch.Tensor:
+        """Apply B, rather than the inverse-Hessian used for search directions."""
+        if self._scale is None:
+            return torch.zeros_like(vector)
+        result = self._scale * vector
+        for product, denominator, change, curvature in zip(
+            self._products, self._step_products, self._changes, self._curvatures
+        ):
+            result = result - product * (product @ vector) / denominator
+            result = result + change * (change @ vector) / curvature
+        return result
+
+    def inverse_hessian_product(self, vector: torch.Tensor) -> torch.Tensor:
+        """Apply the matching inverse BFGS approximation by two-loop recursion.
+
+        Before the first retained pair, return the input for a steepest-descent
+        search direction. The outer objective independently uses a zero
+        quadratic term until physical curvature becomes available.
+        """
+        if not self._steps:
+            return vector.clone()
+        result = vector.clone()
+        coefficients = []
+        for step, change, curvature in zip(
+            reversed(self._steps), reversed(self._changes), reversed(self._curvatures)
+        ):
+            coefficient = (step @ result) / curvature
+            coefficients.append(coefficient)
+            result = result - coefficient * change
+        result = result / self._scale
+        for step, change, curvature, coefficient in zip(
+            self._steps, self._changes, self._curvatures, reversed(coefficients)
+        ):
+            result = result + step * (coefficient - (change @ result) / curvature)
+        return result
+
+    def __call__(self, point: torch.Tensor) -> torch.Tensor:
+        """Return g.T d + 0.5 d.T B d, with zero value at the anchor."""
+        if self.point is None:
+            raise RuntimeError(
+                "Observe a physical gradient before evaluating the surrogate."
+            )
+        delta = point.flatten() - self.point
+        return self.gradient @ delta + 0.5 * (delta @ self.hessian_product(delta))
+
+    def save(self, path: str | Path) -> None:
+        """Persist raw observations, including the last pre-update anchor."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        size = self.point.numel() if self.point is not None else 0
+        np.savez_compressed(
+            path,
+            observed=self.point is not None,
+            point=(self.point.cpu().numpy() if self.point is not None else np.empty(0)),
+            gradient=(
+                self.gradient.cpu().numpy()
+                if self.gradient is not None
+                else np.empty(0)
+            ),
+            layout=np.asarray(self._layout, dtype=np.int64),
+            steps=(
+                torch.stack(self._steps).cpu().numpy()
+                if self._steps
+                else np.empty((0, size))
+            ),
+            changes=(
+                torch.stack(self._changes).cpu().numpy()
+                if self._changes
+                else np.empty((0, size))
+            ),
+        )
+
+    def load(self, path: str | Path) -> None:
+        """Restore observations on the active default device and rebuild B."""
+        with np.load(path, allow_pickle=False) as state:
+            observed = state["observed"].item()
+            self.point = torch.tensor(state["point"]) if observed else None
+            self.gradient = torch.tensor(state["gradient"]) if observed else None
+            self._layout = tuple(int(value) for value in state["layout"])
+            self._steps = [
+                torch.tensor(value) for value in state["steps"][-self.memory_size :]
+            ]
+            self._changes = [
+                torch.tensor(value) for value in state["changes"][-self.memory_size :]
+            ]
+        self._build_hessian()
 
 
 class BaseUpdater(ProtocalInitializable, ProtocalSavable):
@@ -182,7 +371,10 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                     ):
                         return alpha, obj_new
                     alpha *= self._rou1
-                    if (alpha * direction).abs().max() < CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_MIN_STEP_TOLERANCE:
+                    if (
+                        (alpha * direction).abs().max()
+                        < CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_MIN_STEP_TOLERANCE
+                    ):
                         return 0.0, obj0
 
         class LBFGS(BaseOpt):
@@ -193,47 +385,16 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                 tol_error: float = CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
             ) -> None:
                 super().__init__(closure=closure)
-                self.SK = []
-                self.YK = []
-                self.rhok = []
-
-                self.num_limit = num_limit
-                """
-                the number of pairs of Hessian and gradient stored in the memory
-                """
+                self.history = QuadraticHistory(memory_size=num_limit)
 
                 self.tol_error = tol_error
                 """
                 the tolerance for the convergence of the optimization process
                 """
 
-            def Hg_loop(self, dv: torch.Tensor) -> torch.Tensor:
-                """
-                Compute the product of the inverse Hessian matrix and the gradient vector.
-                This is done using the BFGS update formula.
-
-                Parameters:
-                    dv (torch.Tensor): The gradient vector.
-
-                Returns:
-                    torch.Tensor: The product of the inverse Hessian matrix and the gradient vector.
-                """
-
-                q = dv.clone()
-                alpha = torch.zeros(len(self.SK))
-                for i in range(len(self.SK) - 1, -1, -1):
-                    alpha[i] = self.rhok[i] * self.SK[i].dot(q)
-                    q = q - alpha[i] * self.YK[i]
-
-                y = q / (self.rhok[-1] * self.YK[-1].dot(self.YK[-1]))
-
-                for i in range(len(self.SK)):
-                    beta = self.rhok[i] * self.YK[i].dot(y)
-                    y = y + (alpha[i] - beta) * self.SK[i]
-
-                return y
-
-            def step(self, x_now: torch.Tensor, gk_now: torch.Tensor = None):
+            def step(
+                self, x_now: torch.Tensor, gk_now: torch.Tensor | None = None
+            ) -> tuple[float, torch.Tensor, torch.Tensor]:
 
                 obj_now = self.closure(x_now)
                 if gk_now is None:
@@ -241,56 +402,29 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
 
                 gk_now.view(-1)[gk_now.view(-1).isnan()] = 0
 
-                # if the first iteration, use steepest descent direction
-                if len(self.SK) == 0:
+                if self.history.point is None:
+                    self.history.observe(x_now, gk_now)
+                dk = self.history.inverse_hessian_product(-gk_now)
+                if not torch.isfinite(dk).all() or (dk * gk_now).sum() > 0:
+                    self.history.clear()
+                    self.history.observe(x_now, gk_now)
                     dk = -gk_now
-                else:
-                    dk = self.Hg_loop(-gk_now)
-                if dk.view(-1).isnan().any():
-                    dk = -gk_now
-                    self.SK = []
-                    self.YK = []
-                    self.rhok = []
-
-                # if the gradient is not positive, use steepest descent direction
-                if (dk * gk_now).sum() > 0:
-                    dk = -dk
 
                 # line search
                 alpha, obj_new = self._LineSearchBacktracking(
                     x0=x_now, dx=gk_now, direction=dk, alpha0=1.0, obj0=obj_now
                 )
 
-                # if the step length is too small, stop the iteration
-                if abs(alpha) <= self.tol_error:
-                    self.SK = []
-                    self.YK = []
-                    self.rhok = []
-
-                x_new = x_now + alpha * dk
-
-                if obj_new > obj_now:
-                    self.SK = []
-                    self.YK = []
-                    self.rhok = []
+                if alpha == 0 or obj_new > obj_now:
+                    self.history.clear()
                     return 0.0, torch.zeros_like(x_now), gk_now
 
+                x_new = x_now + alpha * dk
                 gk_new: torch.Tensor = self.grad(x_new).flatten()
-
-                yk = gk_new.flatten() - gk_now.flatten()
-                sk = alpha * dk.flatten()
-
-                # BFGS method
-                curvature_tolerance = CONSTANT.KERNEL.OPTIMIZER.LBFGS_CURVATURE_TOLERANCE
-                if yk.norm() > curvature_tolerance and sk.norm() > curvature_tolerance:
-                    self.SK.append(sk)
-                    self.YK.append(yk)
-                    self.rhok.append(1 / yk.dot(sk))
-
-                    if len(self.SK) > self.num_limit:
-                        self.SK = self.SK[1:]
-                        self.YK = self.YK[1:]
-                        self.rhok = self.rhok[1:]
+                if abs(alpha) <= self.tol_error:
+                    self.history.clear()
+                else:
+                    self.history.observe(x_new, gk_new)
 
                 return alpha, dk, gk_new
 
@@ -765,11 +899,27 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
         """Save the state of every sub-updater."""
         for updater in self.updaters.values():
             updater.save(foldpath=foldpath, iteration=iteration)
+            directory = updater.save_directory(
+                foldpath, updater.interface_name or "all"
+            )
+            for name, objective in updater.obj_funcs.items():
+                objective.save(
+                    foldpath=os.path.join(directory, "objectives", name),
+                    iteration=iteration,
+                )
 
     def load(self, foldpath: str, iteration: int) -> None:
         """Restore the state of every sub-updater."""
         for updater in self.updaters.values():
             updater.load(foldpath=foldpath, iteration=iteration)
+            directory = updater.save_directory(
+                foldpath, updater.interface_name or "all"
+            )
+            for name, objective in updater.obj_funcs.items():
+                objective.load(
+                    foldpath=os.path.join(directory, "objectives", name),
+                    iteration=iteration,
+                )
 
     def pathlog_required(self) -> list[str]:
         """The log sub-paths every sub-updater needs (deduplicated)."""

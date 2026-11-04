@@ -1082,6 +1082,10 @@ class _Constants:
         class CODESIGN_GEOMETRY:
             DEFAULT_SHELL_THICKNESS = 1.0
 
+        class UPDATER_OBJECTIVES:
+            QUADRATIC_MEMORY_PAIRS = 10
+            QUADRATIC_CURVATURE_TOLERANCE = 1e-8
+
         class OPTIMIZER:
             LINE_SEARCH_C1 = 0.0001
             LINE_SEARCH_BACKTRACK_RATIO = 0.2

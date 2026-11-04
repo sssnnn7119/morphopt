@@ -15,7 +15,7 @@
 - [5 灵敏度分析（基于自动微分的离散伴随法）](#section-灵敏度分析基于自动微分的离散伴随法)
 - [6 工作空间优化与连续体雅可比矩阵](#section-工作空间优化与连续体雅可比矩阵)
 - [7 几何约束](#section-几何约束)
-- [8 子优化与信赖域方法](#section-子优化与信赖域方法)
+- [8 子优化与局部代理模型](#section-子优化与信赖域方法)
 - [9 数值流程](#section-数值流程)
 - [10 参考文献](#section-参考文献)
 
@@ -728,13 +728,13 @@ $$
 
 <a id="section-子优化与信赖域方法"></a>
 
-## 8 子优化与信赖域方法
+## 8 子优化与局部代理模型
 
 <a id="section-动机"></a>
 
 ### 8.1 动机
 
-FEA 是计算瓶颈（单次求解可能耗时数分钟）。MorphOpt 采用**信赖域方法**减少 FEA 调用频率：在信赖域内用一阶泰勒展开构造代理函数代替真实 FEA，仅当子优化收敛后才重新执行 FEA。
+FEA 通常占据主要计算时间。MorphOpt 在每次外层有限元及灵敏度分析后构造局部代理，在子优化内部评价代理目标和几何罚项。子优化达到停止条件后更新设计，并在下一轮重新执行 FEA。现有实现通过步长限制和更新方向调整控制设计变化，尚未采用标准信赖域算法中的真实改善比、试探步拒绝和回退机制。
 
 <a id="section-子优化问题"></a>
 
@@ -748,6 +748,18 @@ $$
 
 其中 $\vec{\Psi} = \mathbf{\Phi}^{k+1} - \mathbf{\Phi}^k$ 为设计变量的变化量。
 
+`ShapeDerivative()` 表示原有一阶代理；独立目标类 `QuadraticShapeDerivative(memory_size=10)` 在一阶物理目标中增加历史曲率项：
+
+$$
+\tilde{\mathcal L}^k(\vec\Psi)
+=g_k^T\vec\Psi+\frac12\vec\Psi^T B_k^{\mathrm{FEA}}\vec\Psi
++\sum\operatorname{Penalty}(\text{约束}).
+$$
+
+其中 $s_k=\Phi_k-\Phi_{k-1}$、$y_k=g_k-g_{k-1}$ 来自外层有限元观测，采用未归一化的物理梯度。有限记忆直接 BFGS 更新构造 $B_k^{\mathrm{FEA}}$，仅保留满足 $s_k^Ty_k>10^{-8}\|s_k\|\|y_k\|$ 的曲率对，无有效历史时不增加二次项。该正定近似忽略真实目标中的负曲率。归一化作用于完整的物理代理，不进入历史差分。
+
+此曲率与内层求解器的拟牛顿信息分别属于不同迭代层次：前者近似真实有限元目标，后者近似当前代理与罚项之和。两者共同使用，但各自保存独立历史。具体目标定义位于 `shapeopt/objectivefuncs/shapederivative.py`，共享历史计算 `QuadraticHistory` 位于 `src/morphopt/optcore/updaters.py`，参数与持久化接口见[脚本模块与接口参考](../scriptreference.md#section-有限元目标的历史梯度二阶代理)。
+
 <a id="section-l-bfgs-求解器"></a>
 
 ### 8.3 L-BFGS 求解器
@@ -758,15 +770,16 @@ $$
 \vec{\Psi}^{l+1} = \vec{\Psi}^l - \alpha_l B_l^{-1} \nabla \tilde{\mathcal{L}}^k
 $$
 
-其中 $B_l$ 为 Hessian 矩阵的近似（通过 DFP 公式更新）：
+其中 $B_l^{-1}$ 为当前子问题 Hessian 的逆近似，BFGS 更新形式为：
 
 $$
-B^{-1}_{l+1} = B^{-1}_l + \frac{\mathbf{s}_l \mathbf{s}_l^\text{T}}{\mathbf{y}_l^\text{T} \mathbf{s}_l} - \frac{B^{-1}_l \mathbf{y}_l \mathbf{y}_l^\text{T} B^{-1}_l}{\mathbf{y}_l^\text{T} B^{-1}_l \mathbf{y}_l}
+B^{-1}_{l+1}=(I-\rho_l s_l y_l^T)B^{-1}_l(I-\rho_l y_l s_l^T)+\rho_l s_l s_l^T,
+\qquad \rho_l=(y_l^Ts_l)^{-1}.
 $$
 
 $\mathbf{s}_l = \vec{\Psi}^{l+1} - \vec{\Psi}^l$ 为步长向量，$\mathbf{y}_l$ 为梯度变化向量。
 
-**代码对应**：`src/morphopt/optcore/updaters/optimizer.py` 中的 `LBFGS` 类：
+**代码对应**：`src/morphopt/optcore/updaters.py` 中的 `BaseUpdater.Optimizer.LBFGS` 类：
 
 ```python
 class LBFGS(BaseOpt):
@@ -803,20 +816,7 @@ $$
 - $\alpha_k < \epsilon_\alpha$（步长过小）
 - $l > \aleph^k$（达到最大迭代上限）
 
-最大迭代次数 $\aleph^k$ 根据梯度变化自适应调整：
-
-$$
-\aleph^{k+1} = 
-\begin{cases}
-\beta_1 \aleph^k, & \lambda \leq 0.2 \\
-\beta_2 \aleph^k, & \lambda > 0.2
-\end{cases}
-, \quad 
-\lambda = \frac{\|\nabla \tilde{\mathcal{L}}^{k+1} - \nabla \tilde{\mathcal{L}}^{k}\|_1}{\|\nabla \tilde{\mathcal{L}}^{k}\|_1}
-$$
-
-梯度变化快 → 减少子优化迭代 → 更频繁执行 FEA（$\beta_2 = 0.9$）
-梯度变化慢 → 增加子优化迭代 → 减少 FEA 频率（$\beta_1 = 1.2$）
+当前实现由 `max_step_iter` 设置每轮子问题的迭代上限，没有按外层梯度差自动调整该上限。物理设计步长由 `atan` 映射限制，连续外层更新方向的夹角控制步长上限的增加或衰减。二阶代理沿用该策略，未额外引入真实目标接受判据。
 
 ---
 
@@ -851,8 +851,8 @@ while 未收敛:
     ├── 求解伴随方程（复用刚度矩阵分解）
     └── 自动回传梯度至控制点
   
-    # 4. 子优化（信赖域）
-    构建代理函数（一阶泰勒展开 + 约束罚项）
+    # 4. 子优化（局部代理与步长限制）
+    构建代理函数（一阶 Taylor 或历史梯度二阶代理 + 约束罚项）
     L-BFGS 迭代求解子问题
     回溯线搜索确定步长
   

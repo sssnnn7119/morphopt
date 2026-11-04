@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from scipy import interpolate
 
+from ...constants import CONSTANT
+from ...optcore.updaters import QuadraticHistory
 from .basefuncs import BaseObjective
 
 if TYPE_CHECKING:
@@ -15,11 +18,10 @@ if TYPE_CHECKING:
 
 class ShapeDerivative(BaseObjective):
     """
-    Shape derivative for contact forces.
+    First-order physical objective from the current shape gradient.
     """
 
-    def __init__(self):
-
+    def __init__(self) -> None:
         super().__init__()
 
         self._cp0: list[torch.Tensor] = []
@@ -31,7 +33,7 @@ class ShapeDerivative(BaseObjective):
         """Gradient of the shape derivative with respect to the control points, computed in the initialize function.
         """
 
-        self.factor: float
+        self.factor: torch.Tensor
         """A factor to scale the shape derivative, can be set in the initialize function.
         """
 
@@ -39,10 +41,10 @@ class ShapeDerivative(BaseObjective):
         self,
         gradient: torch.Tensor,
         r0: list[torch.Tensor],
-        *args,
+        *args: object,
         surfaces: Sequence[BaseSurface] | None = None,
-        **kwargs,
-    ):
+        **kwargs: object,
+    ) -> None:
         """Map the structural gradient onto the control points of this Part.
 
         ``surfaces`` are the surface interfaces owned by the boundary Part this
@@ -59,7 +61,9 @@ class ShapeDerivative(BaseObjective):
         ptidx = 0
         self.gradient = []
         for sf_idx in range(len(sflist)):
-            cp0_sf = sflist[sf_idx].get_surface_parameters().detach().clone().reshape(-1, 3)
+            cp0_sf = (
+                sflist[sf_idx].get_surface_parameters().detach().clone().reshape(-1, 3)
+            )
             self._cp0.append(cp0_sf)
             self.gradient.append(
                 gradient[ptidx : ptidx + cp0_sf.numel()].reshape_as(cp0_sf)
@@ -133,9 +137,9 @@ class ShapeDerivative(BaseObjective):
     def __call__(
         self,
         r: list[torch.Tensor],
-        *args,
-        **kwargs,
-    ):
+        *args: object,
+        **kwargs: object,
+    ) -> torch.Tensor:
         loss_objective = 0.0
 
         if not self.surfaces:
@@ -147,7 +151,11 @@ class ShapeDerivative(BaseObjective):
             # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
             # Compute inner product: sum over all points and dimensions
             loss_objective += (
-                (self.surfaces[i].get_surface_parameters().reshape(-1, 3) - self._cp0[i]) * self.gradient[i]
+                (
+                    self.surfaces[i].get_surface_parameters().reshape(-1, 3)
+                    - self._cp0[i]
+                )
+                * self.gradient[i]
             ).sum() * self.factor
 
         return loss_objective
@@ -197,3 +205,58 @@ class ShapeDerivative(BaseObjective):
                 output_senNodes[-1][:, i] = torch.tensor((Part_B).tolist())
 
         return output_senNodes
+
+
+class QuadraticShapeDerivative(ShapeDerivative):
+    """Historical quadratic shape objective with limited-memory BFGS curvature."""
+
+    def __init__(
+        self,
+        memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
+    ) -> None:
+        super().__init__()
+        self.history = QuadraticHistory(memory_size)
+
+    def initialize(
+        self,
+        gradient: torch.Tensor,
+        r0: list[torch.Tensor],
+        *args: object,
+        surfaces: Sequence[BaseSurface],
+        **kwargs: object,
+    ) -> None:
+        super().initialize(gradient, r0, *args, surfaces=surfaces, **kwargs)
+        active_gradient = torch.cat(
+            [
+                value.flatten()
+                for surface, value in zip(self.surfaces, self.gradient)
+                if surface.is_updatable and surface.num_variables
+            ]
+        )
+        layout = tuple(
+            value
+            for surface in self.surfaces
+            for value in (surface.num_variables, int(surface.is_updatable))
+        )
+        self.history.observe(self._active_parameters(), active_gradient, layout)
+
+    def _active_parameters(self) -> torch.Tensor:
+        """Physical control coordinates of active surfaces, in gradient order."""
+        return torch.cat(
+            [
+                surface.get_surface_parameters().flatten()
+                for surface in self.surfaces
+                if surface.is_updatable and surface.num_variables
+            ]
+        )
+
+    def __call__(
+        self, r: list[torch.Tensor], *args: object, **kwargs: object
+    ) -> torch.Tensor:
+        return self.history(self._active_parameters()) * self.factor
+
+    def save(self, foldpath: str, iteration: int) -> None:
+        self.history.save(Path(foldpath) / f"surrogate_{iteration}.npz")
+
+    def load(self, foldpath: str, iteration: int) -> None:
+        self.history.load(Path(foldpath) / f"surrogate_{iteration}.npz")

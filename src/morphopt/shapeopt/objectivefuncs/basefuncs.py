@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ...optcore.protocal import ProtocalSavable
+
 if TYPE_CHECKING:
     from ..surfaces import BaseSurface
 
@@ -89,7 +91,7 @@ class BaseConstraints():
         return index, fnew
     
 
-class BaseObjective():
+class BaseObjective(ProtocalSavable):
     """
     Base class for objective functions in MorphOpt.
     """

@@ -41,6 +41,8 @@ from .loads import (
 from .materials import HomogeneousMaterialNode, SIMPFieldMaterialNode
 from .objectives import (
     DensityFieldMinimizeObjectiveNode,
+    QuadraticShapeDerivativeObjectiveNode,
+    QuadraticSensitivityObjectiveNode,
     SensitivityObjectiveNode,
     ShapeDerivativeObjectiveNode,
 )
@@ -148,6 +150,8 @@ __all__ = (
     "PenaltyDoFNode",
     "PressureNode",
     "ProblemNode",
+    "QuadraticShapeDerivativeObjectiveNode",
+    "QuadraticSensitivityObjectiveNode",
     "ReferencePointNode",
     "RotateOperationNode",
     "SIMPFieldMaterialNode",

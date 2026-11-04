@@ -842,7 +842,8 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
-| `ShapeDerivative()` | `add_objective_function()` | 将主目标的结构灵敏度传入几何子问题 |
+| `ShapeDerivative()` | `add_objective_function()` | 原有一阶形状代理 |
+| `QuadraticShapeDerivative(memory_size=10)` | `add_objective_function()` | 基于外层梯度历史的独立二阶形状代理 |
 | `Fairness()` | `add_constraints()` | 使用曲面的曲率、度量等阈值抑制几何畸变 |
 | `Distance(min_distance=...)` | `add_constraints()` | 曲面间最小距离，矩阵按曲面索引配置 |
 | `boundarys.Cylinder(radius, height, bottom)` | `add_constraints()` | 圆柱包络 |
@@ -850,6 +851,46 @@ class Shape(morphopt.UpdaterBoundaryPart):
 | `VolumeMaximization(surf_idx, weight=...)` | `add_constraints()` | 指定 CPGEO 曲面的体积辅助目标 |
 
 主目标在 `ObjectiveFunction` 中定义，`ShapeDerivative` 为更新子问题中的梯度项。只填写主目标而缺少相应更新器或灵敏度项，不能构成完整的形状更新配置。
+
+<a id="section-有限元目标的历史梯度二阶代理"></a>
+
+#### 9.2.1 有限元目标的历史梯度二阶代理
+
+`ShapeDerivative()` 保持原有一阶 Taylor 代理形式，不包含代理类型开关或历史参数。`QuadraticShapeDerivative(memory_size=10)` 是独立的二阶形状目标类，继承形状参数与灵敏度映射接口，重写物理目标评价并管理自己的曲率历史。`memory_size` 指定保留的有效曲率对数，默认值为 10，且必须为正整数。
+
+```python
+def define_objective(self) -> None:
+    self.add_objective_function(self.objectivefuncs.QuadraticShapeDerivative(
+        memory_size=10,
+    ))
+    self.add_constraints(self.objectivefuncs.Fairness())
+```
+
+该目标替换原有 `ShapeDerivative` 项；同时添加两个目标会重复计入主目标的一阶项。
+
+外层有限元分析给出物理设计参数 $\theta_k$ 处的主目标梯度 $g_k$。相邻外层观测形成 $s_k=\theta_k-\theta_{k-1}$ 和 $y_k=g_k-g_{k-1}$。子问题中的物理目标增量为
+
+$$
+m_k(\theta_k+d)=g_k^T d+\frac12 d^T B_kd.
+$$
+
+$B_k$ 为 Hessian 近似，不是内层 L-BFGS 搜索方向中的逆 Hessian。每轮以最近一个有效曲率对的 $\gamma=(y^Ty)/(s^Ty)$ 构造 $B_0=\gamma I$，再依次重放保留的 BFGS 更新：
+
+$$
+B^+=B-\frac{(Bs)(Bs)^T}{s^TBs}+\frac{yy^T}{s^Ty}.
+$$
+
+更新公式可参见 [SciPy 的 BFGS 实现](https://github.com/scipy/scipy/blob/main/scipy/optimize/_hessian_update_strategy.py)。MorphOpt 在 PyTorch 中以向量乘积实现相应二次型，保持对子问题设计变量的自动微分。
+
+实现仅保存向量及秩更新因子；历史长度为 $m$、参数数量为 $n$ 时，存储和单次 Hessian 乘积的开销均为 $O(mn)$。更新因子的重建在外层观测时执行，开销为 $O(m^2n)$。
+
+仅保留满足 $s^Ty>10^{-8}\|s\|\|y\|$ 的曲率对。零步长、非正曲率和近乎正交的梯度增量不进入历史；没有有效曲率对时，二阶模式采用一阶 Taylor 代理。有有效历史时，Hessian 近似保持正定，不能描述真实目标的负曲率。
+
+历史记录采用未归一化的梯度和实际控制点坐标；现有梯度缩放作用于整个代理目标。形状历史仅包含可更新曲面，曲面参数数量或更新状态变化时清空历史。材料历史在参数数量变化时清空。二阶模型在内层迭代期间保持固定，不增加有限元或伴随分析次数；几何约束及现有步长限制继续生效。
+
+每个更新器、每个目标项分别保存自己的观测及曲率历史，状态文件位于对应更新器目录的 `objectives/<目标项名称>/surrogate_<迭代号>.npz`。进程重启后恢复最后一次有限元观测，再与下一轮观测构造新的曲率对。参数含义、目标定义或载荷改变后应新建优化任务，避免混用不同问题的梯度。多个 Part 或材料同时更新时，各子目标独立近似局部曲率，不构造跨更新器的 Hessian 耦合块；梯度差仍可能包含其他接口变化的影响，因此该局部拟合不等同于严格的块 Hessian。
+
+该目标仍采用现有步长调整，没有加入基于真实改善量与预测改善量比值的接受、拒绝及回退机制，因此不属于完整的标准信赖域算法。实际收益应以相同目标阈值下的有限元调用次数和总时间评价。
 
 <a id="section-材料更新器"></a>
 
@@ -878,11 +919,14 @@ class Updater(morphopt.Updaters):
 
 | 项目 | 注册位置 | 定义 |
 |---|---|---|
-| `Sensitivity(normalize_gradient=False)` | `add_objective_function()` | 传递主目标的材料灵敏度 |
+| `Sensitivity(normalize_gradient=False)` | `add_objective_function()` | 原有材料目标的倒数近似 |
+| `QuadraticSensitivity(normalize_gradient=False, memory_size=10)` | `add_objective_function()` | 独立的历史梯度二阶材料代理 |
 | `DensityFieldMinimize(scale=...)` | `add_objective_function()` | 控制场辅助正则化项 |
 | `VolFrac(volfrac_min, volfrac_max, elementname, penalty=...)` | `add_constraints()` | 体积加权材料占比范围 |
 | `boundarys.MinValue(xmin=...)` | `add_constraints()` | 设计控制变量下界 |
 | `boundarys.MaxValue(xmax=...)` | `add_constraints()` | 设计控制变量上界 |
+
+`QuadraticSensitivity` 替换 `Sensitivity` 后使用历史二阶模型；原有 `Sensitivity` 继续使用倒数近似。两个类分别注册和保存，不通过参数切换算法。
 
 `DensityFieldMinimize` 是弱辅助项，不能替代体积分数约束。上下界作用于设计控制变量，不直接代表 `ρ` 的上下限。
 

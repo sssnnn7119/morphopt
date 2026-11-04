@@ -19,6 +19,7 @@ class TaskOptimization:
         warnings.filterwarnings("ignore", category=UserWarning)
 
         from queue import Empty
+
         from .optcore.history import History
 
         completed = 0
