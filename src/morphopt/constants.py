@@ -1008,7 +1008,7 @@ class _Constants:
 
         class SOLVER:
             NUM_PROCESS = 1
-            STATIC_TOLERANCE_ERROR = 1e-07
+            STATIC_TOLERANCE_ERROR = 1e-04
 
         class VISUALIZATION:
             WINDOW_SIZE = (1200, 1200)

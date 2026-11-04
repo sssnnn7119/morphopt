@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 import numpy as np
+import torch
 
 if TYPE_CHECKING:
     from .base_surface import BaseSurface, ControlPointSurface
@@ -32,7 +33,11 @@ class BaseSurfaceConstraints(ABC, Generic[SurfaceT]):
 
     @abstractmethod
     def apply(self, surface: SurfaceT) -> None:
-        """Apply this constraint to the current surface geometry."""
+        """Project control tensors without NumPy conversion or CAD synchronization.
+
+        This hook also runs inside the differentiable subproblem. External
+        geometry is synchronized during reinitialization and mesh preparation.
+        """
 
     @abstractmethod
     def reinitialize(self, surface: SurfaceT) -> None:
@@ -62,14 +67,16 @@ class SurfaceRelationConstraint(
             raise ValueError("pose must have six components [tx, ty, tz, rx, ry, rz].")
 
     def apply(self, surface: RelatedSurfaceT) -> None:
-        source = surface.control_points.detach().cpu().numpy()
+        source = surface.control_points
         rotation, shift = self._pose_transform()
+        rotation = torch.as_tensor(rotation, dtype=source.dtype, device=source.device)
+        shift = torch.as_tensor(shift, dtype=source.dtype, device=source.device)
         self.related.control_points = source @ rotation.T + shift
-        self.related.synchronize()
 
     def reinitialize(self, surface: RelatedSurfaceT) -> None:
         self._copy_surface_data(surface)
         self.apply(surface)
+        self.related.synchronize()
         self._reinitialize_related()
 
     @abstractmethod

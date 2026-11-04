@@ -354,7 +354,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             raise ValueError("Surface parameter list does not match surfaces.")
         for surface, value in zip(self.surfaceinterfaces, values):
             surface.set_surface_parameters(value.detach().clone())
-        self.apply_surface_constraints()
+        self._apply_surface_constraints()
 
     def update_variables(
         self,
@@ -392,7 +392,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                 change = change * step
             surface.update_variables(change)
 
-        self.apply_surface_constraints()
+        self._apply_surface_constraints()
 
     @staticmethod
     def _surface_step_lengths(

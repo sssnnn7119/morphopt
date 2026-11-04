@@ -92,6 +92,7 @@ class SolverEditor(QWidget):
             ]
         )
         self._table.verticalHeader().setVisible(False)
+        self._table.setShowGrid(False)
         self._table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
@@ -216,12 +217,13 @@ class SolverEditor(QWidget):
         self._loading = True
         try:
             self._table.setRowCount(len(self._groups))
+            margin = theme_manager.palette.layout.widgets.collection_spacing
             for group_index, cases in enumerate(self._groups):
                 group_widget = QWidget(self._table)
+                group_widget.setProperty("tableGroupCell", True)
+                group_widget.setProperty("tableGroupHeader", True)
                 group_layout = QHBoxLayout(group_widget)
-                group_layout.setContentsMargins(
-                    *theme_manager.palette.layout.zero_margins
-                )
+                group_layout.setContentsMargins(margin, margin, margin, margin)
                 group_layout.addWidget(
                     QLabel(
                         tr(
@@ -250,10 +252,9 @@ class SolverEditor(QWidget):
                 self._table.setCellWidget(group_index, 0, group_widget)
 
                 sequence = QWidget(self._table)
+                sequence.setProperty("tableGroupCell", True)
                 sequence_layout = QVBoxLayout(sequence)
-                sequence_layout.setContentsMargins(
-                    *theme_manager.palette.layout.zero_margins
-                )
+                sequence_layout.setContentsMargins(margin, margin, margin, margin)
                 sequence_layout.setSpacing(
                     theme_manager.palette.layout.widgets.action_grid_spacing
                 )

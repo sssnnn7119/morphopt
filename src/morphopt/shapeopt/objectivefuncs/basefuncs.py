@@ -10,7 +10,8 @@ from ...optcore.protocal import ProtocalSavable
 if TYPE_CHECKING:
     from ..surfaces import BaseSurface
 
-class BaseConstraints():
+
+class BaseConstraints:
     """
     Base class for objective functions in MorphOpt.
     """
@@ -26,26 +27,37 @@ class BaseConstraints():
 
         self.surfaces: list[BaseSurface] = []
 
-
     def initialize(
-        self, r0: list[torch.Tensor], rdu0: list[torch.Tensor],
-        rdu20: list[torch.Tensor], sensitivity: list[torch.Tensor],
-        weights: list[torch.Tensor], *args: object,
-        surfaces: Sequence[BaseSurface], **kwargs: object,
+        self,
+        r0: list[torch.Tensor],
+        rdu0: list[torch.Tensor],
+        rdu20: list[torch.Tensor],
+        sensitivity: list[torch.Tensor],
+        weights: list[torch.Tensor],
+        *args: object,
+        surfaces: Sequence[BaseSurface],
+        **kwargs: object,
     ) -> None:
-        
+
         self.scaler = []
         for i in range(len(sensitivity)):
             sen_now = sensitivity[i].reshape([-1, 3]).norm(dim=1)
             if (sen_now != 0).any():
-                sen_now[sen_now==0] = sen_now[sen_now!=0].min()
+                sen_now[sen_now == 0] = sen_now[sen_now != 0].min()
             else:
                 sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
-            self.scaler.append(sen_now * weights[i])
+            self.scaler.append(sen_now * weights[i] * 0.01)
 
         self.surfaces = list(surfaces)
 
-    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
+    def __call__(
+        self,
+        r: list[torch.Tensor],
+        rdu: list[torch.Tensor],
+        rdu2: list[torch.Tensor],
+        *args,
+        **kwargs,
+    ) -> float:
         """
         Call the objective function.
 
@@ -60,22 +72,24 @@ class BaseConstraints():
             The value of the objective function.
         """
         raise NotImplementedError("Objective function not implemented.")
-    
+
     @staticmethod
-    def barrier_function(f: torch.Tensor, f_max: torch.Tensor|float, ratio: float, p: int):
+    def barrier_function(
+        f: torch.Tensor, f_max: torch.Tensor | float, ratio: float, p: int
+    ):
         """
         Apply a barrier function to the objective function.
-        
+
         Args:
             f (torch.Tensor): The objective function value.
             f_max (float or torch.Tensor): The maximum value of the objective function.
             ratio (float): The ratio for the barrier function.
             p (float): The exponent for the barrier function.
-            
+
         Returns:
             index (torch.Tensor): The indices of the elements that are greater than the barrier.
             fnew (torch.Tensor): The new objective function value after applying the barrier function.
-        
+
         """
         if type(f_max) != torch.Tensor:
             f_max = torch.tensor(f_max).repeat(f.shape)
@@ -84,12 +98,12 @@ class BaseConstraints():
         if index.numel() > 0:
             f = f[index]
             f_max = f_max[index]
-            fnew = ((f - f_max * ratio) / (f_max - f_max * ratio))**(p)
+            fnew = ((f - f_max * ratio) / (f_max - f_max * ratio)) ** (p)
         else:
             f = f[index]
             fnew = torch.zeros_like(f)
         return index, fnew
-    
+
 
 class BaseObjective(ProtocalSavable):
     """
@@ -108,15 +122,23 @@ class BaseObjective(ProtocalSavable):
         self.surfaces: list[BaseSurface] = []
 
     def initialize(
-        self, gradient: torch.Tensor, r0: list[torch.Tensor],
-        rdu0: list[torch.Tensor], rdu20: list[torch.Tensor], *args: object,
-        surfaces: Sequence[BaseSurface], **kwargs: object,
+        self,
+        gradient: torch.Tensor,
+        r0: list[torch.Tensor],
+        rdu0: list[torch.Tensor],
+        rdu20: list[torch.Tensor],
+        *args: object,
+        surfaces: Sequence[BaseSurface],
+        **kwargs: object,
     ) -> None:
         """
         Initialize the objective function with the given parameters.
 
         Args:
             gradient (torch.Tensor): The gradient of the objective function.
+            r0 (list[torch.Tensor]): The initial point coordinates of the surfaces.
+            rdu0 (list[torch.Tensor]): The initial partial derivatives of the surfaces.
+            rdu20 (list[torch.Tensor]): The initial second partial derivatives of the surfaces.
             weights (list[torch.Tensor]): The weights for each point.
             surfaces (Sequence[BaseSurface]): Surfaces owned by the boundary Part.
             *args: Positional arguments.
@@ -124,7 +146,14 @@ class BaseObjective(ProtocalSavable):
         """
         self.surfaces = list(surfaces)
 
-    def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], rdu2: list[torch.Tensor], *args, **kwargs) -> float:
+    def __call__(
+        self,
+        r: list[torch.Tensor],
+        rdu: list[torch.Tensor],
+        rdu2: list[torch.Tensor],
+        *args,
+        **kwargs,
+    ) -> float:
         """
         Call the objective function.
 

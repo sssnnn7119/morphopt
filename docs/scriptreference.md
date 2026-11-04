@@ -357,9 +357,9 @@ surface.add_constraint(surface.mirror("xy", offset=40.0))
 
 上述两个调用展示不同镜面配置，实际按模型选择登记。BSP 支持 xz 平面和指定偏移的 xy 平面；CPGEO 支持 xy、xz、yz 镜面和旋转对称，例如 `surface.rotate(axis="z", order=4)`。
 
-跨曲面关联通过 `target.add_constraint(target.relate(source, pose=(tx, ty, tz, rx, ry, rz)))` 登记，两侧应采用同类曲面。该表达式中的六个分量替换为实际位姿数值。约束按登记顺序执行，多个约束的叠加应满足几何相容条件。
+跨曲面关联通过 `source.add_constraint(source.relate(target, pose=(tx, ty, tz, rx, ry, rz)))` 登记，将源曲面经位姿变换后赋予从动曲面，两侧应采用同类曲面。该表达式中的六个分量替换为实际位姿数值。约束按登记顺序执行，多个约束的叠加应满足几何相容条件。
 
-自定义曲面约束继承 `morphopt.BaseSurfaceConstraints`，实现 `apply(surface)` 与 `reinitialize(surface)`。Part 级跨曲面处理通过重写 `apply_surface_constraints()` 扩展。
+自定义曲面约束继承 `morphopt.BaseSurfaceConstraints`，实现 `apply(surface)` 与 `reinitialize(surface)`。Part 级跨曲面处理通过重写 `apply_surface_constraints()` 扩展。`apply()` 和 `apply_surface_constraints()` 参与子优化问题的自动微分，使用 Torch 张量运算更新控制点，不调用 `detach().numpy()` 或 `synchronize()`。外部几何状态的同步在重初始化和网格准备阶段完成。
 
 <a id="section-instance-位姿与集合引用"></a>
 

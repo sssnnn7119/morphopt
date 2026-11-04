@@ -40,7 +40,6 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
     @staticmethod
     def _set_control_points(surface: CPGEOSurface, points: torch.Tensor) -> None:
         surface.control_points = points.reshape(-1, 3)
-        surface.synchronize()
 
 
 class CPGEOMirrorConstraint(_CPGEOSymmetryConstraint):

@@ -64,10 +64,10 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
             dim=-1,
         )
         surface.control_points = projected.reshape_as(surface.control_points)
-        surface.synchronize()
 
     def reinitialize(self, surface: BspSurface) -> None:
         self.apply(surface)
+        surface.synchronize()
 
 
 class BspSurfaceRelationConstraint(SurfaceRelationConstraint["BspSurface"]):
