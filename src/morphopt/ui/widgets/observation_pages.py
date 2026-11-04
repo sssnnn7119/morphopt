@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QTableWidget,
     QTableWidgetItem,
@@ -40,6 +42,11 @@ class MetricsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setMinimumSectionSize(88)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setWordWrap(False)
         layout.addWidget(self.table, 3)
         controls = QHBoxLayout()
         self.curve_label = QLabel(tr("ui.widgets.observation_pages.display_curve"))
@@ -72,7 +79,6 @@ class MetricsPage(QWidget):
             for column_index, value in enumerate(values):
                 if value is not None:
                     self.table.setItem(row_index, column_index, QTableWidgetItem(value))
-        self.table.resizeColumnsToContents()
         self._curves = table.curves
         selected = self.curve_selector.currentIndex()
         self.curve_selector.blockSignals(True)
@@ -89,7 +95,9 @@ class MetricsPage(QWidget):
 
     def _draw_curve(self) -> None:
         index = self.curve_selector.currentIndex()
-        title, values = self._curves[index] if 0 <= index < len(self._curves) else ("", [])
+        title, values = (
+            self._curves[index] if 0 <= index < len(self._curves) else ("", [])
+        )
         self.figure.clear()
         self.figure.set_facecolor(theme_manager.palette.chart.background)
         axes = self.figure.add_subplot(111)
@@ -104,7 +112,9 @@ class MetricsPage(QWidget):
         )
         axes.set_xlabel(tr("ui.widgets.observation_pages.iteration"))
         axes.set_ylabel(title)
-        axes.set_title(tr("ui.widgets.observation_pages.series_vs_iteration", value_0=title))
+        axes.set_title(
+            tr("ui.widgets.observation_pages.series_vs_iteration", value_0=title)
+        )
         axes.tick_params(colors=theme_manager.palette.chart.text)
         axes.xaxis.label.set_color(theme_manager.palette.chart.text)
         axes.yaxis.label.set_color(theme_manager.palette.chart.text)
