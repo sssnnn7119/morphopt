@@ -1,4 +1,4 @@
-"""History records projected into table columns, independently of Qt."""
+"""History records projected into table columns and numeric curves without Qt."""
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
@@ -9,7 +9,7 @@ from ..i18n import tr
 class HistoryTable:
     headers: list[str]
     rows: list[list[str | None]]
-    objectives: list[float]
+    curves: dict[str, list[float]]
 
 
 def _metric_count(metrics) -> int:
@@ -80,4 +80,11 @@ def history_table(history) -> HistoryTable:
         history.history_num_nodes,
         flat,
     ) for index, objective in enumerate(objectives)]
-    return HistoryTable(headers, rows, objectives)
+    curves = {headers[1]: objectives}
+    for index in range(count):
+        curves[headers[index + 2]] = [
+            float(np.atleast_1d(metrics[row])[index])
+            if row < len(metrics) else float("nan")
+            for row in range(len(objectives))
+        ]
+    return HistoryTable(headers, rows, curves)

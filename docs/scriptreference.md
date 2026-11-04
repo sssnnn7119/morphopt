@@ -717,6 +717,8 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
 
 `get_metrics()` 返回独立记录的响应列表，不产生优化驱动。指标数量与排列应在一个运行中保持一致。
 
+UI 生成的任务通过 `_objective_values()` 计算按定义顺序排列的各项目标贡献，`objective_function()` 返回其和，`get_metrics()` 将其追加在用户指标之后。贡献值包含权重、目标方向与误差变换，与总目标中的对应项一致。手写脚本的指标仍由 `get_metrics()` 显式定义。
+
 <a id="section-载荷雅可比"></a>
 
 ### 7.3 载荷雅可比

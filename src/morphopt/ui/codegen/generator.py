@@ -288,13 +288,13 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     return result
 
 
-def _objective_function_body(
+def _objective_values_body(
     objective: ObjectiveNode, problem: ProblemDefinition
 ) -> str:
-    """Generate one local measurement function per ordered objective term."""
+    """Generate ordered weighted contributions shared by the loss and metrics."""
     terms = objective.objective_terms
     if not terms:
-        return "return 0.0"
+        return "return []"
 
     reference_points = {
         component.name
@@ -325,7 +325,7 @@ def _objective_function_body(
             )
         positive_weight = positive_weight or weight > 0
 
-        function_name = f"objective_term_{index + 1}"
+        function_name = f"objective_term_{index}"
         if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT:
             direction = str(
                 term.get("direction", CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION)
@@ -470,11 +470,11 @@ def _objective_function_body(
         raise ValueError(
             localized_message("ui.errors.generator.objective_needs_positive_weight")
         )
-    return "\n".join([*functions, "return " + " + ".join(weighted_terms)])
+    return "\n".join([*functions, "return [" + ", ".join(weighted_terms) + "]"])
 
 
 def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
-    """Generate an ordered list of displacement and custom metric functions."""
+    """Record user measurements first, followed by weighted objective values."""
     terms = objective.metrics_terms
     reference_points = {
         component.name
@@ -488,7 +488,7 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
 
     for index, term in enumerate(terms):
         metric_type = str(term.get("type") or "")
-        function_name = f"metric_term_{index + 1}"
+        function_name = f"metric_term_{index}"
         if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
             reference_point = str(term.get("reference_point_name") or "").strip()
             component = str(term.get("component") or "")
@@ -543,7 +543,7 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
                     value_0=metric_type,
                 )
             )
-        value_name = f"metric_value_{index + 1}"
+        value_name = f"metric_value_{index}"
         values.extend(
             [
                 f"{value_name} = {function_name}()",
@@ -559,6 +559,7 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
             *functions,
             "metrics = []",
             *values,
+            "metrics.extend(self._objective_values())",
             "return metrics",
         ]
     )
@@ -621,10 +622,10 @@ def generate_base_source(
         )
     )
     if for_class_catalog:
-        obj_body = "return 0.0"
+        obj_body = "return []"
         met_body = "return []"
     else:
-        obj_body = _objective_function_body(objective, problem)
+        obj_body = _objective_values_body(objective, problem)
         met_body = _metrics_function_body(objective, problem)
 
     a(f"    class ObjectiveFunction({CORE_BASES['objective']}):")
@@ -636,6 +637,9 @@ def generate_base_source(
     a("")
 
     a("        def objective_function(self) -> Any:")
+    a("            return sum(self._objective_values())")
+    a("")
+    a("        def _objective_values(self) -> list[Any]:")
     a(indent_block(obj_body, 12))
     a("")
     a("        def get_metrics(self) -> Any:")

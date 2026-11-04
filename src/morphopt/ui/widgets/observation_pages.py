@@ -33,7 +33,7 @@ from .viewport import PlotViewport
 
 
 class MetricsPage(QWidget):
-    """History table and objective-versus-iteration chart."""
+    """History table and a selectable objective or metric curve."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -41,6 +41,14 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
         layout.addWidget(self.table, 3)
+        controls = QHBoxLayout()
+        self.curve_label = QLabel(tr("ui.widgets.observation_pages.display_curve"))
+        controls.addWidget(self.curve_label)
+        self.curve_selector = QComboBox()
+        self.curve_selector.setEnabled(False)
+        self.curve_selector.currentIndexChanged.connect(self._draw_curve)
+        controls.addWidget(self.curve_selector, 1)
+        layout.addLayout(controls)
         self.figure = Figure(
             facecolor=theme_manager.palette.chart.background, layout="constrained"
         )
@@ -48,6 +56,7 @@ class MetricsPage(QWidget):
         layout.addWidget(self.canvas, 2)
         self._last_history = None
         self._last_iteration = 0
+        self._curves: dict[str, list[float]] = {}
         font_manager.changed.connect(self._font_changed)
 
     def update_from_history(self, history, iteration: int) -> None:
@@ -63,24 +72,38 @@ class MetricsPage(QWidget):
             for column_index, value in enumerate(values):
                 if value is not None:
                     self.table.setItem(row_index, column_index, QTableWidgetItem(value))
-        self._draw_objectives(table.objectives)
+        self._curves = table.curves
+        selected = self.curve_selector.currentIndex()
+        self.curve_selector.blockSignals(True)
+        try:
+            self.curve_selector.clear()
+            self.curve_selector.addItems(list(self._curves))
+            self.curve_selector.setCurrentIndex(
+                max(0, min(selected, self.curve_selector.count() - 1))
+            )
+            self.curve_selector.setEnabled(bool(self._curves))
+        finally:
+            self.curve_selector.blockSignals(False)
+        self._draw_curve()
 
-    def _draw_objectives(self, objectives: list[float]) -> None:
+    def _draw_curve(self) -> None:
+        title = self.curve_selector.currentText()
+        values = self._curves.get(title, [])
         self.figure.clear()
         self.figure.set_facecolor(theme_manager.palette.chart.background)
         axes = self.figure.add_subplot(111)
         axes.set_facecolor(theme_manager.palette.chart.background)
         axes.plot(
-            range(1, len(objectives) + 1),
-            objectives,
+            range(1, len(values) + 1),
+            values,
             marker="o",
             color=theme_manager.palette.chart.line,
             linewidth=theme_manager.palette.chart.line_width,
             markersize=theme_manager.palette.chart.marker_size,
         )
         axes.set_xlabel(tr("ui.widgets.observation_pages.iteration"))
-        axes.set_ylabel(tr("ui.widgets.observation_pages.objective"))
-        axes.set_title(tr("ui.widgets.observation_pages.objective_vs_iteration"))
+        axes.set_ylabel(title)
+        axes.set_title(tr("ui.widgets.observation_pages.series_vs_iteration", value_0=title))
         axes.tick_params(colors=theme_manager.palette.chart.text)
         axes.xaxis.label.set_color(theme_manager.palette.chart.text)
         axes.yaxis.label.set_color(theme_manager.palette.chart.text)
@@ -112,16 +135,17 @@ class MetricsPage(QWidget):
 
     def _font_changed(self, role: str) -> None:
         if role == "chart" and self._last_history is not None:
-            self._draw_objectives(history_table(self._last_history).objectives)
+            self._draw_curve()
 
     def apply_language(self) -> None:
         """Refresh translated table headers and chart labels."""
+        self.curve_label.setText(tr("ui.widgets.observation_pages.display_curve"))
         if self._last_history is not None:
             self.update_from_history(self._last_history, self._last_iteration)
 
     def apply_theme(self) -> None:
         if self._last_history is not None:
-            self._draw_objectives(history_table(self._last_history).objectives)
+            self._draw_curve()
         else:
             self.figure.set_facecolor(theme_manager.palette.chart.background)
             self.canvas.draw()
@@ -130,6 +154,9 @@ class MetricsPage(QWidget):
         """Drop all history data and reset the chart."""
         self._last_history = None
         self._last_iteration = 0
+        self._curves = {}
+        self.curve_selector.clear()
+        self.curve_selector.setEnabled(False)
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
         self.figure.clear()

@@ -25,6 +25,7 @@ class GeometryParams(morphopt.GeometryParams):
 from __future__ import annotations
 
 import os
+import random
 from collections import defaultdict
 from collections.abc import Sequence
 from functools import partial
@@ -165,7 +166,11 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                 )
                 names.extend(
                     f"{prefix}_{name}"
-                    for name in (*metadata["edge_map"], *metadata["vertex_map"], *metadata["node_sets"])
+                    for name in (
+                        *metadata["edge_map"],
+                        *metadata["vertex_map"],
+                        *metadata["node_sets"],
+                    )
                 )
             elif index == 0 and isinstance(surface, self.BSP):
                 names.extend((f"{prefix}_Bottom", f"{prefix}_Head"))
@@ -241,7 +246,8 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         action = partial(self._assemble_surfaces, surfaces=geometry)
         return CADHistory(
             operations=[self._Operation("boundary", action)],
-            mesh_size=self.mesh_size,
+            mesh_size=self.mesh_size
+            * random.uniform(*CONSTANT.KERNEL.MESH.BOUNDARY_SEED_SIZE_VARIATION),
         )
 
     def _assemble_surfaces(
@@ -311,7 +317,9 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         """Map designable boundary nodes before element and order processing."""
         nodes = part.nodes.detach().cpu().numpy()
         outer_nodes = part.set_nodes["surface_0_All"]
-        for name, indices in self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items():
+        for name, indices in (
+            self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items()
+        ):
             part.add_node_set(f"surface_0_{name}", outer_nodes[indices])
         for index, surface in enumerate(self.surfaceinterfaces):
             if not surface.num_variables or surface.uses_facewise_binding:

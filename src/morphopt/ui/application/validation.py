@@ -20,7 +20,7 @@ from ...utils.paths import sanitize_name
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,
-    _objective_function_body,
+    _objective_values_body,
     _render_updater_item,
     _surface_constraints_for_part,
 )
@@ -382,7 +382,7 @@ class DefinitionValidation:
             if name not in {node.name for node in self.problem.amplitude_components()}:
                 self.add(objective, "reference", field="jacobian_needed", name=name)
         for category, terms, render in (
-            ("objective", objective.objective_terms, _objective_function_body),
+            ("objective", objective.objective_terms, _objective_values_body),
             ("metric", objective.metrics_terms, _metrics_function_body),
         ):
             for term in terms:

@@ -1039,6 +1039,7 @@ class _Constants:
             MAXIMUM_SIZE_RATIO = 1.0
             MINIMUM_SIZE_RATIO = 0.5
             DEFAULT_CAD_MESH_SIZE = 1.0
+            BOUNDARY_SEED_SIZE_VARIATION = (0.8, 1.2)
             DEFAULT_BOUNDARY_SEED_SIZE = 1.0
             DEFAULT_ELEMENT_ORDER = 1
 

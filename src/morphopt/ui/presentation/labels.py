@@ -199,7 +199,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         }.get(term_type, "objective_term")
         return tr(
             "ui.widgets.objective_editor.tree_objective_entry",
-            value_0=objective_item.index + 1,
+            value_0=objective_item.index,
             value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
         )
     if node.kind == "metric_term":
@@ -210,7 +210,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         }.get(objective_item.item.get("type"), "metric_term")
         return tr(
             "ui.widgets.objective_editor.tree_metric_entry",
-            value_0=objective_item.index + 1,
+            value_0=objective_item.index,
             value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
         )
     if isinstance(node, PartNode):
@@ -288,7 +288,7 @@ def quickstart_summary(options) -> str:
             value_3=100*options.volume_fraction,
         ), tr('ui.widgets.quickstart.left_end_fixed_objective_load_cases_act_along_z')]
     parts.append(tr('ui.widgets.quickstart.objective_terms_and_their_load_cases'))
-    for index, objective in enumerate(options.objectives, 1):
+    for index, objective in enumerate(options.objectives):
         label = tr(GOALS[objective.kind][0])
         if objective.kind.startswith("workspace_"):
             load = tr(

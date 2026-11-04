@@ -34,9 +34,9 @@ class GeometryParams(BaseParams):
 
     from .parts import (
         BasePart,
-        FixedPart,
-        CADPart,
         BoxPart,
+        CADPart,
+        FixedPart,
         INPPart,
     )
 
@@ -53,7 +53,9 @@ class GeometryParams(BaseParams):
         return ["geometry"]
 
     # --------------------------------------------------------------- assembly
-    def generate(self, path_result: str, pools: Pool | None = None) -> torchfea.Assembly:
+    def generate(
+        self, path_result: str, pools: Pool | None = None
+    ) -> torchfea.Assembly:
         """Build the assembly holding every interface's Parts and Instances."""
         assembly = torchfea.Assembly()
         for interface in self.interfaces.values():

@@ -465,7 +465,7 @@ class ObjectiveEditor(QWidget):
             CONSTANT.UI.METRIC.TYPE_CUSTOM: "custom_metric",
         }.get(metric_type, "metric_term")
         card = QGroupBox(
-            f"{index + 1}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
+            f"{index}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
         )
         layout = QVBoxLayout(card)
         actions = ItemActions(
@@ -650,7 +650,7 @@ class ObjectiveEditor(QWidget):
             CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE: "workspace_term",
         }.get(term_type, "objective_term")
         card = QGroupBox(
-            f"{index + 1}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
+            f"{index}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
         )
         layout = QVBoxLayout(card)
         actions = ItemActions(
