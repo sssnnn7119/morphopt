@@ -16,7 +16,7 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
-from ...paths import sanitize_name
+from ...utils.paths import sanitize_name
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,

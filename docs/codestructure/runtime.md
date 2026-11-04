@@ -23,8 +23,7 @@
 
 | 文件 | 主要对象与职责 |
 |---|---|
-| [`opt_runner.py`](../../src/morphopt/opt_runner.py) | `start_optimization()`、`debug_optimization()` |
-| [`taskoptmization.py`](../../src/morphopt/taskoptmization.py) | `TaskOptimization`，任务工作进程与继续计算循环 |
+| [`opt_runner.py`](../../src/morphopt/opt_runner.py) | 公开启动与调试入口、`_run_task()` 分段继续循环、`_run_worker()` 任务工作进程 |
 | [`optcore/controller.py`](../../src/morphopt/optcore/controller.py) | `Controller`，运行对象、计算主循环、保存与设备切换 |
 | [`optcore/solver.py`](../../src/morphopt/optcore/solver.py) | 工况任务分配、有限元初值与求解进程调用 |
 | [`optcore/objfunc.py`](../../src/morphopt/optcore/objfunc.py) | 目标计算、灵敏度与模型/结果保存 |
@@ -37,8 +36,8 @@
 ```text
 用户任务文件的 __main__ 入口
 └── start_optimization()
-    └── TaskOptimization.task_optimization()
-        └── TaskOptimization.optmain() 工作进程
+    └── _run_task()
+        └── _run_worker() 工作进程
             ├── 导入任务模块的 ThisController
             ├── 创建 Controller 并初始化
             └── spawn 进程池 → Solver 的各工况任务
@@ -47,6 +46,8 @@
 运行器使用 `spawn`，工作进程导入模块级 `ThisController`。任务启动调用位于 `if __name__ == "__main__":` 内。工作进程设置浮点精度与设备，并将工作目录切换到任务脚本目录，因此相对输入与输出路径按脚本目录解析。
 
 新运行从用户任务文件加载类；继续运行从具体结果目录的 `scripts/MAIN_SCRIPT_FOR_RESTART.py` 加载类。`path_result` 表示已有运行目录，`target_iteration` 决定读取的保存状态。
+
+`debug_optimization()` 在当前进程调用同一个 `_run_worker()`，只创建一次控制器，并在实际执行的控制器上设置 `_debug_mode=True`。求解器据此采用串行调试路径。工作进程函数定义在模块顶层，支持 Windows 与 Linux 的 `spawn` 导入。
 
 UI 启动与停止外层任务的责任位于 `OptimizationRunSession`，见 [UI 运行会话](ui-application.md#runs)。该会话不替换内核中的计算流程。
 
@@ -108,7 +109,7 @@ Controller.opt_loop()
 
 `restart_per_iteration` 控制工作进程分段返回，外层任务循环取得结果目录后，从保存状态继续。工作进程返回不表示优化达到收敛。
 
-当前 `Controller.opt_loop()` 还包含 `history.iteration == 2` 的返回分支。这是现有实现中的额外工作段退出条件，不是总迭代数或目标收敛判据。运行机制变更时应同时核对 `Controller` 与 `TaskOptimization`，不能只修改一处循环。
+当前 `Controller.opt_loop()` 还包含 `history.iteration == 2` 的返回分支。这是现有实现中的额外工作段退出条件，不是总迭代数或目标收敛判据。运行机制变更时应同时核对 `Controller` 与 `opt_runner._run_task()`，不能只修改一处循环。
 
 `Controller._load_history()` 初始化运行对象后读取指定历史、参数和更新器状态；`restart_optimization()` 随后进入计算循环。原任务文件与运行快照相互独立。改变变量布局、材料分配或工况结构后，旧状态不能直接解释为新模型的状态。
 

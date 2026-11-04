@@ -1,5 +1,7 @@
 import torch
 
+from ...optcore.protocal import ProtocalSavable
+
 class BaseConstraints():
     """
     Base class for objective functions in MorphOpt.
@@ -66,7 +68,7 @@ class BaseConstraints():
         return index, fnew
     
 
-class BaseObjective():
+class BaseObjective(ProtocalSavable):
     """
     Base class for objective functions in MorphOpt.
     """

@@ -229,6 +229,40 @@ def test_updater_term_fields_reach_backend(category, kind, spec):
     assert kwargs == params
 
 
+@pytest.mark.parametrize("kind,group", [("QuadraticShapeDerivative", "geometry"), ("QuadraticSensitivity", "materials")])
+def test_quadratic_surrogate_ui_edit_and_codegen(kind, group, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from morphopt.ui.widgets.param_form import ParamForm
+    from morphopt.ui.application.updaters import updater_item
+
+    app = QApplication.instance() or QApplication([])
+    item = updater_item(kind, "objectives")
+    spec = R.UPDATER_CATALOG["objectives"][kind]
+    form = ParamForm(item["params"], spec.fields)
+    memory = form.controls["memory_size"]
+    memory.setText("4")
+    memory.editingFinished.emit()
+    app.processEvents()
+    assert item["params"]["memory_size"] == 4
+    expression = _render_updater_item(item, "objectives")
+    root = morphopt.UpdaterBoundaryPart if group == "geometry" else morphopt.UpdaterSIMPMaterial
+    objective = eval(expression, {"self": root})
+    assert objective.history.memory_size == 4
+    if group == "geometry":
+        problem = ProblemLibrary.create("shapeopt")
+        problem.updater.geometry[0]["objective_functions"] = [item]
+        saved = ProblemLibrary.save(problem, tmp_path / "quadratic.morph")
+        loaded = ProblemLibrary.load(saved)
+        assert loaded.updater.geometry[0]["objective_functions"][0] == item
+        from morphopt.ui.codegen.generator import generate_base_source
+
+        source = generate_base_source(loaded)
+        assert expression in source
+        compile(source, "quadratic.py", "exec")
+    form.close()
+
+
 @pytest.mark.parametrize("kind,spec", [
     (kind, spec) for kind, spec in R.SURFACE_SYMMETRY_CONSTRAINTS.items()
     if spec.factory is not None

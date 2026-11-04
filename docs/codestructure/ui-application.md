@@ -105,7 +105,7 @@
 
 `SchemeTemplate` 提供共享节点工厂、类型选项及目标代码片段，内置策略在 `schemes/base.py` 注册。新增策略是 Python 类注册，不以新增 `.morph` 文件注册方案。
 
-几何工厂与网格生成由内核实现，Quickstart 组合现有 Part/曲面类型。工作空间目标的边界积分点与权重由 `optcore/quadrature.py` 提供，应用层将压力通道映射为载荷工况和目标中的 Jacobian 列。
+几何工厂与网格生成由内核实现，Quickstart 组合现有 Part/曲面类型。工作空间目标的边界积分点与权重由 `utils/quadrature.py` 提供，应用层将压力通道映射为载荷工况和目标中的 Jacobian 列。
 
 <a id="section-代码生成边界"></a>
 

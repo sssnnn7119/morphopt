@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import copy
+from typing import TYPE_CHECKING
 
 import torch
-import torchfea
 
-from ..optcore.controller import Controller as ThisController
+if TYPE_CHECKING:
+    import torchfea
+
+    from ..optcore.controller import Controller as ThisController
 
 
 def _run_once(

@@ -45,6 +45,8 @@ from .node_types import (
     CylinderOperationNode,
     CylinderPenaltyNode,
     DensityFieldMinimizeObjectiveNode,
+    QuadraticShapeDerivativeObjectiveNode,
+    QuadraticSensitivityObjectiveNode,
     DilateOperationNode,
     DistancePenaltyNode,
     FairnessPenaltyNode,
@@ -159,7 +161,9 @@ PART_TYPES: dict[str, type[PartNode]] = {
 UPDATER_OBJECTIVES: dict[str, type[ObjectiveTermNode]] = {
     node.type_name: node for node in (
         ShapeDerivativeObjectiveNode,
+        QuadraticShapeDerivativeObjectiveNode,
         SensitivityObjectiveNode,
+        QuadraticSensitivityObjectiveNode,
         DensityFieldMinimizeObjectiveNode,
     )
 }

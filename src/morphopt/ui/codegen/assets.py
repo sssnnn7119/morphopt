@@ -8,7 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from ...paths import sanitize_name
+from ...utils.paths import sanitize_name
 
 from ..model.node_types.cad import StepImportOperationNode
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode

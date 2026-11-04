@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 
 import pyvista as pv
 import torch
+import torchfea
 
 from ..constants import CONSTANT
-import torchfea
 
 __all__ = [
     "ProtocalInitializable",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ...paths import sanitize_name
+from ...utils.paths import sanitize_name
 from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
 from ..codegen.generator import generate_source
 from ..i18n import localized_message

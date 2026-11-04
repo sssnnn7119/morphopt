@@ -18,7 +18,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..paths import sanitize_name
+from ..utils.paths import sanitize_name
 from .model.problem import ProblemDefinition
 from .processes import worker_environment
 

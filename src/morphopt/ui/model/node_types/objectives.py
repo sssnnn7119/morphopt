@@ -9,6 +9,15 @@ from ..base_nodes import ObjectiveTermNode
 from ..fields import FieldSpec
 
 
+_QUADRATIC_FIELDS = (
+    FieldSpec(
+        "memory_size", "ui.schema.fields.memory_size.label", "int",
+        CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS, minimum=1,
+        doc_key="ui.schema.fields.memory_size.help",
+    ),
+)
+
+
 class ShapeDerivativeObjectiveNode(ObjectiveTermNode):
     """UI definition of ShapeDerivative."""
 
@@ -43,6 +52,31 @@ class SensitivityObjectiveNode(ObjectiveTermNode):
             doc_key="ui.schema.fields.normalize_gradient.help.text",
         ),
     )
+
+
+class QuadraticShapeDerivativeObjectiveNode(ShapeDerivativeObjectiveNode):
+    """Historical quadratic shape objective, separate from ShapeDerivative."""
+
+    type_name: ClassVar[str] = "QuadraticShapeDerivative"
+    backend_class: ClassVar[str] = "QuadraticShapeDerivative"
+    label_key: ClassVar[str] = "ui.schema.catalog.updater_objective.quadraticshapederivative.label"
+    gen: ClassVar[str] = "self.objectivefuncs.QuadraticShapeDerivative(memory_size={memory_size})"
+    memory_size: int
+    fields: ClassVar[tuple[FieldSpec, ...]] = _QUADRATIC_FIELDS
+
+
+class QuadraticSensitivityObjectiveNode(SensitivityObjectiveNode):
+    """Historical quadratic material objective, separate from Sensitivity."""
+
+    type_name: ClassVar[str] = "QuadraticSensitivity"
+    backend_class: ClassVar[str] = "QuadraticSensitivity"
+    label_key: ClassVar[str] = "ui.schema.catalog.updater_objective.quadraticsensitivity.label"
+    gen: ClassVar[str] = (
+        "self.objectivefuncs.QuadraticSensitivity(normalize_gradient={normalize_gradient}, "
+        "memory_size={memory_size})"
+    )
+    memory_size: int
+    fields: ClassVar[tuple[FieldSpec, ...]] = SensitivityObjectiveNode.fields + _QUADRATIC_FIELDS
 
 
 class DensityFieldMinimizeObjectiveNode(ObjectiveTermNode):

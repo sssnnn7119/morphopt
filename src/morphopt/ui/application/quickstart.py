@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from textwrap import dedent
 
 from ...constants import CONSTANT
-from ...optcore.quadrature import actuation_boundary_gauss_points
+from ...utils.quadrature import actuation_boundary_gauss_points
 from ..codegen.workspace import workspace_integral_body
 from ..i18n import localized_message
 from ..model.chamberlayout import ChamberLayer, LayeredChambers

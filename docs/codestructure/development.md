@@ -88,6 +88,7 @@ BSP 的 `maxC/maxR/maxFF` 和 CPGEO 的曲率参数通过 `Fairness` 求值，�
 |---|---|
 | [`tests/optcore/test_objfunc.py`](../../tests/optcore/test_objfunc.py) | 目标与结果保存行为 |
 | [`tests/optcore/test_solver.py`](../../tests/optcore/test_solver.py) | 工况求解与初值处理 |
+| [`tests/optcore/test_runner.py`](../../tests/optcore/test_runner.py) | 任务函数的 spawn 导入、继续计算、首轮失败退出与调试路径 |
 | [`tests/ui/test_model_persistence.py`](../../tests/ui/test_model_persistence.py) | 定义序列化与类型恢复 |
 | [`tests/ui/test_application.py`](../../tests/ui/test_application.py) | 应用操作、引用与会话 |
 | [`tests/ui/test_parameter_contracts.py`](../../tests/ui/test_parameter_contracts.py) | 节点、生成参数与后端签名对应 |
@@ -109,6 +110,8 @@ BSP 的 `maxC/maxR/maxFF` 和 CPGEO 的曲率参数通过 `Fairness` 求值，�
 `Session` 表示有状态应用会话，`Library` 表示资源/文件入口，`Page/Editor/Viewer` 表示 Qt 展示角色。方法名称区分领域编辑、文件读写、会话绑定与显示刷新，避免长期业务对象使用含义不明的临时命名。
 
 业务默认值与数值配置归 `constants.py`，外观与布局归 `ui/theme/`，应用文案归 `ui/locales/`。资源路径按包位置或明确的任务来源解析，不写入特定电脑的绝对路径或环境名。
+
+跨模块复用且不持有业务状态的辅助函数归 `utils/`：`paths.py` 处理 Windows 与 Linux 的文件名组成部分，`quadrature.py` 提供载荷空间边界高斯积分。仅属于一个调用方的短辅助函数放在调用模块内部；启动与任务继续循环集中在 `opt_runner.py`。独立领域对象按模型、求解、设计更新或 UI 职责组织，文件行数不作为合并模块的唯一标准。工具模块中的控制器类型注解使用 `TYPE_CHECKING` 导入，避免基础工具反向加载运行控制器。
 
 代码结构文档以本目录 README 为唯一导航入口。公共边界变更更新系统架构；具体实现变更只在所属专题展开，其他专题使用链接。用户可见的参数与操作同步更新[四篇使用文档](../README.md)。
 

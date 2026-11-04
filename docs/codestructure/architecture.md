@@ -88,14 +88,14 @@ flowchart TB
 | 路径 | 主要职责 |
 |---|---|
 | [`src/morphopt/__init__.py`](../../src/morphopt/__init__.py) | 公共类、启动函数、日志与工具入口 |
-| [`opt_runner.py`](../../src/morphopt/opt_runner.py)、[`taskoptmization.py`](../../src/morphopt/taskoptmization.py) | 脚本任务的进程启动与分段继续计算 |
+| [`opt_runner.py`](../../src/morphopt/opt_runner.py) | 脚本任务的进程启动与分段继续计算 |
 | [`optcore/`](../../src/morphopt/optcore) | 控制器、参数、求解、目标、更新器管理、历史与共享协议 |
 | [`shapeopt/`](../../src/morphopt/shapeopt) | 边界曲面部件、曲面约束、体网格与形状更新 |
 | [`simp/`](../../src/morphopt/simp) | 材料设计场、材料与单元缩放、密度场更新 |
 | [`codesign/`](../../src/morphopt/codesign) | 内腔偏置实体层及其专用更新器和约束 |
 | [`postprocess/`](../../src/morphopt/postprocess) | 无 Qt 的归档读取、有限元场量、统一文件导出与场景绘制 |
 | [`ui/`](../../src/morphopt/ui) | 编辑、生成、任务管理、预览与结果界面 |
-| [`utils/`](../../src/morphopt/utils) | 历史控制器读取与灵敏度检查工具 |
+| [`utils/`](../../src/morphopt/utils) | 跨模块名称处理、数值积分、历史控制器读取与灵敏度检查工具 |
 | [`constants.py`](../../src/morphopt/constants.py) | 业务默认值、运行参数与数值配置 |
 
 `morphopt.start_optimization()` 启动脚本任务，`morphopt.debug_optimization()` 提供调试入口。`morphopt-ui` 与 `python -m morphopt.ui` 进入图形应用。

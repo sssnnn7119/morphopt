@@ -1343,5 +1343,9 @@
   "ui.visualization.choose_view": "View direction…",
   "ui.visualization.isometric": "Isometric",
   "ui.visualization.fit": "Fit to window",
-  "ui.visualization.view_hint": "Axial views look toward the model from the selected positive or negative axis."
+  "ui.visualization.view_hint": "Axial views look toward the model from the selected positive or negative axis.",
+  "ui.schema.fields.memory_size.label": "Curvature history pairs",
+  "ui.schema.fields.memory_size.help": "Positive integer: maximum retained outer design/gradient difference pairs. Uses a linear Taylor model without valid positive-curvature history.",
+  "ui.schema.catalog.updater_objective.quadraticshapederivative.label": "Historical quadratic shape objective",
+  "ui.schema.catalog.updater_objective.quadraticsensitivity.label": "Historical quadratic material objective"
 }

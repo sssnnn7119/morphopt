@@ -1283,9 +1283,9 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 *SIMP 材料的子优化器独立选择材料 updater。*
 
-<a id="section-三类更新目标项"></a>
+<a id="section-更新目标项"></a>
 
-### 10.2 三类更新目标项
+### 10.2 更新目标项
 
 **主目标**读取 FE 响应并评价设计性能；本节的**更新目标项**在子优化问题中接收该梯度或添加正则项。两者在 UI 中位于不同位置。
 
@@ -1293,7 +1293,9 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 #### 10.2.1 ShapeDerivative：结构灵敏度
 
-`ShapeDerivative` 在几何子问题中使用主目标的形状导数。添加到几何优化器 → 目标项。无独立参数；是否更新某个曲面由该曲面对象的 `is_updatable` 控制。
+`ShapeDerivative` 在几何子问题中使用主目标的形状导数。添加到几何优化器 → 目标项。是否更新某个曲面由该曲面对象的 `is_updatable` 控制。
+
+该项保持原有一阶 Taylor 形式，无独立参数。历史二阶代理作为单独的目标类添加。
 
 几何优化器中的包络、距离等约束仅控制几何条件，主目标对应的 FE 响应由目标梯度项驱动改善。
 
@@ -1301,9 +1303,21 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 *ShapeDerivative 在几何更新中引入主目标梯度。*
 
+<a id="updater_objectives-quadraticshapederivative"></a>
+
+#### 10.2.2 QuadraticShapeDerivative：历史二阶形状代理
+
+**入口：几何优化器 → 目标项 → 添加 → 历史二阶形状代理。** 切换为二阶代理时，以该项替换 `ShapeDerivative`；同时添加会重复计入主目标的一阶项。
+
+| 界面字段 / 保存键 | 初始值 | 参数定义 |
+|---|---|---|
+| 曲率历史对数 / `memory_size` | `10` | 保留的有效外层设计增量与梯度增量对数，必须为正整数。 |
+
+该目标采用外层有限元梯度构造有限记忆 BFGS Hessian 近似。第一轮及没有有效正曲率历史时采用一阶 Taylor 代理。内层迭代不调用额外有限元分析，历史状态随优化结果保存并在进程重启后恢复。现有步长限制继续生效；完整定义及适用限制见[脚本模块与接口参考](scriptreference.md#section-有限元目标的历史梯度二阶代理)。
+
 <a id="updater_objectives-sensitivity"></a>
 
-#### 10.2.2 Sensitivity：材料灵敏度
+#### 10.2.3 Sensitivity：材料灵敏度
 
 `Sensitivity` 在材料子问题中使用主目标对设计材料场的敏感度。添加到材料优化器 → 目标项。
 
@@ -1313,13 +1327,28 @@ normalize_gradient 开启后改变梯度缩放，可能影响它与约束罚项�
 |---|---|---|
 | 梯度归一化 / `normalize_gradient` | `false` | 是否对材料梯度进行归一化。 |
 
+该项保持原有倒数近似形式。
+
 ![SIMP 材料优化器中的 Sensitivity 目标项](images/ui-reference/updaters/material/sensitivity.png)
 
 *SIMP 材料优化器中的 Sensitivity 目标项。*
 
+<a id="updater_objectives-quadraticsensitivity"></a>
+
+#### 10.2.4 QuadraticSensitivity：历史二阶材料代理
+
+**入口：材料优化器 → 目标项 → 添加 → 历史二阶材料代理。** 该项替换原有 `Sensitivity` 材料目标，独立管理二阶曲率历史。
+
+| 界面字段 / 保存键 | 初始值 | 参数定义 |
+|---|---|---|
+| 梯度归一化 / `normalize_gradient` | `false` | 是否整体缩放物理代理目标。 |
+| 曲率历史对数 / `memory_size` | `10` | 有效曲率历史长度，必须为正整数。 |
+
+材料二阶代理与形状二阶代理共享曲率计算实现。梯度归一化在曲率历史构造之后作用于整个代理目标，避免将逐轮缩放变化混入梯度差分。
+
 <a id="updater_objectives-densityfieldminimize"></a>
 
-#### 10.2.3 DensityFieldMinimize：密度场正则化
+#### 10.2.5 DensityFieldMinimize：密度场正则化
 
 `DensityFieldMinimize` 添加一个针对设计控制量总和的弱正则项。当前实现精确形式为 `scale * (sum(cps) + 1)^2`，其中 cps 是材料场控制变量。
 
@@ -1901,7 +1930,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | CAD 操作 | 14 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
 | 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
-| 更新目标 | 3 | [ShapeDerivative](#updater_objectives-shapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |
+| 更新目标 | 5 | [ShapeDerivative](#updater_objectives-shapederivative)、[QuadraticShapeDerivative](#updater_objectives-quadraticshapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[QuadraticSensitivity](#updater_objectives-quadraticsensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |
 | 曲面对称与关联 | 6 | [BspMirror](#surface_symmetry_constraints-bspmirror)、[CPGEOMirror](#surface_symmetry_constraints-cpgeomirror)、[CPGEORotation](#surface_symmetry_constraints-cpgeorotation)、[BspRelation](#surface_symmetry_constraints-bsprelation)、[CPGEORelation](#surface_symmetry_constraints-cpgeorelation)、[Custom](#surface_symmetry_constraints-custom) |
 | 几何与材料约束 | 10 | [Fairness](#updater_constraints-fairness)、[Distance](#updater_constraints-distance)、[Cylinder](#updater_constraints-cylinder)、[MinRadius](#updater_constraints-minradius)、[VolumeMaximization](#updater_constraints-volumemaximization)、[InwardCurvatureRadius](#updater_constraints-inwardcurvatureradius)（隐藏）、[OffsetSurfaceMinThickness](#updater_constraints-offsetsurfaceminthickness)（隐藏）、[VolFrac](#updater_constraints-volfrac)、[MinValue](#updater_constraints-minvalue)、[MaxValue](#updater_constraints-maxvalue) |
 

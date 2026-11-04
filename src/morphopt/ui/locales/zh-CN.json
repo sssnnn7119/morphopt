@@ -1343,5 +1343,9 @@
   "ui.visualization.choose_view": "切换视角…",
   "ui.visualization.isometric": "正等轴测",
   "ui.visualization.fit": "适应窗口",
-  "ui.visualization.view_hint": "轴向视角从所选轴的正向或负向看向模型。"
+  "ui.visualization.view_hint": "轴向视角从所选轴的正向或负向看向模型。",
+  "ui.schema.fields.memory_size.label": "曲率历史对数",
+  "ui.schema.fields.memory_size.help": "保留的有效外层设计增量与梯度增量对数，必须为正整数。没有有效正曲率历史时采用一阶 Taylor 代理。",
+  "ui.schema.catalog.updater_objective.quadraticshapederivative.label": "历史二阶形状代理",
+  "ui.schema.catalog.updater_objective.quadraticsensitivity.label": "历史二阶材料代理"
 }
