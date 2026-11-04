@@ -95,7 +95,7 @@ class QuadraticHistory:
             change = gradient - self.gradient
             curvature = step @ change
             threshold = (
-                CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_CURVATURE_TOLERANCE
+                CONSTANT.KERNEL.OPTIMIZER.BFGS_CURVATURE_TOLERANCE
                 * step.norm()
                 * change.norm()
             )
@@ -163,13 +163,13 @@ class QuadraticHistory:
         """Return g.T d + 0.5 d.T B d, with zero value at the anchor."""
         if self.point is None:
             raise RuntimeError(
-                "Observe a physical gradient before evaluating the surrogate."
+                "Observe a gradient before evaluating the quadratic model."
             )
         delta = point.flatten() - self.point
         return self.gradient @ delta + 0.5 * (delta @ self.hessian_product(delta))
 
     def save(self, path: str | Path) -> None:
-        """Persist raw observations, including the last pre-update anchor."""
+        """Persist the latest observation and retained curvature pairs."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         size = self.point.numel() if self.point is not None else 0

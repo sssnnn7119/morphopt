@@ -12,7 +12,7 @@ from morphopt.optcore.controller import Controller
 from morphopt.optcore.modelparams import FEAParams, GeometryParams, MaterialsParams, Params
 from morphopt.optcore.modelparams.materials import MaterialModels
 from morphopt.optcore.objfunc import ObjectiveFunction
-from morphopt.optcore.updaters import QuadraticHistory, Updaters
+from morphopt.optcore.updaters import BaseUpdater, QuadraticHistory, Updaters
 from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
@@ -52,6 +52,11 @@ def test_direct_hessian_matches_independent_dense_bfgs():
     torch.testing.assert_close(actual, torch.tensor(reference.get_matrix()))
     torch.testing.assert_close(actual @ last, hessian @ last)
     assert torch.linalg.eigvalsh(actual).min() > 0
+    inverse = torch.stack([
+        model.inverse_hessian_product(axis) for axis in torch.eye(3)
+    ], dim=1)
+    torch.testing.assert_close(inverse, torch.linalg.inv(actual))
+    torch.testing.assert_close(inverse @ change, last)
     # Both the automatic gradient and Hessian use B, not B^{-1}.
     trial = points[-1] + torch.tensor([0.02, -0.01, 0.03])
     torch.testing.assert_close(torch.func.jacrev(model)(trial), hessian @ points[-1] + actual @ (trial - points[-1]))
@@ -63,6 +68,7 @@ def test_first_observation_and_invalid_curvature_stay_linear():
     model = QuadraticHistory()
     model.observe(torch.zeros(2), torch.tensor([1.0, 2.0]))
     trial = torch.tensor([0.1, 0.2])
+    torch.testing.assert_close(model.inverse_hessian_product(trial), trial)
     assert model(trial) == pytest.approx(0.5)
     model.observe(torch.zeros(2), torch.tensor([2.0, 3.0]))  # zero step
     model.observe(torch.ones(2), torch.tensor([1.0, 2.0]))  # negative curvature
@@ -196,6 +202,8 @@ def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface():
     assert torch.isfinite(torch.func.jacrev(updater.closure)(direction)).all()
     assert loss_after < loss_before
     assert objective.history.history_size == 1  # inner evaluations never add pairs
+    assert updater.optimizer.history is not objective.history
+    assert updater.optimizer.history.history_size > 0
     updater.update_variables(direction)
     assert active.points.square().sum() < before.square().sum()
     torch.testing.assert_close(fixed.points, fixed_before)
@@ -332,3 +340,51 @@ def test_fea_gradient_reaches_shape_history_without_normalization(monkeypatch):
     updater.surface_interfaces[0].points += delta.reshape(1, 3)
     expected = second @ delta + 0.5 * (delta @ quadratic.history.hessian_product(delta))
     assert float(quadratic([])) == pytest.approx(float(expected / second.abs().max()))
+
+
+def test_lbfgs_shared_history_converges_on_rosenbrock():
+    def loss(point):
+        return (1 - point[0]) ** 2 + 100 * (point[1] - point[0] ** 2) ** 2
+
+    optimizer = BaseUpdater.Optimizer.LBFGS(loss, num_limit=5)
+    point = torch.tensor([-1.2, 1.0])
+    gradient = None
+    for _ in range(150):
+        before = float(loss(point))
+        alpha, direction, gradient = optimizer.step(point, gradient)
+        point = point + alpha * direction
+        assert float(loss(point)) <= before + 1e-14
+        assert optimizer.history.history_size <= 5
+        if float(loss(point)) < 1e-14:
+            break
+    torch.testing.assert_close(point, torch.ones(2), atol=1e-6, rtol=0)
+
+
+def test_lbfgs_discards_negative_pairs_and_failed_search(monkeypatch):
+    optimizer = BaseUpdater.Optimizer.LBFGS(lambda point: -point.square().sum())
+    point = torch.tensor([1.0, 2.0])
+    gradient = None
+    for _ in range(3):
+        alpha, direction, gradient = optimizer.step(point, gradient)
+        point = point + alpha * direction
+        assert optimizer.history.history_size == 0
+        torch.testing.assert_close(optimizer.history.point, point)
+    monkeypatch.setattr(
+        optimizer, "_LineSearchBacktracking",
+        lambda **kwargs: (0.0, kwargs["obj0"]),
+    )
+    alpha, direction, unchanged_gradient = optimizer.step(point, gradient)
+    assert alpha == 0
+    assert not direction.any()
+    assert optimizer.history.point is None
+    torch.testing.assert_close(unchanged_gradient, gradient)
+
+
+def test_lbfgs_at_stationary_point_has_no_spurious_pair():
+    optimizer = BaseUpdater.Optimizer.LBFGS(lambda point: point.square().sum())
+    point = torch.zeros(3)
+    alpha, direction, gradient = optimizer.step(point)
+    assert alpha == 0
+    assert not direction.any()
+    assert not gradient.any()
+    assert optimizer.history.history_size == 0

@@ -119,9 +119,9 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 
 `ShapeDerivative` 将主目标结构梯度传入局部问题；`Fairness`、`Distance`、圆柱/半径边界及体积辅助项在形状子问题中求值。`Fairness` 使用曲面预计算的一、二阶几何量与阈值；这些阈值不等同于控制点位移上限。
 
-`ShapeDerivative` 保持原有一阶形式，`QuadraticShapeDerivative` 是独立的历史二阶目标类，两者均定义在 `shapeopt/objectivefuncs/shapederivative.py`。材料模块同样区分 `Sensitivity` 与 `QuadraticSensitivity`。具体目标通过继承复用参数读取、灵敏度映射和缩放，仅二阶类持有 `QuadraticHistory`。`QuadraticHistory` 合并在 `optcore/updaters.py` 中，统一维护曲率历史、Hessian 乘积和历史状态序列化；具体目标仍在各自的 `objectivefuncs` 模块定义。
+`ShapeDerivative` 保持原有一阶形式，`QuadraticShapeDerivative` 是独立的历史二阶目标类，两者均定义在 `shapeopt/objectivefuncs/shapederivative.py`。材料模块同样区分 `Sensitivity` 与 `QuadraticSensitivity`。具体目标通过继承复用参数读取、灵敏度映射和缩放。`QuadraticHistory` 位于 `optcore/updaters.py` 中，统一维护曲率历史、直接及逆 Hessian 乘积和历史状态序列化；具体目标仍在各自的 `objectivefuncs` 模块定义。
 
-曲率历史仅在外层灵敏度观测时更新，内层 L-BFGS 在固定目标代理与罚项之和上求解。各目标项通过 `ProtocalSavable` 保存独立状态；更新器管理器统一分配 `objectives/<目标项名称>/` 子目录，仅调用目标的保存和恢复接口，不解释具体代理算法。
+二阶目标和内层 `Optimizer.LBFGS` 分别持有独立的 `QuadraticHistory` 实例。外层实例在有限元灵敏度观测时更新，以 `hessian_product()` 评价物理目标的二次项；内层实例在试探步被接受后更新，以 `inverse_hessian_product()` 计算搜索方向。两者共用正曲率筛选与历史截断实现。子问题重新建立时重置内层历史，外层历史跨轮保留。各目标项通过 `ProtocalSavable` 保存独立状态；更新器管理器统一分配 `objectives/<目标项名称>/` 子目录，仅调用目标的保存和恢复接口，不解释具体代理算法。
 
 曲面 `seed_size` 控制初始控制网格和采样，Part 的 `fea_seed_size` 控制体网格。更改体网格尺寸不自动改变设计控制点数量。
 

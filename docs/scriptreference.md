@@ -880,6 +880,8 @@ $$
 B^+=B-\frac{(Bs)(Bs)^T}{s^TBs}+\frac{yy^T}{s^Ty}.
 $$
 
+内层 `Optimizer.LBFGS` 复用 `QuadraticHistory` 的历史管理与 `inverse_hessian_product()` 两循环递归，外层二阶目标使用 `hessian_product()`。每个使用方持有独立实例：外层记录物理参数与有限元梯度，内层记录子问题变量与完整子问题梯度。没有有效曲率对时，外层采用一阶模型，内层采用最速下降方向；重新建立子问题或线搜索失败时清空内层历史。
+
 更新公式可参见 [SciPy 的 BFGS 实现](https://github.com/scipy/scipy/blob/main/scipy/optimize/_hessian_update_strategy.py)。MorphOpt 在 PyTorch 中以向量乘积实现相应二次型，保持对子问题设计变量的自动微分。
 
 实现仅保存向量及秩更新因子；历史长度为 $m$、参数数量为 $n$ 时，存储和单次 Hessian 乘积的开销均为 $O(mn)$。更新因子的重建在外层观测时执行，开销为 $O(m^2n)$。

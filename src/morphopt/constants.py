@@ -1084,7 +1084,6 @@ class _Constants:
 
         class UPDATER_OBJECTIVES:
             QUADRATIC_MEMORY_PAIRS = 10
-            QUADRATIC_CURVATURE_TOLERANCE = 1e-8
 
         class OPTIMIZER:
             LINE_SEARCH_C1 = 0.0001
@@ -1092,7 +1091,7 @@ class _Constants:
             LINE_SEARCH_MIN_STEP_TOLERANCE = 1e-14
             LBFGS_MEMORY_PAIRS = 10
             LBFGS_CONVERGENCE_TOLERANCE = 1e-10
-            LBFGS_CURVATURE_TOLERANCE = 1e-14
+            BFGS_CURVATURE_TOLERANCE = 1e-8
             LBFGS_SHAPE_MEMORY_PAIRS = 20
             LBFGS_MATERIAL_MEMORY_PAIRS = 20
 

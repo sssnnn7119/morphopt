@@ -783,19 +783,19 @@ $\mathbf{s}_l = \vec{\Psi}^{l+1} - \vec{\Psi}^l$ 为步长向量，$\mathbf{y}_l
 
 ```python
 class LBFGS(BaseOpt):
-    def Hg_loop(self, dv):
-        # 两循环递归计算 Hv 乘积
-        q = dv.clone()
-        for i in reversed(range(len(self.SK))):
-            alpha[i] = self.rhok[i] * self.SK[i].dot(q)
-            q = q - alpha[i] * self.YK[i]
-        # ...
-  
+    def __init__(self, closure, num_limit=10):
+        super().__init__(closure)
+        self.history = QuadraticHistory(memory_size=num_limit)
+
     def step(self, x_now, gk_now=None):
-        # 确定搜索方向 dk
-        # 回溯线搜索确定步长 alpha
-        # 更新 BFGS 历史
+        # 首次记录子问题的参数与梯度
+        # history.inverse_hessian_product(-gk_now) 计算搜索方向
+        # Armijo 回溯线搜索确定步长
+        # 接受试探步后，history.observe(x_new, gk_new) 更新内层历史
+        ...
 ```
+
+`QuadraticHistory` 统一实现有限记忆曲率对管理与两循环递归。内层梯度来自完整子问题，包括物理代理和几何罚项；外层二阶目标的梯度来自有限元分析。两个实例使用不同的参数坐标并独立更新，不能共享同一份历史。
 
 <a id="section-回溯线搜索"></a>
 
