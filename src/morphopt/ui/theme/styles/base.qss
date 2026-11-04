@@ -8,6 +8,7 @@ QTreeWidget, QTreeView, QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {
     color: @text@;
     border: 1px solid @border@;
 }
+QTableWidget { alternate-background-color: @table_alternate@; }
 QTreeWidget::item, QListWidget::item { padding: 3px 2px; }
 QTreeWidget::item:selected, QTableWidget::item:selected, QListWidget::item:selected {
     background-color: @selection@;

@@ -30,6 +30,7 @@ _viewer = replace(
 DARK = ThemePalette(
     window="#121417",
     panel="#191d24",
+    table_alternate="#20252e",
     input="#232832",
     border="#333b48",
     text="#e7ebf0",

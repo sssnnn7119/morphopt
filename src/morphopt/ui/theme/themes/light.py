@@ -67,6 +67,7 @@ _viewer = replace(
 LIGHT = ThemePalette(
     window="#f3f5f8",
     panel="#e9edf2",
+    table_alternate="#e1e7ee",
     input="#ffffff",
     border="#c3ccd7",
     text="#202a36",

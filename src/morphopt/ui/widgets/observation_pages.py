@@ -43,10 +43,13 @@ class MetricsPage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.table = QTableWidget()
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        header.setMinimumSectionSize(88)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        header.setMinimumSectionSize(
+            theme_manager.palette.layout.history.minimum_column_width
+        )
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.setWordWrap(False)
+        self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table, 3)
         controls = QHBoxLayout()
         self.curve_label = QLabel(tr("ui.widgets.observation_pages.display_curve"))
@@ -77,8 +80,16 @@ class MetricsPage(QWidget):
         self.table.clearContents()
         for row_index, values in enumerate(table.rows):
             for column_index, value in enumerate(values):
-                if value is not None:
-                    self.table.setItem(row_index, column_index, QTableWidgetItem(value))
+                self.table.setItem(
+                    row_index,
+                    column_index,
+                    QTableWidgetItem("" if value is None else value),
+                )
+        for column, title in enumerate(table.headers):
+            item = self.table.horizontalHeaderItem(column)
+            if item is not None:
+                item.setToolTip(title)
+        self._configure_history_widths()
         self._curves = table.curves
         selected = self.curve_selector.currentIndex()
         self.curve_selector.blockSignals(True)
@@ -92,6 +103,20 @@ class MetricsPage(QWidget):
         finally:
             self.curve_selector.blockSignals(False)
         self._draw_curve()
+
+    def _configure_history_widths(self) -> None:
+        """Use a few title-based widths and allow horizontal scrolling."""
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        metrics = header.fontMetrics()
+        layout = theme_manager.palette.layout.history
+        widths = layout.column_widths
+        for column in range(self.table.columnCount()):
+            item = self.table.horizontalHeaderItem(column)
+            title = item.text() if item is not None else ""
+            required = metrics.horizontalAdvance(title) + layout.column_width_padding
+            width = next((size for size in widths if required <= size), widths[-1])
+            self.table.setColumnWidth(column, width)
 
     def _draw_curve(self) -> None:
         index = self.curve_selector.currentIndex()
@@ -156,6 +181,7 @@ class MetricsPage(QWidget):
 
     def apply_theme(self) -> None:
         if self._last_history is not None:
+            self._configure_history_widths()
             self._draw_curve()
         else:
             self.figure.set_facecolor(theme_manager.palette.chart.background)

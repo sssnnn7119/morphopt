@@ -76,6 +76,9 @@ class WorkbenchLayout:
 @dataclass(frozen=True)
 class HistoryLayout:
     row_height: int = 28
+    column_widths: tuple[int, ...] = (96, 128, 168, 220, 280)
+    column_width_padding: int = 24
+    minimum_column_width: int = 96
     graph_left_margin: int = 12
     graph_right_margin: int = 14
     graph_text_gap: int = 6
@@ -357,6 +360,7 @@ class ThemePalette:
 
     window: str
     panel: str
+    table_alternate: str
     input: str
     border: str
     text: str
