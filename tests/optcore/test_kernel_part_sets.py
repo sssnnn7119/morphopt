@@ -107,6 +107,21 @@ def test_cad_properties_reuse_the_mesh_and_follow_operation_changes():
     assert part.node_sets is second.set_nodes
 
 
+def test_cad_mesh_uses_history_mesh_size(monkeypatch):
+    part = CADPart(mesh_size=2.0, mesh_order=1, part_name="body")
+    history = torchfea.cad.CADHistory(operations=[], mesh_size=0.75)
+    captured = {}
+    expected = object()
+
+    def mesh(mesh_size):
+        captured["mesh_size"] = mesh_size
+        return expected
+
+    monkeypatch.setattr(history, "mesh", mesh)
+    assert part.mesh_geometry(history) is expected
+    assert captured["mesh_size"] == 0.75
+
+
 def test_custom_fixed_part_reuses_one_mesh_and_exposes_its_live_sets():
     class ImportedPart(FixedPart):
         builds = 0

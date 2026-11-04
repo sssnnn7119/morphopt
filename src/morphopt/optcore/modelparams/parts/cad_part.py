@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import math
 import json
+import math
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -98,14 +98,17 @@ class CADMeshingMixin:
         self.define_operations()
 
     def prepare_geometry(
-        self, path_result: str | None = None, pools: Pool | None = None,
+        self,
+        path_result: str | None = None,
+        pools: Pool | None = None,
     ) -> list[torchfea_cad.CADOperation]:
         """Provide the declared CAD operations; subclasses prepare their inputs."""
         self._face_names.clear()
         return self.operations
 
     def assemble_geometry(
-        self, geometry: Sequence[torchfea_cad.CADOperation],
+        self,
+        geometry: Sequence[torchfea_cad.CADOperation],
     ) -> torchfea_cad.CADHistory:
         """Construct the native CAD history used by the shared mesher."""
         return torchfea_cad.CADHistory(
@@ -116,7 +119,10 @@ class CADMeshingMixin:
 
     def mesh_geometry(self, geometry: torchfea_cad.CADHistory) -> torchfea.Part:
         """Use TorchFEA's shared Gmsh mesh extraction for either geometry kernel."""
-        return geometry.mesh(self.mesh_size)
+        mesh_size = geometry.mesh_size
+        if mesh_size is None:
+            mesh_size = self.mesh_size
+        return geometry.mesh(mesh_size)
 
     def define_mesh_sets(self, part: torchfea.Part) -> None:
         """Map geometric face identities onto the FE mesh."""
@@ -135,7 +141,9 @@ class CADMeshingMixin:
         return part
 
     def build_part(
-        self, path_result: str | None = None, pools: Pool | None = None,
+        self,
+        path_result: str | None = None,
+        pools: Pool | None = None,
     ) -> torchfea.Part:
         """Prepare, assemble, mesh, name and postprocess one Part."""
         geometry = self.assemble_geometry(self.prepare_geometry(path_result, pools))
@@ -180,7 +188,9 @@ class CADMeshingMixin:
             old: identities[int(old.rsplit("_", 1)[1])] for old in face_names
         }
         for old_name in part.surfaces.keys():
-            renamed_surfaces[renamed_names.get(old_name, old_name)] = part.surfaces[old_name]
+            renamed_surfaces[renamed_names.get(old_name, old_name)] = part.surfaces[
+                old_name
+            ]
         part.surfaces = renamed_surfaces
 
         for old_name in face_names:
@@ -213,9 +223,14 @@ class CADMeshingMixin:
                 "Define disconnected solids as separate CADParts."
             )
         volume = volumes[0]
-        faces = sorted(tag for _, tag in gmsh.model.getBoundary(
-            [(3, volume)], oriented=False, recursive=False,
-        ))
+        faces = sorted(
+            tag
+            for _, tag in gmsh.model.getBoundary(
+                [(3, volume)],
+                oriented=False,
+                recursive=False,
+            )
+        )
         return volume, faces
 
     @staticmethod
@@ -268,7 +283,9 @@ class CADMeshingMixin:
             solid = context.occ.addVolume([int(loop)])
             mass = abs(context.occ.getMass(3, solid))
             context.occ.remove([(3, solid)], recursive=False)
-            ordered.append((mass, tuple(sorted(indices[abs(int(tag))] for tag in tags))))
+            ordered.append(
+                (mass, tuple(sorted(indices[abs(int(tag))] for tag in tags)))
+            )
         context.occ.synchronize()
         ordered.sort(key=lambda item: (-item[0], item[1]))
         shells[:] = [indices for _, indices in ordered]
@@ -276,7 +293,9 @@ class CADMeshingMixin:
             raise ValueError("The CAD solid has no closed boundary shell.")
         return [(3, volume)]
 
-    def split_shells(self) -> tuple[
+    def split_shells(
+        self,
+    ) -> tuple[
         tuple[torchfea_cad.CADOperation, ...],
         list[tuple[int, ...]],
     ]:
@@ -286,7 +305,9 @@ class CADMeshingMixin:
         """
         operations = tuple(deepcopy(self.operations))
         if not operations:
-            raise ValueError("The CAD history is empty; initialize the CADPart before conversion.")
+            raise ValueError(
+                "The CAD history is empty; initialize the CADPart before conversion."
+            )
         shells: list[tuple[int, ...]] = []
         action = partial(self._inspect_shells, operations=operations, shells=shells)
         torchfea_cad.preview_brep([self._Operation("inspect", action)])
@@ -311,10 +332,12 @@ class CADMeshingMixin:
         if unused:
             context.occ.remove(unused, recursive=True)
             context.occ.synchronize()
-        face_map.update({
-            f"face_{index}": CADMeshingMixin.get_face_signature(tag)
-            for index, tag in zip(face_indices, selected)
-        })
+        face_map.update(
+            {
+                f"face_{index}": CADMeshingMixin.get_face_signature(tag)
+                for index, tag in zip(face_indices, selected)
+            }
+        )
         return [(3, solid)]
 
     @staticmethod
@@ -327,16 +350,22 @@ class CADMeshingMixin:
         path = Path(path)
         face_map: dict[str, list[float]] = {}
         action = partial(
-            CADMeshingMixin._build_shell, operations=operations,
-            face_indices=face_indices, face_map=face_map,
+            CADMeshingMixin._build_shell,
+            operations=operations,
+            face_indices=face_indices,
+            face_map=face_map,
         )
-        torchfea_cad.export_step([CADMeshingMixin._Operation("shell", action)], str(path))
+        torchfea_cad.export_step(
+            [CADMeshingMixin._Operation("shell", action)], str(path)
+        )
         path.with_suffix(".brep.json").write_text(
-            json.dumps({"face_map": face_map}, indent=2), encoding="utf-8",
+            json.dumps({"face_map": face_map}, indent=2),
+            encoding="utf-8",
         )
 
     def to_boundary_part(
-        self, asset_directory: str | Path = "morphopt_assets",
+        self,
+        asset_directory: str | Path = "morphopt_assets",
     ) -> BoundaryPart:
         """Export an initialized single-solid CAD Part as fixed STEP boundaries.
 
@@ -372,4 +401,9 @@ class CADPart(CADMeshingMixin, FixedPart):
     """A fixed CAD Part with shared CAD construction and cached FE mesh sets."""
 
     def _mesh_cache_key(self) -> object:
-        return (self.mesh_size, self.mesh_order, self.exterior_surface, tuple(map(repr, self.operations)))
+        return (
+            self.mesh_size,
+            self.mesh_order,
+            self.exterior_surface,
+            tuple(map(repr, self.operations)),
+        )
