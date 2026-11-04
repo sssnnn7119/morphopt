@@ -543,23 +543,28 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
                     value_0=metric_type,
                 )
             )
-        value_name = f"metric_value_{index}"
-        values.extend(
-            [
-                f"{value_name} = {function_name}()",
-                f"if isinstance({value_name}, (list, tuple)):",
-                f"    metrics.extend({value_name})",
-                "else:",
-                f"    metrics.append({value_name})",
-            ]
-        )
+        values.append(f"({str(term.get('name') or '')!r}, {function_name}())")
 
     return "\n".join(
         [
             *functions,
-            "metrics = []",
-            *values,
-            "metrics.extend(self._objective_values())",
+            "metrics = {}",
+            "for name, value in [",
+            *[f"    {value}," for value in values],
+            "    ('', {f'objective_{index}': value for index, value in enumerate(self._objective_values())}),",
+            "]:",
+            "    if isinstance(value, dict):",
+            "        entries = value",
+            "    elif isinstance(value, (list, tuple)):",
+            "        entries = {",
+            "            f'{name}_{index}' if name else str(len(metrics) + index): item",
+            "            for index, item in enumerate(value)",
+            "        }",
+            "    else:",
+            "        entries = {name or str(len(metrics)): value}",
+            "    if metrics.keys() & entries.keys():",
+            "        raise ValueError('Metric names must be unique.')",
+            "    metrics.update(entries)",
             "return metrics",
         ]
     )
@@ -623,7 +628,7 @@ def generate_base_source(
     )
     if for_class_catalog:
         obj_body = "return []"
-        met_body = "return []"
+        met_body = "return {}"
     else:
         obj_body = _objective_values_body(objective, problem)
         met_body = _metrics_function_body(objective, problem)

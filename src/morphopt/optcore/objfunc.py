@@ -31,14 +31,9 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         A list of load parameter names for which the jacobian is needed for sensitivity analysis.
         """
 
-    def get_metrics(self) -> list[float]:
-        """
-        Get custom metrics for display.
-        
-        Returns:
-            list[float]: A list of metric values.
-        """
-        return []
+    def get_metrics(self) -> dict[str, float | torch.Tensor] | list[float | torch.Tensor]:
+        """Return named scalars, or a list assigned names '0', '1', ... on recording."""
+        return {}
     
     def objective_function(self):
         """

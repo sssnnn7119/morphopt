@@ -36,17 +36,19 @@ def test_user_metrics_precede_weighted_objectives_and_preserve_gradients(tmp_pat
     objective = generated_objective(problem)
     objective.response = torch.tensor(2.0, requires_grad=True)
     loss = objective.objective_function()
-    metrics = torch.stack(objective.get_metrics())
+    recorded = objective.get_metrics()
+    assert list(recorded) == ["0", "1", "2", "objective_0", "objective_1"]
+    metrics = torch.stack(list(recorded.values()))
     torch.testing.assert_close(metrics, torch.tensor([2.0, 3.0, 4.0, 8.0, -6.0]))
     torch.testing.assert_close(loss, metrics[3:].sum())
     torch.testing.assert_close(torch.autograd.grad(loss, objective.response)[0], torch.tensor(5.0))
     history = History()
-    history.append("objective", loss)
-    history.append("metrics", objective.get_metrics())
+    history.append(objective=loss, metrics=objective.get_metrics())
     history.save(str(tmp_path))
     restored = History()
     restored.load(str(tmp_path))
-    np.testing.assert_equal(restored.history_metrics, [[2.0, 3.0, 4.0, 8.0, -6.0]])
+    for name, value in zip(recorded, [2., 3., 4., 8., -6.]):
+        assert restored.records[0]["metrics"][name] == value
 
 
 @pytest.mark.parametrize("direction,expected", [("minimize", 6.0), ("maximize", -6.0), ("target", 2.0)])
@@ -67,7 +69,7 @@ def test_recorded_displacement_objective_includes_direction_and_target(direction
     ))
     objective.fe_results = {case: SimpleNamespace(GC=torch.tensor([3., 0., 0., 0., 0., 0.]))}
     assert objective.objective_function().item() == expected
-    assert [value.item() for value in objective.get_metrics()] == [expected]
+    assert {name: value.item() for name, value in objective.get_metrics().items()} == {"objective_0": expected}
 
 
 def test_objective_and_metric_tree_and_card_indices_start_at_zero():
@@ -87,12 +89,14 @@ def test_objective_and_metric_tree_and_card_indices_start_at_zero():
 
 
 def history(metrics):
-    return SimpleNamespace(
-        history_objective=np.array([4.0, 2.0]),
-        history_metrics=np.asarray(metrics, dtype=float),
-        history_deformation=np.array([]), history_time=None,
-        history_num_elements=None, history_num_nodes=None,
-    )
+    values = np.asarray(metrics, dtype=float)
+    result = History()
+    for index, objective in enumerate([4., 2.]):
+        record = {"objective": objective}
+        if index < len(values):
+            record["metrics"] = {str(column): value for column, value in enumerate(values[index])}
+        result.append(**record)
+    return result
 
 
 def test_curve_selection_is_independent_and_survives_refresh_and_theme():
@@ -128,4 +132,72 @@ def test_missing_metric_rows_leave_gaps_in_the_curve():
     page.curve_selector.setCurrentIndex(1)
     values = page.figure.axes[0].lines[0].get_ydata()
     assert values[0] == 10.0 and np.isnan(values[1])
+    page.close()
+
+
+def test_named_metric_editor_serializes_and_generated_dictionary_names_reach_plot(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create_blank()
+    problem.objective.objective_terms = [{"type": "custom_loss", "weight": 1., "body": "return 4.0"}]
+    problem.objective.metrics_terms = [
+        {"type": "custom", "body": "return 2.0"},
+        {"type": "custom", "body": "return {'Ry': 3.0, '伸长量': 5.0}"},
+    ]
+    editor = ObjectiveEditor()
+    editor.set_problem(problem)
+    field = editor._metric_fields[0]["name"]
+    field.setText("tip_displacement")
+    field.editingFinished.emit()
+    ProblemLibrary.save(problem, tmp_path / "named.morph")
+    loaded = ProblemLibrary.load(tmp_path / "named.morph")
+    assert loaded.objective.metrics_terms[0]["name"] == "tip_displacement"
+    metrics = generated_objective(loaded).get_metrics()
+    assert metrics == {"tip_displacement": 2., "Ry": 3., "伸长量": 5., "objective_0": 4.}
+    history_data = History()
+    history_data.append(objective=4., metrics=metrics)
+    history_data.save(str(tmp_path))
+    restored = History()
+    restored.load(str(tmp_path))
+    page = MetricsPage()
+    page.update_from_history(restored, 1)
+    for index, name in enumerate(metrics):
+        label = tr("ui.widgets.observation_pages.metric_value", value_0=name)
+        assert page.table.horizontalHeaderItem(index + 2).text() == label
+        assert page.curve_selector.itemText(index + 1) == label
+    page.curve_selector.setCurrentIndex(3)
+    np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [5.])
+    editor.close()
+    page.close()
+
+
+def test_custom_history_fields_appear_without_registering_columns():
+    app = QApplication.instance() or QApplication([])
+    data = History()
+    data.append(objective=4., diagnostics={"residual": 0.1}, vector=[[1., 2.]], status="running")
+    data.append(objective=2., diagnostics={"new_value": 3.}, vector=[[2., 4.]], status="finished")
+    page = MetricsPage()
+    page.update_from_history(data, 2)
+    labels = [page.curve_selector.itemText(index) for index in range(page.curve_selector.count())]
+    assert "diagnostics.residual" in labels
+    assert "diagnostics.new_value" in labels
+    assert "vector.0.1" in labels
+    assert "status" not in labels
+    page.curve_selector.setCurrentIndex(labels.index("diagnostics.residual"))
+    values = page.figure.axes[0].lines[0].get_ydata()
+    assert values[0] == 0.1 and np.isnan(values[1])
+    page.close()
+
+
+def test_custom_curve_labels_do_not_overwrite_other_series():
+    app = QApplication.instance() or QApplication([])
+    data = History()
+    title = tr("ui.widgets.observation_pages.objective")
+    data.append(objective=1., **{title: 2.})
+    page = MetricsPage()
+    page.update_from_history(data, 1)
+    assert page.curve_selector.count() == 2
+    page.curve_selector.setCurrentIndex(0)
+    np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [1.])
+    page.curve_selector.setCurrentIndex(1)
+    np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [2.])
     page.close()

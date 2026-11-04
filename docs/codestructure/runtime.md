@@ -89,7 +89,7 @@ Controller.opt_loop()
 
 `step()` 负责数值阶段，历史记录和保存发生在外层循环。FEA 模型与结果对应本轮已求解的状态，设计变量更新为后续计算准备。分析时按归档中同一轮的模型和解配对，不能直接用更新后的参数重建网格替换该模型。
 
-`History` 记录 objective、metrics、分阶段耗时及网格统计。`get_metrics()` 仅提供记录量；设计梯度来自目标函数的灵敏度计算，详见[优化数据流](optimization.md#gradients)。
+`Controller.record_history()` 组织本轮目标、命名指标、分阶段耗时及网格统计，再通过一次 `history.append(**record)` 追加完整记录。`History` 仅管理普通字典组成的 `records` 列表，以及复制、保存和读取；它不声明业务字段，`iteration` 由记录数得到。CSV 的每个单元格使用 JSON 保留字段值，读取时不推断名称后缀或数组形状。UI 展示层按记录内容展开字段，新增记录项无需修改历史容器。`get_metrics()` 仅提供记录量；设计梯度来自目标函数的灵敏度计算，详见[优化数据流](optimization.md#gradients)。
 
 <a id="section-求解调度与初始解"></a>
 

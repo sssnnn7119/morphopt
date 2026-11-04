@@ -368,6 +368,14 @@ class DefinitionValidation:
         objective = self.problem.objective
         if objective is None:
             return
+        metric_names = Counter(
+            term["name"] for term in objective.metrics_terms if term.get("name")
+        )
+        reserved = {f"objective_{index}" for index in range(len(objective.objective_terms))}
+        for term in objective.metrics_terms:
+            name = term.get("name")
+            if name and (metric_names[name] > 1 or name in reserved):
+                self.add(term, "duplicate", name=name)
         if objective.objective_terms:
             try:
                 if not any(

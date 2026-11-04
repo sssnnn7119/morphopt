@@ -97,7 +97,7 @@ def design_archive(tmp_path):
         inner.update_variables(torch.full_like(inner.control_points, 0.2))
         part.save(foldpath=str(archive.log_folder), iteration=2)
     history = History()
-    history.append("objective", 1.0)
-    history.append("objective", 0.9)
+    history.append(objective=1.0)
+    history.append(objective=0.9)
     history.save(foldpath=str(archive.log_folder))
     return archive

@@ -210,7 +210,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         }.get(objective_item.item.get("type"), "metric_term")
         return tr(
             "ui.widgets.objective_editor.tree_metric_entry",
-            value_0=objective_item.index,
+            value_0=objective_item.item.get("name") or objective_item.index,
             value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
         )
     if isinstance(node, PartNode):

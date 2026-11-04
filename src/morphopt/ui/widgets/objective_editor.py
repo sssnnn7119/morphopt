@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QScrollArea,
@@ -417,7 +418,7 @@ class ObjectiveEditor(QWidget):
             tuple(self._problem.steps.step_values)
             if self._problem and self._problem.steps
             else (),
-            tuple(metric.get("type") for metric in metrics),
+            tuple((metric.get("type"), metric.get("name")) for metric in metrics),
         )
         self._metric_header.add_button.setEnabled(self._obj is not None)
         if signature != self._metric_signature:
@@ -464,9 +465,8 @@ class ObjectiveEditor(QWidget):
             CONSTANT.UI.METRIC.TYPE_DISPLACEMENT: "displacement_metric",
             CONSTANT.UI.METRIC.TYPE_CUSTOM: "custom_metric",
         }.get(metric_type, "metric_term")
-        card = QGroupBox(
-            f"{index}. {tr(f'ui.widgets.objective_editor.{title_key}')}"
-        )
+        name = str(metric.get("name") or index)
+        card = QGroupBox(f"{name}. {tr(f'ui.widgets.objective_editor.{title_key}')}")
         layout = QVBoxLayout(card)
         actions = ItemActions(
             index,
@@ -477,6 +477,17 @@ class ObjectiveEditor(QWidget):
         layout.addWidget(actions)
 
         fields: dict[str, QWidget] = {}
+        name_form = QFormLayout()
+        name_edit = QLineEdit(str(metric.get("name") or ""))
+        name_edit.setPlaceholderText(str(index))
+        name_form.addRow(tr("ui.widgets.objective_editor.metric_name"), name_edit)
+        layout.addLayout(name_form)
+        fields["name"] = name_edit
+        name_edit.editingFinished.connect(
+            lambda item=index, control=name_edit: self._update_metric(
+                item, "name", control.text().strip()
+            )
+        )
         if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
             form = QFormLayout()
             point_combo = QComboBox()
@@ -555,6 +566,9 @@ class ObjectiveEditor(QWidget):
                 if isinstance(widget, QComboBox):
                     with QSignalBlocker(widget):
                         self._set_combo_value(widget, metric.get(key))
+                elif isinstance(widget, QLineEdit):
+                    with QSignalBlocker(widget):
+                        widget.setText(str(metric.get(key) or ""))
 
     def _update_metric(self, index: int, key: str, value: object) -> None:
         if self._loading or self._obj is None:

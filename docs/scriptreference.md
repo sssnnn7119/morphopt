@@ -710,14 +710,27 @@ class ObjectiveFunction(morphopt.ObjectiveFunction):
         return -self.reference_point_motion()[4]
 
     def get_metrics(self):
-        return [self.reference_point_motion()[4].detach().cpu().item()]
+        return {"tip_ry": self.reference_point_motion()[4]}
 ```
 
 `fe_results[i]` 对应工况 `i`。`GC` 是全局广义坐标向量，不宜用向量尾部的固定偏移假定某个 RP 的位置；新增节点、RP 或约束后，该假定可能失效。上述提取方式与 UI 模板一致，使用当前 TorchFEA 后端的 `_GC2RGC` 和 `_RGC_index`。这些以下划线开头的成员属于后端内部接口，升级后端版本时应与同版本的数据模板一并核对。
 
-`get_metrics()` 返回独立记录的响应列表，不产生优化驱动。指标数量与排列应在一个运行中保持一致。
+`get_metrics()` 返回指标列表或“名称 → 标量值”字典，不产生优化驱动。`Controller.record_history()` 将列表 `[a, b]` 转换为 `{"0": a, "1": b}`，字典保留指定名称。数值可为 Python 标量或单元素 Torch 张量。
 
-UI 生成的任务通过 `_objective_values()` 计算按定义顺序排列的各项目标贡献，`objective_function()` 返回其和，`get_metrics()` 将其追加在用户指标之后。贡献值包含权重、目标方向与误差变换，与总目标中的对应项一致。手写脚本的指标仍由 `get_metrics()` 显式定义。
+UI 生成的任务通过 `_objective_values()` 计算按定义顺序排列的各项目标贡献，`objective_function()` 返回其和，`get_metrics()` 将其以 `objective_0`、`objective_1` 等名称追加在用户指标之后。贡献值包含权重、目标方向与误差变换，与总目标中的对应项一致。手写脚本的指标仍由 `get_metrics()` 显式定义。UI 自定义指标函数也可返回字典；返回列表时使用自动编号，填写指标名称后返回的列表分量依次命名为 `<名称>_0`、`<名称>_1`。生成脚本直接构造并合并字典，不调用额外的指标登记函数。
+
+历史以 `history.records` 保存，每个元素对应一次完整迭代的普通字典。`History` 不预定义目标、指标或诊断字段，`history.iteration` 等于记录数量。追加与查询采用以下形式：
+
+```python
+history.append(
+    objective=loss,
+    metrics={"tip_ry": ry},
+    diagnostics={"residual": residual},
+)
+last_record = history.records[-1]
+```
+
+追加时，Torch 张量脱离计算图并复制为普通数值或列表，NumPy 数组也转换为列表。新增字段或指标可在后续迭代出现。`save(foldpath, iteration=None)` 将记录写入 `history_record.csv`，CSV 列为记录字段，单元格按 JSON 编码，直接保留嵌套字典、数组和字符串；`load(foldpath, iteration=None)` 读取全部记录或指定的迭代前缀。UI 按字段路径展开历史表格，数值字段自动进入曲线选择器，缺失值显示为空并在曲线中留出间隔。
 
 <a id="section-载荷雅可比"></a>
 

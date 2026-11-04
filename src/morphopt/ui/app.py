@@ -29,8 +29,17 @@ def create_application(argv: list[str] | None = None):
     """Create the shared QApplication with MorphOpt's process-wide settings."""
     configure_environment()
 
-    from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QEvent, QObject, QPointF, QSettings
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import (
+        QAbstractScrollArea,
+        QAbstractSpinBox,
+        QApplication,
+        QComboBox,
+        QDial,
+        QLineEdit,
+        QSlider,
+    )
 
     from .application_icon import (
         configure_application_identity,
@@ -43,6 +52,43 @@ def create_application(argv: list[str] | None = None):
 
     prepare_application_identity()
     app = QApplication.instance() or QApplication(argv or sys.argv)
+
+    class WheelInputFilter(QObject):
+        """Send wheel input to the page instead of changing a field's value."""
+
+        def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+            if event.type() == QEvent.Type.Wheel and isinstance(
+                watched, (QComboBox, QAbstractSpinBox, QSlider, QDial, QLineEdit)
+            ):
+                event.ignore()
+                parent = watched.parentWidget()
+                while parent is not None:
+                    if isinstance(parent, QAbstractScrollArea):
+                        viewport = parent.viewport()
+                        forwarded = QWheelEvent(
+                            QPointF(viewport.mapFromGlobal(event.globalPosition().toPoint())),
+                            event.globalPosition(),
+                            event.pixelDelta(),
+                            event.angleDelta(),
+                            event.buttons(),
+                            event.modifiers(),
+                            event.phase(),
+                            event.inverted(),
+                            event.source(),
+                            event.pointingDevice(),
+                        )
+                        QApplication.sendEvent(viewport, forwarded)
+                        if forwarded.isAccepted():
+                            break
+                    parent = parent.parentWidget()
+                return True
+            return False
+
+    if app.findChild(QObject, "wheelInputFilter") is None:
+        wheel_filter = WheelInputFilter(app)
+        wheel_filter.setObjectName("wheelInputFilter")
+        app.installEventFilter(wheel_filter)
+
     configure_application_identity(app)
     localization.set_locale(
         QSettings("MorphOptUI", "ui").value("language", "zh-CN", str)

@@ -56,7 +56,7 @@ class MetricsPage(QWidget):
         layout.addWidget(self.canvas, 2)
         self._last_history = None
         self._last_iteration = 0
-        self._curves: dict[str, list[float]] = {}
+        self._curves: list[tuple[str, list[float]]] = []
         font_manager.changed.connect(self._font_changed)
 
     def update_from_history(self, history, iteration: int) -> None:
@@ -72,12 +72,13 @@ class MetricsPage(QWidget):
             for column_index, value in enumerate(values):
                 if value is not None:
                     self.table.setItem(row_index, column_index, QTableWidgetItem(value))
+        self.table.resizeColumnsToContents()
         self._curves = table.curves
         selected = self.curve_selector.currentIndex()
         self.curve_selector.blockSignals(True)
         try:
             self.curve_selector.clear()
-            self.curve_selector.addItems(list(self._curves))
+            self.curve_selector.addItems([title for title, _values in self._curves])
             self.curve_selector.setCurrentIndex(
                 max(0, min(selected, self.curve_selector.count() - 1))
             )
@@ -87,8 +88,8 @@ class MetricsPage(QWidget):
         self._draw_curve()
 
     def _draw_curve(self) -> None:
-        title = self.curve_selector.currentText()
-        values = self._curves.get(title, [])
+        index = self.curve_selector.currentIndex()
+        title, values = self._curves[index] if 0 <= index < len(self._curves) else ("", [])
         self.figure.clear()
         self.figure.set_facecolor(theme_manager.palette.chart.background)
         axes = self.figure.add_subplot(111)
@@ -154,7 +155,7 @@ class MetricsPage(QWidget):
         """Drop all history data and reset the chart."""
         self._last_history = None
         self._last_iteration = 0
-        self._curves = {}
+        self._curves = []
         self.curve_selector.clear()
         self.curve_selector.setEnabled(False)
         self.table.setRowCount(0)
