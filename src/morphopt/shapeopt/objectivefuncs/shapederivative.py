@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from scipy import interpolate
 
 from ...constants import CONSTANT
 from ...optcore.updaters import QuadraticHistory
@@ -152,52 +151,6 @@ class ShapeDerivative(BaseObjective):
             ).sum()
 
         return loss_objective
-
-    def _sensitivity_interpolation(
-        self,
-        Ldot: torch.Tensor,
-        points_request: torch.Tensor,
-        interpolated_points: list[torch.Tensor],
-    ) -> list[torch.Tensor]:
-        """
-        Interpolate the sensitivity into the structural grids.
-
-        Parameters:
-            Ldot (torch.Tensor): The sensitivity values for elements gaussian points.
-                [num_points, 3]
-            points_request (torch.Tensor): The coordinates of the elements.
-                [num_points, 3]
-            interpolated_points (list[torch.Tensor]): The coordinates of the interpolation points.
-                [num_surfaces, 3]
-
-        Returns:
-            list[torch.Tensor]: The interpolated sensitivity values for the structural grids.
-                [num_surfaces, sensitivity]
-        """
-
-        # interpolate the sensitivity into the structral grids
-        output_senNodes = []
-
-        for surf_index in range(len(interpolated_points)):
-            output_senNodes.append(torch.zeros(interpolated_points[surf_index].shape))
-
-            for i in range(3):
-                Part_B = interpolate.griddata(
-                    points_request.reshape([-1, 3]).detach().cpu().numpy(),
-                    Ldot[:, i].flatten().detach().cpu().numpy(),
-                    (
-                        interpolated_points[surf_index][:, 0],
-                        interpolated_points[surf_index][:, 1],
-                        interpolated_points[surf_index][:, 2],
-                    ),
-                    method="nearest",
-                    fill_value=0,
-                    rescale=True,
-                )
-
-                output_senNodes[-1][:, i] = torch.tensor((Part_B).tolist())
-
-        return output_senNodes
 
 
 class QuadraticShapeDerivative(ShapeDerivative):

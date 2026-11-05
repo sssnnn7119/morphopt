@@ -191,6 +191,30 @@ def make_shape_updater(
     return updater
 
 
+def test_shape_step_lengths_follow_each_surface_and_control_point():
+    part = BoundaryPart()
+    first = ControlSurface(torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
+    fixed = ControlSurface(torch.tensor([[7.0, 8.0, 9.0]]), active=False)
+    last = ControlSurface(torch.tensor([[10.0, 11.0, 12.0]]))
+    for surface in (first, BaseSurface(), fixed, last):
+        part.add_surface_interface(surface)
+    before = part.get_parameters()
+    delta = torch.tensor([
+        [3.0, 0.0, 0.0], [0.0, 4.0, 0.0],
+        [1.0, 1.0, 1.0], [0.0, 0.0, 5.0],
+    ])
+    steps = [torch.tensor([0.2, 0.6]), torch.empty(0), torch.tensor([0.8]), torch.tensor([0.4])]
+    part.update_variables(delta.flatten(), max_step_length=steps)
+    expected_first = torch.tensor([
+        [0.2 * 2 / torch.pi * torch.atan(torch.tensor(3.0)), 0.0, 0.0],
+        [0.0, 0.6 * 2 / torch.pi * torch.atan(torch.tensor(4.0)), 0.0],
+    ])
+    expected_last = torch.tensor([[0.0, 0.0, 0.4 * 2 / torch.pi * torch.atan(torch.tensor(5.0))]])
+    torch.testing.assert_close(first.points, before[0].reshape(-1, 3) + expected_first)
+    torch.testing.assert_close(fixed.points.flatten(), before[2])
+    torch.testing.assert_close(last.points, before[3].reshape(-1, 3) + expected_last)
+
+
 @pytest.mark.parametrize("objective_type", [ShapeDerivative, QuadraticShapeDerivative])
 @pytest.mark.parametrize("scale", [0.0, 1e-8, 1.0, 1e8])
 def test_shape_proxy_preserves_native_sensitivity(objective_type, scale):

@@ -6,6 +6,7 @@ from ...constants import CONSTANT
 from ..surfaces import CPGEOSurface
 from .basefuncs import BaseConstraints
 
+
 class VolumeMaximization(BaseConstraints):
     def __init__(
         self,
@@ -28,9 +29,7 @@ class VolumeMaximization(BaseConstraints):
             raise ValueError("VolumeMaximization requires the updater's surfaces.")
         cpgeo_interface = self.surfaces[self._surf_idx]
         if not isinstance(cpgeo_interface, CPGEOSurface):
-            raise ValueError(
-                "VolumeMaximization requires a CPGEOSurface at surf_idx."
-            )
+            raise TypeError("VolumeMaximization requires a CPGEOSurface at surf_idx.")
         cpr = r[self._surf_idx]
         faces = cpgeo_interface._preload_data.faces
 

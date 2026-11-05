@@ -855,6 +855,8 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。BREP 默认关闭，选定 NURBS 面后可启用面内控制点优化；网格曲面不提供设计变量。几何更新器直接读取曲面状态。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
+逐控制点步长由 `UpdaterBoundaryPart` 统一初始化、调整及适配控制点数量。`BoundaryPart.update_variables(x_change, max_step_length)` 接收更新器提供的逐曲面 Tensor 列表，通过 `atan` 映射应用步长限制；部件自身不推算或修正步长，不接受缺省步长或逐曲面的 `None` 值。
+
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
 | `ShapeDerivative()` | `add_objective_function()` | 原有一阶形状代理 |

@@ -110,7 +110,7 @@ class ProtocalUpdatable(ABC):
     def update_variables(
         self,
         x_change: torch.Tensor,
-        max_step_length: list[torch.Tensor | None] | torch.Tensor | None = None,
+        max_step_length: list[torch.Tensor] | torch.Tensor | None = None,
     ) -> None:
         """Apply a design-variable update."""
         raise NotImplementedError

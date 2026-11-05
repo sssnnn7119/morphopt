@@ -367,20 +367,16 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     def update_variables(
         self,
         x_change: torch.Tensor,
-        max_step_length: list[torch.Tensor | None] | None = None,
+        max_step_length: list[torch.Tensor],
     ) -> None:
-        """Apply one shape update with the ``atan`` step-length limiter.
+        """Apply the updater's per-control-point limits through ``atan``.
 
-        ``max_step_length`` is ``None`` (no limiting) or **one tensor per
-        surface**, holding the step length of each control point (that is the
-        form :class:`~morphopt.UpdaterBoundaryPart` keeps per iteration).
+        The updater supplies one step-length tensor per surface and owns its
+        initialization, resizing and adaptation.
         """
-        x_change = torch.as_tensor(x_change).reshape(-1)
-        surfaces = self.surfaceinterfaces
-        steps = self._surface_step_lengths(max_step_length, surfaces)
-
+        x_change = x_change.reshape(-1)
         start = 0
-        for surface, step in zip(surfaces, steps):
+        for surface, step in zip(self.surfaceinterfaces, max_step_length, strict=True):
             size = surface.num_variables
             if not size:
                 continue
@@ -396,42 +392,10 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                 * delta
                 / (norm + CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON)
             )
-            if step is not None:
-                change = change * step
+            change = change * step.reshape(-1, 1)
             surface.update_variables(change)
 
         self._apply_surface_constraints()
-
-    @staticmethod
-    def _surface_step_lengths(
-        max_step_length: list[torch.Tensor | None] | None,
-        surfaces: Sequence[BaseSurface],
-    ) -> list[torch.Tensor | None]:
-        """One ``[num_points, 1]`` step-length column per surface (or ``None``)."""
-        if max_step_length is None:
-            return [None] * len(surfaces)
-        if isinstance(max_step_length, torch.Tensor):
-            raise TypeError(
-                "max_step_length must be one tensor per surface (per control "
-                "point), not a single tensor."
-            )
-        steps = list(max_step_length)
-        if len(steps) != len(surfaces):
-            raise ValueError(
-                f"Expected {len(surfaces)} per-surface step lengths, got {len(steps)}."
-            )
-        normalised: list[torch.Tensor | None] = []
-        for surface, step in zip(surfaces, steps):
-            if step is None:
-                normalised.append(None)
-                continue
-            column = torch.as_tensor(step).reshape(-1, 1)
-            num_points = surface.num_variables // 3
-            if column.shape[0] != num_points:
-                # the surface changed size since the step length was built
-                column = column.mean().repeat(num_points, 1)
-            normalised.append(column)
-        return normalised
 
     def get_geometry_values(
         self,
