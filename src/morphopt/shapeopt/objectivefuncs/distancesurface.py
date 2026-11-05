@@ -140,7 +140,7 @@ class Distance(BaseConstraints):
         thre = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_THRESHOLD
         degree = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_EXPONENT
         loss_distance = torch.tensor(0.0, dtype=torch.float32)
-        weight_flatten = torch.cat(self.scaler, dim=0).type(torch.float32)
+        weight_flatten = torch.cat(self.integration_weights, dim=0).type(torch.float32)
 
         normal_min = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MIN
         normal_max = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MAX

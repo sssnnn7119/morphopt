@@ -40,7 +40,7 @@ class MinRadius(BaseConstraints):
 
             
             if len(index_r) > 0:
-                loss = loss + (self.scaler[i][index_r] * loss_r).sum()
+                loss = loss + (self.integration_weights[i][index_r] * loss_r).sum()
             
         return loss
     
@@ -96,10 +96,10 @@ class Cylinder(BaseConstraints):
             )
             
             if len(index_r) > 0:
-                loss = loss + (self.scaler[i][index_r] * loss_r).sum()
+                loss = loss + (self.integration_weights[i][index_r] * loss_r).sum()
             if len(index_bottom) > 0:
-                loss = loss + (self.scaler[i][index_bottom] * loss_bottom).sum()
+                loss = loss + (self.integration_weights[i][index_bottom] * loss_bottom).sum()
             if len(index_top) > 0:
-                loss = loss + (self.scaler[i][index_top] * loss_top).sum()
+                loss = loss + (self.integration_weights[i][index_top] * loss_top).sum()
             
         return loss

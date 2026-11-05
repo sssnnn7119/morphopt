@@ -360,7 +360,7 @@ class ThisController(morphopt.Controller):
                 super().__init__(max_step_iter=100, max_step_length=1.0)
 
             def define_objective(self) -> None:
-                self.add_objective_function(self.objectivefuncs.Sensitivity(normalize_gradient=False))
+                self.add_objective_function(self.objectivefuncs.Sensitivity())
                 self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-15.0, threshold=0.0, p=4))
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=15.0, threshold=0.0, p=4))
                 self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.7, volfrac_max=0.7, penalty=1000000.0, elementname='design'))

@@ -639,8 +639,6 @@
   "ui.schema.fields.voidpenalfactor.help.text": "空域惩罚因子。",
   "ui.schema.fields.materialpenalty.label.material_penalty": "RAMP 插值惩罚参数",
   "ui.schema.fields.materialpenalty.help.text": "对应整数 materialpenalty = p；插值公式为 ρ / (1 + p(1 − ρ))，其中 ρ = sigmoid(设计场)。",
-  "ui.schema.fields.normalize_gradient.label.normalize_gradient": "梯度归一化",
-  "ui.schema.fields.normalize_gradient.help.text": "是否对材料梯度进行归一化。",
   "ui.schema.fields.scale.label.scale": "缩放系数",
   "ui.schema.fields.scale.help.text": "目标项的缩放系数。",
   "ui.schema.fields.plane.label.text": "对称面",

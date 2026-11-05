@@ -38,20 +38,8 @@ class SensitivityObjectiveNode(ObjectiveTermNode):
     backend_class: ClassVar[str] = "Sensitivity"
     label_key: ClassVar[str] = "ui.schema.catalog.updater_objective.sensitivity.label"
     group: ClassVar[str] = "materials"
-    gen: ClassVar[str] = (
-        "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})"
-    )
-    Defaults = CONSTANT.UI.SCHEMA_FIELDS.UPDATER_OBJECTIVES.SENSITIVITY
-    normalize_gradient: bool
-    fields: ClassVar[tuple[FieldSpec, ...]] = (
-        FieldSpec(
-            "normalize_gradient",
-            "ui.schema.fields.normalize_gradient.label.normalize_gradient",
-            "bool",
-            Defaults.NORMALIZE_GRADIENT.DEFAULT,
-            doc_key="ui.schema.fields.normalize_gradient.help.text",
-        ),
-    )
+    gen: ClassVar[str] = "self.objectivefuncs.Sensitivity()"
+    fields: ClassVar[tuple[FieldSpec, ...]] = ()
 
 
 class QuadraticShapeDerivativeObjectiveNode(ShapeDerivativeObjectiveNode):
@@ -71,12 +59,9 @@ class QuadraticSensitivityObjectiveNode(SensitivityObjectiveNode):
     type_name: ClassVar[str] = "QuadraticSensitivity"
     backend_class: ClassVar[str] = "QuadraticSensitivity"
     label_key: ClassVar[str] = "ui.schema.catalog.updater_objective.quadraticsensitivity.label"
-    gen: ClassVar[str] = (
-        "self.objectivefuncs.QuadraticSensitivity(normalize_gradient={normalize_gradient}, "
-        "memory_size={memory_size})"
-    )
+    gen: ClassVar[str] = "self.objectivefuncs.QuadraticSensitivity(memory_size={memory_size})"
     memory_size: int
-    fields: ClassVar[tuple[FieldSpec, ...]] = SensitivityObjectiveNode.fields + _QUADRATIC_FIELDS
+    fields: ClassVar[tuple[FieldSpec, ...]] = _QUADRATIC_FIELDS
 
 
 class DensityFieldMinimizeObjectiveNode(ObjectiveTermNode):

@@ -32,10 +32,6 @@ class ShapeDerivative(BaseObjective):
         """Gradient of the shape derivative with respect to the control points, computed in the initialize function.
         """
 
-        self.factor: torch.Tensor
-        """A factor to scale the shape derivative, can be set in the initialize function.
-        """
-
     def initialize(
         self,
         gradient: torch.Tensor,
@@ -74,8 +70,6 @@ class ShapeDerivative(BaseObjective):
             points_request=torch.cat(self._cp0, dim=0).reshape([-1, 3]),
             interpolated_points=interpolate_points,
         )
-
-        self.factor = 1 / (gradient.abs().max() + 1e-20)
 
     def show_sensitivity(self, ind: int) -> None:
         """
@@ -155,7 +149,7 @@ class ShapeDerivative(BaseObjective):
                     - self._cp0[i]
                 )
                 * self.gradient[i]
-            ).sum() * self.factor
+            ).sum()
 
         return loss_objective
 
@@ -252,7 +246,7 @@ class QuadraticShapeDerivative(ShapeDerivative):
     def __call__(
         self, r: list[torch.Tensor], *args: object, **kwargs: object
     ) -> torch.Tensor:
-        return self.history(self._active_parameters()) * self.factor
+        return self.history(self._active_parameters())
 
     def save(self, foldpath: str, iteration: int) -> None:
         self.history.save(foldpath=foldpath, iteration=iteration)

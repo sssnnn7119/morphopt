@@ -95,9 +95,6 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             compute_objective_funcs=self.compute_multistep_objective,
         )
         
-        # rescale the gradients
-        # design_gradients = design_gradients / (design_gradients.abs().max() + 1e-8)
-        
         design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
         
         

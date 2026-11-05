@@ -867,6 +867,18 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 主目标在 `ObjectiveFunction` 中定义，`ShapeDerivative` 为更新子问题中的梯度项。只填写主目标而缺少相应更新器或灵敏度项，不能构成完整的形状更新配置。
 
+几何罚项使用曲面参考面积权重进行离散积分，积分权重在每轮外层迭代开始时更新，并在该轮子优化中固定。积分权重不乘以有限元灵敏度，也不按采样点数平均。曲面点对距离罚项保留两侧面积权重的乘积，对应点对的双重曲面积分。平滑障碍函数的激活条件与表达式保持不变。
+
+子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。`UpdaterBoundaryPart.constraint_weights` 保存各几何罚项的系数，默认均为 1。`compute_constraint_weights()` 是系数选择策略入口；该方法在目标项、约束项及步长完成初始化后调用，每轮外层迭代调用一次，返回键为 `constraints_funcs` 中注册名称的字典。返回的系数必须有限且非负，并在子优化期间固定。
+
+```python
+class Shape(morphopt.UpdaterBoundaryPart):
+    def compute_constraint_weights(self) -> dict[str, float]:
+        return {name: 1.0 for name in self.constraints_funcs}
+```
+
+后续自适应策略可重写该方法，并通过 `self.part`、`self.obj_funcs` 和 `self.constraints_funcs` 读取当前状态。`self.closure(x, return_list=True)` 返回按注册顺序排列的原始目标值与原始罚项值；普通 `self.closure(x)` 返回加权后的总目标。子优化日志中的约束列显示加权贡献，`Total` 包含全部目标与罚项。当前默认策略不进行梯度匹配或自动调整系数。参考面积权重实现的是每轮参考曲面上的积分近似；若需当前变形曲面上的面积积分，还需在评价时引入随设计变化的面积微元。
+
 <a id="section-有限元目标的历史梯度二阶代理"></a>
 
 #### 9.2.1 有限元目标的历史梯度二阶代理
@@ -903,7 +915,7 @@ $$
 
 仅保留满足 $s^Ty>10^{-8}\|s\|\|y\|$ 的曲率对。零步长、非正曲率和近乎正交的梯度增量不进入历史；没有有效曲率对时，二阶模式采用一阶 Taylor 代理。有有效历史时，Hessian 近似保持正定，不能描述真实目标的负曲率。
 
-历史记录采用未归一化的梯度和实际控制点坐标；现有梯度缩放作用于整个代理目标。形状历史仅包含可更新曲面，曲面参数数量或更新状态变化时清空历史。材料历史在参数数量变化时清空。二阶模型在内层迭代期间保持固定，不增加有限元或伴随分析次数；几何约束及现有步长限制继续生效。
+一阶代理、二阶代理及曲率历史均采用原始有限元灵敏度，保留其数值大小，不进行最大值或范数归一化，也不对整个代理目标附加灵敏度缩放。形状历史仅包含可更新曲面，曲面参数数量或更新状态变化时清空历史。材料历史在参数数量变化时清空。二阶模型在内层迭代期间保持固定，不增加有限元或伴随分析次数；几何约束及现有步长限制继续生效。
 
 每个更新器、每个目标项分别保存自己的观测及曲率历史，状态文件位于对应更新器目录的 `objectives/<目标项名称>/surrogate_<迭代号>.npz`。`QuadraticHistory` 继承 `ProtocalSavable`，通过 `save(foldpath, iteration)` 和 `load(foldpath, iteration)` 实现保存与恢复，由具体目标委托调用。进程重启后恢复最后一次有限元观测，再与下一轮观测构造新的曲率对。参数含义、目标定义或载荷改变后应新建优化任务，避免混用不同问题的梯度。多个 Part 或材料同时更新时，各子目标独立近似局部曲率，不构造跨更新器的 Hessian 耦合块；梯度差仍可能包含其他接口变化的影响，因此该局部拟合不等同于严格的块 Hessian。
 
@@ -924,9 +936,7 @@ class Updater(morphopt.Updaters):
             self.if_update = True
 
         def define_objective(self):
-            self.add_objective_function(self.objectivefuncs.Sensitivity(
-                normalize_gradient=False,
-            ))
+            self.add_objective_function(self.objectivefuncs.Sensitivity())
             self.add_constraints(self.objectivefuncs.VolFrac(
                 volfrac_min=0.2, volfrac_max=0.5, elementname="C3D8",
             ))
@@ -936,8 +946,8 @@ class Updater(morphopt.Updaters):
 
 | 项目 | 注册位置 | 定义 |
 |---|---|---|
-| `Sensitivity(normalize_gradient=False)` | `add_objective_function()` | 原有材料目标的倒数近似 |
-| `QuadraticSensitivity(normalize_gradient=False, memory_size=10)` | `add_objective_function()` | 独立的历史梯度二阶材料代理 |
+| `Sensitivity()` | `add_objective_function()` | 使用原始材料灵敏度的倒数近似 |
+| `QuadraticSensitivity(memory_size=10)` | `add_objective_function()` | 使用原始灵敏度及其历史差分的二阶材料代理 |
 | `DensityFieldMinimize(scale=...)` | `add_objective_function()` | 控制场辅助正则化项 |
 | `VolFrac(volfrac_min, volfrac_max, elementname, penalty=...)` | `add_constraints()` | 体积加权材料占比范围 |
 | `boundarys.MinValue(xmin=...)` | `add_constraints()` | 设计控制变量下界 |

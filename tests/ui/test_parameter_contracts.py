@@ -263,6 +263,26 @@ def test_quadratic_surrogate_ui_edit_and_codegen(kind, group, tmp_path):
     form.close()
 
 
+@pytest.mark.parametrize("kind,parameters", [
+    ("ShapeDerivative", {}),
+    ("QuadraticShapeDerivative", {"memory_size": 10}),
+    ("Sensitivity", {}),
+    ("QuadraticSensitivity", {"memory_size": 10}),
+])
+def test_physical_objective_ui_has_no_sensitivity_scaling(kind, parameters):
+    from morphopt.ui.application.updaters import updater_item
+
+    item = updater_item(kind, "objectives")
+    assert item["params"] == parameters
+    spec = R.UPDATER_CATALOG["objectives"][kind]
+    assert {field.key for field in spec.fields} == set(parameters)
+    expression = _render_updater_item(item, "objectives")
+    root = morphopt.UpdaterBoundaryPart if spec.group == "geometry" else morphopt.UpdaterSIMPMaterial
+    objective = eval(expression, {"self": root})
+    assert not hasattr(objective, "normalize_gradient")
+    assert not hasattr(objective, "factor")
+
+
 @pytest.mark.parametrize("kind,spec", [
     (kind, spec) for kind, spec in R.SURFACE_SYMMETRY_CONSTRAINTS.items()
     if spec.factory is not None

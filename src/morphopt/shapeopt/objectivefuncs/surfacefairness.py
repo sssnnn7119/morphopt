@@ -36,7 +36,7 @@ class Fairness(BaseConstraints):
                 "through the owning geometry updater first."
             )
         return sum(
-            surface.get_penalty_fairness(self.scaler[i], r[i], rdu[i], rdu2[i])
+            surface.get_penalty_fairness(self.integration_weights[i], r[i], rdu[i], rdu2[i])
             for i, surface in enumerate(self.surfaces)
             if surface.is_updatable
         )

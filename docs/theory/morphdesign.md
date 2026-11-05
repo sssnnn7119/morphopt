@@ -756,7 +756,7 @@ $$
 +\sum\operatorname{Penalty}(\text{约束}).
 $$
 
-其中 $s_k=\Phi_k-\Phi_{k-1}$、$y_k=g_k-g_{k-1}$ 来自外层有限元观测，采用未归一化的物理梯度。有限记忆直接 BFGS 更新构造 $B_k^{\mathrm{FEA}}$，仅保留满足 $s_k^Ty_k>10^{-8}\|s_k\|\|y_k\|$ 的曲率对，无有效历史时不增加二次项。该正定近似忽略真实目标中的负曲率。归一化作用于完整的物理代理，不进入历史差分。
+其中 $s_k=\Phi_k-\Phi_{k-1}$、$y_k=g_k-g_{k-1}$ 来自外层有限元观测。物理代理与历史差分均采用原始有限元梯度，不附加灵敏度缩放。有限记忆直接 BFGS 更新构造 $B_k^{\mathrm{FEA}}$，仅保留满足 $s_k^Ty_k>10^{-8}\|s_k\|\|y_k\|$ 的曲率对，无有效历史时不增加二次项。该正定近似忽略真实目标中的负曲率。
 
 此曲率与内层求解器的拟牛顿信息分别属于不同迭代层次：前者近似真实有限元目标，后者近似当前代理与罚项之和。两者共同使用，但各自保存独立历史。具体目标定义位于 `shapeopt/objectivefuncs/shapederivative.py`，共享历史计算 `QuadraticHistory` 位于 `src/morphopt/optcore/updaters.py`，参数与持久化接口见[脚本模块与接口参考](../scriptreference.md#section-有限元目标的历史梯度二阶代理)。
 

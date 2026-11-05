@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import numpy as np
 import torch
@@ -82,6 +83,9 @@ class UpdaterBoundaryPart(BaseUpdater):
         The maximum number of iterations for the sub-optimization process.
         """
 
+        self.constraint_weights: dict[str, float] = {}
+        """Penalty coefficients computed once per outer iteration."""
+
         self._delta_control_points_previous: list[np.ndarray] | None = None
         """
         The previous change in control points for each surface.
@@ -160,16 +164,8 @@ class UpdaterBoundaryPart(BaseUpdater):
         # initialize the shape derivative sensitivity
         self._initialize_objectives(gradient=gradient, r0=r0, rdu0=rdu0, rdu20=rdu20)
 
-        # get the total sensitivity
-        sensitivity = self._get_total_sensitivity()
-
         # initialize the constraint functions
-        self._initialize_constraints(
-            r0=r0, rdu0=rdu0, rdu20=rdu20, sensitivity=sensitivity
-        )
-
-        # initialize the optimizer
-        self._initialize_optimizer()
+        self._initialize_constraints(r0=r0, rdu0=rdu0, rdu20=rdu20)
 
         # initialize the step length
         surfaces = self.surface_interfaces
@@ -183,6 +179,28 @@ class UpdaterBoundaryPart(BaseUpdater):
                     .mean()
                     .repeat(surfaces[i].num_variables // 3)
                 )
+
+        weights = self.compute_constraint_weights()
+        if weights.keys() != self.constraints_funcs.keys():
+            raise ValueError("Constraint weights must match the registered constraint names.")
+        if any(not math.isfinite(weight) or weight < 0 for weight in weights.values()):
+            raise ValueError("Constraint weights must be finite and nonnegative.")
+        self.constraint_weights = {name: float(weight) for name, weight in weights.items()}
+        self._initialize_optimizer()
+
+    def compute_constraint_weights(self) -> dict[str, float]:
+        """Choose penalty coefficients for the next subproblem.
+
+        Override this strategy hook to implement adaptive coefficients. The
+        objectives, constraints, geometry and step limits are initialized
+        before this call. ``closure(x, return_list=True)`` returns raw term
+        values for strategy evaluation. Returned keys are the names in
+        ``constraints_funcs``. Coefficients stay fixed during the inner solve.
+        """
+        return {
+            name: CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DEFAULT_WEIGHT
+            for name in self.constraints_funcs
+        }
 
     def initialize(self) -> None:
         """Register this updater's terms, then size the Part's step lengths.
@@ -220,30 +238,17 @@ class UpdaterBoundaryPart(BaseUpdater):
                 part_interface=self.part,
             )
 
-    def _get_total_sensitivity(self) -> list[torch.Tensor]:
-        # get the total sensitivity
-        sensitivity_all = []
-        for obj_func in self.obj_funcs.values():
-            sensitivity_all.append(obj_func.sensitivity)
-        sensitivity: list[torch.Tensor] = sensitivity_all[0]
-        for surf_ind in range(len(sensitivity)):
-            for obj_ind in range(1, len(sensitivity_all)):
-                sensitivity[surf_ind] += sensitivity_all[obj_ind][surf_ind]
-        return sensitivity
-
     def _initialize_constraints(
         self,
         r0: list[torch.Tensor],
         rdu0: list[torch.Tensor],
         rdu20: list[torch.Tensor],
-        sensitivity: list[torch.Tensor],
     ) -> None:
         for constraints in self.constraints_funcs.values():
             constraints.initialize(
                 r0=r0,
                 rdu0=rdu0,
                 rdu20=rdu20,
-                sensitivity=sensitivity,
                 weights=self._weight_points,
                 surfaces=self.surface_interfaces,
                 part_interface=self.part,
@@ -302,16 +307,10 @@ class UpdaterBoundaryPart(BaseUpdater):
                         * self._step_length_decay,
                         min=self._max_step_length_max * self._step_length_min_ratio,
                     )
-    def closure(self, x: torch.Tensor, return_list=False) -> float:
-        """
-        The closure function for the optimization process.
-
-        Parameters:
-            x (torch.Tensor): The current point in the optimization process.
-
-        Returns:
-            float: The objective function value at the current point.
-        """
+    def closure(
+        self, x: torch.Tensor, return_list: bool = False,
+    ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
+        """Evaluate the weighted total or the two lists of unweighted terms."""
         # save the current point
         x0 = self.part.get_parameters()
 
@@ -336,8 +335,10 @@ class UpdaterBoundaryPart(BaseUpdater):
 
         if return_list:
             return obj_value, constraints_value
-        else:
-            return sum(obj_value) + sum(constraints_value)
+        return sum(obj_value) + sum(
+            self.constraint_weights[name] * value
+            for name, value in zip(self.constraints_funcs, constraints_value)
+        )
 
     def update(self) -> None:
         """
@@ -377,9 +378,13 @@ class UpdaterBoundaryPart(BaseUpdater):
             # get current objective function value
             if self.iteration_total % self._status_log_interval == 0:
                 with torch.no_grad():
-                    obj_values, constraints_values = self.closure(
+                    obj_values, raw_constraints = self.closure(
                         x=variables, return_list=True
                     )
+                    constraints_values = [
+                        self.constraint_weights[name] * value
+                        for name, value in zip(self.constraints_funcs, raw_constraints)
+                    ]
 
                 # print the objective function value
                 # Print a pretty table showing objective values and iteration progress
@@ -395,7 +400,7 @@ class UpdaterBoundaryPart(BaseUpdater):
                 )
                 data = [
                     [f"{iteration + 1}/{self.max_step_iter}"]
-                    + [f"{sum(obj_values).item():.6e}"]
+                    + [f"{(sum(obj_values) + sum(constraints_values)).item():.6e}"]
                     + [f"{val.item():.6e}" for val in obj_values]
                     + [f"{val.item():.6e}" for val in constraints_values]
                 ]

@@ -607,9 +607,7 @@
               "objective_functions": [
                 {
                   "type": "Sensitivity",
-                  "params": {
-                    "normalize_gradient": false
-                  }
+                  "params": {}
                 }
               ],
               "constraints": [

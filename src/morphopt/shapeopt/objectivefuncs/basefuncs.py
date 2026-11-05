@@ -12,19 +12,11 @@ if TYPE_CHECKING:
 
 
 class BaseConstraints:
-    """
-    Base class for objective functions in MorphOpt.
-    """
+    """Geometric penalties evaluated with reference surface quadrature."""
 
-    def __init__(self):
-        """
-        Initialize the objective function.
-        """
-        self.scaler: list[torch.Tensor] = []
-        """
-        The scaler to process the objective function.
-        """
-
+    def __init__(self) -> None:
+        self.integration_weights: list[torch.Tensor] = []
+        """Reference area weights, fixed throughout one subproblem."""
         self.surfaces: list[BaseSurface] = []
 
     def initialize(
@@ -32,22 +24,13 @@ class BaseConstraints:
         r0: list[torch.Tensor],
         rdu0: list[torch.Tensor],
         rdu20: list[torch.Tensor],
-        sensitivity: list[torch.Tensor],
         weights: list[torch.Tensor],
         *args: object,
         surfaces: Sequence[BaseSurface],
         **kwargs: object,
     ) -> None:
-
-        self.scaler = []
-        for i in range(len(sensitivity)):
-            sen_now = sensitivity[i].reshape([-1, 3]).norm(dim=1)
-            if (sen_now != 0).any():
-                sen_now[sen_now == 0] = sen_now[sen_now != 0].min()
-            else:
-                sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
-            self.scaler.append(sen_now * weights[i])
-
+        """Bind reference area weights without physical sensitivity scaling."""
+        self.integration_weights = [weight.detach().clone() for weight in weights]
         self.surfaces = list(surfaces)
 
     def __call__(

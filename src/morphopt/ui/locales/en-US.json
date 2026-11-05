@@ -639,8 +639,6 @@
   "ui.schema.fields.voidpenalfactor.help.text": "Void penalty factor.",
   "ui.schema.fields.materialpenalty.label.material_penalty": "RAMP interpolation penalty",
   "ui.schema.fields.materialpenalty.help.text": "Integer materialpenalty = p in ρ / (1 + p(1 − ρ)), where ρ = sigmoid(design field).",
-  "ui.schema.fields.normalize_gradient.label.normalize_gradient": "normalize_gradient",
-  "ui.schema.fields.normalize_gradient.help.text": "Normalize the material gradient.",
   "ui.schema.fields.scale.label.scale": "scale",
   "ui.schema.fields.scale.help.text": "Scale factor of the objective term.",
   "ui.schema.fields.plane.label.text": "Symmetry plane",

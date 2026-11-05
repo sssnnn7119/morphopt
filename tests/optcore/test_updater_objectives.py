@@ -16,6 +16,7 @@ from morphopt.optcore.protocal import ProtocalSavable
 from morphopt.optcore.updaters import BaseUpdater, QuadraticHistory, Updaters
 from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
+from morphopt.shapeopt.objectivefuncs.boundarys import MinRadius
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
 from morphopt.shapeopt.update_boundary_part import UpdaterBoundaryPart
 from morphopt.simp.objectivefuncs import Sensitivity, QuadraticSensitivity
@@ -129,17 +130,19 @@ def test_unobserved_model_checkpoint(tmp_path: Path):
     assert model.history_size == 0
 
 
-def test_material_scaling_does_not_create_artificial_curvature():
-    objective = QuadraticSensitivity(normalize_gradient=True)
+def test_material_quadratic_model_preserves_native_gradient_and_curvature():
+    objective = QuadraticSensitivity()
     first = torch.tensor([0.2, 0.1])
     second = torch.tensor([0.5, 0.2])
     for point in (first, second):
         objective.initialize(gradient=3 * point, cps0=point, step_length=torch.ones(2))
     trial = second + torch.tensor([0.01, 0.02])
     torch.testing.assert_close(
-        torch.func.jacrev(objective)(trial), 3 * trial / (3 * second).norm()
+        torch.func.jacrev(objective)(trial), 3 * trial
     )
     assert objective.history.history_size == 1
+    torch.testing.assert_close(objective.history.gradient, 3 * second)
+    torch.testing.assert_close(torch.func.hessian(objective)(trial), 3 * torch.eye(2))
 
 
 class ControlSurface(BaseSurface):
@@ -174,16 +177,145 @@ class ControlSurface(BaseSurface):
         return self.points, torch.zeros(len(self.points), 3, 2), torch.zeros(len(self.points), 3, 3)
 
 
-def make_shape_updater() -> UpdaterBoundaryPart:
+def make_shape_updater(
+    updater_type: type[UpdaterBoundaryPart] = UpdaterBoundaryPart,
+) -> UpdaterBoundaryPart:
     part = BoundaryPart()
     part._name = "body"
     part.add_surface_interface(ControlSurface(torch.tensor([[0.2, 0.3, 0.4]])))
     part.add_surface_interface(ControlSurface(torch.tensor([[0.0, 0.0, 1.0]]), active=False))
-    updater = UpdaterBoundaryPart(max_step_iter=5, max_step_length=0.05)
+    updater = updater_type(max_step_iter=5, max_step_length=0.05)
     updater.bind_target(part)
     updater.add_objective_function(QuadraticShapeDerivative(memory_size=2))
     updater.initialize()
     return updater
+
+
+@pytest.mark.parametrize("objective_type", [ShapeDerivative, QuadraticShapeDerivative])
+@pytest.mark.parametrize("scale", [0.0, 1e-8, 1.0, 1e8])
+def test_shape_proxy_preserves_native_sensitivity(objective_type, scale):
+    updater = make_shape_updater()
+    active = updater.surface_interfaces[0]
+    anchor = active.points.clone()
+    r, _, _ = updater.part.get_geometry_values()
+    gradient = scale * torch.tensor([2.0, -3.0, 0.0, 10.0, -20.0, 5.0])
+    original_gradient = gradient.clone()
+    objective = objective_type()
+    objective.initialize(gradient=gradient, r0=r, surfaces=updater.surface_interfaces)
+
+    def evaluate(points: torch.Tensor) -> torch.Tensor:
+        active.points = points
+        return objective(r)
+
+    actual = torch.func.grad(evaluate)(anchor)
+    active.points = anchor
+    torch.testing.assert_close(actual.flatten(), original_gradient[:3])
+    delta = torch.tensor([[0.03, -0.02, 0.01]])
+    torch.testing.assert_close(evaluate(anchor + delta), original_gradient[:3] @ delta.flatten())
+    torch.testing.assert_close(gradient, original_gradient)
+    if isinstance(objective, QuadraticShapeDerivative):
+        torch.testing.assert_close(objective.history.gradient, original_gradient[:3])
+
+
+@pytest.mark.parametrize("objective_type", [Sensitivity, QuadraticSensitivity])
+@pytest.mark.parametrize("scale", [0.0, 1e-8, 1.0, 1e8])
+def test_material_proxy_preserves_native_sensitivity(objective_type, scale):
+    objective = objective_type()
+    anchor = torch.tensor([0.2, 0.4, 0.6])
+    gradient = scale * torch.tensor([2.0, -3.0, 0.0])
+    original_gradient = gradient.clone()
+    objective.initialize(gradient=gradient, cps0=anchor, step_length=torch.ones(3))
+    torch.testing.assert_close(objective.sensitivity, original_gradient)
+    torch.testing.assert_close(torch.func.grad(objective)(anchor), original_gradient)
+    torch.testing.assert_close(gradient, original_gradient)
+    if isinstance(objective, QuadraticSensitivity):
+        torch.testing.assert_close(objective.history.gradient, original_gradient)
+
+
+def test_geometric_integral_is_independent_of_physical_gradient():
+    updater = make_shape_updater()
+    updater.add_constraints(MinRadius(radius=0.5))
+    values = []
+    for scale in (1.0, 100.0, 0.0):
+        updater.reinitialize(gradient=scale * torch.cat(updater.part.get_parameters()))
+        trial = torch.zeros(updater.part.num_variables)
+        values.append(updater.closure(trial, return_list=True)[1][0])
+        assert updater.constraint_weights == {"MinRadius_0": 1.0}
+    assert values[0] > 0
+    for value in values[1:]:
+        torch.testing.assert_close(value, values[0])
+
+
+def test_geometric_integral_preserves_area_under_quadrature_refinement():
+    def evaluate(count: int) -> tuple[torch.Tensor, torch.Tensor]:
+        points = torch.tensor([[0.4, 0.0, 0.0]]).repeat(count, 1)
+        surface = ControlSurface(points)
+        r, rdu, rdu2 = surface.get_geometry_values()
+        weights = torch.full((count,), 2.0 / count)
+        penalty = MinRadius(radius=0.5)
+        penalty.initialize(
+            r0=[r], rdu0=[rdu], rdu20=[rdu2],
+            weights=[weights], surfaces=[surface],
+        )
+        # Reference quadrature is frozen even if its source tensor changes.
+        weights.zero_()
+
+        def loss(shift: torch.Tensor) -> torch.Tensor:
+            return penalty(r=[r + shift], rdu=[rdu], rdu2=[rdu2]).sum()
+
+        shift = torch.zeros(3)
+        return loss(shift), torch.func.grad(loss)(shift)
+
+    value, gradient = evaluate(1)
+    refined_value, refined_gradient = evaluate(8)
+    assert value == pytest.approx(16.0)  # area 2 * ((0.5 - 0.4) / 0.05)**3
+    torch.testing.assert_close(refined_value, value)
+    torch.testing.assert_close(refined_gradient, gradient)
+
+
+def test_constraint_weight_strategy_is_frozen_and_scales_loss_and_gradient():
+    class WeightedUpdater(UpdaterBoundaryPart):
+        calls = 0
+        next_weight = 3.0
+
+        def compute_constraint_weights(self) -> dict[str, float]:
+            self.calls += 1
+            # Strategies can inspect raw terms before coefficients are assigned.
+            self.closure(self.part.get_variables(), return_list=True)
+            return {name: self.next_weight for name in self.constraints_funcs}
+
+    updater = make_shape_updater(WeightedUpdater)
+    updater.add_constraints(MinRadius(radius=0.5))
+    updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
+    trial = torch.zeros(updater.part.num_variables)
+
+    def expected(values: torch.Tensor) -> torch.Tensor:
+        objectives, penalties = updater.closure(values, return_list=True)
+        return sum(objectives) + 3 * sum(penalties)
+
+    torch.testing.assert_close(updater.closure(trial), expected(trial))
+    torch.testing.assert_close(
+        torch.func.jacrev(updater.closure)(trial), torch.func.jacrev(expected)(trial),
+    )
+    updater.next_weight = 7.0
+    updater.closure(trial)
+    assert updater.calls == 1
+    assert updater.constraint_weights == {"MinRadius_0": 3.0}
+    updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
+    assert updater.calls == 2
+    assert updater.constraint_weights == {"MinRadius_0": 7.0}
+
+
+@pytest.mark.parametrize("weights", [{}, {"MinRadius_0": -1.0}, {"MinRadius_0": float("nan")}])
+def test_invalid_constraint_weights_fail_before_inner_solve(weights):
+    class InvalidWeights(UpdaterBoundaryPart):
+        def compute_constraint_weights(self) -> dict[str, float]:
+            return weights
+
+    updater = make_shape_updater(InvalidWeights)
+    updater.add_constraints(MinRadius(radius=0.5))
+    with pytest.raises(ValueError, match="Constraint weights"):
+        updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
 
 
 def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface():
@@ -280,7 +412,7 @@ def test_original_objectives_are_independent_of_quadratic_history():
     import inspect
 
     assert not inspect.signature(ShapeDerivative).parameters
-    assert list(inspect.signature(Sensitivity).parameters) == ["normalize_gradient"]
+    assert not inspect.signature(Sensitivity).parameters
     assert not hasattr(ShapeDerivative(), "history")
     assert not hasattr(Sensitivity(), "history")
 
@@ -300,7 +432,7 @@ def test_shape_first_observation_matches_original_linear_model():
 
 
 def test_fea_gradient_reaches_shape_history_without_normalization(monkeypatch):
-    """Outer splitting, Part slicing and changing loss scales preserve raw g."""
+    """Outer splitting, Part slicing and proxy evaluation preserve raw g."""
     updater = make_shape_updater()
     quadratic = next(iter(updater.obj_funcs.values()))
     geometry = GeometryParams()
@@ -334,14 +466,12 @@ def test_fea_gradient_reaches_shape_history_without_normalization(monkeypatch):
         torch.testing.assert_close(quadratic.history.gradient, gradient, rtol=0, atol=0)
         torch.testing.assert_close(quadratic.gradient[0].flatten(), gradient, rtol=0, atol=0)
         torch.testing.assert_close(raw, source, rtol=0, atol=0)
-        assert float(quadratic.factor) == pytest.approx(1 / gradient.abs().max().item())
     assert quadratic.history.history_size == 1
     torch.testing.assert_close(quadratic.history.hessian_product(step), second - first)
-    # Scaling applies to the complete model only when the loss is evaluated.
     delta = torch.tensor([0.001, -0.002, 0.003])
     updater.surface_interfaces[0].points += delta.reshape(1, 3)
     expected = second @ delta + 0.5 * (delta @ quadratic.history.hessian_product(delta))
-    assert float(quadratic([])) == pytest.approx(float(expected / second.abs().max()))
+    assert float(quadratic([])) == pytest.approx(float(expected))
 
 
 def test_lbfgs_shared_history_converges_on_rosenbrock():

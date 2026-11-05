@@ -756,10 +756,6 @@ class _Constants:
                         DEFAULT = ""
 
             class UPDATER_OBJECTIVES:
-                class SENSITIVITY:
-                    class NORMALIZE_GRADIENT:
-                        DEFAULT = False
-
                 class DENSITYFIELDMINIMIZE:
                     class SCALE:
                         DEFAULT = 1e-07
@@ -1058,6 +1054,7 @@ class _Constants:
             DEFAULT_WEIGHT = 1.0
 
         class SHAPE_CONSTRAINTS:
+            DEFAULT_WEIGHT = 1.0
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0
             MIN_RADIUS_EXPONENT = 3

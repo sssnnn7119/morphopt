@@ -912,7 +912,7 @@ def _topology(options, geometry, loads, materials):
                     "max_step_length": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
                     "if_update": True,
                     "objective_functions": [
-                        {"type": "Sensitivity", "params": {"normalize_gradient": False}}
+                        {"type": "Sensitivity", "params": {}}
                     ],
                     "constraints": [
                         {
