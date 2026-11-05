@@ -46,7 +46,7 @@ class BaseConstraints:
                 sen_now[sen_now == 0] = sen_now[sen_now != 0].min()
             else:
                 sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
-            self.scaler.append(sen_now * weights[i] * 0.01)
+            self.scaler.append(sen_now * weights[i])
 
         self.surfaces = list(surfaces)
 

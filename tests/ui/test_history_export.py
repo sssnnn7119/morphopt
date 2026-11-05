@@ -37,8 +37,13 @@ def wait_for_export(app, dialog):
 
 
 def surface_dialog(archive):
+    surfaces = boundary_surface_options(archive.params)
+    selections = [
+        {"part": surface.part, "index": surface.index, "format": "stp"}
+        for surface in surfaces
+    ]
     return history_export.SurfaceExportDialog(
-        str(archive.folder), 2, 2, boundary_surface_options(archive.params),
+        str(archive.folder), 2, selections, "boundary / all surfaces",
     )
 
 

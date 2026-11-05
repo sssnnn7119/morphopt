@@ -48,18 +48,42 @@ def cad_operation_from_node(
     return operation_class(**kwargs)
 
 
+def cad_operations_from_node(
+    node: CADPartNode, problem: ProblemDefinition | None = None
+) -> tuple[torchfea.cad.CADOperation, ...]:
+    """Resolve the current UI CAD operations for preview or export."""
+    namespace = DefinitionValues(problem).namespace
+    return tuple(
+        cad_operation_from_node(operation, namespace)
+        for operation in node.operations
+    )
+
+
+def cad_preview_signature(
+    node: CADPartNode, problem: ProblemDefinition | None = None
+) -> tuple[str, ...]:
+    """Return a stable signature for the resolved CAD preview geometry."""
+    return tuple(
+        f"{type(operation).__qualname__}:"
+        f"{json.dumps(vars(operation), sort_keys=True, default=repr)}"
+        for operation in cad_operations_from_node(node, problem)
+    )
+
+
 def cad_part_from_node(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> CADPart:
     """Create a preview Part from its structured, ordered CAD feature list."""
-    operations = node.operations
     values = DefinitionValues(problem)
-    namespace = values.namespace
+    operations = tuple(
+        cad_operation_from_node(operation, values.namespace)
+        for operation in node.operations
+    )
 
     class PreviewCADPart(CADPart):
         def define_operations(self) -> None:
-            for operation_node in operations:
-                self.add_operation(cad_operation_from_node(operation_node, namespace))
+            for operation in operations:
+                self.add_operation(operation)
 
     part = PreviewCADPart(
         mesh_size=(
@@ -81,18 +105,17 @@ def cad_brep_records_from_node(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> list[dict]:
     """Return OCC face and edge geometry for the CAD viewport."""
-    part = cad_part_from_node(node, problem)
-    if not part.operations:
+    operations = cad_operations_from_node(node, problem)
+    if not operations:
         return []
-    return torchfea.cad.preview_brep(part.operations)
+    return torchfea.cad.preview_brep(operations)
 
 
 def export_cad_step(
     node: CADPartNode, path: str | Path, problem: ProblemDefinition | None = None
 ) -> None:
     """Export the Part's final CAD solids in local coordinates without meshing."""
-    namespace = DefinitionValues(problem).namespace
-    operations = [cad_operation_from_node(item, namespace) for item in node.operations]
+    operations = cad_operations_from_node(node, problem)
     torchfea.cad.export_step(operations, str(path))
 
 

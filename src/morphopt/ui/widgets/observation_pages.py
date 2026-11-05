@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
 from ...postprocess.visualization import (
     add_deformation_mesh,
     add_design_component,
+    design_view_options,
 )
 from ..application.results import ResultSession
 from ..i18n import tr
 from ..presentation.history import history_table
-from ..presentation.labels import component_selection_title
 from ..theme import theme_manager
 from ..theme.fonts import chart_font, font_manager
 from .viewport import PlotViewport
@@ -205,7 +205,9 @@ class MetricsPage(QWidget):
 
 
 class UpdatableStructurePage(QWidget):
-    """Render one updateable component at a selected result iteration."""
+    """Render one updateable component and one of its available views."""
+
+    viewChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -213,53 +215,84 @@ class UpdatableStructurePage(QWidget):
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
         controls = QHBoxLayout()
-        self.component_label = QLabel(
-            tr("ui.widgets.observation_pages.display_component")
-        )
-        controls.addWidget(self.component_label)
-        self.component_selector = QComboBox()
-        self.component_selector.currentIndexChanged.connect(self._component_changed)
-        controls.addWidget(self.component_selector, 1)
+        self.view_label = QLabel(tr("ui.widgets.observation_pages.display_view"))
+        controls.addWidget(self.view_label)
+        self.view_selector = QComboBox()
+        self.view_selector.currentIndexChanged.connect(self._view_changed)
+        controls.addWidget(self.view_selector, 1)
         layout.addLayout(controls)
 
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
         self._results: ResultSession | None = None
         self._iteration = 0
-        self._last_rendered: tuple[str, int, int | None] | None = None
+        self._component = None
+        self._views = ()
+        self._last_rendered: tuple[str, int, int | None, str | None] | None = None
         self._theme_pending = False
 
-    def build(self, results: ResultSession, iteration: int) -> None:
+    def build(self, results: ResultSession, iteration: int, component=None) -> None:
         self._results = results
         self._iteration = iteration
-        self._sync_component_selector()
+        if component is None:
+            components = results.fea_components()
+            component = components[0][1] if components else None
+        self._component = component
+        self._sync_view_selector()
         self._render_selected()
 
-    def _component_changed(self, _index: int) -> None:
+    def _view_changed(self, _index: int) -> None:
         self._last_rendered = None
         self._render_selected()
+        self.viewChanged.emit()
 
-    def _sync_component_selector(self) -> None:
-        components = self._results.fea_components() if self._results else ()
-        current = self.component_selector.currentData()
-        self.component_selector.blockSignals(True)
+    @property
+    def component(self):
+        """Return the component currently shown in the viewport."""
+        return self._component
+
+    @property
+    def current_view(self):
+        """Return the selected design view descriptor, if any."""
+        return self._selected_view()
+
+    def _view_title(self, view) -> str:
+        if view.key == "all":
+            return tr("ui.widgets.observation_pages.all_surfaces")
+        if view.surface_index is None:
+            return tr("ui.widgets.observation_pages.design_structure")
+        if view.control_net:
+            return tr(
+                "ui.widgets.observation_pages.surface_control_net_value",
+                value_0=view.surface_index,
+            )
+        return tr(
+            "ui.widgets.observation_pages.surface_value", value_0=view.surface_index
+        )
+
+    def _sync_view_selector(self) -> None:
+        current = self.view_selector.currentData()
+        self._views = design_view_options(self._component)
+        self.view_selector.blockSignals(True)
         try:
-            self.component_selector.clear()
-            for category, component in components:
-                self.component_selector.addItem(
-                    component_selection_title(category, component), component
-                )
-            if not components:
-                self.component_selector.addItem(
+            self.view_selector.clear()
+            for view in self._views:
+                self.view_selector.addItem(self._view_title(view), view.key)
+            if not self._views:
+                self.view_selector.addItem(
                     tr("ui.widgets.observation_pages.no_updateable_components"), None
                 )
-                self.component_selector.setEnabled(False)
+                self.view_selector.setEnabled(False)
             else:
-                self.component_selector.setEnabled(True)
-                index = self.component_selector.findData(current)
-                self.component_selector.setCurrentIndex(max(index, 0))
+                self.view_selector.setEnabled(True)
+                index = self.view_selector.findData(current)
+                self.view_selector.setCurrentIndex(max(index, 0))
         finally:
-            self.component_selector.blockSignals(False)
+            self.view_selector.blockSignals(False)
+
+    def _selected_view(self):
+        key = self.view_selector.currentData()
+        return next((view for view in self._views if view.key == key), None)
 
     def _render_selected(self) -> None:
         if (
@@ -268,11 +301,13 @@ class UpdatableStructurePage(QWidget):
             or self._results.folder is None
         ):
             return
-        selected = self.component_selector.currentData()
+        selected = self._component
+        view = self._selected_view()
         marker = (
             self._results.folder,
             self._iteration,
             id(selected) if selected is not None else None,
+            view.key if view is not None else None,
         )
         if marker == self._last_rendered:
             return
@@ -292,6 +327,7 @@ class UpdatableStructurePage(QWidget):
                 specular=style.render.mesh_specular,
                 specular_power=style.render.mesh_specular_power,
                 boundary_shell_opacity=style.geometry.boundary_shell_opacity,
+                view=view,
             )
 
         try:
@@ -310,27 +346,27 @@ class UpdatableStructurePage(QWidget):
     def clear_view(self) -> None:
         """Empty the viewport and forget the previous render marker."""
         self._results = None
+        self._component = None
+        self._views = ()
         self._last_rendered = None
-        self.component_selector.blockSignals(True)
+        self.view_selector.blockSignals(True)
         try:
-            self.component_selector.clear()
-            self.component_selector.addItem(
+            self.view_selector.clear()
+            self.view_selector.addItem(
                 tr("ui.widgets.observation_pages.no_updatable_components"), None
             )
-            self.component_selector.setEnabled(False)
+            self.view_selector.setEnabled(False)
         finally:
-            self.component_selector.blockSignals(False)
+            self.view_selector.blockSignals(False)
         try:
             self.viewport.rebuild(lambda _plotter: None)
         except Exception as exc:  # pragma: no cover - best-effort rendering
             print(tr("ui.messages.structure_preview_clear_failed", error=exc))
 
     def apply_language(self) -> None:
-        """Refresh the component selector without rebuilding the scene."""
-        self.component_label.setText(
-            tr("ui.widgets.observation_pages.display_component")
-        )
-        self._sync_component_selector()
+        """Refresh the view selector without rebuilding the scene."""
+        self.view_label.setText(tr("ui.widgets.observation_pages.display_view"))
+        self._sync_view_selector()
 
     def apply_theme(self) -> None:
         self.viewport.apply_theme()
