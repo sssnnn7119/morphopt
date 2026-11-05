@@ -855,7 +855,7 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。BREP 默认关闭，选定 NURBS 面后可启用面内控制点优化；网格曲面不提供设计变量。几何更新器直接读取曲面状态。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
-逐控制点步长由 `UpdaterBoundaryPart` 统一初始化、调整及适配控制点数量。`BoundaryPart.update_variables(x_change, max_step_length)` 接收更新器提供的逐曲面 Tensor 列表，通过 `atan` 映射应用步长限制；部件自身不推算或修正步长，不接受缺省步长或逐曲面的 `None` 值。
+逐控制点步长由 `UpdaterBoundaryPart` 通过步长策略统一生成。默认 `FixedStepLength` 在每轮外层迭代中将各控制点的步长上限设为 `max_step_length`，不根据相邻更新方向增大或衰减，也不乘以隐含的初始比例。`BoundaryPart.update_variables(x_change, max_step_length)` 接收更新器提供的逐曲面 Tensor 列表，通过 `atan` 映射应用步长限制；部件自身不推算或修正步长，不接受缺省步长或逐曲面的 `None` 值。
 
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
@@ -871,15 +871,25 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 几何罚项使用曲面参考面积权重进行离散积分，积分权重在每轮外层迭代开始时更新，并在该轮子优化中固定。积分权重不乘以有限元灵敏度，也不按采样点数平均。曲面点对距离罚项保留两侧面积权重的乘积，对应点对的双重曲面积分。平滑障碍函数的激活条件与表达式保持不变。
 
-子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。`UpdaterBoundaryPart.constraint_weights` 保存各几何罚项的系数，默认均为 1。`compute_constraint_weights()` 是系数选择策略入口；该方法在目标项、约束项及步长完成初始化后调用，每轮外层迭代调用一次，返回键为 `constraints_funcs` 中注册名称的字典。返回的系数必须有限且非负，并在子优化期间固定。
+子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。更新器的 `constraint_weights` 保存各罚项的系数，默认均为 1。步长和权重策略集中定义在 `morphopt/optcore/strategies.py`，通过更新器构造参数选择。几何与 SIMP 材料更新器共用相同策略接口，分别持有各自的策略实例。
 
 ```python
 class Shape(morphopt.UpdaterBoundaryPart):
-    def compute_constraint_weights(self) -> dict[str, float]:
-        return {name: 1.0 for name in self.constraints_funcs}
+    def __init__(self) -> None:
+        super().__init__(
+            max_step_length=0.2,
+            step_length_strategy=morphopt.strategies.FixedStepLength(),
+            constraint_weight_strategy=morphopt.strategies.ConstantConstraintWeights(
+                value=1.0,
+            ),
+        )
 ```
 
-后续自适应策略可重写该方法，并通过 `self.part`、`self.obj_funcs` 和 `self.constraints_funcs` 读取当前状态。`self.closure(x, return_list=True)` 返回按注册顺序排列的原始目标值与原始罚项值；普通 `self.closure(x)` 返回加权后的总目标。子优化日志中的约束列显示加权贡献，`Total` 包含全部目标与罚项。当前默认策略不进行梯度匹配或自动调整系数。参考面积权重实现的是每轮参考曲面上的积分近似；若需当前变形曲面上的面积积分，还需在评价时引入随设计变化的面积微元。
+新增步长策略继承 `StepLengthStrategy` 并实现 `__call__(updater, parameters, maximum, gradient)`。`parameters` 为逐块物理参数，几何块形状为 `(控制点数, 3)`，材料块为 `(变量数, 1)`；返回逐块的一维步长 Tensor 列表。初始化时 `gradient` 为 `None`，每轮外层迭代开始时接收当前原始有限元梯度。策略重新生成与当前参数数量对应的步长，不在部件中取均值补齐。默认策略的输出与梯度无关。
+
+新增权重策略继承 `ConstraintWeightStrategy` 并实现 `__call__(updater, gradient)`，返回键为 `updater.constraints_funcs` 中注册名称的系数字典。策略通过 `updater.part` 或 `updater.material`、`updater.obj_funcs` 和 `updater.constraints_funcs` 读取当前状态。该策略在目标项、约束项和步长初始化完成后每轮调用一次，系数必须有限且非负。原有 `compute_constraint_weights()` 方法已由策略对象替代。
+
+步长和权重均在子优化期间固定；闭包评价、线搜索和最终写回不重新调用策略，也不进行更新差分。`updater.closure(x, return_list=True)` 返回按注册顺序排列的原始目标值与原始罚项值；普通 `updater.closure(x)` 返回加权后的总目标。子优化日志中的约束列显示加权贡献，`Total` 包含全部目标与罚项。当前默认策略不进行梯度匹配或自动调整系数。UI 普通配置使用默认策略，其他策略可通过更新器自定义类的构造方法传入。参考面积权重实现的是每轮参考曲面上的积分近似；若需当前变形曲面上的面积积分，还需在评价时引入随设计变化的面积微元。
 
 <a id="section-有限元目标的历史梯度二阶代理"></a>
 

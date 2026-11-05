@@ -14,6 +14,10 @@ from morphopt.optcore.modelparams.materials import MaterialModels
 from morphopt.optcore.objfunc import ObjectiveFunction
 from morphopt.optcore.protocal import ProtocalSavable
 from morphopt.optcore.updaters import BaseUpdater, QuadraticHistory, Updaters
+from morphopt.optcore.strategies import (
+    ConstantConstraintWeights, ConstraintWeightStrategy, FixedStepLength,
+    StepLengthStrategy,
+)
 from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
 from morphopt.shapeopt.objectivefuncs.boundarys import MinRadius
@@ -178,13 +182,19 @@ class ControlSurface(BaseSurface):
 
 
 def make_shape_updater(
-    updater_type: type[UpdaterBoundaryPart] = UpdaterBoundaryPart,
+    *,
+    step_length_strategy: StepLengthStrategy | None = None,
+    constraint_weight_strategy: ConstraintWeightStrategy | None = None,
 ) -> UpdaterBoundaryPart:
     part = BoundaryPart()
     part._name = "body"
     part.add_surface_interface(ControlSurface(torch.tensor([[0.2, 0.3, 0.4]])))
     part.add_surface_interface(ControlSurface(torch.tensor([[0.0, 0.0, 1.0]]), active=False))
-    updater = updater_type(max_step_iter=5, max_step_length=0.05)
+    updater = UpdaterBoundaryPart(
+        max_step_iter=5, max_step_length=0.05,
+        step_length_strategy=step_length_strategy,
+        constraint_weight_strategy=constraint_weight_strategy,
+    )
     updater.bind_target(part)
     updater.add_objective_function(QuadraticShapeDerivative(memory_size=2))
     updater.initialize()
@@ -298,17 +308,18 @@ def test_geometric_integral_preserves_area_under_quadrature_refinement():
 
 
 def test_constraint_weight_strategy_is_frozen_and_scales_loss_and_gradient():
-    class WeightedUpdater(UpdaterBoundaryPart):
+    class Weights(ConstraintWeightStrategy):
         calls = 0
         next_weight = 3.0
 
-        def compute_constraint_weights(self) -> dict[str, float]:
+        def __call__(self, updater: BaseUpdater, gradient: torch.Tensor) -> dict[str, float]:
             self.calls += 1
             # Strategies can inspect raw terms before coefficients are assigned.
-            self.closure(self.part.get_variables(), return_list=True)
-            return {name: self.next_weight for name in self.constraints_funcs}
+            updater.closure(updater.part.get_variables(), return_list=True)
+            return {name: self.next_weight for name in updater.constraints_funcs}
 
-    updater = make_shape_updater(WeightedUpdater)
+    strategy = Weights()
+    updater = make_shape_updater(constraint_weight_strategy=strategy)
     updater.add_constraints(MinRadius(radius=0.5))
     updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
     trial = torch.zeros(updater.part.num_variables)
@@ -321,25 +332,67 @@ def test_constraint_weight_strategy_is_frozen_and_scales_loss_and_gradient():
     torch.testing.assert_close(
         torch.func.jacrev(updater.closure)(trial), torch.func.jacrev(expected)(trial),
     )
-    updater.next_weight = 7.0
+    strategy.next_weight = 7.0
     updater.closure(trial)
-    assert updater.calls == 1
+    assert strategy.calls == 1
     assert updater.constraint_weights == {"MinRadius_0": 3.0}
     updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
-    assert updater.calls == 2
+    assert strategy.calls == 2
     assert updater.constraint_weights == {"MinRadius_0": 7.0}
 
 
 @pytest.mark.parametrize("weights", [{}, {"MinRadius_0": -1.0}, {"MinRadius_0": float("nan")}])
 def test_invalid_constraint_weights_fail_before_inner_solve(weights):
-    class InvalidWeights(UpdaterBoundaryPart):
-        def compute_constraint_weights(self) -> dict[str, float]:
+    class InvalidWeights(ConstraintWeightStrategy):
+        def __call__(self, updater: BaseUpdater, gradient: torch.Tensor) -> dict[str, float]:
             return weights
 
-    updater = make_shape_updater(InvalidWeights)
+    updater = make_shape_updater(constraint_weight_strategy=InvalidWeights())
     updater.add_constraints(MinRadius(radius=0.5))
     with pytest.raises(ValueError, match="Constraint weights"):
         updater.reinitialize(gradient=torch.cat(updater.part.get_parameters()))
+
+
+def test_fixed_step_lengths_do_not_depend_on_update_direction_or_gradient():
+    updater = make_shape_updater()
+    assert isinstance(updater.step_length_strategy, FixedStepLength)
+    for scale, direction in ((1.0, 1.0), (100.0, -1.0), (0.0, 1.0)):
+        updater.reinitialize(gradient=scale * torch.cat(updater.part.get_parameters()))
+        updater.update_variables(torch.full((updater.part.num_variables,), direction))
+        for step in updater._max_step_length:
+            torch.testing.assert_close(step, torch.full_like(step, 0.05))
+    assert not hasattr(updater, "_delta_control_points_previous")
+
+
+def test_step_strategy_gets_native_gradient_and_is_frozen_in_inner_solve():
+    class SelectedStep(FixedStepLength):
+        observed = None
+        calls = 0
+
+        def __call__(self, updater, parameters, maximum, gradient):
+            self.calls += 1
+            if gradient is not None:
+                self.observed = gradient.clone()
+            return super().__call__(updater, parameters, maximum / 4, gradient)
+
+    strategy = SelectedStep()
+    updater = make_shape_updater(step_length_strategy=strategy)
+    gradient = torch.tensor([120.0, -900.0, 35.0, 0.0, 0.0, 0.0])
+    updater.reinitialize(gradient=gradient)
+    assert strategy.calls == 2  # initial setup and first outer observation
+    torch.testing.assert_close(strategy.observed, gradient, rtol=0, atol=0)
+    trial = torch.zeros(updater.part.num_variables)
+    updater.closure(trial)
+    torch.func.jacrev(updater.closure)(trial)
+    updater.update_variables(trial)
+    assert strategy.calls == 2
+    for step in updater._max_step_length:
+        torch.testing.assert_close(step, torch.full_like(step, 0.0125))
+    # A new control-point layout is handled by the next strategy evaluation.
+    updater.surface_interfaces[0].points = torch.cat((updater.surface_interfaces[0].points, torch.ones(1, 3)))
+    updater.reinitialize(gradient=torch.ones(updater.part.num_variables))
+    assert updater._max_step_length[0].shape == (2,)
+    assert strategy.calls == 3
 
 
 def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface():
@@ -408,10 +461,14 @@ def test_material_inner_solver_and_restart(tmp_path: Path):
     )
     material._name = "solid"
     material.initialize()
-    updater = UpdaterSIMPMaterial(max_step_iter=5)
+    updater = UpdaterSIMPMaterial(
+        max_step_iter=5, max_step_length=0.2,
+        constraint_weight_strategy=ConstantConstraintWeights(3.0),
+    )
     updater.bind_target(material)
     objective = QuadraticSensitivity(memory_size=2)
     updater.add_objective_function(objective)
+    updater.add_constraints(updater.objectivefuncs.boundarys.MinValue(xmin=-100.0))
     updater.initialize()
     for shift in (0.0, 0.01):
         material._cps += shift
@@ -422,6 +479,8 @@ def test_material_inner_solver_and_restart(tmp_path: Path):
     assert torch.isfinite(direction).all()
     assert updater.closure(direction) < updater.closure(torch.zeros_like(direction))
     updater.update_variables(direction)
+    assert updater.constraint_weights == {"MinValue_0": 3.0}
+    torch.testing.assert_close(updater._max_step_length, torch.full_like(updater._max_step_length, 0.2))
     assert material.get_design_values().square().sum() < before.square().sum()
     manager = Updaters(updaters={"solid": updater})
     manager.save(str(tmp_path), 2)

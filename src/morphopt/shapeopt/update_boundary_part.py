@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import math
+from typing import cast
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ from tabulate import tabulate
 
 from ..constants import CONSTANT
 from ..optcore import BaseUpdater
+from ..optcore.strategies import ConstraintWeightStrategy, StepLengthStrategy
 from .boundary_part import BoundaryPart
 from .surfaces import BaseSurface
 
@@ -59,6 +60,9 @@ class UpdaterBoundaryPart(BaseUpdater):
         interface_name: str | None = None,
         max_step_iter: int = CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_ITERATIONS,
         max_step_length: float = CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
+        *,
+        step_length_strategy: StepLengthStrategy | None = None,
+        constraint_weight_strategy: ConstraintWeightStrategy | None = None,
     ) -> None:
         """
         Initialize the Updater class with the given parameters.
@@ -74,21 +78,19 @@ class UpdaterBoundaryPart(BaseUpdater):
                 omitted.
             max_step_iter (int): The maximum number of iterations for the sub-optimization process.
             max_step_length (float): The maximum step length for each surface in the optimization process.
+            step_length_strategy: Policy generating per-control-point step limits.
+            constraint_weight_strategy: Policy selecting named penalty coefficients.
         """
 
-        super().__init__(interface_name)
+        super().__init__(
+            interface_name,
+            step_length_strategy=step_length_strategy,
+            constraint_weight_strategy=constraint_weight_strategy,
+        )
 
         self.max_step_iter = max_step_iter
         """
         The maximum number of iterations for the sub-optimization process.
-        """
-
-        self.constraint_weights: dict[str, float] = {}
-        """Penalty coefficients computed once per outer iteration."""
-
-        self._delta_control_points_previous: list[np.ndarray] | None = None
-        """
-        The previous change in control points for each surface.
         """
 
         self._weight_points: list[torch.Tensor] = []
@@ -106,35 +108,20 @@ class UpdaterBoundaryPart(BaseUpdater):
         The current maximum step length for each surface in the optimization process.
         """
 
-        self._step_length_min_ratio: float = CONSTANT.KERNEL.SHAPE_UPDATE.MIN_STEP_LENGTH_RATIO
-        """
-        The minimum ratio for the step length relative to the maximum step length.
-        """
-
-        self._step_length_decay: float = CONSTANT.KERNEL.SHAPE_UPDATE.STEP_LENGTH_DECAY
-        """
-        The decay factor for the step length relative to the maximum step length.
-        """
-
-        self._step_length_increase: float = CONSTANT.KERNEL.SHAPE_UPDATE.STEP_LENGTH_INCREASE
-
-        self._low_step_length_tolerance: float = CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_TOLERANCE
-        self._low_step_length_iteration_limit: int = CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_ITERATION_LIMIT
-        self._status_log_interval: int = CONSTANT.KERNEL.SHAPE_UPDATE.STATUS_LOG_INTERVAL
-        """
-        The increase factor for the step length relative to the maximum step length.
-        """
+        self._low_step_length_tolerance: float = (
+            CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_TOLERANCE
+        )
+        self._low_step_length_iteration_limit: int = (
+            CONSTANT.KERNEL.SHAPE_UPDATE.LOW_STEP_LENGTH_ITERATION_LIMIT
+        )
+        self._status_log_interval: int = (
+            CONSTANT.KERNEL.SHAPE_UPDATE.STATUS_LOG_INTERVAL
+        )
 
     @property
     def part(self) -> BoundaryPart:
         """The boundary part interface this updater updates."""
-        if self._target is None:
-            raise ValueError(
-                f"{type(self).__name__} has no Part yet: the updater manager "
-                "hands it over while initializing, so give the updater the name "
-                "used in add_geometry_updater(..., name=...)."
-            )
-        return self._target
+        return cast(BoundaryPart, self.target)
 
     @property
     def surface_interfaces(self) -> list[BaseSurface]:
@@ -149,11 +136,25 @@ class UpdaterBoundaryPart(BaseUpdater):
         Initialize the parameters of the optimization process.
 
         Parameters:
-            iter_now (int): The current iteration number.
+            gradient (torch.Tensor): The gradient of the objective function.
+            *args: Additional positional arguments.
+            **kwargs: Additional keyword arguments.
         """
 
-        if not any(surface.is_updatable and surface.num_variables for surface in self.surface_interfaces):
+        if not any(
+            surface.is_updatable and surface.num_variables
+            for surface in self.surface_interfaces
+        ):
             return
+
+        self._max_step_length = self._prepare_step_lengths(
+            [
+                surface.get_surface_parameters().reshape(-1, 3)
+                for surface in self.surface_interfaces
+            ],
+            self._max_step_length_max,
+            gradient,
+        )
 
         # get the weights for the points of this Part in the optimization process
         self._weight_points = self.part.get_points_weight()
@@ -162,71 +163,6 @@ class UpdaterBoundaryPart(BaseUpdater):
         r0, rdu0, rdu20 = self.part.get_geometry_values()
 
         # initialize the shape derivative sensitivity
-        self._initialize_objectives(gradient=gradient, r0=r0, rdu0=rdu0, rdu20=rdu20)
-
-        # initialize the constraint functions
-        self._initialize_constraints(r0=r0, rdu0=rdu0, rdu20=rdu20)
-
-        # initialize the step length
-        surfaces = self.surface_interfaces
-        for i in range(len(self._max_step_length)):
-            if (
-                self._max_step_length[i].shape[0]
-                != surfaces[i].num_variables // 3
-            ):
-                self._max_step_length[i] = (
-                    self._max_step_length[i]
-                    .mean()
-                    .repeat(surfaces[i].num_variables // 3)
-                )
-
-        weights = self.compute_constraint_weights()
-        if weights.keys() != self.constraints_funcs.keys():
-            raise ValueError("Constraint weights must match the registered constraint names.")
-        if any(not math.isfinite(weight) or weight < 0 for weight in weights.values()):
-            raise ValueError("Constraint weights must be finite and nonnegative.")
-        self.constraint_weights = {name: float(weight) for name, weight in weights.items()}
-        self._initialize_optimizer()
-
-    def compute_constraint_weights(self) -> dict[str, float]:
-        """Choose penalty coefficients for the next subproblem.
-
-        Override this strategy hook to implement adaptive coefficients. The
-        objectives, constraints, geometry and step limits are initialized
-        before this call. ``closure(x, return_list=True)`` returns raw term
-        values for strategy evaluation. Returned keys are the names in
-        ``constraints_funcs``. Coefficients stay fixed during the inner solve.
-        """
-        return {
-            name: CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DEFAULT_WEIGHT
-            for name in self.constraints_funcs
-        }
-
-    def initialize(self) -> None:
-        """Register this updater's terms, then size the Part's step lengths.
-
-        The Part is already bound (the updater manager resolves it and calls
-        :meth:`bind_target` before this runs), so a wrong name or a Part without
-        surfaces fails before the optimization loop.  Objective functions and
-        constraints were registered when this updater was added to its
-        :class:`Updaters` collection.
-        """
-        surfaces = self.surface_interfaces
-        if len(self._max_step_length) == 0:
-            for i in range(len(surfaces)):
-                self._max_step_length.append(
-                    torch.ones(surfaces[i].num_variables // 3)
-                    * self._max_step_length_max
-                    * CONSTANT.KERNEL.SHAPE_UPDATE.INITIAL_STEP_LENGTH_RATIO
-                )
-
-    def _initialize_objectives(
-        self,
-        gradient: torch.Tensor,
-        r0: list[torch.Tensor],
-        rdu0: list[torch.Tensor],
-        rdu20: list[torch.Tensor],
-    ) -> None:
         for obj_func in self.obj_funcs.values():
             obj_func.initialize(
                 gradient=gradient,
@@ -238,12 +174,7 @@ class UpdaterBoundaryPart(BaseUpdater):
                 part_interface=self.part,
             )
 
-    def _initialize_constraints(
-        self,
-        r0: list[torch.Tensor],
-        rdu0: list[torch.Tensor],
-        rdu20: list[torch.Tensor],
-    ) -> None:
+        # initialize the constraint functions
         for constraints in self.constraints_funcs.values():
             constraints.initialize(
                 r0=r0,
@@ -254,6 +185,26 @@ class UpdaterBoundaryPart(BaseUpdater):
                 part_interface=self.part,
             )
 
+        self._prepare_constraint_weights(gradient)
+        self._initialize_optimizer()
+
+    def initialize(self) -> None:
+        """Register this updater's terms, then size the Part's step lengths.
+
+        The Part is already bound (the updater manager resolves it and calls
+        :meth:`bind_target` before this runs), so a wrong name or a Part without
+        surfaces fails before the optimization loop.  Objective functions and
+        constraints were registered when this updater was added to its
+        :class:`Updaters` collection.
+        """
+        self._max_step_length = self._prepare_step_lengths(
+            [
+                surface.get_surface_parameters().reshape(-1, 3)
+                for surface in self.surface_interfaces
+            ],
+            self._max_step_length_max,
+        )
+
     def _initialize_optimizer(self) -> None:
         self.optimizer = UpdaterBoundaryPart.Optimizer.LBFGS(
             closure=self.closure,
@@ -262,62 +213,17 @@ class UpdaterBoundaryPart(BaseUpdater):
         )
         self.iteration_total = 0
 
-    def _update_step_length(self, delta_control_points: list[np.ndarray]) -> None:
-
-        surfaces = self.surface_interfaces
-        # update the step length based on the number of variables
-        if self._delta_control_points_previous is not None:
-            for i in range(len(self._max_step_length)):
-                if not surfaces[i].is_updatable or not surfaces[i].num_variables:
-                    continue
-                # check if the mesh has improved
-                if (
-                    self._delta_control_points_previous[i].shape
-                    != surfaces[i].control_points.shape
-                ):
-                    self._max_step_length[i] = (
-                        self._max_step_length[i]
-                        .mean()
-                        .repeat(surfaces[i].num_variables // 3)
-                    )
-                else:
-                    delta_difference: np.ndarray = (
-                        np.sum(
-                            self._delta_control_points_previous[i]
-                            * delta_control_points[i],
-                            axis=-1,
-                        )
-                        / (np.linalg.norm(delta_control_points[i], axis=-1))
-                        / np.linalg.norm(
-                            self._delta_control_points_previous[i], axis=-1
-                        )
-                    )
-                    delta_difference[np.isnan(delta_difference)] = 0.0
-
-                    direction_threshold = CONSTANT.KERNEL.SHAPE_UPDATE.DIRECTION_CHANGE_THRESHOLD
-                    index_increase = (delta_difference > direction_threshold).flatten()
-                    index_decrease = (delta_difference <= direction_threshold).flatten()
-                    self._max_step_length[i][index_increase] = torch.clamp(
-                        self._max_step_length[i][index_increase]
-                        * self._step_length_increase,
-                        max=self._max_step_length_max,
-                    )
-                    self._max_step_length[i][index_decrease] = torch.clamp(
-                        self._max_step_length[i][index_decrease]
-                        * self._step_length_decay,
-                        min=self._max_step_length_max * self._step_length_min_ratio,
-                    )
     def closure(
-        self, x: torch.Tensor, return_list: bool = False,
+        self,
+        x: torch.Tensor,
+        return_list: bool = False,
     ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
         """Evaluate the weighted total or the two lists of unweighted terms."""
         # save the current point
         x0 = self.part.get_parameters()
 
         # Set the design variables to the current point
-        self.part.update_variables(
-            x_change=x, max_step_length=self._max_step_length
-        )
+        self.part.update_variables(x_change=x, max_step_length=self._max_step_length)
 
         # Calculate the objective function value
         r, rdu, rdu2 = self.part.get_geometry_values()
@@ -335,17 +241,17 @@ class UpdaterBoundaryPart(BaseUpdater):
 
         if return_list:
             return obj_value, constraints_value
-        return sum(obj_value) + sum(
-            self.constraint_weights[name] * value
-            for name, value in zip(self.constraints_funcs, constraints_value)
-        )
+        return sum(obj_value) + sum(self._weighted_constraints(constraints_value))
 
     def update(self) -> None:
         """
         Update the parameters of the optimization process.
         """
 
-        if not any(surface.is_updatable and surface.num_variables for surface in self.surface_interfaces):
+        if not any(
+            surface.is_updatable and surface.num_variables
+            for surface in self.surface_interfaces
+        ):
             return
 
         # update the objective function
@@ -381,10 +287,7 @@ class UpdaterBoundaryPart(BaseUpdater):
                     obj_values, raw_constraints = self.closure(
                         x=variables, return_list=True
                     )
-                    constraints_values = [
-                        self.constraint_weights[name] * value
-                        for name, value in zip(self.constraints_funcs, raw_constraints)
-                    ]
+                    constraints_values = self._weighted_constraints(raw_constraints)
 
                 # print the objective function value
                 # Print a pretty table showing objective values and iteration progress
@@ -413,27 +316,8 @@ class UpdaterBoundaryPart(BaseUpdater):
         return variables.detach().clone()
 
     def update_variables(self, dx: torch.Tensor) -> None:
-        """
-        Update the variables of the surfaces.
-        """
-        control_points0 = self.part.get_control_points_list()
-        control_points0 = [cp.detach().clone().cpu().numpy() for cp in control_points0]
-
-        self.part.update_variables(
-            x_change=dx, max_step_length=self._max_step_length
-        )
-
-        control_points_new = self.part.get_control_points_list()
-        control_points_new = [
-            cp.detach().clone().cpu().numpy() for cp in control_points_new
-        ]
-        delta_control_points = [
-            control_points_new[i] - control_points0[i]
-            for i in range(len(control_points0))
-        ]
-        self._update_step_length(delta_control_points=delta_control_points)
-
-        self._delta_control_points_previous = [cp.copy() for cp in delta_control_points]
+        """Commit the update using the subproblem's frozen step limits."""
+        self.part.update_variables(x_change=dx, max_step_length=self._max_step_length)
 
     def save(self, foldpath, iteration):
         step_length_numpy = [

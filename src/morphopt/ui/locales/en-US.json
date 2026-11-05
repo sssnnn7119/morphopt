@@ -1291,7 +1291,7 @@
   "ui.workspace_objective.cases_cleared": "Case references have been cleared. Changing the load inputs, upper limits, or Gauss order automatically generates new boundary Gauss-point cases.",
   "ui.load_cases.workspace_link": "Objective {index} · Workspace (configure)",
   "ui.widgets.updater_editor.max_step_length": "Maximum update step length",
-  "ui.widgets.updater_editor.max_step_length_help": "Maximum design-update step length. The actual step adapts to the update direction. Enter a positive number or a custom constant name.",
+  "ui.widgets.updater_editor.max_step_length_help": "Update limit per control point or material variable. Fixed by default and independent of update direction. Enter a positive number or a custom constant name.",
   "ui.surface_export.overwrite": "Directory “{value_0}” already exists. Overwrite export files with the same names?",
   "ui.surface_export.completed": "Exported {count} surfaces from iteration {iteration}.\nDirectory: {path}",
   "ui.surface_export.current.title": "Export current view…",

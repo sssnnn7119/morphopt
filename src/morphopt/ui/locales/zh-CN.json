@@ -1291,7 +1291,7 @@
   "ui.workspace_objective.cases_cleared": "工况引用已清空。修改载荷输入、上限或高斯点数后，将自动生成新的边界高斯点工况。",
   "ui.load_cases.workspace_link": "目标 {index} · 工作空间（点击配置）",
   "ui.widgets.updater_editor.max_step_length": "最大更新步长",
-  "ui.widgets.updater_editor.max_step_length_help": "设计更新的最大步长，实际步长按更新方向自适应调整。填写正数或自定义常量名。",
+  "ui.widgets.updater_editor.max_step_length_help": "逐控制点或材料变量的更新步长上限。默认固定，不随更新方向改变。填写正数或自定义常量名。",
   "ui.surface_export.overwrite": "目录“{value_0}”已存在。是否覆盖其中同名的导出文件？",
   "ui.surface_export.completed": "已导出第 {iteration} 轮的 {count} 个曲面。\n目录：{path}",
   "ui.surface_export.current.title": "导出当前视图…",

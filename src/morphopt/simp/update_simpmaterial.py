@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import numpy as np
 import torch
@@ -8,6 +9,7 @@ from tabulate import tabulate
 
 from ..constants import CONSTANT
 from ..optcore import BaseUpdater
+from ..optcore.strategies import ConstraintWeightStrategy, StepLengthStrategy
 from .simpmaterial import SIMP_BSPFieldMaterials
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,9 @@ class UpdaterSIMPMaterial(BaseUpdater):
         interface_name: str = None,
         max_step_iter: int = CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
         max_step_length: float = CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
+        *,
+        step_length_strategy: StepLengthStrategy | None = None,
+        constraint_weight_strategy: ConstraintWeightStrategy | None = None,
     ) -> None:
         """
         Initialize the Updater class with the given parameters.
@@ -69,18 +74,19 @@ class UpdaterSIMPMaterial(BaseUpdater):
                 the same).
             max_step_iter (int): The maximum number of iterations for the sub-optimization process.
             max_step_length (float): The maximum step length for each material variable.
+            step_length_strategy: Policy generating per-variable step limits.
+            constraint_weight_strategy: Policy selecting named penalty coefficients.
         """
 
-        super().__init__(interface_name)
+        super().__init__(
+            interface_name,
+            step_length_strategy=step_length_strategy,
+            constraint_weight_strategy=constraint_weight_strategy,
+        )
 
         self.max_step_iter = max_step_iter
         """
         The maximum number of iterations for the sub-optimization process.
-        """
-
-        self._delta_control_points_previous: np.ndarray | None = None
-        """
-        The previous change in material control points.
         """
 
         self._max_step_length_max: float = max_step_length
@@ -93,24 +99,9 @@ class UpdaterSIMPMaterial(BaseUpdater):
         The current maximum step length for each material variable.
         """
 
-        self._step_length_min_ratio: float = CONSTANT.KERNEL.SIMP_UPDATE.MIN_STEP_LENGTH_RATIO
-        """
-        The minimum ratio for the step length relative to the maximum step length.
-        """
-
-        self._step_length_decay: float = CONSTANT.KERNEL.SIMP_UPDATE.STEP_LENGTH_DECAY
-        """
-        The decay factor for the step length relative to the maximum step length.
-        """
-
-        self._step_length_increase: float = CONSTANT.KERNEL.SIMP_UPDATE.STEP_LENGTH_INCREASE
-
         self._low_step_length_tolerance: float = CONSTANT.KERNEL.SIMP_UPDATE.LOW_STEP_LENGTH_TOLERANCE
         self._low_step_length_iteration_limit: int = CONSTANT.KERNEL.SIMP_UPDATE.LOW_STEP_LENGTH_ITERATION_LIMIT
         self._status_log_interval: int = CONSTANT.KERNEL.SIMP_UPDATE.STATUS_LOG_INTERVAL
-        """
-        The increase factor for the step length relative to the maximum step length.
-        """
 
         self.if_update: bool = True
         """
@@ -123,14 +114,7 @@ class UpdaterSIMPMaterial(BaseUpdater):
     @property
     def material(self) -> SIMP_BSPFieldMaterials:
         """The material interface this updater updates."""
-        if self._target is None:
-            raise ValueError(
-                f"{type(self).__name__} has no material interface yet: the "
-                "updater manager hands it over while initializing, so give "
-                "the updater the name used in "
-                "add_material_updater(..., name=...)."
-            )
-        return self._target
+        return cast(SIMP_BSPFieldMaterials, self.target)
 
     @property
     def num_variables(self) -> int:
@@ -151,6 +135,11 @@ class UpdaterSIMPMaterial(BaseUpdater):
             value.detach().clone() for value in self.material.get_parameters()
         ]
         cps0 = torch.cat([value.flatten() for value in params0])
+        self._max_step_length = self._prepare_step_lengths(
+            [cps0.reshape(-1, 1)], self._max_step_length_max, gradient,
+        )[0]
+        if not self.if_update:
+            self._max_step_length.zero_()
 
         # initialize objective functions with material variables only
         self._initialize_objectives(gradient=gradient.flatten(), cps0=cps0)
@@ -158,23 +147,9 @@ class UpdaterSIMPMaterial(BaseUpdater):
         # initialize the constraint functions
         self._initialize_constraints(cps0=cps0, sensitivity=gradient.flatten())
 
+        self._prepare_constraint_weights(gradient)
         # initialize the optimizer
         self._initialize_optimizer()
-
-        # initialize the step length
-        num_vars = self.material.get_design_values().numel()
-        if self._max_step_length is None or self._max_step_length.numel() != num_vars:
-            if self._max_step_length is None:
-                self._max_step_length = (
-                    torch.ones(num_vars, device=torch.get_default_device())
-                    * self._max_step_length_max
-                    * CONSTANT.KERNEL.SIMP_UPDATE.INITIAL_STEP_LENGTH_RATIO
-                )
-            else:
-                self._max_step_length = self._max_step_length.mean().repeat(num_vars)
-
-        # save the sensitivity for the next iteration
-        self.sensitivity_previous = gradient.flatten()
 
     def initialize(self) -> None:
         """Register this updater's terms, then size the step lengths.
@@ -185,18 +160,12 @@ class UpdaterSIMPMaterial(BaseUpdater):
         functions and constraints were registered when this updater was added
         to its :class:`Updaters` collection.
         """
-        num_vars = self.material.get_design_values().numel()
-        if self._max_step_length is None:
-            self._max_step_length = (
-                torch.ones(num_vars, device=torch.get_default_device())
-                * self._max_step_length_max
-                * CONSTANT.KERNEL.SIMP_UPDATE.INITIAL_STEP_LENGTH_RATIO
-            )
-        elif self._max_step_length.numel() != num_vars:
-            self._max_step_length = self._max_step_length.mean().repeat(num_vars)
-
+        self._max_step_length = self._prepare_step_lengths(
+            [self.material.get_design_values().reshape(-1, 1)],
+            self._max_step_length_max,
+        )[0]
         if not self.if_update:
-            self._max_step_length *= 0.0
+            self._max_step_length.zero_()
 
     def _initialize_objectives(
         self, gradient: torch.Tensor, cps0: torch.Tensor
@@ -208,18 +177,6 @@ class UpdaterSIMPMaterial(BaseUpdater):
                 material_params=self.material,
                 step_length=self._max_step_length,
             )
-
-    def _get_total_sensitivity(self) -> torch.Tensor:
-        sensitivity_all = []
-        for obj_func in self.obj_funcs.values():
-            sensitivity_all.append(obj_func.sensitivity)
-        if len(sensitivity_all) == 0:
-            return torch.zeros_like(self.material.get_design_values())
-
-        sensitivity = sensitivity_all[0].clone()
-        for obj_ind in range(1, len(sensitivity_all)):
-            sensitivity = sensitivity + sensitivity_all[obj_ind]
-        return sensitivity
 
     def _initialize_constraints(
         self, cps0: torch.Tensor, sensitivity: torch.Tensor
@@ -236,33 +193,6 @@ class UpdaterSIMPMaterial(BaseUpdater):
             tol_error=CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
         )
         self.iteration_total = 0
-
-    def _update_step_length(self, delta_control_points: np.ndarray) -> None:
-
-        # update the step length based on the number of variables
-        if self._delta_control_points_previous is not None:
-            if self._delta_control_points_previous.shape != delta_control_points.shape:
-                pass
-            else:
-                delta_difference = (
-                    delta_control_points * self._delta_control_points_previous
-                ).flatten()
-
-                idx_positive = delta_difference > 0
-                idx_negative = delta_difference < 0
-
-                self._max_step_length[idx_positive] = torch.clamp(
-                    self._max_step_length[idx_positive] * self._step_length_increase,
-                    max=self._max_step_length_max,
-                )
-
-                self._max_step_length[idx_negative] = torch.clamp(
-                    self._max_step_length[idx_negative] * self._step_length_decay,
-                    min=self._max_step_length_max * self._step_length_min_ratio,
-                )
-
-        if not self.if_update:
-            self._max_step_length *= 0.0
 
     def closure(
         self,
@@ -309,7 +239,7 @@ class UpdaterSIMPMaterial(BaseUpdater):
         if return_list:
             return obj_value, constraints_value
         else:
-            return sum(obj_value) + sum(constraints_value)
+            return sum(obj_value) + sum(self._weighted_constraints(constraints_value))
 
     def update(self) -> torch.Tensor:
         """
@@ -346,9 +276,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
             # get current objective function value
             if self.iteration_total % self._status_log_interval == 0:
                 with torch.no_grad():
-                    obj_values, constraints_values = self.closure(
+                    obj_values, raw_constraints = self.closure(
                         x=variables, return_list=True
                     )
+                    constraints_values = self._weighted_constraints(raw_constraints)
 
                 # print the objective function value
                 # Print a pretty table showing objective values and iteration progress
@@ -364,7 +295,7 @@ class UpdaterSIMPMaterial(BaseUpdater):
                 )
                 data = [
                     [f"{iteration + 1}/{self.max_step_iter}"]
-                    + [f"{sum(obj_values).item():.6e}"]
+                    + [f"{(sum(obj_values) + sum(constraints_values)).item():.6e}"]
                     + [f"{val.item():.6e}" for val in obj_values]
                     + [f"{val.item():.6e}" for val in constraints_values]
                 ]
@@ -376,24 +307,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
         return variables.detach().clone()
 
     def update_variables(self, dx: torch.Tensor) -> None:
-        """
-        Update the variables of the materials.
-        """
-        design_values0 = (
-            self.material.get_design_values().detach().clone().cpu().numpy()
-        )
-
+        """Commit the update using the subproblem's frozen step limits."""
         self.material.update_variables(
             x_change=dx, max_step_length=self._max_step_length
         )
-
-        design_values_new = (
-            self.material.get_design_values().detach().clone().cpu().numpy()
-        )
-        delta_design_values = design_values_new - design_values0
-        self._update_step_length(delta_control_points=delta_design_values)
-
-        self._delta_control_points_previous = delta_design_values.copy()
 
     def save(self, foldpath: str, iteration: int) -> None:
         step_length_numpy = self._max_step_length.detach().cpu().numpy()

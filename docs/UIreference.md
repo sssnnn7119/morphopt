@@ -1261,7 +1261,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | `constraints` | 距离、包络、平滑等几何项 | 体积分数和控制量上下界等 |
 | `symmetry_constraints` | 对指定曲面建立镜像、旋转、关联或自定义关系 | 不在材料更新器中使用 |
 
-“最大更新步长”对应 `max_step_length`，可填写正数或自定义常量名。默认值分别来自 `CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH` 和 `CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH`。该字段随优化器配置保存，生成脚本时显式传入构造函数；实际步长由更新器在该上限内自适应调整。
+“最大更新步长”对应 `max_step_length`，可填写正数或自定义常量名。默认值分别来自 `CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH` 和 `CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH`。该字段随优化器配置保存，生成脚本时显式传入构造函数。默认 `FixedStepLength` 保持该上限固定，实际改变量通过 `atan` 映射限制，不根据更新方向自适应调整。步长与罚项权重的其他策略可通过更新器自定义类构造方法传入，接口见[脚本模块与接口参考](scriptreference.md#section-几何更新器)。
 
 `max_step_iter=50` 表示每轮更新子问题的内部迭代上限为 50。外层每轮执行 FE 求解和目标梯度计算，内层根据梯度与约束求解更新子问题。该参数不定义外层优化总轮数，内部更新迭代、外层轮次及 FE 求解迭代分别记录。
 

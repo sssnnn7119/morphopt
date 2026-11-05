@@ -26,6 +26,7 @@
 |---|---|
 | [`optcore/objfunc.py`](../../src/morphopt/optcore/objfunc.py) | 多工况目标及伴随/自动微分灵敏度 |
 | [`optcore/updaters.py`](../../src/morphopt/optcore/updaters.py) | 更新器注册、目标解析、梯度切片、公共优化算法及 `QuadraticHistory` 曲率历史 |
+| [`optcore/strategies.py`](../../src/morphopt/optcore/strategies.py) | 可组合的步长与罚项权重策略接口及默认实现 |
 | [`shapeopt/boundary_part.py`](../../src/morphopt/shapeopt/boundary_part.py)、[`surfaces/`](../../src/morphopt/shapeopt/surfaces) | 边界部件与曲面设计变量 |
 | [`optcore/modelparams/parts/cad_part.py`](../../src/morphopt/optcore/modelparams/parts/cad_part.py) | 公共剖分流程、几何载入、壳体查询、面身份与 CAD 转换 |
 | [`shapeopt/surfaces/brep_surface.py`](../../src/morphopt/shapeopt/surfaces/brep_surface.py) | BREP 边界、STEP 资产与面名称映射 |
@@ -72,6 +73,8 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 子优化器构造时只保存算法参数和目标名。注册时调用 `define_objective()`；管理器初始化时解析目标，再调用子优化器初始化。子优化器绑定后保存 `self.part` 或 `self.material`，不另持整个参数集合。
 
+`BaseUpdater` 直接继承 `ProtocalInitializable` 的生命周期钩子，不重复声明仅抛出异常的 `initialize()` 和 `reinitialize()`。具体更新器分别实现绑定后的初始化与接收原始梯度的子问题重建。`part` 和 `material` 通过公共 `target` 属性访问目标，绑定状态仅在该公共入口检查。`closure()`、`update()` 和 `update_variables()` 是更新器专用算法接口，由 `BaseUpdater` 保留。
+
 同一子类可创建多个独立对象，分别绑定不同 Part 或材料。注册方法、显式目标、变量切片与状态目录应共同指向同一设计接口。
 
 <a id="section-局部子问题与写回"></a>
@@ -85,10 +88,13 @@ Params.obtain_design_sensitivity_vars(assembly)
 | `max_step_iter` | 单次设计更新内部迭代上限 |
 | `max_step_length` | 更新步长配置 |
 | 更新范围 | 几何直接读取曲面的 `is_updatable`；材料更新器使用整体开关 `if_update` |
-| 前次改变量与当前步长 | 局部算法的迭代状态 |
+| `step_length_strategy` | 生成当前子问题的逐控制点或逐材料变量步长上限 |
+| `constraint_weight_strategy` | 选择当前子问题的具名罚项系数 |
 | `save/load()` | 按目标接口保存和恢复局部状态 |
 
 局部更新的设备上下文覆盖目标、约束及其缓存 Tensor，完成后恢复相应设备状态。几何与材料子优化器分别保存到 `geometryupdater/<接口>/` 和 `materialupdater/<接口>/`，不共享一份步长文件。
+
+步长与罚项权重采用组合方式注入，具体策略集中在 `optcore/strategies.py`。`FixedStepLength` 直接采用配置的最大步长；`ConstantConstraintWeights` 默认系数为 1。步长策略在初始化和每轮外层迭代开始时求值，权重策略在该轮目标与约束完成初始化后求值。返回值在子优化期间固定。原有基于相邻改变量夹角或符号的增减规则、前次改变量缓存及对应 NumPy 往返转换已移除。新增策略继承对应接口并实现 `__call__`，通过更新器构造参数选用，不在具体更新器中添加策略分支。
 
 <a id="shape"></a>
 

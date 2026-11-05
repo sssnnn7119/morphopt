@@ -49,7 +49,6 @@ class ShapeDerivative(BaseObjective):
             raise ValueError("ShapeDerivative requires the updater's surfaces.")
         self.surfaces = list(surfaces)
         sflist = self.surfaces
-        interpolate_points = [value.cpu().numpy() for value in r0]
 
         self._cp0 = []
         ptidx = 0
@@ -64,12 +63,6 @@ class ShapeDerivative(BaseObjective):
             )
             ptidx += cp0_sf.numel()
 
-        self.sensitivity = self._sensitivity_interpolation(
-            Ldot=gradient.reshape([-1, 3]),
-            points_request=torch.cat(self._cp0, dim=0).reshape([-1, 3]),
-            interpolated_points=interpolate_points,
-        )
-
     def show_sensitivity(self, ind: int) -> None:
         """
         Show the shape sensitivity
@@ -80,8 +73,8 @@ class ShapeDerivative(BaseObjective):
         plotter = pv.Plotter(window_size=(1000, 1000))
         plotter.set_background("white")
 
-        r = self._r0[ind].detach().cpu().numpy()
-        n = self.sensitivity[ind].detach().cpu().numpy()
+        r = self._cp0[ind].detach().cpu().numpy()
+        n = self.gradient[ind].detach().cpu().numpy()
 
         # r and n are [N, 3]
         points = r
@@ -140,8 +133,7 @@ class ShapeDerivative(BaseObjective):
         for i in range(len(self.surfaces)):
             if not self.surfaces[i].is_updatable:
                 continue
-            # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
-            # Compute inner product: sum over all points and dimensions
+            # Use the raw gradient in physical control-point coordinates.
             loss_objective += (
                 (
                     self.surfaces[i].get_surface_parameters().reshape(-1, 3)

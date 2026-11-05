@@ -97,7 +97,7 @@ class BaseObjective(ProtocalSavable):
         """
         Initialize the objective function.
         """
-        self.sensitivity: list[torch.Tensor] = []
+        self.gradient: list[torch.Tensor] = []
         """
         Sensitivity of the shape derivative with respect to the contact forces.
         """

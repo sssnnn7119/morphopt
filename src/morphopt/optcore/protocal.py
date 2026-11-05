@@ -25,8 +25,8 @@ class ProtocalInitializable(ABC):
     def initialize(self, *args: object, **kwargs: object) -> None:
         """Initialize the object before the optimization starts."""
 
-    def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
-        """Refresh the object at the beginning of an optimization iteration."""
+    def reinitialize(self, *args: object, **kwargs: object) -> None:
+        """Refresh runtime state using the inputs required by the concrete object."""
 
 
 class ProtocalSavable(ABC):

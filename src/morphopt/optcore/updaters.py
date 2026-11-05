@@ -1,5 +1,6 @@
 import os
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TypeAlias
 
@@ -13,6 +14,12 @@ from .modelparams import GeometryParams, MaterialsParams, Params
 from .modelparams.materials.base_material import BaseMaterial
 from .modelparams.parts.base_part import BasePart
 from .protocal import ProtocalInitializable, ProtocalSavable
+from .strategies import (
+    ConstantConstraintWeights,
+    ConstraintWeightStrategy,
+    FixedStepLength,
+    StepLengthStrategy,
+)
 
 UpdaterCollection: TypeAlias = GeometryParams | MaterialsParams
 """Collections from which :class:`Updaters` resolves a target."""
@@ -254,7 +261,10 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
     registered, before initialization resolves the target interface.
 
     The constructor stays empty of model knowledge.  Runtime initialization is
-    handled separately after the target has been resolved.
+    handled separately after the target has been resolved. Lifecycle hooks
+    come from ``ProtocalInitializable``: concrete updaters implement
+    ``initialize()`` for the bound target and ``reinitialize(gradient)`` for
+    each new subproblem.
     """
 
     update_kind: str = ""
@@ -432,7 +442,13 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
 
                 return alpha, dk, gk_new
 
-    def __init__(self, interface_name: str | None = None) -> None:
+    def __init__(
+        self,
+        interface_name: str | None = None,
+        *,
+        step_length_strategy: StepLengthStrategy | None = None,
+        constraint_weight_strategy: ConstraintWeightStrategy | None = None,
+    ) -> None:
         """
         Initialize the BaseUpdater.
 
@@ -454,10 +470,52 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
         self.constraints_funcs: dict[str, object] = {}
         """Constraints registered by this updater."""
 
+        self.step_length_strategy = (
+            FixedStepLength() if step_length_strategy is None else step_length_strategy
+        )
+        self.constraint_weight_strategy = (
+            ConstantConstraintWeights()
+            if constraint_weight_strategy is None else constraint_weight_strategy
+        )
+        self.constraint_weights: dict[str, float] = {}
+
         self.optimizer: BaseUpdater.Optimizer.BaseOpt = None
         """The optimization algorithm used to update the design variables.
         This should be set to an instance of a subclass of Optimizer.BaseOpt.
         """
+
+    def _prepare_step_lengths(
+        self,
+        parameters: Sequence[torch.Tensor],
+        maximum: float,
+        gradient: torch.Tensor | None = None,
+    ) -> list[torch.Tensor]:
+        """Evaluate the selected policy and freeze its per-block limits."""
+        steps = self.step_length_strategy(self, parameters, maximum, gradient)
+        if len(steps) != len(parameters):
+            raise ValueError("Step lengths must match the parameter blocks.")
+        for step, parameter in zip(steps, parameters):
+            if step.shape != (len(parameter),):
+                raise ValueError("Step lengths must contain one value per parameter row.")
+            if not torch.isfinite(step).all() or (step < 0).any():
+                raise ValueError("Step lengths must be finite and nonnegative.")
+        return [step.detach().clone() for step in steps]
+
+    def _prepare_constraint_weights(self, gradient: torch.Tensor) -> None:
+        """Evaluate the selected policy once, after initializing all terms."""
+        weights = self.constraint_weight_strategy(self, gradient)
+        if weights.keys() != self.constraints_funcs.keys():
+            raise ValueError("Constraint weights must match the registered constraint names.")
+        if any(not math.isfinite(weight) or weight < 0 for weight in weights.values()):
+            raise ValueError("Constraint weights must be finite and nonnegative.")
+        self.constraint_weights = {name: float(weight) for name, weight in weights.items()}
+
+    def _weighted_constraints(self, values: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Weighted penalty contributions shared by loss evaluation and logging."""
+        return [
+            self.constraint_weights[name] * value
+            for name, value in zip(self.constraints_funcs, values, strict=True)
+        ]
 
     def define_objective(self) -> None:
         """Register this updater's objective functions and constraints.
@@ -489,21 +547,6 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
     def add_constraints(self, obj_func: object, name: str | None = None) -> None:
         """Register one constraint function for this updater."""
         self._add_named_function(self.constraints_funcs, obj_func, name)
-
-    def reinitialize(self, gradient: torch.Tensor) -> None:
-        """Rebuild the updater's subproblem from one gradient slice."""
-        raise NotImplementedError("This method should be overridden by subclasses.")
-
-    def initialize(self) -> None:
-        """
-        Initialize the updater.
-
-        Called by :class:`Updaters` right after :meth:`bind_target`, with the
-        updater's own interface already bound.  A subclass implements its
-        runtime initialization here; objective functions and constraints were
-        already registered by :meth:`Updaters.add_updater`.
-        """
-        raise NotImplementedError("This method should be overridden by subclasses.")
 
     def closure(self, x: torch.Tensor, return_list: bool = False) -> torch.Tensor:
         """

@@ -1096,11 +1096,6 @@ class _Constants:
         class SHAPE_UPDATE:
             MAX_STEP_ITERATIONS = 100
             MAX_STEP_LENGTH = 0.5
-            INITIAL_STEP_LENGTH_RATIO = 0.5
-            DIRECTION_CHANGE_THRESHOLD = -0.5
-            MIN_STEP_LENGTH_RATIO = 0.1
-            STEP_LENGTH_DECAY = 0.5
-            STEP_LENGTH_INCREASE = 1.5
             LOW_STEP_LENGTH_TOLERANCE = 1e-10
             LOW_STEP_LENGTH_ITERATION_LIMIT = 10
             STATUS_LOG_INTERVAL = 10
@@ -1110,10 +1105,6 @@ class _Constants:
         class SIMP_UPDATE:
             MAX_STEP_ITERATIONS = 50
             MAX_STEP_LENGTH = 1.0
-            INITIAL_STEP_LENGTH_RATIO = 0.5
-            MIN_STEP_LENGTH_RATIO = 0.1
-            STEP_LENGTH_DECAY = 0.5
-            STEP_LENGTH_INCREASE = 1.5
             LOW_STEP_LENGTH_TOLERANCE = 1e-10
             LOW_STEP_LENGTH_ITERATION_LIMIT = 10
             STATUS_LOG_INTERVAL = 10
