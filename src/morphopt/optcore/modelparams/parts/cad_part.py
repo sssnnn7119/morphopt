@@ -391,7 +391,6 @@ class CADMeshingMixin:
             path = directory / f"surface_{index}.stp"
             self.export_shell_step(operations, face_indices, path)
             surface = BREPSurface(path)
-            surface.flip = index != 0
             boundary.add_surface_interface(surface)
         boundary.initialize()
         return boundary

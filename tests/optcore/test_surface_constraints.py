@@ -6,6 +6,8 @@ import pytest
 import torch
 
 from morphopt import BoundaryPart, UpdaterBoundaryPart
+from morphopt.shapeopt import strategies
+from morphopt.shapeopt.surfaces.base_surface import BaseSurface
 from morphopt.shapeopt.surfaces.bsp_surface import BspSurface
 from morphopt.shapeopt.surfaces.cpgeo_surface import CPGEOSurface
 
@@ -20,8 +22,41 @@ def double_precision():
 
 def cylinder(factory, radius=2.0):
     return factory.initialize_cylinder(
-        r0=radius, length=4.0, seed_size=1.0, flip=False,
+        r0=radius, length=4.0, seed_size=1.0,
     )
+
+
+@pytest.mark.parametrize("factory", [BspSurface, CPGEOSurface])
+def test_boundary_order_owns_surface_orientation(factory):
+    surface = cylinder(factory)
+    surface.initialize()
+    uv = (
+        torch.as_tensor(surface.model.reference_to_curvilinear(surface.model._knots[[20, 40]]))
+        if factory is CPGEOSurface else torch.tensor([[0.2, 0.4], [0.6, 0.7]])
+    )
+    outer_normals = surface.get_normals(uv)
+    torch.testing.assert_close(outer_normals.norm(dim=1), torch.ones(2))
+    part = BoundaryPart(part_name="body")
+    part.add_surface_interface(BaseSurface())
+    part.add_surface_interface(surface)
+    assert surface.flip is True
+    torch.testing.assert_close(surface.get_normals(uv), -outer_normals)
+    with pytest.raises(AttributeError):
+        surface.flip = False
+    # Reinitializing a reordered Part derives orientation from the new order.
+    part.surface_interfaces().reverse()
+    part.initialize()
+    assert [surface.flip for surface in part.surface_interfaces()] == [False, True]
+
+
+def test_reinitialize_derives_orientation_after_removing_outer_surface():
+    part = BoundaryPart(part_name="body")
+    for _ in range(3):
+        part.add_surface_interface(BaseSurface())
+    assert [surface.flip for surface in part.surface_interfaces()] == [False, True, True]
+    part.surface_interfaces().pop(0)
+    part.reinitialize(iteration=1)
+    assert [surface.flip for surface in part.surface_interfaces()] == [False, True]
 
 
 @pytest.mark.parametrize("factory", [BspSurface, CPGEOSurface])
@@ -78,7 +113,8 @@ def test_cpgeo_rotation_can_run_inside_torch_func():
     torch.testing.assert_close(gradient[count:], torch.zeros_like(gradient[count:]))
 
 
-def test_shape_update_enforces_relations_and_inner_solver_is_differentiable():
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adaptive):
     part = BoundaryPart(part_name="body")
     source, target = cylinder(BspSurface, 2.0), cylinder(BspSurface, 0.5)
     source.add_constraint(source.mirror("xz"))
@@ -87,7 +123,10 @@ def test_shape_update_enforces_relations_and_inner_solver_is_differentiable():
     part.add_surface_interface(target)
     part.initialize()
     saved = part.get_parameters()
-    updater = UpdaterBoundaryPart(max_step_iter=2, max_step_length=0.05)
+    updater = UpdaterBoundaryPart(
+        max_step_iter=2, max_step_length=0.05,
+        constraint_weight_strategy=strategies.AdaptiveShapeWeights() if adaptive else None,
+    )
     updater.bind_target(part)
     updater.add_objective_function(updater.objectivefuncs.ShapeDerivative())
     updater.add_constraints(updater.objectivefuncs.Fairness())

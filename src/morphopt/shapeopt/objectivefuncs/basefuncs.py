@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...optcore.protocal import ProtocalSavable
+from ..barriers import PolynomialBarrier
 
 if TYPE_CHECKING:
     from ..surfaces import BaseSurface
@@ -15,6 +16,7 @@ class BaseConstraints:
     """Geometric penalties evaluated with reference surface quadrature."""
 
     def __init__(self) -> None:
+        self.barrier_function = PolynomialBarrier()
         self.integration_weights: list[torch.Tensor] = []
         """Reference area weights, fixed throughout one subproblem."""
         self.surfaces: list[BaseSurface] = []
@@ -32,6 +34,7 @@ class BaseConstraints:
         """Bind reference area weights without physical sensitivity scaling."""
         self.integration_weights = [weight.detach().clone() for weight in weights]
         self.surfaces = list(surfaces)
+        self.barrier_function = PolynomialBarrier()
 
     def __call__(
         self,
@@ -55,38 +58,6 @@ class BaseConstraints:
             The value of the objective function.
         """
         raise NotImplementedError("Objective function not implemented.")
-
-    @staticmethod
-    def barrier_function(
-        f: torch.Tensor, f_max: torch.Tensor | float, ratio: float, p: int
-    ):
-        """
-        Apply a barrier function to the objective function.
-
-        Args:
-            f (torch.Tensor): The objective function value.
-            f_max (float or torch.Tensor): The maximum value of the objective function.
-            ratio (float): The ratio for the barrier function.
-            p (float): The exponent for the barrier function.
-
-        Returns:
-            index (torch.Tensor): The indices of the elements that are greater than the barrier.
-            fnew (torch.Tensor): The new objective function value after applying the barrier function.
-
-        """
-        if type(f_max) != torch.Tensor:
-            f_max = torch.tensor(f_max).repeat(f.shape)
-        index = torch.where(f > f_max * ratio)[0]
-
-        if index.numel() > 0:
-            f = f[index]
-            f_max = f_max[index]
-            fnew = ((f - f_max * ratio) / (f_max - f_max * ratio)) ** (p)
-        else:
-            f = f[index]
-            fnew = torch.zeros_like(f)
-        return index, fnew
-
 
 class BaseObjective(ProtocalSavable):
     """

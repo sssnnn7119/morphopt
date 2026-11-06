@@ -1,6 +1,7 @@
 """Construct mutable optimizer configurations from registered node defaults."""
 from ...constants import CONSTANT
 from .registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG, UPDATER_OBJECTIVES, UPDATER_CONSTRAINTS
+from .strategies import strategy_config
 
 def symmetry_constraint_defaults(item_type: str) -> dict:
     """Return defaults for one geometry-symmetry constraint."""
@@ -67,6 +68,8 @@ def geometry_updater_config(
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
+        "step_length_strategy": strategy_config("step_length_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],
@@ -98,6 +101,8 @@ def materials_updater_config(
         "material_name": str(material_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
+        "step_length_strategy": strategy_config("step_length_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
         "if_update": if_update,
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("Sensitivity"),

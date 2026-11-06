@@ -19,6 +19,7 @@ from morphopt.optcore.strategies import (
     StepLengthStrategy,
 )
 from morphopt.shapeopt.boundary_part import BoundaryPart
+from morphopt.shapeopt.strategies import AdaptiveShapeWeights
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
 from morphopt.shapeopt.objectivefuncs.boundarys import MinRadius
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
@@ -201,6 +202,26 @@ def make_shape_updater(
     return updater
 
 
+@pytest.mark.parametrize("base", [UpdaterBoundaryPart, morphopt.UpdaterOffsetBoundaryPart])
+def test_shape_strategies_are_available_through_self_before_initialization(base):
+    class Shape(base):
+        def __init__(self):
+            super().__init__(
+                step_length_strategy=self.strategies.FixedStepLength(),
+                constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(),
+            )
+
+    first, second = Shape(), Shape()
+    assert first.strategies.FixedStepLength is FixedStepLength
+    assert first.strategies.ConstantConstraintWeights is ConstantConstraintWeights
+    assert isinstance(first.step_length_strategy, FixedStepLength)
+    assert isinstance(first.constraint_weight_strategy, AdaptiveShapeWeights)
+    assert first.constraint_weight_strategy is not second.constraint_weight_strategy
+    first.constraint_weight_strategy.state["limit"] = {"weight": 2.0}
+    assert second.constraint_weight_strategy.state == {}
+    assert UpdaterSIMPMaterial.strategies.FixedStepLength is FixedStepLength
+
+
 def test_shape_step_lengths_follow_each_surface_and_control_point():
     part = BoundaryPart()
     first = ControlSurface(torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]))
@@ -362,6 +383,68 @@ def test_fixed_step_lengths_do_not_depend_on_update_direction_or_gradient():
         for step in updater._max_step_length:
             torch.testing.assert_close(step, torch.full_like(step, 0.05))
     assert not hasattr(updater, "_delta_control_points_previous")
+
+
+def test_adaptive_shape_weights_probe_restore_solve_and_restart(tmp_path: Path):
+    strategy = AdaptiveShapeWeights()
+    updater = make_shape_updater(constraint_weight_strategy=strategy)
+    updater.add_constraints(MinRadius(radius=0.5))
+    before = updater.part.get_parameters()
+    gradient = 3 * torch.cat(before)
+    updater.reinitialize(gradient=gradient)
+    for actual, expected in zip(updater.part.get_parameters(), before):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    native = next(iter(updater.obj_funcs.values())).history.gradient
+    torch.testing.assert_close(native, gradient[:3], rtol=0, atol=0)
+    zero = torch.zeros(updater.part.num_variables)
+    penalty_before = updater.closure(zero, return_list=True)[1][0]
+    state = {name: dict(record) for name, record in strategy.state.items()}
+    change = updater.update()
+    assert torch.isfinite(change).all()
+    assert updater.closure(change, return_list=True)[1][0] < penalty_before
+    assert strategy.state == state
+    updater.update_variables(change)
+    manager = Updaters(updaters={"body": updater})
+    manager.save(str(tmp_path), 1)
+    resumed_strategy = AdaptiveShapeWeights()
+    resumed = make_shape_updater(constraint_weight_strategy=resumed_strategy)
+    resumed.add_constraints(MinRadius(radius=0.5))
+    Updaters(updaters={"body": resumed}).load(str(tmp_path), 1)
+    assert resumed_strategy.state == strategy.state
+
+
+def test_shape_update_map_has_the_correct_jacobian_at_zero():
+    updater = make_shape_updater()
+    original = updater.part.get_parameters()
+    surface = updater.surface_interfaces[0]
+
+    def mapped(change):
+        updater.part.set_parameters(original)
+        updater.part.update_variables(change, updater._max_step_length)
+        return surface.get_surface_parameters().flatten()
+
+    zero = torch.zeros(updater.part.num_variables)
+    jacobian = torch.func.jacrev(mapped)(zero)
+    torch.testing.assert_close(jacobian[:, :3], torch.eye(3) * (2 / torch.pi) * 0.05)
+    assert torch.isfinite(torch.func.hessian(lambda change: mapped(change).sum())(zero)).all()
+    torch.testing.assert_close(mapped(zero), original[0])
+    updater.part.set_parameters(original)
+
+
+def test_failed_geometry_probe_restores_the_original_control_points():
+    class InvalidTrial(MinRadius):
+        def __call__(self, r, rdu, rdu2, *args, **kwargs):
+            if r[0][0, 0] != 0.2:
+                raise ValueError("Invalid trial geometry")
+            return super().__call__(r, rdu, rdu2, *args, **kwargs)
+
+    updater = make_shape_updater(constraint_weight_strategy=AdaptiveShapeWeights())
+    updater.add_constraints(InvalidTrial(radius=0.5))
+    before = updater.part.get_parameters()
+    with pytest.raises(ValueError, match="Invalid trial geometry"):
+        updater.reinitialize(gradient=3 * torch.cat(before))
+    for actual, expected in zip(updater.part.get_parameters(), before):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
 def test_step_strategy_gets_native_gradient_and_is_frozen_in_inner_solve():

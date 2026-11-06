@@ -1,0 +1,601 @@
+{
+  "version": 4,
+  "scheme": "shapeopt",
+  "label": "FRONT",
+  "result_folder": "/home/song/mycache/results",
+  "device": "cpu",
+  "updater_device": "cuda:0",
+  "restart_per_iteration": 20,
+  "root": {
+    "kind": "problem",
+    "name": "FRONT",
+    "params": {},
+    "children": [
+      {
+        "kind": "geometry",
+        "name": "Geometry",
+        "params": {},
+        "children": [
+          {
+            "kind": "part",
+            "name": "actuator",
+            "params": {
+              "type": "BoundaryPart",
+              "fea_seed_size": 1.5,
+              "mesh_order": 1,
+              "exterior_surface": "surface_0_All"
+            },
+            "children": [
+              {
+                "kind": "instance",
+                "name": "final_model",
+                "params": {
+                  "translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "surface_0",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": false,
+                  "is_updatable": true,
+                  "r0": 21.0,
+                  "length": 70.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "maxR": 0.1,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 14.0
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "surface_1",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "is_updatable": true,
+                  "r0": 5.0,
+                  "length": 64.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    12.0,
+                    0.0,
+                    3.0
+                  ],
+                  "maxR": 0.1,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 14.0
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "surface_2",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "is_updatable": true,
+                  "r0": 5.0,
+                  "length": 64.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    -6.0,
+                    10.5,
+                    3.0
+                  ],
+                  "maxR": 0.1,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 14.0
+                },
+                "children": []
+              },
+              {
+                "kind": "surface",
+                "name": "surface_3",
+                "params": {
+                  "type": "bsp_cylinder",
+                  "flip": true,
+                  "is_updatable": true,
+                  "r0": 5.0,
+                  "length": 64.0,
+                  "seed_size": 1.0,
+                  "num_U_ratio": 1,
+                  "num_V_ratio": 1,
+                  "degree": 3,
+                  "init_location": [
+                    -6.0,
+                    -10.5,
+                    3.0
+                  ],
+                  "maxR": 0.1,
+                  "maxC": 1.0,
+                  "maxFF": 0.2,
+                  "perturbation_L": 14.0
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "loads",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "fea_component",
+            "name": "bc_base",
+            "params": {
+              "type": "BoundaryCondition",
+              "instance_name": "final_model",
+              "set_nodes_name": "surface_0_Bottom",
+              "index_dof": [
+                0,
+                1,
+                2
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "RP_head",
+            "params": {
+              "type": "ReferencePoint",
+              "rp_location": [
+                0.0,
+                0.0,
+                70.0
+              ]
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "couple_head",
+            "params": {
+              "type": "Couple",
+              "rp_name": "RP_head",
+              "instance_name": "final_model",
+              "set_nodes_name": "surface_0_Head"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "P_s1",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "final_model",
+              "surface_name": "surface_1_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "P_s2",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "final_model",
+              "surface_name": "surface_2_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "P_s3",
+            "params": {
+              "type": "Pressure",
+              "instance_name": "final_model",
+              "surface_name": "surface_3_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "BodyForce",
+            "params": {
+              "type": "Bodyforce",
+              "element_name": "C3D4",
+              "instance_name": "final_model"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "CS_s0",
+            "params": {
+              "type": "ContactSelf",
+              "instance_name": "final_model",
+              "surface_name": "surface_0_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "CS_s1",
+            "params": {
+              "type": "ContactSelf",
+              "instance_name": "final_model",
+              "surface_name": "surface_1_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "CS_s2",
+            "params": {
+              "type": "ContactSelf",
+              "instance_name": "final_model",
+              "surface_name": "surface_2_All"
+            },
+            "children": []
+          },
+          {
+            "kind": "fea_component",
+            "name": "CS_s3",
+            "params": {
+              "type": "ContactSelf",
+              "instance_name": "final_model",
+              "surface_name": "surface_3_All"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "steps",
+        "name": "Load steps",
+        "params": {
+          "generated_by": {},
+          "step_values": {
+            "compression": {
+              "P_s1": [
+                -0.08
+              ],
+              "P_s2": [
+                -0.08
+              ],
+              "P_s3": [
+                -0.08
+              ],
+              "BodyForce": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "extension": {
+              "P_s1": [
+                0.08
+              ],
+              "P_s2": [
+                0.08
+              ],
+              "P_s3": [
+                0.08
+              ],
+              "BodyForce": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "gravity": {
+              "P_s1": [
+                0.08
+              ],
+              "P_s2": [
+                0.08
+              ],
+              "P_s3": [
+                0.08
+              ],
+              "BodyForce": [
+                0.0,
+                9.81e-06,
+                0.0
+              ]
+            },
+            "bending": {
+              "P_s1": [
+                -0.08
+              ],
+              "P_s2": [
+                0.08
+              ],
+              "P_s3": [
+                0.08
+              ],
+              "BodyForce": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          }
+        },
+        "children": []
+      },
+      {
+        "kind": "materials",
+        "name": "",
+        "params": {},
+        "children": [
+          {
+            "kind": "material",
+            "name": "material_1",
+            "params": {
+              "type": "HomogeneousMaterial",
+              "part_name": "actuator",
+              "material_model": "NeoHookeanLnJ",
+              "E": 1.0,
+              "nu": 0.45,
+              "mu": 0.48,
+              "kappa": 4.8,
+              "c10": 0.241,
+              "c01": 0.241,
+              "c1": 0.482,
+              "c2": 0.0,
+              "c3": 0.0,
+              "Jm": 100.0,
+              "N": 10.0,
+              "alpha": [
+                2.0
+              ],
+              "density": 1.08e-09,
+              "elementname": ""
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "kind": "objective",
+        "name": "Objective Function",
+        "params": {
+          "objective_terms": [
+            {
+              "type": "custom_loss",
+              "weight": 1.0,
+              "body": "uz_compression = reference_point_motion(self, \"compression\")[2]\nuz_extension = reference_point_motion(self, \"extension\")[2]\nreturn torch.exp(1.0 - (uz_extension - uz_compression) / 24.0)"
+            },
+            {
+              "type": "custom_loss",
+              "weight": 1.0,
+              "body": "ry = reference_point_motion(self, \"bending\")[4]\nreturn torch.exp(1.0 - ry / 2.1)"
+            },
+            {
+              "type": "custom_loss",
+              "weight": 1.0,
+              "body": "motion = reference_point_motion(self, \"bending\")\nreturn (motion[2] + 70.0) / torch.sin(motion[4])"
+            },
+            {
+              "type": "custom_loss",
+              "weight": 1.0,
+              "body": "return reference_point_motion(self, \"gravity\")[1]"
+            }
+          ],
+          "metrics_terms": [
+            {
+              "type": "custom",
+              "body": "return reference_point_motion(self, \"extension\")[2] - reference_point_motion(self, \"compression\")[2]"
+            },
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_head",
+              "component": "ry",
+              "step_name": "bending"
+            },
+            {
+              "type": "custom",
+              "body": "return reference_point_motion(self, \"bending\")[2] + 70.0"
+            },
+            {
+              "type": "custom",
+              "body": "motion = reference_point_motion(self, \"bending\")\nreturn (motion[2] + 70.0) / torch.sin(motion[4])"
+            },
+            {
+              "type": "displacement",
+              "reference_point_name": "RP_head",
+              "component": "uy",
+              "step_name": "gravity"
+            }
+          ],
+          "jacobian_needed": []
+        },
+        "children": []
+      },
+      {
+        "kind": "solver",
+        "name": "Solver",
+        "params": {
+          "num_process": 2,
+          "process_devices": [
+            "cuda:0",
+            "cuda:1"
+          ],
+          "task_step_list": [
+            [
+              "compression"
+            ],
+            [
+              "extension",
+              "gravity"
+            ],
+            [
+              "bending"
+            ]
+          ]
+        },
+        "children": []
+      },
+      {
+        "kind": "updater",
+        "name": "Updater",
+        "params": {
+          "geometry": [
+            {
+              "max_step_iter": 100,
+              "objective_functions": [
+                {
+                  "type": "ShapeDerivative",
+                  "params": {}
+                }
+              ],
+              "constraints": [
+                {
+                  "type": "Fairness",
+                  "params": {}
+                },
+                {
+                  "type": "Distance",
+                  "params": {
+                    "min_distance": [
+                      [
+                        1.0,
+                        2.5,
+                        2.5,
+                        2.5
+                      ],
+                      [
+                        2.5,
+                        2.0,
+                        2.5,
+                        2.5
+                      ],
+                      [
+                        2.5,
+                        2.5,
+                        2.0,
+                        2.5
+                      ],
+                      [
+                        2.5,
+                        2.5,
+                        2.5,
+                        2.0
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "Cylinder",
+                  "params": {
+                    "radius": 22.5,
+                    "height": 70.0,
+                    "bottom": 0.0
+                  }
+                }
+              ],
+              "symmetry_constraints": [
+                {
+                  "type": "BspMirror",
+                  "surface_index": 1,
+                  "params": {
+                    "plane": "xz",
+                    "offset": 0.0
+                  }
+                },
+                {
+                  "type": "BspRelation",
+                  "surface_index": 1,
+                  "related_surface_index": 2,
+                  "params": {
+                    "pose": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      2.0943951023931953
+                    ]
+                  }
+                },
+                {
+                  "type": "BspRelation",
+                  "surface_index": 1,
+                  "related_surface_index": 3,
+                  "params": {
+                    "pose": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      4.1887902047863905
+                    ]
+                  }
+                },
+                {
+                  "type": "Custom",
+                  "params": {
+                    "code": "outer = self.surface_interface(0)\nnum_v, num_u = outer.model.size\npoints = outer.control_points.reshape(num_v, num_u, 3)\nsector = points[:, :num_u // 3].clone()\npoints = torch.cat([\n    sector,\n    rotate_about_z(sector, -2.0 * math.pi / 3.0),\n    rotate_about_z(sector, -4.0 * math.pi / 3.0),\n], dim=1)\nreflected = points.flip(dims=[1])\nouter.control_points = torch.stack([\n    (points[..., 0] + reflected[..., 0]) / 2.0,\n    (points[..., 1] - reflected[..., 1]) / 2.0,\n    (points[..., 2] + reflected[..., 2]) / 2.0,\n], dim=-1).reshape(-1, 3)"
+                  }
+                }
+              ],
+              "max_step_length": 0.5,
+              "part_name": "actuator"
+            }
+          ],
+          "materials": []
+        },
+        "children": []
+      }
+    ]
+  },
+  "custom_classes": [],
+  "class_bindings": {},
+  "helper_code": "import torch\nimport math\n",
+  "helper_variables": [],
+  "helper_functions": [
+    {
+      "kind": "helper_function",
+      "name": "reference_point_motion",
+      "params": {
+        "parameters": "objective: morphopt.ObjectiveFunction, case_name: str",
+        "body": "objective.set_step(case_name)\nassembly = objective.fe.assembly\ncoordinates = objective.fe_results[case_name].GC.to(assembly.device)\nreference_point = assembly.get_reference_point(\"RP_head\")\nreturn assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)"
+      },
+      "children": []
+    },
+    {
+      "kind": "helper_function",
+      "name": "rotate_about_z",
+      "params": {
+        "parameters": "points: torch.Tensor, angle: float",
+        "body": "cosine, sine = math.cos(angle), math.sin(angle)\nreturn torch.stack([\n    cosine * points[..., 0] - sine * points[..., 1],\n    sine * points[..., 0] + cosine * points[..., 1],\n    points[..., 2],\n], dim=-1)"
+      },
+      "children": []
+    }
+  ]
+}

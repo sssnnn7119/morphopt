@@ -29,6 +29,7 @@ from ..model.registry import (
     UPDATER_CATALOG,
     surface_factory_for_type,
 )
+from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
 from ..schemes.base import SchemeTemplate, get_template
 from .assets import collect_python_assets
 from .workspace import workspace_integral_body
@@ -141,7 +142,6 @@ def render_surface_call(
         if value is None:
             continue
         kwargs.append(f"{key}={_render_value(value, problem)}")
-    kwargs.append(f"flip={surface.flip!r}")
     factory = (
         (surface.custom_class + "." + factory.split(".", 1)[1])
         if surface.custom_class
@@ -1350,10 +1350,23 @@ def _emit_nested_updater(
         if base == MATERIAL_UPDATER_BASE
         else CONSTANT.KERNEL.SHAPE_UPDATE
     )
-    a(
-        f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)}, "
-        f"max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)})"
-    )
+    group = "materials" if base == MATERIAL_UPDATER_BASE else "geometry"
+    a("                super().__init__(")
+    a(f"                    max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)},")
+    a(f"                    max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)},")
+    for key in STRATEGY_CATALOG:
+        item = cfg.get(key, strategy_config(key))
+        spec = strategy_specs(key, group)[item["type"]]
+        params = item.get("params", {})
+        if spec.fields:
+            a(f"                    {key}=self.strategies.{spec.name}(")
+            for field in spec.fields:
+                value = _render_value(params.get(field.key, field.new_default()), problem)
+                a(f"                        {field.key}={value},")
+            a("                    ),")
+        else:
+            a(f"                    {key}=self.strategies.{spec.name}(),")
+    a("                )")
 
     if for_class_catalog:
         a("")

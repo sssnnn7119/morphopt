@@ -48,7 +48,6 @@
                 "name": "",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": false,
                   "is_updatable": true,
                   "r0": 8.0,
                   "length": 100.0,
@@ -61,9 +60,6 @@
                     0.0,
                     0.0
                   ],
-                  "maxR": 0.2,
-                  "maxC": 2.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
                 "children": []
@@ -73,7 +69,6 @@
                 "name": "",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
                   "is_updatable": true,
                   "r0": 4.0,
                   "length": 44.0,
@@ -86,9 +81,6 @@
                     0.0,
                     3.0
                   ],
-                  "maxR": 0.2,
-                  "maxC": 2.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
                 "children": []
@@ -98,7 +90,6 @@
                 "name": "",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
                   "is_updatable": true,
                   "r0": 4.0,
                   "length": 44.0,
@@ -111,9 +102,6 @@
                     0.0,
                     53.0
                   ],
-                  "maxR": 0.2,
-                  "maxC": 2.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 10.0
                 },
                 "children": []
@@ -384,7 +372,9 @@
               "constraints": [
                 {
                   "type": "Fairness",
-                  "params": {}
+                  "params": {
+                    "max_curvature": 2.0
+                  }
                 },
                 {
                   "type": "Distance",

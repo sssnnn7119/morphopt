@@ -18,7 +18,7 @@ class ThisController(morphopt.Controller):
             return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
         def objective_function(self):
-            return (1 - self.reference_point_motion()[4]) ** 2
+            return (2 - self.reference_point_motion()[4]) ** 2
 
         def get_metrics(self):
             return [self.reference_point_motion()[4].detach().cpu().item()]
@@ -30,19 +30,15 @@ class ThisController(morphopt.Controller):
                     self.add_instance(self.part_name, "part1-1", [0.0] * 6)
 
                 def define_surfaces(self):
-                    for radius, length, location, flip in [
-                        (8.0, 80.0, [0.0, 0.0, 0.0], False),
-                        (4.0, 74.0, [0.0, 0.0, 3.0], True),
+                    for radius, length, location in [
+                        (8.0, 80.0, [0.0, 0.0, 0.0]),
+                        (4.0, 74.0, [0.0, 0.0, 3.0]),
                     ]:
                         surface = self.BSP.initialize_cylinder(
                             r0=radius,
                             length=length,
                             seed_size=1.0,
                             init_location=location,
-                            flip=flip,
-                            maxR=0.2,
-                            maxC=1.0,
-                            maxFF=0.2,
                             perturbation_L=10.0,
                         )
                         surface.is_updatable = True
@@ -116,11 +112,16 @@ class ThisController(morphopt.Controller):
 
         class Shape(morphopt.UpdaterBoundaryPart):
             def __init__(self):
-                super().__init__(max_step_iter=50)
+                super().__init__(
+                    max_step_iter=150,
+                    constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(),
+                )
 
             def define_objective(self):
-                self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_objective_function(
+                    self.objectivefuncs.QuadraticShapeDerivative()
+                )
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=1.0))
                 self.add_constraints(
                     self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]])
                 )

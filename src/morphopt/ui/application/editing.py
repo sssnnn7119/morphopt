@@ -113,9 +113,7 @@ class DefinitionCommands:
         owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
-        node = get_template(self.problem.scheme).make_surface(
-            surface_type, len(owner.surfaces)
-        )
+        node = get_template(self.problem.scheme).make_surface(surface_type)
         node.custom_class = custom_class
         self.problem.add_surface(node, part=owner)
         return node

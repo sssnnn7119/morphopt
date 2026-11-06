@@ -44,7 +44,7 @@ def test_case_embeds_assets_and_roundtrips(tmp_path: Path) -> None:
     assert "if_update" not in problem.updater.geometry[0]
     assert problem.device == "cpu"
     assert problem.solver.num_process == 1
-    assert problem.solver.gpus == []
+    assert problem.solver.process_devices == ["cpu"]
     _, assets = collect_python_assets(problem)
     assert {asset.format for asset in assets.values()} == {"step", "json"}
     path = Path(ProblemLibrary.save(problem, tmp_path / "copy.morph"))

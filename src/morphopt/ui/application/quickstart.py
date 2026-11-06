@@ -481,7 +481,6 @@ def _shape_geometry(options, geometry, loads, materials):
         if cavity.shape == "sphere":
             surface = SurfaceNode.create(
                 "cpgeo_sphere",
-                index=index,
                 r0=cavity.radius,
                 seed_size=seed,
                 init_location=[cavity.x, cavity.y, cavity.z + cavity.length / 2],
@@ -489,7 +488,6 @@ def _shape_geometry(options, geometry, loads, materials):
         else:
             surface = SurfaceNode.create(
                 "bsp_cylinder",
-                index=index,
                 r0=cavity.radius,
                 length=cavity.length,
                 seed_size=seed,

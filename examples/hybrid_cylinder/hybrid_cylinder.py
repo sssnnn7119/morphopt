@@ -78,7 +78,7 @@ class ThisController(morphopt.Controller):
                     surface_0 = self.BREPSurface(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets/outer-cylinder.stp'), control_point_spacing=1.0)
                     surface_0.is_updatable = False
                     self.add_surface_interface(surface_0)
-                    surface_1 = self.BSP.initialize_cylinder(r0=1.4, length=14.0, seed_size=2.0, num_U_ratio=1, num_V_ratio=1, degree=2, init_location=[-0.0, 0.0, 1.0], maxR=0.2, maxC=1.0, maxFF=0.2, perturbation_L=-1.0, flip=True)
+                    surface_1 = self.BSP.initialize_cylinder(r0=1.4, length=14.0, seed_size=2.0, num_U_ratio=1, num_V_ratio=1, degree=2, init_location=[-0.0, 0.0, 1.0], perturbation_L=-1.0)
                     surface_1.is_updatable = True
                     self.add_surface_interface(surface_1)
 
@@ -152,7 +152,7 @@ class ThisController(morphopt.Controller):
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=1.0))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=[[1.0, 1.0], [1.0, 1.0]]))
                 self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=4.0, height=16.0, bottom=0.0))
 

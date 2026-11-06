@@ -267,6 +267,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
     each new subproblem.
     """
 
+    from . import strategies
+
     update_kind: str = ""
     """Kind of collection this updater updates (``geometry`` / ``materials``)."""
 
@@ -949,6 +951,9 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
             directory = updater.save_directory(
                 foldpath, updater.interface_name or "all"
             )
+            updater.constraint_weight_strategy.save(
+                foldpath=os.path.join(directory, "constraint_weights"), iteration=iteration,
+            )
             for name, objective in updater.obj_funcs.items():
                 objective.save(
                     foldpath=os.path.join(directory, "objectives", name),
@@ -961,6 +966,9 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
             updater.load(foldpath=foldpath, iteration=iteration)
             directory = updater.save_directory(
                 foldpath, updater.interface_name or "all"
+            )
+            updater.constraint_weight_strategy.load(
+                foldpath=os.path.join(directory, "constraint_weights"), iteration=iteration,
             )
             for name, objective in updater.obj_funcs.items():
                 objective.load(

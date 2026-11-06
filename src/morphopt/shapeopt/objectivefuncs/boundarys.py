@@ -33,7 +33,7 @@ class MinRadius(BaseConstraints):
             length_r = -(r[i][:, 0] ** 2 + r[i][:, 1] ** 2).sqrt() + self._radius
 
             index_r, loss_r = self.barrier_function(
-                length_r, thre, CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_RATIO, degree
+                length_r, thre, CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_RATIO, degree,
             )
 
             if len(index_r) > 0:
@@ -84,13 +84,13 @@ class Cylinder(BaseConstraints):
 
             barrier_ratio = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_RATIO
             index_r, loss_r = self.barrier_function(
-                length_r, thre, barrier_ratio, degree
+                length_r, thre, barrier_ratio, degree,
             )
             index_bottom, loss_bottom = self.barrier_function(
-                length_bottom, thre, barrier_ratio, degree
+                length_bottom, thre, barrier_ratio, degree,
             )
             index_top, loss_top = self.barrier_function(
-                length_top, thre, barrier_ratio, degree
+                length_top, thre, barrier_ratio, degree,
             )
 
             if len(index_r) > 0:

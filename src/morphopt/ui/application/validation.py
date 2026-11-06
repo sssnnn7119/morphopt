@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from ...utils.paths import sanitize_name
+from ...shapeopt import strategies as shape_strategies
+from ...shapeopt.objectivefuncs import Fairness
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,
@@ -38,6 +40,7 @@ from ..model.problem import (
     ProblemDefinition,
 )
 from ..model.registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG
+from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
 from .fields import fields_for_node
 from .part_sets import PartSetCatalog
 
@@ -526,6 +529,33 @@ class DefinitionValidation:
                     FieldSpec("max_step_length", "max_step_length", "float", minimum=0),
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
+                for key in STRATEGY_CATALOG:
+                    item = cfg.get(key, strategy_config(key))
+                    spec = strategy_specs(key, group).get(item.get("type"))
+                    if spec is None:
+                        self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
+                        continue
+                    for field in spec.fields:
+                        self.field(
+                            cfg, field,
+                            item.get("params", {}).get(field.key, field.new_default()),
+                        )
+                    # Built-in strategy constructors only validate numeric
+                    # settings. Reuse their cross-field rules without running
+                    # generated scripts or user-defined expressions.
+                    try:
+                        parameters = {
+                            field.key: item.get("params", {}).get(field.key, field.new_default())
+                            for field in spec.fields
+                        }
+                        parameters = {
+                            name: self.literal(value) if isinstance(value, str) else value
+                            for name, value in parameters.items()
+                        }
+                        if all(isinstance(value, Real) for value in parameters.values()):
+                            getattr(shape_strategies, spec.name)(**parameters)
+                    except (ValueError, TypeError, SyntaxError, ArithmeticError) as exc:
+                        self.add(cfg, "definition", reason=str(exc))
                 for key, category in (
                     ("objective_functions", "objectives"),
                     ("constraints", "constraints"),
@@ -539,8 +569,9 @@ class DefinitionValidation:
                             else UPDATER_CATALOG[category]
                         )
                         spec = catalog.get(item.get("type"))
+                        item_fields = spec.fields if spec is not None else ()
                         if spec is not None:
-                            for field in spec.fields:
+                            for field in item_fields:
                                 self.field(
                                     item,
                                     field,
@@ -557,6 +588,17 @@ class DefinitionValidation:
                                         self.problem,
                                     )
                             else:
+                                if item.get("type") == "Fairness":
+                                    values = {
+                                        field.key: item.get("params", {}).get(field.key, field.new_default())
+                                        for field in item_fields
+                                    }
+                                    values = {
+                                        name: self.literal(value) if isinstance(value, str) else value
+                                        for name, value in values.items()
+                                    }
+                                    if all(value is None or isinstance(value, Real) for value in values.values()):
+                                        Fairness(**values)
                                 _render_updater_item(item, category, self.problem)
                         except (ValueError, TypeError, SyntaxError) as exc:
                             self.add(item, "definition", reason=str(exc))

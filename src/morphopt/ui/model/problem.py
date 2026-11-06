@@ -616,7 +616,7 @@ class ProblemDefinition:
 
     # ------------------------------------------------------ tree mutations
     # These operations are deliberately owned by the aggregate root rather
-    # than Qt widgets.  A surface's position affects both its ``flip`` flag
+    # than Qt widgets. A surface's position determines its geometric role
     # and the geometry updater's per-surface state, while an FEA component name
     # is referenced by load steps and objective Jacobians.  Keeping the
     # invariants here means every UI entry point behaves identically.
@@ -677,7 +677,6 @@ class ProblemDefinition:
         owner.add_surface(surface, index=target_index)
         self._insert_surface_state(owner, target_index)
         self.align_surface_dependent_state()
-        self._refresh_surface_flags()
         return surface
 
     def default_surface_part_node(self) -> BoundaryPartNode | None:
@@ -739,7 +738,6 @@ class ProblemDefinition:
         self._remove_surface_state(owner, position)
         owner.remove_child(surface)
         self.align_surface_dependent_state()
-        self._refresh_surface_flags()
 
     def move_surface(self, surface: SurfaceNode, offset: int) -> bool:
         """Move a surface by ``offset`` positions inside its owning Part."""
@@ -754,7 +752,6 @@ class ProblemDefinition:
             return False
         surfaces[source], surfaces[target] = surfaces[target], surfaces[source]
         self._swap_surface_state(owner, source, target)
-        self._refresh_surface_flags()
         return True
 
     def suggest_component_name(self, prefix: str) -> str:
@@ -1029,7 +1026,6 @@ class ProblemDefinition:
                     config["target"] = replacement
         self.resolve_references()
         self.align_surface_dependent_state()
-        self._refresh_surface_flags()
         return replacement
 
     def remove_part(self, part: PartNode) -> None:
@@ -1060,7 +1056,6 @@ class ProblemDefinition:
             self.remove_instance(instance)
         geometry.remove_child(part)
         self.align_surface_dependent_state()
-        self._refresh_surface_flags()
 
     def move_part(self, part: PartNode, offset: int) -> bool:
         """Move a Part definition by ``offset`` positions."""
@@ -1404,13 +1399,18 @@ class ProblemDefinition:
                 return config
         return None
 
+    @staticmethod
+    def _surface_symmetry_references(config: dict) -> Iterator[dict]:
+        """Mutable surface indices owned by symmetry constraints."""
+        for constraint in config.get("symmetry_constraints", []) or []:
+            if isinstance(constraint, dict) and constraint.get("type") != "Custom":
+                yield constraint
+
     def _insert_surface_state(self, part: PartNode, index: int) -> None:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
-        for constraint in config.get("symmetry_constraints", []) or []:
-            if not isinstance(constraint, dict) or constraint.get("type") == "Custom":
-                continue
+        for constraint in self._surface_symmetry_references(config):
             for key in ("surface_index", "related_surface_index"):
                 surface_index = constraint.get(key)
                 if isinstance(surface_index, int) and surface_index >= index:
@@ -1449,12 +1449,13 @@ class ProblemDefinition:
             ]
             if index in indices:
                 continue
+            constraints.append(constraint)
+        config["symmetry_constraints"] = constraints
+        for constraint in self._surface_symmetry_references(config):
             for key in ("surface_index", "related_surface_index"):
                 surface_index = constraint.get(key)
                 if isinstance(surface_index, int) and surface_index > index:
                     constraint[key] = surface_index - 1
-            constraints.append(constraint)
-        config["symmetry_constraints"] = constraints
         for parameters in self._distance_constraint_parameters(config):
             matrix = self._square_matrix(parameters.get("min_distance"))
             if matrix is None or index >= len(matrix):
@@ -1469,9 +1470,7 @@ class ProblemDefinition:
         config = self._geometry_config_for_part(part)
         if config is None:
             return
-        for constraint in config.get("symmetry_constraints", []) or []:
-            if not isinstance(constraint, dict) or constraint.get("type") == "Custom":
-                continue
+        for constraint in self._surface_symmetry_references(config):
             for key in ("surface_index", "related_surface_index"):
                 surface_index = constraint.get(key)
                 if surface_index == first:
@@ -1486,11 +1485,6 @@ class ProblemDefinition:
             for row in matrix:
                 row[first], row[second] = row[second], row[first]
             parameters["min_distance"] = matrix
-
-    def _refresh_surface_flags(self) -> None:
-        for part in self.boundary_part_nodes():
-            for index, surface in enumerate(part.surfaces):
-                surface.flip = index > 0
 
     # ----------------------------------------------------------- persistence
     def to_dict(self) -> dict:

@@ -54,10 +54,10 @@ class SchemeTemplate:
     # Low-level factories delegate to the typed node classes, so schema
     # defaults + validation live in exactly one place (model/problem.py).
     def make_surface(
-        self, surface_type: str, index: int = 0, **overrides
+        self, surface_type: str, **overrides
     ) -> SurfaceNode:
-        """Build a fresh surface; name stays empty, index 0 = outer."""
-        return SurfaceNode.create(surface_type, index=index, **overrides)
+        """Build a fresh surface with schema defaults."""
+        return SurfaceNode.create(surface_type, **overrides)
 
     def make_component(
         self, component_type: str, name: str | None = None, **overrides

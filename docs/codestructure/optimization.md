@@ -27,6 +27,8 @@
 | [`optcore/objfunc.py`](../../src/morphopt/optcore/objfunc.py) | 多工况目标及伴随/自动微分灵敏度 |
 | [`optcore/updaters.py`](../../src/morphopt/optcore/updaters.py) | 更新器注册、目标解析、梯度切片、公共优化算法及 `QuadraticHistory` 曲率历史 |
 | [`optcore/strategies.py`](../../src/morphopt/optcore/strategies.py) | 可组合的步长与罚项权重策略接口及默认实现 |
+| [`shapeopt/strategies.py`](../../src/morphopt/shapeopt/strategies.py) | 形状优化的自适应权重与障碍逐步收紧策略 |
+| [`shapeopt/barriers.py`](../../src/morphopt/shapeopt/barriers.py) | 共享几何障碍函数、相对违反量测量和采样更新接受检查 |
 | [`shapeopt/boundary_part.py`](../../src/morphopt/shapeopt/boundary_part.py)、[`surfaces/`](../../src/morphopt/shapeopt/surfaces) | 边界部件与曲面设计变量 |
 | [`optcore/modelparams/parts/cad_part.py`](../../src/morphopt/optcore/modelparams/parts/cad_part.py) | 公共剖分流程、几何载入、壳体查询、面身份与 CAD 转换 |
 | [`shapeopt/surfaces/brep_surface.py`](../../src/morphopt/shapeopt/surfaces/brep_surface.py) | BREP 边界、STEP 资产与面名称映射 |
@@ -94,7 +96,13 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 局部更新的设备上下文覆盖目标、约束及其缓存 Tensor，完成后恢复相应设备状态。几何与材料子优化器分别保存到 `geometryupdater/<接口>/` 和 `materialupdater/<接口>/`，不共享一份步长文件。
 
-步长与罚项权重采用组合方式注入，具体策略集中在 `optcore/strategies.py`。`FixedStepLength` 直接采用配置的最大步长；`ConstantConstraintWeights` 默认系数为 1。步长策略在初始化和每轮外层迭代开始时求值，权重策略在该轮目标与约束完成初始化后求值。返回值在子优化期间固定。原有基于相邻改变量夹角或符号的增减规则、前次改变量缓存及对应 NumPy 往返转换已移除。新增策略继承对应接口并实现 `__call__`，通过更新器构造参数选用，不在具体更新器中添加策略分支。
+步长与罚项权重采用组合方式注入。`optcore/strategies.py` 仅定义通用接口及默认实现，不导入形状优化模块，也不解释三维控制点、曲面或材料变量的专有语义。`FixedStepLength` 直接采用配置的最大步长；`ConstantConstraintWeights` 默认系数为 1，默认系数定义在通用的 `CONSTANT.KERNEL.UPDATER_STRATEGIES` 中。步长策略在初始化和每轮外层迭代开始时求值，权重策略在该轮目标与约束完成初始化后求值。步长和权重在本轮子优化内均固定。更新器仅使用所选系数求解，不包含具体策略分支或内层策略钩子。
+
+更新器通过类属性 `strategies` 暴露策略命名空间，与 `objectivefuncs` 的用法一致。基类提供通用策略；形状更新器重写该命名空间，引用同一批通用策略类并增加形状专用实现，不复制算法。脚本在构造方法中使用 `self.strategies.AdaptiveShapeWeights()` 等表达式创建独立策略对象，偏置形状更新器继承相同入口。
+
+`shapeopt/strategies.py` 中只保留一个形状专用策略 `AdaptiveShapeWeights`，统一执行“确定当前距离要求 → 双向梯度标定 → 固定参数求解”的外层流程。距离放宽比例按外层进度线性减小，各几何罚项的权重由同一次双向试探确定，不累积反馈倍数。运行状态仅保存已完成外层步数和逐项标定结果，继承关系为 `AdaptiveShapeWeights → ConstraintWeightStrategy → ProtocalSavable`。管理器仅按协议委托保存和恢复。
+
+`PolynomialBarrier` 由几何罚项独立持有。`Distance` 传入距离尺度，在当前放宽比例下采用固定二次障碍；其余几何罚项保持原始定义。UI 目录只声明一个自适应几何策略及其三个距离计划参数，复用参数表单、验证与代码生成。标定常数集中在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS`，不在 UI 和策略实现中重复定义。梯度标定和距离计划分别由 `tests/shapeopt/test_adaptive_weights.py` 与 `tests/shapeopt/test_distance_barrier.py` 验证。具体公式见[脚本参考](../scriptreference.md#section-几何更新器)。
 
 <a id="shape"></a>
 

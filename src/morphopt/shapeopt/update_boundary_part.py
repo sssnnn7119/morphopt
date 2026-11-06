@@ -47,7 +47,7 @@ class UpdaterBoundaryPart(BaseUpdater):
     Part (``name="leg"``), each object resolving its own Part.
     """
 
-    from . import objectivefuncs
+    from . import objectivefuncs, strategies
 
     update_kind: str = "geometry"
     """This updater updates a geometry collection (``params.geometry``)."""
@@ -222,22 +222,19 @@ class UpdaterBoundaryPart(BaseUpdater):
         # save the current point
         x0 = self.part.get_parameters()
 
-        # Set the design variables to the current point
-        self.part.update_variables(x_change=x, max_step_length=self._max_step_length)
-
-        # Calculate the objective function value
-        r, rdu, rdu2 = self.part.get_geometry_values()
-
-        constraints_value: list[torch.Tensor] = []
-        for constraints in self.constraints_funcs.values():
-            constraints_value.append(constraints(r=r, rdu=rdu, rdu2=rdu2))
-
-        obj_value: list[torch.Tensor] = []
-        for obj_func in self.obj_funcs.values():
-            obj_value.append(obj_func(r=r, rdu=rdu, rdu2=rdu2))
-
-        # enroll the design variables
-        self.part.set_parameters(x0)
+        try:
+            self.part.update_variables(x_change=x, max_step_length=self._max_step_length)
+            r, rdu, rdu2 = self.part.get_geometry_values()
+            constraints_value = [
+                constraint(r=r, rdu=rdu, rdu2=rdu2)
+                for constraint in self.constraints_funcs.values()
+            ]
+            obj_value = [
+                objective(r=r, rdu=rdu, rdu2=rdu2)
+                for objective in self.obj_funcs.values()
+            ]
+        finally:
+            self.part.set_parameters(x0)
 
         if return_list:
             return obj_value, constraints_value
@@ -254,8 +251,8 @@ class UpdaterBoundaryPart(BaseUpdater):
         ):
             return
 
-        # update the objective function
-        variables = self.part.get_variables().detach().clone()
+        # The current geometry is the origin of this fixed subproblem.
+        variables = torch.zeros_like(torch.cat(self.part.get_parameters()))
 
         # print the information
         logger.info("Start updating the surfaces...")

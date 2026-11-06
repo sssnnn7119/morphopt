@@ -117,6 +117,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         Call this from :meth:`define_surfaces`; for surfaces that only exist at
         runtime (the UI rebuilding a model) it may be called directly.
         """
+        surface._flip = bool(self.surfaceinterfaces)
         self.surfaceinterfaces.append(surface)
         self._surfaces_defined = True
         return self
@@ -188,14 +189,16 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         if not self._surfaces_defined:
             self.define_surfaces()
             self._surfaces_defined = True
-        for surface in self.surfaceinterfaces:
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface._flip = index != 0
             surface.initialize(*args, **kwargs)
         self._reinitialize_constraints()
         self._apply_surface_constraints()
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
         """Re-initialize every boundary surface (reconstruction / refinement)."""
-        for surface in self.surfaceinterfaces:
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface._flip = index != 0
             surface.reinitialize(iteration, *args, **kwargs)
         self._reinitialize_constraints()
         self._apply_surface_constraints()
@@ -235,7 +238,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.prepare_geometry(
                 path_output=directory,
                 name_output=f"__surface-{index}",
-                flip=index != 0,
                 pools=pools,
             )
         return list(self.surfaceinterfaces)
@@ -344,7 +346,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.output_data(
                 path_output=dirpath,
                 name_output="__surface-%d" % index,
-                flip=(index != 0),
                 pools=pools,
             )
 
@@ -384,14 +385,17 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             start += size
             if not surface.is_updatable:
                 continue
-            norm = delta.norm(dim=1, keepdim=True)
-            change = (
-                2
-                / torch.pi
-                * torch.atan(norm)
-                * delta
-                / (norm + CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON)
+            # atan(r)/r has limit 1 at r=0. Its Taylor branch gives the
+            # correct nonzero Jacobian without a random initial perturbation.
+            squared_norm = delta.square().sum(dim=1, keepdim=True)
+            epsilon = CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON
+            safe_norm = squared_norm.clamp_min(epsilon).sqrt()
+            factor = torch.where(
+                squared_norm > epsilon,
+                torch.atan(safe_norm) / safe_norm,
+                1 - squared_norm / 3,
             )
+            change = (2 / torch.pi) * factor * delta
             change = change * step.reshape(-1, 1)
             surface.update_variables(change)
 
@@ -415,21 +419,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             if surface.num_variables
             else torch.empty((0, 3))
             for surface in self.surfaceinterfaces
-        ]
-
-    def get_penalty_fairness(
-        self,
-        weight: list[torch.Tensor],
-        r: list[torch.Tensor],
-        rdu: list[torch.Tensor],
-        rdu2: list[torch.Tensor],
-    ) -> list[torch.Tensor]:
-        """Fairness penalty of every surface."""
-        return [
-            surface.get_penalty_fairness(
-                weight[index], r[index], rdu[index], rdu2[index]
-            )
-            for index, surface in enumerate(self.surfaceinterfaces)
         ]
 
     def get_points_weight(self) -> list[torch.Tensor]:

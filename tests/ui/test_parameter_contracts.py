@@ -59,6 +59,10 @@ def backend_surface_factory(spec):
 def test_surface_fields_reach_factory(kind, spec):
     surface = SurfaceNode.create(kind)
     args, kwargs = literal_call(render_surface_call(surface))
+    assert "flip" not in kwargs
+    assert "flip" not in surface.to_dict()["params"]
+    with pytest.raises(ValueError):
+        SurfaceNode.create(kind, flip=True)
     bound = inspect.signature(backend_surface_factory(spec)).bind(*args, **kwargs)
     if kind == "brep_surface":
         assert bound.arguments["path_step"] == ""
@@ -76,36 +80,17 @@ def test_surface_factories_construct_with_ui_parameters(kind):
     params = field_defaults(spec.fields)
     params.update(r0=2.0, seed_size=1.5, init_location=[1.0, 2.0, 3.0])
     if kind.endswith("cylinder"):
-        params.update(length=12.0, maxC=0.6)
-    else:
-        params["MaxC"] = 0.6
-    surface = backend_surface_factory(spec)(**params, flip=True)
+        params.update(length=12.0)
+    with pytest.raises(TypeError):
+        backend_surface_factory(spec)(**params, flip=True)
+    surface = backend_surface_factory(spec)(**params)
     assert surface.is_updatable is True
-    assert surface.MaxC == 0.6
+    assert not any(hasattr(surface, key) for key in ("MaxC", "MaxR", "MaxFF", "barrier_function"))
     assert surface.init_size == 1.5
-    assert surface.flip is True
+    assert surface.flip is False
     assert surface.control_points.shape[1] == 3
     assert np.isfinite(surface.control_points.cpu().numpy()).all()
-    if kind == "bsp_cylinder":
-        assert surface.MaxR == params["maxR"]
-        assert surface.MaxFF == params["maxFF"]
-
-
-@pytest.mark.parametrize("key,index", [("maxC", 0), ("maxFF", 1), ("maxR", 2)])
-def test_bsp_fairness_thresholds_control_penalties(key, index, monkeypatch):
-    params = field_defaults(R.SURFACE_TYPES["bsp_cylinder"].fields)
-    params.update(r0=2.0, length=12.0, seed_size=1.5, maxC=1.0, maxR=1.0, maxFF=1.0)
-    surface = backend_surface_factory(R.SURFACE_TYPES["bsp_cylinder"])(**params, flip=False)
-    measures = [torch.zeros(1) for _ in range(6)]
-    measures[index] = torch.tensor([0.9])
-    surface.rr_compensation = torch.ones((4, 1))
-    monkeypatch.setattr(surface, "_geofair_data", lambda *args: measures)
-    points = surface.control_points.clone()
-    penalty = surface.get_penalty_fairness(torch.ones(1), None, None, None)
-    assert penalty.item() == pytest.approx(0.125)
-    setattr(surface, {"maxC": "MaxC", "maxR": "MaxR", "maxFF": "MaxFF"}[key], 2.0)
-    assert surface.get_penalty_fairness(torch.ones(1), None, None, None).item() == 0.0
-    assert torch.equal(surface.control_points, points)
+    assert not any(field.key in {"maxC", "maxR", "maxFF", "MaxC"} for field in spec.fields)
 
 
 @pytest.mark.parametrize("kind,spec", R.PART_TYPES.items())
@@ -293,7 +278,7 @@ def test_symmetry_fields_reach_surface_owned_constraint(kind, spec):
     surface_kind = "bsp_cylinder" if spec.factory == "BSP" else "cpgeo_cylinder"
     part.surfaces.clear()
     for index in range(2):
-        part.add_surface(SurfaceNode.create(surface_kind, index=index))
+        part.add_surface(SurfaceNode.create(surface_kind))
     item = symmetry_constraint(kind)
     item["surface_index"] = 0
     if spec.related_surface:
@@ -371,12 +356,12 @@ def test_solver_device_selection_and_task_groups_reach_backend(devices):
     assert solver.task_step_list == groups
 
 
-def test_surface_helper_variable_is_emitted_as_an_expression():
+def test_fairness_helper_variable_is_emitted_as_an_expression():
     problem = ProblemLibrary.create("shapeopt")
     problem.helper_variables.append(HelperVariableNode(name="curvature_limit", params={"value": "0.25"}))
-    surface = SurfaceNode.create("bsp_cylinder", maxC="curvature_limit")
-    call = ast.parse(render_surface_call(surface, problem), mode="eval").body
-    value = next(keyword.value for keyword in call.keywords if keyword.arg == "maxC")
+    item = {"type": "Fairness", "params": {"max_curvature": "curvature_limit"}}
+    call = ast.parse(_render_updater_item(item, "constraints", problem), mode="eval").body
+    value = next(keyword.value for keyword in call.keywords if keyword.arg == "max_curvature")
     assert isinstance(value, ast.Name) and value.id == "curvature_limit"
 
 
@@ -385,9 +370,9 @@ def test_parameter_form_shows_code_field_and_fairness_help():
     from morphopt.ui.widgets.param_form import ParamForm
 
     app = QApplication.instance() or QApplication([])
-    fields = R.SURFACE_TYPES["bsp_cylinder"].fields
+    fields = R.UPDATER_CONSTRAINTS["Fairness"].fields
     form = ParamForm(field_defaults(fields), fields)
-    for key in ("maxR", "maxC", "maxFF"):
+    for key in ("max_curvature",):
         tooltip = form.controls[key].toolTip()
         assert key in tooltip
         assert "Fairness" in tooltip
@@ -409,8 +394,99 @@ def test_fairness_threshold_labels_and_help_are_defined_in_each_locale():
                     assert field.label_key in table
                     if field.doc_key:
                         assert field.doc_key in table
-        for key in ("maxR", "maxC", "maxFF"):
-            field = next(f for f in R.SURFACE_TYPES["bsp_cylinder"].fields if f.key == key)
+        for key in ("max_curvature",):
+            field = next(f for f in R.UPDATER_CONSTRAINTS["Fairness"].fields if f.key == key)
             assert "Fairness" in table[field.doc_key]
         assert not any("每次迭代允许的最大" in value for key, value in table.items()
                        if key.startswith("ui.schema.fields.max"))
+
+
+def test_global_fairness_limit_round_trip_through_ui_and_script(tmp_path):
+    from PySide6.QtWidgets import QApplication
+    from morphopt.ui.widgets.param_form import ParamForm
+    from morphopt.ui.widgets.updater_editor import UpdaterEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    editor = UpdaterEditor()
+    editor.edit_node(problem.updater, problem)
+    form = next(form for form in editor.findChildren(ParamForm) if "max_curvature" in form.controls)
+    assert set(form.controls) == {"max_curvature"}
+    limit = form.controls["max_curvature"]
+    limit.setText("0.6")
+    limit.editingFinished.emit()
+    loaded = ProblemLibrary.load(ProblemLibrary.save(problem, tmp_path / "fairness.morph"))
+    namespace = {"__name__": "fairness_ui_test"}
+    exec(ProblemSession(loaded).source(), namespace)
+    updater = namespace["ThisController"].Updater.UpdaterBoundaryPart()
+    updater.define_objective()
+    fairness = next(item for item in updater.constraints_funcs.values() if isinstance(item, morphopt.shapeopt.objectivefuncs.Fairness))
+    assert not hasattr(fairness, "surface_index")
+    assert fairness.max_curvature == 0.6
+    from morphopt.ui.application.validation import DefinitionValidation
+    validation = DefinitionValidation(loaded)
+    validation.updaters()
+    config = loaded.updater.geometry[0]
+    item = next(item for item in config["constraints"] if item["type"] == "Fairness")
+    assert id(item) not in validation.errors
+    editor.close()
+    app.processEvents()
+
+
+@pytest.mark.parametrize("parameters", [{"max_curvature": 0}, {"max_curvature": -1}])
+def test_invalid_fairness_definition_is_marked_in_the_model_tree(parameters):
+    from morphopt.ui.application.validation import DefinitionValidation
+    problem = ProblemLibrary.create("shapeopt")
+    item = next(item for item in problem.updater.geometry[0]["constraints"] if item["type"] == "Fairness")
+    item["params"].update(parameters)
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert id(item) in validation.errors
+
+
+@pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder"])
+def test_fairness_uses_identical_curvature_only_fields_and_source(surface_type):
+    from PySide6.QtWidgets import QApplication
+    from morphopt.ui.widgets.param_form import ParamForm
+    from morphopt.ui.widgets.updater_editor import UpdaterEditor
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    config = problem.updater.geometry[0]
+    part = problem.config_part_node(config)
+    part.surfaces[0] = SurfaceNode.create(surface_type)
+    item = next(item for item in config["constraints"] if item["type"] == "Fairness")
+    editor = UpdaterEditor()
+    editor.edit_node(problem.updater, problem)
+    form = next(form for form in editor.findChildren(ParamForm) if "max_curvature" in form.controls)
+    assert set(form.controls) == {"max_curvature"}
+    call = ast.parse(_render_updater_item(item, "constraints", problem), mode="eval").body
+    assert call.func.attr == "Fairness"
+    assert {keyword.arg for keyword in call.keywords} == {"max_curvature"}
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert id(item) not in validation.errors
+    editor.close()
+    app.processEvents()
+
+
+def test_quickstart_registers_one_fairness_for_the_whole_boundary_part():
+    problem = ProblemLibrary.create("shapeopt")
+    config = problem.updater.geometry[0]
+    penalties = [item for item in config["constraints"] if item["type"] == "Fairness"]
+    assert len(penalties) == 1
+    assert "surface_index" not in penalties[0]["params"]
+
+
+def test_global_fairness_survives_surface_edits_without_binding_state():
+    problem = ProblemLibrary.create("shapeopt")
+    config = problem.updater.geometry[0]
+    part = problem.config_part_node(config)
+    penalty = next(item for item in config["constraints"] if item["type"] == "Fairness")
+    penalty["params"]["max_curvature"] = 0.6
+    assert problem.move_surface(part.surfaces[1], 1)
+    problem.add_surface(SurfaceNode.create("bsp_cylinder"), index=1, part=part)
+    problem.remove_surface(part.surfaces[0])
+    assert any(item is penalty for item in config["constraints"])
+    assert penalty["params"] == {"max_curvature": 0.6}

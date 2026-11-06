@@ -1256,16 +1256,28 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | `custom_class` | 默认使用边界或偏置边界 updater，也可选择兼容的重写类 | 默认使用 SIMP updater，也可选择兼容的重写类 |
 | `max_step_iter` | 每一轮形状子问题的内部优化迭代上限 | 每一轮材料子问题的内部优化迭代上限 |
 | `max_step_length` | 最大更新步长，默认 `0.5` | 最大更新步长，默认 `1.0` |
+| `step_length_strategy` | 固定步长 `FixedStepLength` | 固定步长 `FixedStepLength` |
+| `constraint_weight_strategy` | 固定权重、自适应几何权重或逐步收紧的障碍策略 | 固定权重 |
 | 更新开关 | 在各曲面编辑页设置 `is_updatable`，BSP 和 CPGEO 默认启用；几何更新器不保存开关列表 | `if_update` 控制材料场是否更新 |
 | `objective_functions` | 通常需要 ShapeDerivative | 通常需要 Sensitivity |
 | `constraints` | 距离、包络、平滑等几何项 | 体积分数和控制量上下界等 |
 | `symmetry_constraints` | 对指定曲面建立镜像、旋转、关联或自定义关系 | 不在材料更新器中使用 |
 
-“最大更新步长”对应 `max_step_length`，可填写正数或自定义常量名。默认值分别来自 `CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH` 和 `CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH`。该字段随优化器配置保存，生成脚本时显式传入构造函数。默认 `FixedStepLength` 保持该上限固定，实际改变量通过 `atan` 映射限制，不根据更新方向自适应调整。步长与罚项权重的其他策略可通过更新器自定义类构造方法传入，接口见[脚本模块与接口参考](scriptreference.md#section-几何更新器)。
+“最大更新步长”对应 `max_step_length`，可填写正数或自定义常量名。默认值分别来自 `CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH` 和 `CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH`。该字段随优化器配置保存，生成脚本时显式传入构造函数。默认 `FixedStepLength` 保持该上限固定，实际改变量通过 `atan` 映射限制，不根据更新方向自适应调整。
+
+选中模型树中具体的几何或材料优化器后，编辑页提供“步长策略”和“罚项权重策略”。所选策略的参数直接显示在选择框下方，支持数值或自定义常量名。默认采用固定步长和固定权重；固定权重中的“罚项系数”统一施加于该优化器的所有罚项，默认值为 1。
+
+几何优化器提供统一的“自适应几何权重与距离收紧 [AdaptiveShapeWeights]”。其参数只有收紧迭代次数、初始距离放宽比例、最终距离放宽比例。默认经过 30 次外层更新，将放宽比例从 20% 线性减至 0。例如要求距离为 2.5 时，第 0、15、30 轮分别按 2.0、2.25、2.5 施加距离约束。两个比例均设为 0 时，从首轮起采用原始距离要求。
+
+![统一的几何权重与距离收紧策略](images/ui/updaters/geometry-strategies.png)
+
+每轮先确定当前距离要求，再通过双向几何试探标定各罚项权重，随后保持参数固定进行子优化。`Distance` 使用固定二次障碍，其余几何罚项保持原有定义。权重不累积历史倍数，不改变原始有限元灵敏度，也不增加有限元求解。该策略仅适用于非负几何罚项，不适用于可能取负值的体积最大化等辅助目标。
+
+三个参数随 `.morph` 保存并显式写入生成脚本，收紧进度及标定状态随优化结果恢复。各优化器持有独立策略实例。算法与扩展接口见[脚本模块与接口参考](scriptreference.md#section-几何更新器)。最终约束满足情况仍应通过实际几何检查确认。
 
 `max_step_iter=50` 表示每轮更新子问题的内部迭代上限为 50。外层每轮执行 FE 求解和目标梯度计算，内层根据梯度与约束求解更新子问题。该参数不定义外层优化总轮数，内部更新迭代、外层轮次及 FE 求解迭代分别记录。
 
-新建几何更新配置默认包含 ShapeDerivative、Fairness、Distance 和 Cylinder，配置修改应以已有条目为基础。材料更新配置的目标和约束列表初始可为空，实际条目按优化任务设置。均匀材料不包含材料设计变量，因此不属于 SIMP 更新目标。
+新建几何更新配置默认包含 ShapeDerivative、Fairness、Distance 和 Cylinder，配置修改应以已有条目为基础。新建材料更新配置默认包含 Sensitivity、控制量上下界和体积分数约束，实际条目按优化任务设置。均匀材料不包含材料设计变量，因此不属于 SIMP 更新目标。
 
 ![几何优化器目标、曲面更新开关与内部迭代设置](images/ui/updaters/geometry-updater.png)
 

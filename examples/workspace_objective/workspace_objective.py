@@ -67,13 +67,13 @@ class ThisController(morphopt.Controller):
             class BoundaryPart(morphopt.BoundaryPart):
 
                 def define_surfaces(self) -> None:
-                    surface_0 = self.BSP.initialize_cylinder(r0=8.0, length=100.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 0.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=False)
+                    surface_0 = self.BSP.initialize_cylinder(r0=8.0, length=100.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 0.0], perturbation_L=10.0)
                     surface_0.is_updatable = True
                     self.add_surface_interface(surface_0)
-                    surface_1 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 3.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=True)
+                    surface_1 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 3.0], perturbation_L=10.0)
                     surface_1.is_updatable = True
                     self.add_surface_interface(surface_1)
-                    surface_2 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 53.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=True)
+                    surface_2 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 53.0], perturbation_L=10.0)
                     surface_2.is_updatable = True
                     self.add_surface_interface(surface_2)
                     surface_0.add_constraint(surface_0.mirror(plane='xz', offset=0.0))
@@ -173,7 +173,7 @@ class ThisController(morphopt.Controller):
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=2.0))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=[[2.5, 2.5, 2.5], [2.5, 2.5, 2.5], [2.5, 2.5, 2.5]]))
                 self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=15.0, height=100.0, bottom=0.0))
 

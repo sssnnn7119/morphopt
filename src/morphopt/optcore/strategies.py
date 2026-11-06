@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..constants import CONSTANT
+from .protocal import ProtocalSavable
 
 if TYPE_CHECKING:
     from .updaters import BaseUpdater
@@ -34,8 +35,8 @@ class StepLengthStrategy(ABC):
     ) -> list[torch.Tensor]:
         """Return one limit per row of each parameter block.
 
-        Shape blocks have shape ``(control_points, 3)``; material blocks have
-        shape ``(variables, 1)``. ``gradient`` is the unscaled physical gradient,
+        Each parameter block has shape ``(row_count, components_per_row)``.
+        ``gradient`` is the unscaled physical gradient,
         or ``None`` during initial setup. Results stay fixed in the inner solve.
         """
 
@@ -53,8 +54,11 @@ class FixedStepLength(StepLengthStrategy):
         return [value.new_full((len(value),), maximum) for value in parameters]
 
 
-class ConstraintWeightStrategy(ABC):
-    """Choose named penalty coefficients once per outer iteration."""
+class ConstraintWeightStrategy(ProtocalSavable):
+    """Choose fixed coefficients for one outer-iteration subproblem."""
+
+    # Stateful strategies implement save/load; stateless ones inherit no-op hooks.
+    # The core invokes the interface without interpreting the design object.
 
     @abstractmethod
     def __call__(
@@ -64,6 +68,8 @@ class ConstraintWeightStrategy(ABC):
 
         Terms and step limits are initialized before this call. Raw values are
         available through ``updater.closure(x, return_list=True)``.
+        Coefficients stay fixed throughout the inner solve; raw gradients must
+        not be rescaled to balance the terms.
         """
 
 
@@ -71,7 +77,7 @@ class ConstantConstraintWeights(ConstraintWeightStrategy):
     """Assign the same explicit coefficient to every registered penalty."""
 
     def __init__(
-        self, value: float = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DEFAULT_WEIGHT,
+        self, value: float = CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT,
     ) -> None:
         self.value = value
 
