@@ -30,7 +30,10 @@ class ThisController(morphopt.Controller):
             super().__init__()
 
         def objective_function(self) -> Any:
-            def objective_term_1() -> Any:
+            return sum(self._objective_values())
+
+        def _objective_values(self) -> list[Any]:
+            def objective_term_0() -> Any:
                 self.set_step('compression')
                 assembly = self.fe.assembly
                 state = assembly._GC2RGC(
@@ -38,17 +41,28 @@ class ThisController(morphopt.Controller):
                 )
                 reference_point = assembly.get_reference_point('tip')
                 return state[reference_point._RGC_index].reshape(-1)[2]
-            return (1.0) * objective_term_1()
+            return [(1.0) * objective_term_0()]
 
         def get_metrics(self) -> Any:
-            def metric_term_1() -> Any:
+            def metric_term_0() -> Any:
                 return [self.fe_results["compression"].GC[-4].detach().cpu().item()]
-            metrics = []
-            metric_value_1 = metric_term_1()
-            if isinstance(metric_value_1, (list, tuple)):
-                metrics.extend(metric_value_1)
-            else:
-                metrics.append(metric_value_1)
+            metrics = {}
+            for name, value in [
+                ('', metric_term_0()),
+                ('', {f'objective_{index}': value for index, value in enumerate(self._objective_values())}),
+            ]:
+                if isinstance(value, dict):
+                    entries = value
+                elif isinstance(value, (list, tuple)):
+                    entries = {
+                        f'{name}_{index}' if name else str(len(metrics) + index): item
+                        for index, item in enumerate(value)
+                    }
+                else:
+                    entries = {name or str(len(metrics)): value}
+                if metrics.keys() & entries.keys():
+                    raise ValueError('Metric names must be unique.')
+                metrics.update(entries)
             return metrics
 
     class Params(morphopt.Params):
@@ -130,7 +144,14 @@ class ThisController(morphopt.Controller):
         class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
 
             def __init__(self) -> None:
-                super().__init__(max_step_iter=3, max_step_length=0.02)
+                super().__init__(
+                    max_step_iter=3,
+                    max_step_length=0.02,
+                    step_length_strategy=self.strategies.FixedStepLength(),
+                    constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+                        value=1.0,
+                    ),
+                )
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())

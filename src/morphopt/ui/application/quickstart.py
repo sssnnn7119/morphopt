@@ -12,6 +12,9 @@ from ...utils.quadrature import actuation_boundary_gauss_points
 from ..codegen.workspace import workspace_integral_body
 from ..i18n import localized_message
 from ..model.chamberlayout import ChamberLayer, LayeredChambers
+from ..model.configuration import (
+    geometry_updater_config, materials_updater_config, updater_constraint,
+)
 from ..model.problem import (
     CADOperationNode,
     FEAComponentNode,
@@ -481,7 +484,6 @@ def _shape_geometry(options, geometry, loads, materials):
         if cavity.shape == "sphere":
             surface = SurfaceNode.create(
                 "cpgeo_sphere",
-                index=index,
                 r0=cavity.radius,
                 seed_size=seed,
                 init_location=[cavity.x, cavity.y, cavity.z + cavity.length / 2],
@@ -489,7 +491,6 @@ def _shape_geometry(options, geometry, loads, materials):
         else:
             surface = SurfaceNode.create(
                 "bsp_cylinder",
-                index=index,
                 r0=cavity.radius,
                 length=cavity.length,
                 seed_size=seed,
@@ -519,32 +520,20 @@ def _shape_geometry(options, geometry, loads, materials):
     )
     count = options.chambers + 1
     constraints = [
-        {"type": "Fairness", "params": {}},
-        {
-            "type": "Distance",
-            "params": {"min_distance": [[options.wall] * count for _ in range(count)]},
-        },
-        {
-            "type": "Cylinder",
-            "params": {
-                "radius": options.radius,
-                "height": options.total_length,
-                "bottom": 0.0,
-            },
-        },
+        updater_constraint("Fairness"),
+        updater_constraint("Distance", min_distance=[[options.wall] * count for _ in range(count)]),
+        updater_constraint(
+            "Cylinder", radius=options.radius, height=options.total_length, bottom=0.0,
+        ),
     ]
     updater = UpdaterNode(
         name="Updater",
         params={
-            "geometry": [
-                {
-                    "part_name": "body",
-                    "max_step_iter": CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
-                    "max_step_length": CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH,
-                    "objective_functions": [{"type": "ShapeDerivative", "params": {}}],
-                    "constraints": constraints,
-                }
-            ],
+            "geometry": [geometry_updater_config(
+                part_name="body",
+                max_step_iter=CONSTANT.UI.QUICKSTART.DEFAULT.GEOMETRY_MAX_STEP_ITERATIONS,
+                constraints=tuple(constraints),
+            )],
             "materials": [],
         },
     )
@@ -905,44 +894,24 @@ def _topology(options, geometry, loads, materials):
         name="Updater",
         params={
             "geometry": [],
-            "materials": [
-                {
-                    "material_name": "density",
-                    "max_step_iter": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
-                    "max_step_length": CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH,
-                    "if_update": True,
-                    "objective_functions": [
-                        {"type": "Sensitivity", "params": {"normalize_gradient": False}}
-                    ],
-                    "constraints": [
-                        {
-                            "type": "MinValue",
-                            "params": {
-                                "xmin": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[
-                                    0
-                                ]
-                            },
-                        },
-                        {
-                            "type": "MaxValue",
-                            "params": {
-                                "xmax": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[
-                                    1
-                                ]
-                            },
-                        },
-                        {
-                            "type": "VolFrac",
-                            "params": {
-                                "volfrac_min": options.volume_fraction,
-                                "volfrac_max": options.volume_fraction,
-                                "penalty": CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VOLUME_FRACTION_PENALTY,
-                                "elementname": "C3D8",
-                            },
-                        },
-                    ],
-                }
-            ],
+            "materials": [materials_updater_config(
+                material_name="density",
+                max_step_iter=CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_ITERATIONS,
+                constraints=(
+                    updater_constraint(
+                        "MinValue", xmin=CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[0],
+                    ),
+                    updater_constraint(
+                        "MaxValue", xmax=CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VARIABLE_BOUNDS[1],
+                    ),
+                    updater_constraint(
+                        "VolFrac", volfrac_min=options.volume_fraction,
+                        volfrac_max=options.volume_fraction,
+                        penalty=CONSTANT.UI.QUICKSTART.GENERATION.SIMP_VOLUME_FRACTION_PENALTY,
+                        elementname="C3D8",
+                    ),
+                ),
+            )],
         },
     )
     steps, signatures = {}, {}

@@ -40,9 +40,8 @@ class CPGEOSurface(ControlPointSurface):
         self,
         surface: cpgeo.CPGEO,
         init_size: float,
-        MaxC: float = CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
     ):
-        super().__init__(surface)
+        super().__init__()
         self.is_updatable = True
 
         self.model: cpgeo.CPGEO = surface
@@ -51,8 +50,6 @@ class CPGEOSurface(ControlPointSurface):
         self._cps = torch.from_numpy(self.model.control_points).to(
             torch.get_default_device()
         )
-
-        self.MaxC = MaxC
 
         self.init_size = init_size
 
@@ -93,7 +90,7 @@ class CPGEOSurface(ControlPointSurface):
     def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
         """Compute normals at given UV coordinates using the CPGEO model."""
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
-        indices_cps, indices_pts, w, wdu = self.model.get_weights2(uv_np, derivative=1)
+        indices_cps, indices_pts, _, wdu = self.model.get_weights2(uv_np, derivative=1)
 
         wdu = torch.from_numpy(wdu).to(torch.get_default_device())
         indices_cps_t = torch.from_numpy(indices_cps).to(torch.get_default_device())
@@ -168,13 +165,10 @@ class CPGEOSurface(ControlPointSurface):
             .flatten()[indices_pts_t],
         )
 
-        if (
+        return (
             area_g.max() / area_g.min()
             > CONSTANT.KERNEL.SURFACE.CPGEO_AREA_IMBALANCE_THRESHOLD
-        ):
-            return True
-        else:
-            return False
+        )
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
         """Reinitialize the CPGEO model if the volume change is significant."""
@@ -307,7 +301,6 @@ class CPGEOSurface(ControlPointSurface):
         path_output: str | Path,
         name_output: str,
         seed_size: float = -1,
-        flip: bool = False,
         pools: Pool | None = None,
     ) -> str:
         """Output CPGEO mesh data to STL file.
@@ -316,7 +309,6 @@ class CPGEOSurface(ControlPointSurface):
             path_output (str): Output directory path
             name_output (str): Output file name
             seed_size (float): Optional seed size (unused for CPGEO)
-            flip (bool): Optional flip flag (unused for CPGEO)
 
         Returns:
             str: Output filename with extension
@@ -346,59 +338,6 @@ class CPGEOSurface(ControlPointSurface):
     ) -> list[int]:
         return part.load_mesh_boundary(self._geometry_path)
 
-    def _geofair_data(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor):
-        """
-        To compute the geometric fairness data.
-
-        Parameters:
-            r (torch.Tensor): The surface points.
-            rdu (torch.Tensor): The first derivatives of the surface points.
-            rdu2 (torch.Tensor): The second derivatives of the surface points.
-
-        Returns:
-            C0 (torch.Tensor): The curvature-based fairness measure.
-            FF0 (torch.Tensor): The first fundamental form-based fairness measure.
-            RRuu0 (torch.Tensor): The second derivative in u direction-based fairness measure.
-            RRuv0 (torch.Tensor): The mixed second derivative-based fairness measure.
-            RRvu0 (torch.Tensor): The mixed second derivative-based fairness measure.
-            RRvv0 (torch.Tensor): The second derivative in v direction-based fairness measure.
-        """
-        Normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
-        Normal = Normal0 / torch.sqrt(torch.sum(Normal0**2, dim=1, keepdim=True))
-
-        I = torch.einsum("pim, pin->pmn", rdu, rdu)
-        invI = I.inverse()
-        II = torch.einsum("pimn, pi->pmn", rdu2, Normal)
-
-        detI = I[:, 0, 0] * I[:, 1, 1] - I[:, 0, 1] * I[:, 1, 0]
-        detII = II[:, 0, 0] * II[:, 1, 1] - II[:, 0, 1] * II[:, 1, 0]
-
-        H = 0.5 * (invI * II).sum([1, 2])
-        K = detII / detI
-
-        C0 = 4 * H**2 - 2 * K
-
-        return C0
-
-    def get_penalty_fairness(
-        self,
-        weight: torch.Tensor,
-        r: torch.Tensor,
-        rdu: torch.Tensor,
-        rdu2: torch.Tensor,
-    ) -> torch.Tensor:
-
-        C0 = self._geofair_data(r, rdu, rdu2)
-
-        indexC, C = self.barrier_function(
-            C0,
-            self.MaxC,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.CPGEO_FAIRNESS_EXPONENT,
-        )
-
-        return (weight[indexC] * C).sum()
-
     def save(self, filename):
         """Save CPGEO model to file."""
         self.model.control_points = self._cps.detach().cpu().numpy()
@@ -421,7 +360,7 @@ class CPGEOSurface(ControlPointSurface):
         import pyvista as pv
 
         # Get current control point positions
-        vertices = r = self.model.map3(self.model._knots)
+        vertices = self.model.map3(self.model._knots)
         faces = self.model._cp_faces
 
         # Create PyVista mesh (prepend face count for each triangle)
@@ -437,11 +376,9 @@ class CPGEOSurface(ControlPointSurface):
         r0: float,
         length: float,
         seed_size: float,
-        flip: bool,
         num_U_ratio: int = 1,
         num_V_ratio: int = 1,
         init_location=[0.0, 0.0, 0.0],
-        maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
         perturbation_L=-1.0,
     ):
         """
@@ -451,11 +388,9 @@ class CPGEOSurface(ControlPointSurface):
             r0 (float): The radius of the cylinder.
             length (float): The length of the cylinder.
             seed_size (float): Initial control-mesh and surface sampling spacing.
-            flip (bool): Whether to flip the surface normal or not.
             num_U_ratio (int, optional): Circumferential segment-count alignment factor, combined with 12 by LCM.
             num_V_ratio (int, optional): Axial segment-count rounding factor; the final count is even.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
-            maxC (float, optional): Fairness penalty threshold for kappa_1**2 + kappa_2**2. The penalty activates above 0.8 * maxC when Fairness is registered on the geometry updater.
             perturbation_L (float, optional): The perturbation length for initial shape. Default is -1. If < 0, no perturbation is applied.
 
         Returns:
@@ -480,8 +415,6 @@ class CPGEOSurface(ControlPointSurface):
             z = length * i / num_segments_axial
             for j in range(num_segments_circ):
                 theta = 2 * np.pi * j / num_segments_circ
-                if flip:
-                    theta = -theta
 
                 # Base radius
                 r_val = r0
@@ -514,12 +447,8 @@ class CPGEOSurface(ControlPointSurface):
                 v11 = (i + 1) * num_segments_circ + (j + 1) % num_segments_circ
 
                 # Two triangles per quad
-                if flip:
-                    faces.append([v00, v10, v01])
-                    faces.append([v01, v10, v11])
-                else:
-                    faces.append([v00, v01, v10])
-                    faces.append([v01, v11, v10])
+                faces.append([v00, v01, v10])
+                faces.append([v01, v11, v10])
 
         faces = np.array(faces)
 
@@ -529,19 +458,14 @@ class CPGEOSurface(ControlPointSurface):
         )
 
         # Create interface
-        output = cls(cpgeo_model, init_size=seed_size, MaxC=maxC)
-        output.flip = flip
-
-        return output
+        return cls(cpgeo_model, init_size=seed_size)
 
     @classmethod
     def initialize_Sphere(
         cls,
         r0: float,
         seed_size: float,
-        flip: bool,
         init_location=[0.0, 0.0, 0.0],
-        MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
     ):
         """
         Initialize the CPGEO surface for sphere shape optimization.
@@ -549,9 +473,7 @@ class CPGEOSurface(ControlPointSurface):
         Parameters:
             r0 (float): The radius of the sphere.
             seed_size (float): The size of the mesh seed.
-            flip (bool): Whether to flip the surface normal or not.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
-            MaxC (float, optional): Fairness penalty threshold for kappa_1**2 + kappa_2**2; active above 0.8 * MaxC when Fairness is registered on the geometry updater.
         Returns:
             CPGEOSurface: The initialized CPGEO surface object.
 
@@ -588,10 +510,7 @@ class CPGEOSurface(ControlPointSurface):
         )
 
         # Create interface
-        output = cls(cpgeo_model, init_size=seed_size, MaxC=MaxC)
-        output.flip = flip
-
-        return output
+        return cls(cpgeo_model, init_size=seed_size)
 
     def match_coordinates(
         self,
@@ -628,7 +547,7 @@ class CPGEOSurface(ControlPointSurface):
 
             tree = sp.KDTree(r0)
             _, min_dist_uv_idx = tree.query(nodes, k=1)
-        except Exception:
+        except ImportError:
             # fallback: chunked search over nodes to avoid creating an MxN matrix
             min_dist_uv_idx = np.empty(N, dtype=int)
             node_chunk = CONSTANT.KERNEL.SURFACE.PROJECTION_NODE_CHUNK_SIZE

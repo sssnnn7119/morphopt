@@ -100,6 +100,75 @@ def test_public_start_reports_failure_before_first_checkpoint(tmp_path, monkeypa
     assert (tmp_path / "report.json").is_file()
 
 
+@pytest.mark.parametrize("phase", ["step", "save"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_worker_writes_complete_exception_chain_to_result_log(tmp_path, phase, resume):
+    script = tmp_path / "runner_logging_task.py"
+    script.write_text('''from pathlib import Path
+import morphopt
+
+class ThisController(morphopt.Controller):
+    def __init__(self):
+        super().__init__(path_result_folder=str(Path(__file__).parent))
+        self.path_result = str(Path(__file__).parent / "result")
+        (Path(self.path_result) / "log").mkdir(parents=True)
+
+    def start_optimization(self, main_filepath):
+        self.opt_loop()
+
+    def restart_optimization(self, path_result, target_iteration):
+        self.opt_loop()
+
+    def clear_cache(self):
+        pass
+
+    def step(self):
+        if PHASE == "step":
+            raise ValueError("intentional optimization-step failure")
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    def record_history(self, *args):
+        pass
+
+    def print_info(self, *args):
+        pass
+
+    def save(self):
+        try:
+            (Path(self.path_result) / "missing" / "1.jpg").write_bytes(b"image")
+        except FileNotFoundError as exc:
+            raise RuntimeError("intentional save failure") from exc
+'''.replace("PHASE", repr(phase)), encoding="utf-8")
+    process = mp.get_context("spawn").Process(
+        target=opt_runner._run_worker,
+        kwargs={
+            "main_filepath": str(script),
+            "path_result": str(tmp_path / "result") if resume else None,
+            "target_iteration": 3 if resume else None,
+        },
+    )
+    process.start()
+    try:
+        process.join(timeout=30)
+        assert not process.is_alive()
+        assert process.exitcode == 1
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join()
+        process.close()
+    text = (tmp_path / "result" / "log" / "morphopt.log").read_text(encoding="utf-8")
+    assert text.count("Optimization worker failed") == 1
+    assert "Traceback (most recent call last)" in text
+    assert script.name in text
+    if phase == "step":
+        assert "ValueError: intentional optimization-step failure" in text
+    else:
+        assert "FileNotFoundError" in text and "1.jpg" in text
+        assert "RuntimeError: intentional save failure" in text
+        assert "direct cause" in text
+
+
 @pytest.mark.parametrize("exitcode", [0, 1])
 def test_task_continues_from_last_checkpoint(exitcode, monkeypatch):
     launches = []

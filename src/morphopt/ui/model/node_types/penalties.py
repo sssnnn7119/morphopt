@@ -10,14 +10,18 @@ from ..base_nodes import PenaltyTermNode
 
 
 class FairnessPenaltyNode(PenaltyTermNode):
-    """UI definition of Fairness."""
+    """One curvature limit shared by all updatable boundary surfaces."""
 
     type_name: ClassVar[str] = 'Fairness'
     backend_class: ClassVar[str] = 'Fairness'
     label_key: ClassVar[str] = 'ui.schema.catalog.updater_constraint.fairness.label'
     group: ClassVar[str] = 'geometry'
-    gen: ClassVar[str] = 'self.objectivefuncs.Fairness()'
+    max_curvature: float | str
+    Defaults = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS
+    gen: ClassVar[str] = 'self.objectivefuncs.Fairness(max_curvature={max_curvature})'
     fields: ClassVar[tuple[FieldSpec, ...]] = (
+        FieldSpec('max_curvature', 'ui.fairness.max_curvature.label', 'float', Defaults.CURVATURE_LIMIT,
+                  minimum=0, doc_key='ui.fairness.max_curvature.help'),
     )
 
 

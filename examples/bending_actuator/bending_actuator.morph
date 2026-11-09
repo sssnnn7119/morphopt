@@ -5,7 +5,7 @@
   "result_folder": ".results/",
   "device": "cpu",
   "updater_device": null,
-  "restart_per_iteration": 10,
+  "restart_per_iteration": 20,
   "root": {
     "kind": "problem",
     "name": "BendingActuator",
@@ -23,8 +23,7 @@
               "type": "BoundaryPart",
               "fea_seed_size": 1.0,
               "mesh_order": 1,
-              "exterior_surface": "surface_0_All",
-              "part_name": ""
+              "exterior_surface": "surface_0_All"
             },
             "children": [
               {
@@ -49,7 +48,7 @@
                 "name": "",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": false,
+                  "is_updatable": true,
                   "r0": 8.0,
                   "length": 80.0,
                   "seed_size": 1.0,
@@ -61,11 +60,7 @@
                     0.0,
                     0.0
                   ],
-                  "maxR": 0.2,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
-                  "perturbation_L": 10.0,
-                  "is_updatable": true
+                  "perturbation_L": 10.0
                 },
                 "children": []
               },
@@ -74,7 +69,7 @@
                 "name": "",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
+                  "is_updatable": true,
                   "r0": 4.0,
                   "length": 74.0,
                   "seed_size": 1.0,
@@ -86,11 +81,7 @@
                     0.0,
                     3.0
                   ],
-                  "maxR": 0.2,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
-                  "perturbation_L": 10.0,
-                  "is_updatable": true
+                  "perturbation_L": 10.0
                 },
                 "children": []
               }
@@ -158,14 +149,14 @@
         "kind": "steps",
         "name": "Load steps",
         "params": {
+          "generated_by": {},
           "step_values": {
             "load_case_1": {
               "pressure_1": [
                 0.06
               ]
             }
-          },
-          "generated_by": {}
+          }
         },
         "children": []
       },
@@ -211,18 +202,18 @@
               "type": "displacement",
               "weight": 1.0,
               "reference_point_name": "RP_1",
+              "step_name": "load_case_1",
               "component": "ry",
-              "direction": "maximize",
-              "target": 0.0,
-              "step_name": "load_case_1"
+              "direction": "target",
+              "target": 2.0
             }
           ],
           "metrics_terms": [
             {
               "type": "displacement",
               "reference_point_name": "RP_1",
-              "component": "ry",
-              "step_name": "load_case_1"
+              "step_name": "load_case_1",
+              "component": "ry"
             }
           ],
           "jacobian_needed": []
@@ -248,16 +239,35 @@
           "geometry": [
             {
               "max_step_iter": 50,
+              "max_step_length": 0.5,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "AdaptiveShapeWeights",
+                "params": {
+                  "initial_tolerance": 0.05,
+                  "final_tolerance": 0.0,
+                  "objective_tolerance": 0.01,
+                  "tightening_increment": 0.001,
+                  "penalty_growth_limit": 2.0
+                }
+              },
               "objective_functions": [
                 {
-                  "type": "ShapeDerivative",
-                  "params": {}
+                  "type": "QuadraticShapeDerivative",
+                  "params": {
+                    "memory_size": 10
+                  }
                 }
               ],
               "constraints": [
                 {
                   "type": "Fairness",
-                  "params": {}
+                  "params": {
+                    "max_curvature": 1.0
+                  }
                 },
                 {
                   "type": "Distance",

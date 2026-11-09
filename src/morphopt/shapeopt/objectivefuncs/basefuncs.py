@@ -6,25 +6,21 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...optcore.protocal import ProtocalSavable
+from ..barriers import PolynomialBarrier
 
 if TYPE_CHECKING:
     from ..surfaces import BaseSurface
 
 
 class BaseConstraints:
-    """
-    Base class for objective functions in MorphOpt.
-    """
+    """Geometric penalties evaluated with reference surface quadrature."""
 
-    def __init__(self):
-        """
-        Initialize the objective function.
-        """
-        self.scaler: list[torch.Tensor] = []
-        """
-        The scaler to process the objective function.
-        """
-
+    def __init__(self) -> None:
+        self.barrier_function = PolynomialBarrier()
+        self.area_weights: list[torch.Tensor] = []
+        """Reference area weights, fixed throughout one subproblem."""
+        self.sample_weights: list[torch.Tensor] | None = None
+        """Optional optimization weights, separate from geometric area weights."""
         self.surfaces: list[BaseSurface] = []
 
     def initialize(
@@ -32,23 +28,39 @@ class BaseConstraints:
         r0: list[torch.Tensor],
         rdu0: list[torch.Tensor],
         rdu20: list[torch.Tensor],
-        sensitivity: list[torch.Tensor],
         weights: list[torch.Tensor],
         *args: object,
         surfaces: Sequence[BaseSurface],
         **kwargs: object,
     ) -> None:
-
-        self.scaler = []
-        for i in range(len(sensitivity)):
-            sen_now = sensitivity[i].reshape([-1, 3]).norm(dim=1)
-            if (sen_now != 0).any():
-                sen_now[sen_now == 0] = sen_now[sen_now != 0].min()
-            else:
-                sen_now = torch.ones_like(sen_now)  # Fallback if all zeros
-            self.scaler.append(sen_now * weights[i])
-
+        """Bind reference area weights without physical sensitivity scaling."""
+        self.area_weights = [weight.detach().clone() for weight in weights]
+        self.sample_weights = None
         self.surfaces = list(surfaces)
+        self.barrier_function = PolynomialBarrier()
+
+    def set_sample_weights(self, weights: list[torch.Tensor] | None) -> None:
+        """Bind the strategy's frozen factors in surface quadrature order."""
+        if weights is not None:
+            if len(weights) != len(self.area_weights) or any(
+                value.shape != area.shape
+                for value, area in zip(weights, self.area_weights)
+            ):
+                raise ValueError("Sample weights must match the surface quadrature blocks.")
+            if any(not torch.isfinite(value).all() or (value < 0).any() for value in weights):
+                raise ValueError("Sample weights must be finite and nonnegative.")
+            weights = [
+                value.detach().to(area).clone()
+                for value, area in zip(weights, self.area_weights)
+            ]
+        self.sample_weights = weights
+
+    @property
+    def integration_weights(self) -> list[torch.Tensor]:
+        """Compose area and pointwise factors without changing either input."""
+        if self.sample_weights is None:
+            return self.area_weights
+        return [area * value for area, value in zip(self.area_weights, self.sample_weights)]
 
     def __call__(
         self,
@@ -73,38 +85,6 @@ class BaseConstraints:
         """
         raise NotImplementedError("Objective function not implemented.")
 
-    @staticmethod
-    def barrier_function(
-        f: torch.Tensor, f_max: torch.Tensor | float, ratio: float, p: int
-    ):
-        """
-        Apply a barrier function to the objective function.
-
-        Args:
-            f (torch.Tensor): The objective function value.
-            f_max (float or torch.Tensor): The maximum value of the objective function.
-            ratio (float): The ratio for the barrier function.
-            p (float): The exponent for the barrier function.
-
-        Returns:
-            index (torch.Tensor): The indices of the elements that are greater than the barrier.
-            fnew (torch.Tensor): The new objective function value after applying the barrier function.
-
-        """
-        if type(f_max) != torch.Tensor:
-            f_max = torch.tensor(f_max).repeat(f.shape)
-        index = torch.where(f > f_max * ratio)[0]
-
-        if index.numel() > 0:
-            f = f[index]
-            f_max = f_max[index]
-            fnew = ((f - f_max * ratio) / (f_max - f_max * ratio)) ** (p)
-        else:
-            f = f[index]
-            fnew = torch.zeros_like(f)
-        return index, fnew
-
-
 class BaseObjective(ProtocalSavable):
     """
     Base class for objective functions in MorphOpt.
@@ -114,7 +94,7 @@ class BaseObjective(ProtocalSavable):
         """
         Initialize the objective function.
         """
-        self.sensitivity: list[torch.Tensor] = []
+        self.gradient: list[torch.Tensor] = []
         """
         Sensitivity of the shape derivative with respect to the contact forces.
         """

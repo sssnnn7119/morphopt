@@ -26,6 +26,9 @@
 |---|---|
 | [`optcore/objfunc.py`](../../src/morphopt/optcore/objfunc.py) | 多工况目标及伴随/自动微分灵敏度 |
 | [`optcore/updaters.py`](../../src/morphopt/optcore/updaters.py) | 更新器注册、目标解析、梯度切片、公共优化算法及 `QuadraticHistory` 曲率历史 |
+| [`optcore/strategies.py`](../../src/morphopt/optcore/strategies.py) | 可组合的步长与罚项权重策略接口及默认实现 |
+| [`shapeopt/strategies.py`](../../src/morphopt/shapeopt/strategies.py) | 形状优化的自适应权重与障碍逐步收紧策略 |
+| [`shapeopt/barriers.py`](../../src/morphopt/shapeopt/barriers.py) | 共享几何障碍函数、相对违反量测量和采样更新接受检查 |
 | [`shapeopt/boundary_part.py`](../../src/morphopt/shapeopt/boundary_part.py)、[`surfaces/`](../../src/morphopt/shapeopt/surfaces) | 边界部件与曲面设计变量 |
 | [`optcore/modelparams/parts/cad_part.py`](../../src/morphopt/optcore/modelparams/parts/cad_part.py) | 公共剖分流程、几何载入、壳体查询、面身份与 CAD 转换 |
 | [`shapeopt/surfaces/brep_surface.py`](../../src/morphopt/shapeopt/surfaces/brep_surface.py) | BREP 边界、STEP 资产与面名称映射 |
@@ -72,6 +75,8 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 子优化器构造时只保存算法参数和目标名。注册时调用 `define_objective()`；管理器初始化时解析目标，再调用子优化器初始化。子优化器绑定后保存 `self.part` 或 `self.material`，不另持整个参数集合。
 
+`BaseUpdater` 直接继承 `ProtocalInitializable` 的生命周期钩子，不重复声明仅抛出异常的 `initialize()` 和 `reinitialize()`。具体更新器分别实现绑定后的初始化与接收原始梯度的子问题重建。`part` 和 `material` 通过公共 `target` 属性访问目标，绑定状态仅在该公共入口检查。`closure()`、`update()` 和 `update_variables()` 是更新器专用算法接口，由 `BaseUpdater` 保留。
+
 同一子类可创建多个独立对象，分别绑定不同 Part 或材料。注册方法、显式目标、变量切片与状态目录应共同指向同一设计接口。
 
 <a id="section-局部子问题与写回"></a>
@@ -85,10 +90,19 @@ Params.obtain_design_sensitivity_vars(assembly)
 | `max_step_iter` | 单次设计更新内部迭代上限 |
 | `max_step_length` | 更新步长配置 |
 | 更新范围 | 几何直接读取曲面的 `is_updatable`；材料更新器使用整体开关 `if_update` |
-| 前次改变量与当前步长 | 局部算法的迭代状态 |
+| `step_length_strategy` | 生成当前子问题的逐控制点或逐材料变量步长上限 |
+| `constraint_weight_strategy` | 选择当前子问题的具名罚项系数 |
 | `save/load()` | 按目标接口保存和恢复局部状态 |
 
 局部更新的设备上下文覆盖目标、约束及其缓存 Tensor，完成后恢复相应设备状态。几何与材料子优化器分别保存到 `geometryupdater/<接口>/` 和 `materialupdater/<接口>/`，不共享一份步长文件。
+
+步长与罚项权重采用组合方式注入。`optcore/strategies.py` 仅定义通用接口及默认实现，不导入形状优化模块，也不解释三维控制点、曲面或材料变量的专有语义。`FixedStepLength` 直接采用配置的最大步长；`ConstantConstraintWeights` 默认系数为 1，默认系数定义在通用的 `CONSTANT.KERNEL.UPDATER_STRATEGIES` 中。步长策略在初始化和每轮外层迭代开始时求值，权重策略在该轮目标与约束完成初始化后求值。步长和权重在本轮子优化内均固定。更新器仅使用所选系数求解，不包含具体策略分支或内层策略钩子。
+
+更新器通过类属性 `strategies` 暴露策略命名空间，与 `objectivefuncs` 的用法一致。基类提供通用策略；形状更新器重写该命名空间，引用同一批通用策略类并增加形状专用实现，不复制算法。脚本在构造方法中使用 `self.strategies.AdaptiveShapeWeights()` 等表达式创建独立策略对象，偏置形状更新器继承相同入口。
+
+`shapeopt/strategies.py` 中只保留一个形状专用策略 `AdaptiveShapeWeights`，统一执行“确定当前距离要求 → 双向梯度标定 → 固定参数求解”的外层流程。距离放宽比例按外层进度线性减小，各几何罚项的权重由同一次双向试探确定，不累积反馈倍数。运行状态仅保存已完成外层步数和逐项标定结果，继承关系为 `AdaptiveShapeWeights → ConstraintWeightStrategy → ProtocalSavable`。管理器仅按协议委托保存和恢复。
+
+`PolynomialBarrier` 由几何罚项独立持有。`Distance` 传入距离尺度，在当前放宽比例下采用固定二次障碍；其余几何罚项保持原始定义。UI 目录只声明一个自适应几何策略及其三个距离计划参数，复用参数表单、验证与代码生成。标定常数集中在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS`，不在 UI 和策略实现中重复定义。梯度标定和距离计划分别由 `tests/shapeopt/test_adaptive_weights.py` 与 `tests/shapeopt/test_distance_barrier.py` 验证。具体公式见[脚本参考](../scriptreference.md#section-几何更新器)。
 
 <a id="shape"></a>
 
@@ -119,7 +133,7 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 
 `ShapeDerivative` 将主目标结构梯度传入局部问题；`Fairness`、`Distance`、圆柱/半径边界及体积辅助项在形状子问题中求值。`Fairness` 使用曲面预计算的一、二阶几何量与阈值；这些阈值不等同于控制点位移上限。
 
-`ShapeDerivative` 保持原有一阶形式，`QuadraticShapeDerivative` 是独立的历史二阶目标类，两者均定义在 `shapeopt/objectivefuncs/shapederivative.py`。材料模块同样区分 `Sensitivity` 与 `QuadraticSensitivity`。具体目标通过继承复用参数读取、灵敏度映射和缩放。`QuadraticHistory` 位于 `optcore/updaters.py` 中，统一维护曲率历史、直接及逆 Hessian 乘积和历史状态序列化；具体目标仍在各自的 `objectivefuncs` 模块定义。
+`ShapeDerivative` 保持原有一阶形式，`QuadraticShapeDerivative` 是独立的历史二阶目标类，两者均定义在 `shapeopt/objectivefuncs/shapederivative.py`。材料模块同样区分 `Sensitivity` 与 `QuadraticSensitivity`。具体目标通过继承复用参数读取与灵敏度映射，物理代理及曲率历史均使用原始有限元灵敏度。`QuadraticHistory` 位于 `optcore/updaters.py` 中，统一维护曲率历史、直接及逆 Hessian 乘积和历史状态序列化；具体目标仍在各自的 `objectivefuncs` 模块定义。
 
 二阶目标和内层 `Optimizer.LBFGS` 分别持有独立的 `QuadraticHistory` 实例。外层实例在有限元灵敏度观测时更新，以 `hessian_product()` 评价物理目标的二次项；内层实例在试探步被接受后更新，以 `inverse_hessian_product()` 计算搜索方向。两者共用正曲率筛选与历史截断实现。子问题重新建立时重置内层历史，外层历史跨轮保留。
 

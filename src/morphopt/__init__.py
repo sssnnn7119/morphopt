@@ -92,6 +92,7 @@ from .optcore.protocal import (
     ProtocalVisualizable,
 )
 from .optcore.solver import Solver
+from .optcore import strategies
 from .optcore.updaters import Updaters
 from .shapeopt import (
     BaseSurfaceConstraints,
@@ -150,4 +151,5 @@ __all__ = [
     "shapeopt",
     "simp",
     "start_optimization",
+    "strategies",
 ]

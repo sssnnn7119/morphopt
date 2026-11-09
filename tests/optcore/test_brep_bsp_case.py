@@ -44,7 +44,7 @@ def test_case_embeds_assets_and_roundtrips(tmp_path: Path) -> None:
     assert "if_update" not in problem.updater.geometry[0]
     assert problem.device == "cpu"
     assert problem.solver.num_process == 1
-    assert problem.solver.gpus == []
+    assert problem.solver.process_devices == ["cpu"]
     _, assets = collect_python_assets(problem)
     assert {asset.format for asset in assets.values()} == {"step", "json"}
     path = Path(ProblemLibrary.save(problem, tmp_path / "copy.morph"))
@@ -99,7 +99,13 @@ def test_fixed_boundary_sampling_and_shape_derivative(boundary: BoundaryPart) ->
     before = boundary.get_parameters()
     inner.is_updatable = False
     inner.update_variables(torch.full_like(inner.control_points, 0.001))
-    boundary.update_variables(torch.ones(boundary.num_variables))
+    boundary.update_variables(
+        torch.ones(boundary.num_variables),
+        max_step_length=[
+            torch.ones(surface.num_variables // 3)
+            for surface in boundary.surface_interfaces()
+        ],
+    )
     assert torch.equal(inner.get_surface_parameters(), before[1])
     inner.is_updatable = True
     inner.update_variables(torch.full_like(inner.control_points, 0.001))

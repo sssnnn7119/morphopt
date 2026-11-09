@@ -826,7 +826,7 @@ grad_M = design_gradients[len(Φ_G):]  # → UpdaterSIMPMaterial
 ```python
 class Sensitivity(BaseObjective):
     def __call__(self, cps, *args, **kwargs):
-        return ((cps - self._cp0) * self.sensitivity).sum() * self.factor
+        return ((cps - self._cp0) * self.sensitivity).sum()
 ```
 
 `DensityFieldMinimize` 提供轻微正则化，推动密度场趋于零：

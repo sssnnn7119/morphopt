@@ -155,7 +155,6 @@ def convert_cad_to_boundary(
         replacement.add_surface(
             BREPSurfaceNode(
                 name=f"surface_{index}",
-                flip=index > 0,
                 filename=f"{node.name}_surface_{index}.stp",
                 data=base64.b64encode(path.read_bytes()).decode("ascii"),
                 brep_metadata=json.dumps(surface.metadata()),

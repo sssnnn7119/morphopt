@@ -2,11 +2,120 @@
 
 import numpy as np
 import pyvista as pv
+import pytest
+from PySide6.QtGui import QTextCursor
+from PySide6.QtWidgets import QApplication
 
 from morphopt.postprocess.visualization import (
     add_design_component,
     design_view_options,
 )
+
+
+@pytest.fixture
+def log_view(tmp_path):
+    from morphopt.ui.application.results import ResultSession
+    from morphopt.ui.widgets.observation_pages import LogsPage
+
+    app = QApplication.instance() or QApplication([])
+    logs = tmp_path / "log"
+    logs.mkdir()
+    path = logs / "morphopt.log"
+    path.write_text("".join(f"entry {index}: " + "details " * 40 + "\n" for index in range(200)), encoding="utf-8")
+    results = ResultSession()
+    results.bind(str(tmp_path))
+    page = LogsPage()
+    page.resize(800, 400)
+    page.show()
+    page.refresh(results)
+    app.processEvents()
+    try:
+        yield page, path, results
+    finally:
+        page.close()
+        page.deleteLater()
+        app.processEvents()
+
+
+def append_log(page, path, results, content="new entry\n"):
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(content)
+    page.refresh(results)
+
+
+def test_log_auto_scroll_can_be_disabled_for_reading(log_view):
+    page, path, results = log_view
+    scroll = page.text.verticalScrollBar()
+    assert scroll.maximum() > 0
+    assert scroll.value() == scroll.maximum()
+    page.follow.setChecked(False)
+    scroll.setValue(0)
+    append_log(page, path, results)
+    assert scroll.value() == 0
+    assert page.text.toPlainText().endswith("new entry\n")
+    page.follow.setChecked(True)
+    assert scroll.value() == scroll.maximum()
+
+
+def test_log_updates_hold_the_reading_position_until_user_returns_to_bottom(log_view):
+    page, path, results = log_view
+    scroll = page.text.verticalScrollBar()
+    scroll.setValue(scroll.maximum() // 2)
+    position = scroll.value()
+    visible = page.text.firstVisibleBlock().text()
+    page.refresh(results)
+    assert scroll.value() == position
+    for _ in range(3):
+        append_log(page, path, results)
+        assert page.follow.isChecked()
+        assert scroll.value() == position
+        assert page.text.firstVisibleBlock().text() == visible
+    scroll.setValue(scroll.maximum())
+    append_log(page, path, results)
+    assert scroll.value() == scroll.maximum()
+
+
+def test_log_updates_preserve_selection_even_at_the_bottom(log_view):
+    page, path, results = log_view
+    cursor = QTextCursor(page.text.document().lastBlock().previous())
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    page.text.setTextCursor(cursor)
+    selected = page.text.textCursor().selectedText()
+    assert selected
+    scroll = page.text.verticalScrollBar()
+    scroll.setValue(scroll.maximum())
+    position = scroll.value()
+    append_log(page, path, results)
+    assert scroll.value() == position < scroll.maximum()
+    assert page.text.textCursor().selectedText() == selected
+
+
+def test_log_updates_do_not_move_a_dragged_scrollbar(log_view):
+    page, path, results = log_view
+    scroll = page.text.verticalScrollBar()
+    position = scroll.value()
+    scroll.setSliderDown(True)
+    try:
+        append_log(page, path, results)
+        assert scroll.value() == position < scroll.maximum()
+    finally:
+        scroll.setSliderDown(False)
+
+
+def test_log_trimming_preserves_the_visible_text_and_horizontal_position(log_view):
+    page, path, results = log_view
+    page.text.setMaximumBlockCount(50)
+    scroll = page.text.verticalScrollBar()
+    scroll.setValue(scroll.maximum() // 2)
+    visible = page.text.firstVisibleBlock().text()
+    horizontal = page.text.horizontalScrollBar()
+    horizontal.setValue(horizontal.maximum() // 2)
+    horizontal_position = horizontal.value()
+    assert horizontal_position > 0
+    append_log(page, path, results, "new entry\n" * 10)
+    assert page.text.blockCount() == 50
+    assert page.text.firstVisibleBlock().text() == visible
+    assert horizontal.value() == horizontal_position
 
 
 class BspSurface:

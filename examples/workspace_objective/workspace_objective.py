@@ -19,7 +19,10 @@ class ThisController(morphopt.Controller):
             self.jacobian_needed = ['pressure_1', 'pressure_2']
 
         def objective_function(self) -> Any:
-            def objective_term_1() -> Any:
+            return sum(self._objective_values())
+
+        def _objective_values(self) -> list[Any]:
+            def objective_term_0() -> Any:
                 assembly = self.fe.assembly
                 reference_point = assembly.get_reference_point('RP_1')
                 start = assembly._GC_list_indexStart[reference_point._RGC_index]
@@ -53,10 +56,25 @@ class ThisController(morphopt.Controller):
                     integrand = motion[0] * tangent[1] - motion[1] * tangent[0]
                     integral = integral + weight * orientation * integrand
                 return abs(integral) / 2.0
-            return -(1.0) * objective_term_1() / 1.0
+            return [-(1.0) * objective_term_0() / 1.0]
 
         def get_metrics(self) -> Any:
-            metrics = []
+            metrics = {}
+            for name, value in [
+                ('', {f'objective_{index}': value for index, value in enumerate(self._objective_values())}),
+            ]:
+                if isinstance(value, dict):
+                    entries = value
+                elif isinstance(value, (list, tuple)):
+                    entries = {
+                        f'{name}_{index}' if name else str(len(metrics) + index): item
+                        for index, item in enumerate(value)
+                    }
+                else:
+                    entries = {name or str(len(metrics)): value}
+                if metrics.keys() & entries.keys():
+                    raise ValueError('Metric names must be unique.')
+                metrics.update(entries)
             return metrics
 
     class Params(morphopt.Params):
@@ -67,13 +85,13 @@ class ThisController(morphopt.Controller):
             class BoundaryPart(morphopt.BoundaryPart):
 
                 def define_surfaces(self) -> None:
-                    surface_0 = self.BSP.initialize_cylinder(r0=8.0, length=100.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 0.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=False)
+                    surface_0 = self.BSP.initialize_cylinder(r0=8.0, length=100.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 0.0], perturbation_L=10.0)
                     surface_0.is_updatable = True
                     self.add_surface_interface(surface_0)
-                    surface_1 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 3.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=True)
+                    surface_1 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 3.0], perturbation_L=10.0)
                     surface_1.is_updatable = True
                     self.add_surface_interface(surface_1)
-                    surface_2 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 53.0], maxR=0.2, maxC=2.0, maxFF=0.2, perturbation_L=10.0, flip=True)
+                    surface_2 = self.BSP.initialize_cylinder(r0=4.0, length=44.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 53.0], perturbation_L=10.0)
                     surface_2.is_updatable = True
                     self.add_surface_interface(surface_2)
                     surface_0.add_constraint(surface_0.mirror(plane='xz', offset=0.0))
@@ -169,11 +187,18 @@ class ThisController(morphopt.Controller):
         class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
 
             def __init__(self) -> None:
-                super().__init__(max_step_iter=300, max_step_length=0.5)
+                super().__init__(
+                    max_step_iter=300,
+                    max_step_length=0.5,
+                    step_length_strategy=self.strategies.FixedStepLength(),
+                    constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+                        value=1.0,
+                    ),
+                )
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-                self.add_constraints(self.objectivefuncs.Fairness())
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=2.0))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=[[2.5, 2.5, 2.5], [2.5, 2.5, 2.5], [2.5, 2.5, 2.5]]))
                 self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=15.0, height=100.0, bottom=0.0))
 

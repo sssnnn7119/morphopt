@@ -28,17 +28,7 @@ class BaseSurface(BaseModelComponent):
 
     is_discrete: ClassVar[bool] = False
 
-    def __init__(self, *args, **kwargs) -> None:
-        """
-        Initialize the Surface class.
-
-        Parameters:
-            surface (Surface_Base) : The surface model.
-            surf_type (int) : The type of the surface.
-                - 0: bspline surface
-                - 1: closed surface
-        """
-
+    def __init__(self) -> None:
         super().__init__()
 
         self.is_updatable: bool = False
@@ -50,10 +40,15 @@ class BaseSurface(BaseModelComponent):
         self.surf_node_uv: np.ndarray
         """the (u, v) coordinates of the surface nodes."""
 
-        self.flip: bool = False
+        self._flip = False
 
         self.constraints: list[BaseSurfaceConstraints[Any]] = []
         """Surface-owned constraints in their execution order."""
+
+    @property
+    def flip(self) -> bool:
+        """BoundaryPart owns orientation: outer boundary false, cavities true."""
+        return self._flip
 
     def add_constraint(self, constraint: BaseSurfaceConstraints[Any]) -> BaseSurface:
         """Append a lifecycle constraint to this surface and return ``self``.
@@ -114,7 +109,6 @@ class BaseSurface(BaseModelComponent):
         path_output: str | Path,
         name_output: str,
         seed_size: float = -1,
-        flip: bool = False,
         pools: Pool | None = None,
     ) -> str:
         """
@@ -128,11 +122,10 @@ class BaseSurface(BaseModelComponent):
         self,
         path_output: str | Path,
         name_output: str,
-        flip: bool = False,
         pools: Pool | None = None,
     ) -> None:
         """Export file-backed geometry before entering the meshing session."""
-        filename = self.output_data(path_output, name_output, flip=flip, pools=pools)
+        filename = self.output_data(path_output, name_output, pools=pools)
         self._geometry_path = Path(path_output) / filename
 
     def load_geometry(
@@ -220,28 +213,6 @@ class BaseSurface(BaseModelComponent):
             triangles.new_zeros((len(triangles), 3, 2, 2)),
         )
 
-    def get_penalty_fairness(
-        self,
-        weight: torch.Tensor,
-        r: torch.Tensor,
-        rdu: torch.Tensor,
-        rdu2: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Get the penalty fairness of the surface.
-
-        Args:
-            weight (torch.Tensor): The integration weights of the surface,
-                indexed by the barrier mask of the actual implementation.
-            r (torch.Tensor): The point coordinates of the surface.
-            rdu (torch.Tensor): The partial derivatives of the surface.
-            rdu2 (torch.Tensor): The second partial derivatives of the surface.
-
-        Returns:
-            torch.Tensor: The penalty fairness of the surface, zero by default.
-        """
-        return torch.zeros((), dtype=torch.float32)
-
     def get_points_weight(self) -> torch.Tensor:
         """Return triangle areas for fixed-boundary centroid quadrature."""
         triangles = self._fixed_triangles
@@ -253,36 +224,6 @@ class BaseSurface(BaseModelComponent):
             ).norm(dim=1)
             / 2
         )
-
-    @staticmethod
-    def barrier_function(
-        f: torch.Tensor, f_max: torch.Tensor | float, ratio: float, p: int
-    ):
-        """
-        Apply a barrier function to the objective function.
-
-        Args:
-            f (torch.Tensor): The objective function value.
-            f_max (float or torch.Tensor): The maximum value of the objective function.
-            ratio (float): The ratio for the barrier function.
-            p (float): The exponent for the barrier function.
-
-        Returns:
-            index (torch.Tensor): The indices of the elements that are greater than the barrier.
-            fnew (torch.Tensor): The new objective function value after applying the barrier function.
-
-        """
-        if type(f_max) != torch.Tensor:
-            f_max = torch.tensor(f_max).repeat(f.shape)
-        index = torch.where(f > f_max * ratio)[0]
-
-        if index.numel() > 0:
-            f = f[index]
-            f_max = f_max[index]
-            fnew = ((f - f_max * ratio) / (f_max - f_max * ratio)) ** (p)
-        else:
-            fnew = f[index]
-        return index, fnew
 
     @property
     def num_variables(self) -> int:
@@ -954,18 +895,8 @@ class ControlPointSurface(BaseSurface):
             weights = weights.index_add_(0, triangles[:, 2], areas / 3.0)
             return weights
 
-    def __init__(self, *args, **kwargs) -> None:
-        """
-        Initialize the Surface class.
-
-        Parameters:
-            surface (Surface_Base) : The surface model.
-            surf_type (int) : The type of the surface.
-                - 0: bspline surface
-                - 1: closed surface
-        """
-
-        super().__init__(*args, **kwargs)
+    def __init__(self) -> None:
+        super().__init__()
 
         self._cps: torch.Tensor
         """Control points tensor."""

@@ -855,6 +855,8 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。BREP 默认关闭，选定 NURBS 面后可启用面内控制点优化；网格曲面不提供设计变量。几何更新器直接读取曲面状态。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
+逐控制点步长由 `UpdaterBoundaryPart` 通过步长策略统一生成。默认 `FixedStepLength` 在每轮外层迭代中将各控制点的步长上限设为 `max_step_length`，不根据相邻更新方向增大或衰减，也不乘以隐含的初始比例。`BoundaryPart.update_variables(x_change, max_step_length)` 接收更新器提供的逐曲面 Tensor 列表，通过 `atan` 映射应用步长限制；部件自身不推算或修正步长，不接受缺省步长或逐曲面的 `None` 值。
+
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
 | `ShapeDerivative()` | `add_objective_function()` | 原有一阶形状代理 |
@@ -866,6 +868,90 @@ class Shape(morphopt.UpdaterBoundaryPart):
 | `VolumeMaximization(surf_idx, weight=...)` | `add_constraints()` | 指定 CPGEO 曲面的体积辅助目标 |
 
 主目标在 `ObjectiveFunction` 中定义，`ShapeDerivative` 为更新子问题中的梯度项。只填写主目标而缺少相应更新器或灵敏度项，不能构成完整的形状更新配置。
+
+几何罚项使用曲面参考面积权重进行离散积分，积分权重在每轮外层迭代开始时更新，并在该轮子优化中固定。积分权重不乘以有限元灵敏度，也不按采样点数平均。曲面点对距离罚项保留两侧面积权重的乘积，对应点对的双重曲面积分。平滑障碍函数的激活条件与表达式保持不变。
+
+子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。更新器的 `constraint_weights` 保存各罚项的系数，默认均为 1。`morphopt/optcore/strategies.py` 定义通用步长与权重接口及默认实现，`morphopt/shapeopt/strategies.py` 定义形状优化专用策略，通过更新器构造参数选择。几何与 SIMP 材料更新器共用通用策略接口，分别持有各自的策略实例。
+
+```python
+class Shape(morphopt.UpdaterBoundaryPart):
+    def __init__(self) -> None:
+        super().__init__(
+            max_step_length=0.2,
+            step_length_strategy=self.strategies.FixedStepLength(),
+            constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+                value=1.0,
+            ),
+        )
+```
+
+策略命名空间与 `self.objectivefuncs` 一样作为更新器类属性提供。`BaseUpdater.strategies` 提供通用策略，`UpdaterBoundaryPart.strategies` 在相同入口提供通用策略与形状专用策略，`UpdaterOffsetBoundaryPart` 继承该入口。因此，更新器子类可在调用 `super().__init__()` 时直接使用 `self.strategies.xxx()`。类属性仅引用策略类的命名空间，每次构造策略均产生独立实例，不共享运行状态。
+
+新增步长策略继承 `StepLengthStrategy` 并实现 `__call__(updater, parameters, maximum, gradient)`。`parameters` 为逐块物理参数，几何块形状为 `(控制点数, 3)`，材料块为 `(变量数, 1)`；返回逐块的一维步长 Tensor 列表。初始化时 `gradient` 为 `None`，每轮外层迭代开始时接收当前原始有限元梯度。策略重新生成与当前参数数量对应的步长，不在部件中取均值补齐。默认策略的输出与梯度无关。
+
+新增权重策略继承 `ConstraintWeightStrategy` 并实现 `__call__(updater, gradient)`，返回键为 `updater.constraints_funcs` 中注册名称的系数字典。策略通过 `updater.part` 或 `updater.material`、`updater.obj_funcs` 和 `updater.constraints_funcs` 读取当前状态。该策略在目标项、约束项和步长初始化完成后每轮调用一次，系数必须有限且非负。原有 `compute_constraint_weights()` 方法已由策略对象替代。
+
+步长、距离要求与权重在子优化期间固定，闭包和线搜索不修改策略状态。`updater.closure(x, return_list=True)` 返回按注册顺序排列的原始目标值与原始罚项值；普通 `updater.closure(x)` 返回加权后的总目标。子优化日志中的约束列显示加权贡献，`Total` 包含全部目标与罚项。UI 在各优化器主设置中提供步长与罚项权重策略选择，并直接编辑参数。用户扩展策略仍通过更新器自定义类的构造方法传入。参考面积权重实现的是每轮参考曲面上的积分近似；若需当前变形曲面上的面积积分，还需在评价时引入随设计变化的面积微元。
+
+**自适应几何权重与距离收紧**
+
+`shapeopt.strategies.AdaptiveShapeWeights` 统一确定当前距离要求与几何罚项权重。每轮外层迭代依次执行距离计划、双向梯度标定和固定参数的子优化。策略继承 `ConstraintWeightStrategy`，通过 `ProtocalSavable` 保存收紧进度及逐项权重。
+
+```python
+class Shape(morphopt.UpdaterBoundaryPart):
+    def __init__(self) -> None:
+        super().__init__(
+            max_step_length=0.2,
+            constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
+                tightening_steps=30,
+                initial_tolerance=0.2,
+                final_tolerance=0.0,
+            ),
+        )
+```
+
+| 参数 | 默认值 | 定义 |
+|---|---|---|
+| `tightening_steps` | `30` | 达到最终距离要求所需的已完成外层更新次数，须为正整数 |
+| `initial_tolerance` | `0.2` | 初始距离放宽比例；0.2 表示按原要求距离的 80% 施加约束 |
+| `final_tolerance` | `0.0` | 最终距离放宽比例；0 表示恢复原始距离要求 |
+
+参数须满足 `0 <= final_tolerance <= initial_tolerance < 1`。初始和最终比例均设为 0 时，从第 0 轮起采用原始距离要求，权重标定流程保持一致。
+
+令 $k$ 为已完成的外层更新次数，$K$ 为收紧迭代次数，当前距离放宽比例为
+
+$$
+t=\min(k/K,1),\qquad
+\varepsilon_k=(1-t)\varepsilon_0+t\varepsilon_1,\qquad
+d_{\mathrm{req},k}=(1-\varepsilon_k)d_{\min}.
+$$
+
+原要求距离为 2.5 时，默认设置下第 0、15、30 轮的有效要求距离分别为 2.0、2.25、2.5；此后保持 2.5。`Distance` 采用固定二次障碍：
+
+$$
+\phi_k(d)=\left[1+\frac{d_{\mathrm{req},k}-d}{\eta d_{\min}}\right]_+^2,
+\qquad \eta=0.05.
+$$
+
+障碍在有效要求距离以上保留 5% 原要求距离的预激活余量，距离足够大时为零。零要求距离采用既有障碍尺度作为分母。曲率、半径和包络等其他几何罚项保持原始定义，参考面积权重及距离邻域保持原有规则。
+
+确定距离要求后，策略沿当前物理梯度的下降方向及反方向各进行一次几何试探。试探位移为控制点允许位移上限的 50%，沿用既有 `atan` 位移映射。仅试探方向归一化，原始有限元灵敏度及物理代理保持不变；试探不增加有限元或伴随求解。
+
+令 $g_b=\nabla_xm(x_b)$、$p_{c,b}=\nabla_xP_c(x_b)$ 为同一子优化变量下的物理梯度和第 $c$ 项罚函数梯度，权重取两侧有效试探的最大标定值：
+
+$$
+\lambda_c=\max_{b\in\{+,-\}}
+\max\left\{
+2\frac{[-g_b^Tp_{c,b}]_+}{\|p_{c,b}\|^2},
+0.25\frac{\|g_b\|}{\|p_{c,b}\|}
+\right\}.
+$$
+
+仅使用物理梯度和罚项梯度范数均非零的试探。第一项平衡物理下降与几何修复的方向冲突；第二项保留近似正交时的几何贡献。两侧均无有效响应时，保留该项上次标定系数，首次采用系数 1。物理目标或积分罚项的尺度变化由同一标定公式处理，不累积历史反馈倍数。
+
+试探比例、安全系数、范数平衡比例及距离过渡比例统一定义在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS` 中，日常配置只包含上述三个距离计划参数。每轮日志记录外层步数、放宽比例、逐项权重与罚值；`strategy.diagnostics` 提供试探梯度范数。运行状态统一保存到 `geometryupdater/<接口>/constraint_weights/adaptive_weights_<迭代号>.json`，工作进程重启后恢复。
+
+策略适用于非负几何罚项，不适用于可能取负值的体积最大化等辅助目标。几何试探及内层评价结束时恢复原始参数。有限罚函数和有限试探不构成连续几何的严格可行性保证，最终仍应核查实际距离及其他几何要求。
 
 <a id="section-有限元目标的历史梯度二阶代理"></a>
 
@@ -903,7 +989,7 @@ $$
 
 仅保留满足 $s^Ty>10^{-8}\|s\|\|y\|$ 的曲率对。零步长、非正曲率和近乎正交的梯度增量不进入历史；没有有效曲率对时，二阶模式采用一阶 Taylor 代理。有有效历史时，Hessian 近似保持正定，不能描述真实目标的负曲率。
 
-历史记录采用未归一化的梯度和实际控制点坐标；现有梯度缩放作用于整个代理目标。形状历史仅包含可更新曲面，曲面参数数量或更新状态变化时清空历史。材料历史在参数数量变化时清空。二阶模型在内层迭代期间保持固定，不增加有限元或伴随分析次数；几何约束及现有步长限制继续生效。
+一阶代理、二阶代理及曲率历史均采用原始有限元灵敏度，保留其数值大小，不进行最大值或范数归一化，也不对整个代理目标附加灵敏度缩放。形状历史仅包含可更新曲面，曲面参数数量或更新状态变化时清空历史。材料历史在参数数量变化时清空。二阶模型在内层迭代期间保持固定，不增加有限元或伴随分析次数；几何约束及现有步长限制继续生效。
 
 每个更新器、每个目标项分别保存自己的观测及曲率历史，状态文件位于对应更新器目录的 `objectives/<目标项名称>/surrogate_<迭代号>.npz`。`QuadraticHistory` 继承 `ProtocalSavable`，通过 `save(foldpath, iteration)` 和 `load(foldpath, iteration)` 实现保存与恢复，由具体目标委托调用。进程重启后恢复最后一次有限元观测，再与下一轮观测构造新的曲率对。参数含义、目标定义或载荷改变后应新建优化任务，避免混用不同问题的梯度。多个 Part 或材料同时更新时，各子目标独立近似局部曲率，不构造跨更新器的 Hessian 耦合块；梯度差仍可能包含其他接口变化的影响，因此该局部拟合不等同于严格的块 Hessian。
 
@@ -924,9 +1010,7 @@ class Updater(morphopt.Updaters):
             self.if_update = True
 
         def define_objective(self):
-            self.add_objective_function(self.objectivefuncs.Sensitivity(
-                normalize_gradient=False,
-            ))
+            self.add_objective_function(self.objectivefuncs.Sensitivity())
             self.add_constraints(self.objectivefuncs.VolFrac(
                 volfrac_min=0.2, volfrac_max=0.5, elementname="C3D8",
             ))
@@ -936,8 +1020,8 @@ class Updater(morphopt.Updaters):
 
 | 项目 | 注册位置 | 定义 |
 |---|---|---|
-| `Sensitivity(normalize_gradient=False)` | `add_objective_function()` | 原有材料目标的倒数近似 |
-| `QuadraticSensitivity(normalize_gradient=False, memory_size=10)` | `add_objective_function()` | 独立的历史梯度二阶材料代理 |
+| `Sensitivity()` | `add_objective_function()` | 使用原始材料灵敏度的倒数近似 |
+| `QuadraticSensitivity(memory_size=10)` | `add_objective_function()` | 使用原始灵敏度及其历史差分的二阶材料代理 |
 | `DensityFieldMinimize(scale=...)` | `add_objective_function()` | 控制场辅助正则化项 |
 | `VolFrac(volfrac_min, volfrac_max, elementname, penalty=...)` | `add_constraints()` | 体积加权材料占比范围 |
 | `boundarys.MinValue(xmin=...)` | `add_constraints()` | 设计控制变量下界 |

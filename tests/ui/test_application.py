@@ -20,6 +20,54 @@ from morphopt.ui.model.problem import InstanceNode
 from morphopt.ui.schemes.base import get_template
 from morphopt.ui.application.fields import fields_for_node
 from morphopt.ui.application.runs import RunSourceKind
+from morphopt.ui.application.results import ResultLogReader
+from morphopt.constants import CONSTANT
+
+
+def test_result_logs_are_available_without_completed_iterations(tmp_path):
+    logs = tmp_path / "log"
+    logs.mkdir()
+    for name in ("torchfea.log", "morphopt.log", "history_record.csv"):
+        (logs / name).touch()
+    results = ResultSession()
+    assert not results.bind(str(tmp_path))  # No task script or completed result.
+    assert [path.name for path in results.log_files] == ["morphopt.log", "torchfea.log"]
+    results.reset()
+    assert results.log_files == ()
+
+
+def test_result_log_reader_handles_appends_partial_utf8_and_new_runs(tmp_path):
+    path = tmp_path / "morphopt.log"
+    path.write_bytes(b"initial\n")
+    reader = ResultLogReader()
+    assert reader.read(path) == (True, "initial\n")
+    assert reader.read(path) == (False, "")
+    encoded = "优化完成\n".encode("utf-8")
+    with path.open("ab") as stream:
+        stream.write(encoded[:2])
+    assert reader.read(path) == (False, "")
+    with path.open("ab") as stream:
+        stream.write(encoded[2:])
+    assert reader.read(path) == (False, "优化完成\n")
+    path.write_text("new\n", encoding="utf-8")
+    assert reader.read(path) == (True, "new\n")
+    other = tmp_path / "torchfea.log"
+    other.write_text("FEA\n", encoding="utf-8")
+    assert reader.read(other) == (True, "FEA\n")
+
+
+def test_result_log_reader_bounds_large_initial_and_appended_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr(CONSTANT.UI.OBSERVER, "LOG_READ_MAXIMUM_BYTES", 64)
+    path = tmp_path / "large.log"
+    path.write_text("discard\n" * 100 + "latest\n", encoding="utf-8")
+    reader = ResultLogReader()
+    replace, text = reader.read(path)
+    assert replace and text.endswith("latest\n") and len(text) <= 64
+    assert reader.read(path) == (False, "")
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("more\n" * 100 + "newest\n")
+    replace, text = reader.read(path)
+    assert replace and text.endswith("newest\n") and len(text) <= 64
 
 
 def test_domain_packages_expose_only_concrete_components() -> None:

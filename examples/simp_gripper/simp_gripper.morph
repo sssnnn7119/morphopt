@@ -30,14 +30,14 @@
                 "name": "final_model",
                 "params": {
                   "translation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ],
                   "rotation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ]
                 },
                 "children": []
@@ -59,13 +59,13 @@
                 "params": {
                   "translation": [
                     0.0,
-                    0,
-                    0
+                    0.0,
+                    0.0
                   ],
                   "rotation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ]
                 },
                 "children": []
@@ -76,13 +76,13 @@
                 "params": {
                   "translation": [
                     -10.0,
-                    0,
-                    0
+                    0.0,
+                    0.0
                   ],
                   "rotation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ]
                 },
                 "children": []
@@ -93,13 +93,13 @@
                 "params": {
                   "translation": [
                     -20.0,
-                    0,
-                    0
+                    0.0,
+                    0.0
                   ],
                   "rotation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ]
                 },
                 "children": []
@@ -110,13 +110,13 @@
                 "params": {
                   "translation": [
                     -30.0,
-                    0,
-                    0
+                    0.0,
+                    0.0
                   ],
                   "rotation": [
-                    0,
-                    0,
-                    0
+                    0.0,
+                    0.0,
+                    0.0
                   ]
                 },
                 "children": []
@@ -230,7 +230,8 @@
             "params": {
               "type": "PenaltyDoF",
               "obj_name": "RPCylinder80",
-              "s": 2
+              "s": 2,
+              "obj_type": "auto"
             },
             "children": []
           },
@@ -293,7 +294,8 @@
             "params": {
               "type": "PenaltyDoF",
               "obj_name": "RPCylinder70",
-              "s": 2
+              "s": 2,
+              "obj_type": "auto"
             },
             "children": []
           },
@@ -356,7 +358,8 @@
             "params": {
               "type": "PenaltyDoF",
               "obj_name": "RPCylinder60",
-              "s": 2
+              "s": 2,
+              "obj_type": "auto"
             },
             "children": []
           },
@@ -419,7 +422,8 @@
             "params": {
               "type": "PenaltyDoF",
               "obj_name": "RPCylinder50",
-              "s": 2
+              "s": 2,
+              "obj_type": "auto"
             },
             "children": []
           },
@@ -442,6 +446,7 @@
         "kind": "steps",
         "name": "Load steps",
         "params": {
+          "generated_by": {},
           "step_values": {
             "load_case_1": {
               "Penalty_RPCylinder80_Z": [
@@ -515,8 +520,7 @@
                 -10.0
               ]
             }
-          },
-          "generated_by": {}
+          }
         },
         "children": []
       },
@@ -600,16 +604,23 @@
           "geometry": [],
           "materials": [
             {
-              "material_name": "body",
               "max_step_iter": 100,
               "max_step_length": 1.0,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "ConstantConstraintWeights",
+                "params": {
+                  "value": 1.0
+                }
+              },
               "if_update": true,
               "objective_functions": [
                 {
                   "type": "Sensitivity",
-                  "params": {
-                    "normalize_gradient": false
-                  }
+                  "params": {}
                 }
               ],
               "constraints": [
@@ -638,7 +649,8 @@
                     "elementname": "C3D4"
                   }
                 }
-              ]
+              ],
+              "material_name": "body"
             }
           ]
         },

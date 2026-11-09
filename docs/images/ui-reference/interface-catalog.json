@@ -3687,26 +3687,9 @@
       "custom_only": false,
       "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
+      "generator": "self.objectivefuncs.Sensitivity()",
       "num_values": null,
-      "fields": [
-        {
-          "key": "normalize_gradient",
-          "label_key": "ui.schema.fields.normalize_gradient.label.normalize_gradient",
-          "type": "bool",
-          "default": false,
-          "doc_key": "ui.schema.fields.normalize_gradient.help.text",
-          "choices": [],
-          "size": 6,
-          "minimum": null,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "梯度归一化",
-          "help": "是否对材料梯度进行归一化。"
-        }
-      ],
+      "fields": [],
       "source": "src/morphopt/ui/model/node_types/objectives.py"
     },
     {

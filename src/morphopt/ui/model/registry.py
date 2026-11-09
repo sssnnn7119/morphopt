@@ -93,6 +93,17 @@ from .node_types import (
     WedgeOperationNode,
 )
 
+CONFIGURATION_CLASS_PATHS = {
+    "problem": "ThisController",
+    "params_class": "ThisController.Params",
+    "geometry": "ThisController.Params.GeometryParams",
+    "loads_group": "ThisController.Params.FEAParams",
+    "materials": "ThisController.Params.MaterialsParams",
+    "solver": "ThisController.Solver",
+    "objective": "ThisController.ObjectiveFunction",
+    "updater": "ThisController.Updater",
+}
+
 CAD_OPERATION_TYPES: dict[str, type[CADOperationNode]] = {
     node.type_name: node for node in (
         BoxOperationNode,

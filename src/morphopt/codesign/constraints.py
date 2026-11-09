@@ -160,7 +160,7 @@ class InwardCurvatureRadius(BaseConstraints):
                     )
                 )
                 penalty_strong = self.penalty_scale * penalty * hard_boost
-                loss = loss + (self.scaler[i][index] * penalty_strong).sum()
+                loss = loss + (self.integration_weights[i][index] * penalty_strong).sum()
 
         return loss
 
@@ -349,8 +349,8 @@ class OffsetSurfaceMinThickness(BaseConstraints):
             mindist_n = self._neighbor_mindist[sf_idx][mask_n].to(
                 device=r[sf_idx].device, dtype=r[sf_idx].dtype
             )
-            scaler_n0 = self.scaler[sf_idx][pairs_n[0]]
-            scaler_n1 = self.scaler[sf_idx][pairs_n[1]]
+            weights_n0 = self.integration_weights[sf_idx][pairs_n[0]]
+            weights_n1 = self.integration_weights[sf_idx][pairs_n[1]]
 
             # Offset points and distance
             roff, _ = self._offset_points(
@@ -386,7 +386,7 @@ class OffsetSurfaceMinThickness(BaseConstraints):
 
                 loss = (
                     loss
-                    + (penalty_strong * scaler_n0[indexl] * scaler_n1[indexl]).sum()
+                    + (penalty_strong * weights_n0[indexl] * weights_n1[indexl]).sum()
                 )
 
         return loss

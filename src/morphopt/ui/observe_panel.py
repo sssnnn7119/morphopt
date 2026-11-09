@@ -44,6 +44,7 @@ from .theme import theme_manager
 from .widgets.labels import ElidedLabel
 from .widgets.observation_pages import (
     DeformationCasePage,
+    LogsPage,
     MetricsPage,
     UpdatableStructurePage,
 )
@@ -67,7 +68,9 @@ class ObserverPanel(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
-        top = QHBoxLayout()
+        self.history_controls = QWidget()
+        top = QHBoxLayout(self.history_controls)
+        top.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.btn_prev = QPushButton("◀")
         self.btn_prev.setFixedWidth(
             theme_manager.palette.layout.observer.step_button_width
@@ -129,20 +132,19 @@ class ObserverPanel(QWidget):
             QToolButton.ToolButtonPopupMode.InstantPopup
         )
         top.addWidget(self.btn_export_history)
-        outer.addLayout(top)
+        self.history_controls.hide()
 
         split = QSplitter(Qt.Orientation.Horizontal)
         self.options = QListWidget()
         self.options.setFixedWidth(
             theme_manager.palette.layout.observer.option_panel_width
         )
-        self.options.addItem(tr("ui.observe_panel.metrics"))
-        self.options.item(0).setData(Qt.ItemDataRole.UserRole, ("metrics", None))
         self.options.currentRowChanged.connect(self._on_option)
         split.addWidget(self.options)
 
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
+        self._logs_page = LogsPage()
         self._updatable_structure_page = UpdatableStructurePage()
         self._updatable_structure_page.viewChanged.connect(
             self._update_surface_export_action
@@ -150,14 +152,27 @@ class ObserverPanel(QWidget):
         self._deformation_page = DeformationCasePage()
         self._last_3d_page: str | None = None
         self.stack.addWidget(self._metrics_page)
+        self.stack.addWidget(self._logs_page)
         self.stack.addWidget(self._updatable_structure_page)
         self.stack.addWidget(self._deformation_page)
-        split.addWidget(self.stack)
+        self.stack.currentChanged.connect(
+            lambda _index: self.history_controls.setVisible(
+                self.stack.currentWidget()
+                in (self._updatable_structure_page, self._deformation_page)
+            )
+        )
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        content_layout.addWidget(self.history_controls)
+        content_layout.addWidget(self.stack, 1)
+        split.addWidget(content)
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         split.setSizes(list(theme_manager.palette.layout.observer.option_split_sizes))
         outer.addWidget(split, 1)
-        self.options.setCurrentRow(0)
+        self._sync_design_options()
+        self._refresh_current_option()
 
     @property
     def path_result(self) -> str | None:
@@ -173,6 +188,11 @@ class ObserverPanel(QWidget):
         if self.path_result != str(Path(folder).resolve()):
             self.reset()
         return self._results.bind(folder)
+
+    def refresh_logs(self) -> None:
+        """Read logs on every poll, independently of completed iterations."""
+        if self.stack.currentWidget() is self._logs_page:
+            self._logs_page.refresh(self._results)
 
     def show_iteration(self, folder: str, iteration: int) -> None:
         """Render one finished iteration (history + current option page)."""
@@ -308,16 +328,8 @@ class ObserverPanel(QWidget):
         self._last_3d_page = None
         # Keep native GL windows alive across tasks; only their scenes change.
         self._case_names.clear()
-        self.options.blockSignals(True)
-        try:
-            self.options.clear()
-            self.options.addItem(tr("ui.observe_panel.metrics"))
-            self.options.item(0).setData(
-                Qt.ItemDataRole.UserRole, ("metrics", None)
-            )
-            self.options.setCurrentRow(0)
-        finally:
-            self.options.blockSignals(False)
+        self._sync_design_options()
+        self.options.setCurrentRow(0)
         self.stack.setCurrentWidget(self._metrics_page)
         self.slider.blockSignals(True)
         self.slider.setMaximum(1)
@@ -325,6 +337,7 @@ class ObserverPanel(QWidget):
         self.slider.blockSignals(False)
         self.iter_label.setText("0 / 1")
         self._metrics_page.clear()
+        self._logs_page.clear()
         self._updatable_structure_page.clear_view()
         self._deformation_page.clear_view()
 
@@ -342,10 +355,9 @@ class ObserverPanel(QWidget):
         )
         self.btn_export_history.setText(tr("ui.observe_panel.export_history"))
         self.btn_export_history.setToolTip(tr("ui.observe_panel.export_history_hint"))
-        if self.options.count():
-            self.options.item(0).setText(tr("ui.observe_panel.metrics"))
         self._sync_design_options()
         self._metrics_page.apply_language()
+        self._logs_page.apply_language()
         self._updatable_structure_page.apply_language()
         self._refresh_current_option()
 
@@ -362,6 +374,9 @@ class ObserverPanel(QWidget):
         data = self.options.item(row).data(Qt.ItemDataRole.UserRole)
         if not data or data[0] == "metrics":
             self.stack.setCurrentWidget(self._metrics_page)
+        elif data[0] == "logs":
+            self.stack.setCurrentWidget(self._logs_page)
+            self.refresh_logs()
         elif data[0] == "component":
             self.stack.setCurrentWidget(self._updatable_structure_page)
             self._refresh_updatable_structure(data[2])
@@ -413,7 +428,7 @@ class ObserverPanel(QWidget):
             return ("component", id(data[2]))
         if data[0] == "case":
             return ("case", data[1])
-        return ("metrics",)
+        return (data[0],)
 
     def _sync_design_options(self) -> None:
         """Flatten components and load cases into one stable left-side list."""
@@ -423,10 +438,11 @@ class ObserverPanel(QWidget):
         self.options.blockSignals(True)
         try:
             self.options.clear()
-            self.options.addItem(tr("ui.observe_panel.metrics"))
-            self.options.item(0).setData(
-                Qt.ItemDataRole.UserRole, ("metrics", None)
-            )
+            for kind in ("metrics", "logs"):
+                self.options.addItem(tr(f"ui.observe_panel.{kind}"))
+                self.options.item(self.options.count() - 1).setData(
+                    Qt.ItemDataRole.UserRole, (kind, None)
+                )
             for category, component in components:
                 self.options.addItem(component_selection_title(category, component))
                 self.options.item(self.options.count() - 1).setData(
@@ -785,6 +801,7 @@ class ObserverControls(QWidget):
         if self.panel.path_result != progress.folder:
             self.resultFolderChanged.emit(progress.folder)
             self.panel.ensure_loaded(progress.folder)
+        self.panel.refresh_logs()
         if progress.iteration >= 1 and (
             progress.changed or self.panel.iteration != progress.iteration
         ):

@@ -44,6 +44,8 @@
 | `ProtocalVisualizable` | `get_meshes()`、`plot()` | 网格输出与绘图钩子 |
 | `ProtocalUpdatable` | `num_variables`、参数访问、`update_variables()`、灵敏度变量提取与写回 | 可设计对象的变量契约 |
 
+`ProtocalInitializable` 的两个方法均为默认空钩子。`reinitialize(*args, **kwargs)` 不强制指定迭代号；模型组件通常接收 `iteration`，局部更新器接收 `gradient`，参数类型与实际行为由具体实现声明。中间基类仅在增加共享行为时重写钩子。
+
 `BaseModelComponent` 组合初始化、保存和可视化能力，表示单个模型接口；`BaseParams` 维护多个具名接口。可更新几何与材料额外实现 `ProtocalUpdatable`，不由集合基类为所有对象隐式增加设计变量。
 
 `ProtocalUpdatable.get_variables()` 提供局部优化初始扰动向量，不能将其简单解释为当前几何坐标。设计参数、灵敏度输入和局部变量之间的映射见[设计更新](optimization.md)。
