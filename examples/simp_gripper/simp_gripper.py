@@ -119,6 +119,9 @@ class ThisController(morphopt.Controller):
             super().__init__()
 
 
+        def _objective_values(self) -> list[Any]:
+            return []
+
 
     class Params(morphopt.Params):
 
@@ -258,7 +261,14 @@ class ThisController(morphopt.Controller):
         class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
 
             def __init__(self) -> None:
-                super().__init__(max_step_iter=100, max_step_length=1.0)
+                super().__init__(
+                    max_step_iter=100,
+                    max_step_length=1.0,
+                    step_length_strategy=self.strategies.FixedStepLength(),
+                    constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+                        value=1.0,
+                    ),
+                )
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.Sensitivity())

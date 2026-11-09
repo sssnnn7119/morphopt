@@ -8,7 +8,7 @@ from pathlib import Path
 from ...utils.paths import sanitize_name
 from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
 from ..codegen.generator import generate_source
-from ..i18n import localized_message
+from ..i18n import LocalizedMessage, localized_message
 from ..model.loaders import load_morph, save_morph
 from ..model.problem import (
     GeometryNode,
@@ -226,8 +226,10 @@ class ProblemLibrary:
         return problem
 
     @staticmethod
-    def load(path: str | Path) -> ProblemDefinition:
-        problem = load_morph(str(path))
+    def load(
+        path: str | Path, *, issues: list[LocalizedMessage] | None = None,
+    ) -> ProblemDefinition:
+        problem = load_morph(str(path), issues=issues)
         _synchronize_problem(problem)
         return problem
 

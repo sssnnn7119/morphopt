@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from ...constants import CONSTANT
 from ..application.load_cases import remove_objectives, unused_cases
 from ..i18n import localization, tr
+from ..model.configuration import metric_term_config, objective_term_config
 from ..model.node_types.loads import ReferencePointNode
 from ..model.problem import ObjectiveNode, ProblemDefinition
 from ..presentation.labels import component_title_text, node_title
@@ -596,17 +597,7 @@ class ObjectiveEditor(QWidget):
     def _add_metric(self, metric_type: str) -> None:
         if self._obj is None:
             return
-        metric: dict[str, object] = {"type": metric_type}
-        if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
-            metric.update(
-                {
-                    "reference_point_name": "",
-                    "step_name": None,
-                    "component": "",
-                }
-            )
-        else:
-            metric["body"] = ""
+        metric = metric_term_config(metric_type)
         self._obj.metrics_terms.append(metric)
         self._metric_signature = None
         self._sync_metrics()
@@ -900,31 +891,7 @@ class ObjectiveEditor(QWidget):
     def _add_term(self, term_type: str) -> None:
         if self._obj is None:
             return
-        term: dict[str, object] = {
-            "type": term_type,
-            "weight": CONSTANT.UI.OBJECTIVE.DEFAULT_WEIGHT,
-        }
-        if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT:
-            term.update(
-                {
-                    "reference_point_name": "",
-                    "step_name": None,
-                    "component": "",
-                    "direction": CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION,
-                    "target": CONSTANT.UI.OBJECTIVE.DEFAULT_TARGET,
-                }
-            )
-        elif term_type == CONSTANT.UI.OBJECTIVE.TYPE_WORKSPACE:
-            term.update(
-                kind="workspace_plane",
-                reference_point_name="",
-                inputs=[],
-                gauss_order=2,
-                normalization=1.0,
-                case_names=[],
-            )
-        else:
-            term["body"] = ""
+        term = objective_term_config(term_type)
         self._obj.objective_terms.append(term)
         self._term_signature = None
         self._sync_terms()

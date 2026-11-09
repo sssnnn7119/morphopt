@@ -1364,5 +1364,14 @@
   "ui.strategies.final_tolerance.label": "Final distance relaxation",
   "ui.strategies.final_tolerance.help": "Default 0 restores the nominal required distance. Must be nonnegative and no larger than the initial relaxation.",
   "ui.fairness.max_curvature.label": "Squared curvature limit",
-  "ui.fairness.max_curvature.help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP FF and R limits are fixed at 0.1; CPGEO uses curvature only."
+  "ui.fairness.max_curvature.help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP FF and R limits are fixed at 0.1; CPGEO uses curvature only.",
+  "ui.import.warning_title": "Imported with format differences",
+  "ui.import.warning_summary": "Supported content has been imported. Missing entries use defaults; unknown entries were ignored. There are {count} notices; expand the details and review the definition before running optimization.",
+  "ui.import.ignored_fields": "{path}: ignored unsupported fields: {fields}.",
+  "ui.import.default_fields": "{path}: used defaults for missing entries: {fields}.",
+  "ui.import.skipped": "{path}: skipped unsupported or unreadable content ({reason}).",
+  "ui.import.version": "File version {version} differs from current version {current}; supported fields were imported.",
+  "ui.import.invalid_document": "A definition file must contain a JSON object.",
+  "ui.import.expected_object": "expected an object",
+  "ui.import.expected_list": "expected a list"
 }

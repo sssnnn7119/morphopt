@@ -363,6 +363,17 @@
           "geometry": [
             {
               "max_step_iter": 300,
+              "max_step_length": 0.5,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "ConstantConstraintWeights",
+                "params": {
+                  "value": 1.0
+                }
+              },
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",

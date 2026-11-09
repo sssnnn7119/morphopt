@@ -5,7 +5,7 @@
   "result_folder": ".results/",
   "device": "cpu",
   "updater_device": null,
-  "restart_per_iteration": 10,
+  "restart_per_iteration": 20,
   "root": {
     "kind": "problem",
     "name": "BendingActuator",
@@ -202,18 +202,18 @@
               "type": "displacement",
               "weight": 1.0,
               "reference_point_name": "RP_1",
+              "step_name": "load_case_1",
               "component": "ry",
-              "direction": "maximize",
-              "target": 0.0,
-              "step_name": "load_case_1"
+              "direction": "target",
+              "target": 2.0
             }
           ],
           "metrics_terms": [
             {
               "type": "displacement",
               "reference_point_name": "RP_1",
-              "component": "ry",
-              "step_name": "load_case_1"
+              "step_name": "load_case_1",
+              "component": "ry"
             }
           ],
           "jacobian_needed": []
@@ -239,10 +239,27 @@
           "geometry": [
             {
               "max_step_iter": 50,
+              "max_step_length": 0.5,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "AdaptiveShapeWeights",
+                "params": {
+                  "initial_tolerance": 0.05,
+                  "final_tolerance": 0.0,
+                  "objective_tolerance": 0.01,
+                  "tightening_increment": 0.001,
+                  "penalty_growth_limit": 2.0
+                }
+              },
               "objective_functions": [
                 {
-                  "type": "ShapeDerivative",
-                  "params": {}
+                  "type": "QuadraticShapeDerivative",
+                  "params": {
+                    "memory_size": 10
+                  }
                 }
               ],
               "constraints": [

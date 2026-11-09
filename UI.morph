@@ -48,7 +48,6 @@
                 "name": "surface_0",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": false,
                   "is_updatable": true,
                   "r0": 21.0,
                   "length": 70.0,
@@ -61,9 +60,6 @@
                     0.0,
                     0.0
                   ],
-                  "maxR": 0.1,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 14.0
                 },
                 "children": []
@@ -73,7 +69,6 @@
                 "name": "surface_1",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
                   "is_updatable": true,
                   "r0": 5.0,
                   "length": 64.0,
@@ -86,9 +81,6 @@
                     0.0,
                     3.0
                   ],
-                  "maxR": 0.1,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 14.0
                 },
                 "children": []
@@ -98,7 +90,6 @@
                 "name": "surface_2",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
                   "is_updatable": true,
                   "r0": 5.0,
                   "length": 64.0,
@@ -111,9 +102,6 @@
                     10.5,
                     3.0
                   ],
-                  "maxR": 0.1,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 14.0
                 },
                 "children": []
@@ -123,7 +111,6 @@
                 "name": "surface_3",
                 "params": {
                   "type": "bsp_cylinder",
-                  "flip": true,
                   "is_updatable": true,
                   "r0": 5.0,
                   "length": 64.0,
@@ -136,9 +123,6 @@
                     -10.5,
                     3.0
                   ],
-                  "maxR": 0.1,
-                  "maxC": 1.0,
-                  "maxFF": 0.2,
                   "perturbation_L": 14.0
                 },
                 "children": []
@@ -414,8 +398,8 @@
             {
               "type": "displacement",
               "reference_point_name": "RP_head",
-              "component": "ry",
-              "step_name": "bending"
+              "step_name": "bending",
+              "component": "ry"
             },
             {
               "type": "custom",
@@ -428,8 +412,8 @@
             {
               "type": "displacement",
               "reference_point_name": "RP_head",
-              "component": "uy",
-              "step_name": "gravity"
+              "step_name": "gravity",
+              "component": "uy"
             }
           ],
           "jacobian_needed": []
@@ -467,6 +451,21 @@
           "geometry": [
             {
               "max_step_iter": 100,
+              "max_step_length": 0.5,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "AdaptiveShapeWeights",
+                "params": {
+                  "initial_tolerance": 0.05,
+                  "final_tolerance": 0.0,
+                  "objective_tolerance": 0.01,
+                  "tightening_increment": 0.001,
+                  "penalty_growth_limit": 2.0
+                }
+              },
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",
@@ -476,7 +475,9 @@
               "constraints": [
                 {
                   "type": "Fairness",
-                  "params": {}
+                  "params": {
+                    "max_curvature": 1.0
+                  }
                 },
                 {
                   "type": "Distance",
@@ -521,16 +522,14 @@
               "symmetry_constraints": [
                 {
                   "type": "BspMirror",
-                  "surface_index": 1,
                   "params": {
                     "plane": "xz",
                     "offset": 0.0
-                  }
+                  },
+                  "surface_index": 1
                 },
                 {
                   "type": "BspRelation",
-                  "surface_index": 1,
-                  "related_surface_index": 2,
                   "params": {
                     "pose": [
                       0.0,
@@ -540,12 +539,12 @@
                       0.0,
                       2.0943951023931953
                     ]
-                  }
+                  },
+                  "surface_index": 1,
+                  "related_surface_index": 2
                 },
                 {
                   "type": "BspRelation",
-                  "surface_index": 1,
-                  "related_surface_index": 3,
                   "params": {
                     "pose": [
                       0.0,
@@ -555,7 +554,9 @@
                       0.0,
                       4.1887902047863905
                     ]
-                  }
+                  },
+                  "surface_index": 1,
+                  "related_surface_index": 3
                 },
                 {
                   "type": "Custom",
@@ -564,7 +565,6 @@
                   }
                 }
               ],
-              "max_step_length": 0.5,
               "part_name": "actuator"
             }
           ],

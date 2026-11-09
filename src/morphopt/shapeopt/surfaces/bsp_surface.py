@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 import bspmap
@@ -281,21 +281,14 @@ class BspSurface(ControlPointSurface):
                     gmsh.model.occ.remove(to_remove, recursive=False)
                 gmsh.model.occ.synchronize()
 
-                # Export BRep
-                temp_brep = "temp_clean.brep"
-                gmsh.write(temp_brep)
-
-                # RESET GMSH
-                # Note: gmsh.clear() clears the current model data but keeps the session
-                gmsh.clear()
-
-                # Re-import
-                gmsh.model.occ.importShapes(temp_brep)
-                gmsh.model.occ.synchronize()
-
-                # Cleanup temp file
-                if os.path.exists(temp_brep):
-                    os.remove(temp_brep)
+                # Each worker owns its isolation file; concurrent exports must
+                # never overwrite another surface's intermediate geometry.
+                with TemporaryDirectory(prefix="morphopt-bsp-") as directory:
+                    temp_brep = str(Path(directory) / "boundary.brep")
+                    gmsh.write(temp_brep)
+                    gmsh.clear()
+                    gmsh.model.occ.importShapes(temp_brep)
+                    gmsh.model.occ.synchronize()
 
                 # Get the new volume tag (should be 1)
                 vols = gmsh.model.getEntities(3)
@@ -311,7 +304,7 @@ class BspSurface(ControlPointSurface):
 
                     # 2. Heal
                     try:
-                        healed = gmsh.model.occ.healShapes(
+                        gmsh.model.occ.healShapes(
                             [(3, self.volume_tag)],
                             tolerance=1e-5,  # Tighter tolerance
                             fixDegenerated=True,
@@ -320,12 +313,18 @@ class BspSurface(ControlPointSurface):
                             sewFaces=True,
                             makeSolids=True,
                         )
-                        if healed and healed[0][0] == 3:
-                            self.volume_tag = healed[0][1]
                     except Exception:
                         pass
 
                     gmsh.model.occ.synchronize()
+                    volumes = gmsh.model.getEntities(3)
+                    if len(volumes) != 1:
+                        raise ValueError(
+                            "BSP boundary does not form a closed solid after healing. "
+                            "Check for self-intersections, collapsed control points, "
+                            "and surface relations that overwrite the outer boundary."
+                        )
+                    self.volume_tag = volumes[0][1]
 
                     # ----------------------------------------------------
                     # FINAL CLEANUP: Purge residue from Healing
@@ -364,15 +363,9 @@ class BspSurface(ControlPointSurface):
                 print("Warning: Failed to create solid. Returning surface elements.")
                 return side_surface  # Fallback
 
-        def export_step(self, filename):
-            """导出 STEP 文件"""
-            try:
-                gmsh.write(filename)
-                print(f"Successfully exported to {filename}")
-                return True
-            except Exception as e:
-                print(f"Export failed: {e}")
-                return False
+        def export_step(self, filename: str | Path) -> None:
+            """Write the solid; propagate export errors to the optimization worker."""
+            gmsh.write(str(filename))
 
         def finalize(self):
             """清理 Gmsh 资源"""
@@ -553,14 +546,21 @@ class BspSurface(ControlPointSurface):
         return preload_data
 
     @staticmethod
-    def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
+    def output_stp_file(
+        control_points: np.ndarray,
+        degree_u: int,
+        degree_v: int,
+        path_output: str | Path,
+        name_output: str,
+    ) -> None:
         generator = BspSurface.BSplineSolidGenerator(
             P0=control_points, degree_u=degree_u, degree_v=degree_v
         )
-        generator.build()
-        output_file = path_output + "/" + name_output + ".stp"
-        generator.export_step(output_file)
-        generator.finalize()
+        try:
+            generator.build()
+            generator.export_step(Path(path_output) / f"{name_output}.stp")
+        finally:
+            generator.finalize()
 
     def output_data(
         self,

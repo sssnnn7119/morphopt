@@ -383,12 +383,21 @@ class MainWindow(QMainWindow):
             return
         if not self._confirm_discard():
             return
+        issues = []
         try:
-            problem = ProblemLibrary.load(path)
+            problem = ProblemLibrary.load(path, issues=issues)
         except Exception as exc:
             QMessageBox.warning(self, tr("ui.mainwindow.open_failed"), str(exc))
             return
         self.set_problem(problem, path=path)
+        if issues:
+            message = QMessageBox(self)
+            message.setIcon(QMessageBox.Icon.Warning)
+            message.setWindowTitle(tr("ui.import.warning_title"))
+            message.setText(tr("ui.import.warning_summary", count=len(issues)))
+            message.setDetailedText("\n".join(str(issue) for issue in issues))
+            message.exec()
+            message.deleteLater()
         self.statusBar().showMessage(
             tr(
                 "ui.mainwindow.opened_value_value",

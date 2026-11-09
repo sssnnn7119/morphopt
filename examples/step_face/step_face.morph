@@ -174,12 +174,12 @@
           "objective_terms": [
             {
               "type": "displacement",
+              "weight": 1.0,
               "reference_point_name": "tip",
+              "step_name": "compression",
               "component": "uz",
               "direction": "minimize",
-              "target": 0.0,
-              "weight": 1.0,
-              "step_name": "compression"
+              "target": 0.0
             }
           ],
           "metrics_terms": [
@@ -216,6 +216,16 @@
             {
               "max_step_iter": 3,
               "max_step_length": 0.02,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "ConstantConstraintWeights",
+                "params": {
+                  "value": 1.0
+                }
+              },
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",

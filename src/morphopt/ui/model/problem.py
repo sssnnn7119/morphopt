@@ -1514,27 +1514,41 @@ class ProblemDefinition:
         The caller's document is never mutated.
         """
         root = deepcopy(root)
-        sections = {item.get("kind"): item for item in root.get("children", [])}
-        parts = sections.get("geometry", {}).get("children", [])
+
+        def records(value: object) -> Iterator[dict]:
+            if isinstance(value, list):
+                yield from (item for item in value if isinstance(item, dict))
+
+        sections = {
+            item["kind"]: item for item in records(root.get("children", []))
+            if isinstance(item.get("kind"), str)
+        }
+        parts = records(sections.get("geometry", {}).get("children", []))
         renamed = {}
         physical_names = set()
         for part in parts:
             if part.get("kind") != "part":
                 continue
             params = part.get("params", {})
+            if not isinstance(params, dict):
+                continue
             old_name = part.get("name", "")
             alias = str(params.pop("part_name", "") or "").strip()
             name = alias or old_name
             part["name"] = name
             renamed[old_name] = name
             physical_names.add(name)
-        for material in sections.get("materials", {}).get("children", []):
+        for material in records(sections.get("materials", {}).get("children", [])):
             params = material.get("params", {})
+            if not isinstance(params, dict):
+                continue
             name = params.get("part_name")
             if name not in physical_names and name in renamed:
                 params["part_name"] = renamed[name]
         updater = sections.get("updater", {}).get("params", {})
-        for config in updater.get("geometry", []):
+        if not isinstance(updater, dict):
+            return root
+        for config in records(updater.get("geometry", [])):
             name = config.get("part_name")
             if name in renamed:
                 config["part_name"] = renamed[name]

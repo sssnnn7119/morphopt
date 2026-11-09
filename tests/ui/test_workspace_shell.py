@@ -603,3 +603,35 @@ def test_natural_completion_keeps_the_result_available_for_continuation(monkeypa
     assert window._menu_actions['open_result'].isEnabled()
     window.deleteLater()
     app.processEvents()
+
+
+def test_morph_import_opens_supported_content_before_showing_one_warning(monkeypatch, tmp_path):
+    import json
+    from PySide6.QtWidgets import QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    data = ProblemLibrary.create("shapeopt", label="Imported partially").to_dict()
+    data["version"] = 99
+    data["future_option"] = 1
+    path = tmp_path / "future.morph"
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(window, "_choose_file_path", lambda *args, **kwargs: str(path))
+    monkeypatch.setattr(window, "_confirm_discard", lambda: True)
+    warnings = []
+
+    def show(message):
+        assert window.current_problem().label == "Imported partially"
+        assert message.icon() == QMessageBox.Icon.Warning
+        warnings.append(message.detailedText())
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(QMessageBox, "exec", show)
+    try:
+        window.open_morph()
+        assert len(warnings) == 1
+        assert "future_option" in warnings[0]
+        assert window._document_path == path.resolve()
+    finally:
+        window.deleteLater()
+        app.processEvents()

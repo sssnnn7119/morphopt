@@ -26,6 +26,65 @@ def cylinder(factory, radius=2.0):
     )
 
 
+def test_bsp_step_export_contains_one_meshable_closed_solid(tmp_path):
+    import gmsh
+
+    surface = cylinder(BspSurface)
+    surface.initialize()
+    output = tmp_path / surface.output_data(tmp_path, "boundary")
+    assert output.is_file()
+    assert not gmsh.isInitialized()
+    gmsh.initialize()
+    try:
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.occ.importShapes(str(output))
+        gmsh.model.occ.synchronize()
+        volumes = gmsh.model.getEntities(3)
+        assert len(volumes) == 1
+        assert len(gmsh.model.getBoundary(volumes, oriented=False)) == 3
+        assert gmsh.model.occ.getMass(*volumes[0]) > 0
+        gmsh.option.setNumber("Mesh.MeshSizeMin", 1.0)
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 1.0)
+        gmsh.model.mesh.generate(3)
+        assert sum(map(len, gmsh.model.mesh.getElements(3)[1])) > 0
+    finally:
+        gmsh.finalize()
+
+
+def test_bsp_step_export_reports_lost_solid_and_finalizes(tmp_path, monkeypatch):
+    import gmsh
+
+    def destroy_solid(dim_tags, **kwargs):
+        gmsh.model.occ.remove(dim_tags)
+        return []
+
+    monkeypatch.setattr(gmsh.model.occ, "healShapes", destroy_solid)
+    surface = cylinder(BspSurface)
+    surface.initialize()
+    with pytest.raises(ValueError, match="does not form a closed solid"):
+        surface.output_data(tmp_path, "invalid")
+    assert not (tmp_path / "invalid.stp").exists()
+    assert not gmsh.isInitialized()
+
+
+def test_bsp_step_export_propagates_write_failure_and_finalizes(tmp_path, monkeypatch):
+    import gmsh
+
+    write = gmsh.write
+
+    def fail_step(filename):
+        if str(filename).endswith(".stp"):
+            raise OSError("STEP write failed")
+        return write(filename)
+
+    monkeypatch.setattr(gmsh, "write", fail_step)
+    surface = cylinder(BspSurface)
+    surface.initialize()
+    with pytest.raises(OSError, match="STEP write failed"):
+        surface.output_data(tmp_path, "boundary")
+    assert not gmsh.isInitialized()
+
+
 @pytest.mark.parametrize("factory", [BspSurface, CPGEOSurface])
 def test_boundary_order_owns_surface_orientation(factory):
     surface = cylinder(factory)

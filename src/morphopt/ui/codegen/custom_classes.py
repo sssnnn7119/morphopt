@@ -19,6 +19,7 @@ from ..model.problem import (
     CustomClassNode, CustomFunctionNode, MethodOverrideNode, ProblemDefinition,
 )
 from ..model.registry import (
+    CONFIGURATION_CLASS_PATHS,
     LOAD_TYPES,
     PART_TYPES,
     SURFACE_TYPES,
@@ -257,16 +258,7 @@ def validate_custom_name(name: str, catalog: dict[str, ClassSpec]) -> None:
         raise ValueError(localized_message("ui.errors.custom_classes.class_name_conflicts_with_a_module_member_value", value_0=name))
 
 
-CONFIGURATION_CLASS_PATHS = {
-    "problem": "ThisController",
-    "params_class": "ThisController.Params",
-    "geometry": "ThisController.Params.GeometryParams",
-    "loads_group": "ThisController.Params.FEAParams",
-    "materials": "ThisController.Params.MaterialsParams",
-    "solver": "ThisController.Solver",
-    "objective": "ThisController.ObjectiveFunction",
-    "updater": "ThisController.Updater",
-}
+
 
 
 def class_path_for_node(node):

@@ -193,30 +193,30 @@
           "objective_terms": [
             {
               "type": "displacement",
+              "weight": 44.44444444444444,
               "reference_point_name": "RP_tip",
+              "step_name": "load_case_1",
               "component": "ux",
               "direction": "target",
-              "target": 0.0,
-              "weight": 44.44444444444444,
-              "step_name": "load_case_1"
+              "target": 0.0
             },
             {
               "type": "displacement",
+              "weight": 44.44444444444444,
               "reference_point_name": "RP_tip",
+              "step_name": "load_case_1",
               "component": "uy",
               "direction": "target",
-              "target": 0.0,
-              "weight": 44.44444444444444,
-              "step_name": "load_case_1"
+              "target": 0.0
             },
             {
               "type": "displacement",
+              "weight": 44.44444444444444,
               "reference_point_name": "RP_tip",
+              "step_name": "load_case_1",
               "component": "uz",
               "direction": "target",
-              "target": 0.15,
-              "weight": 44.44444444444444,
-              "step_name": "load_case_1"
+              "target": 0.15
             }
           ],
           "metrics_terms": [
@@ -252,6 +252,17 @@
           "geometry": [
             {
               "max_step_iter": 5,
+              "max_step_length": 0.5,
+              "step_length_strategy": {
+                "type": "FixedStepLength",
+                "params": {}
+              },
+              "constraint_weight_strategy": {
+                "type": "ConstantConstraintWeights",
+                "params": {
+                  "value": 1.0
+                }
+              },
               "objective_functions": [
                 {
                   "type": "ShapeDerivative",
@@ -289,6 +300,7 @@
                   }
                 }
               ],
+              "symmetry_constraints": [],
               "part_name": "body"
             }
           ],

@@ -973,6 +973,9 @@ class _Constants:
             )
             DEFAULT_TARGET = 0.0
             DEFAULT_WEIGHT = 1.0
+            DEFAULT_WORKSPACE_KIND = "workspace_plane"
+            DEFAULT_WORKSPACE_GAUSS_ORDER = 2
+            DEFAULT_WORKSPACE_NORMALIZATION = 1.0
             TARGET_MINIMUM = -1000000.0
             TARGET_MAXIMUM = 1000000.0
             WEIGHT_MINIMUM = 0.0

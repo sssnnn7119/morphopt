@@ -115,3 +115,34 @@ def materials_updater_config(
     }
 
 
+
+
+def objective_term_config(term_type: str) -> dict:
+    """Defaults shared by the objective editor and file import."""
+    objective = CONSTANT.UI.OBJECTIVE
+    term = {"type": term_type, "weight": objective.DEFAULT_WEIGHT}
+    if term_type == objective.TYPE_DISPLACEMENT:
+        term.update(
+            reference_point_name="", step_name=None, component="",
+            direction=objective.DEFAULT_DIRECTION, target=objective.DEFAULT_TARGET,
+        )
+    elif term_type == objective.TYPE_WORKSPACE:
+        term.update(
+            kind=objective.DEFAULT_WORKSPACE_KIND, reference_point_name="", inputs=[],
+            gauss_order=objective.DEFAULT_WORKSPACE_GAUSS_ORDER,
+            normalization=objective.DEFAULT_WORKSPACE_NORMALIZATION, case_names=[],
+        )
+    elif term_type == objective.TYPE_CUSTOM_LOSS:
+        term["body"] = ""
+    else:
+        raise ValueError(f"Unknown objective type: {term_type}")
+    return term
+
+
+def metric_term_config(metric_type: str) -> dict:
+    """Defaults shared by the metric editor and file import."""
+    if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
+        return {"type": metric_type, "reference_point_name": "", "step_name": None, "component": ""}
+    if metric_type == CONSTANT.UI.METRIC.TYPE_CUSTOM:
+        return {"type": metric_type, "body": ""}
+    raise ValueError(f"Unknown metric type: {metric_type}")
