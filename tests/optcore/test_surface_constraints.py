@@ -131,6 +131,7 @@ def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adap
     updater.add_objective_function(updater.objectivefuncs.ShapeDerivative())
     updater.add_constraints(updater.objectivefuncs.Fairness())
     updater.initialize()
+    updater.objective_value = float(sum(value.square().sum() for value in saved))
     updater.reinitialize(gradient=2 * torch.cat(saved))
     trial = torch.randn(part.num_variables) * 0.01
     gradient = torch.func.grad(updater.closure)(trial)

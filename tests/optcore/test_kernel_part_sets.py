@@ -13,6 +13,46 @@ from morphopt import BasePart, BoxPart, CADPart, FixedPart, INPPart
 REFERENCE = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
 
 
+@pytest.mark.parametrize("suffix", ["", "/"])
+def test_params_save_creates_its_screenshot_directory(tmp_path, monkeypatch, suffix):
+    import pyvista as pv
+    from PIL import Image
+    from morphopt import FEAParams, GeometryParams, MaterialsParams, Params
+    from morphopt.constants import CONSTANT
+
+    params = Params(GeometryParams(), FEAParams(), MaterialsParams())
+    monkeypatch.setattr(params, "plot", lambda plotter: plotter.add_mesh(pv.Cube()))
+    monkeypatch.setattr(CONSTANT.KERNEL.VISUALIZATION, "WINDOW_SIZE", (160, 120))
+    root = tmp_path / "new-run" / "log"
+    params.save(str(root) + suffix, iteration=1)
+    image = root / "params" / "1.jpg"
+    with Image.open(image) as saved:
+        assert saved.size == (160, 120)
+    # A later save also owns directory creation, independently of startup.
+    image.unlink()
+    image.parent.rmdir()
+    params.save(str(root) + suffix, iteration=2)
+    assert (root / "params" / "2.jpg").is_file()
+
+
+def test_params_save_closes_plotter_when_screenshot_fails(tmp_path, monkeypatch):
+    import pyvista as pv
+    from morphopt import FEAParams, GeometryParams, MaterialsParams, Params
+
+    params = Params(GeometryParams(), FEAParams(), MaterialsParams())
+    plotter = pv.Plotter(off_screen=True)
+    monkeypatch.setattr(pv, "Plotter", lambda **kwargs: plotter)
+    monkeypatch.setattr(params, "plot", lambda plotter: plotter.add_mesh(pv.Cube()))
+
+    def fail(*args, **kwargs):
+        raise OSError("screenshot write failed")
+
+    monkeypatch.setattr(plotter, "screenshot", fail)
+    with pytest.raises(OSError, match="screenshot write failed"):
+        params.save(str(tmp_path), iteration=1)
+    assert plotter._closed
+
+
 def test_box_build_caches_actual_sets_and_rebuilds_after_dimensions_change():
     part = BoxPart(part_name="body", length=2, height=2, depth=2, mesh_size=1, mesh_order=1)
     mesh = part.get_part()

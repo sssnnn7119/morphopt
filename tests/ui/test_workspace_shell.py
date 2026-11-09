@@ -53,6 +53,91 @@ def test_analysis_is_unavailable_until_a_task_is_opened(monkeypatch):
     app.processEvents()
 
 
+def test_observer_logs_poll_before_first_iteration_and_reset_between_tasks(monkeypatch, tmp_path):
+    from morphopt.ui.application.runs import RunProgress
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    window._ensure_observer()
+    controls = window._observer
+    panel = controls.panel
+    logs = tmp_path / "log"
+    logs.mkdir()
+    path = logs / "morphopt.log"
+    path.write_text("initializing\n", encoding="utf-8")
+    progress = RunProgress(str(tmp_path), 0, False)
+    try:
+        controls._show_progress(progress)
+        panel.options.setCurrentRow(1)
+        page = panel._logs_page
+        assert panel.stack.currentWidget() is page
+        assert page.text.toPlainText() == "initializing\n"
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write("still running\n")
+        controls._show_progress(progress)
+        assert page.text.toPlainText() == "initializing\nstill running\n"
+        (logs / "torchfea.log").write_text("FEA started\n", encoding="utf-8")
+        controls._show_progress(progress)
+        assert page.file_selector.count() == 2
+        page.file_selector.setCurrentIndex(page.file_selector.findText("torchfea.log"))
+        assert page.text.toPlainText() == "FEA started\n"
+        (logs / "another.log").write_text("another file\n", encoding="utf-8")
+        controls._show_progress(progress)
+        assert page.file_selector.currentText() == "torchfea.log"
+        assert page.text.toPlainText() == "FEA started\n"
+        panel.apply_language()
+        assert panel.stack.currentWidget() is page
+        assert page.file_selector.currentText() == "torchfea.log"
+        panel.reset()
+        assert not page.text.toPlainText()
+        assert page.file_selector.count() == 0
+        other = tmp_path / "other"
+        (other / "log").mkdir(parents=True)
+        (other / "log" / "morphopt.log").write_text("next run\n", encoding="utf-8")
+        controls._show_progress(RunProgress(str(other), 0, False))
+        panel.options.setCurrentRow(1)
+        assert page.text.toPlainText() == "next run\n"
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_history_controls_belong_only_to_visualization_pages(monkeypatch):
+    from PySide6.QtCore import Qt
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    try:
+        window._ensure_observer()
+        panel = window._observer.panel
+        assert panel.history_controls.parentWidget() is panel.stack.parentWidget()
+        assert panel.history_controls.isHidden()
+        for data in (("component", "geometry", object()), ("case", "load_case_1")):
+            panel.options.addItem(data[0])
+            panel.options.item(panel.options.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, data,
+            )
+        panel.slider.setMaximum(3)
+        panel.select_iteration(2)
+        for row, page, visible in (
+            (2, panel._updatable_structure_page, True),
+            (0, panel._metrics_page, False),
+            (3, panel._deformation_page, True),
+            (1, panel._logs_page, False),
+            (2, panel._updatable_structure_page, True),
+        ):
+            panel.options.setCurrentRow(row)
+            assert panel.stack.currentWidget() is page
+            assert panel.history_controls.isHidden() is not visible
+            assert panel.slider.value() == 2
+            assert not panel.chk_follow.isChecked()
+        panel.reset()
+        assert panel.history_controls.isHidden()
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
 def test_history_export_actions_are_owned_and_do_not_depend_on_add_action_return(monkeypatch):
     import gc
 

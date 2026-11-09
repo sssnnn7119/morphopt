@@ -19,7 +19,7 @@ from morphopt.optcore.strategies import (
     StepLengthStrategy,
 )
 from morphopt.shapeopt.boundary_part import BoundaryPart
-from morphopt.shapeopt.strategies import AdaptiveShapeWeights
+from morphopt.shapeopt.strategies import AdaptiveShapeWeights, SensitivityShapeWeights
 from morphopt.shapeopt.objectivefuncs import ShapeDerivative, QuadraticShapeDerivative
 from morphopt.shapeopt.objectivefuncs.boundarys import MinRadius
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
@@ -388,6 +388,7 @@ def test_fixed_step_lengths_do_not_depend_on_update_direction_or_gradient():
 def test_adaptive_shape_weights_probe_restore_solve_and_restart(tmp_path: Path):
     strategy = AdaptiveShapeWeights()
     updater = make_shape_updater(constraint_weight_strategy=strategy)
+    updater.objective_value = 1.0
     updater.add_constraints(MinRadius(radius=0.5))
     before = updater.part.get_parameters()
     gradient = 3 * torch.cat(before)
@@ -439,6 +440,7 @@ def test_failed_geometry_probe_restores_the_original_control_points():
             return super().__call__(r, rdu, rdu2, *args, **kwargs)
 
     updater = make_shape_updater(constraint_weight_strategy=AdaptiveShapeWeights())
+    updater.objective_value = 1.0
     updater.add_constraints(InvalidTrial(radius=0.5))
     before = updater.part.get_parameters()
     with pytest.raises(ValueError, match="Invalid trial geometry"):
@@ -628,7 +630,8 @@ def test_fea_gradient_reaches_shape_history_without_normalization(monkeypatch):
         objective.fe = SimpleNamespace(assembly=object(), solver=solver)
         gradients = objective.sensitivity_analysis(params)
         torch.testing.assert_close(gradients["geometry"], source, rtol=0, atol=0)
-        manager.update(gradients)
+        manager.update(gradients, objective_value=4.0)
+        assert updater.objective_value == 4.0
         torch.testing.assert_close(quadratic.history.gradient, gradient, rtol=0, atol=0)
         torch.testing.assert_close(quadratic.gradient[0].flatten(), gradient, rtol=0, atol=0)
         torch.testing.assert_close(raw, source, rtol=0, atol=0)
@@ -686,3 +689,67 @@ def test_lbfgs_at_stationary_point_has_no_spurious_pair():
     assert not direction.any()
     assert not gradient.any()
     assert optimizer.history.history_size == 0
+
+
+def test_controller_passes_evaluated_objective_before_geometry_update():
+    geometry = {"value": 3.0}
+    gradient = torch.tensor([120.0, -900.0, 35.0])
+    gradients = {"geometry": gradient}
+    observations = []
+
+    def objective():
+        observations.append(("objective", geometry["value"]))
+        return torch.tensor(geometry["value"], requires_grad=True)
+
+    def update(*, gradients, objective_value):
+        observations.append(("update", objective_value))
+        assert gradients["geometry"] is gradient
+
+    def commit():
+        observations.append(("commit",))
+        geometry["value"] = 100.0
+
+    controller = SimpleNamespace(
+        history=SimpleNamespace(iteration=0), path_result="/tmp/test-objective", pools=None,
+        params=SimpleNamespace(
+            reinitialize=lambda **kwargs: None,
+            create_feamodel=lambda **kwargs: object(),
+        ),
+        solver=SimpleNamespace(reinitialize=lambda **kwargs: None, solve=lambda: {}),
+        updater=SimpleNamespace(
+            reinitialize=lambda **kwargs: None, update=update, update_variables=commit,
+        ),
+        objfun=SimpleNamespace(
+            reinitialize=lambda **kwargs: None,
+            sensitivity_analysis=lambda **kwargs: gradients, objective_function=objective,
+        ),
+    )
+    loss, *_ = Controller.step(controller)
+    assert observations == [("objective", 3.0), ("update", 3.0), ("commit",)]
+    assert loss.item() == 3.0
+
+
+def test_pointwise_shape_policy_preserves_native_objective_and_resets_between_policies():
+    updater = make_shape_updater(constraint_weight_strategy=SensitivityShapeWeights())
+    penalty = MinRadius(radius=0.5)
+    updater.add_constraints(penalty)
+    gradient = torch.tensor([2., 0., 0., 0., 0., 0.])
+    source = gradient.clone()
+    updater.reinitialize(gradient=gradient)
+    assert updater.constraint_weights == {"MinRadius_0": 1.0}
+    torch.testing.assert_close(penalty.sample_weights[0], torch.tensor([2.]))
+    torch.testing.assert_close(penalty.sample_weights[1], torch.tensor([1.]))
+    torch.testing.assert_close(penalty.area_weights[0], torch.tensor([1.]))
+    objective = next(iter(updater.obj_funcs.values()))
+    torch.testing.assert_close(objective.history.gradient, source[:3], rtol=0, atol=0)
+    original = [value.clone() for value in penalty.sample_weights]
+    change = updater.update()
+    assert torch.isfinite(change).all()
+    for actual, expected in zip(penalty.sample_weights, original):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(gradient, source, rtol=0, atol=0)
+    updater.constraint_weight_strategy = ConstantConstraintWeights(3.0)
+    updater.reinitialize(gradient=gradient)
+    assert penalty.sample_weights is None
+    assert updater.constraint_weights == {"MinRadius_0": 3.0}
+    torch.testing.assert_close(penalty.integration_weights[0], torch.tensor([1.]))

@@ -38,6 +38,11 @@ class OptimizationArchive:
         return self.folder / "log"
 
     @property
+    def log_files(self) -> tuple[Path, ...]:
+        """Saved text logs, available before the first completed iteration."""
+        return tuple(sorted(path for path in self.log_folder.glob("*.log") if path.is_file()))
+
+    @property
     def controller_class(self) -> type[Any] | None:
         if not self._controller_loaded:
             self._controller_class = _import_controller(self.folder)

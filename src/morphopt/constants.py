@@ -21,6 +21,7 @@ class _Constants:
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000
+            LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
         class UPDATER_EDITOR:
@@ -1045,17 +1046,17 @@ class _Constants:
                 NONORTHOGONALITY_LIMIT = 0.1
                 ACTIVATION_RATIO = 0.8
                 BSP_EXPONENT = 3
-                CPGEO_EXPONENT = 5
+                CPGEO_EXPONENT = 3
                 REFERENCE_METRIC_RATIO = 0.2
 
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0
             MIN_RADIUS_EXPONENT = 3
-            CYLINDER_EXPONENT = 7
+            CYLINDER_EXPONENT = 3
             DISTANCE_SEARCH_RATIO = 1.5
             DISTANCE_PAIR_PRUNE_RATIO = 0.3
             DISTANCE_BARRIER_THRESHOLD = 0.01
-            DISTANCE_BARRIER_EXPONENT = 5
+            DISTANCE_BARRIER_EXPONENT = 3
             NORMAL_TRANSITION_MIN = -0.7
             NORMAL_TRANSITION_MAX = 0.0
             NORMALIZATION_TOLERANCE = 1e-08
@@ -1083,8 +1084,12 @@ class _Constants:
             PROBE_FRACTION = 0.5
             SAFETY_FACTOR = 2.0
             BALANCE_RATIO = 0.25
-            TIGHTENING_STEPS = 30
-            INITIAL_TOLERANCE = 0.2
+            OBJECTIVE_TOLERANCE = 0.01
+            TIGHTENING_INCREMENT = 0.001
+            PENALTY_GROWTH_LIMIT = 2.0
+            WEIGHT_INCREASE = 1.25
+            SIGNIFICANT_PENALTY_RATIO = 0.001
+            INITIAL_TOLERANCE = 0.05
             FINAL_TOLERANCE = 0.0
             DISTANCE_TRANSITION_RATIO = 0.05
 

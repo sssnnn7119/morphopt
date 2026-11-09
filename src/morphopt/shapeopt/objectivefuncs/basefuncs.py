@@ -17,8 +17,10 @@ class BaseConstraints:
 
     def __init__(self) -> None:
         self.barrier_function = PolynomialBarrier()
-        self.integration_weights: list[torch.Tensor] = []
+        self.area_weights: list[torch.Tensor] = []
         """Reference area weights, fixed throughout one subproblem."""
+        self.sample_weights: list[torch.Tensor] | None = None
+        """Optional optimization weights, separate from geometric area weights."""
         self.surfaces: list[BaseSurface] = []
 
     def initialize(
@@ -32,9 +34,33 @@ class BaseConstraints:
         **kwargs: object,
     ) -> None:
         """Bind reference area weights without physical sensitivity scaling."""
-        self.integration_weights = [weight.detach().clone() for weight in weights]
+        self.area_weights = [weight.detach().clone() for weight in weights]
+        self.sample_weights = None
         self.surfaces = list(surfaces)
         self.barrier_function = PolynomialBarrier()
+
+    def set_sample_weights(self, weights: list[torch.Tensor] | None) -> None:
+        """Bind the strategy's frozen factors in surface quadrature order."""
+        if weights is not None:
+            if len(weights) != len(self.area_weights) or any(
+                value.shape != area.shape
+                for value, area in zip(weights, self.area_weights)
+            ):
+                raise ValueError("Sample weights must match the surface quadrature blocks.")
+            if any(not torch.isfinite(value).all() or (value < 0).any() for value in weights):
+                raise ValueError("Sample weights must be finite and nonnegative.")
+            weights = [
+                value.detach().to(area).clone()
+                for value, area in zip(weights, self.area_weights)
+            ]
+        self.sample_weights = weights
+
+    @property
+    def integration_weights(self) -> list[torch.Tensor]:
+        """Compose area and pointwise factors without changing either input."""
+        if self.sample_weights is None:
+            return self.area_weights
+        return [area * value for area, value in zip(self.area_weights, self.sample_weights)]
 
     def __call__(
         self,

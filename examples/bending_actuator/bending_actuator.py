@@ -5,7 +5,10 @@ import morphopt
 
 class ThisController(morphopt.Controller):
     def __init__(self):
-        super().__init__(path_result_folder=".results/", opt_label="BendingActuator")
+        super().__init__(
+            path_result_folder="/home/song/mycache/results/",
+            opt_label="BendingActuator",
+        )
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
         def reference_point_motion(self, step_name="load_case_1"):
@@ -113,7 +116,7 @@ class ThisController(morphopt.Controller):
         class Shape(morphopt.UpdaterBoundaryPart):
             def __init__(self):
                 super().__init__(
-                    max_step_iter=150,
+                    max_step_iter=50,
                     constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(),
                 )
 

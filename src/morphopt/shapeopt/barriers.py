@@ -1,4 +1,4 @@
-"""Shared polynomial penalties and optional quadratic distance relaxation."""
+"""Fixed-power polynomial penalties with optional distance relaxation."""
 
 import torch
 
@@ -6,7 +6,7 @@ from ..constants import CONSTANT
 
 
 class PolynomialBarrier:
-    """Keep the original penalty unless an outer distance schedule is active."""
+    """Apply each constraint's exponent while allowing threshold relaxation."""
 
     def __init__(self) -> None:
         self.tolerance: float | None = None
@@ -24,15 +24,14 @@ class PolynomialBarrier:
 
         A distance caller provides f = required - current + f_max and its
         required distance as transition_scale. The schedule relaxes that
-        requirement, with a fixed relative activation margin and power two.
-        Other penalties continue to use their original thresholds and powers.
+        requirement with a fixed relative activation margin. The caller's
+        exponent remains unchanged with or without a distance schedule.
         """
         threshold = torch.as_tensor(f_max, dtype=f.dtype, device=f.device)
         if transition_scale is not None and self.tolerance is not None:
             scale = torch.as_tensor(transition_scale, dtype=f.dtype, device=f.device)
             width = CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS.DISTANCE_TRANSITION_RATIO * scale
             z = 1 + (f - threshold - self.tolerance * scale) / width
-            p = 2
         else:
             z = (f - threshold * ratio) / (threshold * (1 - ratio))
         index = torch.where(z > 0)[0]

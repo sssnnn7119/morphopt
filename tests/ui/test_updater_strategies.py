@@ -22,6 +22,13 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
+def test_adaptive_defaults_apply_the_same_mild_early_relaxation_in_ui_and_kernel():
+    policy = morphopt.UpdaterBoundaryPart.strategies.AdaptiveShapeWeights()
+    config = strategy_config("constraint_weight_strategy", "AdaptiveShapeWeights")
+    assert config["params"]["initial_tolerance"] == policy.initial_tolerance == 0.05
+    assert config["params"]["final_tolerance"] == policy.final_tolerance == 0.0
+
+
 @pytest.mark.parametrize("group,base", [
     ("geometry", morphopt.UpdaterBoundaryPart),
     ("geometry", morphopt.UpdaterOffsetBoundaryPart),
@@ -41,7 +48,9 @@ def test_strategy_fields_match_backend_defaults(group, base):
 
 
 @pytest.mark.parametrize("policy,parameter,setting", [
-    ("AdaptiveShapeWeights", "tightening_steps", 20),
+    ("AdaptiveShapeWeights", "objective_tolerance", 0.02),
+    ("AdaptiveShapeWeights", "tightening_increment", 0.002),
+    ("AdaptiveShapeWeights", "penalty_growth_limit", 1.5),
     ("AdaptiveShapeWeights", "initial_tolerance", 0.3),
 ])
 def test_shape_selection_parameters_round_trip_to_generated_updater(app, tmp_path, policy, parameter, setting):
@@ -121,7 +130,7 @@ def test_strategy_parameter_references_a_custom_constant(app):
 
 def test_default_configs_have_independent_strategy_parameters():
     assert list(strategy_specs("constraint_weight_strategy", "geometry")) == [
-        "ConstantConstraintWeights", "AdaptiveShapeWeights",
+        "ConstantConstraintWeights", "SensitivityShapeWeights", "AdaptiveShapeWeights",
     ]
     first, second = geometry_updater_config(), geometry_updater_config()
     first["constraint_weight_strategy"]["params"]["value"] = 9
@@ -153,4 +162,21 @@ def test_selecting_policies_and_opening_existing_config_do_not_insert_defaults(a
     selector.selector.setCurrentIndex(selector.selector.findData("ConstantConstraintWeights"))
     assert config[selector.key] == strategy_config(selector.key)
     assert set(selector.parameters.controls) == {"value"}
+    selector.close()
+
+
+def test_pointwise_sensitivity_strategy_round_trips_through_ui_and_script(app, tmp_path):
+    problem = ProblemLibrary.create("shapeopt")
+    config = problem.updater.geometry[0]
+    selector = UpdaterStrategyEditor(config, "constraint_weight_strategy", "geometry", problem)
+    selector.selector.setCurrentIndex(selector.selector.findData("SensitivityShapeWeights"))
+    assert config[selector.key] == {"type": "SensitivityShapeWeights", "params": {}}
+    loaded = ProblemLibrary.load(ProblemLibrary.save(problem, tmp_path / "pointwise.morph"))
+    namespace = {"__name__": "pointwise_strategy_test"}
+    exec(ProblemSession(loaded).source(), namespace)
+    updater = namespace["ThisController"].Updater.UpdaterBoundaryPart()
+    assert isinstance(
+        updater.constraint_weight_strategy,
+        morphopt.UpdaterBoundaryPart.strategies.SensitivityShapeWeights,
+    )
     selector.close()

@@ -480,6 +480,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
             if constraint_weight_strategy is None else constraint_weight_strategy
         )
         self.constraint_weights: dict[str, float] = {}
+        self.objective_value: float | None = None
+        """Current high-fidelity objective, supplied before building a subproblem."""
 
         self.optimizer: BaseUpdater.Optimizer.BaseOpt = None
         """The optimization algorithm used to update the design variables.
@@ -908,8 +910,8 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
             updater.bind_target(target)
             updater.initialize()
 
-    def update(self, gradients: dict[str, torch.Tensor]) -> None:
-        """Update every sub-updater from its own slice of the gradient."""
+    def update(self, gradients: dict[str, torch.Tensor], objective_value: float) -> None:
+        """Supply the evaluated objective and each target's native gradient slice."""
         controller = morphopt.controller
         default_device = torch.get_default_device()
         bounds = {
@@ -919,6 +921,7 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
 
         for name, updater in self.updaters.items():
             start, stop = self._slice_of(updater, bounds[updater.update_kind])
+            updater.objective_value = objective_value
             on_updater_device = self._device is not None
             try:
                 if on_updater_device:

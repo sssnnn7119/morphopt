@@ -317,7 +317,7 @@ class Controller:
         """
         Perform a single optimization step.
         Returns:
-            loss (torch.Tensor): The loss value after the optimization step.
+            loss (torch.Tensor): The high-fidelity objective at the evaluated design.
             t0 (float): The start time of the optimization step.
             t1 (float): The time after model generation.
             t2 (float): The time after finite element analysis (FEA).
@@ -364,10 +364,9 @@ class Controller:
 
         # Update the surfaces based on the FEA results
         logger.info(f"Updating surfaces for iteration {self.history.iteration}...")
-        self.updater.update(gradients=gradients)
-        self.updater.update_variables()
-
         loss = self.objfun.objective_function()
+        self.updater.update(gradients=gradients, objective_value=loss.detach().item())
+        self.updater.update_variables()
 
         t4 = time.time()
 

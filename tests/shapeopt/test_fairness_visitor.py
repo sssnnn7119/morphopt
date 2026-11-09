@@ -42,7 +42,7 @@ def bind(penalty, surfaces, count=2):
     return r, rdu, rdu2, weight
 
 
-@pytest.mark.parametrize("index,power", [(0, 3), (1, 5)])
+@pytest.mark.parametrize("index,power", [(0, 3), (1, 3)])
 def test_curvature_penalty_matches_an_analytic_patch(surfaces, index, power):
     penalty = Fairness()
     r, rdu, rdu2, weight = bind(penalty, [surfaces[index]])
@@ -110,10 +110,10 @@ def test_visitor_retains_first_and_second_derivatives(surfaces, index):
 def test_one_fairness_sums_all_updatable_surfaces(surfaces):
     penalty = Fairness()
     r, rdu, rdu2, weight = bind(penalty, surfaces)
-    torch.testing.assert_close(penalty([r, r], [rdu, rdu], [rdu2, rdu2]), weight.sum() * (0.5**3 + 0.5**5))
+    torch.testing.assert_close(penalty([r, r], [rdu, rdu], [rdu2, rdu2]), weight.sum() * (0.5**3 + 0.5**3))
     surfaces[0].is_updatable = False
     bind(penalty, surfaces)
-    torch.testing.assert_close(penalty([r, r], [rdu, rdu], [rdu2, rdu2]), weight.sum() * 0.5**5)
+    torch.testing.assert_close(penalty([r, r], [rdu, rdu], [rdu2, rdu2]), weight.sum() * 0.5**3)
     surfaces[1].is_updatable = False
     bind(penalty, surfaces)
     zero = penalty([r, r], [rdu, rdu], [rdu2, rdu2])
@@ -172,6 +172,7 @@ def test_all_surfaces_share_one_curvature_limit_and_one_weight(surfaces):
             values = [rdu2 * (1 + 0.1*x[0]), rdu2 * (1 + 0.1*x[3])]
             return [-x[0] - 2*x[3]], [self.penalty([r, r], [rdu, rdu], values)]
     updater = PatchUpdater()
+    updater.objective_value = 1.0
     x = torch.zeros(6)
     jacobian = torch.func.grad(lambda x: updater.closure(x, True)[1][0])(x)
     assert jacobian[0] > 0 and jacobian[3] > 0

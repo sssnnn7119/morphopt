@@ -7,31 +7,161 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from ...constants import CONSTANT
 from ...postprocess.visualization import (
     add_deformation_mesh,
     add_design_component,
     design_view_options,
 )
-from ..application.results import ResultSession
+from ..application.results import ResultLogReader, ResultSession
 from ..i18n import tr
 from ..presentation.history import history_table
 from ..theme import theme_manager
 from ..theme.fonts import chart_font, font_manager
 from .viewport import PlotViewport
+
+
+class LogsPage(QWidget):
+    """Display saved task logs; polling is owned by ObserverControls."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._reader = ResultLogReader()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        controls = QHBoxLayout()
+        self.file_label = QLabel()
+        controls.addWidget(self.file_label)
+        self.file_selector = QComboBox()
+        self.file_selector.currentIndexChanged.connect(self._read_current)
+        controls.addWidget(self.file_selector, 1)
+        self.follow = QCheckBox()
+        self.follow.setChecked(True)
+        self.follow.toggled.connect(self._scroll_to_end)
+        controls.addWidget(self.follow)
+        layout.addLayout(controls)
+        self.text = QPlainTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.text.setMaximumBlockCount(CONSTANT.UI.OBSERVER.OUTPUT_MAXIMUM_BLOCKS)
+        self._scroll_maximum = self.text.verticalScrollBar().maximum()
+        self.text.verticalScrollBar().rangeChanged.connect(self._scroll_range_changed)
+        layout.addWidget(self.text, 1)
+        self.apply_language()
+        self.file_selector.setEnabled(False)
+
+    def refresh(self, results: ResultSession) -> None:
+        files = results.log_files
+        current_files = tuple(
+            self.file_selector.itemData(index)
+            for index in range(self.file_selector.count())
+        )
+        if tuple(map(str, files)) != current_files:
+            selected = self.file_selector.currentData()
+            self.file_selector.blockSignals(True)
+            try:
+                self.file_selector.clear()
+                for path in files:
+                    self.file_selector.addItem(path.name, str(path))
+                    self.file_selector.setItemData(
+                        self.file_selector.count() - 1, str(path), Qt.ItemDataRole.ToolTipRole
+                    )
+                self.file_selector.setCurrentIndex(
+                    max(0, self.file_selector.findData(selected)) if files else -1
+                )
+                self.file_selector.setEnabled(bool(files))
+            finally:
+                self.file_selector.blockSignals(False)
+        self._read_current()
+
+    def _read_current(self) -> None:
+        path = self.file_selector.currentData()
+        if path is None:
+            self._reader.clear()
+            self.text.clear()
+            self.file_selector.setToolTip("")
+            self.text.setPlaceholderText(tr("ui.observe_panel.no_logs"))
+            return
+        self.file_selector.setToolTip(path)
+        file_changed = self._reader.path != Path(path)
+        try:
+            replace, content = self._reader.read(Path(path))
+        except OSError as exc:
+            self._reader.clear()
+            self.text.clear()
+            self.text.setPlaceholderText(tr("ui.observe_panel.log_read_failed", error=exc))
+            return
+        bar = self.text.verticalScrollBar()
+        follow = (
+            self._can_follow()
+            and (file_changed or bar.value() == bar.maximum())
+        )
+        # A cursor follows its block when old lines are trimmed from the head.
+        # Restoring a scrollbar value alone would change the text being read.
+        anchor = QTextCursor(self.text.firstVisibleBlock())
+        anchor.setKeepPositionOnInsert(True)
+        offset = bar.value() - anchor.blockNumber()
+        if replace:
+            self.text.clear()
+        if content:
+            cursor = QTextCursor(self.text.document())
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertText(content)
+        if follow:
+            self._scroll_to_end(True)
+        else:
+            bar.setValue(anchor.blockNumber() + offset)
+
+    def _can_follow(self) -> bool:
+        return (
+            self.follow.isChecked()
+            and not self.text.verticalScrollBar().isSliderDown()
+            and not self.text.textCursor().hasSelection()
+        )
+
+    def _scroll_range_changed(self, _minimum: int, maximum: int) -> None:
+        previous = self._scroll_maximum
+        self._scroll_maximum = maximum
+        # Layout can change the range after insertion, for example when the
+        # horizontal scrollbar appears. Keep following only from the old end.
+        if self._can_follow() and self.text.verticalScrollBar().value() == previous:
+            self._scroll_to_end(True)
+
+    def _scroll_to_end(self, checked: bool) -> None:
+        if checked:
+            bar = self.text.verticalScrollBar()
+            bar.setValue(bar.maximum())
+
+    def clear(self) -> None:
+        self._reader.clear()
+        self.file_selector.clear()
+        self.file_selector.setEnabled(False)
+        self.text.clear()
+
+    def apply_language(self) -> None:
+        self.file_label.setText(tr("ui.observe_panel.log_file"))
+        self.follow.setText(tr("ui.observe_panel.log_follow"))
+        self.follow.setToolTip(tr("ui.observe_panel.log_follow_hint"))
+        self.text.setPlaceholderText(tr("ui.observe_panel.no_logs"))
 
 
 class MetricsPage(QWidget):

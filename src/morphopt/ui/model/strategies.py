@@ -28,21 +28,21 @@ STRATEGY_CATALOG: dict[str, tuple[StrategySpec, ...]] = {
                        minimum=0, doc_key="ui.strategies.value.help"),),
         ),
         StrategySpec(
+            "SensitivityShapeWeights", "ui.strategies.sensitivity_shape_weights",
+            groups=("geometry",),
+        ),
+        StrategySpec(
             "AdaptiveShapeWeights", "ui.strategies.adaptive_shape_weights",
-            (
-                FieldSpec(
-                    "tightening_steps", "ui.strategies.tightening_steps.label", "int",
-                    _ADAPTIVE.TIGHTENING_STEPS, minimum=1,
-                    doc_key="ui.strategies.tightening_steps.help",
-                ),
-                *(
-                    FieldSpec(key, f"ui.strategies.{key}.label", "float", default,
-                              doc_key=f"ui.strategies.{key}.help")
-                    for key, default in (
-                        ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
-                        ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
-                    )
-                ),
+            tuple(
+                FieldSpec(key, f"ui.strategies.{key}.label", "float", default,
+                          doc_key=f"ui.strategies.{key}.help")
+                for key, default in (
+                    ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
+                    ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
+                    ("objective_tolerance", _ADAPTIVE.OBJECTIVE_TOLERANCE),
+                    ("tightening_increment", _ADAPTIVE.TIGHTENING_INCREMENT),
+                    ("penalty_growth_limit", _ADAPTIVE.PENALTY_GROWTH_LIMIT),
+                )
             ),
             groups=("geometry",),
         ),
