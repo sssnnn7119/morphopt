@@ -293,6 +293,10 @@ class SIMPFieldMaterialNode(MaterialNode):
             "vec6",
             Defaults.BOUNDING_BOX.DEFAULT,
             doc_key="ui.schema.fields.bounding_box.help.field_bounding_box_xmin_xmax_ymin_ymax_zmin_zmax",
+            components=(
+                "ui.parameters.xmin", "ui.parameters.xmax", "ui.parameters.ymin",
+                "ui.parameters.ymax", "ui.parameters.zmin", "ui.parameters.zmax",
+            ),
         ),
         FieldSpec(
             "simp_field_resolution",

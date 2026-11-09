@@ -205,7 +205,7 @@ class DefinitionValidation:
                         FieldSpec(
                             spec.key,
                             spec.label_key,
-                            "int" if spec.ints or spec.type == "dofs" else "float",
+                            "int" if spec.ints or spec.type == "dofs" else spec.item_type,
                             minimum=spec.minimum,
                             maximum=spec.maximum,
                         ),
@@ -257,11 +257,12 @@ class DefinitionValidation:
 
     def node(self, node: Node) -> None:
         try:
-            fields = (
-                fields_for_node(node)[0]
-                if isinstance(node, MaterialNode)
-                else node.fields
-            )
+            if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF":
+                fields = fields_for_node(node, self.problem)[0]
+            elif isinstance(node, MaterialNode):
+                fields = fields_for_node(node)[0]
+            else:
+                fields = node.fields
         except KeyError:
             self.add(node, "choice", field="material_model")
             fields = ()
@@ -289,6 +290,10 @@ class DefinitionValidation:
                     candidates = self.problem.instance_names()
                 elif spec.key in REFERENCE_POINT_FIELDS:
                     candidates = self.problem.reference_point_names()
+                elif node.type == "PenaltyDoF" and spec.key == "obj_name":
+                    from .fields import penalty_targets
+
+                    candidates = list(penalty_targets(self.problem, node))
                 if candidates is not None and name not in candidates:
                     self.add(node, "reference", field=tr(spec.label_key), name=name)
                 elif (
@@ -450,19 +455,19 @@ class DefinitionValidation:
         counts = Counter(name.casefold() for name in steps.step_values)
         for name, values in steps.step_values.items():
             if not name.strip():
-                self.add(steps, "required", field="name")
+                self.add(values, "required", field="name")
             elif name != sanitize_name(name):
-                self.add(steps, "portable_name", name=name)
+                self.add(values, "portable_name", name=name)
             if counts[name.casefold()] > 1:
-                self.add(steps, "duplicate", name=name)
+                self.add(values, "duplicate", name=name)
             for key, value in values.items():
                 load_name = key.name if isinstance(key, Node) else key
                 load = loads.get(load_name)
                 if load is None:
-                    self.add(steps, "reference", field=name, name=load_name)
+                    self.add(values, "reference", field=name, name=load_name)
                 else:
                     self.field(
-                        steps,
+                        values,
                         FieldSpec(
                             name, name, "vec6" if load.num_values == 6 else "vecN"
                         ),
@@ -473,7 +478,7 @@ class DefinitionValidation:
                         and len(value) != load.num_values
                     ):
                         self.add(
-                            steps,
+                            values,
                             "vector",
                             field=f"{name}/{load_name}",
                             size=load.num_values,

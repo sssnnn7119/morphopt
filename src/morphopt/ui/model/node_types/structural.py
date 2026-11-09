@@ -27,6 +27,7 @@ from ..fields import FieldSpec
 
 if TYPE_CHECKING:
     from .parts import BoundaryPartNode
+    from ..problem import ProblemDefinition
 
 
 class ProblemNode(Node):
@@ -264,6 +265,7 @@ class InstanceNode(Node):
             "vec3",
             (0.0, 0.0, 0.0),
             doc_key="ui.schema.fields.translation.help.translation_tx_ty_tz_of_this_instance",
+            components=("ui.parameters.tx", "ui.parameters.ty", "ui.parameters.tz"),
         ),
         FieldSpec(
             "rotation",
@@ -271,6 +273,7 @@ class InstanceNode(Node):
             "vec3",
             (0.0, 0.0, 0.0),
             doc_key="ui.schema.fields.rotation.help.rotation_exponential_coordinates_rx_ry_rz",
+            components=("ui.parameters.rx", "ui.parameters.ry", "ui.parameters.rz"),
         ),
     )
 
@@ -396,6 +399,63 @@ class StepsNode(Node):
                 for name, values in self.step_values.items()
             },
         )
+
+
+class LoadCaseNode(Node):
+    """Editable interface to a case owned by StepsNode.
+
+    Tree and editor views share the case dictionary, including across renames;
+    no second set of amplitudes is stored on the interface.
+    """
+
+    kind = "load_case"
+    backend_class = "LoadCase"
+
+    def __init__(self, problem: ProblemDefinition, name: str) -> None:
+        self.problem = problem
+        self.steps = problem.steps
+        self.values = self.steps.step_values[name]
+        super().__init__(name=name)
+
+    @property
+    def name(self) -> str:
+        return next(
+            (name for name, values in self.steps.step_values.items() if values is self.values),
+            self._name,
+        )
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self._name = value
+
+    def __hash__(self) -> int:
+        return hash((id(self.steps), id(self.values)))
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, LoadCaseNode) and self.steps is other.steps and self.values is other.values
+
+    def parameters(self) -> dict[str, tuple[FEAComponentNode, FieldSpec]]:
+        return {
+            f"{load.name}.{field.key}": (load, field)
+            for load in self.problem.amplitude_components() for field in load.value_fields
+        }
+
+    def get_field(self, key: str, default: object = None) -> object:
+        parameter = self.parameters().get(key)
+        if parameter is None:
+            return super().get_field(key, default)
+        load, field = parameter
+        index = load.value_fields.index(field)
+        values = self.values.get(load, [])
+        return values[index] if index < len(values) else field.new_default()
+
+    def set_field(self, key: str, value: object) -> None:
+        load, field = self.parameters()[key]
+        values = [
+            self.get_field(f"{load.name}.{entry.key}") for entry in load.value_fields
+        ]
+        values[load.value_fields.index(field)] = value
+        self.values[load] = values
 
 
 class MaterialsNode(Node):

@@ -312,11 +312,8 @@ class _Constants:
                         DEFAULT = "auto"
                         CHOICES = (
                             "auto",
-                            "instance",
                             "rp",
-                            "load",
-                            "constraint",
-                            "boundary",
+                            "instance",
                         )
 
                 class BOUNDARYCONDITION:

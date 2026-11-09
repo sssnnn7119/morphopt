@@ -50,6 +50,7 @@ from .node_types import (
     HelperVariableNode,
     InstanceNode,
     LoadsNode,
+    LoadCaseNode,
     MaterialsNode,
     MethodOverrideNode,
     ObjectiveNode,
@@ -88,6 +89,7 @@ __all__ = [
     "HelperVariableNode",
     "InstanceNode",
     "LoadsNode",
+    "LoadCaseNode",
     "MaterialNode",
     "MaterialsNode",
     "MethodOverrideNode",
@@ -390,8 +392,9 @@ class ProblemDefinition:
 
         steps = self.steps
         if steps is not None:
-            steps.step_values = {
-                name: {
+            # Interface views and tree selection retain these case dictionaries.
+            for step in steps.step_values.values():
+                resolved = {
                     target: list(values)
                     for key, values in step.items()
                     if (
@@ -404,8 +407,8 @@ class ProblemDefinition:
                     )
                     is not None
                 }
-                for name, step in steps.step_values.items()
-            }
+                step.clear()
+                step.update(resolved)
 
         objective = self.objective
         if objective is not None:

@@ -82,6 +82,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
         FieldSpec(
             "perturbation_L",
@@ -156,6 +157,7 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
         FieldSpec(
             "perturbation_L",
@@ -202,6 +204,7 @@ class CPGEOSphereSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.center_of_the_sphere",
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
     )
 
@@ -246,6 +249,6 @@ class BREPSurfaceNode(SurfaceNode):
         ),
         FieldSpec("data", "ui.schema.fields.data.label.step_data", "str", "", hidden=True),
         FieldSpec("brep_metadata", "ui.assets.brep_metadata", "str", "{}", hidden=True),
-        FieldSpec("design_faces", "ui.schema.fields.design_faces.label", "vecN", ()),
+        FieldSpec("design_faces", "ui.schema.fields.design_faces.label", "vecN", (), item_type="str"),
         FieldSpec("control_point_spacing", "ui.schema.fields.control_point_spacing.label", "float", 1.0, minimum=1e-9),
     )

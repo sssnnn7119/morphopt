@@ -635,3 +635,40 @@ def test_morph_import_opens_supported_content_before_showing_one_warning(monkeyp
     finally:
         window.deleteLater()
         app.processEvents()
+
+
+def test_load_case_interfaces_use_common_cards_tree_and_edit_history(monkeypatch):
+    from morphopt.ui.application.editor_routing import EditorKind, route_editor
+    from morphopt.ui.model.problem import LoadCaseNode
+    from morphopt.ui.widgets.definition_manager import DefinitionManagerEditor
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    problem = ProblemLibrary.create('shapeopt')
+    window.set_problem(problem)
+    page = window._workbench
+    try:
+        assert isinstance(page.load_cases, DefinitionManagerEditor)
+        name = next(iter(problem.steps.step_values))
+        case = LoadCaseNode(problem, name)
+        assert route_editor(case).kind is EditorKind.STEPS
+        page.tree.setCurrentItem(page.tree._node_item[case])
+        assert page._stack.currentWidget() is page.load_cases
+        assert page.load_cases._focus == case
+        editor = page.load_cases._node_editors[case][0]
+        key = next(iter(editor._controls))
+        original = case.get_field(key)
+        field = editor._controls[key]
+        field.setText('0.125')
+        field.editingFinished.emit()
+        page.refresh_coordinator.refresh_now()
+        assert case.get_field(key) == 0.125
+        page.undo()
+        restored = LoadCaseNode(page.problem, name)
+        assert restored.get_field(key) == original
+        assert page.tree.currentItem().text(0).endswith('[LoadCase]')
+        page.redo()
+        assert LoadCaseNode(page.problem, name).get_field(key) == 0.125
+    finally:
+        window.deleteLater()
+        app.processEvents()

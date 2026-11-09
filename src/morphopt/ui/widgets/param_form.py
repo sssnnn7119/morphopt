@@ -22,6 +22,7 @@ from ..i18n import localized_message, tr
 from ..presentation.labels import DOF_LABELS, display_choice
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_open_file
+from .sequence_input import SequenceInput
 
 
 class ParamForm(QWidget):
@@ -82,8 +83,11 @@ class ParamForm(QWidget):
             )
             if spec.type == "combo" and spec.default == "" and "" not in choices:
                 choices.insert(0, "")
-            widget = builders.get(spec.type, self._line)(spec, value, choices)
-            label = QLabel(tr(spec.label_key))
+            builder = self._sequence if spec.type.startswith("vec") else builders.get(spec.type, self._line)
+            widget = builder(spec, value, choices)
+            label = QLabel(tr(spec.label_key) if spec.label_key.startswith("ui.") else spec.label_key)
+            label.setBuddy(widget)
+            widget.setAccessibleName(label.text())
             help_text = tr(spec.doc_key) if spec.doc_key else ""
             label.setToolTip(
                 "\n".join(
@@ -143,6 +147,8 @@ class ParamForm(QWidget):
                     control.setEditText(field_text(value))
             elif isinstance(control, QLineEdit):
                 control.setText(field_text(value))
+            elif isinstance(control, SequenceInput):
+                control.set_value(value)
         finally:
             control.blockSignals(False)
 
@@ -177,6 +183,14 @@ class ParamForm(QWidget):
                     text = str(value or "")
                     if control.toPlainText() != text:
                         control.setPlainText(text)
+                elif isinstance(control, SequenceInput):
+                    control.set_value(value)
+
+    def _sequence(self, spec, value, choices):
+        control = SequenceInput(spec, value, self.helper_names)
+        control.changed.connect(lambda items: self._commit(spec.key, items))
+        self.controls[spec.key] = control
+        return control
 
     def _line(self, spec, value, choices):
         key = spec.key

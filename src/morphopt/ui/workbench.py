@@ -219,7 +219,7 @@ class Workbench(QWidget):
         self.controller_editor.resultFolderChanged.connect(self._apply_path)
         self.controller_editor.deviceChanged.connect(self._save_device)
         self.solver_editor = SolverEditor(stack)
-        self.load_cases = LoadCaseEditor(stack)
+        self.load_cases = LoadCaseEditor(self.actions, parent=stack)
         self.load_cases.objectiveRequested.connect(self._on_node_selected)
         self.load_cases.objectiveRequested.connect(self.tree.select_node)
         self.updater_editor = UpdaterEditor(stack)
@@ -246,6 +246,7 @@ class Workbench(QWidget):
             self.prop_editor,
             self.geometry_editor,
             self.loads_editor,
+            self.load_cases,
             self.materials_editor,
             self.helper_variables_editor,
             self.helper_functions_editor,
@@ -434,7 +435,6 @@ class Workbench(QWidget):
         for kind, editor in (
             (EditorKind.CUSTOM_CLASS, self.custom_class_editor),
             (EditorKind.SOLVER, self.solver_editor),
-            (EditorKind.STEPS, self.load_cases),
         ):
             self.pages.register(
                 kind,
@@ -448,6 +448,7 @@ class Workbench(QWidget):
         for kind, editor, section in (
             (EditorKind.GEOMETRY, self.geometry_editor, "geometry"),
             (EditorKind.LOADS, self.loads_editor, "loads"),
+            (EditorKind.STEPS, self.load_cases, "steps"),
             (EditorKind.MATERIALS, self.materials_editor, "materials"),
         ):
             self.pages.register(

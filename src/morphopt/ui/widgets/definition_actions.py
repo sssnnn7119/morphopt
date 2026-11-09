@@ -27,8 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..application.edit_history import EditOperation
-from ..application.editing import CustomClassSession, DefinitionCommands
+from ..application.editing import CustomClassSession, DefinitionCommands, LoadCaseSession
 from ..application.updaters import UpdaterItems
+from ..application.load_cases import case_objectives, unused_cases
 from ..codegen.custom_classes import custom_options
 from ..i18n import localized_message, tr
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
@@ -38,6 +39,7 @@ from ..model.problem import (
     CustomFunctionNode,
     FEAComponentNode,
     InstanceNode,
+    LoadCaseNode,
     MaterialNode,
     MethodOverrideNode,
     Node,
@@ -65,6 +67,7 @@ from ..presentation.navigation import (
 from ..processes import start_worker
 from ..theme import theme_manager
 from .file_dialogs import choose_open_file
+from .case_deletion import confirm_case_cleanup
 
 
 class DefinitionActions(QObject):
@@ -831,3 +834,60 @@ class DefinitionActions(QObject):
         self._problem.remove_component(component)
         self._select(select=self._problem.loads)
         self._emit_change(component, "deleted")
+
+    def add_load_case(self) -> None:
+        if self._problem is None or self._problem.steps is None:
+            return
+        name = LoadCaseSession(self._problem.steps, self._problem).add()
+        node = LoadCaseNode(self._problem, name)
+        self._select(node)
+        self._emit_change(node, "added")
+
+    def move_load_case(self, node: LoadCaseNode, delta: int) -> None:
+        if LoadCaseSession(node.steps, self._problem).move(node.name, delta):
+            self._select(node)
+            self._emit_change(node, "modified")
+
+    def remove_load_case(self, node: LoadCaseNode) -> None:
+        name = node.name
+        terms = case_objectives(self._problem, name)
+        remove_terms = False
+        remove_unused = False
+        if terms:
+            dialog = QMessageBox(self.parent())
+            dialog.setIcon(QMessageBox.Icon.Question)
+            dialog.setWindowTitle(tr("ui.load_cases.title"))
+            dialog.setText(
+                tr("ui.load_cases.remove_references", name=name, count=len(terms))
+            )
+            dialog.setStandardButtons(
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel
+            )
+            dialog.button(QMessageBox.StandardButton.Yes).setText(
+                tr("ui.load_cases.delete_objectives")
+            )
+            dialog.button(QMessageBox.StandardButton.No).setText(
+                tr("ui.load_cases.clear_references")
+            )
+            dialog.setDefaultButton(QMessageBox.StandardButton.No)
+            reply = dialog.exec()
+            if reply not in (
+                QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.No,
+            ):
+                return
+            remove_terms = reply == QMessageBox.StandardButton.Yes
+            if remove_terms:
+                siblings = [
+                    case for case in unused_cases(self._problem, terms) if case != name
+                ]
+                remove_unused = confirm_case_cleanup(self.parent(), siblings)
+                if remove_unused is None:
+                    return
+        LoadCaseSession(self._problem.steps, self._problem).remove(
+            name, remove_objectives=remove_terms, remove_unused=remove_unused
+        )
+        self._select(self._problem.steps)
+        self._emit_change(node, "deleted")

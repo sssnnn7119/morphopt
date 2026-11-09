@@ -189,6 +189,8 @@ def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
 
 def node_title(problem: ProblemDefinition | None, node: Node) -> str:
     """Canonical object title, including the selected custom class."""
+    if node.kind == "load_case":
+        return typed_title(node.name, "LoadCase")
     if node.kind == "objective_term":
         objective_item = cast("ObjectiveItemTreeNode", node)
         term_type = objective_item.item.get("type")
@@ -251,6 +253,11 @@ def reference_choice_title(problem: ProblemDefinition | None, key: str, name: ob
         return None
     if key in {"instance_name", "instance_name1", "instance_name2"}:
         return typed_title(str(name), "Instance")
+    if key == "obj_name":
+        if name in problem.instance_names():
+            return typed_title(str(name), "Instance")
+        component = next((node for node in problem.fea_components() if node.name == name), None)
+        return component_title_text(component) if component is not None else None
     if key in {
         "rp_name", "rp_name1", "rp_name2",
         "force_load_name", "moment_load_name", "reference_point_name",
@@ -331,6 +338,11 @@ DOF_LABELS = {0: "X", 1: "Y", 2: "Z", 3: "Rx", 4: "Ry", 5: "Rz"}
 
 _CHOICE_LABELS = {
     ("obj_type", "auto"): "ui.widgets.values.choice.auto",
+    ("obj_type", "instance"): "ui.penalty.object.instance",
+    ("obj_type", "rp"): "ui.penalty.object.rp",
+    ("obj_name", ""): "ui.penalty.select_object",
+    **{("s", str(index)): f"ui.penalty.dof.{name}" for index, name in DOF_LABELS.items()},
+    **{("direction", str(index)): f"ui.penalty.dof.{DOF_LABELS[index]}" for index in range(3)},
     ("obj_type", "node"): "ui.widgets.values.choice.node",
     ("obj_type", "element"): "ui.widgets.values.choice.element",
     ("obj_type", "part"): "ui.widgets.values.choice.part",

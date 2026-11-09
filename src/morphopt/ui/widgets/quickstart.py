@@ -48,6 +48,8 @@ from ..theme import theme_manager
 from ..visualization.geometry import InitialDesignGeometry
 from .collection_controls import ActionButton, CollectionHeader, ItemActions
 from .file_dialogs import choose_directory
+from ..model.fields import FieldSpec
+from .sequence_input import SequenceInput
 
 
 class ChamberLayersEditor(QWidget):
@@ -113,12 +115,7 @@ class ChamberLayersEditor(QWidget):
                 f"{layer.center_radius:g}",
                 layer.shape,
                 f"{layer.phase_degrees:g}",
-                ",".join(
-                    map(
-                        str,
-                        layer.pressure_channels,
-                    )
-                ),
+                layer.pressure_channels,
             ]
             for column, value in enumerate(values):
                 if column in (2, 5):
@@ -139,8 +136,11 @@ class ChamberLayersEditor(QWidget):
                     combo.setCurrentIndex(combo.findData(value))
                     combo.currentIndexChanged.connect(lambda *_: self.changed.emit())
                     self.table.setCellWidget(row, column, combo)
+                elif column == 7:
+                    self._set_channels(row, value)
                 else:
                     self.table.setItem(row, column, QTableWidgetItem(value))
+        self.table.resizeRowsToContents()
         self._loading = False
         self._update_actions()
 
@@ -167,7 +167,7 @@ class ChamberLayersEditor(QWidget):
                         center_radius=float(value(4)),
                         shape=self.table.cellWidget(row, 5).currentData(),
                         phase_degrees=float(value(6)),
-                        pressure_channels=[int(c.strip()) for c in value(7).split(",")],
+                        pressure_channels=[int(c) for c in self.table.cellWidget(row, 7).value()],
                     )
                 )
         except ValueError as exc:
@@ -184,20 +184,31 @@ class ChamberLayersEditor(QWidget):
         if column == 1:
             try:
                 count = int(self.table.item(row, 1).text())
-                channels = [int(c) for c in self.table.item(row, 7).text().split(",")]
+                channels = self.table.cellWidget(row, 7).value()
             except ValueError:
                 self.changed.emit()
                 return
             if (
-                channels == list(range(1, len(channels) + 1))
-                and 1 <= count <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT
+                1 <= count <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT
             ):
                 self._loading = True
-                self.table.item(row, 7).setText(
-                    ",".join(str(c) for c in range(1, count + 1))
-                )
+                self._set_channels(row, [
+                    channels[i] if i < len(channels) else i + 1 for i in range(count)
+                ])
+                self.table.resizeRowsToContents()
                 self._loading = False
         self.changed.emit()
+
+    def _set_channels(self, row: int, channels: list[int]) -> None:
+        editor = SequenceInput(
+            FieldSpec(
+                "pressure_channels", "ui.widgets.quickstart.cavity_channel", f"vec{len(channels)}",
+                tuple(channels), ints=True,
+            ),
+            channels,
+        )
+        editor.changed.connect(lambda _value: self.changed.emit())
+        self.table.setCellWidget(row, 7, editor)
 
     def _add(self):
         try:

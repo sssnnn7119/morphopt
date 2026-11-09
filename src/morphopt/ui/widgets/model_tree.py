@@ -33,6 +33,7 @@ from ..model.problem import (
     CustomClassNode,
     CustomFunctionNode,
     InstanceNode,
+    LoadCaseNode,
     MaterialNode,
     MethodOverrideNode,
     Node,
@@ -265,7 +266,9 @@ class ModelTree(QTreeWidget):
         def visit(item: QTreeWidgetItem) -> list[str]:
             node = self._item_node[item]
             owner: object | None = node
-            if isinstance(node, (ObjectiveItemTreeNode, UpdaterItemTreeNode)):
+            if isinstance(node, LoadCaseNode):
+                owner = node.values
+            elif isinstance(node, (ObjectiveItemTreeNode, UpdaterItemTreeNode)):
                 owner = node.item
             elif isinstance(node, UpdaterTreeNode):
                 owner = node.config() if node.group == node.section_group else None
@@ -704,6 +707,12 @@ class ModelTree(QTreeWidget):
                     )
                 )
 
+        if kind == "steps":
+            menu.addAction(tr("ui.load_cases.add_interface"), self.actions.add_load_case)
+        if kind == "load_case":
+            menu.addAction(tr("ui.common.move_up"), lambda: self.actions.move_load_case(node, -1))
+            menu.addAction(tr("ui.common.move_down"), lambda: self.actions.move_load_case(node, 1))
+            menu.addAction(tr("ui.common.delete"), lambda: self.actions.remove_load_case(node))
         if kind == "loads":
             sub = menu.addMenu(tr("ui.widgets.model_tree.add_load"))
             for itype, spec in LOAD_TYPES.items():

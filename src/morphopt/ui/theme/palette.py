@@ -132,6 +132,9 @@ class WidgetLayout:
     custom_class_base_minimum_width: int = 400
     model_summary_indentation: int = 18
     model_summary_name_column_width: int = 240
+    sequence_columns: int = 3
+    bounds_columns: int = 2
+    sequence_input_minimum_width: int = 64
 
 
 @dataclass(frozen=True)

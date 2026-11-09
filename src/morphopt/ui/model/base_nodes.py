@@ -534,6 +534,8 @@ class FEAComponentNode(TypedNode):
 
     kind = KIND_FEA_COMPONENT
     num_values: ClassVar[int] = 0
+    value_fields: ClassVar[tuple[FieldSpec, ...]] = ()
+    load_class: ClassVar[str] = ""
     name_hint: ClassVar[str] = "load_"
 
     def __init__(
