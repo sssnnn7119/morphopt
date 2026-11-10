@@ -28,7 +28,7 @@
 | [`optcore/updaters.py`](../../src/morphopt/optcore/updaters.py) | 更新器注册、目标解析、梯度切片、公共优化算法及 `QuadraticHistory` 曲率历史 |
 | [`optcore/strategies.py`](../../src/morphopt/optcore/strategies.py) | 可组合的步长与罚项权重策略接口及默认实现 |
 | [`shapeopt/strategies.py`](../../src/morphopt/shapeopt/strategies.py) | 形状优化的自适应权重与障碍逐步收紧策略 |
-| [`shapeopt/barriers.py`](../../src/morphopt/shapeopt/barriers.py) | 共享几何障碍函数、相对违反量测量和采样更新接受检查 |
+| [`shapeopt/barriers.py`](../../src/morphopt/shapeopt/barriers.py) | 固定幂次几何障碍与可选距离放宽 |
 | [`shapeopt/boundary_part.py`](../../src/morphopt/shapeopt/boundary_part.py)、[`surfaces/`](../../src/morphopt/shapeopt/surfaces) | 边界部件与曲面设计变量 |
 | [`optcore/modelparams/parts/cad_part.py`](../../src/morphopt/optcore/modelparams/parts/cad_part.py) | 公共剖分流程、几何载入、壳体查询、面身份与 CAD 转换 |
 | [`shapeopt/surfaces/brep_surface.py`](../../src/morphopt/shapeopt/surfaces/brep_surface.py) | BREP 边界、STEP 资产与面名称映射 |
@@ -100,15 +100,32 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 更新器通过类属性 `strategies` 暴露策略命名空间，与 `objectivefuncs` 的用法一致。基类提供通用策略；形状更新器重写该命名空间，引用同一批通用策略类并增加形状专用实现，不复制算法。脚本在构造方法中使用 `self.strategies.AdaptiveShapeWeights()` 等表达式创建独立策略对象，偏置形状更新器继承相同入口。
 
-`shapeopt/strategies.py` 中只保留一个形状专用策略 `AdaptiveShapeWeights`，统一执行“确定当前距离要求 → 双向梯度标定 → 固定参数求解”的外层流程。距离放宽比例按外层进度线性减小，各几何罚项的权重由同一次双向试探确定，不累积反馈倍数。运行状态仅保存已完成外层步数和逐项标定结果，继承关系为 `AdaptiveShapeWeights → ConstraintWeightStrategy → ProtocalSavable`。管理器仅按协议委托保存和恢复。
+`shapeopt/strategies.py` 提供两个形状专用权重策略。`SensitivityShapeWeights` 将控制点原始梯度的模长插值到几何采样点，并通过 `BaseConstraints.set_sample_weights()` 绑定逐点因子；`AdaptiveShapeWeights` 保持采样因子为 1，只管理逐罚项整体系数和距离放宽量。通用基类不包含曲面或逐点几何权重概念。
 
-`PolynomialBarrier` 由几何罚项独立持有。`Distance` 传入距离尺度，在当前放宽比例下采用固定二次障碍；其余几何罚项保持原始定义。UI 目录只声明一个自适应几何策略及其三个距离计划参数，复用参数表单、验证与代码生成。标定常数集中在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS`，不在 UI 和策略实现中重复定义。梯度标定和距离计划分别由 `tests/shapeopt/test_adaptive_weights.py` 与 `tests/shapeopt/test_distance_barrier.py` 验证。具体公式见[脚本参考](../scriptreference.md#section-几何更新器)。
+`BaseConstraints` 分别持有参考面积 `area_weights` 与可选 `sample_weights`，通过 `integration_weights` 组合。面积在一轮外层基准上冻结，逐点策略在该轮初始化后设置；物理梯度和一阶/二阶代理始终保留原始尺度。距离项使用两侧组合权重的乘积，构成点对双重积分。
+
+自适应策略首先在固定初始放宽量下监测非负罚值，再依据高保真目标的相对变化或显著的约束恶化决定是否收紧距离。仅对待标定项进行双向试探，已标定且未恶化的系数保持稳定，恶化项独立增强。单次子优化内不更新策略。策略继承 `ConstraintWeightStrategy → ProtocalSavable`，保存上一目标、历史目标尺度、当前距离放宽量及每项系数和参考罚值。
+
+```mermaid
+flowchart TD
+    F["高保真目标与原始梯度"] --> I["初始化物理代理和参考面积"]
+    I --> M["固定监测阈值下评价罚值"]
+    M --> E["按目标变化或罚值恶化检查触发"]
+    E --> C["收紧距离；仅增强恶化项"]
+    C --> P["双向试探标定尚未完成的项"]
+    P --> L["冻结步长、阈值与系数；求解子问题"]
+    L --> S["写回设计并保存状态"]
+    S --> F
+    classDef default fill:transparent,stroke:#808080
+```
+
+`PolynomialBarrier` 由每个几何罚项持有。距离、曲率、半径和包络采用固定三次幂，障碍只在接近阈值或违反条件时激活；策略不动态改变幂次。UI 策略目录声明固定权重、灵敏度采样权重和五参数自适应权重，复用参数表单、校验和代码生成。参数定义与公式见[脚本策略参考](../scriptreference.md#section-几何权重策略与障碍积分)。
 
 <a id="shape"></a>
 
 ## 5 边界形状设计
 
-`BoundaryPart` 继承 `CADPart` 与可更新协议，管理有序曲面。曲面 0 为外边界，后续曲面为内腔；`define_surfaces()` 声明曲面。子类重写 `prepare_geometry()`、`assemble_geometry()` 和 `define_mesh_sets()`，提供封闭边界、外壳与内腔组装及逐曲面集合，并在网格后处理中匹配设计曲面的节点。父类通过模板流程调度这些方法，共用体网格生成、面集命名和阶次转换。
+`BoundaryPart` 与 `CADPart` 共用 `CADMeshingMixin`，并继承 `BasePart` 与可更新协议，管理有序曲面。曲面 0 为外边界，后续曲面为内腔，法向按此顺序设置，用户不输入 `flip`；`define_surfaces()` 声明曲面。子类重写 `prepare_geometry()`、`assemble_geometry()` 和 `define_mesh_sets()`，提供封闭边界、外壳与内腔组装及逐曲面集合，并在网格后处理中匹配设计曲面的节点。公共 mixin 通过模板流程调度这些方法，共用体网格生成、面集命名和阶次转换。
 
 CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几何表面环。两种表示均构成带内腔的体，通过同一 `CADHistory.mesh()` 入口交给 TorchFEA 划分并提取有限元网格。原有独立的 INP 写入与回读管线已移除。曲面输出显式接收 `pools`，省略时同步输出，不访问全局控制器的进程池。
 
@@ -131,7 +148,7 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 
 固定曲面的几何约束采样由 `BaseSurface` 提供：缓存定向三角片，以重心作为采样点、面积作为积分权重。参数曲面重写采样接口，提供解析几何量。`BaseSurface.is_updatable` 默认为 `False`；`BspSurface` 和 `CPGEOSurface` 默认启用，可按对象手动关闭。几何更新器不保存独立开关，`BoundaryPart` 在更新和灵敏度映射时直接读取曲面属性；`ShapeDerivative` 通过统一的 `get_surface_parameters()` 读取参数。固定边界仍参与距离约束。完整混合边界验证见 [STEP 外边界与 BSP 内腔算例](../../examples/hybrid_cylinder/hybrid_cylinder.md)。
 
-`ShapeDerivative` 将主目标结构梯度传入局部问题；`Fairness`、`Distance`、圆柱/半径边界及体积辅助项在形状子问题中求值。`Fairness` 使用曲面预计算的一、二阶几何量与阈值；这些阈值不等同于控制点位移上限。
+`ShapeDerivative` 将主目标结构梯度传入局部问题；`Fairness`、`Distance`、圆柱/半径边界及体积辅助项在形状子问题中求值。`Fairness` 以外部 visitor 读取各支持曲面的一、二阶几何量；曲率阈值、BSP 参数化阈值及参考补偿均属于罚项。`max_curvature` 对全部可更新 BSP/CPGEO 曲面共用，BSP 的度量变化与非正交阈值固定为 0.1。曲面只保留几何，未注册 visitor 的类型贡献零。
 
 `ShapeDerivative` 保持原有一阶形式，`QuadraticShapeDerivative` 是独立的历史二阶目标类，两者均定义在 `shapeopt/objectivefuncs/shapederivative.py`。材料模块同样区分 `Sensitivity` 与 `QuadraticSensitivity`。具体目标通过继承复用参数读取与灵敏度映射，物理代理及曲率历史均使用原始有限元灵敏度。`QuadraticHistory` 位于 `optcore/updaters.py` 中，统一维护曲率历史、直接及逆 Hessian 乘积和历史状态序列化；具体目标仍在各自的 `objectivefuncs` 模块定义。
 

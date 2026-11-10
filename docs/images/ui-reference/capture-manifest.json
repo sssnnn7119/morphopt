@@ -43,23 +43,27 @@
     },
     {
       "file": "geometry/cpgeo-cylinder.png",
-      "description": "cpgeo_cylinder 的参数与三维预览",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "geometry/cpgeo-sphere.png",
-      "description": "cpgeo_sphere 的参数与三维预览",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "geometry/offset-boundary-part.png",
@@ -113,13 +117,15 @@
     },
     {
       "file": "loads/penalty-degree-of-freedom.png",
-      "description": "PenaltyDoF 的作用对象定义",
+      "description": "Reference-point constraint with six named DoFs",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/reference-point-boundary.png",
@@ -153,13 +159,15 @@
     },
     {
       "file": "loads/spring-load-case.png",
-      "description": "多分量接口 SpringToGround 的 k、L0、Px、Py、Pz 工况列",
+      "description": "Named pressure, penalty stiffness/target and spring stiffness/rest length/anchor coordinates",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/spring-to-ground.png",
@@ -183,23 +191,27 @@
     },
     {
       "file": "materials/ogden-model.png",
-      "description": "材料模型切换后仅显示当前本构模型的参数",
+      "description": "Ogden alpha edited as individual list items",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "materials/simp-material.png",
-      "description": "SIMP 材料：目标部件、实体模量与设计场",
+      "description": "SIMP bounding-box components and constitutive parameters",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Built-in simp template (form demonstration)",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "objectives/custom-loss.png",
@@ -283,33 +295,39 @@
     },
     {
       "file": "updaters/material/control-bounds.png",
-      "description": "材料优化器 MinValue 接口",
+      "description": "MinValue",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Built-in simp template (form demonstration)",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/material/sensitivity.png",
-      "description": "材料优化器 Sensitivity 接口",
+      "description": "Sensitivity",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Built-in simp template (form demonstration)",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/material/volume-fraction.png",
-      "description": "材料优化器 VolFrac 接口",
+      "description": "Volume-fraction constraint and actual element block",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Built-in simp template (form demonstration)",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "custom-code/objective-class-selection.png",
@@ -499,5 +517,6 @@
   },
   "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
   "portable_definition": "../../../examples/bending_actuator/bending_actuator.morph",
-  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479"
+  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479",
+  "current_capture_manifest": "../current-capture-manifest.json"
 }

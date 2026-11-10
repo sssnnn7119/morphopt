@@ -10,64 +10,43 @@
   "platform": "wayland",
   "locale": "zh-CN",
   "pixels": [
-    3570,
-    2035
+    3675,
+    2030
   ],
   "font_policy": {
-    "family": "Noto Sans CJK SC",
-    "point_size": 10,
-    "vtk_font_file": "NotoSansCJKSC-Regular.otf",
-    "source_collection": "NotoSansCJK-Regular.ttc",
-    "glyph_runs": {
-      "400": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Regular"
-        }
-      ],
-      "600": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Medium"
-        }
-      ],
-      "700": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Bold"
-        }
+    "body": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
       ]
     },
-    "sampled_widget_fonts": {
-      "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Regular"
-        }
-      ],
-      "Noto Sans CJK SC,10,-1,5,600,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Medium"
-        }
-      ],
-      "Hack,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Regular"
-        }
-      ],
-      "Noto Sans CJK SC,-1,14,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Bold"
-        }
-      ],
-      "Noto Sans CJK SC,10,-1,5,700,0,0,0,0,0,0,0,0,0,0,1,,0,0": [
-        {
-          "family": "Noto Sans CJK SC",
-          "style": "Bold"
-        }
+    "tree": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "heading": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "code": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "chart": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
       ]
     }
   },

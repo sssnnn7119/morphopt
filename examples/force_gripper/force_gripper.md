@@ -20,3 +20,7 @@ python examples/force_gripper/force_gripper.py
 ```
 
 脚本和 `.morph` 定义均默认使用一个 CPU 求解进程。UI 中打开 `force_gripper.morph` 可检查进程组及工况顺序。
+
+## 更新与工况配置
+
+材料子问题采用原始 `Sensitivity()`、固定步长和固定罚项系数。工况 `load_case_1` 至 `load_case_12` 以字符串名称登记，并在同一任务组中显式排序；组内顺序不按名称的字典序推断。最大更新步长 1，每次子优化最多 100 次。

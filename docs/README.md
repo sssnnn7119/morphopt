@@ -59,3 +59,33 @@ python scripts/number_docs.py --watch
 新增标题只需填写对应数量的 `#` 和标题文字，已有数字前缀由脚本重新计算。已有显式锚点继续保留；章节链接采用标题文字与锚点，避免手动引用易变的章节编号。代码结构文档的页面标识与页内章节编号分别维护。
 
 自动目录由 HTML 注释 `docs:toc depth=1` 与 `/docs:toc` 标记界定；`depth` 指定目录包含的编号层数，取值为 `1`–`5`。脚本模块参考列出两级目录，快速开始及 UI 模块参考列出一级目录。代码围栏、显示公式和注释中的示例内容不参与章节编号。
+
+<a id="section-当前能力与阅读入口"></a>
+
+## 4 当前能力与阅读入口
+
+| 内容 | 当前约定 | 详细说明 |
+|---|---|---|
+| 物理代理 | 一阶与历史二阶分别登记，使用原始灵敏度 | [代理与更新器](scriptreference.md#section-有限元目标的历史梯度二阶代理) |
+| 几何积分和策略 | 面积、逐点采样因子及整体系数分离；自适应调整按事件触发 | [权重策略](scriptreference.md#section-几何权重策略与障碍积分) |
+| Fairness | 统一曲率参数；几何与罚项 visitor 分离 | [几何罚项](UIreference.md#updater_constraints-fairness) |
+| 列表参数 | 有名称的分量框和逐项列表编辑 | [输入约定](UIreference.md#section-数值列表与表达式) |
+| 载荷工况 | 字符串名称、接口卡片与独立标量幅值 | [载荷工况](UIreference.md#steps) |
+| 工作空间 | 预定义载荷、边界高斯点工况和显式积分表达式 | [目标与工况](UIreference.md#objectives) |
+| 自由度约束 | 参考点六分量；实例节点序号与 X/Y/Z 方向 | [PenaltyDoF](UIreference.md#load_types-penaltydof) |
+| 计算资源 | 一个 CPU 进程为默认；逐进程设备与有序工况组 | [求解器](UIreference.md#section-solver工况任务的组织) |
+| 指标和历史 | 命名指标、自动目标贡献、曲线选择与动态记录字段 | [指标与记录](scriptreference.md#section-按名称提取参考点响应) |
+| 日志和错误 | 已保存日志浏览、保持阅读位置、Python 异常入日志 | [运行时](codestructure/runtime.md#section-首轮失败与日志归档) |
+| 结果视图与导出 | 单曲面及控制网格、当前曲面导出、历史设计/变形 GIF | [结果参考](UIreference.md#results) |
+| 外观 | 分角色中西文字体、预览/应用/确认和全局三维材质 | [字体设置](UIreference.md#section-字体设置与应用范围) |
+| 定义文件 | 文件边界保留支持项、补默认值、忽略额外项并汇总警告 | [导入规则](codestructure/ui-model.md#section-morph-边界与兼容处理) |
+| 几何资产 | `.morph` 内嵌，运行脚本目录中还原 STEP/STL/INP 与元数据 | [脚本与资产](UIreference.md#section-生成代码与持久化接口) |
+
+本轮补充按当前实现核对四篇使用文档、代码结构、理论中的实现对应关系及算例说明。新增与替换截图的定义摘要、像素尺寸和实际中文字体记录见[当前截图清单](images/current-capture-manifest.json)。
+
+编号更新后可检查本地链接、图片、锚点和 Python 代码块语法：
+
+```bash
+python scripts/number_docs.py
+python scripts/docs/check_docs.py
+```

@@ -32,3 +32,7 @@ python examples/hybrid_cylinder/hybrid_cylinder.py
 ```
 
 UI 使用方式为打开 `hybrid_cylinder.morph` 并启动优化。运行结果保存在算例目录下的 `.results/`。
+
+## 更新与工况配置
+
+几何更新使用原始一阶 `ShapeDerivative`、`Fairness(max_curvature=1.0)` 与固定罚项系数 1；最大更新步长为 0.5，每次子优化最多迭代 5 次。求解器默认一个 CPU 进程，工况名为 `load_case_1`。

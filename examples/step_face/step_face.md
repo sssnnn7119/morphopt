@@ -22,3 +22,7 @@ python examples/step_face/step_face.py
 ```
 
 UI 使用方式为打开 `step_face.morph`。运行脚本时，STEP 和 BREP 元数据从同目录的 `assets/` 读取。
+
+## 更新与工况配置
+
+设计面与优化设置由脚本显式定义，资产 JSON 仅描述 BREP 拓扑和集合。更新使用一阶 `ShapeDerivative`、固定步长和固定罚项系数；每次子优化最多 3 次，最大步长 0.02。求解工况名为 `compression`，默认一个 CPU 进程。

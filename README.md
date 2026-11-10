@@ -2,13 +2,16 @@
 
 **Developed by Zenan Song**
 
-MorphOpt is a differentiable structural optimization framework that combines the adjoint method with automatic differentiation (AD). The sensitivity corresponds to the virtual work of residual force derivatives on the adjoint displacement field, computed via a single backpropagation through the residual graph. MorphOpt provides a unified interface for geometry, load, and material definition, calls torchfea for GPU-accelerated differentiable nonlinear FEA and adjoint-AD sensitivity, and employs a trust-region optimizer with L-BFGS for design updates. Validated on SIMP topology optimization with B-spline density fields and pneumatic soft robot shape optimization with deformation-dependent follower loads.
+MorphOpt is a differentiable structural optimization framework that combines the adjoint method with automatic differentiation (AD). The sensitivity corresponds to the virtual work of residual force derivatives on the adjoint displacement field, computed via a single backpropagation through the residual graph. MorphOpt provides a unified interface for geometry, load, and material definition, calls torchfea for GPU-accelerated differentiable nonlinear FEA and adjoint-AD sensitivity, and solves step-limited local surrogate subproblems with L-BFGS for design updates. Validated on SIMP topology optimization with B-spline density fields and pneumatic soft robot shape optimization with deformation-dependent follower loads.
 
 ## Features
 
 - Custom model definition covering geometry, material, and load parameters
 - Differentiable FEA via torchfea with automatic solving and sensitivity propagation
-- L-BFGS and trust-region methods for parameter updates within a subproblem framework
+- First-order and history-based quadratic FEA surrogates with L-BFGS subproblem solves and explicit step limits
+- Surface-integrated geometric penalties with fixed, sensitivity-based, or adaptive weights; native FEA sensitivities remain unscaled
+- Named load cases, ordered solve groups, and per-worker CPU/GPU assignment (one CPU worker by default)
+- UI definition, asset preview, saved-log browsing, per-surface/control-net views, and current-view geometry export and history GIF export
 - Component customization through framework class inheritance
 
 ## Quick Start
@@ -39,16 +42,16 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
    python my_task.py
    ```
 
-   Each run writes its results (logs, FEA files, restart script) into a timestamped result folder under the run root.
+   Each run writes logs, FEA files, design states, and a restart script into a timestamped result folder under the configured run root. The bending example matches `ry=2 rad` with a squared-error objective and a quadratic history surrogate.
 
-3. **Graphical interface.** The GUI supports problem definition, optimization monitoring, and result inspection in one window. It also exports runnable Python scripts (`.py`) for execution in the UI or a terminal.
+3. **Graphical interface.** The GUI supports problem definition, optimization monitoring, and result inspection in one window. It exports a runnable folder containing a same-named `.py` file and `morphopt_assets/`. Geometry inputs are restored from the definition beside the script; move the whole folder when transferring a task.
 
    ```bash
    morphopt-ui            # console command, available after `pip install morphopt`
    # Alternative entry point: python -m morphopt.ui
    ```
 
-The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Definitions can be created directly in the workbench or generated through **Quickstart**. Quickstart provides shape and topology optimization settings, geometry definitions, and weighted objective terms with associated load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable scripts.
+The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Definitions can be created directly in the workbench or generated through **Quickstart**. Quickstart provides shape and topology optimization settings, geometry definitions, and weighted objective terms with associated load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable folders. Load cases use named interface cards with individually labelled scalar parameters. Workspace objectives automatically register their boundary Gauss-point cases.
 
 The [UI quick start](docs/UIguide.md) covers the complete example from model definition to optimization and result inspection. The [script quick start](docs/scriptguide.md) provides the equivalent runnable Python task.
 
@@ -95,7 +98,7 @@ The [documentation index](docs/README.md) includes the reading order and automat
 
 - `src/morphopt/`
   - `optcore` — Core package (controller, params, solver, objective, updaters)
-  - `shapeopt/` — B-spline shape optimization
+  - `shapeopt/` — Boundary-surface shape optimization, geometric penalties, and weight strategies
   - `simp/` — SIMP topology optimization
   - `codesign/` — Shell co-design (shape + material)
   - `ui/` — PySide6 graphical UI (definition + observer in one window)
