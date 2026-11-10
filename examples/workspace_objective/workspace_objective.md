@@ -20,3 +20,7 @@ python examples/workspace_objective/workspace_objective.py
 ```
 
 也可在 UI 中打开 `workspace_objective.morph`。生成的工况名称以 `workspace_1_case_` 开头。
+
+## 更新与工况配置
+
+两路压力上限均为 0.06，每条边两个高斯点，工况幅值在载荷工况卡片中逐项显示。子问题采用一阶 `ShapeDerivative`、`Fairness(max_curvature=2)`、固定步长及固定罚项系数；默认一个 CPU 进程，每个工况独立成组。删除工作空间目标时可清理无引用工况，预定义压力载荷保留。

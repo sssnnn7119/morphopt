@@ -108,6 +108,33 @@ def test_cad_remains_merged_without_static_face_labels(monkeypatch):
         plotter.close()
 
 
+def test_cad_preview_records_are_reused_across_rebuilds(monkeypatch):
+    import morphopt.ui.visualization.geometry as geometry_module
+    from morphopt.ui.model.base_nodes import CADOperationNode
+
+    records = [{
+        "points": np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]]),
+        "triangles": [[0, 1, 2]],
+        "edge_lines": [],
+    }]
+    calls = []
+    monkeypatch.setattr(
+        geometry_module,
+        "cad_brep_records_from_node",
+        lambda *_: calls.append(True) or records,
+    )
+    problem = ProblemLibrary.create_blank()
+    part = CADPartNode(name="housing")
+    problem.add_part(part)
+    geometry = PreviewGeometry()
+    geometry.build(problem, "part", part)
+    geometry.build(problem, "part", part)
+    assert len(calls) == 1
+    part.add_child(CADOperationNode.create("Box", "body"))
+    geometry.build(problem, "part", part)
+    assert len(calls) == 2
+
+
 def test_inp_face_names_come_from_original_surface_sets():
     source = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
     part = INPPartNode(name="imported", mesh_file=str(source))

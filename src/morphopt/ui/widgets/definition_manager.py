@@ -28,6 +28,7 @@ from ..model.problem import (
     CADOperationNode,
     FEAComponentNode,
     InstanceNode,
+    LoadCaseNode,
     MaterialNode,
     Node,
     PartNode,
@@ -46,6 +47,7 @@ from ..presentation.labels import (
     node_title,
     node_type_title,
 )
+from ..presentation.navigation import node_key
 from ..refresh import RefreshContext
 from ..theme import theme_manager
 from .collection_controls import (
@@ -133,6 +135,7 @@ class DefinitionManagerEditor(QWidget):
             {
                 "geometry": tr("ui.widgets.definition_manager.parts"),
                 "loads": tr("ui.widgets.definition_manager.components"),
+                "steps": tr("ui.load_cases.title"),
                 "materials": tr("ui.widgets.definition_manager.materials"),
                 "helper_variables": tr(
                     "ui.widgets.model_tree.container.helper_variables_group"
@@ -150,6 +153,7 @@ class DefinitionManagerEditor(QWidget):
                 "loads": tr(
                     "ui.widgets.definition_manager.edit_load_definitions_add_and_configure_loads_boundary_conditions_reference_points"
                 ),
+                "steps": tr("ui.load_cases.interfaces_hint"),
                 "materials": tr(
                     "ui.widgets.definition_manager.select_a_material_in_the_model_tree_to_edit_its_properties_and"
                 ),
@@ -210,6 +214,8 @@ class DefinitionManagerEditor(QWidget):
             return list(self._problem.parts())
         if self.mode == "loads":
             return list(self._problem.fea_components())
+        if self.mode == "steps":
+            return managed_nodes(self._problem, self.mode, None)
         if self.mode == "helper_variables":
             return list(self._problem.helper_variables)
         if self.mode == "helper_functions":
@@ -225,7 +231,7 @@ class DefinitionManagerEditor(QWidget):
                     for item in items
                 ),
             )
-        return tuple(id(item) for item in items)
+        return tuple(node_key(item) for item in items)
 
     def _refresh_add_menu(self) -> None:
         self._add_menu.clear()
@@ -270,6 +276,8 @@ class DefinitionManagerEditor(QWidget):
                 },
                 self.actions.add_component,
             )
+        elif self.mode == "steps":
+            self._add_menu.addAction(tr("ui.load_cases.add_interface"), self.actions.add_load_case)
         elif self.mode in {"helper_variables", "helper_functions"}:
             kind = (
                 "helper_variable"
@@ -304,6 +312,7 @@ class DefinitionManagerEditor(QWidget):
             item = self._layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
         self._focus_widgets.clear()
         self._item_groups.clear()
@@ -408,7 +417,11 @@ class DefinitionManagerEditor(QWidget):
             return group
         if isinstance(node, MaterialNode):
             self._add_component_update_controls(col, node)
-        if isinstance(node, FEAComponentNode):
+        if isinstance(node, LoadCaseNode):
+            remove = lambda item=node: self.actions.remove_load_case(item)
+            move = lambda item=node, delta=-1: self.actions.move_load_case(item, delta)
+            delete_title = tr("ui.load_cases.delete_interface")
+        elif isinstance(node, FEAComponentNode):
             remove = lambda item=node: self.actions.remove_component(item)
             move = lambda item=node, delta=-1: self.actions.move_component(item, delta)
             delete_title = tr("ui.widgets.definition_manager.delete_component")
@@ -665,7 +678,7 @@ class DefinitionManagerEditor(QWidget):
 
     def _focus_selection(self, *, scroll: bool = True) -> None:
         for node, widget in self._focus_widgets.items():
-            focused = node is self._focus
+            focused = node == self._focus
             set_card_selected(widget, focused)
         target = (
             self._focus_widgets.get(self._focus) if self._focus is not None else None

@@ -18,6 +18,7 @@
 - [8 子优化与局部代理模型](#section-子优化与信赖域方法)
 - [9 数值流程](#section-数值流程)
 - [10 参考文献](#section-参考文献)
+- [11 几何罚项的离散积分与权重](#section-几何罚项的离散积分与权重)
 
 <!-- /docs:toc -->
 
@@ -82,8 +83,7 @@ class GeometryParams(morphopt.GeometryParams):
                 self.BSP.initialize_cylinder(
                     r0=8., length=80., seed_size=1.0,
                     symmetric=[1, [1]],
-                    flip=False, maxR=0.1, maxC=1.0,
-                    maxFF=0.2, perturbation_L=12.
+                    perturbation_L=12.
                 )
             )
 
@@ -562,25 +562,24 @@ $$
 
 <a id="section-灵敏度从-fea-节点到控制点的映射"></a>
 
-### 5.5 灵敏度从 FEA 节点到控制点的映射
+### 5.5 灵敏度从有限元节点到设计参数的映射
 
-`torchfea` 返回的灵敏度梯度定义在 FEA 网格节点上。为将其映射到 B 样条/球面映射曲面的控制点上，MorphOpt 通过 `ShapeDerivative` 类进行**空间插值**：
+几何接口将设计参数 $\theta$ 映射到边界节点坐标 $X_b(\theta)$，匹配后的 UV 和基函数在当前网格上固定。自动微分沿该映射及模型修改路径传递伴随灵敏度：
 
-```python
-class ShapeDerivative(BaseObjective):
-    def initialize(self, gradient, r0, ...):
-        # gradient: torchfea 返回的节点灵敏度
-        # 使用 scipy.interpolate.griddata 最近邻插值
-        self.sensitivity = self._sensitivity_interpolation(
-            Ldot=gradient.reshape([-1, 3]),
-            points_request=torch.cat(self._cp0, dim=0),
-            interpolated_points=interpolate_points
-        )
-```
+$$
+\frac{\mathrm dJ}{\mathrm d\theta}
+=\left(\frac{\partial X_b}{\partial\theta}\right)^T
+\frac{\mathrm dJ}{\mathrm dX_b}
++\text{其余显式设计依赖项}.
+$$
 
-**代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/shapederivative.py`。
+`ObjectiveFunction.sensitivity_analysis()` 返回按几何、载荷和材料布局组织的设计参数梯度。更新器管理器再按 Part 分派相应切片。`ShapeDerivative.initialize()` 直接按各曲面的 `get_surface_parameters()` 尺寸拆分该原始切片，不执行节点梯度到控制点的最近邻插值，也不归一化。
 
----
+BSP/CPGEO 复用其已有基函数映射，BREP 的选定 NURBS 面复用 `bspmap.Basis` 构造有理基函数与节点 UV 映射。曲面重剖分后重新匹配节点，参数、梯度和更新写回顺序保持一致。
+
+最近邻插值仅用于可选的 `SensitivityShapeWeights` 几何罚项采样权重；它不替代物理灵敏度的链式求导。二阶代理同样使用上述原始参数梯度构造曲率历史。
+
+实现入口为 `shapeopt/boundary_part.py`、`shapeopt/objectivefuncs/shapederivative.py` 和相应曲面映射类。
 
 <a id="section-工作空间优化与连续体雅可比矩阵"></a>
 
@@ -656,7 +655,7 @@ $$
 \frac{\partial g}{\partial \mathbf{P}_{ij}} = -\frac{B_i^q B_j^r (\mathbf{r}^m - \mathbf{r}^n)}{\|\mathbf{r}^m - \mathbf{r}^n\|}
 $$
 
-**代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/distancesurface.py` 中的 `Distance` 类。
+**代码对应**：`src/morphopt/shapeopt/objectivefuncs/distancesurface.py` 中的 `Distance` 类。
 
 <a id="section-曲率约束"></a>
 
@@ -693,7 +692,7 @@ $$
 h_3(q,r) = \frac{E_q^2 + E_r^2}{4\tau_q^2 E^2} + \frac{G_q^2 + G_r^2}{4\tau_r^2 G^2}
 $$
 
-**代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/surfacefairness.py` 中的 `Fairness` 类。
+**代码对应**：`src/morphopt/shapeopt/objectivefuncs/surfacefairness.py` 中的 `Fairness` 类。
 
 <a id="section-边界约束"></a>
 
@@ -706,7 +705,7 @@ class Cylinder(BaseConstraints):
     """约束点在圆柱 (radius, height, bottom) 内"""
 ```
 
-**代码对应**：`src/morphopt/optcore/updaters/geometry/objectivefuncs/boundarys.py`。
+**代码对应**：`src/morphopt/shapeopt/objectivefuncs/boundarys.py`。
 
 <a id="section-罚函数形式"></a>
 
@@ -722,7 +721,7 @@ x^b, & x > 0
 \end{cases}
 $$
 
-其中 $b=5$ 保证直到 4 阶导数连续。
+当前内置几何罚项采用 $b=3$，在激活边界处二阶连续。其阈值与过渡区由具体罚项定义；正部函数施加于无量纲违反量，不能直接将物理量无量纲地混加。参考曲面积分、采样因子与整体系数分别定义，见[策略与积分接口](../scriptreference.md#section-几何权重策略与障碍积分)。
 
 ---
 
@@ -734,7 +733,7 @@ $$
 
 ### 8.1 动机
 
-FEA 通常占据主要计算时间。MorphOpt 在每次外层有限元及灵敏度分析后构造局部代理，在子优化内部评价代理目标和几何罚项。子优化达到停止条件后更新设计，并在下一轮重新执行 FEA。现有实现通过步长限制和更新方向调整控制设计变化，尚未采用标准信赖域算法中的真实改善比、试探步拒绝和回退机制。
+FEA 通常占据主要计算时间。MorphOpt 在每次外层有限元及灵敏度分析后构造局部代理，在子优化内部评价代理目标和几何罚项。子优化达到停止条件后更新设计，并在下一轮重新执行 FEA。现有实现通过固定步长策略和 `atan` 位移映射控制设计变化，尚未采用标准信赖域算法中的真实改善比、试探步拒绝和回退机制。
 
 <a id="section-子优化问题"></a>
 
@@ -756,7 +755,7 @@ $$
 +\sum\operatorname{Penalty}(\text{约束}).
 $$
 
-其中 $s_k=\Phi_k-\Phi_{k-1}$、$y_k=g_k-g_{k-1}$ 来自外层有限元观测，采用未归一化的物理梯度。有限记忆直接 BFGS 更新构造 $B_k^{\mathrm{FEA}}$，仅保留满足 $s_k^Ty_k>10^{-8}\|s_k\|\|y_k\|$ 的曲率对，无有效历史时不增加二次项。该正定近似忽略真实目标中的负曲率。归一化作用于完整的物理代理，不进入历史差分。
+其中 $s_k=\Phi_k-\Phi_{k-1}$、$y_k=g_k-g_{k-1}$ 来自外层有限元观测。物理代理与历史差分均采用原始有限元梯度，不附加灵敏度缩放。有限记忆直接 BFGS 更新构造 $B_k^{\mathrm{FEA}}$，仅保留满足 $s_k^Ty_k>10^{-8}\|s_k\|\|y_k\|$ 的曲率对，无有效历史时不增加二次项。该正定近似忽略真实目标中的负曲率。
 
 此曲率与内层求解器的拟牛顿信息分别属于不同迭代层次：前者近似真实有限元目标，后者近似当前代理与罚项之和。两者共同使用，但各自保存独立历史。具体目标定义位于 `shapeopt/objectivefuncs/shapederivative.py`，共享历史计算 `QuadraticHistory` 位于 `src/morphopt/optcore/updaters.py`，参数与持久化接口见[脚本模块与接口参考](../scriptreference.md#section-有限元目标的历史梯度二阶代理)。
 
@@ -816,7 +815,7 @@ $$
 - $\alpha_k < \epsilon_\alpha$（步长过小）
 - $l > \aleph^k$（达到最大迭代上限）
 
-当前实现由 `max_step_iter` 设置每轮子问题的迭代上限，没有按外层梯度差自动调整该上限。物理设计步长由 `atan` 映射限制，连续外层更新方向的夹角控制步长上限的增加或衰减。二阶代理沿用该策略，未额外引入真实目标接受判据。
+当前实现由 `max_step_iter` 设置每轮子问题的迭代上限，没有按外层梯度差自动调整该上限。物理设计步长由 `atan` 映射限制，默认 `FixedStepLength` 将上限固定为配置的 `max_step_length`，不根据相邻更新方向增大或衰减。步长与罚项权重由独立策略对象提供，并在子优化期间保持固定；一阶与二阶代理共用该接口。当前实现未额外引入真实目标接受判据。
 
 ---
 
@@ -916,3 +915,11 @@ Controller                    → 优化主循环控制 (optcore/controller.py)
 1. **Chen F, Song Z, Chen S, Gu G, Zhu X.** *Morphological Design for Pneumatic Soft Actuators and Robots with Desired Deformation Behavior.* IEEE Transactions on Robotics, 2023.
 2. **Song Z, Chen F, et al.** *Continuum Jacobian based Computational Morphogenesis for Soft Robotic Workspace Optimization.* IEEE Transactions on Robotics, 2026.
 3. Choi K K, Kim N-H. *Structural Sensitivity Analysis and Optimization 1: Linear Systems.* Springer, 2006.
+
+<a id="section-几何罚项的离散积分与权重"></a>
+
+## 11 几何罚项的离散积分与权重
+
+在外层基准曲面上，以参考面积权重离散几何罚项，单次子问题中保持这些面积固定。逐点灵敏度策略另外引入采样因子，整体系数策略在积分之后施加具名系数，物理目标梯度保持原始尺度。距离点对罚项采用两侧积分权重的乘积。离散结果仍受采样和邻域筛选误差影响，积分形式不意味着任意粗采样下数值完全相同。
+
+自适应几何策略以高保真目标相对变化和固定监测阈值下的罚值恶化为触发条件，逐步减小距离放宽比例。已标定且未恶化的罚项系数保持不变；仅待标定项需要双向试探，恶化项独立增强。目标、约束阈值和权重均在单次子优化内固定，避免内层优化过程中改变被求解的函数。该策略属于罚函数连续化与系数管理，未引入高保真目标的接受/拒绝机制。

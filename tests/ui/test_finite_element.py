@@ -25,6 +25,12 @@ from morphopt.ui.application.finite_element import FiniteElementSession
 from morphopt.ui.application.results import ResultSelection
 
 
+def edit_load_value(page, row, index, value):
+    edit = page.loads.cellWidget(row, 3).edits[index]
+    edit.setText(str(value))
+    edit.editingFinished.emit()
+
+
 def test_analysis_worker_changes_loads_without_changing_optimization(iteration_model):
     source, _, original_result = iteration_model
     original_hash = hashlib.sha256(source.model_path.read_bytes()).digest()
@@ -172,13 +178,13 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         assert original_entry.is_original
         assert page.loads.rowCount() == 1
         assert page.loads.item(0, 2).text() == "body-1 · C3D8"
-        page.loads.item(0, 3).setText("0.004, 0, 0")
+        edit_load_value(page, 0, 0, 0.004)
         assert page.session.result is None
         # Returning from the observer at the same iteration must retain edits.
         edited_model = page.session.controller
         page.synchronize_result(source.folder, source.iteration)
         assert page.session.controller is edited_model
-        assert page.loads.item(0, 3).text() == "0.004, 0, 0"
+        assert page.loads.cellWidget(0, 3).value() == [0.004, 0.0, 0.0]
         page.start_analysis()
         page.hide()
 
@@ -201,7 +207,7 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         page.synchronize_result(source.folder, source.iteration)
         assert page.cases.currentData() == first_entry
         assert torch.allclose(page.session.result.GC, first_gc)
-        page.loads.item(0, 3).setText("0.006, 0, 0")
+        edit_load_value(page, 0, 0, 0.006)
         page.start_analysis()
         wait_for_job()
         assert page.cases.count() == 3
@@ -292,7 +298,7 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         # Editing or restoring an original must not mutate previously completed analyses.
         page.cases.setCurrentIndex(page._result_index(second_entry))
         assert torch.allclose(page.session.result.GC, second_gc)
-        page.loads.item(0, 3).setText("0.009, 0, 0")
+        edit_load_value(page, 0, 0, 0.009)
         assert page.session.result is None
         assert page.native_export_button.isEnabled()
         original_files = {path.name: path.read_bytes() for path in archive.glob('*.npz')}
@@ -301,10 +307,10 @@ def test_fea_widget_solves_and_exports_after_being_hidden(
         second_archive = native_parent / 'actuator_2'
         assert {path.name: path.read_bytes() for path in second_archive.glob('*.npz')} == original_files
         assert {path.name: path.read_bytes() for path in archive.glob('*.npz')} == original_files
-        assert page.loads.item(0, 3).text() == '0.009, 0, 0'
+        assert page.loads.cellWidget(0, 3).value() == [0.009, 0.0, 0.0]
         assert page.session.result is None
         page.apply_language()
-        assert page.loads.item(0, 3).text() == "0.009, 0, 0"
+        assert page.loads.cellWidget(0, 3).value() == [0.009, 0.0, 0.0]
         assert page.session.result is None
         page.cases.setCurrentIndex(page._result_index(original_entry))
         assert page.cases.currentData().is_original
@@ -545,13 +551,13 @@ def test_analysis_views_share_selection_and_keep_fea_edits_during_navigation(
         window.analysis_navigation.setCurrentIndex(1)
         page = window._finite_element
         assert page.session.source.iteration == observer.panel.slider.value() == 3
-        page.loads.item(0, 3).setText('0.004, 0, 0')
+        edit_load_value(page, 0, 0, 0.004)
         private_model = page.session.controller
         window.show_definition()
         window.navigation.setCurrentIndex(1)
         assert window.stack.currentWidget() is page
         assert page.session.controller is private_model
-        assert page.loads.item(0, 3).text() == '0.004, 0, 0'
+        assert page.loads.cellWidget(0, 3).value() == [0.004, 0.0, 0.0]
         page.iterations.setCurrentIndex(page.iterations.findData(2))
         assert observer.panel.slider.value() == page.session.source.iteration == 2
         assert window._result_selection == ResultSelection(source.folder, 2)
@@ -626,7 +632,7 @@ def test_fea_contours_rebuild_with_axes_and_follow_selected_solution(iteration_m
         page.deformed.setChecked(True)
         np.testing.assert_allclose(page.viewport.plotter.meshes[0][0].point_data[field], undeformed_values)
         # Editing invalidates the old result and its cached fields immediately.
-        page.loads.item(0, 3).setText('0.004, 0, 0')
+        edit_load_value(page, 0, 0, 0.004)
         assert page._result_fields is None
         assert not page.display_field.isEnabled()
         assert 'scalars' not in page.viewport.plotter.meshes[0][1]

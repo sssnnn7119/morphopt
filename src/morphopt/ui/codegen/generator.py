@@ -29,6 +29,7 @@ from ..model.registry import (
     UPDATER_CATALOG,
     surface_factory_for_type,
 )
+from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
 from ..schemes.base import SchemeTemplate, get_template
 from .assets import collect_python_assets
 from .workspace import workspace_integral_body
@@ -141,7 +142,6 @@ def render_surface_call(
         if value is None:
             continue
         kwargs.append(f"{key}={_render_value(value, problem)}")
-    kwargs.append(f"flip={surface.flip!r}")
     factory = (
         (surface.custom_class + "." + factory.split(".", 1)[1])
         if surface.custom_class
@@ -288,13 +288,13 @@ def _insert_helpers(source: str, helper_source: str) -> str:
     return result
 
 
-def _objective_function_body(
+def _objective_values_body(
     objective: ObjectiveNode, problem: ProblemDefinition
 ) -> str:
-    """Generate one local measurement function per ordered objective term."""
+    """Generate ordered weighted contributions shared by the loss and metrics."""
     terms = objective.objective_terms
     if not terms:
-        return "return 0.0"
+        return "return []"
 
     reference_points = {
         component.name
@@ -325,7 +325,7 @@ def _objective_function_body(
             )
         positive_weight = positive_weight or weight > 0
 
-        function_name = f"objective_term_{index + 1}"
+        function_name = f"objective_term_{index}"
         if term_type == CONSTANT.UI.OBJECTIVE.TYPE_DISPLACEMENT:
             direction = str(
                 term.get("direction", CONSTANT.UI.OBJECTIVE.DEFAULT_DIRECTION)
@@ -470,11 +470,11 @@ def _objective_function_body(
         raise ValueError(
             localized_message("ui.errors.generator.objective_needs_positive_weight")
         )
-    return "\n".join([*functions, "return " + " + ".join(weighted_terms)])
+    return "\n".join([*functions, "return [" + ", ".join(weighted_terms) + "]"])
 
 
 def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
-    """Generate an ordered list of displacement and custom metric functions."""
+    """Record user measurements first, followed by weighted objective values."""
     terms = objective.metrics_terms
     reference_points = {
         component.name
@@ -488,7 +488,7 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
 
     for index, term in enumerate(terms):
         metric_type = str(term.get("type") or "")
-        function_name = f"metric_term_{index + 1}"
+        function_name = f"metric_term_{index}"
         if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
             reference_point = str(term.get("reference_point_name") or "").strip()
             component = str(term.get("component") or "")
@@ -543,22 +543,28 @@ def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition)
                     value_0=metric_type,
                 )
             )
-        value_name = f"metric_value_{index + 1}"
-        values.extend(
-            [
-                f"{value_name} = {function_name}()",
-                f"if isinstance({value_name}, (list, tuple)):",
-                f"    metrics.extend({value_name})",
-                "else:",
-                f"    metrics.append({value_name})",
-            ]
-        )
+        values.append(f"({str(term.get('name') or '')!r}, {function_name}())")
 
     return "\n".join(
         [
             *functions,
-            "metrics = []",
-            *values,
+            "metrics = {}",
+            "for name, value in [",
+            *[f"    {value}," for value in values],
+            "    ('', {f'objective_{index}': value for index, value in enumerate(self._objective_values())}),",
+            "]:",
+            "    if isinstance(value, dict):",
+            "        entries = value",
+            "    elif isinstance(value, (list, tuple)):",
+            "        entries = {",
+            "            f'{name}_{index}' if name else str(len(metrics) + index): item",
+            "            for index, item in enumerate(value)",
+            "        }",
+            "    else:",
+            "        entries = {name or str(len(metrics)): value}",
+            "    if metrics.keys() & entries.keys():",
+            "        raise ValueError('Metric names must be unique.')",
+            "    metrics.update(entries)",
             "return metrics",
         ]
     )
@@ -621,10 +627,10 @@ def generate_base_source(
         )
     )
     if for_class_catalog:
-        obj_body = "return 0.0"
-        met_body = "return []"
+        obj_body = "return []"
+        met_body = "return {}"
     else:
-        obj_body = _objective_function_body(objective, problem)
+        obj_body = _objective_values_body(objective, problem)
         met_body = _metrics_function_body(objective, problem)
 
     a(f"    class ObjectiveFunction({CORE_BASES['objective']}):")
@@ -636,6 +642,9 @@ def generate_base_source(
     a("")
 
     a("        def objective_function(self) -> Any:")
+    a("            return sum(self._objective_values())")
+    a("")
+    a("        def _objective_values(self) -> list[Any]:")
     a(indent_block(obj_body, 12))
     a("")
     a("        def get_metrics(self) -> Any:")
@@ -1341,10 +1350,23 @@ def _emit_nested_updater(
         if base == MATERIAL_UPDATER_BASE
         else CONSTANT.KERNEL.SHAPE_UPDATE
     )
-    a(
-        f"                super().__init__(max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)}, "
-        f"max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)})"
-    )
+    group = "materials" if base == MATERIAL_UPDATER_BASE else "geometry"
+    a("                super().__init__(")
+    a(f"                    max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)},")
+    a(f"                    max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)},")
+    for key in STRATEGY_CATALOG:
+        item = cfg.get(key, strategy_config(key))
+        spec = strategy_specs(key, group)[item["type"]]
+        params = item.get("params", {})
+        if spec.fields:
+            a(f"                    {key}=self.strategies.{spec.name}(")
+            for field in spec.fields:
+                value = _render_value(params.get(field.key, field.new_default()), problem)
+                a(f"                        {field.key}={value},")
+            a("                    ),")
+        else:
+            a(f"                    {key}=self.strategies.{spec.name}(),")
+    a("                )")
 
     if for_class_catalog:
         a("")

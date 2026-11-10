@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 import bspmap
@@ -281,21 +281,14 @@ class BspSurface(ControlPointSurface):
                     gmsh.model.occ.remove(to_remove, recursive=False)
                 gmsh.model.occ.synchronize()
 
-                # Export BRep
-                temp_brep = "temp_clean.brep"
-                gmsh.write(temp_brep)
-
-                # RESET GMSH
-                # Note: gmsh.clear() clears the current model data but keeps the session
-                gmsh.clear()
-
-                # Re-import
-                gmsh.model.occ.importShapes(temp_brep)
-                gmsh.model.occ.synchronize()
-
-                # Cleanup temp file
-                if os.path.exists(temp_brep):
-                    os.remove(temp_brep)
+                # Each worker owns its isolation file; concurrent exports must
+                # never overwrite another surface's intermediate geometry.
+                with TemporaryDirectory(prefix="morphopt-bsp-") as directory:
+                    temp_brep = str(Path(directory) / "boundary.brep")
+                    gmsh.write(temp_brep)
+                    gmsh.clear()
+                    gmsh.model.occ.importShapes(temp_brep)
+                    gmsh.model.occ.synchronize()
 
                 # Get the new volume tag (should be 1)
                 vols = gmsh.model.getEntities(3)
@@ -311,7 +304,7 @@ class BspSurface(ControlPointSurface):
 
                     # 2. Heal
                     try:
-                        healed = gmsh.model.occ.healShapes(
+                        gmsh.model.occ.healShapes(
                             [(3, self.volume_tag)],
                             tolerance=1e-5,  # Tighter tolerance
                             fixDegenerated=True,
@@ -320,12 +313,18 @@ class BspSurface(ControlPointSurface):
                             sewFaces=True,
                             makeSolids=True,
                         )
-                        if healed and healed[0][0] == 3:
-                            self.volume_tag = healed[0][1]
                     except Exception:
                         pass
 
                     gmsh.model.occ.synchronize()
+                    volumes = gmsh.model.getEntities(3)
+                    if len(volumes) != 1:
+                        raise ValueError(
+                            "BSP boundary does not form a closed solid after healing. "
+                            "Check for self-intersections, collapsed control points, "
+                            "and surface relations that overwrite the outer boundary."
+                        )
+                    self.volume_tag = volumes[0][1]
 
                     # ----------------------------------------------------
                     # FINAL CLEANUP: Purge residue from Healing
@@ -364,15 +363,9 @@ class BspSurface(ControlPointSurface):
                 print("Warning: Failed to create solid. Returning surface elements.")
                 return side_surface  # Fallback
 
-        def export_step(self, filename):
-            """导出 STEP 文件"""
-            try:
-                gmsh.write(filename)
-                print(f"Successfully exported to {filename}")
-                return True
-            except Exception as e:
-                print(f"Export failed: {e}")
-                return False
+        def export_step(self, filename: str | Path) -> None:
+            """Write the solid; propagate export errors to the optimization worker."""
+            gmsh.write(str(filename))
 
         def finalize(self):
             """清理 Gmsh 资源"""
@@ -386,11 +379,8 @@ class BspSurface(ControlPointSurface):
         self,
         surface: bspmap.BSP,
         init_size: float,
-        MaxR=CONSTANT.KERNEL.SURFACE.DEFAULT_METRIC_VARIATION_LIMIT,
-        MaxFF=CONSTANT.KERNEL.SURFACE.BSP_CLASS_NONORTHOGONALITY_LIMIT,
-        MaxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
     ):
-        super().__init__(surface)
+        super().__init__()
         self.is_updatable = True
 
         self.model: bspmap.BSP = surface
@@ -400,13 +390,7 @@ class BspSurface(ControlPointSurface):
             torch.get_default_device()
         )
 
-        self.MaxR = MaxR
-        self.MaxFF = MaxFF
-        self.MaxC = MaxC
-
         self.init_size = init_size
-
-        self.rr_compensation: torch.Tensor
 
         self._preload_size: tuple[int, int]
         """The preloaded size of the UV grid."""
@@ -472,37 +456,6 @@ class BspSurface(ControlPointSurface):
     def initialize(self):
 
         self.pre_load()
-
-        # initialize fairness compensation
-        RRuu, RRuv, RRvu, RRvv = self._geofair_data(
-            r=self.get_r(), rdu=self.get_rdu(), rdu2=self.get_rdu2()
-        )[-4:]
-
-        lengthU = (2 * self.model.size[0] * self.init_size) ** 2
-        lengthV = (2 * self.model.size[1] * self.init_size) ** 2
-
-        RRuu /= lengthU
-        RRuv /= lengthV
-        RRvu /= lengthU
-        RRvv /= lengthV
-
-        self.rr_compensation = torch.ones(4, RRuu.shape[0])
-        self.rr_compensation[0, RRuu > self.MaxR * 0.2] = (
-            self.MaxR * 0.2 / RRuu[RRuu > self.MaxR * 0.2]
-        )
-        self.rr_compensation[0] /= lengthU
-        self.rr_compensation[1, RRuv > self.MaxR * 0.2] = (
-            self.MaxR * 0.2 / RRuv[RRuv > self.MaxR * 0.2] / lengthV
-        )
-        self.rr_compensation[1] /= lengthV
-        self.rr_compensation[2, RRvu > self.MaxR * 0.2] = (
-            self.MaxR * 0.2 / RRvu[RRvu > self.MaxR * 0.2] / lengthU
-        )
-        self.rr_compensation[2] /= lengthU
-        self.rr_compensation[3, RRvv > self.MaxR * 0.2] = (
-            self.MaxR * 0.2 / RRvv[RRvv > self.MaxR * 0.2] / lengthV
-        )
-        self.rr_compensation[3] /= lengthV
 
     def pre_load(
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
@@ -593,21 +546,27 @@ class BspSurface(ControlPointSurface):
         return preload_data
 
     @staticmethod
-    def output_stp_file(control_points, degree_u, degree_v, path_output, name_output):
+    def output_stp_file(
+        control_points: np.ndarray,
+        degree_u: int,
+        degree_v: int,
+        path_output: str | Path,
+        name_output: str,
+    ) -> None:
         generator = BspSurface.BSplineSolidGenerator(
             P0=control_points, degree_u=degree_u, degree_v=degree_v
         )
-        generator.build()
-        output_file = path_output + "/" + name_output + ".stp"
-        generator.export_step(output_file)
-        generator.finalize()
+        try:
+            generator.build()
+            generator.export_step(Path(path_output) / f"{name_output}.stp")
+        finally:
+            generator.finalize()
 
     def output_data(
         self,
         path_output: str | Path,
         name_output: str,
         seed_size: float = -1,
-        flip: bool = False,
         pools: Pool | None = None,
     ) -> str:
         arguments = (
@@ -643,111 +602,6 @@ class BspSurface(ControlPointSurface):
         x_change[-1] = 0
 
         ControlPointSurface.update_variables(self, x_change)
-
-    def _geofair_data(self, r: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor):
-        """
-        To compute the geometric fairness data.
-
-        Parameters:
-            r (torch.Tensor): The surface points.
-            rdu (torch.Tensor): The first derivatives of the surface points.
-            rdu2 (torch.Tensor): The second derivatives of the surface points.
-
-        Returns:
-            C0 (torch.Tensor): The curvature-based fairness measure.
-            FF0 (torch.Tensor): The first fundamental form-based fairness measure.
-            RRuu0 (torch.Tensor): The second derivative in u direction-based fairness measure.
-            RRuv0 (torch.Tensor): The mixed second derivative-based fairness measure.
-            RRvu0 (torch.Tensor): The mixed second derivative-based fairness measure.
-            RRvv0 (torch.Tensor): The second derivative in v direction-based fairness measure.
-        """
-        Normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
-        Normal = Normal0 / torch.sqrt(torch.sum(Normal0**2, dim=1, keepdim=True))
-
-        I = torch.einsum("pim, pin->pmn", rdu, rdu)
-        invI = I.inverse()
-        II = torch.einsum("pimn, pi->pmn", rdu2, Normal)
-
-        detI = I[:, 0, 0] * I[:, 1, 1] - I[:, 0, 1] * I[:, 1, 0]
-        detII = II[:, 0, 0] * II[:, 1, 1] - II[:, 0, 1] * II[:, 1, 0]
-
-        H = 0.5 * (invI * II).sum([1, 2])
-        K = detII / detI
-
-        C0 = 4 * H**2 - 2 * K
-
-        F = I[:, 0, 1]
-        E = I[:, 0, 0]
-        G = I[:, 1, 1]
-        FF0 = I[:, 0, 1] * I[:, 1, 0] / I[:, 1, 1] / I[:, 0, 0]
-
-        Iu = torch.einsum("piuw, piv->puvw", rdu2, rdu) + torch.einsum(
-            "piu, pivw->puvw", rdu, rdu2
-        )
-
-        RRuu0 = Iu[:, 0, 0, 0] ** 2 / E**2
-        RRuv0 = Iu[:, 0, 0, 1] ** 2 / E**2
-        RRvu0 = Iu[:, 1, 1, 0] ** 2 / G**2
-        RRvv0 = Iu[:, 1, 1, 1] ** 2 / G**2
-
-        return C0, FF0, RRuu0, RRuv0, RRvu0, RRvv0
-
-    def get_penalty_fairness(
-        self,
-        weight: torch.Tensor,
-        r: torch.Tensor,
-        rdu: torch.Tensor,
-        rdu2: torch.Tensor,
-    ) -> torch.Tensor:
-
-        C0, FF0, RRuu0, RRuv0, RRvu0, RRvv0 = self._geofair_data(r, rdu, rdu2)
-
-        indexC, C = self.barrier_function(
-            C0,
-            self.MaxC,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-
-        indexFF, FF = self.barrier_function(
-            FF0,
-            self.MaxFF,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-        indexRRuu, RRuu = self.barrier_function(
-            RRuu0 * self.rr_compensation[0],
-            self.MaxR,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-        indexRRuv, RRuv = self.barrier_function(
-            RRuv0 * self.rr_compensation[1],
-            self.MaxR,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-        indexRRvu, RRvu = self.barrier_function(
-            RRvu0 * self.rr_compensation[2],
-            self.MaxR,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-        indexRRvv, RRvv = self.barrier_function(
-            RRvv0 * self.rr_compensation[3],
-            self.MaxR,
-            CONSTANT.KERNEL.SURFACE.FAIRNESS_ACTIVATION_RATIO,
-            CONSTANT.KERNEL.SURFACE.BSP_FAIRNESS_EXPONENT,
-        )
-
-        return (
-            (weight[indexC] * C).sum()
-            + (weight[indexFF] * FF).sum()
-            + (weight[indexRRuu] * RRuu).sum()
-            + (weight[indexRRuv] * RRuv).sum()
-            + (weight[indexRRvu] * RRvu).sum()
-            + (weight[indexRRvv] * RRvv).sum()
-        )
 
     def get_points_weight(self):
         """Get vertex-based integration weights for the preload mesh."""
@@ -805,14 +659,10 @@ class BspSurface(ControlPointSurface):
         r0: float,
         length: float,
         seed_size: float,
-        flip: bool,
         num_U_ratio: int = 1,
         num_V_ratio: int = 1,
         degree=3,
         init_location=[0.0, 0.0, 0.0],
-        maxR=CONSTANT.KERNEL.SURFACE.DEFAULT_METRIC_VARIATION_LIMIT,
-        maxC=CONSTANT.KERNEL.SURFACE.DEFAULT_CURVATURE_LIMIT,
-        maxFF=CONSTANT.KERNEL.SURFACE.DEFAULT_NONORTHOGONALITY_LIMIT,
         perturbation_L=-1.0,
     ):
         """
@@ -824,17 +674,9 @@ class BspSurface(ControlPointSurface):
             seed_size (float): Initial control-net and surface sampling spacing, separate from the Part's FE mesh size.
             num_U_ratio (int, optional): Circumferential control-point count alignment factor, combined with 12 by LCM.
             num_V_ratio (int, optional): Axial control-point count rounding factor; the final count is odd.
-            flip (bool): Whether to flip the surface or not.
             degree (int, optional): The degree of the B-spline surface. Default is 3.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
-            maxR (float, optional): Fairness penalty threshold for compensated squared relative derivatives of the first fundamental form's diagonal terms.
-            maxC (float, optional): Fairness penalty threshold for kappa_1**2 + kappa_2**2 (inverse length squared).
-            maxFF (float, optional): Fairness penalty threshold for F**2 / (E * G), the squared cosine between parameter tangents.
             perturbation_L (float, optional): The perturbation length for the surface. Default is -1. If < 0, no perturbation is applied.
-
-        Fairness penalties activate above 80% of each threshold when a
-        Fairness constraint is registered on the geometry updater. These
-        parameters do not bound control-point displacement or radius changes.
 
         Returns:
             BspSurface: The cylindrical B-spline surface.
@@ -892,10 +734,7 @@ class BspSurface(ControlPointSurface):
             control_points=P0.cpu().numpy().reshape([-1, 3]),
         )
 
-        output = cls(bsp, init_size=seed_size, MaxR=maxR, MaxC=maxC, MaxFF=maxFF)
-        output.flip = flip
-
-        return output
+        return cls(bsp, init_size=seed_size)
 
     def match_coordinates(
         self,

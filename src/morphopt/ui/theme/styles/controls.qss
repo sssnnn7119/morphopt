@@ -109,6 +109,11 @@ QGroupBox::title {
     color: @heading_text@;
 }
 QGroupBox[collectionSelected="true"] { border-color: @accent@; }
+QWidget[tableGroupCell="true"] {
+    border: 0;
+    border-bottom: 2px solid @muted_text@;
+}
+QWidget[tableGroupHeader="true"] { border-right: 1px solid @border@; }
 QMenu::item { padding: 6px 20px; }
 QMenu::item:selected {
     background-color: @selection@;

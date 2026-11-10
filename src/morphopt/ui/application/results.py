@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import codecs
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ...constants import CONSTANT
 from ...postprocess import OptimizationArchive
 from ..i18n import localized_message
 
@@ -84,3 +86,44 @@ class ResultSession:
 
     def deformation_cases(self) -> tuple[str, ...]:
         return self._archive.deformation_cases() if self._archive else ()
+
+    @property
+    def log_files(self) -> tuple[Path, ...]:
+        return self._archive.log_files if self._archive else ()
+
+
+class ResultLogReader:
+    """Read appended UTF-8 log text without retaining open file handles."""
+
+    def __init__(self) -> None:
+        self.clear()
+
+    def clear(self) -> None:
+        self.path: Path | None = None
+        self._offset = 0
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def read(self, path: Path) -> tuple[bool, str]:
+        """Return whether to replace the view and the newly available text.
+
+        A new or truncated file replaces the view. Large files start at their
+        last complete lines; each poll reads a bounded amount of recent text.
+        The decoder retains UTF-8 characters split across writes.
+        """
+        with path.open("rb") as stream:
+            size = stream.seek(0, 2)
+            replace = path != self.path or size < self._offset
+            offset = 0 if replace else self._offset
+            clipped = size - offset > CONSTANT.UI.OBSERVER.LOG_READ_MAXIMUM_BYTES
+            if clipped:
+                offset = size - CONSTANT.UI.OBSERVER.LOG_READ_MAXIMUM_BYTES
+                replace = True
+            stream.seek(offset)
+            data = stream.read(CONSTANT.UI.OBSERVER.LOG_READ_MAXIMUM_BYTES)
+            self._offset = stream.tell()
+        self.path = path
+        if replace:
+            self._decoder.reset()
+        if clipped:
+            data = data.split(b"\n", 1)[-1]
+        return replace, self._decoder.decode(data)

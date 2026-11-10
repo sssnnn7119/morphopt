@@ -21,6 +21,7 @@ class _Constants:
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000
+            LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
         class UPDATER_EDITOR:
@@ -311,11 +312,8 @@ class _Constants:
                         DEFAULT = "auto"
                         CHOICES = (
                             "auto",
-                            "instance",
                             "rp",
-                            "load",
-                            "constraint",
-                            "boundary",
+                            "instance",
                         )
 
                 class BOUNDARYCONDITION:
@@ -415,17 +413,8 @@ class _Constants:
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
-                    class MAXR:
-                        DEFAULT = 0.2
-                        MIN = 0.0
 
-                    class MAXC:
-                        DEFAULT = 1.0
-                        MIN = 0.0
 
-                    class MAXFF:
-                        DEFAULT = 0.2
-                        MIN = 0.0
 
                     class PERTURBATION_L:
                         DEFAULT = -1.0
@@ -454,9 +443,6 @@ class _Constants:
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
-                    class MAXC:
-                        DEFAULT = 1.0
-                        MIN = 0.0
 
                     class PERTURBATION_L:
                         DEFAULT = -1.0
@@ -473,9 +459,6 @@ class _Constants:
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
-                    class MAXC:
-                        DEFAULT = 1.0
-                        MIN = 0.0
 
                 class MESH_SURFACE:
                     class PATH_STL:
@@ -756,10 +739,6 @@ class _Constants:
                         DEFAULT = ""
 
             class UPDATER_OBJECTIVES:
-                class SENSITIVITY:
-                    class NORMALIZE_GRADIENT:
-                        DEFAULT = False
-
                 class DENSITYFIELDMINIMIZE:
                     class SCALE:
                         DEFAULT = 1e-07
@@ -991,6 +970,9 @@ class _Constants:
             )
             DEFAULT_TARGET = 0.0
             DEFAULT_WEIGHT = 1.0
+            DEFAULT_WORKSPACE_KIND = "workspace_plane"
+            DEFAULT_WORKSPACE_GAUSS_ORDER = 2
+            DEFAULT_WORKSPACE_NORMALIZATION = 1.0
             TARGET_MINIMUM = -1000000.0
             TARGET_MAXIMUM = 1000000.0
             WEIGHT_MINIMUM = 0.0
@@ -1008,7 +990,7 @@ class _Constants:
 
         class SOLVER:
             NUM_PROCESS = 1
-            STATIC_TOLERANCE_ERROR = 1e-07
+            STATIC_TOLERANCE_ERROR = 1e-04
 
         class VISUALIZATION:
             WINDOW_SIZE = (1200, 1200)
@@ -1039,6 +1021,7 @@ class _Constants:
             MAXIMUM_SIZE_RATIO = 1.0
             MINIMUM_SIZE_RATIO = 0.5
             DEFAULT_CAD_MESH_SIZE = 1.0
+            BOUNDARY_SEED_SIZE_VARIATION = (0.9, 1.1)
             DEFAULT_BOUNDARY_SEED_SIZE = 1.0
             DEFAULT_ELEMENT_ORDER = 1
 
@@ -1057,14 +1040,23 @@ class _Constants:
             DEFAULT_WEIGHT = 1.0
 
         class SHAPE_CONSTRAINTS:
+            class FAIRNESS:
+                CURVATURE_LIMIT = 1.0
+                METRIC_VARIATION_LIMIT = 0.1
+                NONORTHOGONALITY_LIMIT = 0.1
+                ACTIVATION_RATIO = 0.8
+                BSP_EXPONENT = 3
+                CPGEO_EXPONENT = 3
+                REFERENCE_METRIC_RATIO = 0.2
+
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0
             MIN_RADIUS_EXPONENT = 3
-            CYLINDER_EXPONENT = 7
+            CYLINDER_EXPONENT = 3
             DISTANCE_SEARCH_RATIO = 1.5
             DISTANCE_PAIR_PRUNE_RATIO = 0.3
             DISTANCE_BARRIER_THRESHOLD = 0.01
-            DISTANCE_BARRIER_EXPONENT = 5
+            DISTANCE_BARRIER_EXPONENT = 3
             NORMAL_TRANSITION_MIN = -0.7
             NORMAL_TRANSITION_MAX = 0.0
             NORMALIZATION_TOLERANCE = 1e-08
@@ -1085,6 +1077,22 @@ class _Constants:
         class UPDATER_OBJECTIVES:
             QUADRATIC_MEMORY_PAIRS = 10
 
+        class UPDATER_STRATEGIES:
+            DEFAULT_CONSTRAINT_WEIGHT = 1.0
+
+        class ADAPTIVE_SHAPE_WEIGHTS:
+            PROBE_FRACTION = 0.5
+            SAFETY_FACTOR = 2.0
+            BALANCE_RATIO = 0.25
+            OBJECTIVE_TOLERANCE = 0.01
+            TIGHTENING_INCREMENT = 0.001
+            PENALTY_GROWTH_LIMIT = 2.0
+            WEIGHT_INCREASE = 1.25
+            SIGNIFICANT_PENALTY_RATIO = 0.001
+            INITIAL_TOLERANCE = 0.05
+            FINAL_TOLERANCE = 0.0
+            DISTANCE_TRANSITION_RATIO = 0.05
+
         class OPTIMIZER:
             LINE_SEARCH_C1 = 0.0001
             LINE_SEARCH_BACKTRACK_RATIO = 0.2
@@ -1098,11 +1106,6 @@ class _Constants:
         class SHAPE_UPDATE:
             MAX_STEP_ITERATIONS = 100
             MAX_STEP_LENGTH = 0.5
-            INITIAL_STEP_LENGTH_RATIO = 0.5
-            DIRECTION_CHANGE_THRESHOLD = -0.5
-            MIN_STEP_LENGTH_RATIO = 0.1
-            STEP_LENGTH_DECAY = 0.5
-            STEP_LENGTH_INCREASE = 1.5
             LOW_STEP_LENGTH_TOLERANCE = 1e-10
             LOW_STEP_LENGTH_ITERATION_LIMIT = 10
             STATUS_LOG_INTERVAL = 10
@@ -1112,10 +1115,6 @@ class _Constants:
         class SIMP_UPDATE:
             MAX_STEP_ITERATIONS = 50
             MAX_STEP_LENGTH = 1.0
-            INITIAL_STEP_LENGTH_RATIO = 0.5
-            MIN_STEP_LENGTH_RATIO = 0.1
-            STEP_LENGTH_DECAY = 0.5
-            STEP_LENGTH_INCREASE = 1.5
             LOW_STEP_LENGTH_TOLERANCE = 1e-10
             LOW_STEP_LENGTH_ITERATION_LIMIT = 10
             STATUS_LOG_INTERVAL = 10
@@ -1125,13 +1124,6 @@ class _Constants:
         class SURFACE:
             OBJ_VERTEX_MERGE_TOLERANCE = 1e-06
             STEP_DISTANCE_ACCURACY_MM = 0.001
-            DEFAULT_CURVATURE_LIMIT = 1.0
-            DEFAULT_METRIC_VARIATION_LIMIT = 0.2
-            DEFAULT_NONORTHOGONALITY_LIMIT = 0.2
-            BSP_CLASS_NONORTHOGONALITY_LIMIT = 0.1
-            FAIRNESS_ACTIVATION_RATIO = 0.8
-            BSP_FAIRNESS_EXPONENT = 3
-            CPGEO_FAIRNESS_EXPONENT = 5
             CYLINDER_CIRCUMFERENTIAL_BASE_SEGMENTS = 12
             CYLINDER_INITIAL_PERTURBATION_RATIO = 0.04
             FIXED_END_CONTROL_POINT_ROWS = 5

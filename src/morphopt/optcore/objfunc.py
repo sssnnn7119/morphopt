@@ -31,14 +31,9 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         A list of load parameter names for which the jacobian is needed for sensitivity analysis.
         """
 
-    def get_metrics(self) -> list[float]:
-        """
-        Get custom metrics for display.
-        
-        Returns:
-            list[float]: A list of metric values.
-        """
-        return []
+    def get_metrics(self) -> dict[str, float | torch.Tensor] | list[float | torch.Tensor]:
+        """Return named scalars, or a list assigned names '0', '1', ... on recording."""
+        return {}
     
     def objective_function(self):
         """
@@ -99,9 +94,6 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             apply_func=apply_func,
             compute_objective_funcs=self.compute_multistep_objective,
         )
-        
-        # rescale the gradients
-        # design_gradients = design_gradients / (design_gradients.abs().max() + 1e-8)
         
         design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
         

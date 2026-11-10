@@ -2,18 +2,45 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from ...constants import CONSTANT
 from ..model.fields import FieldSpec
 from ..model.material_models import MATERIAL_MODEL_PARAMETERS
 from ..model.node_types.parts import INPPartNode
 from ..model.problem import (
     CADOperationNode,
     FEAComponentNode,
+    LoadCaseNode,
     MaterialNode,
     Node,
     ProblemDefinition,
     SurfaceNode,
 )
 from .part_sets import PartSetCatalog
+
+
+def penalty_targets(problem: ProblemDefinition, component: FEAComponentNode) -> dict[str, str]:
+    """Named assembly objects, filtered by the penalty's selected object category."""
+    targets = {name: "instance" for name in problem.instance_names()}
+    targets.update({
+        node.name: "rp" for node in problem.fea_components()
+        if node.type == "ReferencePoint"
+    })
+    return {
+        name: kind for name, kind in targets.items()
+        if component.obj_type == "auto" or kind == component.obj_type
+    }
+
+
+def load_value_fields(load_class: str) -> tuple[FieldSpec, ...]:
+    """Use the same scalar names for definitions and independent FE analyses."""
+    from ..model.registry import LOAD_TYPES
+
+    return next(
+        (node.value_fields for node in LOAD_TYPES.values() if node.load_class == load_class),
+        (),
+    )
 
 
 def fields_for_node(
@@ -24,6 +51,13 @@ def fields_for_node(
 ) -> tuple[list[FieldSpec], dict, dict]:
     fields = [field for field in node.fields if not field.hidden]
     choices: dict[str, list[str]] = {}
+    if isinstance(node, LoadCaseNode):
+        from ..i18n import tr
+
+        fields = [
+            replace(field, key=key, label_key=f"{load.name} · {tr(field.label_key)}")
+            for key, (load, field) in node.parameters().items()
+        ]
     if isinstance(node, SurfaceNode):
         fields.insert(
             0,
@@ -55,6 +89,29 @@ def fields_for_node(
                 choices[key] = [operation.operation_id for operation in prior]
     elif isinstance(node, FEAComponentNode) and problem is not None:
         choices = dynamic_choices(problem, node.type, node, sets=sets)
+        if node.type == "PenaltyDoF":
+            scalar = next(field for field in fields if field.key == "s")
+            fields = sorted(
+                (field for field in fields if field.key != "s"),
+                key=lambda field: field.key != "obj_type",
+            )
+            kind = penalty_targets(problem, node).get(node.obj_name)
+            if kind == "rp":
+                fields.append(replace(
+                    scalar, type="combo", editable=False, label_key="ui.penalty.dof",
+                    choices=tuple(range(CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.BOUNDARYCONDITIONRP.INDEX_DOF.SIZE)),
+                ))
+            elif kind == "instance":
+                fields.extend((
+                    FieldSpec(
+                        "node_index", "ui.penalty.node_index", "int", 0,
+                        minimum=0, doc_key="ui.penalty.node_index_help",
+                    ),
+                    FieldSpec(
+                        "direction", "ui.penalty.direction", "combo", 0,
+                        choices=(0, 1, 2), editable=False,
+                    ),
+                ))
     elif isinstance(node, MaterialNode):
         model = node.material_model
         common = {"part_name", "material_model", "density", "elementname"}
@@ -113,6 +170,8 @@ def dynamic_choices(
             choices[key] = list(getattr(part_sets, kind))
         elif key in ("rp_name", "rp_name1", "rp_name2"):
             choices[key] = rp_names
+        elif key == "obj_name" and itype == "PenaltyDoF":
+            choices[key] = list(penalty_targets(problem, component))
     return choices
 
 

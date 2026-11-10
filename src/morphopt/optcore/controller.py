@@ -317,7 +317,7 @@ class Controller:
         """
         Perform a single optimization step.
         Returns:
-            loss (torch.Tensor): The loss value after the optimization step.
+            loss (torch.Tensor): The high-fidelity objective at the evaluated design.
             t0 (float): The start time of the optimization step.
             t1 (float): The time after model generation.
             t2 (float): The time after finite element analysis (FEA).
@@ -364,10 +364,9 @@ class Controller:
 
         # Update the surfaces based on the FEA results
         logger.info(f"Updating surfaces for iteration {self.history.iteration}...")
-        self.updater.update(gradients=gradients)
-        self.updater.update_variables()
-
         loss = self.objfun.objective_function()
+        self.updater.update(gradients=gradients, objective_value=loss.detach().item())
+        self.updater.update_variables()
 
         t4 = time.time()
 
@@ -379,9 +378,13 @@ class Controller:
         """
         Record the history of the optimization process.
         """
-        self.history.append("objective", loss.item())
-        self.history.append("metrics", self.objfun.get_metrics())
-        self.history.append("time", [t1 - t0, t2 - t1, t3 - t2, t4 - t3])
+        metrics = self.objfun.get_metrics()
+        if isinstance(metrics, (list, tuple)):
+            metrics = {str(index): value for index, value in enumerate(metrics)}
+        metrics = {
+            name: value.item() if isinstance(value, torch.Tensor) else value
+            for name, value in metrics.items()
+        }
         # A model may hold any number of Parts and Instances (shape/codesign
         # geometry interfaces, SIMP assemblies imported from torchfea-ui), so
         # statistics are read from the actual Assembly instead of assuming a
@@ -396,15 +399,26 @@ class Controller:
             instance.nodes.shape[0]
             for instance in self.objfun.fe.assembly._instances.values()
         )
-        self.history.append("num_elements", num_elements)
-        self.history.append("num_nodes", num_nodes)
+        self.history.append(
+            iteration=self.history.iteration + 1,
+            objective=loss.item(),
+            metrics=metrics,
+            time={
+                "init": t1 - t0,
+                "fea": t2 - t1,
+                "sens": t3 - t2,
+                "update": t4 - t3,
+            },
+            num_elements=num_elements,
+            num_nodes=num_nodes,
+        )
 
     def print_info(self, t0, t1, t2, t3, t4) -> None:
         """
         Print the current information of the optimization process.
         """
         logger.info(f"Iteration: {self.history.iteration}")
-        logger.info(f"Loss: {self.history.history_objective[-1]:.6f}")
+        logger.info(f"Loss: {self.history.records[-1]['objective']:.6f}")
         logger.info("Time Breakdown:")
         logger.info(f"  Initialization Time: {t1 - t0:.2f} seconds")
         logger.info(f"  FEA Time: {t2 - t1:.2f} seconds")

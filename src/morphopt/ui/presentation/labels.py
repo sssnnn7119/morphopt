@@ -189,6 +189,8 @@ def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
 
 def node_title(problem: ProblemDefinition | None, node: Node) -> str:
     """Canonical object title, including the selected custom class."""
+    if node.kind == "load_case":
+        return typed_title(node.name, "LoadCase")
     if node.kind == "objective_term":
         objective_item = cast("ObjectiveItemTreeNode", node)
         term_type = objective_item.item.get("type")
@@ -199,7 +201,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         }.get(term_type, "objective_term")
         return tr(
             "ui.widgets.objective_editor.tree_objective_entry",
-            value_0=objective_item.index + 1,
+            value_0=objective_item.index,
             value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
         )
     if node.kind == "metric_term":
@@ -210,7 +212,7 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
         }.get(objective_item.item.get("type"), "metric_term")
         return tr(
             "ui.widgets.objective_editor.tree_metric_entry",
-            value_0=objective_item.index + 1,
+            value_0=objective_item.item.get("name") or objective_item.index,
             value_1=tr(f"ui.widgets.objective_editor.{label_key}"),
         )
     if isinstance(node, PartNode):
@@ -251,6 +253,11 @@ def reference_choice_title(problem: ProblemDefinition | None, key: str, name: ob
         return None
     if key in {"instance_name", "instance_name1", "instance_name2"}:
         return typed_title(str(name), "Instance")
+    if key == "obj_name":
+        if name in problem.instance_names():
+            return typed_title(str(name), "Instance")
+        component = next((node for node in problem.fea_components() if node.name == name), None)
+        return component_title_text(component) if component is not None else None
     if key in {
         "rp_name", "rp_name1", "rp_name2",
         "force_load_name", "moment_load_name", "reference_point_name",
@@ -288,7 +295,7 @@ def quickstart_summary(options) -> str:
             value_3=100*options.volume_fraction,
         ), tr('ui.widgets.quickstart.left_end_fixed_objective_load_cases_act_along_z')]
     parts.append(tr('ui.widgets.quickstart.objective_terms_and_their_load_cases'))
-    for index, objective in enumerate(options.objectives, 1):
+    for index, objective in enumerate(options.objectives):
         label = tr(GOALS[objective.kind][0])
         if objective.kind.startswith("workspace_"):
             load = tr(
@@ -331,6 +338,11 @@ DOF_LABELS = {0: "X", 1: "Y", 2: "Z", 3: "Rx", 4: "Ry", 5: "Rz"}
 
 _CHOICE_LABELS = {
     ("obj_type", "auto"): "ui.widgets.values.choice.auto",
+    ("obj_type", "instance"): "ui.penalty.object.instance",
+    ("obj_type", "rp"): "ui.penalty.object.rp",
+    ("obj_name", ""): "ui.penalty.select_object",
+    **{("s", str(index)): f"ui.penalty.dof.{name}" for index, name in DOF_LABELS.items()},
+    **{("direction", str(index)): f"ui.penalty.dof.{DOF_LABELS[index]}" for index in range(3)},
     ("obj_type", "node"): "ui.widgets.values.choice.node",
     ("obj_type", "element"): "ui.widgets.values.choice.element",
     ("obj_type", "part"): "ui.widgets.values.choice.part",

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
 import os
 from multiprocessing.queues import Queue
+
+logger = logging.getLogger(__name__)
 
 
 def _main_script(path_result: str | None) -> str:
@@ -155,10 +158,16 @@ def _run_worker(
     controller.optdevice = device
     controller.dataqueue = pathqueue
     controller._debug_mode = debug
-    if target_iteration == 0 or path_result is None:
-        controller.start_optimization(main_filepath=main_filepath)
-    else:
-        controller.restart_optimization(
-            path_result=path_result, target_iteration=target_iteration
+    try:
+        if target_iteration == 0 or path_result is None:
+            controller.start_optimization(main_filepath=main_filepath)
+        else:
+            controller.restart_optimization(
+                path_result=path_result, target_iteration=target_iteration
+            )
+    except Exception:
+        logger.exception(
+            "Optimization worker failed; result folder: %s", controller.path_result
         )
+        raise
     return controller.path_result

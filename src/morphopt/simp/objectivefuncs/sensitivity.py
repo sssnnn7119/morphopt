@@ -10,14 +10,9 @@ class Sensitivity(BaseObjective):
     Reciprocal material objective from the current physical sensitivity.
     """
 
-    def __init__(self, normalize_gradient: bool = False) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.normalize_gradient = normalize_gradient
         self._cp0: torch.Tensor | None = None
-
-        self.factor: torch.Tensor
-        """A factor to scale the shape derivative, can be set in the initialize function. 
-        """
 
         self.ind_neg: torch.Tensor | None = None
         """Indices of negative sensitivity, can be set in the initialize function.
@@ -30,15 +25,7 @@ class Sensitivity(BaseObjective):
     def initialize(self, gradient: torch.Tensor, cps0: torch.Tensor, step_length: torch.Tensor, *args, **kwargs) -> None:
         self._cp0 = cps0.reshape_as(cps0).detach().clone().flatten()
 
-        g = gradient.detach().clone().reshape_as(self._cp0)
-        self.factor = g.new_ones(())
-        if self.normalize_gradient:
-            g_norm = g.norm()
-            if g_norm > 0:
-                self.factor = 1 / g_norm
-                g = g / g_norm
-
-        self.sensitivity = g.flatten()
+        self.sensitivity = gradient.detach().clone().reshape_as(self._cp0)
 
         self.step_length = step_length
 
@@ -59,10 +46,9 @@ class QuadraticSensitivity(Sensitivity):
 
     def __init__(
         self,
-        normalize_gradient: bool = False,
         memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
     ) -> None:
-        super().__init__(normalize_gradient=normalize_gradient)
+        super().__init__()
         self.history = QuadraticHistory(memory_size)
 
     def initialize(
@@ -77,7 +63,7 @@ class QuadraticSensitivity(Sensitivity):
         self.history.observe(cps0, gradient)
 
     def __call__(self, cps: torch.Tensor, *args: object, **kwargs: object) -> torch.Tensor:
-        return self.history(cps) * self.factor
+        return self.history(cps)
 
     def save(self, foldpath: str, iteration: int) -> None:
         self.history.save(foldpath=foldpath, iteration=iteration)

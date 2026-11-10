@@ -53,6 +53,91 @@ def test_analysis_is_unavailable_until_a_task_is_opened(monkeypatch):
     app.processEvents()
 
 
+def test_observer_logs_poll_before_first_iteration_and_reset_between_tasks(monkeypatch, tmp_path):
+    from morphopt.ui.application.runs import RunProgress
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    window._ensure_observer()
+    controls = window._observer
+    panel = controls.panel
+    logs = tmp_path / "log"
+    logs.mkdir()
+    path = logs / "morphopt.log"
+    path.write_text("initializing\n", encoding="utf-8")
+    progress = RunProgress(str(tmp_path), 0, False)
+    try:
+        controls._show_progress(progress)
+        panel.options.setCurrentRow(1)
+        page = panel._logs_page
+        assert panel.stack.currentWidget() is page
+        assert page.text.toPlainText() == "initializing\n"
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write("still running\n")
+        controls._show_progress(progress)
+        assert page.text.toPlainText() == "initializing\nstill running\n"
+        (logs / "torchfea.log").write_text("FEA started\n", encoding="utf-8")
+        controls._show_progress(progress)
+        assert page.file_selector.count() == 2
+        page.file_selector.setCurrentIndex(page.file_selector.findText("torchfea.log"))
+        assert page.text.toPlainText() == "FEA started\n"
+        (logs / "another.log").write_text("another file\n", encoding="utf-8")
+        controls._show_progress(progress)
+        assert page.file_selector.currentText() == "torchfea.log"
+        assert page.text.toPlainText() == "FEA started\n"
+        panel.apply_language()
+        assert panel.stack.currentWidget() is page
+        assert page.file_selector.currentText() == "torchfea.log"
+        panel.reset()
+        assert not page.text.toPlainText()
+        assert page.file_selector.count() == 0
+        other = tmp_path / "other"
+        (other / "log").mkdir(parents=True)
+        (other / "log" / "morphopt.log").write_text("next run\n", encoding="utf-8")
+        controls._show_progress(RunProgress(str(other), 0, False))
+        panel.options.setCurrentRow(1)
+        assert page.text.toPlainText() == "next run\n"
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_history_controls_belong_only_to_visualization_pages(monkeypatch):
+    from PySide6.QtCore import Qt
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    try:
+        window._ensure_observer()
+        panel = window._observer.panel
+        assert panel.history_controls.parentWidget() is panel.stack.parentWidget()
+        assert panel.history_controls.isHidden()
+        for data in (("component", "geometry", object()), ("case", "load_case_1")):
+            panel.options.addItem(data[0])
+            panel.options.item(panel.options.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, data,
+            )
+        panel.slider.setMaximum(3)
+        panel.select_iteration(2)
+        for row, page, visible in (
+            (2, panel._updatable_structure_page, True),
+            (0, panel._metrics_page, False),
+            (3, panel._deformation_page, True),
+            (1, panel._logs_page, False),
+            (2, panel._updatable_structure_page, True),
+        ):
+            panel.options.setCurrentRow(row)
+            assert panel.stack.currentWidget() is page
+            assert panel.history_controls.isHidden() is not visible
+            assert panel.slider.value() == 2
+            assert not panel.chk_follow.isChecked()
+        panel.reset()
+        assert panel.history_controls.isHidden()
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
 def test_history_export_actions_are_owned_and_do_not_depend_on_add_action_return(monkeypatch):
     import gc
 
@@ -518,3 +603,72 @@ def test_natural_completion_keeps_the_result_available_for_continuation(monkeypa
     assert window._menu_actions['open_result'].isEnabled()
     window.deleteLater()
     app.processEvents()
+
+
+def test_morph_import_opens_supported_content_before_showing_one_warning(monkeypatch, tmp_path):
+    import json
+    from PySide6.QtWidgets import QMessageBox
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    data = ProblemLibrary.create("shapeopt", label="Imported partially").to_dict()
+    data["version"] = 99
+    data["future_option"] = 1
+    path = tmp_path / "future.morph"
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(window, "_choose_file_path", lambda *args, **kwargs: str(path))
+    monkeypatch.setattr(window, "_confirm_discard", lambda: True)
+    warnings = []
+
+    def show(message):
+        assert window.current_problem().label == "Imported partially"
+        assert message.icon() == QMessageBox.Icon.Warning
+        warnings.append(message.detailedText())
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(QMessageBox, "exec", show)
+    try:
+        window.open_morph()
+        assert len(warnings) == 1
+        assert "future_option" in warnings[0]
+        assert window._document_path == path.resolve()
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_load_case_interfaces_use_common_cards_tree_and_edit_history(monkeypatch):
+    from morphopt.ui.application.editor_routing import EditorKind, route_editor
+    from morphopt.ui.model.problem import LoadCaseNode
+    from morphopt.ui.widgets.definition_manager import DefinitionManagerEditor
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    problem = ProblemLibrary.create('shapeopt')
+    window.set_problem(problem)
+    page = window._workbench
+    try:
+        assert isinstance(page.load_cases, DefinitionManagerEditor)
+        name = next(iter(problem.steps.step_values))
+        case = LoadCaseNode(problem, name)
+        assert route_editor(case).kind is EditorKind.STEPS
+        page.tree.setCurrentItem(page.tree._node_item[case])
+        assert page._stack.currentWidget() is page.load_cases
+        assert page.load_cases._focus == case
+        editor = page.load_cases._node_editors[case][0]
+        key = next(iter(editor._controls))
+        original = case.get_field(key)
+        field = editor._controls[key]
+        field.setText('0.125')
+        field.editingFinished.emit()
+        page.refresh_coordinator.refresh_now()
+        assert case.get_field(key) == 0.125
+        page.undo()
+        restored = LoadCaseNode(page.problem, name)
+        assert restored.get_field(key) == original
+        assert page.tree.currentItem().text(0).endswith('[LoadCase]')
+        page.redo()
+        assert LoadCaseNode(page.problem, name).get_field(key) == 0.125
+    finally:
+        window.deleteLater()
+        app.processEvents()

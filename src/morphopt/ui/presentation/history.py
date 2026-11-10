@@ -1,7 +1,13 @@
-"""History records projected into table columns, independently of Qt."""
+"""Project ordinary iteration records into table cells and numeric curves."""
+
 from __future__ import annotations
+
+from collections.abc import Iterator
 from dataclasses import dataclass
-import numpy as np
+from numbers import Real
+from typing import Any
+
+from ...optcore.history import History
 from ..i18n import tr
 
 
@@ -9,75 +15,57 @@ from ..i18n import tr
 class HistoryTable:
     headers: list[str]
     rows: list[list[str | None]]
-    objectives: list[float]
+    curves: list[tuple[str, list[float]]]
 
 
-def _metric_count(metrics) -> int:
-    if metrics is None or metrics.size == 0:
-        return 0
-    return metrics.shape[-1] if metrics.ndim > 1 else 1
-
-
-def _deformation_columns(deformation) -> tuple[list[str], object]:
-    if deformation is None or deformation.size == 0:
-        return [], None
-    if deformation.ndim == 2:
-        return ([tr('ui.widgets.observation_pages.u0_value', value_0=index)
-                 for index in range(deformation.shape[1])],
-                deformation)
-    if deformation.ndim == 3:
-        tasks, dimensions = deformation.shape[1:]
-        labels = [tr('ui.widgets.observation_pages.u_value_value', value_0=task, value_1=dimension)
-                  for task in range(tasks)
-                  for dimension in range(dimensions)]
-        return labels, deformation.reshape(deformation.shape[0], -1)
-    return [], None
-
-
-def _row_values(row_index, objective, metrics, metric_count, times,
-                elements, nodes, flat_deformation) -> list[str | None]:
-    values: list[str | None] = [str(row_index + 1), f"{objective:.6f}"]
-    for metric_index in range(metric_count):
-        if metrics is None or row_index >= len(metrics):
-            values.append(None)
-            continue
-        metric_row = metrics[row_index]
-        metric_value = (metric_row[metric_index] if np.ndim(metric_row)
-                        else metric_row)
-        values.append(f"{metric_value:.6f}")
-    if times is not None and row_index < len(times):
-        values.extend(f"{value:.2f}" for value in times[row_index][:4])
-        values.extend([None] * max(0, 4 - len(times[row_index][:4])))
+def _flatten(value: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], Any]]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _flatten(item, (*path, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _flatten(item, (*path, str(index)))
     else:
-        values.extend([None] * 4)
-    values.append(str(elements[row_index]) if elements is not None and row_index < len(elements)
-                  else None)
-    values.append(str(nodes[row_index]) if nodes is not None and row_index < len(nodes)
-                  else None)
-    if flat_deformation is not None and row_index < len(flat_deformation):
-        values.extend(f"{value:.4e}" for value in flat_deformation[row_index])
-    return values
+        yield path, value
 
 
-def history_table(history) -> HistoryTable:
-    objectives = list(history.history_objective)
-    metrics = history.history_metrics
-    count = _metric_count(metrics)
-    deformation_labels, flat = _deformation_columns(history.history_deformation)
-    headers = (
-        [tr('ui.widgets.observation_pages.iteration'), tr('ui.widgets.observation_pages.objective')]
-        + [tr('ui.widgets.observation_pages.metric_value', value_0=index) for index in range(count)]
-        + [tr('ui.widgets.observation_pages.init'), tr('ui.widgets.observation_pages.fea'), tr('ui.widgets.observation_pages.sens'), tr('ui.widgets.observation_pages.update'), tr('ui.widgets.observation_pages.elements'), tr('ui.widgets.observation_pages.nodes')]
-        + deformation_labels
-    )
-    rows = [_row_values(
-        index,
-        objective,
-        metrics,
-        count,
-        history.history_time,
-        history.history_num_elements,
-        history.history_num_nodes,
-        flat,
-    ) for index, objective in enumerate(objectives)]
-    return HistoryTable(headers, rows, objectives)
+def _title(path: tuple[str, ...]) -> str:
+    labels = {
+        ("objective",): "objective",
+        ("time", "init"): "init",
+        ("time", "fea"): "fea",
+        ("time", "sens"): "sens",
+        ("time", "update"): "update",
+        ("num_elements",): "elements",
+        ("num_nodes",): "nodes",
+    }
+    if path[0] == "metrics" and len(path) > 1:
+        return tr("ui.widgets.observation_pages.metric_value", value_0=".".join(path[1:]))
+    if path in labels:
+        return tr(f"ui.widgets.observation_pages.{labels[path]}")
+    return ".".join(path)
+
+
+def history_table(history: History) -> HistoryTable:
+    cells = [dict(_flatten(record)) for record in history.records]
+    paths = list(dict.fromkeys(path for row in cells for path in row if path != ("iteration",)))
+    titles = [_title(path) for path in paths]
+    headers = [tr("ui.widgets.observation_pages.iteration"), *titles]
+    rows = []
+    for index, row in enumerate(cells, 1):
+        values: list[str | None] = [str(history.records[index - 1].get("iteration", index))]
+        for path in paths:
+            value = row.get(path)
+            values.append(
+                f"{value:.6g}" if isinstance(value, Real)
+                else str(value) if value is not None else None
+            )
+        rows.append(values)
+    curves = []
+    for path, title in zip(paths, titles):
+        values = [row.get(path) for row in cells]
+        if any(isinstance(value, Real) for value in values) and all(
+            value is None or isinstance(value, Real) for value in values
+        ):
+            curves.append((title, [float(value) if value is not None else float("nan") for value in values]))
+    return HistoryTable(headers, rows, curves)

@@ -7,26 +7,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from ...postprocess import BoundarySurfaceInfo
 from ..i18n import tr
 from ..presentation.labels import component_selection_title
 from ..processes import start_worker
@@ -148,75 +143,36 @@ class _HistoryExportDialog(QDialog):
 
 
 class SurfaceExportDialog(_HistoryExportDialog):
+    """Export the already selected result-page view without extra choices."""
+
     def __init__(
         self,
         folder: str,
-        max_iteration: int,
         iteration: int,
-        surfaces: tuple[BoundarySurfaceInfo, ...],
+        selections: list[dict[str, Any]],
+        view_title: str,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__("ui.surface_export", "ui.surface_export.title", parent)
-        self.resize(720, 450)
-        self._folder, self._surfaces = folder, surfaces
-        form = QFormLayout()
-        self.iteration = QSpinBox()
-        self.iteration.setRange(1, max_iteration)
-        self.iteration.setValue(iteration)
-        form.addRow(tr("ui.surface_export.iteration"), self.iteration)
-        self.content.addLayout(form)
-        self.table = QTableWidget(len(surfaces), 4)
-        self.table.setHorizontalHeaderLabels(
-            [
-                tr("ui.surface_export.part"),
-                tr("ui.surface_export.surface"),
-                tr("ui.surface_export.type"),
-                tr("ui.surface_export.format"),
-            ]
+        super().__init__(
+            "ui.surface_export.current", "ui.surface_export.current.title", parent
         )
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+        self.resize(520, 190)
+        self._folder = folder
+        self._iteration = int(iteration)
+        self._selections = selections
+        summary = QLabel(
+            tr("ui.surface_export.current.view_value", value_0=view_title)
         )
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self._formats: list[QComboBox] = []
-        for row, surface in enumerate(surfaces):
-            part = QTableWidgetItem(surface.part)
-            part.setFlags(part.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            part.setCheckState(Qt.CheckState.Checked)
-            self.table.setItem(row, 0, part)
-            self.table.setItem(row, 1, QTableWidgetItem(f"surface_{surface.index}"))
-            self.table.setItem(row, 2, QTableWidgetItem(surface.surface_type))
-            formats = QComboBox()
-            for format in surface.formats:
-                formats.addItem(
-                    "STEP (.stp)" if format == "stp" else "STL (.stl)", format
-                )
-            self._formats.append(formats)
-            self.table.setCellWidget(row, 3, formats)
-        self.content.addWidget(self.table)
-        self.export.setEnabled(bool(surfaces))
+        summary.setWordWrap(True)
+        self.content.addWidget(summary)
+        self.export.setEnabled(bool(selections))
 
     def _export(self) -> None:
-        selections = [
-            {
-                "part": surface.part,
-                "index": surface.index,
-                "format": self._formats[row].currentData(),
-            }
-            for row, surface in enumerate(self._surfaces)
-            if self.table.item(row, 0).checkState() == Qt.CheckState.Checked
-        ]
-        if not selections:
-            QMessageBox.warning(
-                self, self.windowTitle(), tr("ui.surface_export.invalid_selection")
-            )
-            return
         destination = choose_save_directory(
             self,
             self.windowTitle(),
             self._folder,
-            f"iteration_{self.iteration.value()}_surfaces",
+            f"iteration_{self._iteration}_view",
         )
         if not destination:
             return
@@ -229,9 +185,9 @@ class SurfaceExportDialog(_HistoryExportDialog):
             {
                 "action": "export_surfaces",
                 "folder": self._folder,
-                "iteration": self.iteration.value(),
+                "iteration": self._iteration,
                 "destination": destination,
-                "selections": selections,
+                "selections": self._selections,
                 "overwrite": exists,
             }
         )
@@ -239,8 +195,8 @@ class SurfaceExportDialog(_HistoryExportDialog):
     def _completion_message(self, response: dict[str, Any]) -> str:
         return tr(
             "ui.surface_export.completed",
-            count=len(self._request["selections"]),
-            iteration=self._request["iteration"],
+            count=len(self._selections),
+            iteration=self._iteration,
             path=self._request["destination"],
         )
 

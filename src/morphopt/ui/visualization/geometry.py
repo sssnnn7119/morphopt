@@ -17,7 +17,7 @@ from ...optcore.modelparams.parts import (
     BoxPart,
     INPPart,
 )
-from ..application.cad import cad_brep_records_from_node
+from ..application.cad import cad_brep_records_from_node, cad_preview_signature
 from ..application.expressions import DefinitionValues
 from ..i18n import localized_message
 from ..model.node_types.materials import SIMPFieldMaterialNode
@@ -45,6 +45,22 @@ from ..theme import theme_manager
 from .scene import MeshFaces, PreviewScene
 
 _CAD_FACE_ID = "morphopt_cad_face_id"
+
+
+def _preview_key(node: PartNode | SurfaceNode, problem: ProblemDefinition) -> str:
+    """Identify one resolved preview input without depending on object identity."""
+    return json.dumps(
+        {
+            "node": node.to_dict(),
+            "helper_code": problem.helper_code,
+            "helper_variables": [item.to_dict() for item in problem.helper_variables],
+            "helper_functions": [item.to_dict() for item in problem.helper_functions],
+            "custom_classes": [item.to_dict() for item in problem.custom_classes],
+            "class_bindings": problem.class_bindings,
+        },
+        sort_keys=True,
+        default=repr,
+    )
 
 
 def apply_instance_pose(
@@ -521,13 +537,19 @@ class PreviewGeometry:
         self.problem: ProblemDefinition
         self.scene = PreviewScene()
         self._cad_face_meshes: dict[tuple[str, str], pv.DataSet] = {}
-        self._local_cad_faces: dict[tuple[int, str], pv.DataSet] = {}
+        self._local_cad_faces: dict[tuple[tuple[str, ...], str], pv.DataSet] = {}
         self._part_cache: dict[int, torchfea.Part] = {}
+        self._part_cache_keys: dict[int, str] = {}
         self._box_cache: dict[int, BoxPart] = {}
-        self._cad_cache: dict[int, list[dict[str, Any]]] = {}
-        self._cad_mesh_cache: dict[int, tuple[pv.PolyData, pv.PolyData]] = {}
+        self._box_cache_keys: dict[int, str] = {}
+        self._surface_cache: dict[str, pv.DataSet | None] = {}
+        self._cad_cache: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+        self._cad_mesh_cache: dict[
+            tuple[str, ...], tuple[pv.PolyData, pv.PolyData]
+        ] = {}
         self._instance_colors: dict[str, str] = {}
         self.values = DefinitionValues(None)
+        self._cache_problem: ProblemDefinition | None = None
 
     def build(
         self,
@@ -535,14 +557,19 @@ class PreviewGeometry:
         mode: str,
         selected: PartNode | None = None,
     ) -> PreviewScene:
+        if problem is not self._cache_problem:
+            self._part_cache.clear()
+            self._part_cache_keys.clear()
+            self._box_cache.clear()
+            self._box_cache_keys.clear()
+            self._surface_cache.clear()
+            self._cad_cache.clear()
+            self._cad_mesh_cache.clear()
+            self._cache_problem = problem
         self.problem = problem
         self.scene = PreviewScene()
         self._cad_face_meshes = {}
         self._local_cad_faces = {}
-        self._part_cache = {}
-        self._box_cache = {}
-        self._cad_cache = {}
-        self._cad_mesh_cache = {}
         self._instance_colors = {}
         self.values = DefinitionValues(problem)
         if mode == "part":
@@ -598,22 +625,30 @@ class PreviewGeometry:
         )
 
     def surface_mesh(self, surface: SurfaceNode) -> pv.DataSet | None:
-        return self.surfaces.visit(surface, self.values)
+        key = _preview_key(surface, self.problem)
+        if key not in self._surface_cache:
+            self._surface_cache[key] = self.surfaces.visit(surface, self.values)
+        return self._surface_cache[key]
 
     def cached_part(
         self,
         part: PartNode,
         factory: Callable[[], torchfea.Part],
     ) -> torchfea.Part:
-        if id(part) not in self._part_cache:
+        key = _preview_key(part, self.problem)
+        part_id = id(part)
+        if self._part_cache_keys.get(part_id) != key:
             model_part = factory()
             model_part.initialize()
-            self._part_cache[id(part)] = model_part
-        return self._part_cache[id(part)]
+            self._part_cache[part_id] = model_part
+            self._part_cache_keys[part_id] = key
+        return self._part_cache[part_id]
 
     def box_part(self, part: BoxPartNode) -> BoxPart:
-        if id(part) not in self._box_cache:
-            self._box_cache[id(part)] = BoxPart(
+        key = _preview_key(part, self.problem)
+        part_id = id(part)
+        if self._box_cache_keys.get(part_id) != key:
+            box = BoxPart(
                 length=self.values.resolve(part.length),
                 height=self.values.resolve(part.height),
                 depth=self.values.resolve(part.depth),
@@ -622,12 +657,15 @@ class PreviewGeometry:
                 exterior_surface=part.exterior_surface or "extern",
                 part_name=part.assembly_name,
             )
-        return self._box_cache[id(part)]
+            self._box_cache[part_id] = box
+            self._box_cache_keys[part_id] = key
+        return self._box_cache[part_id]
 
     def cad_records(self, part: CADPartNode) -> list[dict[str, Any]]:
-        if id(part) not in self._cad_cache:
-            self._cad_cache[id(part)] = cad_brep_records_from_node(part, self.problem)
-        return self._cad_cache[id(part)]
+        key = cad_preview_signature(part, self.problem)
+        if key not in self._cad_cache:
+            self._cad_cache[key] = cad_brep_records_from_node(part, self.problem)
+        return self._cad_cache[key]
 
     def cad_meshes(self, part: CADPartNode) -> tuple[pv.PolyData, pv.PolyData]:
         """Build one face mesh and one edge mesh for a CAD Part preview.
@@ -637,7 +675,7 @@ class PreviewGeometry:
         without multiplying viewport actors.  Points are duplicated across
         topological faces to retain their independent face normals.
         """
-        key = id(part)
+        key = cad_preview_signature(part, self.problem)
         if key in self._cad_mesh_cache:
             return self._cad_mesh_cache[key]
 
@@ -700,7 +738,7 @@ class PreviewGeometry:
 
     def cad_face_mesh(self, part: CADPartNode, face_name: str) -> pv.PolyData | None:
         """Return one local CAD face only when a load or set query requests it."""
-        key = (id(part), face_name)
+        key = (cad_preview_signature(part, self.problem), face_name)
         if key in self._local_cad_faces:
             return self._local_cad_faces[key]
         try:
@@ -793,9 +831,7 @@ class PreviewGeometry:
         """Extract an actual mesh set in Part coordinates, meshing only on demand."""
         from ..application.part_mesh import build_part_mesh
 
-        model = self._part_cache.get(id(part))
-        if model is None:
-            model = self.parts.adapter(part).model_part(self, part)
+        model = self.parts.adapter(part).model_part(self, part)
         if model is None:
             model = self.cached_part(part, lambda: build_part_mesh(part, self.problem))
         if kind == "nodes":

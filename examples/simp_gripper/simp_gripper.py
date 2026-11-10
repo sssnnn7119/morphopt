@@ -119,6 +119,9 @@ class ThisController(morphopt.Controller):
             super().__init__()
 
 
+        def _objective_values(self) -> list[Any]:
+            return []
+
 
     class Params(morphopt.Params):
 
@@ -258,10 +261,17 @@ class ThisController(morphopt.Controller):
         class UpdaterSIMPMaterial(morphopt.UpdaterSIMPMaterial):
 
             def __init__(self) -> None:
-                super().__init__(max_step_iter=100, max_step_length=1.0)
+                super().__init__(
+                    max_step_iter=100,
+                    max_step_length=1.0,
+                    step_length_strategy=self.strategies.FixedStepLength(),
+                    constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+                        value=1.0,
+                    ),
+                )
 
             def define_objective(self) -> None:
-                self.add_objective_function(self.objectivefuncs.Sensitivity(normalize_gradient=False))
+                self.add_objective_function(self.objectivefuncs.Sensitivity())
                 self.add_constraints(self.objectivefuncs.boundarys.MinValue(xmin=-15.0, threshold=0.0, p=2))
                 self.add_constraints(self.objectivefuncs.boundarys.MaxValue(xmax=15.0, threshold=0.0, p=2))
                 self.add_constraints(self.objectivefuncs.VolFrac(volfrac_min=0.3, volfrac_max=0.4, penalty=1000000.0, elementname='C3D4'))

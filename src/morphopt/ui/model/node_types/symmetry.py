@@ -103,6 +103,7 @@ class CPGEORotationConstraintNode(SurfaceConstraintNode):
             "ui.schema.fields.center.label.text",
             "vec3",
             Defaults.CENTER.DEFAULT,
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
     )
 
@@ -124,6 +125,10 @@ class BspRelationConstraintNode(SurfaceConstraintNode):
             "ui.schema.fields.pose.label.tx_ty_tz_rx_ry_rz",
             "vec6",
             Defaults.POSE.DEFAULT,
+            components=(
+                "ui.parameters.tx", "ui.parameters.ty", "ui.parameters.tz",
+                "ui.parameters.rx", "ui.parameters.ry", "ui.parameters.rz",
+            ),
         ),
     )
 
@@ -147,6 +152,10 @@ class CPGEORelationConstraintNode(SurfaceConstraintNode):
             "ui.schema.fields.pose.label.tx_ty_tz_rx_ry_rz",
             "vec6",
             Defaults.POSE.DEFAULT,
+            components=(
+                "ui.parameters.tx", "ui.parameters.ty", "ui.parameters.tz",
+                "ui.parameters.rx", "ui.parameters.ry", "ui.parameters.rz",
+            ),
         ),
     )
 

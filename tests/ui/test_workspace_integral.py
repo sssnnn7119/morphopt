@@ -10,7 +10,7 @@ import torch
 
 from morphopt.utils.quadrature import actuation_boundary_gauss_points
 from morphopt.ui.codegen.workspace import workspace_integral_body
-from morphopt.ui.codegen.generator import _objective_function_body
+from morphopt.ui.codegen.generator import _objective_values_body
 
 
 def evaluate_workspace(
@@ -76,9 +76,9 @@ def evaluate_workspace(
         reference_point_names=lambda: ["RP"],
         amplitude_components=lambda: [SimpleNamespace(name=load, num_values=1) for load in loads],
     )
-    loss_body = _objective_function_body(SimpleNamespace(objective_terms=[term]), problem)
+    loss_body = _objective_values_body(SimpleNamespace(objective_terms=[term]), problem)
     exec("def objective_function(self):\n" + indent(loss_body, "    "), namespace)
-    loss = namespace["objective_function"](objective)
+    loss = sum(namespace["objective_function"](objective))
     return measure, signed_sums[0], loss
 
 

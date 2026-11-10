@@ -17,10 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from ...utils.paths import sanitize_name
+from ...shapeopt import strategies as shape_strategies
+from ...shapeopt.objectivefuncs import Fairness
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS, _resolve
 from ..codegen.generator import (
     _metrics_function_body,
-    _objective_function_body,
+    _objective_values_body,
     _render_updater_item,
     _surface_constraints_for_part,
 )
@@ -38,6 +40,7 @@ from ..model.problem import (
     ProblemDefinition,
 )
 from ..model.registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG
+from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
 from .fields import fields_for_node
 from .part_sets import PartSetCatalog
 
@@ -202,7 +205,7 @@ class DefinitionValidation:
                         FieldSpec(
                             spec.key,
                             spec.label_key,
-                            "int" if spec.ints or spec.type == "dofs" else "float",
+                            "int" if spec.ints or spec.type == "dofs" else spec.item_type,
                             minimum=spec.minimum,
                             maximum=spec.maximum,
                         ),
@@ -254,11 +257,12 @@ class DefinitionValidation:
 
     def node(self, node: Node) -> None:
         try:
-            fields = (
-                fields_for_node(node)[0]
-                if isinstance(node, MaterialNode)
-                else node.fields
-            )
+            if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF":
+                fields = fields_for_node(node, self.problem)[0]
+            elif isinstance(node, MaterialNode):
+                fields = fields_for_node(node)[0]
+            else:
+                fields = node.fields
         except KeyError:
             self.add(node, "choice", field="material_model")
             fields = ()
@@ -286,6 +290,10 @@ class DefinitionValidation:
                     candidates = self.problem.instance_names()
                 elif spec.key in REFERENCE_POINT_FIELDS:
                     candidates = self.problem.reference_point_names()
+                elif node.type == "PenaltyDoF" and spec.key == "obj_name":
+                    from .fields import penalty_targets
+
+                    candidates = list(penalty_targets(self.problem, node))
                 if candidates is not None and name not in candidates:
                     self.add(node, "reference", field=tr(spec.label_key), name=name)
                 elif (
@@ -368,6 +376,14 @@ class DefinitionValidation:
         objective = self.problem.objective
         if objective is None:
             return
+        metric_names = Counter(
+            term["name"] for term in objective.metrics_terms if term.get("name")
+        )
+        reserved = {f"objective_{index}" for index in range(len(objective.objective_terms))}
+        for term in objective.metrics_terms:
+            name = term.get("name")
+            if name and (metric_names[name] > 1 or name in reserved):
+                self.add(term, "duplicate", name=name)
         if objective.objective_terms:
             try:
                 if not any(
@@ -382,7 +398,7 @@ class DefinitionValidation:
             if name not in {node.name for node in self.problem.amplitude_components()}:
                 self.add(objective, "reference", field="jacobian_needed", name=name)
         for category, terms, render in (
-            ("objective", objective.objective_terms, _objective_function_body),
+            ("objective", objective.objective_terms, _objective_values_body),
             ("metric", objective.metrics_terms, _metrics_function_body),
         ):
             for term in terms:
@@ -439,19 +455,19 @@ class DefinitionValidation:
         counts = Counter(name.casefold() for name in steps.step_values)
         for name, values in steps.step_values.items():
             if not name.strip():
-                self.add(steps, "required", field="name")
+                self.add(values, "required", field="name")
             elif name != sanitize_name(name):
-                self.add(steps, "portable_name", name=name)
+                self.add(values, "portable_name", name=name)
             if counts[name.casefold()] > 1:
-                self.add(steps, "duplicate", name=name)
+                self.add(values, "duplicate", name=name)
             for key, value in values.items():
                 load_name = key.name if isinstance(key, Node) else key
                 load = loads.get(load_name)
                 if load is None:
-                    self.add(steps, "reference", field=name, name=load_name)
+                    self.add(values, "reference", field=name, name=load_name)
                 else:
                     self.field(
-                        steps,
+                        values,
                         FieldSpec(
                             name, name, "vec6" if load.num_values == 6 else "vecN"
                         ),
@@ -462,7 +478,7 @@ class DefinitionValidation:
                         and len(value) != load.num_values
                     ):
                         self.add(
-                            steps,
+                            values,
                             "vector",
                             field=f"{name}/{load_name}",
                             size=load.num_values,
@@ -518,6 +534,33 @@ class DefinitionValidation:
                     FieldSpec("max_step_length", "max_step_length", "float", minimum=0),
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
+                for key in STRATEGY_CATALOG:
+                    item = cfg.get(key, strategy_config(key))
+                    spec = strategy_specs(key, group).get(item.get("type"))
+                    if spec is None:
+                        self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
+                        continue
+                    for field in spec.fields:
+                        self.field(
+                            cfg, field,
+                            item.get("params", {}).get(field.key, field.new_default()),
+                        )
+                    # Built-in strategy constructors only validate numeric
+                    # settings. Reuse their cross-field rules without running
+                    # generated scripts or user-defined expressions.
+                    try:
+                        parameters = {
+                            field.key: item.get("params", {}).get(field.key, field.new_default())
+                            for field in spec.fields
+                        }
+                        parameters = {
+                            name: self.literal(value) if isinstance(value, str) else value
+                            for name, value in parameters.items()
+                        }
+                        if all(isinstance(value, Real) for value in parameters.values()):
+                            getattr(shape_strategies, spec.name)(**parameters)
+                    except (ValueError, TypeError, SyntaxError, ArithmeticError) as exc:
+                        self.add(cfg, "definition", reason=str(exc))
                 for key, category in (
                     ("objective_functions", "objectives"),
                     ("constraints", "constraints"),
@@ -531,8 +574,9 @@ class DefinitionValidation:
                             else UPDATER_CATALOG[category]
                         )
                         spec = catalog.get(item.get("type"))
+                        item_fields = spec.fields if spec is not None else ()
                         if spec is not None:
-                            for field in spec.fields:
+                            for field in item_fields:
                                 self.field(
                                     item,
                                     field,
@@ -549,6 +593,17 @@ class DefinitionValidation:
                                         self.problem,
                                     )
                             else:
+                                if item.get("type") == "Fairness":
+                                    values = {
+                                        field.key: item.get("params", {}).get(field.key, field.new_default())
+                                        for field in item_fields
+                                    }
+                                    values = {
+                                        name: self.literal(value) if isinstance(value, str) else value
+                                        for name, value in values.items()
+                                    }
+                                    if all(value is None or isinstance(value, Real) for value in values.values()):
+                                        Fairness(**values)
                                 _render_updater_item(item, category, self.problem)
                         except (ValueError, TypeError, SyntaxError) as exc:
                             self.add(item, "definition", reason=str(exc))

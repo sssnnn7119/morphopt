@@ -7,9 +7,8 @@
       "backend": "BoundaryPart",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -25,6 +24,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "FEA 网格种子尺寸",
           "help": "全局 Gmsh 网格种子尺寸。"
         },
@@ -44,6 +46,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "网格阶次",
           "help": "网格阶次。"
         },
@@ -60,11 +65,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
           "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     },
     {
       "key": "INPPart",
@@ -73,9 +81,8 @@
       "backend": "INPPart",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -91,6 +98,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "INP 网格文件",
           "help": "包含网格的 Abaqus .inp 文件。"
         },
@@ -107,9 +117,11 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "INP 中的 Part",
-          "help": "从 INP 文件中选择 Part；仅有一个 Part 时可自动选择。",
-          "editable": false
+          "help": "从 INP 文件中选择 Part；仅有一个 Part 时可自动选择。"
         },
         {
           "key": "exterior_surface",
@@ -124,12 +136,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
-          "help": "从所选 Part 中选择可视化时绘制的表面集合；默认使用导入模型的显示表面。",
-          "editable": false
+          "help": "从所选 Part 中选择可视化时绘制的表面集合；默认使用导入模型的显示表面。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     },
     {
       "key": "BasePart",
@@ -138,9 +152,8 @@
       "backend": "BasePart",
       "hidden": false,
       "custom_only": true,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -156,11 +169,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
           "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     },
     {
       "key": "BoxPart",
@@ -169,9 +185,8 @@
       "backend": "BoxPart",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -187,6 +202,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "长度",
           "help": "Box 的 X 方向尺寸 length。"
         },
@@ -203,6 +221,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "高度",
           "help": "Box 的 Y 方向尺寸 height。"
         },
@@ -219,6 +240,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "厚度",
           "help": "Box 的 Z 方向尺寸 depth。"
         },
@@ -235,6 +259,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "网格尺寸",
           "help": ""
         },
@@ -254,6 +281,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "网格阶次",
           "help": "网格阶次。"
         },
@@ -270,11 +300,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
           "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     },
     {
       "key": "CADPart",
@@ -283,9 +316,8 @@
       "backend": "CADPart",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -301,6 +333,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "网格尺寸",
           "help": ""
         },
@@ -320,6 +355,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "网格阶次",
           "help": "网格阶次。"
         },
@@ -336,11 +374,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
           "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     },
     {
       "key": "OffsetBoundaryPart",
@@ -349,9 +390,8 @@
       "backend": "OffsetBoundaryPart",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -367,6 +407,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "FEA 网格种子尺寸",
           "help": "全局 Gmsh 网格种子尺寸。"
         },
@@ -386,6 +429,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "网格阶次",
           "help": "网格阶次。"
         },
@@ -402,6 +448,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "显示表面集合",
           "help": "部件网格和变形结果可视化时默认绘制的表面集合名称。"
         },
@@ -418,6 +467,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "偏置层厚度",
           "help": ""
         },
@@ -434,11 +486,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "偏置层数",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/parts.py"
+      "value_fields": []
     }
   ],
   "SURFACE_TYPES": [
@@ -449,9 +504,8 @@
       "backend": "BspSurface",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "BSP.initialize_cylinder",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -467,6 +521,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径 r0",
           "help": "初始构型的内/外半径。"
         },
@@ -483,6 +540,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "长度",
           "help": "圆柱沿 Z 轴的长度。"
         },
@@ -499,6 +559,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "曲面采样间距",
           "help": "用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。"
         },
@@ -515,6 +578,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "周向控制网格计数因子",
           "help": "对应 num_U_ratio：周向控制网格数量按 lcm(12, num_U_ratio) 的倍数取整。"
         },
@@ -531,6 +597,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "轴向控制网格计数因子",
           "help": "对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。"
         },
@@ -547,6 +616,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "B 样条次数",
           "help": "B 样条多项式次数 degree，例如 3 表示三次 B 样条。"
         },
@@ -567,56 +639,15 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.x",
+            "ui.parameters.y",
+            "ui.parameters.z"
+          ],
+          "item_type": "float",
           "label": "初始位置",
           "help": "表面的初始偏移位置。"
-        },
-        {
-          "key": "maxR",
-          "label_key": "ui.schema.fields.maxr.label.maxr",
-          "type": "float",
-          "default": 0.2,
-          "doc_key": "ui.schema.fields.maxr.help.metric_variation_penalty",
-          "choices": [],
-          "size": 6,
-          "minimum": 0.0,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "参数度量变化惩罚阈值 (maxR)",
-          "help": "对应 BspSurface.MaxR：对第一基本形式 E、G 的相对导数平方进行补偿后施加惩罚。仅添加 Fairness 时生效，超过阈值的 80% 后开始惩罚。"
-        },
-        {
-          "key": "maxC",
-          "label_key": "ui.schema.fields.maxc.label.maxc",
-          "type": "float",
-          "default": 1.0,
-          "doc_key": "ui.schema.fields.maxc.help.curvature_squared_penalty",
-          "choices": [],
-          "size": 6,
-          "minimum": 0.0,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "曲率平方和惩罚阈值 (maxC)",
-          "help": "对应曲面的 MaxC：限制 κ₁² + κ₂² = 4H² − 2K，量纲为长度的负二次方。仅添加 Fairness 时生效，超过阈值的 80% 后开始惩罚。"
-        },
-        {
-          "key": "maxFF",
-          "label_key": "ui.schema.fields.maxff.label.maxff",
-          "type": "float",
-          "default": 0.2,
-          "doc_key": "ui.schema.fields.maxff.help.nonorthogonality_penalty",
-          "choices": [],
-          "size": 6,
-          "minimum": 0.0,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "参数方向非正交惩罚阈值 (maxFF)",
-          "help": "对应 BspSurface.MaxFF：限制 F²/(E·G)，即两条参数切向量夹角的余弦平方。仅添加 Fairness 时生效，超过阈值的 80% 后开始惩罚。"
         },
         {
           "key": "perturbation_L",
@@ -631,11 +662,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "初始扰动波长",
           "help": "初始缺陷波长；小于等于 0 表示不添加缺陷。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+      "value_fields": []
     },
     {
       "key": "cpgeo_cylinder",
@@ -644,9 +678,8 @@
       "backend": "CPGEOSurface",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "CPGEO.initialize_cylinder",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -662,6 +695,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径 r0",
           "help": "初始构型的内/外半径。"
         },
@@ -678,6 +714,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "长度",
           "help": "圆柱沿 Z 轴的长度。"
         },
@@ -694,6 +733,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "曲面采样间距",
           "help": "用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。"
         },
@@ -710,6 +752,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "周向控制网格计数因子",
           "help": "对应 num_U_ratio：周向控制网格数量按 lcm(12, num_U_ratio) 的倍数取整。"
         },
@@ -726,6 +771,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "轴向控制网格计数因子",
           "help": "对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。"
         },
@@ -746,24 +794,15 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.x",
+            "ui.parameters.y",
+            "ui.parameters.z"
+          ],
+          "item_type": "float",
           "label": "初始位置",
           "help": "表面的初始偏移位置。"
-        },
-        {
-          "key": "maxC",
-          "label_key": "ui.schema.fields.maxc.label.maxc",
-          "type": "float",
-          "default": 1.0,
-          "doc_key": "ui.schema.fields.maxc.help.curvature_squared_penalty",
-          "choices": [],
-          "size": 6,
-          "minimum": 0.0,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "曲率平方和惩罚阈值 (maxC)",
-          "help": "对应曲面的 MaxC：限制 κ₁² + κ₂² = 4H² − 2K，量纲为长度的负二次方。仅添加 Fairness 时生效，超过阈值的 80% 后开始惩罚。"
         },
         {
           "key": "perturbation_L",
@@ -778,11 +817,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "初始扰动波长",
           "help": "初始缺陷波长；小于等于 0 表示不添加缺陷。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+      "value_fields": []
     },
     {
       "key": "cpgeo_sphere",
@@ -791,9 +833,8 @@
       "backend": "CPGEOSurface",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "CPGEO.initialize_Sphere",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -809,6 +850,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径 r0",
           "help": "初始构型的内/外半径。"
         },
@@ -825,6 +869,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "曲面采样间距",
           "help": "用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。"
         },
@@ -845,27 +892,18 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.x",
+            "ui.parameters.y",
+            "ui.parameters.z"
+          ],
+          "item_type": "float",
           "label": "初始位置",
           "help": "球心坐标 init_location。"
-        },
-        {
-          "key": "MaxC",
-          "label_key": "ui.schema.fields.maxc.label.maxc",
-          "type": "float",
-          "default": 1.0,
-          "doc_key": "ui.schema.fields.maxc.help.curvature_squared_penalty",
-          "choices": [],
-          "size": 6,
-          "minimum": 0.0,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "label": "曲率平方和惩罚阈值 (maxC)",
-          "help": "对应曲面的 MaxC：限制 κ₁² + κ₂² = 4H² − 2K，量纲为长度的负二次方。仅添加 Fairness 时生效，超过阈值的 80% 后开始惩罚。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+      "value_fields": []
     },
     {
       "key": "mesh_surface",
@@ -874,9 +912,8 @@
       "backend": "MeshSurface",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": null,
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -892,11 +929,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "STL 文件",
           "help": "STL 曲面文件路径。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+      "value_fields": []
     },
     {
       "key": "brep_surface",
@@ -905,9 +945,8 @@
       "backend": "BREPSurface",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": null,
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -923,6 +962,9 @@
           "ints": false,
           "read_only": true,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "STEP 文件",
           "help": "STEP 几何以文件内容嵌入模型。"
         },
@@ -939,6 +981,9 @@
           "ints": false,
           "read_only": false,
           "hidden": true,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "STEP 几何数据",
           "help": ""
         },
@@ -955,11 +1000,52 @@
           "ints": false,
           "read_only": false,
           "hidden": true,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "BREP 拓扑与集合",
+          "help": ""
+        },
+        {
+          "key": "design_faces",
+          "label_key": "ui.schema.fields.design_faces.label",
+          "type": "vecN",
+          "default": [],
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "str",
+          "label": "参与更新的面",
+          "help": ""
+        },
+        {
+          "key": "control_point_spacing",
+          "label_key": "ui.schema.fields.control_point_spacing.label",
+          "type": "float",
+          "default": 1.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": 1e-09,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "控制点目标间距",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/surfaces.py"
+      "value_fields": []
     }
   ],
   "CAD_OPERATION_TYPES": [
@@ -970,9 +1056,8 @@
       "backend": "Box",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -988,6 +1073,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1004,6 +1092,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1020,6 +1111,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1036,6 +1130,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 X",
           "help": ""
         },
@@ -1052,6 +1149,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Y",
           "help": ""
         },
@@ -1068,11 +1168,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Z",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Wedge",
@@ -1081,9 +1184,8 @@
       "backend": "Wedge",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -1099,6 +1201,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1115,6 +1220,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1131,6 +1239,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1147,6 +1258,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 X",
           "help": ""
         },
@@ -1163,6 +1277,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Y",
           "help": ""
         },
@@ -1179,6 +1296,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Z",
           "help": ""
         },
@@ -1195,11 +1315,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "顶部偏移 X",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Cylinder",
@@ -1208,9 +1331,8 @@
       "backend": "Cylinder",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -1226,6 +1348,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1242,6 +1367,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1258,6 +1386,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1274,6 +1405,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 X",
           "help": ""
         },
@@ -1290,6 +1424,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Y",
           "help": ""
         },
@@ -1306,6 +1443,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Z",
           "help": ""
         },
@@ -1322,11 +1462,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径",
           "help": "圆柱或半径约束的半径。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Sphere",
@@ -1335,9 +1478,8 @@
       "backend": "Sphere",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -1353,6 +1495,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1369,6 +1514,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1385,6 +1533,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1401,11 +1552,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径",
           "help": "圆柱或半径约束的半径。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Cone",
@@ -1414,9 +1568,8 @@
       "backend": "Cone",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -1432,6 +1585,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1448,6 +1604,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1464,6 +1623,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1480,6 +1642,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 X",
           "help": ""
         },
@@ -1496,6 +1661,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Y",
           "help": ""
         },
@@ -1512,6 +1680,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Z",
           "help": ""
         },
@@ -1528,6 +1699,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "底部半径",
           "help": ""
         },
@@ -1544,11 +1718,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "顶部半径",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Torus",
@@ -1557,9 +1734,8 @@
       "backend": "Torus",
       "hidden": false,
       "custom_only": false,
-      "group": "primitive",
       "factory": "",
-      "generator": "",
+      "group": "primitive",
       "num_values": null,
       "fields": [
         {
@@ -1575,6 +1751,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1591,6 +1770,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1607,6 +1789,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -1623,6 +1808,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "主半径",
           "help": ""
         },
@@ -1639,11 +1827,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "管半径",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "StepImport",
@@ -1652,9 +1843,8 @@
       "backend": "StepImport",
       "hidden": false,
       "custom_only": false,
-      "group": "import",
       "factory": "",
-      "generator": "",
+      "group": "import",
       "num_values": null,
       "fields": [
         {
@@ -1670,6 +1860,9 @@
           "ints": false,
           "read_only": true,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "STEP 文件",
           "help": "STEP 几何以文件内容嵌入模型。"
         },
@@ -1686,11 +1879,14 @@
           "ints": false,
           "read_only": false,
           "hidden": true,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "STEP 几何数据",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Fuse",
@@ -1699,9 +1895,8 @@
       "backend": "Fuse",
       "hidden": false,
       "custom_only": false,
-      "group": "boolean",
       "factory": "",
-      "generator": "",
+      "group": "boolean",
       "num_values": null,
       "fields": [
         {
@@ -1717,6 +1912,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对象 ID",
           "help": ""
         },
@@ -1733,11 +1931,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "工具 ID",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Cut",
@@ -1746,9 +1947,8 @@
       "backend": "Cut",
       "hidden": false,
       "custom_only": false,
-      "group": "boolean",
       "factory": "",
-      "generator": "",
+      "group": "boolean",
       "num_values": null,
       "fields": [
         {
@@ -1764,6 +1964,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对象 ID",
           "help": ""
         },
@@ -1780,11 +1983,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "工具 ID",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Intersect",
@@ -1793,9 +1999,8 @@
       "backend": "Intersect",
       "hidden": false,
       "custom_only": false,
-      "group": "boolean",
       "factory": "",
-      "generator": "",
+      "group": "boolean",
       "num_values": null,
       "fields": [
         {
@@ -1811,6 +2016,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对象 ID",
           "help": ""
         },
@@ -1827,11 +2035,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "工具 ID",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Translate",
@@ -1840,9 +2051,8 @@
       "backend": "Translate",
       "hidden": false,
       "custom_only": false,
-      "group": "transform",
       "factory": "",
-      "generator": "",
+      "group": "transform",
       "num_values": null,
       "fields": [
         {
@@ -1858,6 +2068,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "输入 ID",
           "help": ""
         },
@@ -1874,6 +2087,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 X",
           "help": ""
         },
@@ -1890,6 +2106,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Y",
           "help": ""
         },
@@ -1906,11 +2125,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平移 Z",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Rotate",
@@ -1919,9 +2141,8 @@
       "backend": "Rotate",
       "hidden": false,
       "custom_only": false,
-      "group": "transform",
       "factory": "",
-      "generator": "",
+      "group": "transform",
       "num_values": null,
       "fields": [
         {
@@ -1937,6 +2158,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "输入 ID",
           "help": ""
         },
@@ -1953,6 +2177,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -1969,6 +2196,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -1985,6 +2215,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -2001,6 +2234,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "轴向 X",
           "help": ""
         },
@@ -2017,6 +2253,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "轴向 Y",
           "help": ""
         },
@@ -2033,6 +2272,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "轴向 Z",
           "help": ""
         },
@@ -2049,11 +2291,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "角度（弧度）",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Dilate",
@@ -2062,9 +2307,8 @@
       "backend": "Dilate",
       "hidden": false,
       "custom_only": false,
-      "group": "transform",
       "factory": "",
-      "generator": "",
+      "group": "transform",
       "num_values": null,
       "fields": [
         {
@@ -2080,6 +2324,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "输入 ID",
           "help": ""
         },
@@ -2096,6 +2343,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "X",
           "help": ""
         },
@@ -2112,6 +2362,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Y",
           "help": ""
         },
@@ -2128,6 +2381,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Z",
           "help": ""
         },
@@ -2144,6 +2400,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "缩放 X",
           "help": ""
         },
@@ -2160,6 +2419,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "缩放 Y",
           "help": ""
         },
@@ -2176,11 +2438,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "缩放 Z",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     },
     {
       "key": "Mirror",
@@ -2189,9 +2454,8 @@
       "backend": "Mirror",
       "hidden": false,
       "custom_only": false,
-      "group": "transform",
       "factory": "",
-      "generator": "",
+      "group": "transform",
       "num_values": null,
       "fields": [
         {
@@ -2207,6 +2471,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "输入 ID",
           "help": ""
         },
@@ -2223,6 +2490,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面法向 X",
           "help": ""
         },
@@ -2239,6 +2509,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面法向 Y",
           "help": ""
         },
@@ -2255,6 +2528,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面法向 Z",
           "help": ""
         },
@@ -2271,11 +2547,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面偏移",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/cad.py"
+      "value_fields": []
     }
   ],
   "LOAD_TYPES": [
@@ -2286,9 +2565,8 @@
       "backend": "Pressure",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 1,
       "fields": [
         {
@@ -2304,6 +2582,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例",
           "help": "对应的 TorchFEA Instance 名称。"
         },
@@ -2320,11 +2601,34 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面",
           "help": "实例上的表面集名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "pressure",
+          "label_key": "ui.load_parameters.pressure",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "压力 p",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "ConcentratedForce",
@@ -2333,9 +2637,8 @@
       "backend": "ConcentratedForce",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 3,
       "fields": [
         {
@@ -2351,11 +2654,72 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点",
           "help": "由参考点创建的参考点名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "force_x",
+          "label_key": "ui.load_parameters.force_x",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "X 方向力 · Fx",
+          "help": ""
+        },
+        {
+          "key": "force_y",
+          "label_key": "ui.load_parameters.force_y",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "Y 方向力 · Fy",
+          "help": ""
+        },
+        {
+          "key": "force_z",
+          "label_key": "ui.load_parameters.force_z",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "Z 方向力 · Fz",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "ConcentratedMoment",
@@ -2364,9 +2728,8 @@
       "backend": "ConcentratedMoment",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 3,
       "fields": [
         {
@@ -2382,11 +2745,72 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点",
           "help": "由参考点创建的参考点名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "moment_x",
+          "label_key": "ui.load_parameters.moment_x",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "绕 X 轴力矩 · Mx",
+          "help": ""
+        },
+        {
+          "key": "moment_y",
+          "label_key": "ui.load_parameters.moment_y",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "绕 Y 轴力矩 · My",
+          "help": ""
+        },
+        {
+          "key": "moment_z",
+          "label_key": "ui.load_parameters.moment_z",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "绕 Z 轴力矩 · Mz",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "Bodyforce",
@@ -2395,9 +2819,8 @@
       "backend": "BodyForce",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 3,
       "fields": [
         {
@@ -2413,6 +2836,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "单元类型",
           "help": "单元类型名称。"
         },
@@ -2429,11 +2855,72 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例",
           "help": "对应的 TorchFEA Instance 名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "body_x",
+          "label_key": "ui.load_parameters.body_x",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "X 方向体力密度 · fx",
+          "help": ""
+        },
+        {
+          "key": "body_y",
+          "label_key": "ui.load_parameters.body_y",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "Y 方向体力密度 · fy",
+          "help": ""
+        },
+        {
+          "key": "body_z",
+          "label_key": "ui.load_parameters.body_z",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "Z 方向体力密度 · fz",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "SpringToGround",
@@ -2442,9 +2929,8 @@
       "backend": "SpringToGround",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 5,
       "fields": [
         {
@@ -2460,11 +2946,110 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点",
           "help": "由参考点创建的参考点名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "stiffness",
+          "label_key": "ui.load_parameters.stiffness",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "弹簧刚度 k",
+          "help": ""
+        },
+        {
+          "key": "rest_length",
+          "label_key": "ui.load_parameters.rest_length",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "弹簧原长 L₀",
+          "help": ""
+        },
+        {
+          "key": "anchor_x",
+          "label_key": "ui.load_parameters.anchor_x",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "固定端 X 坐标",
+          "help": ""
+        },
+        {
+          "key": "anchor_y",
+          "label_key": "ui.load_parameters.anchor_y",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "固定端 Y 坐标",
+          "help": ""
+        },
+        {
+          "key": "anchor_z",
+          "label_key": "ui.load_parameters.anchor_z",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "固定端 Z 坐标",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "SpringBetweenRPs",
@@ -2473,9 +3058,8 @@
       "backend": "SpringBetweenRPs",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 2,
       "fields": [
         {
@@ -2491,6 +3075,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点 1",
           "help": "第一个参考点名称。"
         },
@@ -2507,11 +3094,53 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点 2",
           "help": "第二个参考点名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "stiffness",
+          "label_key": "ui.load_parameters.stiffness",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "弹簧刚度 k",
+          "help": ""
+        },
+        {
+          "key": "rest_length",
+          "label_key": "ui.load_parameters.rest_length",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "弹簧原长 L₀",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "PenaltyDoF",
@@ -2520,15 +3149,14 @@
       "backend": "PenaltyDoF",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 2,
       "fields": [
         {
           "key": "obj_name",
           "label_key": "ui.schema.fields.obj_name.label.object",
-          "type": "str",
+          "type": "combo",
           "default": "",
           "doc_key": "ui.schema.fields.obj_name.help.text",
           "choices": [],
@@ -2538,8 +3166,11 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "对象",
-          "help": "被约束对象的名称。"
+          "help": "选择当前模型中的对象；可选项由上方对象类型筛选。"
         },
         {
           "key": "s",
@@ -2554,8 +3185,11 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "自由度",
-          "help": "自由度编号。"
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "局部自由度序号 s",
+          "help": "参考点可按位移或转角选择。实例使用从 0 开始的局部自由度序号：节点 n 的 X、Y、Z 分量分别为 3n、3n+1、3n+2。"
         },
         {
           "key": "obj_type",
@@ -2565,11 +3199,8 @@
           "doc_key": "ui.schema.fields.obj_type.help.text",
           "choices": [
             "auto",
-            "instance",
             "rp",
-            "load",
-            "constraint",
-            "boundary"
+            "instance"
           ],
           "size": 6,
           "minimum": null,
@@ -2577,11 +3208,53 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": false,
+          "components": [],
+          "item_type": "float",
           "label": "对象类型",
-          "help": "对应 Assembly.get_object 的对象类型：auto、instance、rp、load、constraint、boundary。对象必须提供所选的广义自由度。"
+          "help": "约束对象限于参考点和实例；自动模式在这两类对象中选择。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": [
+        {
+          "key": "penalty_stiffness",
+          "label_key": "ui.load_parameters.penalty_stiffness",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "罚刚度 k",
+          "help": ""
+        },
+        {
+          "key": "target",
+          "label_key": "ui.load_parameters.target",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "目标位移或转角",
+          "help": ""
+        }
+      ]
     },
     {
       "key": "BoundaryCondition",
@@ -2590,9 +3263,8 @@
       "backend": "BoundaryCondition",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2608,6 +3280,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例",
           "help": "对应的 TorchFEA Instance 名称。"
         },
@@ -2624,6 +3299,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "节点集",
           "help": "实例上的节点集名称。"
         },
@@ -2644,11 +3322,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "固定自由度 index_dof",
           "help": "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz)."
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     },
     {
       "key": "BoundaryConditionRP",
@@ -2657,9 +3338,8 @@
       "backend": "ReferencePointBoundaryCondition",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2675,6 +3355,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点",
           "help": "由参考点创建的参考点名称。"
         },
@@ -2695,11 +3378,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "固定自由度 index_dof",
           "help": "勾选要固定的自由度 (X,Y,Z,Rx,Ry,Rz)."
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     },
     {
       "key": "Couple",
@@ -2708,9 +3394,8 @@
       "backend": "Couple",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2726,6 +3411,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "参考点",
           "help": "由参考点创建的参考点名称。"
         },
@@ -2742,6 +3430,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例",
           "help": "对应的 TorchFEA Instance 名称。"
         },
@@ -2758,11 +3449,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "节点集",
           "help": "实例上的节点集名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     },
     {
       "key": "ReferencePoint",
@@ -2771,9 +3465,8 @@
       "backend": "ReferencePoint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2793,11 +3486,18 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.x",
+            "ui.parameters.y",
+            "ui.parameters.z"
+          ],
+          "item_type": "float",
           "label": "参考点位置",
           "help": "参考点坐标。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     },
     {
       "key": "Contact",
@@ -2806,9 +3506,8 @@
       "backend": "Contact",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2824,6 +3523,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例 1",
           "help": "第一个实例名称。"
         },
@@ -2840,6 +3542,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面 1",
           "help": "可下拉选择或手输另一部件的表面集。"
         },
@@ -2856,6 +3561,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例 2",
           "help": "第二个实例名称。"
         },
@@ -2872,6 +3580,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面 2",
           "help": "可下拉选择或手输表面集。"
         },
@@ -2888,11 +3599,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "罚函数阈值 h",
           "help": "罚函数阈值。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     },
     {
       "key": "ContactSelf",
@@ -2901,9 +3615,8 @@
       "backend": "SelfContact",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": 0,
       "fields": [
         {
@@ -2919,6 +3632,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "实例",
           "help": "对应的 TorchFEA Instance 名称。"
         },
@@ -2935,11 +3651,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面",
           "help": "可下拉选择或手输表面集。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/loads.py"
+      "value_fields": []
     }
   ],
   "MATERIAL_TYPES": [
@@ -2950,9 +3669,8 @@
       "backend": "HomogeneousMaterial",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -2968,6 +3686,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "所属部件",
           "help": "材料分配的部件，必须选择已定义的 Part。"
         },
@@ -2993,6 +3714,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "材料模型",
           "help": "对应 MaterialModels 中的本构参数类及 TorchFEA 材料模型。"
         },
@@ -3009,6 +3733,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "杨氏模量 E",
           "help": ""
         },
@@ -3025,6 +3752,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "泊松比 ν",
           "help": ""
         },
@@ -3041,6 +3771,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "剪切模量 μ",
           "help": "剪切模量。"
         },
@@ -3057,6 +3790,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "体积模量 κ",
           "help": "体积模量。"
         },
@@ -3073,6 +3809,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Mooney-Rivlin c10",
           "help": ""
         },
@@ -3089,6 +3828,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Mooney-Rivlin c01",
           "help": ""
         },
@@ -3105,6 +3847,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c1",
           "help": ""
         },
@@ -3121,6 +3866,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c2",
           "help": ""
         },
@@ -3137,6 +3885,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c3",
           "help": ""
         },
@@ -3153,6 +3904,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Gent Jm",
           "help": ""
         },
@@ -3169,6 +3923,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Arruda-Boyce N",
           "help": ""
         },
@@ -3187,6 +3944,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Ogden alpha",
           "help": ""
         },
@@ -3203,6 +3963,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "密度",
           "help": "质量密度。"
         },
@@ -3221,11 +3984,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Elems 名称",
           "help": "材料要赋予的 Part.elems 名称；为空时选择全部 elems。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/materials.py"
+      "value_fields": []
     },
     {
       "key": "SIMP_BSPFieldMaterials",
@@ -3234,9 +4000,8 @@
       "backend": "SIMP_BSPFieldMaterials",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3252,6 +4017,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "设计部件",
           "help": "承载 SIMP 设计场的部件，必须选择已定义的 Part。"
         },
@@ -3277,6 +4045,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "材料模型",
           "help": "对应 MaterialModels 中的本构参数类及 TorchFEA 材料模型。"
         },
@@ -3293,6 +4064,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "最大剪切模量",
           "help": "最大剪切模量。"
         },
@@ -3309,6 +4083,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "最大体积模量",
           "help": "最大体积模量。"
         },
@@ -3325,6 +4102,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "杨氏模量 E",
           "help": ""
         },
@@ -3341,6 +4121,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "泊松比 ν",
           "help": ""
         },
@@ -3357,6 +4140,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "剪切模量 μ",
           "help": "剪切模量。"
         },
@@ -3373,6 +4159,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "体积模量 κ",
           "help": "体积模量。"
         },
@@ -3389,6 +4178,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Mooney-Rivlin c10",
           "help": ""
         },
@@ -3405,6 +4197,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Mooney-Rivlin c01",
           "help": ""
         },
@@ -3421,6 +4216,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c1",
           "help": ""
         },
@@ -3437,6 +4235,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c2",
           "help": ""
         },
@@ -3453,6 +4254,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Yeoh c3",
           "help": ""
         },
@@ -3469,6 +4273,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Gent Jm",
           "help": ""
         },
@@ -3485,6 +4292,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Arruda-Boyce N",
           "help": ""
         },
@@ -3503,6 +4313,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Ogden alpha",
           "help": ""
         },
@@ -3519,6 +4332,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "最小材料刚度比例",
           "help": "材料刚度比例下限 simp_ratio_min；实际比例为 simp_ratio_min + (1 − simp_ratio_min) × RAMP(sigmoid(设计场))。"
         },
@@ -3542,6 +4358,16 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.xmin",
+            "ui.parameters.xmax",
+            "ui.parameters.ymin",
+            "ui.parameters.ymax",
+            "ui.parameters.zmin",
+            "ui.parameters.zmax"
+          ],
+          "item_type": "float",
           "label": "设计域边界框",
           "help": "设计域边界框 [xmin, xmax, ymin, ymax, zmin, zmax]。"
         },
@@ -3558,6 +4384,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "密度场分辨率",
           "help": "密度场分辨率。"
         },
@@ -3574,6 +4403,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "B 样条次数",
           "help": "密度设计场 B 样条基函数的多项式次数 degree。"
         },
@@ -3590,6 +4422,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "密度",
           "help": "质量密度。"
         },
@@ -3606,6 +4441,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "初始设计场值",
           "help": "initial_ratio 直接作为设计场控制点初值；其值经 sigmoid 和 RAMP 插值后得到初始材料比例。"
         },
@@ -3622,6 +4460,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "空域惩罚因子",
           "help": "空域惩罚因子。"
         },
@@ -3638,6 +4479,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "RAMP 插值惩罚参数",
           "help": "对应整数 materialpenalty = p；插值公式为 ρ / (1 + p(1 − ρ))，其中 ρ = sigmoid(设计场)。"
         },
@@ -3656,11 +4500,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Elems 名称",
           "help": "材料要赋予的 Part.elems 名称；为空时选择全部 elems。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/materials.py"
+      "value_fields": []
     }
   ],
   "UPDATER_OBJECTIVES": [
@@ -3671,12 +4518,44 @@
       "backend": "ShapeDerivative",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.ShapeDerivative()",
+      "group": "geometry",
       "num_values": null,
       "fields": [],
-      "source": "src/morphopt/ui/model/node_types/objectives.py"
+      "value_fields": []
+    },
+    {
+      "key": "QuadraticShapeDerivative",
+      "class": "QuadraticShapeDerivativeObjectiveNode",
+      "label": "历史二阶形状代理",
+      "backend": "QuadraticShapeDerivative",
+      "hidden": false,
+      "custom_only": false,
+      "factory": "",
+      "group": "geometry",
+      "num_values": null,
+      "fields": [
+        {
+          "key": "memory_size",
+          "label_key": "ui.schema.fields.memory_size.label",
+          "type": "int",
+          "default": 10,
+          "doc_key": "ui.schema.fields.memory_size.help",
+          "choices": [],
+          "size": 6,
+          "minimum": 1,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "曲率历史对数",
+          "help": "保留的有效外层设计增量与梯度增量对数，必须为正整数。没有有效正曲率历史时采用一阶 Taylor 代理。"
+        }
+      ],
+      "value_fields": []
     },
     {
       "key": "Sensitivity",
@@ -3685,29 +4564,44 @@
       "backend": "Sensitivity",
       "hidden": false,
       "custom_only": false,
-      "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.Sensitivity(normalize_gradient={normalize_gradient})",
+      "group": "materials",
+      "num_values": null,
+      "fields": [],
+      "value_fields": []
+    },
+    {
+      "key": "QuadraticSensitivity",
+      "class": "QuadraticSensitivityObjectiveNode",
+      "label": "历史二阶材料代理",
+      "backend": "QuadraticSensitivity",
+      "hidden": false,
+      "custom_only": false,
+      "factory": "",
+      "group": "materials",
       "num_values": null,
       "fields": [
         {
-          "key": "normalize_gradient",
-          "label_key": "ui.schema.fields.normalize_gradient.label.normalize_gradient",
-          "type": "bool",
-          "default": false,
-          "doc_key": "ui.schema.fields.normalize_gradient.help.text",
+          "key": "memory_size",
+          "label_key": "ui.schema.fields.memory_size.label",
+          "type": "int",
+          "default": 10,
+          "doc_key": "ui.schema.fields.memory_size.help",
           "choices": [],
           "size": 6,
-          "minimum": null,
+          "minimum": 1,
           "maximum": null,
           "ints": false,
           "read_only": false,
           "hidden": false,
-          "label": "梯度归一化",
-          "help": "是否对材料梯度进行归一化。"
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "曲率历史对数",
+          "help": "保留的有效外层设计增量与梯度增量对数，必须为正整数。没有有效正曲率历史时采用一阶 Taylor 代理。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/objectives.py"
+      "value_fields": []
     },
     {
       "key": "DensityFieldMinimize",
@@ -3716,9 +4610,8 @@
       "backend": "DensityFieldMinimize",
       "hidden": false,
       "custom_only": false,
-      "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.DensityFieldMinimize(scale={scale})",
+      "group": "materials",
       "num_values": null,
       "fields": [
         {
@@ -3734,11 +4627,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "缩放系数",
           "help": "目标项的缩放系数。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/objectives.py"
+      "value_fields": []
     }
   ],
   "SURFACE_SYMMETRY_CONSTRAINTS": [
@@ -3749,9 +4645,8 @@
       "backend": "BspMirrorConstraint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "BSP",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3770,6 +4665,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对称面",
           "help": "支持 xz（y=0）和 xy（z=offset）。"
         },
@@ -3786,11 +4684,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面对称位置",
           "help": "仅 xy 对称面使用；xz 对称面的偏移必须为 0。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     },
     {
       "key": "CPGEOMirror",
@@ -3799,9 +4700,8 @@
       "backend": "CPGEOMirrorConstraint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "CPGEO",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3821,6 +4721,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对称面",
           "help": "镜像平面沿法向坐标为 offset。"
         },
@@ -3837,11 +4740,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "平面对称位置",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     },
     {
       "key": "CPGEORotation",
@@ -3850,9 +4756,8 @@
       "backend": "CPGEORotationalSymmetryConstraint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "CPGEO",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3872,6 +4777,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "旋转轴",
           "help": "对称轴方向。"
         },
@@ -3888,6 +4796,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "对称阶数",
           "help": ""
         },
@@ -3908,11 +4819,18 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.x",
+            "ui.parameters.y",
+            "ui.parameters.z"
+          ],
+          "item_type": "float",
           "label": "旋转中心",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     },
     {
       "key": "BspRelation",
@@ -3921,9 +4839,8 @@
       "backend": "BspSurfaceRelationConstraint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "BSP",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3946,11 +4863,21 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.tx",
+            "ui.parameters.ty",
+            "ui.parameters.tz",
+            "ui.parameters.rx",
+            "ui.parameters.ry",
+            "ui.parameters.rz"
+          ],
+          "item_type": "float",
           "label": "位姿 [tx, ty, tz, rx, ry, rz]",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     },
     {
       "key": "CPGEORelation",
@@ -3959,9 +4886,8 @@
       "backend": "CPGEOSurfaceRelationConstraint",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": "CPGEO",
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -3984,11 +4910,21 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [
+            "ui.parameters.tx",
+            "ui.parameters.ty",
+            "ui.parameters.tz",
+            "ui.parameters.rx",
+            "ui.parameters.ry",
+            "ui.parameters.rz"
+          ],
+          "item_type": "float",
           "label": "位姿 [tx, ty, tz, rx, ry, rz]",
           "help": ""
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     },
     {
       "key": "Custom",
@@ -3997,9 +4933,8 @@
       "backend": "",
       "hidden": false,
       "custom_only": false,
-      "group": "",
       "factory": null,
-      "generator": "",
+      "group": "",
       "num_values": null,
       "fields": [
         {
@@ -4015,11 +4950,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "约束函数体",
           "help": "在 apply_surface_constraints 中执行的自定义代码。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/symmetry.py"
+      "value_fields": []
     }
   ],
   "UPDATER_CONSTRAINTS": [
@@ -4030,12 +4968,31 @@
       "backend": "Fairness",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.Fairness()",
+      "group": "geometry",
       "num_values": null,
-      "fields": [],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "fields": [
+        {
+          "key": "max_curvature",
+          "label_key": "ui.fairness.max_curvature.label",
+          "type": "float",
+          "default": 1.0,
+          "doc_key": "ui.fairness.max_curvature.help",
+          "choices": [],
+          "size": 6,
+          "minimum": 0,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "曲率平方上限",
+          "help": "Fairness 的 max_curvature 统一限制全部可更新曲面的主曲率平方和 κ₁²+κ₂²，单位为长度的负二次方。BSP 的 FF、R 阈值均固定为 0.1；CPGEO 仅计算曲率项。"
+        }
+      ],
+      "value_fields": []
     },
     {
       "key": "Distance",
@@ -4044,9 +5001,8 @@
       "backend": "Distance",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.Distance(min_distance={min_distance})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4071,11 +5027,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面间最小距离矩阵",
           "help": "表面两两之间的最小距离矩阵。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "Cylinder",
@@ -4084,9 +5043,8 @@
       "backend": "Cylinder",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.boundarys.Cylinder(radius={radius}, height={height}, bottom={bottom})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4102,6 +5060,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径",
           "help": "圆柱或半径约束的半径。"
         },
@@ -4118,6 +5079,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "包络上边界 Z",
           "help": "对应 Cylinder.height：包络顶面的全局 Z 坐标，惩罚 z > height 的位置。"
         },
@@ -4134,11 +5098,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "包络下边界 Z",
           "help": "对应 Cylinder.bottom：包络底面的全局 Z 坐标，惩罚 z < bottom 的位置。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "MinRadius",
@@ -4147,9 +5114,8 @@
       "backend": "MinRadius",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.boundarys.MinRadius(radius={radius})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4165,11 +5131,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "半径",
           "help": "圆柱或半径约束的半径。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "VolumeMaximization",
@@ -4178,9 +5147,8 @@
       "backend": "VolumeMaximization",
       "hidden": false,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "self.objectivefuncs.VolumeMaximization(surf_idx={surf_idx}, weight={weight})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4196,6 +5164,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面索引",
           "help": "参与目标或约束的表面索引。"
         },
@@ -4212,11 +5183,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "权重",
           "help": "目标项权重。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "InwardCurvatureRadius",
@@ -4225,9 +5199,8 @@
       "backend": "InwardCurvatureRadius",
       "hidden": true,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "morphopt.codesign.InwardCurvatureRadius(margin={margin}, margin_ratio={margin_ratio}, p={p}, penalty_scale={penalty_scale})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4243,6 +5216,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "边界余量",
           "help": "曲率约束边界余量。"
         },
@@ -4259,6 +5235,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "边界余量比例",
           "help": "曲率约束边界余量比例。"
         },
@@ -4275,6 +5254,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "惩罚指数 p",
           "help": "惩罚指数。"
         },
@@ -4291,11 +5273,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "惩罚缩放系数",
           "help": "惩罚项缩放系数。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "OffsetSurfaceMinThickness",
@@ -4304,9 +5289,8 @@
       "backend": "OffsetSurfaceMinThickness",
       "hidden": true,
       "custom_only": false,
-      "group": "geometry",
       "factory": "",
-      "generator": "morphopt.codesign.OffsetSurfaceMinThickness(min_distance={min_distance})",
+      "group": "geometry",
       "num_values": null,
       "fields": [
         {
@@ -4322,11 +5306,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "表面间最小距离矩阵",
           "help": "表面两两之间的最小距离矩阵。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "VolFrac",
@@ -4335,9 +5322,8 @@
       "backend": "VolFrac",
       "hidden": false,
       "custom_only": false,
-      "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.VolFrac(volfrac_min={volfrac_min}, volfrac_max={volfrac_max}, penalty={penalty}, elementname={elementname})",
+      "group": "materials",
       "num_values": null,
       "fields": [
         {
@@ -4353,6 +5339,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "最小体积分数",
           "help": "允许的最小体积分数。"
         },
@@ -4369,6 +5358,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "最大体积分数",
           "help": "允许的最大体积分数。"
         },
@@ -4385,6 +5377,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "惩罚系数",
           "help": "体积分数偏差的惩罚系数。"
         },
@@ -4401,11 +5396,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "Elems 名称",
           "help": "必须明确选择目标 Part.elems 名称。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "MinValue",
@@ -4414,9 +5412,8 @@
       "backend": "MinValue",
       "hidden": false,
       "custom_only": false,
-      "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.boundarys.MinValue(xmin={xmin}, threshold={threshold}, p={p})",
+      "group": "materials",
       "num_values": null,
       "fields": [
         {
@@ -4432,6 +5429,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "设计变量下界",
           "help": "对设计场控制变量施加下界惩罚；变量经 sigmoid 和 RAMP 插值后才得到材料比例。"
         },
@@ -4448,6 +5448,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "边界内移量",
           "help": "MinValue 在变量 < xmin + threshold 时惩罚；MaxValue 在变量 > xmax − threshold 时惩罚。"
         },
@@ -4464,11 +5467,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "惩罚指数 p",
           "help": "惩罚指数。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     },
     {
       "key": "MaxValue",
@@ -4477,9 +5483,8 @@
       "backend": "MaxValue",
       "hidden": false,
       "custom_only": false,
-      "group": "materials",
       "factory": "",
-      "generator": "self.objectivefuncs.boundarys.MaxValue(xmax={xmax}, threshold={threshold}, p={p})",
+      "group": "materials",
       "num_values": null,
       "fields": [
         {
@@ -4495,6 +5500,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "设计变量上界",
           "help": "对设计场控制变量施加上界惩罚；变量经 sigmoid 和 RAMP 插值后才得到材料比例。"
         },
@@ -4511,6 +5519,9 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "边界内移量",
           "help": "MinValue 在变量 < xmin + threshold 时惩罚；MaxValue 在变量 > xmax − threshold 时惩罚。"
         },
@@ -4527,11 +5538,14 @@
           "ints": false,
           "read_only": false,
           "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
           "label": "惩罚指数 p",
           "help": "惩罚指数。"
         }
       ],
-      "source": "src/morphopt/ui/model/node_types/penalties.py"
+      "value_fields": []
     }
   ],
   "MATERIAL_MODELS": [
@@ -4552,9 +5566,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.LinearElastic``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "NeoHookean",
@@ -4573,9 +5585,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.NeoHookean``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "NeoHookeanLnJ",
@@ -4594,9 +5604,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.NeoHookeanLnJ``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "MooneyRivlin",
@@ -4621,9 +5629,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.MooneyRivlin``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "Yeoh",
@@ -4654,9 +5660,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.Yeoh``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "Gent",
@@ -4681,9 +5685,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.Gent``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "ArrudaBoyce",
@@ -4708,9 +5710,7 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.ArrudaBoyce``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     },
     {
       "name": "Ogden",
@@ -4735,9 +5735,151 @@
           "default": "required",
           "annotation": "float"
         }
-      ],
-      "doc": "Parameters for ``torchfea.materials.Ogden``.",
-      "source": "src/morphopt/optcore/modelparams/materials/models.py"
+      ]
     }
-  ]
+  ],
+  "STRATEGIES": {
+    "step_length_strategy": [
+      {
+        "name": "FixedStepLength",
+        "label_key": "ui.strategies.fixed_step_length",
+        "fields": [],
+        "groups": [
+          "geometry",
+          "materials"
+        ]
+      }
+    ],
+    "constraint_weight_strategy": [
+      {
+        "name": "ConstantConstraintWeights",
+        "label_key": "ui.strategies.constant_weights",
+        "fields": [
+          {
+            "key": "value",
+            "label_key": "ui.strategies.value.label",
+            "type": "float",
+            "default": 1.0,
+            "doc_key": "ui.strategies.value.help",
+            "choices": [],
+            "size": 6,
+            "minimum": 0,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          }
+        ],
+        "groups": [
+          "geometry",
+          "materials"
+        ]
+      },
+      {
+        "name": "SensitivityShapeWeights",
+        "label_key": "ui.strategies.sensitivity_shape_weights",
+        "fields": [],
+        "groups": [
+          "geometry"
+        ]
+      },
+      {
+        "name": "AdaptiveShapeWeights",
+        "label_key": "ui.strategies.adaptive_shape_weights",
+        "fields": [
+          {
+            "key": "initial_tolerance",
+            "label_key": "ui.strategies.initial_tolerance.label",
+            "type": "float",
+            "default": 0.05,
+            "doc_key": "ui.strategies.initial_tolerance.help",
+            "choices": [],
+            "size": 6,
+            "minimum": null,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          },
+          {
+            "key": "final_tolerance",
+            "label_key": "ui.strategies.final_tolerance.label",
+            "type": "float",
+            "default": 0.0,
+            "doc_key": "ui.strategies.final_tolerance.help",
+            "choices": [],
+            "size": 6,
+            "minimum": null,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          },
+          {
+            "key": "objective_tolerance",
+            "label_key": "ui.strategies.objective_tolerance.label",
+            "type": "float",
+            "default": 0.01,
+            "doc_key": "ui.strategies.objective_tolerance.help",
+            "choices": [],
+            "size": 6,
+            "minimum": null,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          },
+          {
+            "key": "tightening_increment",
+            "label_key": "ui.strategies.tightening_increment.label",
+            "type": "float",
+            "default": 0.001,
+            "doc_key": "ui.strategies.tightening_increment.help",
+            "choices": [],
+            "size": 6,
+            "minimum": null,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          },
+          {
+            "key": "penalty_growth_limit",
+            "label_key": "ui.strategies.penalty_growth_limit.label",
+            "type": "float",
+            "default": 2.0,
+            "doc_key": "ui.strategies.penalty_growth_limit.help",
+            "choices": [],
+            "size": 6,
+            "minimum": null,
+            "maximum": null,
+            "ints": false,
+            "read_only": false,
+            "hidden": false,
+            "editable": true,
+            "components": [],
+            "item_type": "float"
+          }
+        ],
+        "groups": [
+          "geometry"
+        ]
+      }
+    ]
+  }
 }

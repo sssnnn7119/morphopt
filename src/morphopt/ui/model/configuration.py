@@ -1,6 +1,7 @@
 """Construct mutable optimizer configurations from registered node defaults."""
 from ...constants import CONSTANT
 from .registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG, UPDATER_OBJECTIVES, UPDATER_CONSTRAINTS
+from .strategies import strategy_config
 
 def symmetry_constraint_defaults(item_type: str) -> dict:
     """Return defaults for one geometry-symmetry constraint."""
@@ -67,6 +68,8 @@ def geometry_updater_config(
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
+        "step_length_strategy": strategy_config("step_length_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],
@@ -98,6 +101,8 @@ def materials_updater_config(
         "material_name": str(material_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
+        "step_length_strategy": strategy_config("step_length_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
         "if_update": if_update,
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("Sensitivity"),
@@ -110,3 +115,34 @@ def materials_updater_config(
     }
 
 
+
+
+def objective_term_config(term_type: str) -> dict:
+    """Defaults shared by the objective editor and file import."""
+    objective = CONSTANT.UI.OBJECTIVE
+    term = {"type": term_type, "weight": objective.DEFAULT_WEIGHT}
+    if term_type == objective.TYPE_DISPLACEMENT:
+        term.update(
+            reference_point_name="", step_name=None, component="",
+            direction=objective.DEFAULT_DIRECTION, target=objective.DEFAULT_TARGET,
+        )
+    elif term_type == objective.TYPE_WORKSPACE:
+        term.update(
+            kind=objective.DEFAULT_WORKSPACE_KIND, reference_point_name="", inputs=[],
+            gauss_order=objective.DEFAULT_WORKSPACE_GAUSS_ORDER,
+            normalization=objective.DEFAULT_WORKSPACE_NORMALIZATION, case_names=[],
+        )
+    elif term_type == objective.TYPE_CUSTOM_LOSS:
+        term["body"] = ""
+    else:
+        raise ValueError(f"Unknown objective type: {term_type}")
+    return term
+
+
+def metric_term_config(metric_type: str) -> dict:
+    """Defaults shared by the metric editor and file import."""
+    if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
+        return {"type": metric_type, "reference_point_name": "", "step_name": None, "component": ""}
+    if metric_type == CONSTANT.UI.METRIC.TYPE_CUSTOM:
+        return {"type": metric_type, "body": ""}
+    raise ValueError(f"Unknown metric type: {metric_type}")

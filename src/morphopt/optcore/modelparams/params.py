@@ -1,5 +1,6 @@
 from copy import deepcopy
 import math
+from pathlib import Path
 import tempfile
 
 import pyvista as pv
@@ -42,17 +43,13 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
         """
 
     def pathlog_required(self) -> list[str]:
-        """
-        Allocate the path for saving data.
-
-        Args:
-            foldpath (str): The path to allocate.
-        """
-        paths = []
-        paths += self.geometry.pathlog_required()
-        paths += self.feamodel.pathlog_required()
-        paths += self.materials.pathlog_required()
-        return paths + ["params"]
+        """Declare this object's save directory before its child directories."""
+        return [
+            "params",
+            *self.geometry.pathlog_required(),
+            *self.feamodel.pathlog_required(),
+            *self.materials.pathlog_required(),
+        ]
 
     def reinitialize(self, iteration: int) -> None:
         """
@@ -136,6 +133,7 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
         Args:
             foldpath (str): The path to save the parameters.
         """
+        directory = Path(self.save_directory(foldpath))
         self.geometry.save(foldpath=foldpath, iteration=iteration)
         self.feamodel.save(foldpath=foldpath, iteration=iteration)
         self.materials.save(foldpath=foldpath, iteration=iteration)
@@ -146,25 +144,22 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
             off_screen=True,
             window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE),
         )
-        plotter.set_background("white")
-
-        self.plot(plotter=plotter)
-
-        plotter.enable_parallel_projection()
-        azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
-        elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
-        plotter.view_vector(
-            (
-                math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                math.sin(math.radians(elevation)),
+        try:
+            plotter.set_background("white")
+            self.plot(plotter=plotter)
+            plotter.enable_parallel_projection()
+            azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
+            elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
+            plotter.view_vector(
+                (
+                    math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(elevation)),
+                )
             )
-        )
-
-        plotter.screenshot(
-            foldpath + self.pathlog_required()[-1] + "/%d.jpg" % iteration
-        )
-        plotter.close()
+            plotter.screenshot(str(directory / f"{iteration}.jpg"))
+        finally:
+            plotter.close()
 
     def load(self, foldpath: str, iteration: int) -> None:
         """

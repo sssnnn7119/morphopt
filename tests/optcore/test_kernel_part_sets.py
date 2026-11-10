@@ -13,6 +13,46 @@ from morphopt import BasePart, BoxPart, CADPart, FixedPart, INPPart
 REFERENCE = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
 
 
+@pytest.mark.parametrize("suffix", ["", "/"])
+def test_params_save_creates_its_screenshot_directory(tmp_path, monkeypatch, suffix):
+    import pyvista as pv
+    from PIL import Image
+    from morphopt import FEAParams, GeometryParams, MaterialsParams, Params
+    from morphopt.constants import CONSTANT
+
+    params = Params(GeometryParams(), FEAParams(), MaterialsParams())
+    monkeypatch.setattr(params, "plot", lambda plotter: plotter.add_mesh(pv.Cube()))
+    monkeypatch.setattr(CONSTANT.KERNEL.VISUALIZATION, "WINDOW_SIZE", (160, 120))
+    root = tmp_path / "new-run" / "log"
+    params.save(str(root) + suffix, iteration=1)
+    image = root / "params" / "1.jpg"
+    with Image.open(image) as saved:
+        assert saved.size == (160, 120)
+    # A later save also owns directory creation, independently of startup.
+    image.unlink()
+    image.parent.rmdir()
+    params.save(str(root) + suffix, iteration=2)
+    assert (root / "params" / "2.jpg").is_file()
+
+
+def test_params_save_closes_plotter_when_screenshot_fails(tmp_path, monkeypatch):
+    import pyvista as pv
+    from morphopt import FEAParams, GeometryParams, MaterialsParams, Params
+
+    params = Params(GeometryParams(), FEAParams(), MaterialsParams())
+    plotter = pv.Plotter(off_screen=True)
+    monkeypatch.setattr(pv, "Plotter", lambda **kwargs: plotter)
+    monkeypatch.setattr(params, "plot", lambda plotter: plotter.add_mesh(pv.Cube()))
+
+    def fail(*args, **kwargs):
+        raise OSError("screenshot write failed")
+
+    monkeypatch.setattr(plotter, "screenshot", fail)
+    with pytest.raises(OSError, match="screenshot write failed"):
+        params.save(str(tmp_path), iteration=1)
+    assert plotter._closed
+
+
 def test_box_build_caches_actual_sets_and_rebuilds_after_dimensions_change():
     part = BoxPart(part_name="body", length=2, height=2, depth=2, mesh_size=1, mesh_order=1)
     mesh = part.get_part()
@@ -76,8 +116,8 @@ def test_boundary_set_names_come_from_geometry_without_meshing(monkeypatch):
         pytest.fail("Describing a boundary selection must not build or cache FE indices")
 
     for part in (BoundaryPart(), OffsetBoundaryPart()):
-        part.add_surface_interface(BoundaryPart.BSP.initialize_cylinder(r0=4, length=12, seed_size=1, flip=False))
-        part.add_surface_interface(BoundaryPart.BSP.initialize_cylinder(r0=2, length=8, seed_size=1, flip=True))
+        part.add_surface_interface(BoundaryPart.BSP.initialize_cylinder(r0=4, length=12, seed_size=1))
+        part.add_surface_interface(BoundaryPart.BSP.initialize_cylinder(r0=2, length=8, seed_size=1))
         monkeypatch.setattr(part, "build_part", forbid_mesh)
         assert "surface_0_All" in part.surface_set_names
         assert "surface_1_All" in part.surface_set_names
@@ -105,6 +145,37 @@ def test_cad_properties_reuse_the_mesh_and_follow_operation_changes():
     assert first is not second
     assert part.surface_sets is second.surfaces
     assert part.node_sets is second.set_nodes
+
+
+def test_cad_conversion_derives_shell_orientation_and_exports_step(tmp_path):
+    class HollowBox(CADPart):
+        def define_operations(self):
+            self.add_operation(torchfea.cad.Box(id="outer", x=0, y=0, z=0, dx=6, dy=6, dz=6))
+            self.add_operation(torchfea.cad.Box(id="cavity", x=2, y=2, z=2, dx=2, dy=2, dz=2))
+            self.add_operation(torchfea.cad.Cut(id="cut", object_id="outer", tool_id="cavity"))
+
+    part = HollowBox(part_name="hollow_box")
+    part.initialize()
+    boundary = part.to_boundary_part(tmp_path / "assets")
+    assert [surface.flip for surface in boundary.surface_interfaces()] == [False, True]
+    boundary.export_data(str(tmp_path / "export"))
+    for index in range(2):
+        assert (tmp_path / "export" / f"__surface-{index}.stp").is_file()
+
+
+def test_cad_mesh_uses_history_mesh_size(monkeypatch):
+    part = CADPart(mesh_size=2.0, mesh_order=1, part_name="body")
+    history = torchfea.cad.CADHistory(operations=[], mesh_size=0.75)
+    captured = {}
+    expected = object()
+
+    def mesh(mesh_size):
+        captured["mesh_size"] = mesh_size
+        return expected
+
+    monkeypatch.setattr(history, "mesh", mesh)
+    assert part.mesh_geometry(history) is expected
+    assert captured["mesh_size"] == 0.75
 
 
 def test_custom_fixed_part_reuses_one_mesh_and_exposes_its_live_sets():

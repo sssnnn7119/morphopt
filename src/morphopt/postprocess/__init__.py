@@ -29,6 +29,7 @@ from .fields import (
     ResultLocation,
     ResultTable,
 )
+from .visualization import DesignView, design_view_options
 
 __all__ = [
     "CONTOUR_FIELDS",
@@ -36,6 +37,7 @@ __all__ = [
     "TABLE_WRITERS",
     "BoundarySurfaceInfo",
     "ContourField",
+    "DesignView",
     "FiniteElementResults",
     "IterationModel",
     "NativeResultSnapshot",
@@ -53,4 +55,5 @@ __all__ = [
     "export_saved_fields",
     "last_completed_iteration",
     "normalize_export_name",
+    "design_view_options",
 ]

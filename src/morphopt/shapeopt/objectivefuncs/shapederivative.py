@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from scipy import interpolate
 
 from ...constants import CONSTANT
 from ...optcore.updaters import QuadraticHistory
@@ -32,10 +31,6 @@ class ShapeDerivative(BaseObjective):
         """Gradient of the shape derivative with respect to the control points, computed in the initialize function.
         """
 
-        self.factor: torch.Tensor
-        """A factor to scale the shape derivative, can be set in the initialize function.
-        """
-
     def initialize(
         self,
         gradient: torch.Tensor,
@@ -54,7 +49,6 @@ class ShapeDerivative(BaseObjective):
             raise ValueError("ShapeDerivative requires the updater's surfaces.")
         self.surfaces = list(surfaces)
         sflist = self.surfaces
-        interpolate_points = [value.cpu().numpy() for value in r0]
 
         self._cp0 = []
         ptidx = 0
@@ -69,14 +63,6 @@ class ShapeDerivative(BaseObjective):
             )
             ptidx += cp0_sf.numel()
 
-        self.sensitivity = self._sensitivity_interpolation(
-            Ldot=gradient.reshape([-1, 3]),
-            points_request=torch.cat(self._cp0, dim=0).reshape([-1, 3]),
-            interpolated_points=interpolate_points,
-        )
-
-        self.factor = 1 / (gradient.abs().max() + 1e-20)
-
     def show_sensitivity(self, ind: int) -> None:
         """
         Show the shape sensitivity
@@ -87,8 +73,8 @@ class ShapeDerivative(BaseObjective):
         plotter = pv.Plotter(window_size=(1000, 1000))
         plotter.set_background("white")
 
-        r = self._r0[ind].detach().cpu().numpy()
-        n = self.sensitivity[ind].detach().cpu().numpy()
+        r = self._cp0[ind].detach().cpu().numpy()
+        n = self.gradient[ind].detach().cpu().numpy()
 
         # r and n are [N, 3]
         points = r
@@ -147,63 +133,16 @@ class ShapeDerivative(BaseObjective):
         for i in range(len(self.surfaces)):
             if not self.surfaces[i].is_updatable:
                 continue
-            # r[i], self._r0[i], self.sensitivity[i] are all [p, 3]
-            # Compute inner product: sum over all points and dimensions
+            # Use the raw gradient in physical control-point coordinates.
             loss_objective += (
                 (
                     self.surfaces[i].get_surface_parameters().reshape(-1, 3)
                     - self._cp0[i]
                 )
                 * self.gradient[i]
-            ).sum() * self.factor
+            ).sum()
 
         return loss_objective
-
-    def _sensitivity_interpolation(
-        self,
-        Ldot: torch.Tensor,
-        points_request: torch.Tensor,
-        interpolated_points: list[torch.Tensor],
-    ) -> list[torch.Tensor]:
-        """
-        Interpolate the sensitivity into the structural grids.
-
-        Parameters:
-            Ldot (torch.Tensor): The sensitivity values for elements gaussian points.
-                [num_points, 3]
-            points_request (torch.Tensor): The coordinates of the elements.
-                [num_points, 3]
-            interpolated_points (list[torch.Tensor]): The coordinates of the interpolation points.
-                [num_surfaces, 3]
-
-        Returns:
-            list[torch.Tensor]: The interpolated sensitivity values for the structural grids.
-                [num_surfaces, sensitivity]
-        """
-
-        # interpolate the sensitivity into the structral grids
-        output_senNodes = []
-
-        for surf_index in range(len(interpolated_points)):
-            output_senNodes.append(torch.zeros(interpolated_points[surf_index].shape))
-
-            for i in range(3):
-                Part_B = interpolate.griddata(
-                    points_request.reshape([-1, 3]).detach().cpu().numpy(),
-                    Ldot[:, i].flatten().detach().cpu().numpy(),
-                    (
-                        interpolated_points[surf_index][:, 0],
-                        interpolated_points[surf_index][:, 1],
-                        interpolated_points[surf_index][:, 2],
-                    ),
-                    method="nearest",
-                    fill_value=0,
-                    rescale=True,
-                )
-
-                output_senNodes[-1][:, i] = torch.tensor((Part_B).tolist())
-
-        return output_senNodes
 
 
 class QuadraticShapeDerivative(ShapeDerivative):
@@ -252,7 +191,7 @@ class QuadraticShapeDerivative(ShapeDerivative):
     def __call__(
         self, r: list[torch.Tensor], *args: object, **kwargs: object
     ) -> torch.Tensor:
-        return self.history(self._active_parameters()) * self.factor
+        return self.history(self._active_parameters())
 
     def save(self, foldpath: str, iteration: int) -> None:
         self.history.save(foldpath=foldpath, iteration=iteration)

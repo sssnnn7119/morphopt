@@ -17,6 +17,7 @@ UI 按业务数据与显示分离的原则组织。领域对象和应用会话�
 - [7 定义预览与渲染边界](#preview)
 - [8 观察页的展示边界](#section-观察页的展示边界)
 - [9 主题、本地化与平台资源](#section-主题本地化与平台资源)
+- [10 当前结果视图与日志跟随](#section-当前结果视图与日志跟随)
 
 <!-- /docs:toc -->
 
@@ -79,10 +80,11 @@ MainWindow
 | 组件 | 展示责任 |
 |---|---|
 | `PropertyEditor`、`ParamForm` | 节点标题和共享 schema 字段表单 |
-| `DefinitionManagerEditor` | 部件及子项、载荷或辅助定义的集合卡片 |
+| `DefinitionManagerEditor` | 部件及子项、载荷、工况或辅助定义的集合卡片 |
 | `CollectionHeader`、`ItemActions` | 共用添加、上移、下移与删除入口 |
 | `DefinitionActions` | 树菜单与卡片共用的结构动作、对话框与通知 |
-| `LoadCaseEditor`、`SolverEditor` | 具名工况卡片和任务分组表 |
+| `LoadCaseEditor`、`SolverEditor` | 复用集合编辑器的工况接口页，以及逐进程设备与有序工况组 |
+| `SequenceInput` | 按元数据绘制固定分量或可变长度列表，支持整体常量引用 |
 | `UpdaterEditor` | 子目标、对称和罚函数的有序卡片 |
 | `ObjectiveEditor` | 目标、指标与 Jacobian 选择 |
 | `ModelClassSelector` | 根级配置、目标函数和具体子优化器的类选择 |
@@ -90,6 +92,8 @@ MainWindow
 | `GeneratedSourceView` | 同步定义对应的只读 Python |
 
 `ParamForm` 直接绑定类型化节点的读写接口，或绑定由所属服务持有的参数字典，不复制出需要双向维护的第二份字段值。结构、schema 或目标变化时重建表单；普通字段更新和动态选项刷新尽量保留焦点、滚动与代码编辑历史。
+
+嵌入卡片的 `PropertyEditor(compact=True)` 直接使用最小尺寸约束布局，不嵌套独立滚动区；外层集合页负责滚动，目标类型切换及字体变化时由布局重新计算高度。`ParamForm` 对列表字段统一使用 `SequenceInput`，分量名称由 schema 提供。全局滚轮过滤器将输入控件上的滚动转交页面，避免滚动时误改数值。
 
 参数选择和业务校验由应用服务提供。控件处理输入事件与渲染，不自行计算材料分配、更新器目标或集合名称。
 
@@ -167,7 +171,7 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 
 ## 8 观察页的展示边界
 
-`MetricsPage` 消费历史表格投影与曲线数据；`UpdatableStructurePage` 根据已载入的可更新接口展示 Part 曲面或材料场；`DeformationCasePage` 展示选定工况的变形网格。可更新对象通过自身的加载/绘图协议提供展示，不按方案名称复制分支。
+`MetricsPage` 消费历史表格投影与曲线数据，按标题选择列宽档次、提供横向滚动和隔行底色；`LogsPage` 通过 `ResultLogReader` 增量读取保存日志，读取状态与滚动锚点分别由服务和控件持有；`UpdatableStructurePage` 根据已载入的可更新接口展示 Part 曲面或材料场；`DeformationCasePage` 展示选定工况的变形网格。可更新对象通过自身的加载/绘图协议提供展示，不按方案名称复制分支。
 
 结果文件读取与参数载入属于 `ResultSession`，在载入成功后再清理旧视口。隐藏结果页保留轮询与任务状态，暂停无必要的 VTK 重绘。场量解释、独立有限元和导出流程见[结果专题](results.md)。
 
@@ -188,3 +192,15 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 文件和目录选择统一由 `widgets/file_dialogs.py` 创建。STEP、网格和工程文件导入，以及结果目录和导出文件选择均使用共用入口；导航按钮图标按当前主题绘制，标签使用当前语言资源。新增文件选择功能应调用 `choose_open_file()`、`choose_directory()` 或 `choose_save_file()`。
 
 `application_icon.py` 管理应用图标与平台身份，`assets/morphopt.svg` 为共享图标资源。Windows 在创建应用前设置进程应用 ID，Linux 使用运行窗口图标；平台打包资源与运行时窗口资源分别管理。语言与主题选择不改变问题定义，不进入文档编辑历史。
+
+<a id="section-当前结果视图与日志跟随"></a>
+
+## 10 当前结果视图与日志跟随
+
+`ObserverPanel.options` 平铺指标、日志、可更新组件及具名工况。`UpdatableStructurePage` 复用 `postprocess.visualization.design_view_options()` 和 `add_design_component()` 生成全部曲面、单曲面与控制网格视图；UI 不重复实现几何绘图。三维视图切换控制迭代工具栏可见性，指标与日志页隐藏滑条和历史导出。
+
+日志读取独立于已完成迭代，首次完整保存前即可显示。`ResultLogReader` 持有文件位置与 UTF-8 增量解码状态，`LogsPage` 持有阅读锚点；向上阅读、选择文字和拖动滚动条时不自动跳底，恢复底部后可继续跟随。
+
+字体、色彩、控件尺寸及全局三维材质分别集中于 `ui/theme/`。`FontSettingsDialog` 保存各字体角色的草稿，预览不触发全局更新；应用或确认时统一提交给 `FontManager`。模型树、标题、正文、代码和图表按角色订阅变化，字体选择不通过控件局部硬编码覆盖。
+
+定义预览以当前 `ProblemDefinition` 为缓存边界，按几何字段和表达式依赖生成输入签名，缓存各类 Part 的网格、曲面显示网格与 CAD 面记录。载荷、材料、目标或选项刷新不重新剖分未变化的几何；修改几何或更换定义时失效。该显示缓存独立于内核 FixedPart 的有限元网格缓存，不以几何是否参与优化判断是否缓存。

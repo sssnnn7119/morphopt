@@ -397,7 +397,7 @@ class BREPSurface(BaseSurface):
 
     def prepare_geometry(
         self, path_output: str | Path, name_output: str,
-        flip: bool = False, pools: Pool | None = None,
+        pools: Pool | None = None,
     ) -> None:
         """Materialize converted geometry before entering the Part mesh session."""
         self._geometry_path = (
@@ -408,7 +408,7 @@ class BREPSurface(BaseSurface):
 
     def output_data(
         self, path_output: str | Path, name_output: str, seed_size: float = -1,
-        flip: bool = False, pools: Pool | None = None,
+        pools: Pool | None = None,
     ) -> str:
         return self.export_step(Path(path_output) / f"{name_output}.stp").name
 

@@ -9,6 +9,14 @@ from ..base_nodes import FEAComponentNode
 from ..fields import FieldSpec
 
 
+def _value_fields(*names: str) -> tuple[FieldSpec, ...]:
+    """Declare load-case scalar parameters in the kernel's value order."""
+    return tuple(
+        FieldSpec(name, f"ui.load_parameters.{name}", "float", 0.0)
+        for name in names
+    )
+
+
 class PressureNode(FEAComponentNode):
     """UI definition of Pressure."""
 
@@ -16,7 +24,9 @@ class PressureNode(FEAComponentNode):
     backend_class: ClassVar[str] = "Pressure"
     label_key: ClassVar[str] = "ui.schema.catalog.component.pressure.label"
     name_hint: ClassVar[str] = "pressure_"
-    num_values: ClassVar[int] = 1
+    load_class = "Pressure"
+    value_fields = _value_fields("pressure")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.PRESSURE
     instance_name: str
     surface_name: str
@@ -47,7 +57,9 @@ class ConcentratedForceNode(FEAComponentNode):
     backend_class: ClassVar[str] = "ConcentratedForce"
     label_key: ClassVar[str] = "ui.schema.catalog.component.concentratedforce.label"
     name_hint: ClassVar[str] = "force_"
-    num_values: ClassVar[int] = 3
+    load_class = "Concentrate_Force"
+    value_fields = _value_fields("force_x", "force_y", "force_z")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.CONCENTRATEDFORCE
     rp_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -69,7 +81,9 @@ class ConcentratedMomentNode(FEAComponentNode):
     backend_class: ClassVar[str] = "ConcentratedMoment"
     label_key: ClassVar[str] = "ui.schema.catalog.component.concentratedmoment.label"
     name_hint: ClassVar[str] = "moment_"
-    num_values: ClassVar[int] = 3
+    load_class = "Moment"
+    value_fields = _value_fields("moment_x", "moment_y", "moment_z")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.CONCENTRATEDMOMENT
     rp_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -91,7 +105,9 @@ class BodyForceNode(FEAComponentNode):
     backend_class: ClassVar[str] = "BodyForce"
     label_key: ClassVar[str] = "ui.schema.catalog.component.bodyforce.label"
     name_hint: ClassVar[str] = "body_"
-    num_values: ClassVar[int] = 3
+    load_class = "BodyForce"
+    value_fields = _value_fields("body_x", "body_y", "body_z")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.BODYFORCE
     element_name: str
     instance_name: str
@@ -122,7 +138,9 @@ class SpringToGroundNode(FEAComponentNode):
     backend_class: ClassVar[str] = "SpringToGround"
     label_key: ClassVar[str] = "ui.schema.catalog.component.springtoground.label"
     name_hint: ClassVar[str] = "spring_"
-    num_values: ClassVar[int] = 5
+    load_class = "Spring_RP_Point"
+    value_fields = _value_fields("stiffness", "rest_length", "anchor_x", "anchor_y", "anchor_z")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.SPRINGTOGROUND
     rp_name: str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -144,7 +162,9 @@ class SpringBetweenRPsNode(FEAComponentNode):
     backend_class: ClassVar[str] = "SpringBetweenRPs"
     label_key: ClassVar[str] = "ui.schema.catalog.component.springbetweenrps.label"
     name_hint: ClassVar[str] = "spring_"
-    num_values: ClassVar[int] = 2
+    load_class = "Spring_RP_RP"
+    value_fields = _value_fields("stiffness", "rest_length")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.SPRINGBETWEENRPS
     rp_name1: str
     rp_name2: str
@@ -175,7 +195,9 @@ class PenaltyDoFNode(FEAComponentNode):
     backend_class: ClassVar[str] = "PenaltyDoF"
     label_key: ClassVar[str] = "ui.schema.catalog.component.penaltydof.label"
     name_hint: ClassVar[str] = "lock_"
-    num_values: ClassVar[int] = 2
+    load_class = "Penalty_DoF"
+    value_fields = _value_fields("penalty_stiffness", "target")
+    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.PENALTYDOF
     obj_name: str
     s: int | str
@@ -184,9 +206,10 @@ class PenaltyDoFNode(FEAComponentNode):
         FieldSpec(
             "obj_name",
             "ui.schema.fields.obj_name.label.object",
-            "str",
+            "combo",
             Defaults.OBJ_NAME.DEFAULT,
             doc_key="ui.schema.fields.obj_name.help.text",
+            editable=False,
         ),
         FieldSpec(
             "s",
@@ -202,8 +225,36 @@ class PenaltyDoFNode(FEAComponentNode):
             Defaults.OBJ_TYPE.DEFAULT,
             doc_key="ui.schema.fields.obj_type.help.text",
             choices=Defaults.OBJ_TYPE.CHOICES,
+            editable=False,
         ),
     )
+
+    @property
+    def node_index(self) -> int | str:
+        """Zero-based mesh node, derived from the solver's flattened DoF."""
+        return self.s // 3 if isinstance(self.s, int) else self.s
+
+    @property
+    def direction(self) -> int | None:
+        """Cartesian component: 0 = X, 1 = Y, 2 = Z."""
+        return self.s % 3 if isinstance(self.s, int) else None
+
+    def get_field(self, key: str, default: object = None) -> object:
+        if key in {"node_index", "direction"}:
+            return getattr(self, key)
+        return super().get_field(key, default)
+
+    def set_field(self, key: str, value: object) -> PenaltyDoFNode:
+        if key not in {"node_index", "direction"}:
+            return super().set_field(key, value)
+        if type(value) is not int or value < 0 or key == "direction" and value > 2:
+            raise ValueError("Select a nonnegative node index and an X/Y/Z direction.")
+        if key == "node_index":
+            self.s = 3 * value + (self.direction or 0)
+        else:
+            index = self.node_index if isinstance(self.node_index, int) else 0
+            self.s = 3 * index + value
+        return self
 
 
 class BoundaryConditionNode(FEAComponentNode):
@@ -334,6 +385,7 @@ class ReferencePointNode(FEAComponentNode):
             "vec3",
             Defaults.RP_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.rp_location.help.reference_point_position",
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
     )
 

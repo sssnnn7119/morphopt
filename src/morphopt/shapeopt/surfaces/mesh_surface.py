@@ -58,7 +58,6 @@ class MeshSurface(BaseSurface):
         path_output: str | Path,
         name_output: str,
         seed_size: float = -1,
-        flip: bool = False,
         pools: Pool | None = None,
     ) -> str:
         """Export the mesh as STL and return its filename."""

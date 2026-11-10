@@ -498,10 +498,9 @@ class SurfaceNode(TypedNode):
     """Base of one boundary surface type (outer or cavity)."""
 
     kind = KIND_SURFACE
-    _FIELDS = ("type", "flip", "is_updatable")
+    _FIELDS = ("type", "is_updatable")
     factory: ClassVar[str | None] = None
     end_node_set_names: ClassVar[tuple[str, ...]] = ()
-    flip: bool
     is_updatable: bool
 
     def __init__(
@@ -514,7 +513,6 @@ class SurfaceNode(TypedNode):
     ) -> None:
         data = {**(params or {}), **values}
         super().__init__(kind=kind, name=name, params=data, children=children)
-        self.flip = bool(data.get("flip", False))
         self.is_updatable = bool(data.get("is_updatable", type(self).is_updatable))
 
     @property
@@ -522,18 +520,12 @@ class SurfaceNode(TypedNode):
         """Backend surface class name, e.g. ``"bsp_cylinder"``."""
         return self.type
 
-    @property
-    def is_inner(self) -> bool:
-        """Whether this surface is an inner cavity (normals flipped)."""
-        return self.flip
-
     @classmethod
     def create(
-        cls, surface_type: str, index: int = 0, name: str = "", **overrides
+        cls, surface_type: str, name: str = "", **overrides
     ) -> SurfaceNode:
         from .registry import SURFACE_TYPES
 
-        overrides["flip"] = index > 0
         return SURFACE_TYPES[surface_type](name=name, **overrides)
 
 
@@ -542,6 +534,8 @@ class FEAComponentNode(TypedNode):
 
     kind = KIND_FEA_COMPONENT
     num_values: ClassVar[int] = 0
+    value_fields: ClassVar[tuple[FieldSpec, ...]] = ()
+    load_class: ClassVar[str] = ""
     name_hint: ClassVar[str] = "load_"
 
     def __init__(

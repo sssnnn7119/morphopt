@@ -25,6 +25,7 @@ class GeometryParams(morphopt.GeometryParams):
 from __future__ import annotations
 
 import os
+import random
 from collections import defaultdict
 from collections.abc import Sequence
 from functools import partial
@@ -116,6 +117,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         Call this from :meth:`define_surfaces`; for surfaces that only exist at
         runtime (the UI rebuilding a model) it may be called directly.
         """
+        surface._flip = bool(self.surfaceinterfaces)
         self.surfaceinterfaces.append(surface)
         self._surfaces_defined = True
         return self
@@ -165,7 +167,11 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                 )
                 names.extend(
                     f"{prefix}_{name}"
-                    for name in (*metadata["edge_map"], *metadata["vertex_map"], *metadata["node_sets"])
+                    for name in (
+                        *metadata["edge_map"],
+                        *metadata["vertex_map"],
+                        *metadata["node_sets"],
+                    )
                 )
             elif index == 0 and isinstance(surface, self.BSP):
                 names.extend((f"{prefix}_Bottom", f"{prefix}_Head"))
@@ -183,14 +189,16 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         if not self._surfaces_defined:
             self.define_surfaces()
             self._surfaces_defined = True
-        for surface in self.surfaceinterfaces:
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface._flip = index != 0
             surface.initialize(*args, **kwargs)
         self._reinitialize_constraints()
         self._apply_surface_constraints()
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
         """Re-initialize every boundary surface (reconstruction / refinement)."""
-        for surface in self.surfaceinterfaces:
+        for index, surface in enumerate(self.surfaceinterfaces):
+            surface._flip = index != 0
             surface.reinitialize(iteration, *args, **kwargs)
         self._reinitialize_constraints()
         self._apply_surface_constraints()
@@ -230,7 +238,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.prepare_geometry(
                 path_output=directory,
                 name_output=f"__surface-{index}",
-                flip=index != 0,
                 pools=pools,
             )
         return list(self.surfaceinterfaces)
@@ -241,7 +248,8 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         action = partial(self._assemble_surfaces, surfaces=geometry)
         return CADHistory(
             operations=[self._Operation("boundary", action)],
-            mesh_size=self.mesh_size,
+            mesh_size=self.mesh_size
+            * random.uniform(*CONSTANT.KERNEL.MESH.BOUNDARY_SEED_SIZE_VARIATION),
         )
 
     def _assemble_surfaces(
@@ -311,7 +319,9 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         """Map designable boundary nodes before element and order processing."""
         nodes = part.nodes.detach().cpu().numpy()
         outer_nodes = part.set_nodes["surface_0_All"]
-        for name, indices in self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items():
+        for name, indices in (
+            self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items()
+        ):
             part.add_node_set(f"surface_0_{name}", outer_nodes[indices])
         for index, surface in enumerate(self.surfaceinterfaces):
             if not surface.num_variables or surface.uses_facewise_binding:
@@ -336,7 +346,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.output_data(
                 path_output=dirpath,
                 name_output="__surface-%d" % index,
-                flip=(index != 0),
                 pools=pools,
             )
 
@@ -354,25 +363,21 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             raise ValueError("Surface parameter list does not match surfaces.")
         for surface, value in zip(self.surfaceinterfaces, values):
             surface.set_surface_parameters(value.detach().clone())
-        self.apply_surface_constraints()
+        self._apply_surface_constraints()
 
     def update_variables(
         self,
         x_change: torch.Tensor,
-        max_step_length: list[torch.Tensor | None] | None = None,
+        max_step_length: list[torch.Tensor],
     ) -> None:
-        """Apply one shape update with the ``atan`` step-length limiter.
+        """Apply the updater's per-control-point limits through ``atan``.
 
-        ``max_step_length`` is ``None`` (no limiting) or **one tensor per
-        surface**, holding the step length of each control point (that is the
-        form :class:`~morphopt.UpdaterBoundaryPart` keeps per iteration).
+        The updater supplies one step-length tensor per surface and owns its
+        initialization, resizing and adaptation.
         """
-        x_change = torch.as_tensor(x_change).reshape(-1)
-        surfaces = self.surfaceinterfaces
-        steps = self._surface_step_lengths(max_step_length, surfaces)
-
+        x_change = x_change.reshape(-1)
         start = 0
-        for surface, step in zip(surfaces, steps):
+        for surface, step in zip(self.surfaceinterfaces, max_step_length, strict=True):
             size = surface.num_variables
             if not size:
                 continue
@@ -380,50 +385,21 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             start += size
             if not surface.is_updatable:
                 continue
-            norm = delta.norm(dim=1, keepdim=True)
-            change = (
-                2
-                / torch.pi
-                * torch.atan(norm)
-                * delta
-                / (norm + CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON)
+            # atan(r)/r has limit 1 at r=0. Its Taylor branch gives the
+            # correct nonzero Jacobian without a random initial perturbation.
+            squared_norm = delta.square().sum(dim=1, keepdim=True)
+            epsilon = CONSTANT.KERNEL.BOUNDARY_PART.UPDATE_STEP_EPSILON
+            safe_norm = squared_norm.clamp_min(epsilon).sqrt()
+            factor = torch.where(
+                squared_norm > epsilon,
+                torch.atan(safe_norm) / safe_norm,
+                1 - squared_norm / 3,
             )
-            if step is not None:
-                change = change * step
+            change = (2 / torch.pi) * factor * delta
+            change = change * step.reshape(-1, 1)
             surface.update_variables(change)
 
-        self.apply_surface_constraints()
-
-    @staticmethod
-    def _surface_step_lengths(
-        max_step_length: list[torch.Tensor | None] | None,
-        surfaces: Sequence[BaseSurface],
-    ) -> list[torch.Tensor | None]:
-        """One ``[num_points, 1]`` step-length column per surface (or ``None``)."""
-        if max_step_length is None:
-            return [None] * len(surfaces)
-        if isinstance(max_step_length, torch.Tensor):
-            raise TypeError(
-                "max_step_length must be one tensor per surface (per control "
-                "point), not a single tensor."
-            )
-        steps = list(max_step_length)
-        if len(steps) != len(surfaces):
-            raise ValueError(
-                f"Expected {len(surfaces)} per-surface step lengths, got {len(steps)}."
-            )
-        normalised: list[torch.Tensor | None] = []
-        for surface, step in zip(surfaces, steps):
-            if step is None:
-                normalised.append(None)
-                continue
-            column = torch.as_tensor(step).reshape(-1, 1)
-            num_points = surface.num_variables // 3
-            if column.shape[0] != num_points:
-                # the surface changed size since the step length was built
-                column = column.mean().repeat(num_points, 1)
-            normalised.append(column)
-        return normalised
+        self._apply_surface_constraints()
 
     def get_geometry_values(
         self,
@@ -443,21 +419,6 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             if surface.num_variables
             else torch.empty((0, 3))
             for surface in self.surfaceinterfaces
-        ]
-
-    def get_penalty_fairness(
-        self,
-        weight: list[torch.Tensor],
-        r: list[torch.Tensor],
-        rdu: list[torch.Tensor],
-        rdu2: list[torch.Tensor],
-    ) -> list[torch.Tensor]:
-        """Fairness penalty of every surface."""
-        return [
-            surface.get_penalty_fairness(
-                weight[index], r[index], rdu[index], rdu2[index]
-            )
-            for index, surface in enumerate(self.surfaceinterfaces)
         ]
 
     def get_points_weight(self) -> list[torch.Tensor]:

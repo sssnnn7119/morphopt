@@ -30,7 +30,7 @@
 | 末端响应 | `RP_1` 与顶端节点耦合，读取旋转向量的 Y 分量 `ry` |
 | 材料 | `NeoHookeanLnJ`，`mu=0.482`、`kappa=4.8` |
 | 设计变量 | 外边界与内腔的曲面控制点 |
-| 优化目标 | 最大化有符号转角 `ry`，损失为 `-ry` |
+| 优化目标 | 匹配转角 `ry=2 rad`，损失为 `(ry - 2) ** 2` |
 | 几何控制 | xz 镜面对称、曲率正则化、最小距离与圆柱包络 |
 | 计算设置 | CPU，一个有限元求解进程 |
 
@@ -65,144 +65,172 @@ python examples/bending_actuator/bending_actuator.py
 以下代码与随文档提供的任务文件一致，可整体保存为 `bending_actuator.py` 后运行。
 
 ```python
-"""脚本与 UI 快速开始共用的气动弯曲优化算例。"""
-
+import os
+os.environ["MPLBACKEND"] = "Agg"
 import morphopt
+import torchfea
+from typing import Any
 
 
 class ThisController(morphopt.Controller):
-    def __init__(self):
-        super().__init__(path_result_folder="./results/", opt_label="BendingExample")
+
+    def __init__(self) -> None:
+        super().__init__(
+            path_result_folder='.results/', opt_label='BendingActuator'
+        )
 
     class ObjectiveFunction(morphopt.ObjectiveFunction):
-        def reference_point_motion(self, step_name="load_case_1"):
-            morphopt.controller.params.feamodel.process_fea(
-                self.fe, step_name=step_name
-            )
-            assembly = self.fe.assembly
-            coordinates = self.fe_results[step_name].GC.to(assembly.device)
-            reference_point = assembly.get_reference_point("RP_1")
-            return assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)
 
-        def objective_function(self):
-            # 最小化 -ry，对应最大化绕全局 Y 轴的有符号转角。
-            return -self.reference_point_motion()[4]
+        def __init__(self) -> None:
+            super().__init__()
 
-        def get_metrics(self):
-            return [self.reference_point_motion()[4].detach().cpu().item()]
+        def objective_function(self) -> Any:
+            return sum(self._objective_values())
+
+        def _objective_values(self) -> list[Any]:
+            def objective_term_0() -> Any:
+                self.set_step('load_case_1')
+                assembly = self.fe.assembly
+                state = assembly._GC2RGC(
+                    self.fe_results['load_case_1'].GC.to(assembly.device)
+                )
+                reference_point = assembly.get_reference_point('RP_1')
+                return state[reference_point._RGC_index].reshape(-1)[4]
+            return [(1.0) * (objective_term_0() - 2.0) ** 2]
+
+        def get_metrics(self) -> Any:
+            def metric_term_0() -> Any:
+                self.set_step('load_case_1')
+                assembly = self.fe.assembly
+                state = assembly._GC2RGC(
+                    self.fe_results['load_case_1'].GC.to(assembly.device)
+                )
+                reference_point = assembly.get_reference_point('RP_1')
+                return state[reference_point._RGC_index].reshape(-1)[4]
+            metrics = {}
+            for name, value in [
+                ('', metric_term_0()),
+                ('', {f'objective_{index}': value for index, value in enumerate(self._objective_values())}),
+            ]:
+                if isinstance(value, dict):
+                    entries = value
+                elif isinstance(value, (list, tuple)):
+                    entries = {
+                        f'{name}_{index}' if name else str(len(metrics) + index): item
+                        for index, item in enumerate(value)
+                    }
+                else:
+                    entries = {name or str(len(metrics)): value}
+                if metrics.keys() & entries.keys():
+                    raise ValueError('Metric names must be unique.')
+                metrics.update(entries)
+            return metrics
 
     class Params(morphopt.Params):
+
         class GeometryParams(morphopt.GeometryParams):
-            class Actuator(morphopt.BoundaryPart):
-                def define_instance(self):
-                    self.add_instance(self.part_name, "part1-1", [0.0] * 6)
 
-                def define_surfaces(self):
-                    for radius, length, location, flip in [
-                        (8.0, 80.0, [0.0, 0.0, 0.0], False),
-                        (4.0, 74.0, [0.0, 0.0, 3.0], True),
-                    ]:
-                        surface = self.BSP.initialize_cylinder(
-                            r0=radius,
-                            length=length,
-                            seed_size=1.0,
-                            init_location=location,
-                            flip=flip,
-                            maxR=0.2,
-                            maxC=1.0,
-                            maxFF=0.2,
-                            perturbation_L=10.0,
-                        )
-                        surface.is_updatable = True
-                        surface.add_constraint(surface.mirror("xz"))
-                        self.add_surface_interface(surface)
 
-            def define_interface(self):
-                self.add_interface(
-                    self.Actuator(fea_seed_size=1.0, mesh_order=1), name="part1"
+            class BoundaryPart(morphopt.BoundaryPart):
+
+                def define_surfaces(self) -> None:
+                    surface_0 = self.BSP.initialize_cylinder(r0=8.0, length=80.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 0.0], perturbation_L=10.0)
+                    surface_0.is_updatable = True
+                    self.add_surface_interface(surface_0)
+                    surface_1 = self.BSP.initialize_cylinder(r0=4.0, length=74.0, seed_size=1.0, num_U_ratio=1, num_V_ratio=1, degree=3, init_location=[0.0, 0.0, 3.0], perturbation_L=10.0)
+                    surface_1.is_updatable = True
+                    self.add_surface_interface(surface_1)
+                    surface_0.add_constraint(surface_0.mirror(plane='xz', offset=0.0))
+                    surface_1.add_constraint(surface_1.mirror(plane='xz', offset=0.0))
+
+                def define_instance(self) -> None:
+
+                    self.add_instance('part1', 'part1-1', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+            def define_interface(self) -> None:
+
+                # BoundaryPart
+                part_0 = self.BoundaryPart(
+                    fea_seed_size=1.0,
+                    mesh_order=1,
+                    exterior_surface='surface_0_All',
                 )
+                self.add_interface(part_0, name='part1')
+
 
         class FEAParams(morphopt.FEAParams):
-            def define_interface(self):
-                self.add_interface(
-                    self.BoundaryCondition(
-                        instance_name="part1-1",
-                        set_nodes_name="surface_0_Bottom",
-                        index_dof=[0, 1, 2],
-                    ),
-                    name="bc_1",
-                )
-                self.add_interface(
-                    self.ReferencePoint(rp_location=[0.0, 0.0, 80.0]), name="RP_1"
-                )
-                self.add_interface(
-                    self.Couple(
-                        rp_name="RP_1",
-                        instance_name="part1-1",
-                        set_nodes_name="surface_0_Head",
-                    ),
-                    name="couple_1",
-                )
-                self.add_interface(
-                    self.Pressure(
-                        instance_name="part1-1", surface_name="surface_1_All"
-                    ),
-                    name="pressure_1",
-                )
 
-            def define_steps(self):
-                self.add_step("load_case_1")
-                self.set_step_params("load_case_1", "pressure_1", [0.06])
+            def __init__(self) -> None:
+                super().__init__()
+
+            def define_interface(self) -> None:
+                self.add_interface(self.Pressure(instance_name='part1-1', surface_name='surface_1_All'), name='pressure_1')
+                self.add_interface(self.ReferencePoint(rp_location=[0.0, 0.0, 80.0]), name='RP_1')
+                self.add_interface(self.Couple(rp_name='RP_1', instance_name='part1-1', set_nodes_name='surface_0_Head'), name='couple_1')
+                self.add_interface(self.BoundaryCondition(instance_name='part1-1', set_nodes_name='surface_0_Bottom', index_dof=[0, 1, 2]), name='bc_1')
+
+            def define_steps(self) -> None:
+                self.add_step('load_case_1')
+                self.set_step_params('load_case_1', 'pressure_1', [0.06])
 
         class MaterialsParams(morphopt.MaterialsParams):
-            def define_interface(self):
-                self.add_interface(
-                    self.HomogeneousMaterial(
-                        material_parameters=self.models.NeoHookeanLnJParams(
-                            mu=0.482, kappa=4.8
-                        ),
-                        density=1.08e-9,
-                        part_name="part1",
-                    ),
-                    name="material_1",
-                )
 
-        def __init__(self):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def define_interface(self) -> None:
+
+                self.add_interface(morphopt.HomogeneousMaterial(
+                    material_parameters=self.models.NeoHookeanLnJParams(mu=0.482, kappa=4.8),
+                    part_name='part1',
+                    elementname='',
+                    density=1.08e-09,
+                ), name='material_1')
+
+        def __init__(self) -> None:
             super().__init__(
-                geometry=self.GeometryParams(),
-                feamodel=self.FEAParams(),
-                materials=self.MaterialsParams(),
+                geometry=self.GeometryParams(), feamodel=self.FEAParams(), materials=self.MaterialsParams()
             )
 
     class Solver(morphopt.Solver):
-        def __init__(self, params):
-            super().__init__(params=params, num_process=1, process_devices=["cpu"])
+
+        def __init__(self, params: Any) -> None:
+
+            super().__init__(params=params, num_process=1, process_devices=['cpu'])
 
     class Updater(morphopt.Updaters):
-        def define_updater(self):
-            self.add_geometry_updater(self.Shape(), name="part1")
 
-        class Shape(morphopt.UpdaterBoundaryPart):
-            def __init__(self):
-                super().__init__(max_step_iter=50)
+        def define_updater(self) -> None:
+            self.add_geometry_updater(self.UpdaterBoundaryPart(), name='part1')
 
-            def define_objective(self):
-                self.add_objective_function(self.objectivefuncs.ShapeDerivative())
-                self.add_constraints(self.objectivefuncs.Fairness())
-                self.add_constraints(
-                    self.objectivefuncs.Distance(
-                        min_distance=[[2.5, 2.5], [2.5, 2.5]]
-                    )
+        def __init__(self, params: Any) -> None:
+            super().__init__(params=params, device='cpu')
+
+        class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
+
+            def __init__(self) -> None:
+                super().__init__(
+                    max_step_iter=50,
+                    max_step_length=0.5,
+                    step_length_strategy=self.strategies.FixedStepLength(),
+                    constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
+                        initial_tolerance=0.05,
+                        final_tolerance=0.0,
+                        objective_tolerance=0.01,
+                        tightening_increment=0.001,
+                        penalty_growth_limit=2.0,
+                    ),
                 )
-                self.add_constraints(
-                    self.objectivefuncs.boundarys.Cylinder(
-                        radius=10.0, height=80.0, bottom=0.0
-                    )
-                )
+
+            def define_objective(self) -> None:
+                self.add_objective_function(self.objectivefuncs.QuadraticShapeDerivative(memory_size=10))
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=1.0))
+                self.add_constraints(self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]]))
+                self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=10.0, height=80.0, bottom=0.0))
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device="cpu", restart_per_iteration=20)
+    morphopt.start_optimization(device='cpu', restart_per_iteration=20)
 ```
 
 `ThisController` 为运行器加载的任务类名称。文件末尾的 `if __name__ == "__main__":` 限制启动入口，避免多进程导入脚本时重复启动任务。
@@ -226,7 +254,7 @@ if __name__ == "__main__":
 
 ## 4 查看输出与设计变化
 
-结果保存在任务脚本所在目录的 `results/BendingExample_T<时间戳>/`。相对输入路径和结果根目录均按任务脚本目录解析。
+结果保存在任务脚本所在目录的 `.results/BendingActuator_T<时间戳>/`。相对输入路径和结果根目录均按任务脚本目录解析。
 
 | 文件或目录 | 内容 |
 |---|---|
@@ -239,14 +267,14 @@ if __name__ == "__main__":
 | `log/deformation/` | 工况变形图与表面文件 |
 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` | 继续计算使用的任务脚本快照 |
 
-终端的 `Iteration`、`Loss` 与分阶段耗时反映当前优化进展。本例最小化 `-ry`，因此负损失与正转角可以同时出现。判断优化方向时，应同时读取损失与记录的 `ry`，并区分有符号转角、转角绝对值和欧拉角。
+终端的 `Iteration`、`Loss` 与分阶段耗时反映当前优化进展。本例最小化 `(ry - 2) ** 2`。用户指标 `0` 记录原始 `ry`，自动指标 `objective_0` 记录这一项的加权误差，当前仅有一个目标，因此它与总损失相等。目标接近零表示转角接近 2 rad，不表示转角本身接近零。
 
 图形查看步骤如下：
 
 1. 执行 `morphopt-ui`。
 2. 选择 **文件 → 打开优化结果**，定位到包含 `log/` 和 `scripts/` 的具体任务目录。
 3. 在 **优化过程** 中选择迭代，查看历史曲线、设计边界与工况变形。
-4. 进入 **工况与计算结果**，查看该轮对应的位移、应力和应变。
+4. 进入 **优化过程 → 有限元**，查看该轮对应的位移、应力和应变。
 
 该过程读取脚本运行产生的归档。任意 Python 任务不会反向转换为主定义页中可编辑的 `.morph` 模型树。界面操作见 [UI 快速开始](UIguide.md#optimization) 与 [UI 结果分析参考](UIreference.md#results)。
 
@@ -263,7 +291,7 @@ from pathlib import Path
 import morphopt
 
 if __name__ == "__main__":
-    run_folder = Path("results/BendingExample_T<时间戳>").resolve()
+    run_folder = Path("examples/bending_actuator/.results/BendingActuator_T<时间戳>").resolve()
     morphopt.start_optimization(
         device="cpu",
         path_result=str(run_folder),
@@ -280,11 +308,11 @@ if __name__ == "__main__":
 
 | 修改内容 | 修改位置 | 同步核查 |
 |---|---|---|
-| 圆柱与内腔尺寸 | `Actuator.define_surfaces()` | 内腔位置、壁厚、参考点位置与包络尺寸 |
+| 圆柱与内腔尺寸 | `Params.GeometryParams.BoundaryPart.define_surfaces()` | 内腔位置、壁厚、参考点位置与包络尺寸 |
 | 压力幅值 | `FEAParams.define_steps()` 中的 `[0.06]` | 一致单位制及加压表面 |
 | 材料参数 | `MaterialsParams.define_interface()` | 参数名称、本构模型及部件分配 |
-| 运动方向 | `objective_function()` 的分量与符号 | 指标分量、最大化或最小化含义 |
+| 运动目标 | `_objective_values()` 中的分量和目标值 | 指标分量、匹配误差及单位 |
 | 网格疏密 | `fea_seed_size` | 首轮流程、求解稳定性与正式结果精度 |
-| 更新控制 | `Shape.define_objective()` | 最小距离、曲率阈值和包络 |
+| 更新控制 | `Updater.UpdaterBoundaryPart.define_objective()` | 最小距离、曲率阈值和包络 |
 
 `seed_size` 控制曲面控制网格，`fea_seed_size` 控制体有限元网格，两者独立。只增大体网格尺寸不会同时减少曲面设计变量。多工况、材料拓扑优化、CAD、接触和自定义更新器分别见[脚本模块与接口参考](scriptreference.md)。

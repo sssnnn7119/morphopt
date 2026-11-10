@@ -11,6 +11,7 @@ from ..model.problem import (
     FEAComponentNode,
     HelperFunctionNode,
     HelperVariableNode,
+    LoadCaseNode,
     MaterialNode,
     MethodOverrideNode,
     Node,
@@ -113,9 +114,7 @@ class DefinitionCommands:
         owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
-        node = get_template(self.problem.scheme).make_surface(
-            surface_type, len(owner.surfaces)
-        )
+        node = get_template(self.problem.scheme).make_surface(surface_type)
         node.custom_class = custom_class
         self.problem.add_surface(node, part=owner)
         return node
@@ -203,6 +202,25 @@ def set_node_field(
     from ..model.problem import INSTANCE_REFERENCE_FIELDS, REFERENCE_POINT_FIELDS
 
     if problem is not None:
+        if isinstance(node, LoadCaseNode):
+            load, field = node.parameters()[key]
+            return LoadCaseSession(node.steps, problem).set_parameter(node.name, load, field.key, value)
+        if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF" and key in {"node_index", "direction"}:
+            try:
+                node.set_field(key, value)
+            except ValueError:
+                return False
+            return True
+        if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF" and key in {"obj_type", "obj_name"}:
+            from .fields import penalty_targets
+
+            previous = node.obj_name
+            node.set_field(key, value)
+            if node.obj_name not in penalty_targets(problem, node):
+                node.obj_name = ""
+            if node.obj_name != previous:
+                node.s = 0
+            return True
         if isinstance(node, FEAComponentNode) and key in {
             *INSTANCE_REFERENCE_FIELDS,
             *REFERENCE_POINT_FIELDS,
@@ -241,6 +259,12 @@ def rename_node(
     if not name or name == node.name:
         return False
     if problem is not None:
+        if isinstance(node, LoadCaseNode):
+            try:
+                LoadCaseSession(node.steps, problem).rename(node.name, name)
+            except ValueError:
+                return False
+            return True
         if node.kind == "instance":
             return problem.rename_instance(node, name)
         return problem.rename_definition(node, name)
@@ -497,19 +521,24 @@ class LoadCaseSession:
 
         remove_case(self.problem, name, remove_objectives, remove_unused)
 
-    def set_value(self, name: str, component: FEAComponentNode, text: str) -> bool:
-        values = []
-        constants = {constant.name for constant in self.problem.helper_variables}
-        for entry in text.strip().strip("[]").split(","):
-            try:
-                value = float(entry.strip())
-            except ValueError:
-                value = entry.strip()
-                if value not in constants:
-                    return False
-            values.append(value)
-        if len(values) != component.num_values:
+    def value(self, name: str, component: FEAComponentNode, key: str) -> float | str:
+        index = next(i for i, field in enumerate(component.value_fields) if field.key == key)
+        values = self.steps.step_values[name].get(component, [])
+        return values[index] if index < len(values) else 0.0
+
+    def set_parameter(
+        self, name: str, component: FEAComponentNode, key: str, value: float | str,
+    ) -> bool:
+        """Change one named scalar without rewriting the load's other values."""
+        if name not in self.steps.step_values:
             return False
+        constants = {constant.name for constant in self.problem.helper_variables}
+        if isinstance(value, str) and value not in constants:
+            return False
+        fields = component.value_fields
+        values = [self.value(name, component, field.key) for field in fields]
+        index = next(i for i, field in enumerate(fields) if field.key == key)
+        values[index] = value
         self.steps.step_values[name][component] = values
         return True
 

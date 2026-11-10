@@ -45,6 +45,7 @@ from ..application.updaters import (
 )
 from ..i18n import tr
 from ..model.problem import ProblemDefinition, UpdaterNode
+from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
 from ..presentation.labels import (
     node_title,
     node_type_title,
@@ -349,6 +350,11 @@ class UpdaterEditor(QWidget):
             step_length.editingFinished.connect(save_step_length)
             form.addRow(tr("ui.widgets.updater_editor.max_step_length"), step_length)
 
+            for key in STRATEGY_CATALOG:
+                strategy = UpdaterStrategyEditor(cfg, key, group, self._problem)
+                strategy.changed.connect(self._on_change)
+                form.addRow(tr(f"ui.strategies.{key}"), strategy)
+
             if group == "materials":
                 form.addRow(
                     tr("ui.widgets.updater_editor.if_update"),
@@ -478,6 +484,53 @@ class UpdaterEditor(QWidget):
 
     def _on_code_change(self) -> None:
         self._on_change()
+
+
+class UpdaterStrategyEditor(QWidget):
+    """Select a policy and edit its parameters through the shared schema form."""
+
+    changed = Signal()
+
+    def __init__(
+        self, config: dict, key: str, group: str, problem: ProblemDefinition,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.config, self.key, self.problem = config, key, problem
+        self.specs = strategy_specs(key, group)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
+        self.selector = QComboBox()
+        self.selector.setToolTip(tr(f"ui.strategies.{key}.help"))
+        for name, spec in self.specs.items():
+            self.selector.addItem(tr(spec.label_key), name)
+        item = config.get(key, strategy_config(key))
+        self.selector.setCurrentIndex(self.selector.findData(item["type"]))
+        self._layout.addWidget(self.selector)
+        self.parameters: ParamForm | None = None
+        self._show_parameters(item)
+        self.selector.currentIndexChanged.connect(self._select)
+
+    def _show_parameters(self, item: dict) -> None:
+        if self.parameters is not None:
+            self._layout.removeWidget(self.parameters)
+            self.parameters.hide()
+            self.parameters.deleteLater()
+        self.parameters = ParamForm(
+            item["params"], self.specs[item["type"]].fields,
+            helper_names=[node.name for node in self.problem.helper_variables],
+        )
+        self.parameters.changed.connect(lambda _key: self._commit(item))
+        self._layout.addWidget(self.parameters)
+
+    def _commit(self, item: dict) -> None:
+        self.config[self.key] = item
+        self.changed.emit()
+
+    def _select(self, _index: int) -> None:
+        item = strategy_config(self.key, self.selector.currentData())
+        self._show_parameters(item)
+        self._commit(item)
 
 
 class _DistanceMatrixDropDown(QToolButton):

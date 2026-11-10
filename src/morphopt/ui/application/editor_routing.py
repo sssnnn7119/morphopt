@@ -67,6 +67,8 @@ def route_editor(node: Node | None) -> EditorRoute:
         return EditorRoute(EditorKind.MATERIALS)
     if node.kind == "material":
         return EditorRoute(EditorKind.MATERIALS, focus=node)
+    if node.kind == "load_case":
+        return EditorRoute(EditorKind.STEPS, node.steps, node)
     if node.kind == "steps":
         return EditorRoute(EditorKind.STEPS, node)
     if node.kind == "updater":
@@ -109,6 +111,10 @@ def managed_nodes(
         # Load definitions belong to their collection editor. Selecting one in
         # the tree only focuses its card; it must not hide the other loads.
         return list(problem.fea_components())
+    if mode == "steps":
+        from ..model.problem import LoadCaseNode
+
+        return [LoadCaseNode(problem, name) for name in problem.steps.step_values] if problem.steps else []
     if mode == "helper_variables":
         return list(problem.helper_variables)
     if mode == "helper_functions":

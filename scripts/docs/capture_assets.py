@@ -1,14 +1,15 @@
 """Capture the actual assets UI with the documentation font policy.
 
-Run from the repository: conda run -n mine python scripts/docs/capture_assets.py
-Requires fonttools, fontconfig and the installed Noto Sans CJK SC family.
+Run from the repository: python scripts/docs/capture_assets.py
 """
 
 import base64
 import json
+import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QSettings, QTimer
 
 from capture_fonts import CaptureFonts
 from morphopt.ui.app import create_application
@@ -27,10 +28,16 @@ class CaptureWindow(MainWindow):
 
 
 def main():
+    settings = TemporaryDirectory(prefix='morphopt-doc-assets-')
+    os.environ['XDG_CONFIG_HOME'] = settings.name
+    os.environ['MPLCONFIGDIR'] = str(Path(settings.name) / 'matplotlib')
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, settings.name)
     app = create_application([])
-    fonts = CaptureFonts(app)
+    fonts = CaptureFonts()
     set_locale("zh-CN")
     root = Path(__file__).resolve().parents[2]
+    os.chdir(root)
     ui_assets = root / "docs" / "assets" / "ui_reference"
     problem = ProblemLibrary.create_blank("资产预览示例")
     operation = CADOperationNode.create("StepImport", operation_id="import_body")
@@ -41,24 +48,23 @@ def main():
     problem.add_part(CADPartNode(name="cad_body", children=[operation]))
     problem.add_part(BoundaryPartNode(name="stl_boundary", children=[
         MeshSurfaceNode(
-            name="fixed_shell", path_stl=str(ui_assets / "reference-boundary.stl")
+            name="fixed_shell", path_stl=str((ui_assets / "reference-boundary.stl").relative_to(root))
         )
     ]))
     problem.add_part(INPPartNode(
-        name="inp_mesh", mesh_file=str(ui_assets / "reference-box.inp")
+        name="inp_mesh", mesh_file=str((ui_assets / "reference-box.inp").relative_to(root))
     ))
     window = CaptureWindow()
     window.set_problem(problem)
     window.resize(2100, 1200)
     workbench = window._workbench
     workbench._center.setCurrentIndex(2)
-    fonts.apply_to_window(window)
     window.show()
 
     def capture():
         destination = root / "docs/images/ui/assets"
         destination.mkdir(parents=True, exist_ok=True)
-        font_policy = fonts.audit(window)
+        font_policy = fonts.audit()
         pixmap = window.grab()
         if not pixmap.save(str(destination / "geometry-assets.png")):
             raise RuntimeError("Could not save assets screenshot")

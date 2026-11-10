@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode
-from ..model.problem import Node, ObjectiveNode, ProblemDefinition, UpdaterNode
+from ..model.problem import LoadCaseNode, Node, ObjectiveNode, ProblemDefinition, UpdaterNode
 from ..i18n import tr
 from .labels import container_title, node_title, updater_group_title
 
@@ -141,6 +141,8 @@ def node_key(node: Node | None):
     """Stable identity for transient Params/updater entries across rebuilds."""
     if node is None:
         return None
+    if isinstance(node, LoadCaseNode):
+        return ("load_case", id(node.steps), id(node.values))
     if node.kind == "params_class":
         return ("params_class",)
     if node.kind in {
@@ -231,7 +233,10 @@ class DefinitionNavigation:
                 children=[self.entry(node) for node in problem.fea_components()],
             ))
         if problem.steps is not None:
-            loads.children.append(self.entry(problem.steps, bold=True))
+            loads.children.append(self.entry(
+                problem.steps, bold=True,
+                children=[self.entry(LoadCaseNode(problem, name)) for name in problem.steps.step_values],
+            ))
         if problem.materials is not None:
             params.children.append(self.entry(
                 problem.materials,

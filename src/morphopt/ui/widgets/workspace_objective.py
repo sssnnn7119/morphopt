@@ -75,14 +75,16 @@ class WorkspaceObjectiveEditor(QWidget):
         occupied = {
             tuple(parameter) for entry in selected for parameter in entry["parameters"]
         }
+        labels = {}
         for load in problem.amplitude_components():
-            for index in range(load.num_values):
+            for index, field in enumerate(load.value_fields):
+                labels[load.name, index] = f"{load.name} · {tr(field.label_key)}"
                 if (load.name, index) not in occupied:
                     entries.append(([[load.name, index]], 1.0, False))
         for parameters, upper, checked in entries:
             row = QHBoxLayout()
             check = QCheckBox(
-                " + ".join(f"{name}[{index}]" for name, index in parameters)
+                " + ".join(labels.get((name, index), f"{name}[{index}]") for name, index in parameters)
             )
             check.setChecked(checked)
             limit = QLineEdit(str(upper))

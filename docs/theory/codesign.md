@@ -595,7 +595,7 @@ basis_x = bspmap.BasisClamped(num_cps=nx, degree=degree)
 basis_y = bspmap.BasisClamped(num_cps=ny, degree=degree)
 basis_z = bspmap.BasisClamped(num_cps=nz, degree=degree)
 
-bsp = bspmap.BSP(basis=[basis_x, basis_y, basis_z], ...)
+bsp = bspmap.BSP(basis=[basis_x, basis_y, basis_z], control_points=control_points)
 self.simp_field = bsp
 self._cps = torch.from_numpy(bsp.control_points)  # 设计变量
 ```
@@ -624,9 +624,9 @@ def RAMP_interpolation(rho, p):
 ```python
 def get_ratio_with_spatial_derivative(self, nodes):
     # 计算设计场值及其空间梯度
-    rdx = Σ wdx * cps   # ∂χ/∂x
-    rdy = Σ wdy * cps   # ∂χ/∂y
-    rdz = Σ wdz * cps   # ∂χ/∂z
+    rdx = (wdx * cps).sum(dim=-1)   # ∂χ/∂x
+    rdy = (wdy * cps).sum(dim=-1)   # ∂χ/∂y
+    rdz = (wdz * cps).sum(dim=-1)   # ∂χ/∂z
     
     # 构造空间代理修正：Δχ ≈ ∇χ · Δx
     # surrogate 的值参与前向计算，但其梯度被 detach 阻断，
@@ -756,7 +756,8 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
     def _get_EpdUe_EpdUe2(self, U, if_onlyforce=False):
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
-        Ugrad2 = Σ shape_func_d2[i] * U[elems[:, i]]
+        Ugrad2 = sum(shape_func_d2[i] * U[elems[:, i]]
+                     for i in range(self.num_nodes_per_elem))
         EmdUgrad2 = 4 * (Ugrad2 - Ugrad2.transpose(2, 3))
         EmdUe = torch.einsum('gIij,geija->aIe', EmdUgrad2, self._dN2WP)
 
@@ -826,7 +827,7 @@ grad_M = design_gradients[len(Φ_G):]  # → UpdaterSIMPMaterial
 ```python
 class Sensitivity(BaseObjective):
     def __call__(self, cps, *args, **kwargs):
-        return ((cps - self._cp0) * self.sensitivity).sum() * self.factor
+        return ((cps - self._cp0) * self.sensitivity).sum()
 ```
 
 `DensityFieldMinimize` 提供轻微正则化，推动密度场趋于零：

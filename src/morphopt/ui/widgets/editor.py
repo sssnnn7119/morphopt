@@ -16,12 +16,13 @@ from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -46,7 +47,6 @@ class PropertyEditor(QWidget):
 
     def __init__(self, parent=None, compact: bool = False):
         super().__init__(parent)
-        self._compact = compact
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         # Visibility is set before insertion into the layout. Give the label
@@ -57,16 +57,6 @@ class PropertyEditor(QWidget):
         if not compact:
             outer.addWidget(self._title)
 
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        if compact:
-            self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-            self._scroll.setVerticalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-            )
-            self._scroll.setHorizontalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-            )
         self._body = QWidget()
         self._form = QFormLayout(self._body)
         self._form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
@@ -76,8 +66,18 @@ class PropertyEditor(QWidget):
         self._form.setVerticalSpacing(
             theme_manager.palette.layout.widgets.standard_form_spacing
         )
-        self._scroll.setWidget(self._body)
-        outer.addWidget(self._scroll, 0 if compact else 1)
+        if compact:
+            # The collection owns scrolling. Let layout changes propagate the
+            # form's minimum height instead of clipping it in a second viewport.
+            self._scroll = None
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            outer.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+            outer.addWidget(self._body)
+        else:
+            self._scroll = QScrollArea()
+            self._scroll.setWidgetResizable(True)
+            self._scroll.setWidget(self._body)
+            outer.addWidget(self._scroll, 1)
 
         self._node: Node | None = None
         self._schema = None
@@ -137,7 +137,7 @@ class PropertyEditor(QWidget):
             self._form.removeRow(0)
 
         self._title.setText(title)
-        if node.kind in {"fea_component", "part", "material", "instance"}:
+        if node.kind in {"fea_component", "part", "material", "instance", "load_case"}:
             name_edit = QLineEdit(node.name or "")
             self._name_edit = name_edit
             name_edit.setToolTip(
@@ -159,11 +159,16 @@ class PropertyEditor(QWidget):
                         "ui.widgets.editor.registration_name_in_materialsparams_material_updaters_are_retargeted"
                     )
                 )
+            if node.kind == "load_case":
+                name_edit.setToolTip(tr("ui.load_cases.name"))
             name_edit.editingFinished.connect(
                 lambda e=name_edit: self._rename_node(e.text())
             )
             self._form.addRow(
                 (
+                    tr("ui.load_cases.name")
+                    if node.kind == "load_case"
+                    else
                     tr("ui.widgets.editor.component_name")
                     if node.kind == "fea_component"
                     else tr("ui.widgets.editor.part_name")
@@ -248,9 +253,6 @@ class PropertyEditor(QWidget):
             self._add_code_slot(key, caption)
         for widget in self.findChildren(QWidget):
             widget.installEventFilter(self)
-        if self._compact:
-            self._body.adjustSize()
-            self._scroll.setMinimumHeight(self._body.layout().sizeHint().height() + 8)
 
     def refresh_ui(self, context: RefreshContext) -> None:
         if self._node is not None:

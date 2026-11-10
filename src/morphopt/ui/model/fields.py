@@ -30,6 +30,8 @@ class FieldSpec:
     read_only: bool = False
     hidden: bool = False
     editable: bool = True
+    components: tuple[str, ...] = ()
+    item_type: str = "float"
 
     def new_default(self) -> Any:
         return _mutable_value(self.default)

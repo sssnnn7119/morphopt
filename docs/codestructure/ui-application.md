@@ -15,6 +15,7 @@
 - [7 自定义类的选择与绑定](#custom-classes)
 - [8 CAD 转换与 STEP 导出](#cad)
 - [9 优化运行会话](#runs)
+- [10 工况操作与参数元数据](#section-工况操作与参数元数据)
 
 <!-- /docs:toc -->
 
@@ -52,7 +53,7 @@
 | `record_edit()`、`restore_edit_step()` | 提交和恢复定义快照 |
 | `set_label/result_folder/device()` | 修改任务配置 |
 
-`ProblemLibrary` 是创建空白定义、选择方案、打开/保存 `.morph`、导出 Python 和保存运行伴随定义的文件入口。对话框由窗口提供路径，服务层负责文件内容。
+`ProblemLibrary` 是创建空白定义、选择方案、打开/保存 `.morph`、导出 Python 和保存运行伴随定义的文件入口。对话框由窗口提供路径，服务层负责文件内容。导入阶段的额外字段、缺失默认项和不支持条目由导入器统一汇总，窗口只负责显示警告；运行校验继续检查当前定义的完整性。
 
 字段编辑、结构操作和恢复历史分别触发相应同步。刷新组件消费已同步的上下文，不各自重复调用生成与领域同步。
 
@@ -66,8 +67,8 @@
 | `set_node_field()`、`rename_node()` | 统一字段写入及名称路由 |
 | `HelperCodeSession` | 保存并校验辅助代码、变量与函数 |
 | `CustomClassSession` | 类与方法创建、改名、删除及引用同步 |
-| `LoadCaseSession` | 工况矩阵的列、值、复制、数量和删除操作 |
-| `SolverTasks` | 任务分组与表格分配转换 |
+| `LoadCaseSession` | 工况名称、注册顺序、逐载荷参数读写及生成工况同步 |
+| `SolverTasks` | 有序工况组、组内移动、拆组与合组 |
 | `UpdaterItems` 等有序项服务 | 目标、罚函数和曲面对称的增删排序 |
 | `PartSetCatalog` | 按实际 Part 类型查询节点集、表面集和单元块 |
 
@@ -179,3 +180,11 @@
 `ObserverControls` 接入按钮、对话框、定时器与 Qt 信号，消费会话的进度；不保存另一份进程状态。输出读取在后台完成，UI 线程不阻塞等待标准输出。
 
 打开结果只准备浏览与继续计算，不自动启动任务。切换页面不启动、停止或重置进程；运行中的定义快照与当前编辑定义分别持有，后续编辑不会改写正在执行的任务。
+
+<a id="section-工况操作与参数元数据"></a>
+
+## 10 工况操作与参数元数据
+
+工况集合页和树菜单共用 `DefinitionActions.add_load_case()`、`move_load_case()` 与 `remove_load_case()`，改名与标量编辑通过 `set_node_field()`/`rename_node()` 路由到 `LoadCaseSession`。工作空间配置完整时同步生成边界高斯点工况；删除目标时询问是否清理无引用生成工况，删除工况时询问是否级联删除引用目标，否则清空相应选择。已有载荷定义不参与该清理。
+
+`application/fields.py` 根据对象上下文生成字段和候选项。实例 PenaltyDoF 只展示节点序号与方向，参考点只展示六个自由度；业务值仍写回同一个 `s`。独立有限元页依据载荷实际类读取相同的 `value_fields`，各标量独立校验和提交。

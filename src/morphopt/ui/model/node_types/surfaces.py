@@ -26,9 +26,6 @@ class BspCylinderSurfaceNode(SurfaceNode):
     num_V_ratio: int | str
     degree: int | str
     init_location: list[float] | str
-    maxR: float | str
-    maxC: float | str
-    maxFF: float | str
     perturbation_L: float | str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
@@ -85,30 +82,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
-        ),
-        FieldSpec(
-            "maxR",
-            "ui.schema.fields.maxr.label.maxr",
-            "float",
-            Defaults.MAXR.DEFAULT,
-            doc_key="ui.schema.fields.maxr.help.metric_variation_penalty",
-            minimum=Defaults.MAXR.MIN,
-        ),
-        FieldSpec(
-            "maxC",
-            "ui.schema.fields.maxc.label.maxc",
-            "float",
-            Defaults.MAXC.DEFAULT,
-            doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
-            minimum=Defaults.MAXC.MIN,
-        ),
-        FieldSpec(
-            "maxFF",
-            "ui.schema.fields.maxff.label.maxff",
-            "float",
-            Defaults.MAXFF.DEFAULT,
-            doc_key="ui.schema.fields.maxff.help.nonorthogonality_penalty",
-            minimum=Defaults.MAXFF.MIN,
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
         FieldSpec(
             "perturbation_L",
@@ -135,7 +109,6 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
     num_U_ratio: int | str
     num_V_ratio: int | str
     init_location: list[float] | str
-    maxC: float | str
     perturbation_L: float | str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
@@ -184,14 +157,7 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.offset_of_the_surface",
-        ),
-        FieldSpec(
-            "maxC",
-            "ui.schema.fields.maxc.label.maxc",
-            "float",
-            Defaults.MAXC.DEFAULT,
-            doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
-            minimum=Defaults.MAXC.MIN,
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
         FieldSpec(
             "perturbation_L",
@@ -215,7 +181,6 @@ class CPGEOSphereSurfaceNode(SurfaceNode):
     r0: float | str
     seed_size: float | str
     init_location: list[float] | str
-    MaxC: float | str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec(
             "r0",
@@ -239,14 +204,7 @@ class CPGEOSphereSurfaceNode(SurfaceNode):
             "vec3",
             Defaults.INIT_LOCATION.DEFAULT,
             doc_key="ui.schema.fields.init_location.help.center_of_the_sphere",
-        ),
-        FieldSpec(
-            "MaxC",
-            "ui.schema.fields.maxc.label.maxc",
-            "float",
-            Defaults.MAXC.DEFAULT,
-            doc_key="ui.schema.fields.maxc.help.curvature_squared_penalty",
-            minimum=Defaults.MAXC.MIN,
+            components=("ui.parameters.x", "ui.parameters.y", "ui.parameters.z"),
         ),
     )
 
@@ -291,6 +249,6 @@ class BREPSurfaceNode(SurfaceNode):
         ),
         FieldSpec("data", "ui.schema.fields.data.label.step_data", "str", "", hidden=True),
         FieldSpec("brep_metadata", "ui.assets.brep_metadata", "str", "{}", hidden=True),
-        FieldSpec("design_faces", "ui.schema.fields.design_faces.label", "vecN", ()),
+        FieldSpec("design_faces", "ui.schema.fields.design_faces.label", "vecN", (), item_type="str"),
         FieldSpec("control_point_spacing", "ui.schema.fields.control_point_spacing.label", "float", 1.0, minimum=1e-9),
     )

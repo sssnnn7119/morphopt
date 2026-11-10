@@ -1,0 +1,515 @@
+{
+  "capture": "Actual QWidget.grab(); no image resampling or text replacement",
+  "platform": "wayland",
+  "images": [
+    {
+      "file": "ui/geometry/boundary-part.png",
+      "description": "BoundaryPart, mesh settings and instance",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/geometry/bsp-outer-surface.png",
+      "description": "Outer BSP geometry and update flag",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/geometry/bsp-inner-cavity.png",
+      "description": "Inner BSP geometry and position components",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/geometry/instance-pose.png",
+      "description": "Instance translation and rotation components",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/loads/pressure.png",
+      "description": "Pressure and assembly",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/loads/reference-point.png",
+      "description": "Reference-point X/Y/Z position",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/loads/coupling.png",
+      "description": "Reference-point coupling",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/loads/fixed-boundary.png",
+      "description": "Fixed displacement directions",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/loads/pressure-load-case.png",
+      "description": "Named load-case interface and pressure amplitude",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/materials/homogeneous-material.png",
+      "description": "Material assignment and constitutive parameters",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/objectives/displacement-objective-and-metric.png",
+      "description": "Squared error to ry=2 and recorded metrics",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/solver/task-configuration.png",
+      "description": "CPU worker and ordered load-case groups",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/solver/run-settings.png",
+      "description": "Task name, result directory and device",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/geometry-updater.png",
+      "description": "Step limits and event-driven penalty strategy",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/geometry-strategies.png",
+      "description": "AdaptiveShapeWeights with five current parameters",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/shape-derivative.png",
+      "description": "QuadraticShapeDerivative",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/mirror-symmetry.png",
+      "description": "BspMirror",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/fairness.png",
+      "description": "Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/minimum-distance.png",
+      "description": "Distance",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/updaters/cylinder-envelope.png",
+      "description": "Cylinder",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/linear-shape-derivative.png",
+      "description": "Original unscaled first-order shape objective",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/loads/penalty-degree-of-freedom.png",
+      "description": "Reference-point constraint with six named DoFs",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/loads/penalty-node-direction.png",
+      "description": "Instance constraint: node 5, Z displacement",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/loads/spring-load-case.png",
+      "description": "Named pressure, penalty stiffness/target and spring stiffness/rest length/anchor coordinates",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/workspace-objective.png",
+      "description": "Workspace inputs, upper bounds and boundary quadrature",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/loads/workspace-load-cases.png",
+      "description": "Generated Gauss-point load cases appear in the model tree",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/solver/process-groups.png",
+      "description": "Ordered process groups; one case per group by default",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/cpgeo-cylinder.png",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/cpgeo-sphere.png",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/materials/ogden-model.png",
+      "description": "Ogden alpha edited as individual list items",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/materials/simp-material.png",
+      "description": "SIMP bounding-box components and constitutive parameters",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/sensitivity.png",
+      "description": "Sensitivity",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/control-bounds.png",
+      "description": "MinValue",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/volume-fraction.png",
+      "description": "Volume-fraction constraint and actual element block",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/brep-design-face.png",
+      "description": "Explicit face selection and control-point spacing",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/custom-code/generated-source.png",
+      "description": "Generated script references external STEP and metadata assets",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/brep-assets.png",
+      "description": "BREP geometry and metadata in the asset browser",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui-reference/appearance/font-settings.png",
+      "description": "Embedded font selection, preview, Apply/Confirm/Cancel",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.75,
+      "pixels": [
+        1435,
+        805
+      ]
+    },
+    {
+      "file": "ui-reference/appearance/visualization-settings.png",
+      "description": "Global projection, illumination, material and shared view controls",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.75,
+      "pixels": [
+        1540,
+        875
+      ]
+    },
+    {
+      "file": "ui/optimization/history-and-metrics.png",
+      "description": "Actual completed iterations, named metrics, timing and plot selector",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/optimization/optimization-log.png",
+      "description": "Saved .log browser and independent follow control",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/optimization/saved-design.png",
+      "description": "Saved boundary design and current-view export controls",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/optimization/surface-control-net.png",
+      "description": "Individual boundary surface and control net",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    },
+    {
+      "file": "ui/optimization/export-current-surfaces.png",
+      "description": "Geometry export uses the current component, surface and iteration",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        910,
+        333
+      ]
+    },
+    {
+      "file": "ui/optimization/export-history-gif.png",
+      "description": "History GIF target, iteration range and frame rate",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        910,
+        490
+      ]
+    },
+    {
+      "file": "ui/optimization/load-case-deformation.png",
+      "description": "Saved deformation for the named pressure case",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "dpr": 1.75,
+      "pixels": [
+        2870,
+        1820
+      ]
+    }
+  ],
+  "definition_sha256": {
+    "examples/bending_actuator/bending_actuator.morph": "e4b62b77975e6d2ffcf4627cff3c7dd316cca92bc6c2b4c04222cae476b70234",
+    "examples/workspace_objective/workspace_objective.morph": "993fad8805c9e39cca26b3dc82c633c5ddcb0484f4d47d55401c78a3212fc8f4",
+    "examples/step_face/step_face.morph": "c01b353192ffb20cd5ca47b1f12962a9f0c7966de2b2680b058e7d633839ee10"
+  },
+  "completed_run": {
+    "definition": "examples/bending_actuator/bending_actuator.py",
+    "device": "cpu",
+    "completed_iterations": 2,
+    "objective": "(ry - 2) ** 2",
+    "script_sha256": "14be58df8ebdfc7e61204546c01256af834fbc1dd5861225abed003739c11afa"
+  },
+  "font_policy": {
+    "body": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "tree": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "heading": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "code": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "chart": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    }
+  }
+}

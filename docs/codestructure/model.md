@@ -14,6 +14,7 @@
 - [6 FEA 接口与工况覆盖](#section-fea-接口与工况覆盖)
 - [7 材料分配与参数类型](#section-材料分配与参数类型)
 - [8 内核命名与 UI 命名的边界](#section-内核命名与-ui-命名的边界)
+- [9 BSP 几何输出与可微约束](#section-bsp-几何输出与可微约束)
 
 <!-- /docs:toc -->
 
@@ -43,6 +44,8 @@
 | `ProtocalSavable` | `save()`、`load()`、`pathlog_required()`、`save_directory()` | 状态持久化与命名目录 |
 | `ProtocalVisualizable` | `get_meshes()`、`plot()` | 网格输出与绘图钩子 |
 | `ProtocalUpdatable` | `num_variables`、参数访问、`update_variables()`、灵敏度变量提取与写回 | 可设计对象的变量契约 |
+
+`ProtocalInitializable` 的两个方法均为默认空钩子。`reinitialize(*args, **kwargs)` 不强制指定迭代号；模型组件通常接收 `iteration`，局部更新器接收 `gradient`，参数类型与实际行为由具体实现声明。中间基类仅在增加共享行为时重写钩子。
 
 `BaseModelComponent` 组合初始化、保存和可视化能力，表示单个模型接口；`BaseParams` 维护多个具名接口。可更新几何与材料额外实现 `ProtocalUpdatable`，不由集合基类为所有对象隐式增加设计变量。
 
@@ -135,14 +138,17 @@ BREP 拓扑检查和 STEP 导出使用与预览、剖分共享锁的 `torchfea.c
 
 父类不根据 `BoundaryPart` 或其几何描述类型选择实现。曲面通过 `prepare_geometry()` 准备几何文件，再由 `load_geometry()` 调用 CADPart 的对应载入方法。BSP 和 `BREPSurface` 使用 STEP 载入，CPGEO 和固定 STL 使用离散网格载入。BoundaryPart 按这些方法返回的面编号组装外壳和内腔，并根据曲面的离散几何能力选择相应 Gmsh 内核。
 
-`CADPart` 集中实现 `load_step_boundary()`、`load_mesh_boundary()`、`split_shells()` 和 `export_shell_step()`。转换时，各封闭壳体分别导出为 STEP 资产，`BREPSurface` 仅持有文件路径和面名称映射。原始面身份在组装时写入部件的 `_face_names`，BoundaryPart 的曲面分组由自身 `_surface_groups` 持有。源 CAD 操作历史只参与转换，不进入曲面对象。
+`CADPart` 集中实现 `load_step_boundary()`、`load_mesh_boundary()`、`split_shells()` 和 `export_shell_step()`。转换时，各封闭壳体分别导出为 STEP 资产，`BREPSurface` 保存资产引用、拓扑身份和选定面的设计状态。原始面身份在组装时写入部件的 `_face_names`，BoundaryPart 的曲面分组由自身 `_surface_groups` 持有。源 CAD 操作历史只参与转换，不进入曲面对象。
 
-`CADPart._Operation` 是内部执行适配器，将当前 Part 的构建或查询方法接入 TorchFEA 管理的 Gmsh 会话。它只在当前操作中使用，实际 CAD 声明、曲面状态与集合身份仍保存在 Part 和 Surface 中。`CADPart.to_boundary_part()` 直接创建普通 `BoundaryPart`，复制网格设置、名称和实例声明。实例声明采用深拷贝，并由公共初始化流程保留。
+`CADMeshingMixin._Operation` 是内部执行适配器，将当前 Part 的构建或查询方法接入 TorchFEA 管理的 Gmsh 会话。它只在当前操作中使用，实际 CAD 声明、曲面状态与集合身份仍保存在 Part 和 Surface 中。`CADPart.to_boundary_part()` 直接创建普通 `BoundaryPart`，复制网格设置、名称和实例声明。实例声明采用深拷贝，并由公共初始化流程保留。
 
 ```mermaid
 flowchart TB
-    B["BasePart：模型接口与实例"] --> C["CADPart：公共几何构建与剖分流程"]
-    C --> S["BoundaryPart：外壳、内腔与设计变量"]
+    B["BasePart：模型接口与实例"] --> F["FixedPart：固定网格缓存"]
+    F --> C["CADPart：CAD 操作输入"]
+    B --> S["BoundaryPart：外壳、内腔与设计变量"]
+    M["CADMeshingMixin：公共构建模板"] --> C
+    M --> S
     S --> O["OffsetBoundaryPart：偏置层单元"]
     classDef default fill:transparent,stroke:#808080
 ```
@@ -266,3 +272,13 @@ UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映�
 内核 Part 支持显式装配名；UI 的 Part 节点仅保留一个可编辑名称，`assembly_name` 为派生值。UI 的实例名称单独管理，Part 改名不修改已有 Instance 名。
 
 UI 通过对象引用维护载荷、材料和更新目标，保存及生成代码时才投影为内核名称。该规则属于 [UI 领域模型](ui-model.md)，不通过修改内核默认实例工厂来实现。
+
+<a id="section-bsp-几何输出与可微约束"></a>
+
+## 9 BSP 几何输出与可微约束
+
+BSP 导出在各进程内初始化并最终释放 Gmsh，会话内缝合后重新查询实际闭合体，不沿用修复前的体 tag。重建 BREP 数据使用独立临时目录，避免多个曲面导出任务相互覆盖。缺少闭合实体或输出文件失败时显式报告几何错误，不将空文件作为正常资产继续剖分。
+
+`BoundaryPart.apply_surface_constraints()` 可在 `torch.func` 自动微分变换内部执行，跨曲面约束应使用 PyTorch 运算保持计算图；不能在该钩子内调用 `synchronize()` 或将设计 Tensor 转为 NumPy。几何输出阶段再同步到外部 CAD/BSP 对象。
+
+BoundaryPart 的 CADHistory 将体网格尺寸乘以 `CONSTANT.KERNEL.MESH.BOUNDARY_SEED_SIZE_VARIATION` 范围内的随机因子，公共剖分入口优先读取该历史对象的尺寸。该扰动影响实际有限元网格，不改变定义预览的控制网格或曲面几何；不同运行的节点、单元数量可能不同。

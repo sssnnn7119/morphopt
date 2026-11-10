@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import codecs
-import re
 from pathlib import Path
 
 import numpy as np
@@ -42,12 +40,15 @@ from ..application.finite_element import (
     FiniteElementResult,
     FiniteElementSession,
 )
+from ..application.fields import load_value_fields
 from ..i18n import tr
+from ..model.fields import FieldSpec
 from ..presentation.result_fields import contour_label_key, export_format_label, field_label
 from ..processes import start_worker
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_save_file
 from .viewport import PlotViewport
+from .sequence_input import SequenceInput
 from ..visualization.rendering import add_orientation_axes
 
 
@@ -115,7 +116,7 @@ class FiniteElementPage(QWidget):
             QHeaderView.ResizeMode.ResizeToContents
         )
         self.loads.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.Stretch
+            3, QHeaderView.ResizeMode.ResizeToContents
         )
         self.loads.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.loads.itemChanged.connect(self._load_edited)
@@ -360,16 +361,18 @@ class FiniteElementPage(QWidget):
                     item = QTableWidgetItem(text)
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                     self.loads.setItem(row, column, item)
-                self.loads.setItem(
-                    row,
-                    3,
-                    QTableWidgetItem(
-                        ", ".join(
-                            format(float(value), ".12g")
-                            for value in numbers.reshape(-1)
-                        )
+                fields = load_value_fields(kind)
+                editor = SequenceInput(
+                    FieldSpec(
+                        "values", "ui.fea.load_parameters", f"vec{numbers.size}",
+                        tuple(numbers.reshape(-1).tolist()),
+                        components=tuple(field.label_key for field in fields),
                     ),
+                    numbers.reshape(-1).tolist(),
                 )
+                editor.changed.connect(self._load_edited)
+                self.loads.setCellWidget(row, 3, editor)
+            self.loads.resizeRowsToContents()
         finally:
             self._loading = False
 
@@ -392,12 +395,7 @@ class FiniteElementPage(QWidget):
             }
             for row in range(self.loads.rowCount()):
                 name = self.loads.item(row, 0).text()
-                raw = self.loads.item(row, 3).text().strip()
-                numbers = (
-                    json.loads(raw)
-                    if raw.startswith("[")
-                    else [float(part) for part in re.split(r"[,，\s]+", raw) if part]
-                )
+                numbers = self.loads.cellWidget(row, 3).value()
                 values[name] = (
                     enabled[name],
                     np.asarray(numbers, dtype=float).reshape(-1).tolist(),

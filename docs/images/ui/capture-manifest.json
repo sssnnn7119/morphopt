@@ -36,43 +36,51 @@
     },
     {
       "file": "geometry/boundary-part.png",
-      "description": "创建part1和默认实例后，填写部件网格和外表面设置",
+      "description": "BoundaryPart, mesh settings and instance",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "geometry/bsp-inner-cavity.png",
-      "description": "再添加内表面surface_1：r0=4、length=74、z=3",
+      "description": "Inner BSP geometry and position components",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "geometry/bsp-outer-surface.png",
-      "description": "只添加外表面surface_0：r0=8、length=80",
+      "description": "Outer BSP geometry and update flag",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "geometry/instance-pose.png",
-      "description": "检查实例part1-1的零平移与零旋转",
+      "description": "Instance translation and rotation components",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/add-interface-menu.png",
@@ -86,53 +94,63 @@
     },
     {
       "file": "loads/coupling.png",
-      "description": "新增耦合，将RP_1连接到surface_0_Head",
+      "description": "Reference-point coupling",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/fixed-boundary.png",
-      "description": "新增底部固定约束bc_1，固定X/Y/Z",
+      "description": "Fixed displacement directions",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/pressure-load-case.png",
-      "description": "定义第一个工况，pressure_1的幅值为0.06",
+      "description": "Named load-case interface and pressure amplitude",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/pressure.png",
-      "description": "先定义作用实例和内腔表面，此时工况幅值尚未设置",
+      "description": "Pressure and assembly",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "loads/reference-point.png",
-      "description": "新增末端参考点RP_1，坐标0,0,80",
+      "description": "Reference-point X/Y/Z position",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "materials/add-material-menu.png",
@@ -146,73 +164,87 @@
     },
     {
       "file": "materials/homogeneous-material.png",
-      "description": "添加NeoHookeanLnJ均匀材料并分配给part1",
+      "description": "Material assignment and constitutive parameters",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "objectives/displacement-objective-and-metric.png",
-      "description": "添加最大化RP_1.ry的目标项和记录ry的指标项",
+      "description": "Squared error to ry=2 and recorded metrics",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/cylinder-envelope.png",
-      "description": "半径10、高80、底部z=0的圆柱包络约束",
+      "description": "Cylinder",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/fairness.png",
-      "description": "表面曲率正则化约束",
+      "description": "Fairness",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/minimum-distance.png",
-      "description": "表面距离矩阵全部为2.5",
+      "description": "Distance",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/mirror-symmetry.png",
-      "description": "两个表面的 xz 镜面对称约束",
+      "description": "BspMirror",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/shape-derivative.png",
-      "description": "子优化目标 ShapeDerivative",
+      "description": "QuadraticShapeDerivative",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "workspace/file-menu.png",
@@ -236,53 +268,63 @@
     },
     {
       "file": "solver/task-configuration.png",
-      "description": "有限元求解器默认使用一个进程和 CPU",
+      "description": "CPU worker and ordered load-case groups",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "updaters/geometry-updater.png",
-      "description": "part1 几何优化器的默认类、50 轮和曲面更新开关",
+      "description": "Step limits and event-driven penalty strategy",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "solver/run-settings.png",
-      "description": "任务名称、相对结果目录和运行设置",
+      "description": "Task name, result directory and device",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "custom-code/generated-source.png",
-      "description": "基于可移植定义生成的只读代码",
+      "description": "Generated script references external STEP and metadata assets",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "examples/step_face/step_face.morph",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "optimization/history-and-metrics.png",
-      "description": "实际运行的迭代历史表和目标值曲线",
+      "description": "Actual completed iterations, named metrics, timing and plot selector",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "optimization/initial-design.png",
@@ -296,23 +338,27 @@
     },
     {
       "file": "optimization/saved-design.png",
-      "description": "同一算例第36轮的可更新边界结构",
+      "description": "Saved boundary design and current-view export controls",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "optimization/load-case-deformation.png",
-      "description": "同一算例第36轮工况0的变形网格",
+      "description": "Saved deformation for the named pressure case",
       "pixels": [
-        3230,
-        1836
+        2870,
+        1820
       ],
-      "dpr": 1.7,
-      "part_naming": "single Part name; independent Instance names"
+      "part_naming": "single Part name; independent Instance names",
+      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
+      "recaptured_for_current_branch": true,
+      "dpr": 1.75
     },
     {
       "file": "optimization/continue-dialog.png",
@@ -561,5 +607,6 @@
   "font_unification": "All documentation screenshots retaken with explicit Simplified Chinese font selection for Qt, Matplotlib and VTK.",
   "part_naming": "One Part name; Instance names edited independently; legacy Part aliases normalized on load.",
   "portable_definition": "../../../examples/bending_actuator/bending_actuator.morph",
-  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479"
+  "portable_definition_sha256": "224ed992960ef5c4276d0205ae68765367983dea5431eb698db274d0f5a39479",
+  "current_capture_manifest": "../current-capture-manifest.json"
 }
