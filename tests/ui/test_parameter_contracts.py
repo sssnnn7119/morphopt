@@ -364,6 +364,60 @@ def test_bsp_rotation_alignment_combines_orders_and_helper_constants():
     assert kernel_surface.model.size[1] % 15 == 0
 
 
+@pytest.mark.parametrize("kind,method,params", [
+    ("BspZMirror", "mirror_z", {}),
+    ("BspZAntisymmetry", "antisymmetry_z", {}),
+    ("BspZPeriodic", "periodic_z", {"periods": 3}),
+    ("BspZPeriodic", "periodic_z", {"periods": "PERIODS"}),
+])
+def test_bsp_axial_constraints_round_trip_and_generate_valid_geometry(tmp_path, kind, method, params):
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    part.surfaces.clear()
+    part.add_surface(SurfaceNode.create("bsp_cylinder", r0=2.0, length=30.0, seed_size=1.0))
+    problem.helper_variables.append(HelperVariableNode(name="PERIODS", params={"value": "3"}))
+    item = symmetry_constraint(kind, **params)
+    item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert kind in R.available_surface_symmetry_types(["bsp_cylinder"])
+    assert kind not in R.available_surface_symmetry_types(["cpgeo_cylinder"])
+    path = ProblemLibrary.save(problem, tmp_path / "axial.morph")
+    loaded = ProblemLibrary.load(path)
+    assert loaded.updater.geometry[0]["symmetry_constraints"] == [item]
+    source = ProblemSession(loaded).source()
+    kwargs = ", ".join(f"{key}={value}" for key, value in params.items())
+    assert f"surface_0.add_constraint(surface_0.{method}({kwargs}))" in source
+    if kind == "BspZPeriodic":
+        assert f"num_V_ratio={params['periods']}" in source
+    namespace = {"__name__": "test_bsp_axial"}
+    exec(source, namespace)
+    geometry = namespace["ThisController"].Params.GeometryParams()
+    geometry.initialize()
+    surface = next(iter(geometry.interfaces.values())).surface_interface(0)
+    assert type(surface.constraints[0]).__name__ == R.SURFACE_SYMMETRY_CONSTRAINTS[kind].backend_class
+    if kind == "BspZPeriodic":
+        assert surface.constraints[0].periods == 3
+        assert surface.constraints[0].period_length > 0
+
+
+def test_bsp_axial_alignment_is_independent_of_circumferential_rotation():
+    problem = ProblemLibrary.create("shapeopt")
+    surface = problem.parts()[0].surfaces[0]
+    rotation = symmetry_constraint("BspRotation", order=3)
+    periodic = symmetry_constraint("BspZPeriodic", periods=5)
+    for item in (rotation, periodic):
+        item["surface_index"] = 0
+    items = problem.updater.geometry[0]["symmetry_constraints"] = [rotation, periodic]
+    parameters = literal_call(render_surface_call(surface, problem))[1]
+    assert (parameters["num_U_ratio"], parameters["num_V_ratio"]) == (3, 5)
+    periodic["params"]["periods"] = 7
+    assert literal_call(render_surface_call(surface, problem))[1]["num_V_ratio"] == 7
+    items.remove(periodic)
+    parameters = literal_call(render_surface_call(surface, problem))[1]
+    assert (parameters["num_U_ratio"], parameters["num_V_ratio"]) == (3, 1)
+    assert surface.num_V_ratio == 1
+
+
 @pytest.mark.parametrize("material_type", R.MATERIAL_TYPES)
 @pytest.mark.parametrize("model", MATERIAL_MODEL_CHOICES)
 def test_every_visible_material_field_reaches_its_constructor(material_type, model):

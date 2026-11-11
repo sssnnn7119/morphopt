@@ -15,6 +15,9 @@ from .bsp_constraints import (
     BspMirrorConstraint,
     BspRotationalSymmetryConstraint,
     BspSurfaceRelationConstraint,
+    BspZAntisymmetryConstraint,
+    BspZMirrorConstraint,
+    BspZPeriodicityConstraint,
 )
 
 if TYPE_CHECKING:
@@ -33,6 +36,9 @@ class BspSurface(ControlPointSurface):
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
     rotate: type[BspRotationalSymmetryConstraint] = BspRotationalSymmetryConstraint
     relate: type[BspSurfaceRelationConstraint] = BspSurfaceRelationConstraint
+    mirror_z: type[BspZMirrorConstraint] = BspZMirrorConstraint
+    antisymmetry_z: type[BspZAntisymmetryConstraint] = BspZAntisymmetryConstraint
+    periodic_z: type[BspZPeriodicityConstraint] = BspZPeriodicityConstraint
 
     def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
         """Identify the bottom and head nodes of this BSP boundary."""
@@ -592,18 +598,18 @@ class BspSurface(ControlPointSurface):
     ) -> list[int]:
         return part.load_step_boundary(self._geometry_path, context)
 
-    def update_variables(self, x_change):
-
-        x_change = x_change.reshape([self.model.size[0], self.model.size[1], 3])
-
+    def constrain_displacements(self, change: torch.Tensor) -> torch.Tensor:
+        """Apply the same fixed-end mask to updates and symmetry projections."""
+        constrained = change.reshape(*self.model.size, 3).clone()
         fixed_rows = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
-        x_change[:fixed_rows, :, 2] = 0
-        x_change[-fixed_rows:, :, 2] = 0
+        constrained[:fixed_rows, :, 2] = 0
+        constrained[-fixed_rows:, :, 2] = 0
+        constrained[0] = 0
+        constrained[-1] = 0
+        return constrained.reshape_as(change)
 
-        x_change[0] = 0
-        x_change[-1] = 0
-
-        ControlPointSurface.update_variables(self, x_change)
+    def update_variables(self, x_change: torch.Tensor) -> None:
+        ControlPointSurface.update_variables(self, self.constrain_displacements(x_change))
 
     def get_points_weight(self):
         """Get vertex-based integration weights for the preload mesh."""
@@ -675,7 +681,7 @@ class BspSurface(ControlPointSurface):
             length (float): The length of the cylinder.
             seed_size (float): Initial control-net and surface sampling spacing, separate from the Part's FE mesh size.
             num_U_ratio (int, optional): Circumferential control-point count alignment factor, combined with 12 by LCM.
-            num_V_ratio (int, optional): Axial control-point count rounding factor; the final count is odd.
+            num_V_ratio (int, optional): Axial period-count alignment. Values above one reserve fixed end rows and periodic wrapping rows.
             degree (int, optional): The degree of the B-spline surface. Default is 3.
             init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
             perturbation_L (float, optional): The perturbation length for the surface. Default is -1. If < 0, no perturbation is applied.
@@ -689,10 +695,16 @@ class BspSurface(ControlPointSurface):
         base_segments = CONSTANT.KERNEL.SURFACE.CYLINDER_CIRCUMFERENTIAL_BASE_SEGMENTS
         numU_unit = int(np.lcm(base_segments, num_U_ratio))
         numU = max(numU_unit, round(numU / numU_unit) * numU_unit)
-        numV = round(numV / num_V_ratio) * num_V_ratio
-        # Keep a control-point row on the mid-plane.  This makes the standard
-        # axial mirror planes directly representable by the BSP control net.
-        if numV % 2 == 0:
+        if num_V_ratio > 1:
+            # A periodic curve with M spans needs M + degree control rows.
+            guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+            fixed_and_wrapped = 2 * guard + degree
+            unit = int(np.lcm(2, num_V_ratio))
+            minimum = int(np.ceil(num_V_ratio * (degree + 1) / unit)) * unit
+            intervals = max(minimum, round((numV - fixed_and_wrapped) / unit) * unit)
+            numV = fixed_and_wrapped + intervals
+        elif numV % 2 == 0:
+            # Ordinary cylinders keep a row on the axial mid-plane.
             numV += 1
 
         P0 = torch.zeros(numV, numU, 3)

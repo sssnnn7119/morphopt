@@ -134,33 +134,33 @@ def render_surface_call(
             else repr("")
         )
         return f"{prefix}.initialize_from_stl_file({path_expression})"
-    rotation_factor = None
+    alignment_factors = {}
     if surface.type == "bsp_cylinder" and problem is not None:
         owner = problem.owner_of_surface(surface)
         config = _geometry_config_for_part(problem, owner) if owner is not None else None
-        orders = [
-            _render_value(item.get("params", {}).get(
-                "order", CONSTANT.UI.SCHEMA_FIELDS.SURFACE_CONSTRAINTS.BSPROTATION.ORDER.DEFAULT,
-            ), problem)
-            for item in (config or {}).get("symmetry_constraints", [])
-            if item.get("type") == "BspRotation"
-            and item.get("surface_index") == owner.surfaces.index(surface)
-        ]
-        if orders:
-            # Derive the factor from the current constraints, not a saved copy.
-            rotation_factor = (
-                orders[0] if len(orders) == 1 else f"math.lcm({', '.join(orders)})"
-            )
+        for constraint_type, axis, parameter in (
+            ("BspRotation", "U", "order"),
+            ("BspZPeriodic", "V", "periods"),
+        ):
+            default = SURFACE_SYMMETRY_CONSTRAINTS[constraint_type].fields[0].new_default()
+            factors = [
+                _render_value(item.get("params", {}).get(parameter, default), problem)
+                for item in (config or {}).get("symmetry_constraints", [])
+                if item.get("type") == constraint_type
+                and item.get("surface_index") == owner.surfaces.index(surface)
+            ]
+            if factors:
+                # Derive alignment from current constraints, not a saved copy.
+                alignment_factors[f"num_{axis}_ratio"] = (
+                    factors[0] if len(factors) == 1 else f"math.lcm({', '.join(factors)})"
+                )
     kwargs = []
     for field in surface.fields:
         key = field.key
         value = surface.get_field(key)
         if value is None:
             continue
-        expression = (
-            rotation_factor if key == "num_U_ratio" and rotation_factor is not None
-            else _render_value(value, problem)
-        )
+        expression = alignment_factors.get(key, _render_value(value, problem))
         kwargs.append(f"{key}={expression}")
     factory = (
         (surface.custom_class + "." + factory.split(".", 1)[1])
@@ -610,9 +610,8 @@ def generate_base_source(
 
     controller_ref = CORE_BASES["controller"]
     run_dev = problem.device or "cpu"
-    upd_dev = problem.updater_device or run_dev
     device = repr(run_dev)  # -> morphopt.start_optimization(device=...)
-    upd_device = repr(upd_dev)  # -> Updater(..., device=...) (independent)
+    upd_device = repr(problem.updater_device or None)
 
     a("import os")
     a('os.environ["MPLBACKEND"] = "Agg"')

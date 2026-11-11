@@ -138,7 +138,7 @@ class ThisController(morphopt.Controller):
             self.add_geometry_updater(self.UpdaterBoundaryPart(), name='part1')
 
         def __init__(self, params: Any) -> None:
-            super().__init__(params=params, device='cpu')
+            super().__init__(params=params, device=None)
 
         class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
 

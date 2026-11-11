@@ -14,12 +14,61 @@ from morphopt.ui.model.configuration import geometry_updater_config, materials_u
 from morphopt.ui.model.fields import field_defaults
 from morphopt.ui.model.problem import HelperVariableNode
 from morphopt.ui.model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
+from morphopt.ui.i18n import tr
 from morphopt.ui.widgets.updater_editor import UpdaterEditor, UpdaterStrategyEditor
 
 
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+def test_updater_device_selector_distinguishes_default_from_cpu(app, monkeypatch):
+    monkeypatch.setattr(
+        "morphopt.ui.widgets.updater_editor.detect_devices", lambda: ["cpu", "cuda:0"],
+    )
+    problem = ProblemLibrary.create_blank()
+    problem.device = "cuda:0"
+    editor = UpdaterEditor()
+    changes = []
+    editor.changed.connect(changes.append)
+    editor.edit_node(problem.updater, problem)
+    assert editor._device.currentText() == tr("ui.widgets.updater_editor.default_device")
+    assert problem.updater_device is None
+    assert not changes
+
+    editor._device.setCurrentText("cpu")
+    assert problem.updater_device == "cpu"
+    editor._device.setCurrentIndex(0)
+    assert problem.updater_device is None
+    assert len(changes) == 2
+
+    problem.device = "cuda:1"
+    editor.edit_node(problem.updater, problem)
+    assert editor._device.currentIndex() == 0
+    assert problem.updater_device is None
+    assert len(changes) == 2
+
+    problem.updater_device = "cuda:9"
+    editor.edit_node(problem.updater, problem)
+    assert editor._device.currentText() == "cuda:9"
+    assert problem.updater_device == "cuda:9"
+    assert len(changes) == 2
+    editor.close()
+
+
+@pytest.mark.parametrize("device", [None, "cpu", "cuda:1"])
+def test_updater_device_round_trip_preserves_runtime_default(tmp_path, device):
+    problem = ProblemLibrary.create("shapeopt")
+    problem.device = "cuda:0"
+    problem.updater_device = device
+    saved = ProblemLibrary.save(problem, tmp_path / "device.morph")
+    restored = ProblemLibrary.load(saved)
+    assert restored.updater_device == device
+    namespace = {"__name__": "test_updater_device"}
+    exec(ProblemSession(restored).source(), namespace)
+    updater = namespace["ThisController"].Updater(None)
+    assert updater._device == device
 
 
 def test_adaptive_defaults_apply_the_same_mild_early_relaxation_in_ui_and_kernel():

@@ -1220,7 +1220,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | `label` | 任务名称，用于识别运行 |
 | `result_folder` | 结果根目录；每次运行建立独立记录目录 |
 | `device` | 主计算设备，例如 cpu 或 cuda:0；必须与实际环境匹配 |
-| `updater_device` | 更新器的设备；留空跟随主设备，允许将几何 / 材料更新与 FE 设备分开安排 |
+| `updater_device` | 更新器的设备；选择“默认（跟随 Controller）”时保存为 `null`，生成脚本传入 `device=None`，在运行时跟随 Controller；也可显式选择 CPU 或 GPU |
 | `restart_per_iteration` | 运行进程周期性重启的轮次间隔，用于进程生命周期管理；不是总优化轮数 |
 
 `.morph` 保存各部件、材料、载荷、求解器及更新器的显式定义，不保存全局优化方案分类。一个任务可同时包含几何和材料设计变量。运行归档还保存了当时的冻结定义、模型、状态与历史；修改当前 `.morph` 不会重写已有轮次的数据。

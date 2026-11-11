@@ -78,15 +78,13 @@ class UpdaterEditor(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
-        # run-level compute device (used by the generated Updater)
+        # An unset updater device follows the Controller's device at runtime.
         devrow = QHBoxLayout()
         devrow.addWidget(QLabel(tr("ui.widgets.updater_editor.updater_device")))
         self._device = QComboBox()
         self._device.setEditable(True)
-        self._device.addItem("cpu")
-        for dev in detect_devices():
-            if dev != "cpu":
-                self._device.addItem(dev)
+        self._device.addItem(tr("ui.widgets.updater_editor.default_device"))
+        self._device.addItems(detect_devices())
         self._device.setToolTip(
             tr(
                 "ui.widgets.updater_editor.device_for_the_updater_only_cpu_cuda_0_independent_from_the_run_device_s"
@@ -146,12 +144,13 @@ class UpdaterEditor(QWidget):
         # show the current updater device without re-triggering a save
         self._loading = True
         try:
-            dev = problem.updater_device or (
-                problem.device if problem is not None else "cpu"
-            )
-            if self._device.findText(dev) < 0:
+            dev = problem.updater_device
+            if dev and self._device.findText(dev) < 0:
                 self._device.addItem(dev)
-            self._device.setCurrentText(dev if dev else "cpu")
+            if dev:
+                self._device.setCurrentText(dev)
+            else:
+                self._device.setCurrentIndex(0)
         finally:
             self._loading = False
         sections = updater_sections(
@@ -272,13 +271,11 @@ class UpdaterEditor(QWidget):
         if self._loading or self._problem is None:
             return
         text = (text or "").strip()
-        if text:
-            if text != self._problem.updater_device:
-                self._problem.updater_device = text
-        else:
-            self._problem.updater_device = None  # empty -> follow run device
-        if self._node is not None:
-            self.changed.emit(self._node)
+        device = None if not text or text == self._device.itemText(0) else text
+        if device != self._problem.updater_device:
+            self._problem.updater_device = device
+            if self._node is not None:
+                self.changed.emit(self._node)
 
     # ------------------------------------------------------------- builders
     def _section_box(

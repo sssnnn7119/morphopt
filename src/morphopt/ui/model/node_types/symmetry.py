@@ -61,6 +61,47 @@ class BspRotationConstraintNode(SurfaceConstraintNode):
     )
 
 
+class BspZMirrorConstraintNode(SurfaceConstraintNode):
+    """BSP axial mirror with an automatically determined mid-plane."""
+
+    type_name: ClassVar[str] = "BspZMirror"
+    backend_class: ClassVar[str] = "BspZMirrorConstraint"
+    label_key: ClassVar[str] = "ui.schema.catalog.symmetry_constraint.bspzmirror.label"
+    factory: ClassVar[str] = "BSP"
+    method: ClassVar[str] = "mirror_z"
+    fields: ClassVar[tuple[FieldSpec, ...]] = ()
+
+
+class BspZAntisymmetryConstraintNode(SurfaceConstraintNode):
+    """BSP axial half-turn symmetry with reversed circumferential order."""
+
+    type_name: ClassVar[str] = "BspZAntisymmetry"
+    backend_class: ClassVar[str] = "BspZAntisymmetryConstraint"
+    label_key: ClassVar[str] = "ui.schema.catalog.symmetry_constraint.bspzantisymmetry.label"
+    factory: ClassVar[str] = "BSP"
+    method: ClassVar[str] = "antisymmetry_z"
+    fields: ClassVar[tuple[FieldSpec, ...]] = ()
+
+
+class BspZPeriodicConstraintNode(SurfaceConstraintNode):
+    """BSP axial translation periods outside the fixed end guards."""
+
+    type_name: ClassVar[str] = "BspZPeriodic"
+    backend_class: ClassVar[str] = "BspZPeriodicityConstraint"
+    label_key: ClassVar[str] = "ui.schema.catalog.symmetry_constraint.bspzperiodic.label"
+    factory: ClassVar[str] = "BSP"
+    method: ClassVar[str] = "periodic_z"
+    Defaults = CONSTANT.UI.SCHEMA_FIELDS.SURFACE_CONSTRAINTS.BSPZPERIODIC
+    periods: int | str
+    fields: ClassVar[tuple[FieldSpec, ...]] = (
+        FieldSpec(
+            "periods", "ui.schema.fields.periods.label", "int",
+            Defaults.PERIODS.DEFAULT, minimum=Defaults.PERIODS.MIN,
+            doc_key="ui.schema.fields.periods.help.bsp_axial",
+        ),
+    )
+
+
 class CPGEOMirrorConstraintNode(SurfaceConstraintNode):
     """UI definition of CPGEOMirrorConstraint."""
 

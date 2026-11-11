@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ...constants import CONSTANT
 from .base_constraints import BaseSurfaceConstraints, SurfaceRelationConstraint
 
 if TYPE_CHECKING:
@@ -40,6 +41,9 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
             raise TypeError("BSP symmetry constraints require a BSP surface.")
 
     def apply(self, surface: BspSurface) -> None:
+        surface.control_points = self._project(surface)
+
+    def _project(self, surface: BspSurface) -> torch.Tensor:
         num_v, num_u = surface.model.size
         control_points = surface.control_points.reshape(num_v, num_u, 3)
 
@@ -64,9 +68,105 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
             ),
             dim=-1,
         )
-        surface.control_points = projected.reshape_as(surface.control_points)
+        return projected.reshape_as(surface.control_points)
 
     def reinitialize(self, surface: BspSurface) -> None:
+        self.apply(surface)
+        surface.synchronize()
+
+
+class BspZMirrorConstraint(BspMirrorConstraint):
+    """Mirror about the initial axial mid-plane and preserve fixed end coordinates."""
+
+    def __init__(self) -> None:
+        super().__init__(plane="xy")
+
+    def validate_surface(self, surface: BspSurface) -> None:
+        super().validate_surface(surface)
+        points = surface.model.control_points.reshape(*surface.model.size, 3)
+        self.offset = float((points[0, :, 2].mean() + points[-1, :, 2].mean()) / 2)
+
+    def apply(self, surface: BspSurface) -> None:
+        change = self._project(surface) - surface.control_points
+        surface.control_points = surface.control_points + surface.constrain_displacements(change)
+
+    def reinitialize(self, surface: BspSurface) -> None:
+        self.validate_surface(surface)
+        super().reinitialize(surface)
+
+
+class BspZAntisymmetryConstraint(BspZMirrorConstraint):
+    """Turn the upper/lower halves by 180 degrees about their mid-height X axis.
+
+    The axis passes through the initial cross-section center in Y. The U roll
+    accounts for the clockwise cylindrical control-net phase before reflecting
+    Y, so an undeformed cylinder and its fixed end rings remain unchanged.
+    """
+
+    def validate_surface(self, surface: BspSurface) -> None:
+        super().validate_surface(surface)
+        points = surface.model.control_points.reshape(*surface.model.size, 3)
+        self._center_y = float(points[0, :, 1].mean())
+
+    def _project(self, surface: BspSurface) -> torch.Tensor:
+        points = surface.control_points.reshape(*surface.model.size, 3)
+        reflected = torch.roll(points.flip(dims=(0, 1)), shifts=-1, dims=1)
+        projected = torch.stack((
+            (points[..., 0] + reflected[..., 0]) / 2,
+            self._center_y + (points[..., 1] - reflected[..., 1]) / 2,
+            self.offset + (points[..., 2] - reflected[..., 2]) / 2,
+        ), dim=-1)
+        return projected.reshape_as(surface.control_points)
+
+
+class BspZPeriodicityConstraint(BaseSurfaceConstraints["BspSurface"]):
+    """Repeat an axial control block while leaving both end guards untouched.
+
+    Each end guard has FIXED_END_CONTROL_POINT_ROWS rows. The remaining net
+    stores ``periods`` blocks plus ``degree`` wrapping rows. With the cylinder's
+    uniform V knots this gives that many full translation periods in the
+    interior; the clamped ends retain smooth B-spline transitions.
+    """
+
+    def __init__(self, periods: int = 2) -> None:
+        if periods < 2 or int(periods) != periods:
+            raise ValueError("periods must be an integer of at least 2.")
+        self.periods = int(periods)
+        self.period_length: float
+
+    def validate_surface(self, surface: BspSurface) -> None:
+        from .bsp_surface import BspSurface
+
+        if not isinstance(surface, BspSurface):
+            raise TypeError("BSP axial periodicity requires a BSP surface.")
+        num_v = surface.model.size[0]
+        guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+        intervals = num_v - 2 * guard - surface.model.degree
+        if intervals < self.periods * (surface.model.degree + 1) or intervals % self.periods:
+            raise ValueError(
+                "The axial control net must contain equal periods and wrapping "
+                "rows outside the fixed ends. Construct the BSP cylinder with "
+                "num_V_ratio=periods."
+            )
+        points = surface.model.control_points.reshape(*surface.model.size, 3)
+        height = float(points[-1, :, 2].mean() - points[0, :, 2].mean())
+        self.period_length = height * intervals / ((num_v - 1) * self.periods)
+
+    def apply(self, surface: BspSurface) -> None:
+        points = surface.control_points.reshape(*surface.model.size, 3)
+        guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+        degree = surface.model.degree
+        count = (len(points) - 2 * guard - degree) // self.periods
+        block = points[guard:guard + count]
+        shift = points.new_tensor([0.0, 0.0, self.period_length])
+        copies = [block + step * shift for step in range(self.periods)]
+        wrapped = block[:degree] + self.periods * shift
+        surface.control_points = torch.cat(
+            [points[:guard], *copies, wrapped, points[-guard:]], dim=0,
+        ).reshape_as(surface.control_points)
+
+    def reinitialize(self, surface: BspSurface) -> None:
+        self.validate_surface(surface)
         self.apply(surface)
         surface.synchronize()
 

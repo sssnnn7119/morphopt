@@ -699,6 +699,11 @@ class _Constants:
                         MIN = 1
 
             class SURFACE_CONSTRAINTS:
+                class BSPZPERIODIC:
+                    class PERIODS:
+                        DEFAULT = 2
+                        MIN = 2
+
                 class BSPROTATION:
                     class ORDER:
                         DEFAULT = 2
