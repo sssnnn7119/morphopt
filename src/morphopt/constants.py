@@ -31,6 +31,7 @@ class _Constants:
         class WIDGETS:
             MAXIMUM_QUICKSTART_OBJECTIVES = 8
             MODEL_SCAN_DEBOUNCE_MS = 500
+            TASK_ACTION_BUTTON_WIDTH = 160
 
         class MODEL_SUMMARY:
             CACHE_ENTRIES = 16
@@ -698,6 +699,11 @@ class _Constants:
                         MIN = 1
 
             class SURFACE_CONSTRAINTS:
+                class BSPROTATION:
+                    class ORDER:
+                        DEFAULT = 2
+                        MIN = 2
+
                 class BSPMIRROR:
                     class PLANE:
                         DEFAULT = "xz"

@@ -22,15 +22,15 @@ from ..model.problem import (
     SurfaceNode,
 )
 from ..model.registry import (
+    LOAD_TYPES,
     PART_TYPES,
 )
-from ..schemes.base import get_template
 from .part_sets import PartSetCatalog
 from .updaters import symmetry_item, updater_item
 
 
 class DefinitionCommands:
-    """Construct nodes with current scheme defaults; domain objects own links.
+    """Construct nodes with registered defaults; domain objects own links.
 
     This service contains no dialogs or selection/rendering behavior. It can be
     used from a script as well as from the Qt action controller.
@@ -93,17 +93,14 @@ class DefinitionCommands:
 
     def add_part(self, part_type: str, custom_class: str = "") -> PartNode:
         name = self.problem.suggest_part_name()
-        if PART_TYPES[part_type].custom_only:
-            if not custom_class:
-                raise ValueError(
-                    localized_message(
-                        "ui.errors.editing.value_requires_a_custom_class",
-                        value_0=part_type,
-                    )
+        if PART_TYPES[part_type].custom_only and not custom_class:
+            raise ValueError(
+                localized_message(
+                    "ui.errors.editing.value_requires_a_custom_class",
+                    value_0=part_type,
                 )
-            node = PartNode.create(part_type, name=name)
-        else:
-            node = get_template(self.problem.scheme).make_part(part_type, name=name)
+            )
+        node = PartNode.create(part_type, name=name)
         node.custom_class = custom_class
         self.problem.add_part(node)
         return node
@@ -114,7 +111,7 @@ class DefinitionCommands:
         owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
-        node = get_template(self.problem.scheme).make_surface(surface_type)
+        node = SurfaceNode.create(surface_type)
         node.custom_class = custom_class
         self.problem.add_surface(node, part=owner)
         return node
@@ -122,16 +119,21 @@ class DefinitionCommands:
     def add_component(
         self, component_type: str, custom_class: str = ""
     ) -> FEAComponentNode:
-        node = get_template(self.problem.scheme).make_component(component_type)
+        reference_fields = {
+            "instance_name", "instance_name1", "instance_name2",
+            "surface_name", "surface_name1", "surface_name2", "set_nodes_name",
+        }
+        node = FEAComponentNode.create(component_type, **{
+            field.key: "" for field in LOAD_TYPES[component_type].fields
+            if field.key in reference_fields
+        })
         node.custom_class = custom_class
         node.name = self.problem.suggest_component_name(node.name_hint)
         self.problem.add_component(node)
         return node
 
     def add_material(self, material_type: str, custom_class: str = "") -> MaterialNode:
-        node = get_template(self.problem.scheme).make_material(
-            material_type=material_type
-        )
+        node = MaterialNode.create(material_type)
         names = {material.name for material in self.problem.material_nodes()}
         index = 1
         while f"material_{index}" in names:

@@ -176,7 +176,7 @@ class UpdaterEditor(QWidget):
             self._layout.addWidget(
                 QLabel(
                     tr(
-                        "ui.widgets.updater_editor.this_scheme_has_no_editable_sub_optimizer"
+                        "ui.widgets.updater_editor.no_sub_optimizer"
                     )
                 )
             )

@@ -33,8 +33,7 @@ from ..model.problem import ObjectiveNode, ProblemDefinition
 from ..presentation.labels import component_title_text, node_title
 from ..presentation.navigation import ObjectiveItemTreeNode
 from ..refresh import RefreshContext
-from ..schemes.base import get_template
-from ..schemes.snippets import CodeSnippet
+from ..codegen.snippets import CodeSnippet, shared_fea_snippets
 from ..theme import theme_manager
 from .case_deletion import confirm_case_cleanup
 from .codeeditor import CodeEditor
@@ -276,7 +275,7 @@ class ObjectiveEditor(QWidget):
 
         self._loading = True
         try:
-            self._snippets = get_template(problem.scheme).objective_code_snippets()
+            self._snippets = shared_fea_snippets()
             if self._obj is not None:
                 amplitude_components = problem.amplitude_components()
                 workspace_loads = {

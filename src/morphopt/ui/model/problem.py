@@ -116,7 +116,6 @@ class ProblemDefinition:
 
     def __init__(
         self,
-        scheme: str = "shapeopt",
         label: str = "Untitled",
         result_folder: str = ".results/",
         device: str = "cpu",
@@ -129,14 +128,6 @@ class ProblemDefinition:
         helper_variables: list[HelperVariableNode] | None = None,
         helper_functions: list[HelperFunctionNode] | None = None,
     ) -> None:
-        scheme = str(scheme or "").strip()
-        if not scheme:
-            raise ValueError(
-                localized_message(
-                    "ui.errors.problem.problem_template_id_cannot_be_empty"
-                )
-            )
-        self.scheme = scheme
         self.label = label
         self.result_folder = result_folder
         self.device = device
@@ -294,7 +285,7 @@ class ProblemDefinition:
                 names.append(component.element_name.strip())
         return list(dict.fromkeys(names))
 
-    # typed top-level section accessors (return None when the scheme lacks it)
+    # typed top-level section accessors (return None when the section is absent)
     def section(self, kind: str) -> Node | None:
         return self.root.section(kind)
 
@@ -1494,7 +1485,6 @@ class ProblemDefinition:
         self.resolve_references()
         return {
             "version": 4,
-            "scheme": self.scheme,
             "label": self.label,
             "result_folder": self.result_folder,
             "device": self.device,
@@ -1569,7 +1559,6 @@ class ProblemDefinition:
         root_data = cls._normalize_part_names(data["root"])
         root = ProblemNode.from_dict(root_data)
         problem = cls(
-            scheme=data["scheme"],
             label=data.get("label", "Untitled"),
             result_folder=data.get("result_folder", ".results/"),
             device=data.get("device", "cpu"),

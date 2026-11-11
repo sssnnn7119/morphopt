@@ -39,6 +39,28 @@ class BspMirrorConstraintNode(SurfaceConstraintNode):
     )
 
 
+class BspRotationConstraintNode(SurfaceConstraintNode):
+    """UI definition of BSP periodic rotation around the global Z axis."""
+
+    type_name: ClassVar[str] = "BspRotation"
+    backend_class: ClassVar[str] = "BspRotationalSymmetryConstraint"
+    label_key: ClassVar[str] = "ui.schema.catalog.symmetry_constraint.bsprotation.label"
+    factory: ClassVar[str] = "BSP"
+    method: ClassVar[str] = "rotate"
+    Defaults = CONSTANT.UI.SCHEMA_FIELDS.SURFACE_CONSTRAINTS.BSPROTATION
+    order: int | str
+    fields: ClassVar[tuple[FieldSpec, ...]] = (
+        FieldSpec(
+            "order",
+            "ui.schema.fields.order.label.text",
+            "int",
+            Defaults.ORDER.DEFAULT,
+            minimum=Defaults.ORDER.MIN,
+            doc_key="ui.schema.fields.order.help.bsp_rotation",
+        ),
+    )
+
+
 class CPGEOMirrorConstraintNode(SurfaceConstraintNode):
     """UI definition of CPGEOMirrorConstraint."""
 

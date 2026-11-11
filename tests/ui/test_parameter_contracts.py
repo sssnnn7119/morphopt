@@ -34,7 +34,6 @@ from morphopt.ui.model.problem import (
     CADOperationNode, HelperVariableNode, FEAComponentNode,
     PartNode, SurfaceNode,
 )
-from morphopt.ui.schemes.base import get_template
 
 
 def literal_call(expression):
@@ -297,6 +296,74 @@ def test_symmetry_fields_reach_surface_owned_constraint(kind, spec):
     assert kwargs == field_defaults(spec.fields)
 
 
+@pytest.mark.parametrize("order", [3, 5, "PERIODS"])
+def test_bsp_rotation_round_trip_and_generated_surface_constraint(tmp_path, order):
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    part.surfaces.clear()
+    part.add_surface(SurfaceNode.create(
+        "bsp_cylinder", r0=2.0, length=4.0, seed_size=1.0,
+    ))
+    if isinstance(order, str):
+        problem.helper_variables.append(HelperVariableNode(name=order, params={"value": "5"}))
+    item = symmetry_constraint("BspRotation", order=order)
+    item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert "BspRotation" in R.available_surface_symmetry_types(["bsp_cylinder"])
+    assert "BspRotation" not in R.available_surface_symmetry_types(["cpgeo_cylinder"])
+    visible_fields = {field.key for field in fields_for_node(part.surfaces[0], problem)[0]}
+    assert not visible_fields & {"num_U_ratio", "num_V_ratio"}
+
+    path = ProblemLibrary.save(problem, tmp_path / "rotation.morph")
+    loaded = ProblemLibrary.load(path)
+    assert loaded.updater.geometry[0]["symmetry_constraints"] == [item]
+    source = ProblemSession(loaded).source()
+    assert f"surface_0.add_constraint(surface_0.rotate(order={order}))" in source
+    assert f"num_U_ratio={order}" in source
+    namespace = {"__name__": "test_bsp_rotation"}
+    exec(source, namespace)
+    geometry = namespace["ThisController"].Params.GeometryParams()
+    geometry.initialize()
+    boundary = next(iter(geometry.interfaces.values()))
+    surface = boundary.surface_interface(0)
+    expected_order = 5 if isinstance(order, str) else order
+    assert surface.constraints[0].order == expected_order
+    assert surface.model.size[1] % expected_order == 0
+    assert isinstance(surface.constraints[0], surface.rotate)
+
+
+def test_bsp_rotation_alignment_tracks_order_edits_and_removal():
+    problem = ProblemLibrary.create("shapeopt")
+    surface = problem.parts()[0].surfaces[0]
+    item = symmetry_constraint("BspRotation", order=5)
+    item["surface_index"] = 0
+    constraints = problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 5
+    item["params"]["order"] = 7
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 7
+    constraints.clear()
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 1
+    assert surface.num_U_ratio == 1
+
+
+def test_bsp_rotation_alignment_combines_orders_and_helper_constants():
+    import math
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = part.surfaces[0]
+    surface.r0, surface.length = 2.0, 4.0
+    problem.helper_variables.append(HelperVariableNode(name="PERIODS", params={"value": "5"}))
+    items = [symmetry_constraint("BspRotation", order=order) for order in ("PERIODS", 3)]
+    for item in items:
+        item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = items
+    expression = render_surface_call(surface, problem)
+    assert "num_U_ratio=math.lcm(PERIODS, 3)" in expression
+    kernel_surface = eval(expression, {"self": morphopt.BoundaryPart, "math": math, "PERIODS": 5})
+    assert kernel_surface.model.size[1] % 15 == 0
+
+
 @pytest.mark.parametrize("material_type", R.MATERIAL_TYPES)
 @pytest.mark.parametrize("model", MATERIAL_MODEL_CHOICES)
 def test_every_visible_material_field_reaches_its_constructor(material_type, model):
@@ -315,7 +382,7 @@ def test_every_visible_material_field_reaches_its_constructor(material_type, mod
             assert {"mumax", "kappamax"} <= visible_keys
             assert not {"mu", "kappa"} & visible_keys
     lines = []
-    _emit_material_init(lines.append, problem, get_template(problem.scheme))
+    _emit_material_init(lines.append, problem)
     tree = ast.parse(dedent("\n".join(lines)))
     ctor = next(call for call in ast.walk(tree) if isinstance(call, ast.Call)
                 and ast.unparse(call.func) == f"morphopt.{material_type}")

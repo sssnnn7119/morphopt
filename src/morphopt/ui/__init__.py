@@ -23,9 +23,8 @@ ui/processes.py      shared worker launch and UTF-8 process environment
 ui/widgets/history_export.py  shared history export forms and task lifecycle
 postprocess/         archive reading, history GIF and surface export, and result analysis (no Qt)
 ui/model/            data model (ProblemDefinition tree)
-ui/codegen/          ProblemDefinition -> ThisController source
+ui/codegen/          ProblemDefinition -> ThisController source and FEA snippets
 ui/widgets/          modeltree / editor / load_cases / codeeditor / viewer
-ui/schemes/          code-defined scheme policies + snippets
 ui/launcher.py       headless job launch / continue / result helpers
 
 The maintainability contract lives in

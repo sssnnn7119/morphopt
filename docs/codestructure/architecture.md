@@ -239,7 +239,7 @@ UI 的可保存定义由 `ProblemDefinition` 表达，编辑会话维护当前�
 |---|---|---|
 | 领域 | `ui/model/` | 节点、字段、对象引用及跨节点不变量 |
 | 应用 | `ui/application/` | 编辑、持久化、任务、结果与校验用例 |
-| 生成与方案 | `ui/codegen/`、`ui/schemes/` | 定义到 Python 的投影、方案策略和模板片段 |
+| 脚本生成 | `ui/codegen/` | 定义到 Python 的投影及有限元数据提取模板 |
 | 展示数据 | `ui/presentation/` | 导航树、标题、历史表格和操作历史的轻量投影 |
 | 场景准备 | `ui/visualization/` | Part/Surface/Load 适配与场景数据 |
 | Qt 展示 | 顶层窗口、`ui/widgets/`、`ui/refresh.py` | 控件、信号、统一刷新、视口及进程事件接入 |

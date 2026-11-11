@@ -116,7 +116,7 @@ UI Part 只有一个可编辑名称，`assembly_name` 是派生值。`rename_par
 
 ## 6 `.morph` 边界与兼容处理
 
-当前 `ProblemDefinition.to_dict()` 写入版本 4：根节点、方案标识、任务/设备配置、辅助定义和自定义类。`from_dict()` 恢复类型化节点及引用，`loaders.py` 负责文件读写。
+当前 `ProblemDefinition.to_dict()` 写入版本 4：根节点、任务/设备配置、辅助定义和自定义类。优化对象和算法由具体节点及更新器定义，不另存全局方案标识。`from_dict()` 恢复类型化节点及引用，`loaders.py` 负责文件读写。
 
 文件导入采用 `loaders._DefinitionReader` 将内容投影到当前 schema：支持字段保留，缺失字段使用当前工厂默认值，额外字段和不支持条目被忽略并记录原因。`ProblemLibrary.load(..., issues=...)` 返回定义及汇总问题，窗口显示一个可展开详情的警告。格式不是对象或 JSON 语法无效时仍报告读取错误；导入后继续进行普通定义校验。
 

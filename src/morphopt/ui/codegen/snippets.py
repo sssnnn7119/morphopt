@@ -1,7 +1,7 @@
-"""Composable, scheme-independent FEA code snippets for the objective editor.
+"""Composable FEA code snippets for the objective editor.
 
 This module intentionally knows neither Qt widgets nor a specific optimization
-scheme.  It describes source text plus the values a UI must collect before
+problem type. It describes source text plus the values a UI must collect before
 insertion.  The Objective editor resolves each parameter against the current
 ``ProblemDefinition`` and inserts the rendered source at the user's caret.
 """
@@ -60,7 +60,7 @@ _MOMENT_LOAD = SnippetParameter(
 
 
 def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
-    """Return the standard snippets available for every optimization scheme."""
+    """Return the standard finite-element data extraction snippets."""
     instance_state = _instance_state_source()
     reference_point_state = _reference_point_state_source()
     return (

@@ -1,6 +1,5 @@
 {
   "version": 4,
-  "scheme": "shapeopt",
   "label": "FRONT",
   "result_folder": "/home/song/mycache/results",
   "device": "cpu",
@@ -559,10 +558,19 @@
                   "related_surface_index": 3
                 },
                 {
-                  "type": "Custom",
+                  "type": "BspRotation",
                   "params": {
-                    "code": "outer = self.surface_interface(0)\nnum_v, num_u = outer.model.size\npoints = outer.control_points.reshape(num_v, num_u, 3)\nsector = points[:, :num_u // 3].clone()\npoints = torch.cat([\n    sector,\n    rotate_about_z(sector, -2.0 * math.pi / 3.0),\n    rotate_about_z(sector, -4.0 * math.pi / 3.0),\n], dim=1)\nreflected = points.flip(dims=[1])\nouter.control_points = torch.stack([\n    (points[..., 0] + reflected[..., 0]) / 2.0,\n    (points[..., 1] - reflected[..., 1]) / 2.0,\n    (points[..., 2] + reflected[..., 2]) / 2.0,\n], dim=-1).reshape(-1, 3)"
-                  }
+                    "order": 3
+                  },
+                  "surface_index": 0
+                },
+                {
+                  "type": "BspMirror",
+                  "params": {
+                    "plane": "xz",
+                    "offset": 0.0
+                  },
+                  "surface_index": 0
                 }
               ],
               "part_name": "actuator"
@@ -576,7 +584,7 @@
   },
   "custom_classes": [],
   "class_bindings": {},
-  "helper_code": "import torch\nimport math\n",
+  "helper_code": "import torch\n",
   "helper_variables": [],
   "helper_functions": [
     {
@@ -585,15 +593,6 @@
       "params": {
         "parameters": "objective: morphopt.ObjectiveFunction, case_name: str",
         "body": "objective.set_step(case_name)\nassembly = objective.fe.assembly\ncoordinates = objective.fe_results[case_name].GC.to(assembly.device)\nreference_point = assembly.get_reference_point(\"RP_head\")\nreturn assembly._GC2RGC(coordinates)[reference_point._RGC_index].reshape(-1)"
-      },
-      "children": []
-    },
-    {
-      "kind": "helper_function",
-      "name": "rotate_about_z",
-      "params": {
-        "parameters": "points: torch.Tensor, angle: float",
-        "body": "cosine, sine = math.cos(angle), math.sin(angle)\nreturn torch.stack([\n    cosine * points[..., 0] - sine * points[..., 1],\n    sine * points[..., 0] + cosine * points[..., 1],\n    points[..., 2],\n], dim=-1)"
       },
       "children": []
     }

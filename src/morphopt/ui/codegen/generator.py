@@ -30,7 +30,6 @@ from ..model.registry import (
     surface_factory_for_type,
 )
 from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
-from ..schemes.base import SchemeTemplate, get_template
 from .assets import collect_python_assets
 from .workspace import workspace_integral_body
 
@@ -135,13 +134,34 @@ def render_surface_call(
             else repr("")
         )
         return f"{prefix}.initialize_from_stl_file({path_expression})"
+    rotation_factor = None
+    if surface.type == "bsp_cylinder" and problem is not None:
+        owner = problem.owner_of_surface(surface)
+        config = _geometry_config_for_part(problem, owner) if owner is not None else None
+        orders = [
+            _render_value(item.get("params", {}).get(
+                "order", CONSTANT.UI.SCHEMA_FIELDS.SURFACE_CONSTRAINTS.BSPROTATION.ORDER.DEFAULT,
+            ), problem)
+            for item in (config or {}).get("symmetry_constraints", [])
+            if item.get("type") == "BspRotation"
+            and item.get("surface_index") == owner.surfaces.index(surface)
+        ]
+        if orders:
+            # Derive the factor from the current constraints, not a saved copy.
+            rotation_factor = (
+                orders[0] if len(orders) == 1 else f"math.lcm({', '.join(orders)})"
+            )
     kwargs = []
     for field in surface.fields:
         key = field.key
         value = surface.get_field(key)
         if value is None:
             continue
-        kwargs.append(f"{key}={_render_value(value, problem)}")
+        expression = (
+            rotation_factor if key == "num_U_ratio" and rotation_factor is not None
+            else _render_value(value, problem)
+        )
+        kwargs.append(f"{key}={expression}")
     factory = (
         (surface.custom_class + "." + factory.split(".", 1)[1])
         if surface.custom_class
@@ -585,7 +605,6 @@ def generate_base_source(
     """
     if asset_paths is None:
         asset_paths, _ = collect_python_assets(problem)
-    template = get_template(problem.scheme)
     L: list[str] = []
     a = L.append
 
@@ -597,6 +616,7 @@ def generate_base_source(
 
     a("import os")
     a('os.environ["MPLBACKEND"] = "Agg"')
+    a("import math")
     a("import morphopt")
     a("import torchfea")
     a("from typing import Any")
@@ -675,7 +695,7 @@ def generate_base_source(
     a("")
     a(f"        class MaterialsParams({CORE_BASES['materials']}):")
     a("")
-    _emit_material_init(a, problem, template)
+    _emit_material_init(a, problem)
     a("")
     a("        def __init__(self) -> None:")
     a("            super().__init__(")
@@ -705,7 +725,7 @@ def generate_base_source(
     a("")
 
     # -------- Updater -----------------------------------------------------
-    _emit_updater(a, problem, template, upd_device, for_class_catalog=for_class_catalog)
+    _emit_updater(a, problem, upd_device, for_class_catalog=for_class_catalog)
 
     # -------- main --------------------------------------------------------
     a("")
@@ -1033,7 +1053,6 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
 def _emit_material_init(
     a: Callable[[str], object],
     problem: ProblemDefinition,
-    template: SchemeTemplate,
 ) -> None:
     materials = problem.material_nodes()
     if not materials:
@@ -1049,7 +1068,7 @@ def _emit_material_init(
     a("")
     a("            def define_interface(self) -> None:")
     for index, mat in enumerate(materials):
-        mtype = mat.material_type or template.MATERIAL_TYPE
+        mtype = mat.material_type
         model = mat.get_field("material_model", "NeoHookeanLnJ")
         parameter_class = getattr(MaterialModels, f"{model}Params")
         model_keys = tuple(field.name for field in fields(parameter_class))
@@ -1192,7 +1211,6 @@ def _resolve_material_targets(
 def _emit_updater(
     a: Callable[[str], object],
     problem: ProblemDefinition,
-    template: SchemeTemplate,
     device: str,
     *,
     for_class_catalog: bool = False,

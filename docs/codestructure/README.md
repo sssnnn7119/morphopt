@@ -54,7 +54,7 @@ MorphOpt 按职责组织模块，通过明确的输入、输出和状态所有�
 | 曲面、密度场、梯度与局部优化 | `shapeopt/`、`simp/`、`codesign/`、`optcore/updaters.py` | [设计更新](optimization.md) |
 | 跨平台名称、边界积分与检查工具 | `utils/paths.py`、`utils/quadrature.py`、`utils/gradient_check.py` | [扩展与维护](development.md) |
 | 字段、引用、增删排序与改名 | `ui/model/`、`ui/application/editing.py` | [UI 领域模型](ui-model.md) |
-| 历史、脚本生成、类选择、任务来源 | `ui/application/`、`ui/codegen/`、`ui/schemes/` | [UI 应用服务](ui-application.md) |
+| 历史、脚本生成、类选择、任务来源 | `ui/application/`、`ui/codegen/` | [UI 应用服务](ui-application.md) |
 | 控件、树、卡片、刷新与预览 | `ui/widgets/`、`ui/presentation/`、`ui/visualization/`、`ui/refresh.py` | [UI 展示](ui-presentation.md) |
 | 历史浏览、独立求解、场量与数据导出 | `ui/observe_panel.py`、`ui/application/finite_element.py`、`ui/worker.py`、`postprocess/` | [结果分析](results.md) |
 

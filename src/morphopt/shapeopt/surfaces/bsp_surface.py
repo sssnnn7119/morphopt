@@ -13,6 +13,7 @@ from ...constants import CONSTANT
 from .base_surface import ControlPointSurface
 from .bsp_constraints import (
     BspMirrorConstraint,
+    BspRotationalSymmetryConstraint,
     BspSurfaceRelationConstraint,
 )
 
@@ -30,6 +31,7 @@ class BspSurface(ControlPointSurface):
     """
 
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
+    rotate: type[BspRotationalSymmetryConstraint] = BspRotationalSymmetryConstraint
     relate: type[BspSurfaceRelationConstraint] = BspSurfaceRelationConstraint
 
     def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:

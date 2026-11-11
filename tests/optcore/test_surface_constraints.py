@@ -172,11 +172,125 @@ def test_cpgeo_rotation_can_run_inside_torch_func():
     torch.testing.assert_close(gradient[count:], torch.zeros_like(gradient[count:]))
 
 
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+def test_bsp_rotation_repeats_each_row_clockwise(order):
+    surface = BspSurface.initialize_cylinder(
+        r0=2.0, length=4.0, seed_size=1.0, num_U_ratio=order,
+    )
+    points = surface.control_points.clone()
+    points += torch.linspace(-0.1, 0.2, points.numel()).reshape_as(points)
+    surface.control_points = points
+    surface.add_constraint(surface.rotate(order=order))
+    surface.apply_constraints()
+    num_v, num_u = surface.model.size
+    result = surface.control_points.reshape(num_v, num_u, 3)
+    count = num_u // order
+    sector = points.reshape(num_v, num_u, 3)[:, :count]
+    torch.testing.assert_close(result[:, :count], sector)
+    for step in range(order):
+        angle = -math.tau * step / order
+        rotation = points.new_tensor([
+            [math.cos(angle), -math.sin(angle), 0],
+            [math.sin(angle), math.cos(angle), 0],
+            [0, 0, 1],
+        ])
+        torch.testing.assert_close(
+            result[:, step * count:(step + 1) * count], sector @ rotation.T,
+        )
+    surface.apply_constraints()
+    torch.testing.assert_close(surface.control_points.reshape_as(result), result)
+    uv = points.new_tensor([[0.2, 0.14], [0.5, 0.37], [0.8, 0.62]])
+    shifted_uv = uv.clone()
+    shifted_uv[:, 1] = (shifted_uv[:, 1] + 1 / order) % 1
+    angle = -math.tau / order
+    rotation = points.new_tensor([
+        [math.cos(angle), -math.sin(angle), 0],
+        [math.sin(angle), math.cos(angle), 0],
+        [0, 0, 1],
+    ])
+    torch.testing.assert_close(
+        surface.map(shifted_uv), surface.map(uv) @ rotation.T,
+        atol=1e-8, rtol=1e-7,
+    )
+
+
+def test_bsp_rotation_matches_ui_custom_rotation_and_mirror():
+    surface = cylinder(BspSurface)
+    points = surface.control_points.clone()
+    points += torch.linspace(-0.1, 0.2, points.numel()).reshape_as(points)
+    num_v, num_u = surface.model.size
+    sector = points.reshape(num_v, num_u, 3)[:, :num_u // 3]
+    copies = []
+    for angle in (0, -2 * math.pi / 3, -4 * math.pi / 3):
+        cosine, sine = math.cos(angle), math.sin(angle)
+        copies.append(torch.stack((
+            cosine * sector[..., 0] - sine * sector[..., 1],
+            sine * sector[..., 0] + cosine * sector[..., 1],
+            sector[..., 2],
+        ), dim=-1))
+    expected = torch.cat(copies, dim=1)
+    reflected = expected.flip(dims=[1])
+    expected = torch.stack((
+        (expected[..., 0] + reflected[..., 0]) / 2,
+        (expected[..., 1] - reflected[..., 1]) / 2,
+        (expected[..., 2] + reflected[..., 2]) / 2,
+    ), dim=-1)
+
+    surface.control_points = points
+    surface.add_constraint(surface.rotate(order=3))
+    surface.add_constraint(surface.mirror("xz"))
+    surface.apply_constraints()
+    torch.testing.assert_close(surface.control_points.reshape_as(expected), expected)
+    surface.reinitialize_constraints()
+    torch.testing.assert_close(
+        torch.as_tensor(surface.model.control_points), surface.control_points,
+    )
+    torch.testing.assert_close(surface.control_points.reshape_as(expected), expected)
+
+
+def test_bsp_rotation_preserves_gradients_inside_torch_func():
+    surface = cylinder(BspSurface)
+    rotation = surface.rotate(order=3)
+    points = surface.control_points.clone()
+    weights = torch.linspace(-1, 2, points.numel()).reshape_as(points)
+
+    def loss(values):
+        surface.control_points = values
+        rotation.apply(surface)
+        return (surface.control_points * weights).sum()
+
+    gradient = torch.func.grad(loss)(points)
+    direction = torch.linspace(-0.3, 0.7, points.numel()).reshape_as(points)
+    difference = (loss(points + 1e-5 * direction) - loss(points - 1e-5 * direction)) / 2e-5
+    torch.testing.assert_close((gradient * direction).sum(), difference)
+    num_v, num_u = surface.model.size
+    gradient = gradient.reshape(num_v, num_u, 3)
+    torch.testing.assert_close(
+        gradient[:, num_u // 3:], torch.zeros_like(gradient[:, num_u // 3:]),
+    )
+    assert gradient[:, :num_u // 3].abs().sum() > 0
+
+
+@pytest.mark.parametrize("order", [0, 1, -3, 2.5])
+def test_bsp_rotation_rejects_invalid_order(order):
+    with pytest.raises(ValueError, match="integer of at least 2"):
+        BspSurface.rotate(order=order)
+
+
+def test_bsp_rotation_rejects_unequal_sectors():
+    surface = cylinder(BspSurface)
+    with pytest.raises(ValueError, match="num_U_ratio=order"):
+        surface.add_constraint(surface.rotate(order=5))
+
+
 @pytest.mark.parametrize("adaptive", [False, True])
-def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adaptive):
+@pytest.mark.parametrize("symmetry", ["mirror", "rotate"])
+def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adaptive, symmetry):
     part = BoundaryPart(part_name="body")
     source, target = cylinder(BspSurface, 2.0), cylinder(BspSurface, 0.5)
-    source.add_constraint(source.mirror("xz"))
+    source.add_constraint(
+        source.mirror("xz") if symmetry == "mirror" else source.rotate(order=3)
+    )
     source.add_constraint(source.relate(target, pose=[0.0, 0.0, 0.0, 0.0, 0.0, math.pi / 2]))
     part.add_surface_interface(source)
     part.add_surface_interface(target)

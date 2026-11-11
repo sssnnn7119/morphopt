@@ -39,6 +39,7 @@ from ..model.registry import (
     MATERIAL_TYPES,
     PART_TYPES,
     SURFACE_TYPES,
+    available_part_types,
 )
 from ..presentation.labels import (
     cad_operation_summary_text,
@@ -237,11 +238,8 @@ class DefinitionManagerEditor(QWidget):
         self._add_menu.clear()
         if self._problem is None:
             return
-        from ..schemes.base import get_template
-
-        template = get_template(self._problem.scheme)
         if self.mode == "geometry":
-            for part_type in template.available_geometry_types():
+            for part_type in available_part_types():
                 spec = PART_TYPES[part_type]
                 action = QAction(node_type_title(spec, part_type), self._add_menu)
                 self._add_menu.addAction(action)
@@ -253,7 +251,7 @@ class DefinitionManagerEditor(QWidget):
                     "morphopt.BoundaryPart" if spec.has_surfaces else f"morphopt.{kind}"
                 )
                 for kind, spec in PART_TYPES.items()
-                if kind in template.available_geometry_types()
+                if kind in available_part_types()
             }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(

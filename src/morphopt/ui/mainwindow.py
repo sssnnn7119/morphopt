@@ -29,7 +29,6 @@ from .i18n import SUPPORTED_LOCALES, localization, tr
 from .model.loaders import MORPH_SUFFIX
 from .model.problem import ProblemDefinition
 from .observe_panel import ObserverControls
-from .schemes.base import scheme_label
 from .theme import theme_manager
 from .widgets.file_dialogs import (
     choose_directory,
@@ -55,6 +54,7 @@ class MainWindow(QMainWindow):
         self._result_selection: ResultSelection | None = None
         self._has_analysis_model = False
         self._starting_optimization = False
+        self._definition_valid = False
         self._syncing_selection = False
         self._unsubscribe_theme = theme_manager.subscribe(self._apply_theme)
         self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.start_button = QPushButton(tr("ui.workspace.start_optimization"))
         self.start_button.setProperty("actionRole", "primary")
         self.start_button.setProperty("buttonLayout", "prominent")
+        self.start_button.setFixedWidth(CONSTANT.UI.WIDGETS.TASK_ACTION_BUTTON_WIDTH)
         self.start_button.clicked.connect(self._request_start_optimization)
         workspace_header.addWidget(self.start_button)
         layout.addLayout(workspace_header)
@@ -400,9 +401,8 @@ class MainWindow(QMainWindow):
             message.deleteLater()
         self.statusBar().showMessage(
             tr(
-                "ui.mainwindow.opened_value_value",
-                value_0=problem.label,
-                value_1=scheme_label(problem.scheme),
+                "ui.mainwindow.opened",
+                name=problem.label,
             ),
             CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.LONG,
         )
@@ -553,7 +553,14 @@ class MainWindow(QMainWindow):
         wb.notify.connect(self.statusBar().showMessage)
         wb.notify.connect(lambda _text: self._set_titles())
         wb.startOptimizationRequested.connect(self.start_optimization)
+        wb.startAvailabilityChanged.connect(self._definition_availability_changed)
         self._workbench = wb
+        self._definition_valid = wb.can_start_optimization
+        self._update_analysis_actions()
+
+    def _definition_availability_changed(self, available: bool) -> None:
+        self._definition_valid = available
+        self._update_analysis_actions()
 
     # ------------------------------------------------ analysis workspace
     def _can_replace_task(self) -> bool:
@@ -720,8 +727,9 @@ class MainWindow(QMainWindow):
         )
         for key in ("open_result", "open_python"):
             self._menu_actions[key].setEnabled(not busy)
-        self._start_optimization_action.setEnabled(not busy)
-        self.start_button.setEnabled(not busy)
+        can_start = not busy and self._definition_valid
+        self._start_optimization_action.setEnabled(can_start)
+        self.start_button.setEnabled(can_start)
         self.start_button.setText(
             tr(
                 "ui.workspace.optimization_running"
@@ -729,7 +737,15 @@ class MainWindow(QMainWindow):
                 else "ui.workspace.start_optimization"
             )
         )
-        self.start_button.setToolTip(tr("ui.workspace.task_busy") if busy else "")
+        start_tooltip = (
+            tr("ui.workspace.task_busy")
+            if busy
+            else ""
+            if self._definition_valid
+            else tr("ui.workbench.fix_model_errors_before_start")
+        )
+        self.start_button.setToolTip(start_tooltip)
+        self._start_optimization_action.setToolTip(start_tooltip)
         self._show_finite_element_action.setEnabled(self._has_analysis_model)
 
     def _finite_element_busy_changed(self, busy: bool) -> None:

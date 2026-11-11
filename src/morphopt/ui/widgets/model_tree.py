@@ -49,6 +49,7 @@ from ..model.registry import (
     SURFACE_TYPES,
     UPDATER_CONSTRAINTS,
     UPDATER_OBJECTIVES,
+    available_part_types,
     available_surface_symmetry_types,
 )
 from ..presentation.labels import cad_operation_summary_text, node_type_title
@@ -117,6 +118,7 @@ class _DefinitionDelegate(QStyledItemDelegate):
 class ModelTree(QTreeWidget):
     nodeSelected = Signal(object)  # Node
     classMethodAddRequested = Signal(object)
+    validationChanged = Signal(bool)
 
     def __init__(self, parent=None, *, actions: DefinitionActions | None = None):
         super().__init__(parent)
@@ -130,8 +132,13 @@ class ModelTree(QTreeWidget):
         self.customContextMenuRequested.connect(self._open_menu)
         self.currentItemChanged.connect(self._on_current)
         self._problem: ProblemDefinition | None = None
+        self._has_errors = False
         self._item_node: dict[QTreeWidgetItem, Node] = {}
         self._node_item: dict[Node, QTreeWidgetItem] = {}
+
+    @property
+    def has_errors(self) -> bool:
+        return self._has_errors
 
     def _font_changed(self, role: str) -> None:
         if role == "tree":
@@ -260,8 +267,16 @@ class ModelTree(QTreeWidget):
 
     def _refresh_validation(self) -> None:
         if self._problem is None:
+            self._has_errors = False
+            self.validationChanged.emit(False)
             return
-        diagnostics = DefinitionValidation(self._problem).collect()
+        try:
+            diagnostics = DefinitionValidation(self._problem).collect()
+        except Exception:
+            self._has_errors = True
+            self.validationChanged.emit(True)
+            raise
+        self._has_errors = bool(diagnostics)
 
         def visit(item: QTreeWidgetItem) -> list[str]:
             node = self._item_node[item]
@@ -295,6 +310,7 @@ class ModelTree(QTreeWidget):
         for index in range(self.topLevelItemCount()):
             visit(self.topLevelItem(index))
         self.apply_theme()
+        self.validationChanged.emit(self._has_errors)
 
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
@@ -351,7 +367,6 @@ class ModelTree(QTreeWidget):
 
     def _build_node_menu(self, menu: QMenu, node: Node) -> None:
         kind = node.kind
-        scheme = self._problem.scheme if self._problem else "shapeopt"
 
         if kind == "custom_classes":
             menu.addAction(
@@ -422,9 +437,7 @@ class ModelTree(QTreeWidget):
 
         if kind == "geometry":
             sub = menu.addMenu(tr("ui.widgets.model_tree.add_part"))
-            from ..schemes.base import get_template
-
-            for itype in get_template(scheme).available_geometry_types():
+            for itype in available_part_types():
                 spec = PART_TYPES[itype]
                 act = QAction(node_type_title(spec, itype), sub)
                 act.setData(itype)
@@ -436,7 +449,7 @@ class ModelTree(QTreeWidget):
                 kind: "morphopt.BoundaryPart"
                 if PART_TYPES[kind].has_surfaces
                 else f"morphopt.{kind}"
-                for kind in get_template(scheme).available_geometry_types()
+                for kind in available_part_types()
             }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(sub, candidates, self.actions.add_part)
@@ -551,9 +564,7 @@ class ModelTree(QTreeWidget):
 
         if kind == "materials":
             sub = menu.addMenu(tr("ui.widgets.model_tree.add_material"))
-            from ..schemes.base import get_template
-
-            available = get_template(scheme).available_material_types()
+            available = tuple(MATERIAL_TYPES)
             for mtype in available:
                 spec = MATERIAL_TYPES[mtype]
                 act = QAction(node_type_title(spec, mtype), sub)

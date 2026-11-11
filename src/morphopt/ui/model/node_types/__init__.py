@@ -88,6 +88,7 @@ from .surfaces import (
 from .symmetry import (
     BspMirrorConstraintNode,
     BspRelationConstraintNode,
+    BspRotationConstraintNode,
     CPGEOMirrorConstraintNode,
     CPGEORelationConstraintNode,
     CPGEORotationConstraintNode,
@@ -105,6 +106,7 @@ __all__ = (
     "BspCylinderSurfaceNode",
     "BspMirrorConstraintNode",
     "BspRelationConstraintNode",
+    "BspRotationConstraintNode",
     "CADPartNode",
     "CPGEOCylinderSurfaceNode",
     "CPGEOMirrorConstraintNode",

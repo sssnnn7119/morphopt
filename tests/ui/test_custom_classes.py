@@ -209,8 +209,8 @@ def test_part_class_names_use_part_types_and_old_paths_are_rejected():
     )
     with pytest.raises(ValueError, match="(?i)base class missing"):
         ProblemSession(problem).source()
-    for template in ProblemLibrary.templates():
-        catalog = class_catalog(ProblemLibrary.create(template.scheme))
+    for method in ("shapeopt", "simp"):
+        catalog = class_catalog(ProblemLibrary.create(method))
         parts = [
             spec
             for spec in catalog.values()
@@ -259,10 +259,10 @@ def test_nested_subclasses_replace_classes_and_retain_generated_configuration():
 
 
 @pytest.mark.parametrize(
-    "scheme", [template.scheme for template in ProblemLibrary.templates()]
+    "method", ["shapeopt", "simp"]
 )
-def test_all_discovered_methods_have_executable_default_subclasses(scheme):
-    problem = ProblemLibrary.create(scheme)
+def test_all_discovered_methods_have_executable_default_subclasses(method):
+    problem = ProblemLibrary.create(method)
     for index, (path, spec) in enumerate(framework_class_catalog(problem).items()):
         custom = customize(problem, path, f"Custom{index}")
         for method in spec.methods.values():
@@ -738,7 +738,7 @@ def test_deep_class_bindings_are_rejected():
 def test_custom_parts_are_added_only_through_defined_classes():
     from PySide6.QtWidgets import QApplication, QMenu
 
-    from morphopt.ui.schemes.base import get_template
+    from morphopt.ui.model.registry import available_part_types
     from morphopt.ui.widgets.model_tree import ModelTree
 
     app = QApplication.instance() or QApplication([])
@@ -746,10 +746,7 @@ def test_custom_parts_are_added_only_through_defined_classes():
     customize(problem, "morphopt.BasePart", "CustomPart", bind=False)
     tree = ModelTree()
     tree.set_problem(problem)
-    assert (
-        "BasePart"
-        not in get_template(problem.scheme).available_geometry_types()
-    )
+    assert "BasePart" not in available_part_types()
     menu = QMenu()
     tree._build_node_menu(menu, problem.geometry)
     geometry_menu = menu.actions()[0].menu()

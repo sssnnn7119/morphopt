@@ -26,6 +26,7 @@ from .node_types import (
     BspCylinderSurfaceNode,
     BspMirrorConstraintNode,
     BspRelationConstraintNode,
+    BspRotationConstraintNode,
     CADPartNode,
     CPGEOCylinderSurfaceNode,
     CPGEOMirrorConstraintNode,
@@ -182,6 +183,7 @@ UPDATER_OBJECTIVES: dict[str, type[ObjectiveTermNode]] = {
 SURFACE_SYMMETRY_CONSTRAINTS: dict[str, type[SurfaceConstraintNode]] = {
     node.type_name: node for node in (
         BspMirrorConstraintNode,
+        BspRotationConstraintNode,
         CPGEOMirrorConstraintNode,
         CPGEORotationConstraintNode,
         BspRelationConstraintNode,
@@ -273,6 +275,14 @@ def resolve_node_type(kind: str, params: dict) -> type[Node]:
             )
         )
     return NODE_FAMILIES[kind][type_name]
+
+
+def available_part_types() -> tuple[str, ...]:
+    """Part types offered directly in the add menus."""
+    return tuple(
+        name for name, spec in PART_TYPES.items()
+        if not spec.hidden and not spec.custom_only
+    )
 
 
 def surface_factory_for_type(surface_type: str) -> str | None:

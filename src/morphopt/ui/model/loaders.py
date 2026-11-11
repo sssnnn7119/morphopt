@@ -14,7 +14,6 @@ from pathlib import Path
 
 from ...constants import CONSTANT
 from ..i18n import LocalizedMessage, localized_message
-from ..schemes.base import get_template
 from .configuration import (
     geometry_updater_config, materials_updater_config,
     metric_term_config, objective_term_config,
@@ -207,11 +206,6 @@ class _DefinitionReader:
         if data.get("version") != defaults["version"]:
             self.note("version", "version", version=data.get("version"), current=defaults["version"])
         document = self.mapping(data, defaults, "document")
-        try:
-            get_template(document["scheme"])
-        except (KeyError, TypeError, ValueError):
-            self.note("skipped", "scheme", reason=str(document["scheme"]))
-            document["scheme"] = defaults["scheme"]
         root_data = document["root"]
         if not isinstance(root_data, dict):
             root_data = {}

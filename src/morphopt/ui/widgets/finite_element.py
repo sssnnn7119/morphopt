@@ -28,28 +28,32 @@ from PySide6.QtWidgets import (
 
 from ...postprocess import (
     CONTOUR_FIELDS,
-    TABLE_WRITERS,
     RESULT_FIELDS,
+    TABLE_WRITERS,
     FiniteElementResults,
     IterationModel,
     ResultLocation,
     cpu_torch_defaults,
     normalize_export_name,
 )
+from ..application.fields import load_value_fields
 from ..application.finite_element import (
     FiniteElementResult,
     FiniteElementSession,
 )
-from ..application.fields import load_value_fields
 from ..i18n import tr
 from ..model.fields import FieldSpec
-from ..presentation.result_fields import contour_label_key, export_format_label, field_label
+from ..presentation.result_fields import (
+    contour_label_key,
+    export_format_label,
+    field_label,
+)
 from ..processes import start_worker
 from ..theme import theme_manager
-from .file_dialogs import choose_directory, choose_save_file
-from .viewport import PlotViewport
-from .sequence_input import SequenceInput
 from ..visualization.rendering import add_orientation_axes
+from .file_dialogs import choose_directory, choose_save_file
+from .sequence_input import SequenceInput
+from .viewport import PlotViewport
 
 
 class FiniteElementPage(QWidget):
@@ -364,7 +368,9 @@ class FiniteElementPage(QWidget):
                 fields = load_value_fields(kind)
                 editor = SequenceInput(
                     FieldSpec(
-                        "values", "ui.fea.load_parameters", f"vec{numbers.size}",
+                        "values",
+                        "ui.fea.load_parameters",
+                        f"vec{numbers.size}",
                         tuple(numbers.reshape(-1).tolist()),
                         components=tuple(field.label_key for field in fields),
                     ),
@@ -417,7 +423,8 @@ class FiniteElementPage(QWidget):
 
     def _read_output(self, *, final: bool = False) -> None:
         text = self._output_decoder.decode(
-            bytes(self._process.readAllStandardOutput()), final=final,
+            bytes(self._process.readAllStandardOutput()),
+            final=final,
         )
         cursor = self.output.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
@@ -485,11 +492,13 @@ class FiniteElementPage(QWidget):
             self._result_fields = FiniteElementResults(controller, result)
         fields = (
             self._result_fields.contour_fields
-            if self._result_fields is not None else CONTOUR_FIELDS
+            if self._result_fields is not None
+            else CONTOUR_FIELDS
         )
         selected = self.display_field.currentData()
         items = tuple(
-            (tr(contour_label_key(field), component=field.key), field.key) for field in fields
+            (tr(contour_label_key(field), component=field.key), field.key)
+            for field in fields
         )
         current = tuple(
             (self.display_field.itemText(index), self.display_field.itemData(index))
@@ -661,7 +670,9 @@ class FiniteElementPage(QWidget):
                 values_by_instance = {}
                 if self._result_fields is not None:
                     descriptor = next(
-                        item for item in self._result_fields.contour_fields if item.key == field
+                        item
+                        for item in self._result_fields.contour_fields
+                        if item.key == field
                     )
                     values_by_instance = self._result_fields.contour_values(descriptor)
                 scalar_range = None

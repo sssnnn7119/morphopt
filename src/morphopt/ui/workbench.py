@@ -48,6 +48,7 @@ from .application import (
 from .application.edit_history import EditOperation
 from .application.fields import fields_for_node
 from .application.part_sets import PartSetCatalog
+from .application.validation import DefinitionValidation
 from .i18n import tr
 from .model.problem import (
     Node,
@@ -57,7 +58,6 @@ from .presentation.edit_history import edit_description
 from .presentation.labels import node_title
 from .presentation.navigation import ObjectiveItemTreeNode, node_at_path, node_path
 from .refresh import Refreshable, RefreshContext, RefreshCoordinator
-from .schemes.base import scheme_label
 from .theme import theme_manager
 from .theme.fonts import font_manager
 from .widgets.asset_browser import AssetBrowser
@@ -87,6 +87,7 @@ from .widgets.viewer import PreviewViewer
 class Workbench(QWidget):
     notify = Signal(str)
     startOptimizationRequested = Signal(object)
+    startAvailabilityChanged = Signal(bool)
 
     def __init__(self, problem: ProblemDefinition, parent=None):
         super().__init__(parent)
@@ -94,6 +95,7 @@ class Workbench(QWidget):
         self._history_ready = False
         self._synchronized_for_refresh = False
         self._text_edit_key: int | None = None
+        self._start_available = False
         self.session = ProblemSession(problem)
         self.session.history.set_max_nodes(
             QSettings("MorphOptUI", "ui").value(
@@ -108,14 +110,13 @@ class Workbench(QWidget):
         self._last_selected: Node | None = None
         self.refresh_coordinator = RefreshCoordinator(self._prepare_refresh, self)
         self.refresh_coordinator.failed.connect(self._on_refresh_failed)
-        self.refresh_coordinator.finished.connect(
-            lambda context: self.notify.emit(context.problem.label)
-        )
+        self.refresh_coordinator.finished.connect(self._on_refresh_finished)
         self._build_ui()
         self._register_refreshables()
         self.reload()
         self.session.reset_history()
         self._history_ready = True
+        self._update_start_availability()
         self._update_history_actions()
         QApplication.instance().installEventFilter(self)
 
@@ -134,6 +135,7 @@ class Workbench(QWidget):
         # ---- left tree
         self.actions = DefinitionActions(self)
         self.tree = ModelTree(actions=self.actions)
+        self.tree.validationChanged.connect(self._update_start_availability)
         self.tree.nodeSelected.connect(self._on_node_selected)
         self.tree.itemClicked.connect(self._on_model_item_clicked)
         self.actions.changed.connect(self._on_structural_change)
@@ -298,11 +300,7 @@ class Workbench(QWidget):
         self._update_caption()
 
     def _update_caption(self) -> None:
-        title = tr(
-            "ui.naming.problem_title",
-            name=self.problem.label,
-            scheme=scheme_label(self.problem.scheme),
-        )
+        title = self.problem.label
         if self.session.history.is_modified:
             title = tr("ui.history.modified", title=title)
         self.setWindowTitle(title)
@@ -606,6 +604,25 @@ class Workbench(QWidget):
                 error=error,
             )
         )
+
+    def _on_refresh_finished(self, context: RefreshContext) -> None:
+        self.notify.emit(context.problem.label)
+        self._update_start_availability()
+
+    @property
+    def can_start_optimization(self) -> bool:
+        return self._start_available
+
+    def _update_start_availability(self, *_args) -> None:
+        available = not self.tree.has_errors
+        if available:
+            try:
+                self.session.validate_references()
+            except Exception:
+                available = False
+        if available != self._start_available:
+            self._start_available = available
+            self.startAvailabilityChanged.emit(available)
 
     def set_problem(self, problem: ProblemDefinition) -> None:
         self._finish_text_edit()
@@ -948,6 +965,15 @@ class Workbench(QWidget):
     # --------------------------------------------------------- task transfer
     def start_optimization(self) -> None:
         self.flush_edits()
+        diagnostics = DefinitionValidation(self.problem).collect()
+        if diagnostics:
+            QMessageBox.warning(
+                self,
+                tr("ui.workbench.incomplete_optimization_definition"),
+                tr("ui.workbench.fix_model_errors_before_start"),
+            )
+            self._update_start_availability()
+            return
         try:
             self.session.validate_references()
         except Exception as exc:

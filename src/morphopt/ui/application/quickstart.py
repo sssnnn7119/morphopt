@@ -129,7 +129,9 @@ class QuickstartOptions:
                 kappa=CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_KAPPA,
                 objectives=[QuickstartObjective(kind="stiffness")],
             )
-        return cls()
+        if method == "shapeopt":
+            return cls()
+        raise ValueError(localized_message("ui.errors.quickstart.select_an_optimization_method"))
 
     @classmethod
     def from_problem(cls, problem):
@@ -141,7 +143,9 @@ class QuickstartOptions:
                     QuickstartObjective(**objective) for objective in data["objectives"]
                 ]
                 return cls(**data)
-        return cls.for_method(problem.scheme)
+        updater = problem.updater
+        method = "simp" if updater and updater.materials and not updater.geometry else "shapeopt"
+        return cls.for_method(method)
 
     def geometry_layout(self):
         return LayeredChambers(self.layers, self.radius, self.wall)
@@ -329,7 +333,6 @@ def _function(problem, name, parameters, body):
 def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
     options.validate()
     problem = ProblemDefinition(
-        scheme=options.method,
         label=options.label.strip(),
         result_folder=options.result_folder.strip(),
     )

@@ -16,7 +16,7 @@ from ..application.fields import SnippetInputs
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
 from ..presentation.labels import reference_choice_title
-from ..schemes.snippets import CodeSnippet, SnippetParameter
+from ..codegen.snippets import CodeSnippet, SnippetParameter
 from .param_form import combo_value
 
 

@@ -1,7 +1,8 @@
-"""Mirror constraints for BSP control nets."""
+"""Symmetry and relation constraints for BSP control nets."""
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -66,6 +67,54 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
         surface.control_points = projected.reshape_as(surface.control_points)
 
     def reinitialize(self, surface: BspSurface) -> None:
+        self.apply(surface)
+        surface.synchronize()
+
+
+class BspRotationalSymmetryConstraint(BaseSurfaceConstraints["BspSurface"]):
+    """Repeat the first circumferential sector around the global Z axis.
+
+    BSP cylinder control points run clockwise in U. Sector ``k`` therefore
+    copies the first sector through ``-2*pi*k/order``; Z coordinates are copied
+    unchanged. The circumferential control-point count must divide into equal
+    sectors (use ``num_U_ratio=order`` when constructing the cylinder).
+    """
+
+    def __init__(self, order: int = 2) -> None:
+        if order < 2 or int(order) != order:
+            raise ValueError("order must be an integer of at least 2.")
+        self.order = int(order)
+
+    def validate_surface(self, surface: BspSurface) -> None:
+        from .bsp_surface import BspSurface
+
+        if not isinstance(surface, BspSurface):
+            raise TypeError("BSP rotational symmetry requires a BSP surface.")
+        if surface.model.size[1] % self.order:
+            raise ValueError(
+                "The circumferential control-point count must be divisible by "
+                "order. Construct the BSP cylinder with num_U_ratio=order."
+            )
+
+    def apply(self, surface: BspSurface) -> None:
+        num_v, num_u = surface.model.size
+        points = surface.control_points.reshape(num_v, num_u, 3)
+        sector = points[:, :num_u // self.order]
+        sectors = []
+        for step in range(self.order):
+            angle = -math.tau * step / self.order
+            cosine, sine = math.cos(angle), math.sin(angle)
+            sectors.append(torch.stack((
+                cosine * sector[..., 0] - sine * sector[..., 1],
+                sine * sector[..., 0] + cosine * sector[..., 1],
+                sector[..., 2],
+            ), dim=-1))
+        surface.control_points = torch.cat(sectors, dim=1).reshape_as(
+            surface.control_points
+        )
+
+    def reinitialize(self, surface: BspSurface) -> None:
+        self.validate_surface(surface)
         self.apply(surface)
         surface.synchronize()
 

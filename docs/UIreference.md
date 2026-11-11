@@ -326,13 +326,13 @@ INPPart 仅处理 MorphOpt/TorchFEA 支持的输入内容，不执行完整的 A
 
 优化中曲面可偏离初始圆柱。平滑性由 `Fairness(max_curvature=...)` 控制，径向外包络由 `Cylinder` 定义；两者均在优化器中登记。
 
+U、V 方向的控制网格计数因子不在 UI 表单中显示。登记 `BspRotation` 后，脚本生成器根据对称阶数自动设置周向整除因子；修改或删除旋转约束后，下一次生成的脚本随当前定义更新。
+
 | 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
 |---|---|---|
 | 半径 r0 / `r0` | `4.0` | 初始构型的内/外半径。 |
 | 长度 / `length` | `74.0` | 圆柱沿 Z 轴的长度。 |
 | 曲面采样间距 / `seed_size` | `1.0` | 用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。 |
-| 周向控制网格计数因子 / `num_U_ratio` | `1` | 对应 num_U_ratio：周向控制网格数量按 lcm(12, num_U_ratio) 的倍数取整。 |
-| 轴向控制网格计数因子 / `num_V_ratio` | `1` | 对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。 |
 | B 样条次数 / `degree` | `3` | B 样条多项式次数 degree，例如 3 表示三次 B 样条。 |
 | 初始位置 / `init_location` | `[0.0, 0.0, 0.0]` | 表面的初始偏移位置。 |
 | 初始扰动波长 / `perturbation_L` | `-1.0` | 初始缺陷波长；小于等于 0 表示不添加缺陷。 |
@@ -1217,14 +1217,13 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 | 字段 | 定义与作用 |
 |---|---|
-| `scheme` | 当前优化方案标识，决定生成的框架结构；普通算例沿用所选方案 |
 | `label` | 任务名称，用于识别运行 |
 | `result_folder` | 结果根目录；每次运行建立独立记录目录 |
 | `device` | 主计算设备，例如 cpu 或 cuda:0；必须与实际环境匹配 |
 | `updater_device` | 更新器的设备；留空跟随主设备，允许将几何 / 材料更新与 FE 设备分开安排 |
 | `restart_per_iteration` | 运行进程周期性重启的轮次间隔，用于进程生命周期管理；不是总优化轮数 |
 
-`.morph` 保存的是定义。运行归档还保存了当时的冻结定义、模型、状态与历史；修改当前 `.morph` 不会重写已有轮次的数据。
+`.morph` 保存各部件、材料、载荷、求解器及更新器的显式定义，不保存全局优化方案分类。一个任务可同时包含几何和材料设计变量。运行归档还保存了当时的冻结定义、模型、状态与历史；修改当前 `.morph` 不会重写已有轮次的数据。
 
 ![任务名称、结果目录、设备与运行重启周期](images/ui/solver/run-settings.png)
 
@@ -1401,7 +1400,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 <a id="section-六类曲面对称与关联"></a>
 
-### 10.3 六类曲面对称与关联
+### 10.3 七类曲面对称与关联
 
 **入口：几何优化器 → 曲面对称约束 → 添加。** 内置关系都必须指定一个有效的 `surface_index`；索引只在当前 Part 内有意义。关联接口同时要求指定 `related_surface_index`。
 
@@ -1420,9 +1419,21 @@ return -state[rp._RGC_index].reshape(-1)[4]
 | 对称面 / `plane` | `"xz"` | 支持 xz（y=0）和 xy（z=offset）。可选：`xz`、`xy`。 |
 | 平面对称位置 / `offset` | `0.0` | 仅 xy 对称面使用；xz 对称面的偏移必须为 0。 |
 
+<a id="surface_symmetry_constraints-bsprotation"></a>
+
+#### 10.3.2 BspRotation：BSP Z 轴周期旋转对称
+
+`BspRotation` 维持指定 BSP 曲面绕全局 Z 轴的周期旋转对称。选择当前 Part 内的 BSP 曲面，并设置对称阶数 `order`。每个轴向控制点行以圆周方向的第一段为独立扇区，其余扇区按 −2π/order 依次旋转生成，Z 坐标保持对应。该约束参与子优化问题的自动微分。
+
+`order=3` 对应 `UI.morph` 外曲面的三重旋转关系。需要同时保持 xz 镜面对称时，在该项之后登记同一曲面的 `BspMirror`。UI 自动按 `order` 调整圆周控制点数量，保证周期划分的整除条件，无需填写 U、V 方向的计数因子。
+
+| 界面字段 / 保存键 | 初始值 | 参数定义与输入格式 |
+|---|---|---|
+| 对称阶数 / `order` | `2` | 一周重复的扇区数，取不小于 2 的整数。旋转轴固定为全局 Z 轴。 |
+
 <a id="surface_symmetry_constraints-cpgeomirror"></a>
 
-#### 10.3.2 CPGEOMirror：CPGEO 镜面对称
+#### 10.3.3 CPGEOMirror：CPGEO 镜面对称
 
 `CPGEOMirror` 维持 CPGEO 曲面的镜面对称。支持 xy、xz、yz，offset 为平面的法向坐标：分别对应 z、y、x。
 
@@ -1435,7 +1446,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 <a id="surface_symmetry_constraints-cpgeorotation"></a>
 
-#### 10.3.3 CPGEORotation：CPGEO 旋转对称
+#### 10.3.4 CPGEORotation：CPGEO 旋转对称
 
 `CPGEORotation` 维持 CPGEO 曲面的 n 重旋转对称。选曲面索引、轴方向、中心与阶数。例如 z、center=[0,0,0]、order=3 表示每 120° 重复。
 
@@ -1449,7 +1460,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 <a id="surface_symmetry_constraints-bsprelation"></a>
 
-#### 10.3.4 BspRelation：BSP 曲面关系
+#### 10.3.5 BspRelation：BSP 曲面关系
 
 `BspRelation` 用刚体位姿关联两张 BSP 曲面的控制网格。 surface_index 指定源曲面，related_surface_index 指定跟随曲面，六分量 pose 定义刚体映射。该接口用于维持重复气腔的形状关联。
 
@@ -1461,7 +1472,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 <a id="surface_symmetry_constraints-cpgeorelation"></a>
 
-#### 10.3.5 CPGEORelation：CPGEO 曲面关系
+#### 10.3.6 CPGEORelation：CPGEO 曲面关系
 
 `CPGEORelation` 用六分量刚体位姿关联两张 CPGEO 曲面。字段与映射方向同 BSP 关联：源 surface_index 经 pose 变换，写入跟随 related_surface_index；两端都应为 CPGEO 曲面。
 
@@ -1473,7 +1484,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 <a id="surface_symmetry_constraints-custom"></a>
 
-#### 10.3.6 Custom：自定义约束
+#### 10.3.7 Custom：自定义约束
 
 `Custom` 填写普通表单无法表达的曲面约束注册代码。代码被放入所属 Part 的 `apply_surface_constraints(self)` 中，**self 指向所属 Part**。
 
@@ -2006,7 +2017,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
 | 更新目标 | 5 | [ShapeDerivative](#updater_objectives-shapederivative)、[QuadraticShapeDerivative](#updater_objectives-quadraticshapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[QuadraticSensitivity](#updater_objectives-quadraticsensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |
-| 曲面对称与关联 | 6 | [BspMirror](#surface_symmetry_constraints-bspmirror)、[CPGEOMirror](#surface_symmetry_constraints-cpgeomirror)、[CPGEORotation](#surface_symmetry_constraints-cpgeorotation)、[BspRelation](#surface_symmetry_constraints-bsprelation)、[CPGEORelation](#surface_symmetry_constraints-cpgeorelation)、[Custom](#surface_symmetry_constraints-custom) |
+| 曲面对称与关联 | 7 | [BspMirror](#surface_symmetry_constraints-bspmirror)、[BspRotation](#surface_symmetry_constraints-bsprotation)、[CPGEOMirror](#surface_symmetry_constraints-cpgeomirror)、[CPGEORotation](#surface_symmetry_constraints-cpgeorotation)、[BspRelation](#surface_symmetry_constraints-bsprelation)、[CPGEORelation](#surface_symmetry_constraints-cpgeorelation)、[Custom](#surface_symmetry_constraints-custom) |
 | 几何与材料约束 | 10 | [Fairness](#updater_constraints-fairness)、[Distance](#updater_constraints-distance)、[Cylinder](#updater_constraints-cylinder)、[MinRadius](#updater_constraints-minradius)、[VolumeMaximization](#updater_constraints-volumemaximization)、[InwardCurvatureRadius](#updater_constraints-inwardcurvatureradius)（隐藏）、[OffsetSurfaceMinThickness](#updater_constraints-offsetsurfaceminthickness)（隐藏）、[VolFrac](#updater_constraints-volfrac)、[MinValue](#updater_constraints-minvalue)、[MaxValue](#updater_constraints-maxvalue) |
 
 <a id="section-实现对照与截图来源"></a>
@@ -2023,7 +2034,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | 按当前本构筛选显示字段 | [fields.py](../src/morphopt/ui/application/fields.py) |
 | 工况、目标、几何与更新器的代码生成 | [generator.py](../src/morphopt/ui/codegen/generator.py) |
 | STL、INP 和 STEP 资源收集及命名 | [assets.py](../src/morphopt/ui/codegen/assets.py) |
-| 十二个 FE 数据模板 | [snippets.py](../src/morphopt/ui/schemes/snippets.py) |
+| 十二个 FE 数据模板 | [snippets.py](../src/morphopt/ui/codegen/snippets.py) |
 | 自定义类签名与绑定 | [custom_classes.py](../src/morphopt/ui/codegen/custom_classes.py) |
 | SIMP 插值与体积分数 | [simpmaterial.py](../src/morphopt/simp/simpmaterial.py)、[volfrac.py](../src/morphopt/simp/objectivefuncs/volfrac.py) |
 | 偏置几何高级约束 | [constraints.py](../src/morphopt/codesign/constraints.py) |

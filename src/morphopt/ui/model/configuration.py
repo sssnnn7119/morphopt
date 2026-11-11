@@ -27,7 +27,7 @@ def updater_item_defaults(item_type: str, category: str) -> dict:
 # updater term / section factories
 #
 # These build the plain config dicts that live on the ``UpdaterNode`` from
-# the catalogued defaults, so scheme templates declare only the *deviations*
+# the catalogued defaults, so Quickstart declares only the *deviations*
 # (``Distance(min_distance=...)`` instead of a full hand-written dict).  The
 # code generator keeps reading the very same ``{"type", "params"}`` layout.
 # --------------------------------------------------------------------------
