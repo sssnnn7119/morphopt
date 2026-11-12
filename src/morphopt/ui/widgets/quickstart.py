@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -43,12 +43,12 @@ from ..application.quickstart import (
 from ..codegen.generator import generate_source
 from ..i18n import tr
 from ..model.chamberlayout import ChamberLayer
+from ..model.fields import FieldSpec
 from ..presentation.labels import quickstart_summary
 from ..theme import theme_manager
 from ..visualization.geometry import InitialDesignGeometry
 from .collection_controls import ActionButton, CollectionHeader, ItemActions
 from .file_dialogs import choose_directory
-from ..model.fields import FieldSpec
 from .sequence_input import SequenceInput
 
 
@@ -153,6 +153,21 @@ class ChamberLayersEditor(QWidget):
             count < CONSTANT.UI.QUICKSTART.LIMITS.LAYER_MAX_COUNT
         )
 
+    def set_total_length(self, length: float) -> None:
+        """Scale layer lengths together, retaining their relative proportions."""
+        layers = self.layers()
+        if not all(np.isfinite(layer.length) and layer.length > 0 for layer in layers):
+            raise ValueError(
+                tr(
+                    "ui.widgets.quickstart.enter_valid_layer_parameters_separate_channel_numbers_with_commas"
+                )
+            )
+        scale = length / sum(layer.length for layer in layers)
+        with QSignalBlocker(self.table):
+            for row, layer in enumerate(layers):
+                self.table.item(row, 0).setText(str(layer.length * scale))
+        self.changed.emit()
+
     def layers(self):
         layers = []
         try:
@@ -167,7 +182,9 @@ class ChamberLayersEditor(QWidget):
                         center_radius=float(value(4)),
                         shape=self.table.cellWidget(row, 5).currentData(),
                         phase_degrees=float(value(6)),
-                        pressure_channels=[int(c) for c in self.table.cellWidget(row, 7).value()],
+                        pressure_channels=[
+                            int(c) for c in self.table.cellWidget(row, 7).value()
+                        ],
                     )
                 )
         except ValueError as exc:
@@ -188,13 +205,12 @@ class ChamberLayersEditor(QWidget):
             except ValueError:
                 self.changed.emit()
                 return
-            if (
-                1 <= count <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT
-            ):
+            if 1 <= count <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT:
                 self._loading = True
-                self._set_channels(row, [
-                    channels[i] if i < len(channels) else i + 1 for i in range(count)
-                ])
+                self._set_channels(
+                    row,
+                    [channels[i] if i < len(channels) else i + 1 for i in range(count)],
+                )
                 self.table.resizeRowsToContents()
                 self._loading = False
         self.changed.emit()
@@ -202,8 +218,11 @@ class ChamberLayersEditor(QWidget):
     def _set_channels(self, row: int, channels: list[int]) -> None:
         editor = SequenceInput(
             FieldSpec(
-                "pressure_channels", "ui.widgets.quickstart.cavity_channel", f"vec{len(channels)}",
-                tuple(channels), ints=True,
+                "pressure_channels",
+                "ui.widgets.quickstart.cavity_channel",
+                f"vec{len(channels)}",
+                tuple(channels),
+                ints=True,
             ),
             channels,
         )
@@ -357,6 +376,7 @@ class ChannelPressureEditor(QWidget):
                 CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_STEP.PRESSURE_KPA
             )
             spin.setSuffix(" kPa")
+            spin.setKeyboardTracking(False)
             value = pressures.get(channel, pressures.get(str(channel), 0.0))
             spin.setValue(float(value))
             spin.valueChanged.connect(self._value_changed)
@@ -453,6 +473,14 @@ class ObjectiveListEditor(QWidget):
             CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MIN,
             CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MAX,
         )
+        for field in (
+            self.weight,
+            self.target,
+            self.force,
+            self.workspace_pressure,
+            self.workspace_order,
+        ):
+            field.setKeyboardTracking(False)
         self.pressures = ChannelPressureEditor()
         self.workspace_inputs = WorkspaceChannelSelector()
         self.kind_caption = self._add_row(
@@ -843,9 +871,23 @@ class QuickstartDialog(QDialog):
         self._double(
             geometry,
             "length",
-            tr("ui.widgets.quickstart.length_mm"),
-            initial.length,
+            tr("ui.widgets.quickstart.domain_length_mm"),
+            initial.length
+            if initial.method == "simp"
+            else CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_LENGTH,
             *deepcopy(CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.LENGTH.RANGE),
+            group="topology",
+        )
+        self._double(
+            geometry,
+            "total_length",
+            tr("ui.widgets.quickstart.total_length_mm"),
+            sum(layer.length for layer in initial.layers)
+            if initial.layers
+            else CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.LENGTH,
+            CONSTANT.UI.QUICKSTART.WIDGET.FIELDS.LENGTH.RANGE[0],
+            CONSTANT.UI.QUICKSTART.WIDGET.SHAPE_LENGTH_MAXIMUM,
+            group="shape",
         )
         self._double(
             geometry,
@@ -985,7 +1027,6 @@ class QuickstartDialog(QDialog):
         outer.addWidget(buttons)
         values = {
             "method": initial.method,
-            "length": initial.length,
             "radius": initial.radius,
             "wall": initial.wall,
             "height": initial.height,
@@ -1033,7 +1074,10 @@ class QuickstartDialog(QDialog):
         elif isinstance(widget, WorkspaceChannelSelector):
             widget.changed.connect(self._refresh)
         else:
-            widget.valueChanged.connect(self._refresh)
+            widget.setKeyboardTracking(False)
+            widget.valueChanged.connect(
+                self._set_total_length if key == "total_length" else self._refresh
+            )
 
     def _double(self, form, key, label, value, minimum, maximum, group=None):
         field = QDoubleSpinBox()
@@ -1046,7 +1090,7 @@ class QuickstartDialog(QDialog):
             field.setDecimals(decimals.DEFAULT)
         field.setRange(minimum, maximum)
         steps = CONSTANT.UI.QUICKSTART.WIDGET.NUMERIC_FIELD_STEP
-        if key == "length":
+        if key in ("length", "total_length"):
             field.setSingleStep(steps.LENGTH)
         elif key == "pressure_kpa":
             field.setSingleStep(steps.PRESSURE_KPA)
@@ -1055,7 +1099,6 @@ class QuickstartDialog(QDialog):
         else:
             field.setSingleStep(steps.GEOMETRY)
         field.setValue(value)
-        field.setKeyboardTracking(False)
         self._row(form, key, label, field, group)
 
     def _integer(self, form, key, label, value, minimum, maximum, group=None):
@@ -1091,18 +1134,22 @@ class QuickstartDialog(QDialog):
         values["layers"] = (
             self.layers_editor.layers() if values["method"] == "shapeopt" else []
         )
+        values.pop("total_length")
         values["objectives"] = self.objectives_editor.values()
         return QuickstartOptions(**values)
+
+    def _set_total_length(self, length: float) -> None:
+        if self._loading:
+            return
+        try:
+            self.layers_editor.set_total_length(length)
+        except ValueError as exc:
+            self.error.setText(str(exc))
+            self.create_button.setEnabled(False)
 
     def _method_changed(self):
         method = self.fields["method"].currentData()
         self.objectives_editor.set_method(method)
-        shape_length = CONSTANT.UI.QUICKSTART.DEFAULT.LENGTH
-        simp_length = CONSTANT.UI.QUICKSTART.DEFAULT.SIMP_LENGTH
-        if self.fields["length"].value() in (simp_length, shape_length):
-            self.fields["length"].setValue(
-                simp_length if method == "simp" else shape_length
-            )
         shape_material = (
             CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_MU,
             CONSTANT.UI.QUICKSTART.DEFAULT.MATERIAL_KAPPA,
@@ -1140,24 +1187,11 @@ class QuickstartDialog(QDialog):
                 or group == "topology"
                 and not shape
             )
-            if key == "length":
-                caption.setText(
-                    tr("ui.widgets.quickstart.total_length_mm")
-                    if shape
-                    else tr("ui.widgets.quickstart.domain_length_mm")
-                )
             caption.setVisible(visible)
             widget.setVisible(visible)
-        self.fields["length"].setReadOnly(shape)
-        self.fields["length"].setMaximum(
-            CONSTANT.UI.QUICKSTART.WIDGET.SHAPE_LENGTH_MAXIMUM
-            if shape
-            else CONSTANT.UI.QUICKSTART.WIDGET.TOPOLOGY_LENGTH_MAXIMUM
-        )
         if shape:
-            self.fields["length"].blockSignals(True)
-            self.fields["length"].setValue(o.total_length)
-            self.fields["length"].blockSignals(False)
+            with QSignalBlocker(self.fields["total_length"]):
+                self.fields["total_length"].setValue(o.total_length)
         self.preview.set_options(o)
         self.summary.setText(quickstart_summary(o))
         try:

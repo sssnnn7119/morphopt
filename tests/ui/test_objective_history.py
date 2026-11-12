@@ -5,11 +5,14 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QSpinBox
 
 from morphopt.optcore.history import History
 from morphopt.ui.application import ProblemLibrary, ProblemSession
 from morphopt.ui.i18n import tr
+from morphopt.ui.model.configuration import objective_term_config
 from morphopt.ui.presentation.labels import node_title
 from morphopt.ui.presentation.navigation import ObjectiveItemTreeNode
 from morphopt.ui.widgets.objective_editor import ObjectiveEditor
@@ -20,6 +23,45 @@ def generated_objective(problem):
     namespace = {"__name__": "objective_history_test"}
     exec(ProblemSession(problem).source(), namespace)
     return namespace["ThisController"].ObjectiveFunction()
+
+
+@pytest.mark.parametrize("kind,key,text", [
+    ("displacement", "target", "-12.75"),
+    ("displacement", "weight", "12.75"),
+    ("workspace", "normalization", "12.75"),
+    ("workspace", "gauss_order", "4"),
+])
+def test_numeric_objective_edits_commit_once_after_complete_input(kind, key, text):
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    term = objective_term_config(kind)
+    problem.objective.objective_terms = [term]
+    editor = ObjectiveEditor()
+    editor.set_problem(problem)
+    editor.show()
+    app.processEvents()
+    fields = editor._term_fields[0]
+    if kind == "workspace":
+        numeric_type = QSpinBox if key == "gauss_order" else QDoubleSpinBox
+        control = fields["workspace"].findChild(numeric_type)
+    else:
+        control = fields[key]
+    changes = []
+    editor.changed.connect(changes.append)
+    original = term[key]
+    try:
+        edit = control.lineEdit()
+        edit.setFocus()
+        edit.selectAll()
+        QTest.keyClicks(edit, text)
+        assert term[key] == original
+        assert changes == []
+        QTest.keyClick(edit, Qt.Key.Key_Tab)
+        app.processEvents()
+        assert term[key] == float(text)
+        assert changes == [problem.objective]
+    finally:
+        editor.close()
 
 
 def test_user_metrics_precede_weighted_objectives_and_preserve_gradients(tmp_path):

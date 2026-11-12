@@ -816,6 +816,7 @@ class ObjectiveEditor(QWidget):
         field.setRange(minimum, maximum)
         field.setDecimals(CONSTANT.UI.OBJECTIVE.FIELD_DECIMALS)
         field.setValue(float(value))
+        field.setKeyboardTracking(False)
         return field
 
     @staticmethod

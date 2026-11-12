@@ -921,7 +921,6 @@ class _Constants:
                 WORKSPACE_PRESSURE_MAXIMUM = 1000.0
                 WORKSPACE_PRESSURE_DECIMALS = 1
                 SHAPE_LENGTH_MAXIMUM = 1000000000000.0
-                TOPOLOGY_LENGTH_MAXIMUM = 1000.0
 
                 class NUMERIC_FIELD_DECIMALS:
                     DEFAULT = 1

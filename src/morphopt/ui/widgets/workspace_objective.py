@@ -56,12 +56,14 @@ class WorkspaceObjectiveEditor(QWidget):
             CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MAX,
         )
         order.setValue(int(term.get("gauss_order", 2)))
+        order.setKeyboardTracking(False)
         order.valueChanged.connect(lambda value: self._set("gauss_order", value))
         form.addRow(tr("ui.workspace_objective.gauss_order"), order)
         normalization = QDoubleSpinBox()
         normalization.setDecimals(8)
         normalization.setRange(1e-8, 1e12)
         normalization.setValue(float(term.get("normalization", 1.0)))
+        normalization.setKeyboardTracking(False)
         normalization.valueChanged.connect(
             lambda value: self._set("normalization", value)
         )
