@@ -1095,11 +1095,12 @@ class _Constants:
             PROBE_FRACTION = 0.5
             SAFETY_FACTOR = 2.0
             BALANCE_RATIO = 0.25
-            OBJECTIVE_TOLERANCE = 0.01
-            TIGHTENING_INCREMENT = 0.001
-            PENALTY_GROWTH_LIMIT = 2.0
-            WEIGHT_INCREASE = 1.25
-            SIGNIFICANT_PENALTY_RATIO = 0.001
+            TIGHTENING_INCREMENT = 0.0002
+            VIOLATION_TOLERANCE = 0.1
+            VIOLATION_BAND_RATIO = 2.0
+            VIOLATION_WEIGHT_POWER = 2.0
+            WEIGHT_CHANGE_LIMIT = 10.0
+            WEIGHT_UPDATE_FRACTION = 0.1
             INITIAL_TOLERANCE = 0.05
             FINAL_TOLERANCE = 0.0
             DISTANCE_TRANSITION_RATIO = 0.05

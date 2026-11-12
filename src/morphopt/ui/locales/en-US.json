@@ -1347,13 +1347,9 @@
   "ui.strategies.fixed_step_length": "Fixed step length [FixedStepLength]",
   "ui.strategies.constant_weights": "Constant weights [ConstantConstraintWeights]",
   "ui.strategies.sensitivity_shape_weights": "Pointwise sensitivity weights [SensitivityShapeWeights]",
-  "ui.strategies.adaptive_shape_weights": "Objective- and penalty-driven continuation [AdaptiveShapeWeights]",
-  "ui.strategies.objective_tolerance.label": "Objective change threshold",
-  "ui.strategies.objective_tolerance.help": "Absolute difference between consecutive high-fidelity objectives, scaled by the historical maximum absolute objective. Small increases and decreases permit tightening, including oscillations near zero. Default: 0.01 (1% of this scale). Material penalty deterioration can independently trigger tightening.",
+  "ui.strategies.adaptive_shape_weights": "Violation-driven constraint weights [AdaptiveShapeWeights]",
   "ui.strategies.tightening_increment.label": "Relaxation decrement",
-  "ui.strategies.tightening_increment.help": "Absolute decrease in distance relaxation when objective changes are small or a penalty deteriorates materially. Default: 0.001, or 0.1% of nominal distance. No iteration schedule is used; relaxation never drops below its final value.",
-  "ui.strategies.penalty_growth_limit.label": "Significant penalty growth factor",
-  "ui.strategies.penalty_growth_limit.help": "Default: 2. Monitor raw integrated penalties at the fixed initial relaxation. When a penalty exceeds twice its reference and has a material weighted contribution, increase its coefficient by 25% and tighten distance requirements. Track improvements and reset the reference after strengthening, so unchanged penalties do not repeatedly increase weights. This factor does not measure geometric violation.",
+  "ui.strategies.tightening_increment.help": "Decrease relative distance relaxation by this amount only while all violations are mild. Weights and thresholds stay fixed during each inner solve.",
   "ui.strategies.value.label": "Penalty coefficient",
   "ui.strategies.value.help": "Nonnegative coefficient applied to every registered penalty. Custom constant names are supported.",
   "ui.strategies.initial_tolerance.label": "Initial distance relaxation",
@@ -1422,5 +1418,9 @@
   "ui.load_cases.delete_interface": "Delete load case",
   "ui.penalty.node_index": "Node index (zero-based)",
   "ui.penalty.node_index_help": "Local index in the instance FE mesh node list. Select its X, Y or Z displacement direction.",
-  "ui.penalty.direction": "Displacement direction"
+  "ui.penalty.direction": "Displacement direction",
+  "ui.strategies.violation_tolerance.label": "Target violation",
+  "ui.strategies.violation_tolerance.help": "Maximum limit excess in barrier transition-width units. Above twice the target violation, use the initial calibration times the squared violation ratio as the target coefficient. Below half the target violation, reduce weight by 10% per update, allowing it below the initial coefficient. Hold within the band.",
+  "ui.strategies.weight_change_limit.label": "Maximum weight increase factor",
+  "ui.strategies.weight_change_limit.help": "Cap each weight increase by this factor. Move 10% of the coefficient gap per update; mild violations set the target coefficient to zero. The initial calibration is not a lower weight bound."
 }

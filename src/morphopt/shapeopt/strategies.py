@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -36,141 +37,179 @@ _SETTINGS = CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS
 
 
 class AdaptiveShapeWeights(ConstraintWeightStrategy):
-    """Calibrate once, then tighten on small objective changes or penalty growth.
+    """Calibrate each term once, then adjust only from geometric violation.
 
-    Monitor penalties at a fixed relaxation. Increase only deteriorating
-    coefficients and keep all coefficients fixed during each inner solve.
+    Violation is the maximum sampled limit excess in transition-width units.
+    Each target coefficient is measured from the initial calibration, so a
+    persistent violation cannot compound the coefficient indefinitely. A dead
+    band avoids reacting to small excess; surplus weight decays gradually.
+    Distance requirements tighten only while all monitored terms remain mild.
+
+    Above the dead band, the target is w0 * (v / v_target)**2.
+    Below the band, the target is zero, allowing an excessive calibration to
+    decay. Each call closes 10% of the gap, subject to the increase cap.
     """
 
     def __init__(
         self,
         initial_tolerance: float = _SETTINGS.INITIAL_TOLERANCE,
         final_tolerance: float = _SETTINGS.FINAL_TOLERANCE,
-        objective_tolerance: float = _SETTINGS.OBJECTIVE_TOLERANCE,
         tightening_increment: float = _SETTINGS.TIGHTENING_INCREMENT,
-        penalty_growth_limit: float = _SETTINGS.PENALTY_GROWTH_LIMIT,
+        violation_tolerance: float = _SETTINGS.VIOLATION_TOLERANCE,
+        weight_change_limit: float = _SETTINGS.WEIGHT_CHANGE_LIMIT,
     ) -> None:
-        """Configure relaxation bounds and event thresholds.
-
-        initial_tolerance/final_tolerance are fractional distance relaxations.
-        objective_tolerance bounds the absolute objective change relative to
-        its historical maximum magnitude, allowing small oscillations.
-        tightening_increment is the relaxation decrement per qualifying event.
-        penalty_growth_limit compares a monitored penalty with its reference.
-        None of these rules depends on the outer iteration number.
-        """
-        if not all(
-            math.isfinite(value)
-            for value in (
-                initial_tolerance,
-                final_tolerance,
-                objective_tolerance,
-                tightening_increment,
-                penalty_growth_limit,
-            )
-        ):
-            raise ValueError("Continuation parameters must be finite.")
+        parameters = (
+            initial_tolerance,
+            final_tolerance,
+            tightening_increment,
+            violation_tolerance,
+            weight_change_limit,
+        )
+        if not all(math.isfinite(value) for value in parameters):
+            raise ValueError("Adaptive weight parameters must be finite.")
         if not 0 <= final_tolerance <= initial_tolerance < 1:
             raise ValueError("Require 0 <= final_tolerance <= initial_tolerance < 1.")
-        if not 0 <= objective_tolerance < 1:
-            raise ValueError("objective_tolerance must lie in [0, 1).")
-        if tightening_increment <= 0:
-            raise ValueError("tightening_increment must be positive.")
-        if penalty_growth_limit <= 1:
-            raise ValueError("penalty_growth_limit must exceed one.")
+        if tightening_increment <= 0 or violation_tolerance <= 0:
+            raise ValueError(
+                "Tightening increment and violation tolerance must be positive."
+            )
+        if weight_change_limit <= 1:
+            raise ValueError("weight_change_limit must exceed one.")
         self.initial_tolerance = initial_tolerance
         self.final_tolerance = final_tolerance
-        self.objective_tolerance = objective_tolerance
         self.tightening_increment = tightening_increment
-        self.penalty_growth_limit = penalty_growth_limit
-        self.objective_scale = 0.0
+        self.violation_tolerance = violation_tolerance
+        self.weight_change_limit = weight_change_limit
         self.tolerance = initial_tolerance
-        self.previous_objective: float | None = None
+        self._started = False
         self.state: dict[str, dict[str, float]] = {}
 
     def __call__(
-        self,
-        updater: BaseUpdater,
-        gradient: torch.Tensor,
+        self, updater: BaseUpdater, gradient: torch.Tensor
     ) -> dict[str, float]:
-        """Monitor, calibrate pending terms, then freeze this subproblem's weights."""
+        """Freeze violation-driven coefficients for the next inner solve."""
         if updater.update_kind != "geometry":
             raise TypeError("AdaptiveShapeWeights requires a geometry updater.")
         names = list(updater.constraints_funcs)
         self.state = {
-            name: record for name, record in self.state.items() if name in names
+            name: value for name, value in self.state.items() if name in names
         }
         if not names:
             return {}
-        objective = updater.objective_value
-        if objective is None or not math.isfinite(objective):
-            raise ValueError(
-                "AdaptiveShapeWeights requires a finite high-fidelity objective_value."
-            )
-        if not updater.obj_funcs:
-            raise ValueError("AdaptiveShapeWeights requires a physical objective.")
-
         origin = torch.zeros_like(gradient)
-        # Fixed monitoring thresholds separate geometric deterioration from
-        # penalty growth caused by tightening the distance requirement itself.
-        for constraint in updater.constraints_funcs.values():
-            constraint.barrier_function.tolerance = self.initial_tolerance
-        with torch.no_grad():
-            monitor = dict(
-                zip(names, self._values(updater, origin)[1:].tolist(), strict=True)
-            )
-        deteriorated = self._advance_requirements(objective, monitor)
         for constraint in updater.constraints_funcs.values():
             constraint.barrier_function.tolerance = self.tolerance
+        penalties, violations = self._measure(updater, origin)
+        upper = self.violation_tolerance * _SETTINGS.VIOLATION_BAND_RATIO
+        previous_tolerance = self.tolerance
+        if self._started and max(violations.values()) <= upper:
+            self.tolerance = max(
+                self.final_tolerance, self.tolerance - self.tightening_increment
+            )
+        self._started = True
+        if self.tolerance != previous_tolerance:
+            for constraint in updater.constraints_funcs.values():
+                constraint.barrier_function.tolerance = self.tolerance
+            penalties, violations = self._measure(updater, origin)
+        logger.info(
+            "Shape distance continuation: tolerance=%.6g max_violation=%.6g action=%s",
+            self.tolerance,
+            max(violations.values()),
+            "tightened" if self.tolerance < previous_tolerance else "held",
+        )
 
         pending = {
             name: index + 1
             for index, name in enumerate(names)
             if name not in self.state
         }
-        learned = self._calibrate(updater, gradient, pending)
-        if self.tolerance == self.initial_tolerance:
-            penalties = monitor
-        else:
-            with torch.no_grad():
-                penalties = dict(
-                    zip(names, self._values(updater, origin)[1:].tolist(), strict=True)
+        learned = {}
+        if pending:
+            if not updater.obj_funcs:
+                raise ValueError(
+                    "Initial weight calibration requires a physical objective."
                 )
+            physical = torch.func.grad(lambda x: self._values(updater, x)[0])(origin)
+            if not torch.isfinite(physical).all():
+                raise ValueError("Physical gradient must be finite.")
+            learned = self._calibrate(updater, gradient, pending, physical)
 
         weights = {}
+        lower = self.violation_tolerance / _SETTINGS.VIOLATION_BAND_RATIO
         for name in names:
             previous = self.state.get(name)
-            mode = "pending" if previous is None else "held"
+            violation = violations[name]
             weight = (
                 previous["weight"]
                 if previous
-                else CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT
+                else learned.get(
+                    name,
+                    CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT,
+                )
             )
-            reference = monitor[name]
-            if name in learned:
-                weight, mode = learned[name], "calibrated"
-            elif name in deteriorated:
-                weight *= _SETTINGS.WEIGHT_INCREASE
-                mode = "strengthened"
-            if previous is not None and name not in deteriorated:
-                reference = min(reference, previous["reference_penalty"])
-            if previous is not None or name in learned:
-                self.state[name] = {"weight": weight, "reference_penalty": reference}
+            target = weight
+            mode = (
+                "held" if previous else ("calibrated" if name in learned else "pending")
+            )
+            if previous:
+                # Use an absolute target, not another multiplier of the last
+                # weight. Repeated peaks of the same size must not ratchet it up.
+                target = (
+                    previous["initial_weight"]
+                    * (violation / self.violation_tolerance)
+                    ** _SETTINGS.VIOLATION_WEIGHT_POWER
+                )
+                if violation < lower:
+                    # The calibration is a scale, not a lower weight bound.
+                    target = 0.0
+                if violation > upper or violation < lower:
+                    weight = min(
+                        weight + _SETTINGS.WEIGHT_UPDATE_FRACTION * (target - weight),
+                        weight * self.weight_change_limit,
+                    )
+                    if weight != previous["weight"]:
+                        mode = (
+                            "strengthened" if weight > previous["weight"] else "relaxed"
+                        )
+            if previous or name in learned:
+                self.state[name] = {
+                    "weight": weight,
+                    "initial_weight": previous["initial_weight"]
+                    if previous
+                    else weight,
+                    "violation": violation,
+                }
             weights[name] = weight
             logger.info(
-                "Adaptive shape weight %s: tolerance=%.6g weight=%.6g "
-                "penalty=%.6g weighted_penalty=%.6g monitor_penalty=%.6g "
-                "reference_penalty=%.6g mode=%s",
+                "Adaptive shape weight %s: tolerance=%.6g violation=%.6g "
+                "weight=%.6g target_weight=%.6g penalty=%.6g weighted_penalty=%.6g mode=%s",
                 name,
                 self.tolerance,
+                violation,
                 weight,
+                target,
                 penalties[name],
                 weight * penalties[name],
-                monitor[name],
-                previous["reference_penalty"] if previous else monitor[name],
                 mode,
             )
         return weights
+
+    def _measure(
+        self,
+        updater: BaseUpdater,
+        origin: torch.Tensor,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """Reuse each penalty's barrier calls; no geometry formulas are duplicated."""
+        with ExitStack() as stack, torch.no_grad():
+            for constraint in updater.constraints_funcs.values():
+                stack.enter_context(constraint.barrier_function.measure_violation())
+            values = self._values(updater, origin)[1:].tolist()
+        penalties = dict(zip(updater.constraints_funcs, values, strict=True))
+        violations = {
+            name: constraint.barrier_function.maximum_violation
+            for name, constraint in updater.constraints_funcs.items()
+        }
+        return penalties, violations
 
     @staticmethod
     def _values(updater: BaseUpdater, variables: torch.Tensor) -> torch.Tensor:
@@ -187,16 +226,12 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         self,
         updater: BaseUpdater,
         gradient: torch.Tensor,
-        pending: dict[str, int],
+        selected: dict[str, int],
+        physical: torch.Tensor,
     ) -> dict[str, float]:
-        """Balance pending penalties against the native gradient at the origin."""
-        if not pending:
+        """Set each selected term's initial physical-to-penalty gradient balance."""
+        if not selected:
             return {}
-        physical = torch.func.grad(lambda x: self._values(updater, x)[0])(
-            torch.zeros_like(gradient)
-        )
-        if not torch.isfinite(physical).all():
-            raise ValueError("Physical gradient must be finite.")
         physical_norm = physical.norm().item()
         if physical_norm == 0:
             return {}
@@ -207,14 +242,14 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         # to probe the configured fraction of its maximum displacement.
         probe = torch.where(norms > 0, -vectors / norms, 0.0).flatten()
         probe *= math.tan(math.pi * _SETTINGS.PROBE_FRACTION / 2)
-        indices = list(pending.values())
+        indices = list(selected.values())
         derivatives = torch.func.jacrev(lambda x: self._values(updater, x)[indices])
         weights = {}
         for sign in (1, -1):
             jacobian = derivatives(sign * probe)
             if not torch.isfinite(jacobian).all():
                 raise ValueError("Penalty probe gradients must be finite.")
-            for name, penalty in zip(pending, jacobian, strict=True):
+            for name, penalty in zip(selected, jacobian, strict=True):
                 norm = penalty.norm().item()
                 if norm == 0:
                     continue
@@ -226,66 +261,14 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
                 weights[name] = max(weights.get(name, 0.0), weight)
         return weights
 
-    def _advance_requirements(
-        self,
-        objective: float,
-        penalties: dict[str, float],
-    ) -> set[str]:
-        """Advance only on small objective changes or material penalty growth.
-
-        The historical objective scale avoids division by a near-zero current
-        objective. Penalty references track improvements, then reset after a
-        strengthening event; an unchanged violation cannot repeatedly ratchet
-        its coefficient. Each reference uses the fixed monitoring relaxation.
-        """
-        self.objective_scale = max(self.objective_scale, abs(objective))
-        relative_change = None
-        if self.previous_objective is not None:
-            change = abs(self.previous_objective - objective)
-            relative_change = (
-                change / self.objective_scale if self.objective_scale else 0.0
-            )
-        significant = _SETTINGS.SIGNIFICANT_PENALTY_RATIO * self.objective_scale
-        deteriorated = {
-            name
-            for name, record in self.state.items()
-            if record["weight"] * penalties[name] > significant
-            and penalties[name]
-            > self.penalty_growth_limit * record["reference_penalty"]
-        }
-        previous_tolerance = self.tolerance
-        settled = (
-            relative_change is not None and relative_change <= self.objective_tolerance
-        )
-        if settled or deteriorated:
-            self.tolerance = max(
-                self.final_tolerance,
-                self.tolerance - self.tightening_increment,
-            )
-        self.previous_objective = objective
-        logger.info(
-            "Shape distance continuation: objective=%.6g relative_change=%s "
-            "tolerance=%.6g action=%s reason=%s",
-            objective,
-            relative_change,
-            self.tolerance,
-            "tightened" if self.tolerance < previous_tolerance else "held",
-            "penalty_growth:" + ",".join(sorted(deteriorated))
-            if deteriorated
-            else ("small_objective_change" if settled else "objective_changing"),
-        )
-        return deteriorated
-
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save objective progress, relaxation and calibrated coefficients."""
         directory = Path(foldpath)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / f"adaptive_weights_{iteration}.json").write_text(
             json.dumps(
                 {
-                    "previous_objective": self.previous_objective,
-                    "objective_scale": self.objective_scale,
                     "tolerance": self.tolerance,
+                    "started": self._started,
                     "penalties": self.state,
                 },
                 allow_nan=False,
@@ -299,9 +282,8 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
                 encoding="utf-8"
             )
         )
-        self.previous_objective = data["previous_objective"]
-        self.objective_scale = data["objective_scale"]
         self.tolerance = data["tolerance"]
+        self._started = data["started"]
         self.state = data["penalties"]
 
 

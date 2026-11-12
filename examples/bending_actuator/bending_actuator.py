@@ -150,9 +150,9 @@ class ThisController(morphopt.Controller):
                     constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
                         initial_tolerance=0.05,
                         final_tolerance=0.0,
-                        objective_tolerance=0.01,
-                        tightening_increment=0.001,
-                        penalty_growth_limit=2.0,
+                        tightening_increment=0.0002,
+                        violation_tolerance=0.1,
+                        weight_change_limit=10.0,
                     ),
                 )
 

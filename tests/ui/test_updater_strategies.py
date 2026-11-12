@@ -97,9 +97,9 @@ def test_strategy_fields_match_backend_defaults(group, base):
 
 
 @pytest.mark.parametrize("policy,parameter,setting", [
-    ("AdaptiveShapeWeights", "objective_tolerance", 0.02),
+    ("AdaptiveShapeWeights", "violation_tolerance", 0.02),
     ("AdaptiveShapeWeights", "tightening_increment", 0.002),
-    ("AdaptiveShapeWeights", "penalty_growth_limit", 1.5),
+    ("AdaptiveShapeWeights", "weight_change_limit", 5.0),
     ("AdaptiveShapeWeights", "initial_tolerance", 0.3),
 ])
 def test_shape_selection_parameters_round_trip_to_generated_updater(app, tmp_path, policy, parameter, setting):

@@ -1,4 +1,4 @@
-"""Penalty calibration preserves physical scales and survives outer restarts."""
+"""One-time calibration and geometry-only penalty feedback."""
 
 from pathlib import Path
 
@@ -6,25 +6,26 @@ import pytest
 import torch
 
 from morphopt.optcore.protocal import ProtocalSavable
-from morphopt.shapeopt.strategies import AdaptiveShapeWeights
 from morphopt.optcore.updaters import BaseUpdater
 from morphopt.shapeopt.objectivefuncs.basefuncs import BaseConstraints
+from morphopt.shapeopt.strategies import AdaptiveShapeWeights
 
 
 class AnalyticUpdater(BaseUpdater):
     update_kind = "geometry"
 
-    def __init__(self, scale=1.0, area=1.0, boundary=0.2, offset=0.0):
+    def __init__(self, scale=1.0, area=1.0):
         super().__init__()
-        self.objective_value = 1.0
         self.scale, self.area = scale, area
-        self.boundary, self.offset = boundary, offset
+        self.z = 0.0
         self.obj_funcs = {"physical": object()}
         self.constraints_funcs = {"limit": BaseConstraints()}
 
     def closure(self, x, return_list=False):
         physical = -self.scale * x[0]
-        penalty = self.area * torch.relu(self.offset + x[0] - self.boundary) ** 2
+        # The transition runs from .8 to 1; z=1 is the declared limit.
+        values = 0.8 + 0.2 * (self.z + x[:1])
+        penalty = self.area * self.constraints_funcs["limit"].barrier_function(values, 1.0, 0.8, 3)[1].sum()
         if return_list:
             return [physical], [penalty]
         return physical + self.constraint_weights["limit"] * penalty
@@ -33,310 +34,229 @@ class AnalyticUpdater(BaseUpdater):
         return torch.tensor([-self.scale, 0.0, 0.0], dtype=torch.float64)
 
 
-def test_inactive_penalty_is_detected_by_probe_and_opposes_violation():
-    updater = AnalyticUpdater(scale=100.0)
-    strategy = AdaptiveShapeWeights()
-    gradient = updater.gradient()
-    assert updater.closure(torch.zeros(3), return_list=True)[1][0] == 0
-    weights = strategy(updater, gradient)
-    # At x=1: g=-100, p=2*(1-0.2)=1.6, so the conflict threshold is 62.5.
-    assert weights["limit"] == pytest.approx(125.0)
-    assert strategy.state["limit"]["reference_penalty"] == 0
-    probe = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64)
-    physical = torch.func.grad(lambda x: updater.closure(x, True)[0][0])(probe)
-    penalty = torch.func.grad(lambda x: updater.closure(x, True)[1][0])(probe)
-    restoring_direction = -penalty
-    assert (physical + weights["limit"] * penalty) @ restoring_direction < 0
-    torch.testing.assert_close(gradient, updater.gradient(), rtol=0, atol=0)
-
-
 @pytest.mark.parametrize("scale", [1e-6, 1.0, 1e6])
 @pytest.mark.parametrize("area", [0.1, 1.0, 1000.0])
-def test_weight_tracks_raw_objective_scale_and_inverse_surface_measure(scale, area):
-    updater = AnalyticUpdater(scale=scale, area=area)
-    weight = AdaptiveShapeWeights()(updater, updater.gradient())["limit"]
-    assert weight == pytest.approx(1.25 * scale / area, rel=1e-10)
-
-
-def test_repeated_calibration_does_not_accumulate_penalty_weights():
-    updater = AnalyticUpdater(offset=0.4)
+def test_initial_weight_balances_native_physical_and_penalty_gradients(scale, area):
+    updater = AnalyticUpdater(scale, area)
     strategy = AdaptiveShapeWeights()
-    weights = [strategy(updater, updater.gradient())["limit"] for _ in range(5)]
-    assert weights == pytest.approx([weights[0]] * 5)
-    assert strategy.tolerance == pytest.approx(0.046)
-    assert set(strategy.state["limit"]) == {"weight", "reference_penalty"}
-
-
-@pytest.mark.parametrize("curvature", [0.0, 1.0, 1000.0, 1e6])
-@pytest.mark.parametrize("scale", [0.001, 1.0])
-def test_quadratic_curvature_does_not_inflate_penalty_weights(curvature, scale):
-    class QuadraticUpdater(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            objectives, penalties = super().closure(x, True)
-            return [objectives[0] + 0.5 * curvature * x.square().sum()], penalties
-
-    updater = QuadraticUpdater(scale=scale)
-    gradient = updater.gradient()
-    strategy = AdaptiveShapeWeights()
-    weights = strategy(updater, gradient)
-    assert weights["limit"] == pytest.approx(1.25 * scale)
-    torch.testing.assert_close(gradient, updater.gradient(), rtol=0, atol=0)
-
-
-def test_stationary_physical_objective_does_not_recalibrate_from_curvature():
-    class StationaryUpdater(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            _, penalties = super().closure(x, True)
-            return [1000 * x.square().sum()], penalties
-
-    updater = StationaryUpdater(scale=0.0)
-    strategy = AdaptiveShapeWeights()
-    strategy.state["limit"] = {"weight": 7.0, "reference_penalty": 0.0}
-    assert strategy(updater, updater.gradient()) == {"limit": 7.0}
-
-
-def test_no_response_or_zero_physical_gradient_keeps_finite_coefficients():
-    for updater in (AnalyticUpdater(boundary=3.0), AnalyticUpdater(scale=0.0)):
-        strategy = AdaptiveShapeWeights()
-        strategy.state["limit"] = {"weight": 7.0, "reference_penalty": 0.0}
-        weights = strategy(updater, updater.gradient())
-        assert weights == {"limit": 7.0}
-
-
-def test_constant_penalty_does_not_trigger_ineffective_weight_growth():
-    class ConstantPenalty(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            return [-x[0]], [x.new_tensor(5.0)]
-
-    updater = ConstantPenalty()
-    strategy = AdaptiveShapeWeights()
-    for _ in range(3):
-        assert strategy(updater, updater.gradient()) == {"limit": 1.0}
-
-
-def test_multiple_penalties_are_calibrated_by_name_and_scale():
-    class MultiplePenalties(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            objectives, penalties = super().closure(x, True)
-            return objectives, [penalties[0], 3 * penalties[0]]
-
-    updater = MultiplePenalties()
-    updater.constraints_funcs["second"] = BaseConstraints()
-    strategy = AdaptiveShapeWeights()
-    weights = strategy(updater, updater.gradient())
-    assert weights["limit"] == pytest.approx(3 * weights["second"])
-
-
-@pytest.mark.parametrize("previous_weight", [1e-12, 1e12])
-def test_learned_coefficients_are_not_replaced_by_new_gradient_scales(previous_weight):
-    updater = AnalyticUpdater()
-    strategy = AdaptiveShapeWeights()
-    strategy.state["limit"] = {
-        "weight": previous_weight, "reference_penalty": 0.0,
-    }
-    weights = strategy(updater, updater.gradient())
-    assert weights == {"limit": previous_weight}
-
-
-def test_growing_seventh_power_violation_does_not_shrink_its_coefficient():
-    class SeventhPowerUpdater(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            physical = -self.scale * x[0]
-            penalty = torch.relu(self.offset + x[0] - self.boundary) ** 7
-            return [physical], [penalty]
-
-    updater = SeventhPowerUpdater()
-    strategy = AdaptiveShapeWeights()
-    initial = strategy(updater, updater.gradient())
-    updater.offset = 100.0
-    updater.scale = 0.001
     gradient = updater.gradient()
     source = gradient.clone()
-    assert strategy(updater, gradient)["limit"] == pytest.approx(1.25 * initial["limit"])
-    penalty = updater.closure(torch.zeros_like(gradient), True)[1][0].item()
-    assert penalty > 1e13
-    assert initial["limit"] * penalty > 1e13
+    weight = strategy(updater, gradient)["limit"]
+    # At x=1 the cubic penalty derivative is 3*area; safety factor is 2.
+    assert weight == pytest.approx(2 * scale / (3 * area))
+    assert strategy.state["limit"]["initial_weight"] == weight
     torch.testing.assert_close(gradient, source, rtol=0, atol=0)
 
 
-def test_inactive_default_is_not_frozen_before_a_penalty_responds(tmp_path):
-    updater = AnalyticUpdater(boundary=3.0)
+def test_later_physical_gradient_changes_do_not_recalibrate(monkeypatch):
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A calibrated term must not request new derivatives")
+
+    monkeypatch.setattr(torch.func, "grad", forbidden)
+    monkeypatch.setattr(torch.func, "jacrev", forbidden)
+    updater.z = 1.1  # Inside the violation dead band.
+    for scale in (1e-6, 1e6, 0.0, 1000.0):
+        updater.scale = scale
+        updater.objective_value = None
+        assert strategy(updater, updater.gradient())["limit"] == initial
+    assert set(strategy.state["limit"]) == {"weight", "initial_weight", "violation"}
+
+
+@pytest.mark.parametrize("violation,factor", [(0.0, 0.9), (0.03, 0.9), (0.1, 1.0), (0.3, 1.125), (5.0, 10.0)])
+def test_feedback_strengthens_holds_or_relaxes_from_violation(violation, factor):
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    strategy.state["limit"]["weight"] = 4 * initial
+    updater.z = 1 + violation
+    changed = strategy(updater, updater.gradient())["limit"]
+    assert changed == pytest.approx(4 * initial * factor)
+    assert strategy.state["limit"]["violation"] == pytest.approx(violation)
+    assert changed > 0
+
+
+def test_severe_violation_is_detected_without_waiting_for_gradient_growth():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    updater.scale = 1e-12
+    updater.z = 3.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(10 * initial)
+
+
+def test_repeated_violation_reaches_an_absolute_weight_without_compounding():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    updater.z = 2.0
+    for _ in range(300):
+        weight = strategy(updater, updater.gradient())["limit"]
+    assert weight == pytest.approx(100 * initial)
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(weight)
+    # A higher peak can strengthen again; it cannot restart unbounded growth.
+    updater.z = 3.0
+    for _ in range(300):
+        weight = strategy(updater, updater.gradient())["limit"]
+    assert weight == pytest.approx(400 * initial)
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(weight)
+    updater.z = 1.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(0.9 * weight)
+    for _ in range(300):
+        strategy(updater, updater.gradient())
+    assert 0 < strategy(updater, updater.gradient())["limit"] < initial
+
+
+def test_safe_constraints_release_weight_below_the_initial_calibration():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    for _ in range(20):
+        weight = strategy(updater, updater.gradient())["limit"]
+    assert weight == pytest.approx(initial * 0.9 ** 20)
+    # Small violations below the dead band must not revive a large seed.
+    updater.z = 1.03
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(0.9 * weight)
+    updater.z = 1.1
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(0.9 * weight)
+    # An actual violation still restores weight, with the per-call increase cap.
+    updater.z = 3.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(9 * weight)
+
+
+def test_excessive_initial_calibration_settles_below_its_seed_without_new_derivatives(monkeypatch):
+    updater = AnalyticUpdater(scale=1000.0)
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    updater.scale = 1.0
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A calibrated term must not request new derivatives")
+
+    monkeypatch.setattr(torch.func, "grad", forbidden)
+    monkeypatch.setattr(torch.func, "jacrev", forbidden)
+    weight = initial
+    tail = []
+    for _ in range(200):
+        updater.z = (updater.scale / (3 * weight * updater.area)) ** 0.5
+        weight = strategy(updater, updater.gradient())["limit"]
+        tail.append(weight)
+    assert tail[-10:] == pytest.approx([weight] * 10)
+    assert 0 < weight < initial / 1000
+    assert 0.05 <= strategy.state["limit"]["violation"] <= 0.2
+    assert strategy.state["limit"]["initial_weight"] == initial
+
+
+def test_feedback_settles_after_large_sensitivity_change_without_repeated_recalibration(monkeypatch):
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    weight = strategy(updater, updater.gradient())["limit"]
+    updater.scale = 1000.0
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Only the initial coefficient is calibrated")
+
+    monkeypatch.setattr(torch.func, "grad", forbidden)
+    monkeypatch.setattr(torch.func, "jacrev", forbidden)
+    tail = []
+    for _ in range(100):
+        # Exact solution of -scale*z + weight*area*z**3 for this subproblem.
+        updater.z = (updater.scale / (3 * weight * updater.area)) ** 0.5
+        weight = strategy(updater, updater.gradient())["limit"]
+        tail.append(weight)
+    assert tail[-10:] == pytest.approx([weight] * 10)
+    violation = strategy.state["limit"]["violation"]
+    assert 0 < violation < 2.0
+    assert weight == pytest.approx(strategy.state["limit"]["initial_weight"] * (violation / 0.1) ** 2)
+
+
+def test_alternating_violation_peaks_do_not_ratchet_weights_up():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    for _ in range(100):
+        for violation in (1.0, 2.0, 0.8, 1.5):
+            updater.z = 1 + violation
+            assert strategy(updater, updater.gradient())["limit"] <= 400 * initial * (1 + 1e-12)
+
+
+def test_existing_excess_weight_decays_even_while_violation_remains_above_target():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    strategy.state["limit"]["weight"] = 1e7 * initial
+    updater.z = 2.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx((0.9e7 + 10) * initial)
+
+
+@pytest.mark.parametrize("area", [1e-9, 1.0, 1e9])
+def test_violation_feedback_is_independent_of_integration_measure(area):
+    updater = AnalyticUpdater(area=area)
+    strategy = AdaptiveShapeWeights()
+    initial = strategy(updater, updater.gradient())["limit"]
+    updater.z = 3.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(10 * initial)
+    assert strategy.state["limit"]["violation"] == pytest.approx(2.0)
+
+
+def test_pending_term_calibrates_on_its_first_nonzero_response():
+    updater = AnalyticUpdater()
+    updater.z = -3.0
     strategy = AdaptiveShapeWeights()
     assert strategy(updater, updater.gradient()) == {"limit": 1.0}
     assert strategy.state == {}
-    strategy.save(str(tmp_path), 1)
-    restored = AdaptiveShapeWeights()
-    restored.load(str(tmp_path), 1)
-    updater.boundary = 0.2
-    assert restored(updater, updater.gradient()) == {"limit": pytest.approx(1.25)}
-    assert "limit" in restored.state
+    updater.z = 0.0
+    initial = strategy(updater, updater.gradient())["limit"]
+    assert initial == pytest.approx(2 / 3)
+    updater.scale = 10000.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(0.9 * initial)
+    assert strategy.state["limit"]["initial_weight"] == initial
 
 
-def test_calibrated_terms_do_not_require_new_displaced_geometry_probes():
-    class TrialRestrictedUpdater(AnalyticUpdater):
-        allow_trials = True
-
-        def closure(self, x, return_list=False):
-            if not self.allow_trials and x.abs().sum() > 0:
-                raise ValueError("No new displaced geometry probe is allowed")
-            return super().closure(x, return_list)
-
-    updater = TrialRestrictedUpdater()
+def test_zero_physical_gradient_does_not_freeze_a_placeholder_as_calibration():
+    updater = AnalyticUpdater(scale=0.0)
     strategy = AdaptiveShapeWeights()
-    initial = strategy(updater, updater.gradient())
-    updater.allow_trials = False
-    assert strategy(updater, updater.gradient()) == initial
+    assert strategy(updater, updater.gradient()) == {"limit": 1.0}
+    assert strategy.state == {}
+    updater.scale = 1.0
+    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(2 / 3)
 
 
-def test_restart_restores_calibration_and_next_update(tmp_path: Path):
-    updater = AnalyticUpdater(offset=0.4)
+def test_restart_restores_initial_weights_violation_and_next_feedback(tmp_path: Path):
+    updater = AnalyticUpdater()
     original = AdaptiveShapeWeights()
     assert isinstance(original, ProtocalSavable)
     original(updater, updater.gradient())
+    updater.z = 3.0
     original(updater, updater.gradient())
-    saved: ProtocalSavable = original
-    saved.save(str(tmp_path), iteration=2)
+    original.save(str(tmp_path), 2)
     restored = AdaptiveShapeWeights()
-    restored.load(str(tmp_path), iteration=2)
+    restored.load(str(tmp_path), 2)
     assert restored.state == original.state
+    assert restored.tolerance == original.tolerance
+    updater.z = 1.02
     assert restored(updater, updater.gradient()) == original(updater, updater.gradient())
+    assert restored.tolerance == original.tolerance
 
 
-def test_negative_auxiliary_objective_is_not_treated_as_a_penalty():
+def test_removed_terms_are_forgotten():
+    updater = AnalyticUpdater()
+    strategy = AdaptiveShapeWeights()
+    strategy(updater, updater.gradient())
+    updater.constraints_funcs.clear()
+    assert strategy(updater, updater.gradient()) == {}
+    assert strategy.state == {}
+
+
+def test_negative_penalty_is_rejected():
     class SignedTerm(AnalyticUpdater):
         def closure(self, x, return_list=False):
-            objectives, penalties = super().closure(x, True)
-            return objectives, [penalties[0] - 100.0]
+            physical, penalty = super().closure(x, True)
+            return physical, [penalty[0] - 100]
 
     updater = SignedTerm()
     with pytest.raises(ValueError, match="nonnegative"):
         AdaptiveShapeWeights()(updater, updater.gradient())
-
-
-def test_negative_displaced_penalty_cannot_be_used_for_initial_calibration():
-    class SignedTrial(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            return [-x[0]], [1 - 2 * x[0].square()]
-
-    updater = SignedTrial()
-    with pytest.raises(ValueError, match="nonnegative"):
-        AdaptiveShapeWeights()(updater, updater.gradient())
-
-
-@pytest.mark.parametrize("relaxation", [0.0, 0.05])
-def test_material_deterioration_strengthens_only_the_affected_penalty(relaxation):
-    class TwoPenalties(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            objectives, first = super().closure(x, True)
-            unchanged = torch.relu(x[0] - self.boundary) ** 2
-            return objectives, [first[0], unchanged]
-
-    updater = TwoPenalties()
-    updater.constraints_funcs["unchanged"] = BaseConstraints()
-    strategy = AdaptiveShapeWeights(initial_tolerance=relaxation)
-    updater.objective_value = 10.0
-    initial = strategy(updater, updater.gradient())
-    updater.offset = 1.0
-    updater.objective_value = 12.0  # Substantial objective regression does not veto repair.
-    changed = strategy(updater, updater.gradient())
-    assert changed["limit"] == pytest.approx(1.25 * initial["limit"])
-    assert changed["unchanged"] == initial["unchanged"]
-    assert strategy.tolerance == pytest.approx(max(0.0, relaxation - 0.001))
-    reference = strategy.state["limit"]["reference_penalty"]
-    updater.objective_value = 20.0
-    assert strategy(updater, updater.gradient()) == changed
-    assert strategy.state["limit"]["reference_penalty"] == reference
-    assert strategy.tolerance == pytest.approx(max(0.0, relaxation - 0.001))
-
-
-def test_negligible_penalty_growth_is_not_strengthened():
-    updater = AnalyticUpdater(area=1e-9)
-    strategy = AdaptiveShapeWeights()
-    strategy.state["limit"] = {
-        "weight": 1.0, "reference_penalty": 0.0,
-    }
-    updater.objective_value = 10.0
-    strategy(updater, updater.gradient())
-    updater.offset = 1.0
-    updater.objective_value = 12.0
-    assert strategy(updater, updater.gradient()) == {"limit": 1.0}
-    assert strategy.tolerance == 0.05
-
-
-def test_cumulative_penalty_growth_is_detected_and_improvement_resets_reference():
-    updater = AnalyticUpdater(offset=1.0)
-    strategy = AdaptiveShapeWeights()
-    updater.objective_value = 10.0
-    initial = strategy(updater, updater.gradient())["limit"]
-    for objective, value in ((8.0, 0.9), (6.0, 1.2)):
-        updater.objective_value = objective
-        updater.offset = updater.boundary + value**0.5
-        assert strategy(updater, updater.gradient())["limit"] == initial
-    updater.objective_value = 4.0
-    updater.offset = updater.boundary + 1.4**0.5
-    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(1.25 * initial)
-    updater.objective_value = 2.0
-    updater.offset = updater.boundary + 0.3**0.5
-    strategy(updater, updater.gradient())
-    assert strategy.state["limit"]["reference_penalty"] == pytest.approx(0.3)
-    updater.objective_value = 1.0
-    updater.offset = updater.boundary + 0.7**0.5
-    assert strategy(updater, updater.gradient())["limit"] == pytest.approx(1.25**2 * initial)
-
-
-def test_restart_preserves_penalty_growth_reference_and_objective_scale(tmp_path):
-    updater = AnalyticUpdater(offset=1.0)
-    strategy = AdaptiveShapeWeights()
-    updater.objective_value = 10.0
-    strategy(updater, updater.gradient())
-    updater.objective_value = 1.0
-    strategy(updater, updater.gradient())
-    strategy.save(str(tmp_path), 2)
-    restored = AdaptiveShapeWeights()
-    restored.load(str(tmp_path), 2)
-    assert restored.objective_scale == 10.0
-    updater.offset = 2.0
-    updater.objective_value = 1.005
-    assert restored(updater, updater.gradient()) == strategy(updater, updater.gradient())
-    assert restored.tolerance == strategy.tolerance
-    assert restored.state == strategy.state
-
-
-def test_calibration_leaves_zero_sensitivity_points_unperturbed():
-    class ObservedUpdater(AnalyticUpdater):
-        def __init__(self):
-            super().__init__()
-            self.trials = []
-
-        def closure(self, x, return_list=False):
-            self.trials.append(x.detach().clone())
-            return super().closure(x, return_list)
-
-    updater = ObservedUpdater()
-    gradient = torch.tensor([-1.0, 0, 0, 0, 0, 0], dtype=torch.float64)
-    weight = AdaptiveShapeWeights()(updater, gradient)["limit"]
-    assert weight == pytest.approx(1.25)
-    trials = [x for x in updater.trials if x.abs().sum() > 0]
-    assert len(trials) == 2
-    for trial in trials:
-        torch.testing.assert_close(trial[1:], torch.zeros_like(trial[1:]))
-
-
-def test_unrelated_large_penalty_cannot_hide_deterioration():
-    class SeparatePenalties(AnalyticUpdater):
-        def closure(self, x, return_list=False):
-            objectives, penalties = super().closure(x, True)
-            return objectives, [penalties[0], x.new_tensor(1e12)]
-
-    updater = SeparatePenalties(offset=2.0)
-    updater.constraints_funcs["other"] = BaseConstraints()
-    updater.objective_value = 12.0
-    strategy = AdaptiveShapeWeights()
-    strategy.previous_objective = 10.0
-    strategy.objective_scale = 10.0
-    strategy.state = {
-        "limit": {"weight": 1.0, "reference_penalty": 1.0},
-        "other": {"weight": 1.0, "reference_penalty": 1e12},
-    }
-    assert strategy(updater, updater.gradient()) == {"limit": 1.25, "other": 1.0}
-    assert strategy.tolerance == pytest.approx(0.049)

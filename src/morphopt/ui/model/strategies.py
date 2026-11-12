@@ -39,9 +39,9 @@ STRATEGY_CATALOG: dict[str, tuple[StrategySpec, ...]] = {
                 for key, default in (
                     ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
                     ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
-                    ("objective_tolerance", _ADAPTIVE.OBJECTIVE_TOLERANCE),
                     ("tightening_increment", _ADAPTIVE.TIGHTENING_INCREMENT),
-                    ("penalty_growth_limit", _ADAPTIVE.PENALTY_GROWTH_LIMIT),
+                    ("violation_tolerance", _ADAPTIVE.VIOLATION_TOLERANCE),
+                    ("weight_change_limit", _ADAPTIVE.WEIGHT_CHANGE_LIMIT),
                 )
             ),
             groups=("geometry",),

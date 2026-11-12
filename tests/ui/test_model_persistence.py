@@ -122,7 +122,7 @@ def test_file_import_projects_nested_updater_terms_and_strategy_parameters(tmp_p
     assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 1.0}}]
     policy = restored["constraint_weight_strategy"]
     assert policy["params"]["initial_tolerance"] == 0.1
-    assert policy["params"]["objective_tolerance"] == 0.01
+    assert policy["params"]["violation_tolerance"] == 0.1
     assert "old_schedule" not in policy["params"]
     assert restored["max_step_length"] > 0
     assert issues
