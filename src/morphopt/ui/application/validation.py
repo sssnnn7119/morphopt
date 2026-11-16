@@ -16,6 +16,7 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
+from ...constants import CONSTANT
 from ...utils.paths import sanitize_name
 from ...shapeopt import strategies as shape_strategies
 from ...shapeopt.objectivefuncs import Fairness
@@ -257,10 +258,8 @@ class DefinitionValidation:
 
     def node(self, node: Node) -> None:
         try:
-            if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF":
+            if isinstance(node, (FEAComponentNode, MaterialNode)):
                 fields = fields_for_node(node, self.problem)[0]
-            elif isinstance(node, MaterialNode):
-                fields = fields_for_node(node)[0]
             else:
                 fields = node.fields
         except KeyError:
@@ -268,6 +267,14 @@ class DefinitionValidation:
             fields = ()
         for spec in fields:
             self.field(node, spec, node.get_field(spec.key))
+            if node.kind == "surface" and spec.key == "r0":
+                radius = node.get_field(spec.key)
+                try:
+                    radius = self.literal(radius) if isinstance(radius, str) else radius
+                except (ValueError, SyntaxError, ArithmeticError):
+                    radius = _UNKNOWN
+                if isinstance(radius, Real) and not isinstance(radius, bool) and radius == 0:
+                    self.add(node, "positive", field=tr(spec.label_key))
             if spec.key == "bounding_box":
                 value = node.get_field(spec.key)
                 if (
@@ -497,6 +504,55 @@ class DefinitionValidation:
                         self.add(solver, "duplicate", name=name)
                     registered.add(name)
 
+    def initial_curvature(
+        self, owner: object, part: Node | None, limit: float,
+    ) -> None:
+        """Check analytic construction profiles without running user definitions.
+
+        The reported value estimates the initial geometry, not the maximum
+        curvature of the fitted spline. For a perturbed cylinder, the profile's
+        crest at z=0 already supplies a lower bound on its maximum curvature.
+        """
+        if not isinstance(part, BoundaryPartNode) or self.overridden(part):
+            return
+        for index, surface in enumerate(part.surfaces):
+            if not surface.is_updatable or surface.custom_class:
+                continue
+            factor = {
+                "bsp_cylinder": 1.0, "cpgeo_cylinder": 1.0, "cpgeo_sphere": 2.0,
+            }.get(surface.type)
+            if factor is None:
+                continue
+            try:
+                radius = surface.r0
+                radius = self.literal(radius) if isinstance(radius, str) else radius
+                if (
+                    not isinstance(radius, Real) or isinstance(radius, bool)
+                    or not math.isfinite(radius) or radius <= 0
+                ):
+                    continue
+                curvature = factor / radius**2
+                if surface.type != "cpgeo_sphere":
+                    wavelength = surface.perturbation_L
+                    wavelength = self.literal(wavelength) if isinstance(wavelength, str) else wavelength
+                    if not isinstance(wavelength, Real) or not math.isfinite(wavelength):
+                        continue
+                    if wavelength > 0:
+                        amplitude_ratio = CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+                        crest_radius = radius * (1 + amplitude_ratio)
+                        axial_curvature = radius * amplitude_ratio * (math.tau / wavelength)**2
+                        curvature = 1 / crest_radius**2 + axial_curvature**2
+            except (ValueError, SyntaxError, ArithmeticError):
+                continue  # Invalid numeric definitions are reported by their fields.
+            if curvature > limit and not math.isclose(curvature, limit):
+                values = {
+                    "surface": f"{part.name}/surface_{index}",
+                    "actual": f"{curvature:.6g}",
+                    "limit": f"{limit:.6g}",
+                }
+                self.add(owner, "initial_curvature", **values)
+                self.add(surface, "initial_curvature", **values)
+
     def updaters(self) -> None:
         updater = self.problem.updater
         if updater is None:
@@ -577,6 +633,11 @@ class DefinitionValidation:
                         item_fields = spec.fields if spec is not None else ()
                         if spec is not None:
                             for field in item_fields:
+                                if item.get("type") == "VolFrac" and field.key == "elementname":
+                                    name = item.get("params", {}).get(field.key, field.new_default())
+                                    part = target.part if isinstance(target, MaterialNode) else None
+                                    if name and name not in PartSetCatalog(self.problem).for_part(part).elements:
+                                        self.add(item, "reference", field=tr(field.label_key), name=name)
                                 self.field(
                                     item,
                                     field,
@@ -604,6 +665,8 @@ class DefinitionValidation:
                                     }
                                     if all(value is None or isinstance(value, Real) for value in values.values()):
                                         Fairness(**values)
+                                        if not item.get("custom_class"):
+                                            self.initial_curvature(item, target, values["max_curvature"])
                                 _render_updater_item(item, category, self.problem)
                         except (ValueError, TypeError, SyntaxError) as exc:
                             self.add(item, "definition", reason=str(exc))

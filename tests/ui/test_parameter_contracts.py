@@ -565,6 +565,121 @@ def test_invalid_fairness_definition_is_marked_in_the_model_tree(parameters):
     assert id(item) in validation.errors
 
 
+@pytest.mark.parametrize("surface_type,factor", [("bsp_cylinder", 1), ("cpgeo_cylinder", 1), ("cpgeo_sphere", 2)])
+@pytest.mark.parametrize("limit_ratio,invalid", [(0.9, True), (1.0, False), (1.1, False)])
+def test_fairness_checks_initial_analytic_curvature(surface_type, factor, limit_ratio, invalid):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create(surface_type, r0=2.0)
+    if surface_type != "cpgeo_sphere":
+        surface.perturbation_L = -1.0
+    part.surfaces = [surface]
+    config = problem.updater.geometry[0]
+    config["symmetry_constraints"] = []
+    item = {"type": "Fairness", "params": {"max_curvature": factor / 4 * limit_ratio}}
+    config["constraints"] = [item]
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert (id(item) in validation.errors) is invalid
+    assert (id(surface) in validation.errors) is invalid
+
+
+@pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder", "cpgeo_sphere"])
+@pytest.mark.parametrize("use_constant", [False, True])
+def test_zero_surface_radius_is_invalid_without_fairness(surface_type, use_constant):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    problem.updater.geometry[0]["constraints"] = []
+    problem.helper_variables.append(HelperVariableNode(name="radius", params={"value": "0.0"}))
+    surface = SurfaceNode.create(surface_type, r0="radius" if use_constant else 0.0)
+    validation = DefinitionValidation(problem)
+    validation.node(surface)
+    assert id(surface) in validation.errors
+    assert len(validation.errors[id(surface)]) == 1
+
+
+@pytest.mark.parametrize("setting", ["fixed", "unknown_wavelength", "custom", "expression"])
+def test_initial_curvature_does_not_guess_unknown_or_unconstrained_geometry(setting):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("bsp_cylinder", r0=2.0, perturbation_L=-1.0)
+    if setting == "fixed":
+        surface.is_updatable = False
+    elif setting == "unknown_wavelength":
+        surface.perturbation_L = "compute_wavelength()"
+    elif setting == "custom":
+        surface.custom_class = "CustomSurface"
+    else:
+        surface.r0 = "compute_radius()"
+    part.surfaces = [surface]
+    item = {"type": "Fairness", "params": {"max_curvature": 0.1}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, 0.1)
+    assert not validation.errors
+
+
+@pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder"])
+@pytest.mark.parametrize("wavelength", [10.0, 0.5])
+@pytest.mark.parametrize("limit_ratio,invalid", [(0.9, True), (1.1, False)])
+def test_initial_curvature_checks_the_perturbed_cylinder_crest(surface_type, wavelength, limit_ratio, invalid):
+    from morphopt.constants import CONSTANT
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    radius = 2.0
+    surface = SurfaceNode.create(surface_type, r0=radius, perturbation_L=wavelength)
+    part.surfaces = [surface]
+    ratio = CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+    estimate = (radius * (1 + ratio))**-2 + (radius * ratio * (2 * np.pi / wavelength)**2)**2
+    item = {"type": "Fairness", "params": {"max_curvature": estimate * limit_ratio}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, estimate * limit_ratio)
+    assert (id(item) in validation.errors) is invalid
+    assert (id(surface) in validation.errors) is invalid
+
+
+def test_bsp_perturbation_does_not_hide_a_small_initial_radius():
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("bsp_cylinder", r0=0.5, perturbation_L=10.0)
+    part.surfaces = [surface]
+    assert surface.perturbation_L > 0
+    item = {"type": "Fairness", "params": {"max_curvature": 1.0}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, 1.0)
+    assert id(item) in validation.errors
+    assert id(surface) in validation.errors
+
+
+def test_initial_curvature_resolves_literal_radius_and_limit_constants():
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("cpgeo_sphere", r0="radius")
+    part.surfaces = [surface]
+    problem.helper_variables.extend([
+        HelperVariableNode(name="radius", params={"value": "2.0"}),
+        HelperVariableNode(name="curvature_limit", params={"value": "0.4"}),
+    ])
+    config = problem.updater.geometry[0]
+    config["symmetry_constraints"] = []
+    item = {"type": "Fairness", "params": {"max_curvature": "curvature_limit"}}
+    config["constraints"] = [item]
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert id(item) in validation.errors
+    assert id(surface) in validation.errors
+
+
 @pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder"])
 def test_fairness_uses_identical_curvature_only_fields_and_source(surface_type):
     from PySide6.QtWidgets import QApplication

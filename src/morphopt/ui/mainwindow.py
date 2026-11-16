@@ -39,6 +39,7 @@ from .widgets.file_dialogs import (
 from .widgets.font_settings import FontSettingsDialog
 from .widgets.labels import ResultPathLabel
 from .widgets.quickstart import QuickstartDialog
+from .widgets.problems import ProblemsButton
 from .workbench import Workbench
 
 
@@ -73,6 +74,12 @@ class MainWindow(QMainWindow):
         self._workspace_header = workspace_header
         workspace_header.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         workspace_header.addWidget(self.navigation, 1)
+        self.problems = ProblemsButton(
+            lambda: self._workbench.tree.diagnostics if self._workbench is not None else (),
+            self,
+        )
+        self.problems.nodeRequested.connect(self._locate_problem)
+        workspace_header.addWidget(self.problems)
         self.start_button = QPushButton(tr("ui.workspace.start_optimization"))
         self.start_button.setProperty("actionRole", "primary")
         self.start_button.setProperty("buttonLayout", "prominent")
@@ -302,6 +309,7 @@ class MainWindow(QMainWindow):
         self._refresh_menu_text()
 
     def _apply_language(self, _locale: str | None = None) -> None:
+        self.problems.apply_language()
         # Directly re-apply the current language to both parts in place: no
         # viewport is recreated, so it is safe regardless of which page is
         # currently shown (recreating a PyVista viewport while the observer's
@@ -554,9 +562,16 @@ class MainWindow(QMainWindow):
         wb.notify.connect(lambda _text: self._set_titles())
         wb.startOptimizationRequested.connect(self.start_optimization)
         wb.startAvailabilityChanged.connect(self._definition_availability_changed)
+        wb.tree.diagnosticsChanged.connect(self.problems.refresh)
         self._workbench = wb
+        self.problems.refresh()
         self._definition_valid = wb.can_start_optimization
         self._update_analysis_actions()
+
+    def _locate_problem(self, node: object) -> None:
+        self.navigation.setCurrentIndex(0)
+        self._workbench.tree.select_node(node)
+        self._workbench._on_node_selected(node)
 
     def _definition_availability_changed(self, available: bool) -> None:
         self._definition_valid = available

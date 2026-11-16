@@ -304,7 +304,7 @@ class DefinitionNavigation:
                 ],
             ))
         helper_code.children.append(custom_classes)
-        return [helper_code, controller]
+        return [controller, helper_code]
 
 
 def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] | None:

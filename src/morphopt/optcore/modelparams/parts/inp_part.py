@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-import numpy as np
 import torchfea
 
 from .fixed_part import FixedPart
@@ -75,9 +74,5 @@ class INPPart(FixedPart):
                     "pass inp_part_name to select one.")
             part_name = names[0]
         part = imported.get_part(part_name)
-        part.set_elements.update({
-            name: np.asarray(sorted(indices), dtype=int)
-            for name, indices in inp.part[part_name].sets_elems.items()
-        })
         part.exterior_surface = self.exterior_surface or part.exterior_surface
         return part

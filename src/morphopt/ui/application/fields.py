@@ -137,6 +137,22 @@ def fields_for_node(
             choices["part_name"] = problem.part_names()
             catalog = sets or PartSetCatalog(problem)
             choices["elementname"] = list(catalog.for_part(node.part).elements)
+        else:
+            # Element blocks belong to a Part; the empty default is not a
+            # complete static choice catalog.
+            fields = [
+                replace(field, choices=()) if field.key == "elementname" else field
+                for field in fields
+            ]
+    fields = [
+        replace(
+            field,
+            choices=tuple(dict.fromkeys([
+                *([""] if field.default == "" else []), *choices[field.key],
+            ])),
+        ) if field.key in choices else field
+        for field in fields
+    ]
     return fields, {}, choices
 
 
@@ -185,7 +201,7 @@ class SnippetInputs:
     def __init__(self, problem: ProblemDefinition):
         self.problem = problem
 
-    def values(self, source: str) -> list:
+    def values(self, source: str, *, instance_name: str = "") -> list:
         catalog = PartSetCatalog(self.problem)
         providers = {
             "load_steps": lambda: (
@@ -193,13 +209,7 @@ class SnippetInputs:
             ),
             "instances": self.problem.instance_names,
             "reference_points": self.problem.reference_point_names,
-            "elements": lambda: list(
-                dict.fromkeys(
-                    name
-                    for part in self.problem.parts()
-                    for name in catalog.for_part(part).elements
-                )
-            ),
+            "elements": lambda: list(catalog.for_instance(instance_name).elements),
             "force_loads": lambda: [
                 node.name
                 for node in self.problem.fea_components()

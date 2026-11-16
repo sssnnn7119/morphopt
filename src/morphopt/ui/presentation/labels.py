@@ -64,6 +64,8 @@ def container_title(kind: str, class_name: str | None = None) -> str:
     key = node_type.label_key if node_type is not None else CONTAINER_TITLE_KEYS.get(kind)
     backend = node_type.backend_class if node_type is not None else CONTAINER_CLASSES.get(kind)
     label = tr(key) if key else kind
+    if kind == "problem":
+        return label
     return typed_title(label, class_name or backend)
 
 

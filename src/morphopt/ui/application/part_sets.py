@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypeVar
 
+from ...constants import CONSTANT
 from ..model.node_types.parts import (
     BoundaryPartNode,
     BoxPartNode,
@@ -147,6 +148,17 @@ class PartSetCatalog:
                     provider(part, self.problem) if provider else PartSets()
                 )
         return self._cache[part]
+
+    @staticmethod
+    def element_type(part: PartNode | None, name: str) -> str:
+        """Describe built-in element types without changing stable block names."""
+        if (
+            isinstance(part, (BoundaryPartNode, CADPartNode, BoxPartNode))
+            and not part.custom_class
+            and part.mesh_order == 2
+        ):
+            return CONSTANT.KERNEL.MESH.QUADRATIC_ELEMENT_TYPES.get(name, name)
+        return name
 
     @staticmethod
     def boundary(part: BoundaryPartNode, problem: ProblemDefinition) -> PartSets:

@@ -119,6 +119,7 @@ class ModelTree(QTreeWidget):
     nodeSelected = Signal(object)  # Node
     classMethodAddRequested = Signal(object)
     validationChanged = Signal(bool)
+    diagnosticsChanged = Signal(object)
 
     def __init__(self, parent=None, *, actions: DefinitionActions | None = None):
         super().__init__(parent)
@@ -133,6 +134,7 @@ class ModelTree(QTreeWidget):
         self.currentItemChanged.connect(self._on_current)
         self._problem: ProblemDefinition | None = None
         self._has_errors = False
+        self.diagnostics: tuple[tuple[Node, str, str], ...] = ()
         self._item_node: dict[QTreeWidgetItem, Node] = {}
         self._node_item: dict[Node, QTreeWidgetItem] = {}
 
@@ -219,7 +221,6 @@ class ModelTree(QTreeWidget):
                 return
             for entry in DefinitionNavigation(self._problem).build():
                 self.addTopLevelItem(self._render_entry(entry))
-            self._refresh_validation()
             self.expandAll()
             item = next(
                 (
@@ -233,6 +234,7 @@ class ModelTree(QTreeWidget):
                 self.setCurrentItem(item)
         finally:
             self.blockSignals(False)
+        self._refresh_validation()
         if notify and item is not None:
             self.nodeSelected.emit(self._item_node[item])
 
@@ -268,6 +270,8 @@ class ModelTree(QTreeWidget):
     def _refresh_validation(self) -> None:
         if self._problem is None:
             self._has_errors = False
+            self.diagnostics = ()
+            self.diagnosticsChanged.emit(self.diagnostics)
             self.validationChanged.emit(False)
             return
         try:
@@ -277,9 +281,12 @@ class ModelTree(QTreeWidget):
             self.validationChanged.emit(True)
             raise
         self._has_errors = bool(diagnostics)
+        entries = []
+        represented = set()
 
-        def visit(item: QTreeWidgetItem) -> list[str]:
+        def visit(item: QTreeWidgetItem, path: str = "") -> list[str]:
             node = self._item_node[item]
+            location = f"{path} / {item.text(0)}" if path else item.text(0)
             owner: object | None = node
             if isinstance(node, LoadCaseNode):
                 owner = node.values
@@ -292,12 +299,14 @@ class ModelTree(QTreeWidget):
             elif node.kind in {"params_class", "loads_group"}:
                 owner = CONFIGURATION_CLASS_PATHS[node.kind]
             identity = owner if isinstance(owner, str) else id(owner)
+            represented.add(identity)
+            entries.extend((node, location, message) for message in diagnostics.get(identity, []))
             messages = [
                 f"{item.text(0)}: {message}"
                 for message in diagnostics.get(identity, [])
             ]
             for index in range(item.childCount()):
-                messages.extend(visit(item.child(index)))
+                messages.extend(visit(item.child(index), location))
             item.setData(0, _ERROR_ROLE, bool(messages))
             tooltip = item.data(0, _TOOLTIP_ROLE) or ""
             if messages:
@@ -309,6 +318,11 @@ class ModelTree(QTreeWidget):
 
         for index in range(self.topLevelItemCount()):
             visit(self.topLevelItem(index))
+        for identity, messages in diagnostics.items():
+            if identity not in represented:
+                entries.extend((self._problem.root, self._problem.label, message) for message in messages)
+        self.diagnostics = tuple(entries)
+        self.diagnosticsChanged.emit(self.diagnostics)
         self.apply_theme()
         self.validationChanged.emit(self._has_errors)
 

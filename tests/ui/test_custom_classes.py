@@ -360,9 +360,11 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     customize(problem, "morphopt.Params", "CustomParams", bind=False)
     window = workbench.Workbench(problem)
     assert window.tree.topLevelItemCount() == 2
-    helper_item = window.tree.topLevelItem(0)
-    root_item = window.tree.topLevelItem(1)
+    root_item = window.tree.topLevelItem(0)
+    helper_item = window.tree.topLevelItem(1)
     assert window.tree._item_node[root_item] is problem.root
+    from morphopt.ui.i18n import tr
+    assert root_item.text(0) == tr("ui.widgets.model_tree.container.problem")
     assert window.tree._item_node[helper_item].kind == "helper_code"
     assert [
         window.tree._item_node[root_item.child(i)].kind
@@ -478,7 +480,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     window = workbench.Workbench(problem)
     assert window._center.count() == 3
-    helper_item = window.tree.topLevelItem(0)
+    helper_item = window.tree.topLevelItem(1)
     helper_node = window.tree._item_node[helper_item]
     assert route_editor(helper_node).kind is EditorKind.HELPER_CODE
     assert [window.tree._item_node[helper_item.child(i)].kind for i in range(3)] == [
@@ -517,7 +519,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     assert window._stack.currentWidget() is window.helper_functions_editor
 
     window._center.setCurrentWidget(window.code_view)
-    window.tree.setCurrentItem(window.tree.topLevelItem(1))
+    window.tree.setCurrentItem(window.tree.topLevelItem(0))
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.controller_editor
     window._center.setCurrentWidget(window.code_view)

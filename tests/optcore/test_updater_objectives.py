@@ -691,6 +691,117 @@ def test_lbfgs_at_stationary_point_has_no_spurious_pair():
     assert optimizer.history.history_size == 0
 
 
+@pytest.mark.parametrize("scale", [1e-14, 1.0, 1e14])
+def test_lbfgs_first_trial_uses_variable_units_and_preserves_raw_gradients(scale, monkeypatch):
+    def loss(point):
+        return scale * (3 * (point[0] - 2).square() + 2 * (point[1] + 1).square())
+
+    optimizer = BaseUpdater.Optimizer.LBFGS(loss)
+    point = torch.zeros(2)
+    source = torch.func.grad(loss)(point)
+    gradient = source.clone()
+    searches = []
+    search = optimizer._LineSearchBacktracking
+
+    def observe_search(**kwargs):
+        searches.append(kwargs)
+        return search(**kwargs)
+
+    monkeypatch.setattr(optimizer, "_LineSearchBacktracking", observe_search)
+    alpha, direction, next_gradient = optimizer.step(point, gradient)
+    torch.testing.assert_close(direction, -source, rtol=0, atol=0)
+    torch.testing.assert_close(searches[0]["dx"], source, rtol=0, atol=0)
+    torch.testing.assert_close(gradient, source, rtol=0, atol=0)
+    assert searches[0]["alpha0"] * source.abs().max().item() == pytest.approx(1.0)
+    moved = point + alpha * direction
+    assert moved.abs().max() == pytest.approx(1.0)
+    assert loss(moved) < loss(point)
+    torch.testing.assert_close(next_gradient, torch.func.grad(loss)(moved))
+    assert optimizer.history.history_size == 1
+
+
+def test_lbfgs_iterates_are_independent_of_a_positive_objective_scale():
+    paths = []
+    for scale in (1e-14, 1.0, 1e14):
+        hessian = torch.tensor([[4.0, 1.0], [1.0, 3.0]])
+        target = torch.tensor([3.0, -2.0])
+
+        def loss(point):
+            delta = point - target
+            return scale * (delta @ hessian @ delta) / 2
+
+        optimizer = BaseUpdater.Optimizer.LBFGS(loss)
+        point, gradient = torch.tensor([-1.0, 2.0]), None
+        path = []
+        for _ in range(5):
+            alpha, direction, gradient = optimizer.step(point, gradient)
+            point = point + alpha * direction
+            path.append(point.clone())
+        paths.append(torch.stack(path))
+    for path in paths[1:]:
+        torch.testing.assert_close(path, paths[0], rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize("scale", [1e-14, 1.0, 1e14])
+def test_shape_update_moves_small_objectives_within_the_same_physical_step_limit(scale):
+    updater = make_shape_updater()
+    gradient = scale * torch.tensor([-2.0, 1.0, -0.5, 0.0, 0.0, 0.0])
+    original = gradient.clone()
+    updater.reinitialize(gradient=gradient)
+    active, fixed = updater.surface_interfaces
+    anchor, fixed_anchor = active.points.clone(), fixed.points.clone()
+    variables = updater.update()
+    updater.update_variables(variables)
+    displacement = (active.points - anchor).abs().max().item()
+    assert 0.025 <= displacement < 0.05
+    torch.testing.assert_close(fixed.points, fixed_anchor, rtol=0, atol=0)
+    torch.testing.assert_close(gradient, original, rtol=0, atol=0)
+    objective = next(iter(updater.obj_funcs.values()))
+    torch.testing.assert_close(objective.gradient[0].flatten(), original[:3], rtol=0, atol=0)
+
+
+def test_shape_update_checks_displacement_instead_of_the_line_search_multiplier(monkeypatch):
+    updater = make_shape_updater()
+    updater.max_step_iter = 15
+    updater.reinitialize(gradient=torch.ones(updater.part.num_variables))
+
+    def step(x_now, gk_now):
+        return 1e-12, torch.full_like(x_now, 1e12), torch.ones_like(x_now)
+
+    monkeypatch.setattr(updater.optimizer, "step", step)
+    variables = updater.update()
+    assert updater.iteration_total == 15
+    torch.testing.assert_close(variables, torch.full_like(variables, 15))
+
+
+def test_material_update_checks_displacement_instead_of_the_line_search_multiplier(monkeypatch):
+    material = SIMP_BSPFieldMaterials(
+        mumax=1.0, kappamax=10.0, simp_ratio_min=0.01,
+        bounding_box=[0.0, 2.0, 0.0, 2.0, 0.0, 2.0],
+        simp_field_resolution=1.0, degree=1,
+        material_parameters=MaterialModels.NeoHookeanLnJParams(mu=1.0, kappa=10.0),
+        part_name="body",
+    )
+    material._name = "solid"
+    material.initialize()
+    updater = UpdaterSIMPMaterial(max_step_iter=15, max_step_length=0.2)
+    updater.bind_target(material)
+    updater.add_objective_function(Sensitivity())
+    updater.initialize()
+    updater.reinitialize(gradient=3 * material.get_design_values())
+    initial = material.get_variables().clone()
+
+    def step(x_now, gk_now):
+        return 1e-12, torch.full_like(x_now, 1e12), torch.ones_like(x_now)
+
+    monkeypatch.setattr(updater.optimizer, "step", step)
+    variables = updater.update()
+    assert updater.iteration_total == 15
+    torch.testing.assert_close(
+        variables - initial, torch.full_like(variables, 15), rtol=0, atol=1e-5,
+    )
+
+
 def test_controller_passes_evaluated_objective_before_geometry_update():
     geometry = {"value": 3.0}
     gradient = torch.tensor([120.0, -900.0, 35.0])

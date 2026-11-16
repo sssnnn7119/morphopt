@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PySide6.QtWidgets import QApplication, QComboBox
 
@@ -72,6 +73,36 @@ def test_multi_part_catalog_does_not_require_a_part_selection(multi_part_inp):
         "surface_name"
     ] == ["lid_outer"]
     assert catalog.for_part(part).nodes == ("lid_fixed", "nodes_xmax")
+    imported = INPPart(str(multi_part_inp), inp_part_name="Lid").get_part()
+    assert catalog.for_part(part).elements == tuple(imported.elems)
+    assert "lid_fixed" in imported.set_nodes
+    assert "lid_outer" in imported.surfaces
+    assert "body_outer" not in imported.surfaces
+
+
+def test_mixed_inp_preserves_element_blocks_and_sparse_label_sets(tmp_path):
+    path = tmp_path / "mixed.inp"
+    path.write_text(
+        "*Part, name=Mixed\n"
+        "*Node\n"
+        "1, 0, 0, 0\n2, 1, 0, 0\n3, 0, 1, 0\n4, 0, 0, 1\n"
+        "5, 2, 0, 0\n6, 3, 0, 0\n7, 2, 1, 0\n"
+        "8, 2, 0, 1\n9, 3, 0, 1\n10, 2, 1, 1\n"
+        "*Element, type=C3D4\n11, 1, 2, 3, 4\n"
+        "*Element, type=C3D6\n101, 5, 6, 7, 8, 9, 10\n"
+        "*Elset, elset=solid\n11\n*Elset, elset=shell\n101\n"
+        "*Elset, elset=both\nsolid, shell\n"
+        "*Solid Section, elset=both, material=Elastic\n,\n"
+        "*End Part\n*Material, name=Elastic\n*Elastic\n1.0, 0.3\n"
+    )
+    definition = INPPartNode(name="body", mesh_file=str(path))
+    imported = INPPart(str(path), part_name="body").get_part()
+    assert PartSetCatalog.inp(definition).elements == tuple(imported.elems) == ("C3D4", "C3D6")
+    np.testing.assert_array_equal(imported.elems["C3D4"]._elems_index.cpu(), [10])
+    np.testing.assert_array_equal(imported.elems["C3D6"]._elems_index.cpu(), [100])
+    np.testing.assert_array_equal(imported.set_elements["solid"], [10])
+    np.testing.assert_array_equal(imported.set_elements["shell"], [100])
+    np.testing.assert_array_equal(imported.set_elements["both"], [10, 100])
 
 
 def test_geometry_editor_updates_part_and_surface_choices(multi_part_inp):

@@ -13,6 +13,7 @@ def workspace_integral_body(
 ) -> str:
     """Render a function body; the emitted script performs the integral itself."""
     planar = len(axes) == 2
+    rotational = axes == [3, 4, 5]
     lines = [
         "assembly = self.fe.assembly",
         f"reference_point = assembly.get_reference_point({reference_point_name!r})",
@@ -48,16 +49,27 @@ def workspace_integral_body(
             "    integrand = motion[0] * tangent[1] - motion[1] * tangent[0]",
         ])
     else:
+        if rotational:
+            lines.extend([
+                "    # Cubic rotation-volume correction from the workspace definition.",
+                "    rx, ry, rz = motion",
+                "    rotation_flux = (",
+                "        rx - rx**3 / 36.0 - rx * (ry**2 + rz**2) / 12.0,",
+                "        ry - ry**3 / 36.0 - ry * (rx**2 + rz**2) / 12.0,",
+                "        rz - rz**3 / 36.0 - rz * (rx**2 + ry**2) / 12.0,",
+                "    )",
+            ])
+        flux = "rotation_flux" if rotational else "motion"
         lines.extend([
             "    tangent_a = jacobians[tangent_a_axis]",
             "    tangent_b = jacobians[tangent_b_axis]",
             "    integrand = (",
-            "        motion[0] * (tangent_a[1] * tangent_b[2] - tangent_a[2] * tangent_b[1])",
-            "        + motion[1] * (tangent_a[2] * tangent_b[0] - tangent_a[0] * tangent_b[2])",
-            "        + motion[2] * (tangent_a[0] * tangent_b[1] - tangent_a[1] * tangent_b[0])",
+            f"        {flux}[0] * (tangent_a[1] * tangent_b[2] - tangent_a[2] * tangent_b[1])",
+            f"        + {flux}[1] * (tangent_a[2] * tangent_b[0] - tangent_a[0] * tangent_b[2])",
+            f"        + {flux}[2] * (tangent_a[0] * tangent_b[1] - tangent_a[1] * tangent_b[0])",
             "    )",
         ])
-    divisor = 2.0 if planar else (24.0 if axes == [3, 4, 5] else 3.0)
+    divisor = 2.0 if planar else (24.0 if rotational else 3.0)
     lines.extend([
         "    integral = integral + weight * orientation * integrand",
         f"return abs(integral) / {divisor!r}",

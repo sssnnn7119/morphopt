@@ -264,8 +264,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
             variables.data += delta_var * alpha
 
             # check if the step length is too small
-            if abs(alpha) < self._low_step_length_tolerance:
+            if (alpha * delta_var).abs().max() < self._low_step_length_tolerance:
                 low_step_length_iter += 1
+            else:
+                low_step_length_iter = 0
 
             if low_step_length_iter > self._low_step_length_iteration_limit:
                 logger.info(

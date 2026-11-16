@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from ..application.values import field_text, parse_field
 from ..i18n import localized_message, tr
+from ..model.fields import FieldSpec
 from ..presentation.labels import DOF_LABELS, display_choice
 from ..theme import theme_manager
 from .file_dialogs import choose_directory, choose_open_file
@@ -103,7 +104,13 @@ class ParamForm(QWidget):
             widget.setToolTip(label.toolTip())
             self._form.addRow(label, widget)
 
-    def refresh_choices(self, choices: dict) -> None:
+    def refresh_choices(
+        self, choices: dict, *, fields: Sequence[FieldSpec] | None = None,
+    ) -> None:
+        """Update existing controls without rebuilding a changing form schema."""
+        if fields is not None:
+            updated = {(field.key, field.type): field for field in fields}
+            self.specs = tuple(updated.get((field.key, field.type), field) for field in self.specs)
         for spec in self.specs:
             if spec.type != "combo":
                 continue

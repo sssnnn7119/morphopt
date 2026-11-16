@@ -29,8 +29,9 @@ from PySide6.QtWidgets import (
 
 from ..application.editing import rename_node, set_node_field
 from ..application.fields import fields_for_node
+from ..application.part_sets import PartSetCatalog
 from ..i18n import tr
-from ..model.problem import Node
+from ..model.problem import FEAComponentNode, MaterialNode, Node
 from ..presentation.labels import display_choice, node_title, reference_choice_title
 from ..refresh import RefreshContext
 from ..theme import theme_manager
@@ -120,8 +121,9 @@ class PropertyEditor(QWidget):
         ):
             self._title.setText(title)
             self._parameter_form.helper_names = set(helper_names)
-            self._parameter_form.refresh_choices(extra_choices)
+            self._parameter_form.refresh_choices(extra_choices, fields=fields)
             self._parameter_form.refresh_values()
+            self._refresh_element_target()
             if self._name_edit is not None and not self._name_edit.hasFocus():
                 if self._name_edit.text() != node.name:
                     self._name_edit.setText(node.name)
@@ -248,6 +250,7 @@ class PropertyEditor(QWidget):
         self._parameter_form = form
         self._controls = form.controls
         self._dof_groups = form.dof_groups
+        self._refresh_element_target()
         self._form.addRow(form)
         for key, caption in code_slots.items():
             self._add_code_slot(key, caption)
@@ -265,8 +268,44 @@ class PropertyEditor(QWidget):
 
     def refresh_choices(self) -> None:
         if self._node is not None and self._parameter_form is not None:
-            _, _, choices = fields_for_node(self._node, self._completion_problem)
-            self._parameter_form.refresh_choices(choices)
+            fields, _, choices = fields_for_node(self._node, self._completion_problem)
+            self._parameter_form.refresh_choices(choices, fields=fields)
+            self._refresh_element_target()
+
+    def _refresh_element_target(self) -> None:
+        """An unbound material/load cannot offer an 'all elements' selection."""
+        node, problem = self._node, self._completion_problem
+        if problem is None:
+            return
+        if isinstance(node, MaterialNode):
+            key, part = "elementname", node.part
+            hint = tr("ui.element_choices.select_part")
+        elif isinstance(node, FEAComponentNode) and node.has_field("element_name"):
+            key = "element_name"
+            part = problem.part_for_instance(node.instance_name)
+            hint = tr("ui.element_choices.select_instance")
+        else:
+            return
+        selector = self._controls.get(key)
+        if selector is None:
+            return
+        available = part is not None and any(
+            selector.itemData(index) for index in range(selector.count())
+        )
+        if part is not None and not available:
+            hint = tr("ui.element_choices.no_blocks")
+        spec = next(field for field in self._parameter_form.specs if field.key == key)
+        selector.setEnabled(available and not spec.read_only)
+        placeholder = "" if available else hint
+        selector.setPlaceholderText(placeholder)
+        if selector.isEditable():
+            selector.lineEdit().setPlaceholderText(placeholder)
+        if not available:
+            selector.blockSignals(True)
+            selector.setCurrentIndex(-1)
+            if selector.isEditable():
+                selector.setEditText("")
+            selector.blockSignals(False)
 
     def _rename_node(self, text: str) -> None:
         if self._node is None:
@@ -281,6 +320,16 @@ class PropertyEditor(QWidget):
             self.changed.emit(self._node)
 
     def _choice_label(self, key: str, value: object) -> str:
+        if value and key in {"elementname", "element_name"}:
+            node, problem = self._node, self._completion_problem
+            part = node.part if isinstance(node, MaterialNode) else (
+                problem.part_for_instance(node.instance_name)
+                if problem is not None and isinstance(node, FEAComponentNode)
+                else None
+            )
+            element_type = PartSetCatalog.element_type(part, str(value))
+            if element_type != value:
+                return f"{value} [{element_type}]"
         return reference_choice_title(
             self._completion_problem, key, value
         ) or display_choice(key, value)

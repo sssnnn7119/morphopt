@@ -141,6 +141,9 @@ class DefinitionCommands:
         node.name = f"material_{index}"
         node.custom_class = custom_class
         self.problem.add_material(node)
+        parts = self.problem.parts()
+        if len(parts) == 1:
+            set_node_field(node, "part_name", parts[0], self.problem)
         return node
 
     def next_operation_id(self, owner: CADPartNode, operation_type: str) -> str:

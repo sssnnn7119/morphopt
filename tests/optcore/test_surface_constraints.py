@@ -2,6 +2,7 @@
 
 import math
 
+import numpy as np
 import pytest
 import torch
 
@@ -164,6 +165,35 @@ def test_mirror_can_run_inside_torch_func(factory):
     assert torch.isfinite(gradient).all()
     assert gradient[:, 0].abs().sum() > 0
     torch.testing.assert_close(gradient[:, 1:], torch.zeros_like(gradient[:, 1:]))
+
+
+@pytest.mark.parametrize("plane,axis", [("yz", 0), ("xz", 1), ("xy", 2)])
+@pytest.mark.parametrize("offset", [0.0, 1.25])
+def test_cpgeo_mirror_reinitializes_coordinates_and_topology(plane, axis, offset):
+    center = [0.0, 0.0, 0.0]
+    center[axis] = offset
+    surface = CPGEOSurface.initialize_Sphere(
+        r0=2.0, seed_size=0.5, init_location=center,
+    )
+    surface.add_constraint(surface.mirror(plane, offset))
+    surface.initialize()
+    surface.reinitialize_constraints()
+    surface.apply_constraints()
+
+    vertices = surface.model.control_points
+    faces = surface.model._cp_faces
+    assert np.issubdtype(vertices.dtype, np.floating)
+    assert np.issubdtype(faces.dtype, np.integer)
+    assert faces.min() >= 0 and faces.max() < len(vertices)
+    assert np.max(np.abs(vertices - center)) <= 2.0 + 1e-10
+    edges = np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
+    assert np.all(np.unique(edges, axis=0, return_counts=True)[1] == 2)
+
+    source, reflected = surface.control_points.chunk(2)
+    expected = source.clone()
+    expected[:, axis] = 2 * offset - expected[:, axis]
+    torch.testing.assert_close(reflected, expected)
+    assert torch.isfinite(surface.get_r()).all()
 
 
 def test_cpgeo_rotation_can_run_inside_torch_func():

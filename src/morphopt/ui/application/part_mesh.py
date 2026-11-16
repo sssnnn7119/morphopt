@@ -30,6 +30,7 @@ def build_part_mesh(node: PartNode, problem: ProblemDefinition) -> torchfea.Part
         namespace = runpy.run_path(str(path), run_name="morphopt_part_sets")
         geometry = namespace["ThisController"].Params.GeometryParams()
         geometry.initialize()
+        geometry.reinitialize(iteration=0)
         return geometry.interface(node.name).get_part(
             path_result=str(Path(directory) / "mesh")
         )

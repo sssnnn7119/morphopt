@@ -62,6 +62,7 @@ class QuickstartPreviewStyle:
 
 @dataclass(frozen=True)
 class WorkbenchLayout:
+    problems_dialog_size: tuple[int, int] = (860, 340)
     output_name_width: int = 180
     path_minimum_width: int = 120
     directory_button_width: int = 30

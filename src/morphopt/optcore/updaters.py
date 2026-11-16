@@ -426,9 +426,19 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
                     self.history.observe(x_now, gk_now)
                     dk = -gk_now
 
+                # Without curvature, choose a trial displacement in variable
+                # coordinates. Keep the objective, gradient and direction raw;
+                # a fixed alpha=1 would stall objectives with small units.
+                alpha0 = 1.0
+                direction_size = dk.abs().max().item()
+                if self.history.history_size == 0 and direction_size > 0:
+                    alpha0 = (
+                        CONSTANT.KERNEL.OPTIMIZER.LBFGS_INITIAL_VARIABLE_STEP
+                        / direction_size
+                    )
                 # line search
                 alpha, obj_new = self._LineSearchBacktracking(
-                    x0=x_now, dx=gk_now, direction=dk, alpha0=1.0, obj0=obj_now
+                    x0=x_now, dx=gk_now, direction=dk, alpha0=alpha0, obj0=obj_now
                 )
 
                 if alpha == 0 or obj_new > obj_now:
@@ -437,7 +447,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
 
                 x_new = x_now + alpha * dk
                 gk_new: torch.Tensor = self.grad(x_new).flatten()
-                if abs(alpha) <= self.tol_error:
+                if (alpha * dk).abs().max() <= self.tol_error:
                     self.history.clear()
                 else:
                     self.history.observe(x_new, gk_new)

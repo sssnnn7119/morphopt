@@ -396,7 +396,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.0
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class NUM_U_RATIO:
@@ -430,7 +430,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.0
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class NUM_U_RATIO:
@@ -454,7 +454,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.5
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class INIT_LOCATION:
@@ -618,7 +618,7 @@ class _Constants:
             class PARTS:
                 class BOUNDARYPART:
                     class FEA_SEED_SIZE:
-                        DEFAULT = 2.5
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -656,7 +656,7 @@ class _Constants:
                         MIN = 0.001
 
                     class MESH_SIZE:
-                        DEFAULT = 2.0
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -668,7 +668,7 @@ class _Constants:
 
                 class CADPART:
                     class MESH_SIZE:
-                        DEFAULT = 2.0
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -680,7 +680,7 @@ class _Constants:
 
                 class OFFSETBOUNDARYPART:
                     class FEA_SEED_SIZE:
-                        DEFAULT = 2.5
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -857,7 +857,7 @@ class _Constants:
                 GEOMETRY_MAX_STEP_ITERATIONS = 50
                 NUM_PROCESS = 1
                 WALL = 2.0
-                MESH_SIZE = 2.0
+                MESH_SIZE = 1.4
                 MATERIAL_MU = 0.482
                 MATERIAL_KAPPA = 4.8
                 OBJECTIVE_TARGET = 20.0
@@ -1026,6 +1026,9 @@ class _Constants:
             OFFSET_SHELL_SURFACE_OPACITY = 1.0
 
         class MESH:
+            QUADRATIC_ELEMENT_TYPES = {
+                "C3D4": "C3D10", "C3D6": "C3D15", "C3D8": "C3D20",
+            }
             SURFACE_ELEMENT_LINE_CHUNK_SIZE = 16
             SURFACE_NODE_LINE_CHUNK_SIZE = 16
             MAXIMUM_SIZE_RATIO = 1.0
@@ -1109,6 +1112,7 @@ class _Constants:
             LINE_SEARCH_BACKTRACK_RATIO = 0.2
             LINE_SEARCH_MIN_STEP_TOLERANCE = 1e-14
             LBFGS_MEMORY_PAIRS = 10
+            LBFGS_INITIAL_VARIABLE_STEP = 1.0
             LBFGS_CONVERGENCE_TOLERANCE = 1e-10
             BFGS_CURVATURE_TOLERANCE = 1e-8
             LBFGS_SHAPE_MEMORY_PAIRS = 20
