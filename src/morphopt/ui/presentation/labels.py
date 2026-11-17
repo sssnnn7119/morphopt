@@ -55,28 +55,61 @@ UPDATER_TITLE_KEYS = {
 
 
 def typed_title(name: str, class_name: str | None) -> str:
-    """Use ``name [ClassName]`` for objects; plain names for groups and hooks."""
+    """Use ``name [ClassName]`` for objects; plain names for groups and hooks.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+        class_name (str | None): Python class name written to the generated source.
+
+    Returns:
+        str: Use ``name [ClassName]`` for objects; plain names for groups and hooks.
+    """
     return tr("ui.naming.object_title", name=name, class_name=class_name) if class_name else name
 
 
 def container_title(kind: str, class_name: str | None = None) -> str:
+    """Return container title.
+
+    Args:
+        kind (str): Registered category or provider identifier used to dispatch the operation.
+        class_name (str | None): Python class name written to the generated source.
+
+    Returns:
+        str: Container title.
+    """
     node_type = NODE_TYPES.get(kind)
     key = node_type.label_key if node_type is not None else CONTAINER_TITLE_KEYS.get(kind)
     backend = node_type.backend_class if node_type is not None else CONTAINER_CLASSES.get(kind)
     label = tr(key) if key else kind
-    if kind == "problem":
-        return label
     return typed_title(label, class_name or backend)
 
 
 def node_type_title(spec: type[Node], key: str) -> str:
-    """Localized type description with the catalog's Python class name."""
+    """Localized type description with the catalog's Python class name.
+
+    Args:
+        spec (type[Node]): Field or interface schema describing valid values and available
+            controls.
+        key (str): Lookup key identifying the requested field or registered item.
+
+    Returns:
+        str: Localized type description with the catalog's Python class name.
+    """
     label = tr(spec.label_key) if spec.label_key else key
     title = typed_title(label, spec.backend_class)
     return tr("ui.naming.updatable_title", title=title) if spec.is_updatable else title
 
 
 def surface_title_text(surface: SurfaceNode, index: int) -> str:
+    """Return surface title text.
+
+    Args:
+        surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+        index (int): Zero-based position within the relevant collection.
+
+    Returns:
+        str: Surface title text.
+    """
     spec = type(surface)
     return typed_title(
         surface.name or f"surface_{index}",
@@ -85,6 +118,14 @@ def surface_title_text(surface: SurfaceNode, index: int) -> str:
 
 
 def part_title_text(part: PartNode) -> str:
+    """Return part title text.
+
+    Args:
+        part (PartNode): Part whose geometry, mesh, or named sets are processed.
+
+    Returns:
+        str: Part title text.
+    """
     title = typed_title(
         part.name or part.assembly_name,
         part.custom_class or part.type,
@@ -93,10 +134,27 @@ def part_title_text(part: PartNode) -> str:
 
 
 def instance_title_text(instance: InstanceNode) -> str:
+    """Return instance title text.
+
+    Args:
+        instance (InstanceNode): Assembly instance whose placement and geometry are used.
+
+    Returns:
+        str: Instance title text.
+    """
     return typed_title(instance.name, "Instance")
 
 
 def cad_operation_title_text(operation: CADOperationNode) -> str:
+    """Return cad operation title text.
+
+    Args:
+        operation (CADOperationNode): CAD history operation or application action being
+            processed.
+
+    Returns:
+        str: Cad operation title text.
+    """
     return typed_title(
         operation.operation_id,
         type(operation).backend_class,
@@ -104,7 +162,15 @@ def cad_operation_title_text(operation: CADOperationNode) -> str:
 
 
 def cad_operation_summary_text(operation: CADOperationNode) -> str:
-    """Keep CAD dependencies available without extending every tree title."""
+    """Keep CAD dependencies available without extending every tree title.
+
+    Args:
+        operation (CADOperationNode): CAD history operation or application action being
+            processed.
+
+    Returns:
+        str: Keep CAD dependencies available without extending every tree title.
+    """
     title = node_type_title(type(operation), operation.operation_type)
     inputs = [
         value for value in (operation.object_id, operation.tool_id, operation.input_id)
@@ -116,11 +182,30 @@ def cad_operation_summary_text(operation: CADOperationNode) -> str:
 
 
 def surface_index(problem: ProblemDefinition | None, surface: SurfaceNode) -> int | None:
+    """Return surface index.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+
+    Returns:
+        int | None: Surface index.
+    """
     owner = problem.owner_of_surface(surface) if problem is not None else None
     return owner.surfaces.index(surface) if owner is not None else None
 
 
 def component_title_text(component: FEAComponentNode) -> str:
+    """Return component title text.
+
+    Args:
+        component (FEAComponentNode): Model, result, or interface component processed by the
+            operation.
+
+    Returns:
+        str: Component title text.
+    """
     spec = type(component)
     return typed_title(
         component.name or component.type,
@@ -129,6 +214,15 @@ def component_title_text(component: FEAComponentNode) -> str:
 
 
 def material_title_text(material: MaterialNode) -> str:
+    """Return material title text.
+
+    Args:
+        material (MaterialNode): Material interface whose assignments or design variables are
+            processed.
+
+    Returns:
+        str: Material title text.
+    """
     spec = type(material)
     title = typed_title(
         material.name or material.material_type,
@@ -138,7 +232,15 @@ def material_title_text(material: MaterialNode) -> str:
 
 
 def component_update_description(component: PartNode | MaterialNode) -> str:
-    """Describe the component's existing design capability; it is not a toggle."""
+    """Describe the component's existing design capability; it is not a toggle.
+
+    Args:
+        component (PartNode | MaterialNode): Model, result, or interface component processed by
+            the operation.
+
+    Returns:
+        str: Describe the component's existing design capability; it is not a toggle.
+    """
     if isinstance(component, PartNode):
         key = "ui.component.geometry_updatable" if component.is_updatable else "ui.component.geometry_fixed"
     else:
@@ -147,11 +249,29 @@ def component_update_description(component: PartNode | MaterialNode) -> str:
 
 
 def updater_group_title(group: str) -> str:
+    """Return updater group title.
+
+    Args:
+        group (str): Named group containing the related interfaces or task configuration.
+
+    Returns:
+        str: Updater group title.
+    """
     return tr(UPDATER_TITLE_KEYS[group])
 
 
 def updater_section_title_text(problem: ProblemDefinition, group: str, config: dict) -> str:
-    """Describe the target and the actual optimizer class in both tree and page."""
+    """Describe the target and the actual optimizer class in both tree and page.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        group (str): Named group containing the related interfaces or task configuration.
+        config (dict): Configuration dictionary for the selected model or updater interface.
+
+    Returns:
+        str: Describe the target and the actual optimizer class in both tree and page.
+    """
     if group == "geometry":
         target = problem.config_part_node(config)
         class_name = (
@@ -169,6 +289,16 @@ def updater_section_title_text(problem: ProblemDefinition, group: str, config: d
 
 
 def updater_title_text(problem: ProblemDefinition | None, node: UpdaterTreeNode) -> str:
+    """Return updater title text.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        node (UpdaterTreeNode): Definition node being inspected or edited.
+
+    Returns:
+        str: Updater title text.
+    """
     if node.kind == "updater_item":
         item = cast("UpdaterItemTreeNode", node).item
         category = "objectives" if node.group.endswith("objectives") else "constraints"
@@ -182,6 +312,16 @@ def updater_title_text(problem: ProblemDefinition | None, node: UpdaterTreeNode)
 
 
 def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
+    """Return updater item title text.
+
+    Args:
+        item (dict): Collection or view item selected for the operation.
+        spec (type[Node] | None): Field or interface schema describing valid values and
+            available controls.
+
+    Returns:
+        str: Updater item title text.
+    """
     if spec:
         label = tr(spec.label_key)
     else:
@@ -190,7 +330,16 @@ def updater_item_title_text(item: dict, spec: type[Node] | None) -> str:
 
 
 def node_title(problem: ProblemDefinition | None, node: Node) -> str:
-    """Canonical object title, including the selected custom class."""
+    """Canonical object title, including the selected custom class.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        node (Node): Definition node being inspected or edited.
+
+    Returns:
+        str: Canonical object title, including the selected custom class.
+    """
     if node.kind == "load_case":
         return typed_title(node.name, "LoadCase")
     if node.kind == "objective_term":
@@ -250,7 +399,17 @@ def node_title(problem: ProblemDefinition | None, node: Node) -> str:
 
 
 def reference_choice_title(problem: ProblemDefinition | None, key: str, name: object) -> str | None:
-    """Decorate object names for display while selectors retain raw values."""
+    """Decorate object names for display while selectors retain raw values.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        key (str): Lookup key identifying the requested field or registered item.
+        name (object): Name identifying the item in its owning collection.
+
+    Returns:
+        str | None: Decorate object names for display while selectors retain raw values.
+    """
     if problem is None or not name:
         return None
     if key in {"instance_name", "instance_name1", "instance_name2"}:
@@ -277,6 +436,14 @@ def reference_choice_title(problem: ProblemDefinition | None, key: str, name: ob
 
 
 def quickstart_summary(options) -> str:
+    """Return quickstart summary.
+
+    Args:
+        options: Options passed to the selected model, renderer, or export operation.
+
+    Returns:
+        str: Quickstart summary.
+    """
     from ..application.quickstart import GOALS
     shape = options.method == "shapeopt"
     mode = tr('ui.widgets.quickstart.shape_optimization') if shape else tr('ui.widgets.quickstart.topology_optimization')
@@ -355,14 +522,31 @@ _CHOICE_LABELS = {
 
 
 def display_choice(key: str, value) -> str:
-    """Return a localized label while retaining the backend choice value."""
+    """Return a localized label while retaining the backend choice value.
+
+    Args:
+        key (str): Lookup key identifying the requested field or registered item.
+        value: Value assigned to or evaluated for the selected field.
+
+    Returns:
+        str: A localized label while retaining the backend choice value.
+    """
     labels = _CHOICE_LABELS.get((key, str(value)))
     return tr(labels) if labels else str(value)
 
 
 
 def component_selection_title(category: str, component: Any) -> str:
-    """Label a visualizable component consistently in views and export forms."""
+    """Label a visualizable component consistently in views and export forms.
+
+    Args:
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+        component (Any): Model, result, or interface component processed by the operation.
+
+    Returns:
+        str: Label a visualizable component consistently in views and export forms.
+    """
     name = component.name
     part_name = getattr(component, "part_name", None)
     if part_name and part_name != name:

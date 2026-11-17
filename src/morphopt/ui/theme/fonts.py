@@ -1,6 +1,7 @@
 """Application typography preferences shared by widgets and charts."""
 
 import hashlib
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -34,7 +35,14 @@ def _face_metadata(font: TTFont) -> tuple[set[str], int]:
 
 
 def _search_font_face(family: str) -> tuple[str, int] | None:
-    """Scan installed font files for a family name Qt resolved locally."""
+    """Scan installed font files for a family name Qt resolved locally.
+
+    Args:
+        family (str): Font family or registered interface family selected by the operation.
+
+    Returns:
+        tuple[str, int] | None: Scan installed font files for a family name Qt resolved locally.
+    """
     target = family.casefold()
     paths = {str(entry.fname) for entry in mpl_fonts.fontManager.ttflist}
     paths.update(mpl_fonts.findSystemFonts())
@@ -66,7 +74,14 @@ def _search_font_face(family: str) -> tuple[str, int] | None:
 
 @lru_cache(maxsize=32)
 def _font_face(family: str) -> tuple[str, int] | None:
-    """Locate the font file and face index that render ``family``."""
+    """Locate the font file and face index that render ``family``.
+
+    Args:
+        family (str): Font family or registered interface family selected by the operation.
+
+    Returns:
+        tuple[str, int] | None: Locate the font file and face index that render ``family``.
+    """
     try:
         found = mpl_fonts.findfont(
             mpl_fonts.FontProperties(family=[family]), fallback_to_default=False
@@ -88,9 +103,17 @@ def _font_face(family: str) -> tuple[str, int] | None:
 def _western_family(family: str, chinese: str) -> str:
     """Mask Han glyphs in the western font so Qt can select the Chinese font.
 
-    The alias encodes the Chinese family because Qt caches the fallback engine
-    of a primary family: a new alias is what makes a changed Chinese font take
-    effect immediately instead of after a restart.
+    The alias encodes the Chinese family because Qt caches the fallback engine of a primary
+    family: a new alias is what makes a changed Chinese font take effect immediately instead of
+    after a restart.
+
+    Args:
+        family (str): Font family or registered interface family selected by the operation.
+        chinese (str): Select the Chinese font configuration when True; otherwise select the
+            Western configuration.
+
+    Returns:
+        str: Mask Han glyphs in the western font so Qt can select the Chinese font.
     """
     face = _font_face(family)
     if face is None:
@@ -146,15 +169,24 @@ def _western_family(family: str, chinese: str) -> str:
 
 
 class FontManager(QObject):
+    """Store typography preferences by UI role and apply independent Chinese and Western font
+    selections.
+    """
     changed = Signal(str)
 
     def __init__(self) -> None:
+        """Initialize FontManager and its configuration state."""
         super().__init__()
         self._defaults: dict[str, QFont] = {}
         self._western: dict[str, QFont] = {}
         self._chinese: dict[str, str] = {}
 
     def restore(self, app: QApplication) -> None:
+        """Restore the FontManager state.
+
+        Args:
+            app (QApplication): Application whose widgets and preferences are updated.
+        """
         body = QFont(app.font())
         self._defaults = {role: QFont(body) for role in ROLES}
         settings = QSettings("MorphOptUI", "ui")
@@ -171,7 +203,11 @@ class FontManager(QObject):
         self._apply("body")
 
     def _ensure_role(self, role: str) -> None:
-        """Allow widgets to query fonts before ``restore`` ran (e.g. in tests)."""
+        """Allow widgets to query fonts before ``restore`` ran (e.g. in tests).
+
+        Args:
+            role (str): Typography role identifying the interface region being styled.
+        """
         if role in self._western:
             return
         app = QApplication.instance()
@@ -181,15 +217,40 @@ class FontManager(QObject):
         self._chinese.setdefault(role, "")
 
     def snapshot(self, role: str) -> tuple[QFont, str]:
+        """Return snapshot.
+
+        Args:
+            role (str): Typography role identifying the interface region being styled.
+
+        Returns:
+            tuple[QFont, str]: Snapshot.
+        """
         self._ensure_role(role)
         return QFont(self._western[role]), self._chinese[role]
 
     def default_font(self, role: str) -> QFont:
+        """Return default font.
+
+        Args:
+            role (str): Typography role identifying the interface region being styled.
+
+        Returns:
+            QFont: Default font.
+        """
         self._ensure_role(role)
         return QFont(self._defaults[role])
 
     def compose(self, font: QFont, chinese_family: str = "") -> QFont:
-        """Return a display font with Han glyphs supplied by the chosen family."""
+        """Return a display font with Han glyphs supplied by the chosen family.
+
+        Args:
+            font (QFont): Font selected for the requested typography role.
+            chinese_family (str): Preferred Chinese font family, or an empty name for the system
+                default.
+
+        Returns:
+            QFont: A display font with Han glyphs supplied by the chosen family.
+        """
         result = QFont(font)
         if not chinese_family:
             return result
@@ -202,10 +263,26 @@ class FontManager(QObject):
         return result
 
     def font(self, role: str) -> QFont:
+        """Return font.
+
+        Args:
+            role (str): Typography role identifying the interface region being styled.
+
+        Returns:
+            QFont: Font.
+        """
         self._ensure_role(role)
         return self.compose(self._western[role], self._chinese[role])
 
     def set_preferences(self, role: str, western: QFont, chinese: str) -> None:
+        """Set preferences.
+
+        Args:
+            role (str): Typography role identifying the interface region being styled.
+            western (QFont): Western font selection including the shared point size and style.
+            chinese (str): Select the Chinese font configuration when True; otherwise select the
+                Western configuration.
+        """
         self._ensure_role(role)
         self._western[role] = QFont(western)
         self._chinese[role] = chinese
@@ -245,6 +322,15 @@ class FontManager(QObject):
             widget.setFont(self.font("heading"))
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            obj (QObject): Object whose attributes or tensor state are traversed.
+            event (QEvent): Qt event delivered to this widget or event filter.
+
+        Returns:
+            bool: Handle relevant input events before the receiving Qt object processes them.
+        """
         if self._defaults and event.type() in (
             QEvent.Type.Polish,
             QEvent.Type.DynamicPropertyChange,
@@ -254,6 +340,24 @@ class FontManager(QObject):
 
 
 font_manager = FontManager()
+
+
+@lru_cache(maxsize=1)
+def cjk_font_file() -> str | None:
+    """Locate the fallback CJK font used by VTK annotations.
+
+    Returns:
+        str | None: Locate the fallback CJK font used by VTK annotations.
+    """
+    windows = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    candidates = (
+        Path("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/System/Library/Fonts/PingFang.ttc"),
+        windows / "msyh.ttc",
+    )
+    return next((str(path) for path in candidates if path.is_file()), None)
 
 
 @lru_cache(maxsize=32)
@@ -278,6 +382,11 @@ def _chart_families(preferred: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def chart_font() -> mpl_fonts.FontProperties:
+    """Return chart font.
+
+    Returns:
+        mpl_fonts.FontProperties: Chart font.
+    """
     font = font_manager.font("chart")
     return mpl_fonts.FontProperties(
         family=list(_chart_families(tuple(font.families())))

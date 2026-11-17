@@ -8,9 +8,15 @@ from ..i18n import tr
 
 
 class PartSetList(QTreeWidget):
+    """Display the named node, element, and surface selections of a Part."""
     selected = Signal(str, str)
 
     def __init__(self, parent=None):
+        """Initialize PartSetList and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setMinimumHeight(120)
         self.setMaximumHeight(260)
@@ -28,6 +34,11 @@ class PartSetList(QTreeWidget):
             self._select(item)
 
     def set_sets(self, sets: PartSets) -> None:
+        """Set sets.
+
+        Args:
+            sets (PartSets): Named mesh selections available on the selected Part.
+        """
         self.setHeaderLabel(tr("ui.part_sets.click_to_highlight"))
         if sets == self._sets:
             return
@@ -53,6 +64,11 @@ class PartSetList(QTreeWidget):
             self.selected.emit("", "")
 
     def set_error(self, error: Exception) -> None:
+        """Set error.
+
+        Args:
+            error (Exception): Exception or Qt process-error status reported by the operation.
+        """
         self._sets = None
         with QSignalBlocker(self):
             self.clear()

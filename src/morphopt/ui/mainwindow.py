@@ -44,7 +44,11 @@ from .workbench import Workbench
 
 
 class MainWindow(QMainWindow):
+    """Compose task definition, optimization observation, finite-element results, and application
+    settings.
+    """
     def __init__(self):
+        """Initialize MainWindow and its configuration state."""
         super().__init__()
         self.setWindowIcon(application_icon())
         self._workbench: Workbench | None = None
@@ -129,6 +133,11 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ api
     def current_problem(self) -> ProblemDefinition | None:
+        """Return current problem.
+
+        Returns:
+            ProblemDefinition | None: Current problem.
+        """
         return self._workbench.problem if self._workbench is not None else None
 
     # ------------------------------------------------------------ language
@@ -300,7 +309,11 @@ class MainWindow(QMainWindow):
         self._update_analysis_actions()
 
     def _apply_theme(self, _theme: str | None = None) -> None:
-        """Refresh theme-aware drawing without replacing either page."""
+        """Refresh theme-aware drawing without replacing either page.
+
+        Args:
+            _theme (str | None): Theme identifier supplied by the appearance-change notification.
+        """
         if self._workbench is not None:
             self._workbench.apply_theme()
         if self._observer is not None:
@@ -368,6 +381,7 @@ class MainWindow(QMainWindow):
         return answer == QMessageBox.StandardButton.Discard or self.save_morph()
 
     def new_problem(self) -> None:
+        """Return new problem."""
         if self._confirm_discard():
             self.set_problem(ProblemLibrary.create_blank())
 
@@ -386,6 +400,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- definition io
     def open_morph(self) -> None:
+        """Return open morph."""
         path = self._choose_file_path(
             tr("ui.mainwindow.open_morph"), MORPH_SUFFIX, save=False
         )
@@ -417,6 +432,11 @@ class MainWindow(QMainWindow):
         )
 
     def save_morph(self) -> bool:
+        """Save morph.
+
+        Returns:
+            bool: Save morph.
+        """
         if self._document_path is None:
             return self.export_morph()
         return self._save_to(self._document_path)
@@ -435,6 +455,11 @@ class MainWindow(QMainWindow):
         return True
 
     def export_morph(self) -> bool:
+        """Export morph.
+
+        Returns:
+            bool: Export morph.
+        """
         workbench = self._workbench
         if workbench is None:
             return False
@@ -496,7 +521,17 @@ class MainWindow(QMainWindow):
     def _choose_file_path(
         self, title: str, suffix: str, *, save: bool, label: str = ""
     ) -> str:
-        """Show a consistently styled open or save dialog for one file type."""
+        """Show a consistently styled open or save dialog for one file type.
+
+        Args:
+            title (str): User-facing title of the view, section, or action.
+            suffix (str): Filename suffix or generated-name suffix appended to the base name.
+            save (bool): Persist the selected preference or restored definition when True.
+            label (str): Human-readable label associated with the definition or result.
+
+        Returns:
+            str: Show a consistently styled open or save dialog for one file type.
+        """
         directory = (
             str(self._document_path.parent) if self._document_path else os.getcwd()
         )
@@ -525,7 +560,15 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _export_filename(label: str, suffix: str) -> str:
-        """Create the suggested basename used by the save dialog."""
+        """Create the suggested basename used by the save dialog.
+
+        Args:
+            label (str): Human-readable label associated with the definition or result.
+            suffix (str): Filename suffix or generated-name suffix appended to the base name.
+
+        Returns:
+            str: Create the suggested basename used by the save dialog.
+        """
         stem = (label or "").strip()
         if stem.lower().endswith(suffix.lower()):
             stem = stem[: -len(suffix)]
@@ -545,6 +588,13 @@ class MainWindow(QMainWindow):
     def set_problem(
         self, problem: ProblemDefinition, *, path: str | None = None
     ) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            path (str | None): Filesystem path read, restored, or written by this operation.
+        """
         self._document_path = Path(path).resolve() if path else None
         if self._workbench is None:
             self._build_workbench(problem)
@@ -595,7 +645,12 @@ class MainWindow(QMainWindow):
             self._workbench.start_optimization()
 
     def start_optimization(self, problem: ProblemDefinition) -> None:
-        """Start the validated definition and enter the live analysis workspace."""
+        """Start the validated definition and enter the live analysis workspace.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         if not self._can_replace_task():
             return
         self._starting_optimization = True
@@ -610,6 +665,7 @@ class MainWindow(QMainWindow):
             self._update_analysis_actions()
 
     def open_python_optimization(self) -> None:
+        """Return open python optimization."""
         if not self._can_replace_task():
             return
         path = self._choose_file_path(tr("ui.workspace.open_python"), ".py", save=False)
@@ -621,6 +677,7 @@ class MainWindow(QMainWindow):
             self._show_analysis()
 
     def open_optimization_result(self) -> None:
+        """Return open optimization result."""
         if not self._can_replace_task():
             return
         folder = choose_directory(
@@ -679,7 +736,12 @@ class MainWindow(QMainWindow):
         self._replace_page(2, self._finite_element)
 
     def _select_result(self, folder: str, iteration: int) -> None:
-        """Share a single folder/iteration selection between both result views."""
+        """Share a single folder/iteration selection between both result views.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         if self._syncing_selection:
             return
         self._syncing_selection = True
@@ -770,14 +832,21 @@ class MainWindow(QMainWindow):
         self._update_analysis_actions()
 
     def show_finite_element(self) -> None:
+        """Show finite element."""
         if self._has_analysis_model:
             self._show_analysis(finite_element=True)
 
     def show_definition(self) -> None:
+        """Show definition."""
         self.navigation.setCurrentIndex(0)
         self._switch_workspace(0)
 
     def closeEvent(self, event):
+        """Release owned view resources when the widget closes.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         running = (self._observer is not None and self._observer.is_running()) or (
             self._finite_element is not None and self._finite_element.is_running()
         )

@@ -5,7 +5,9 @@ from dataclasses import replace
 import numpy as np
 import pyvista as pv
 import pytest
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QWidget
 
 from morphopt.ui.theme import visualization as preferences
@@ -154,3 +156,289 @@ def test_settings_dialog_previews_then_applies_without_closing(
     confirmed.values["specular"].setValue(0.5)
     confirmed.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
     assert isolated_settings.settings.specular == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("parallel", [True, False])
+def test_flight_opens_an_independent_perspective_snapshot(
+    app, isolated_settings, offscreen_viewports, parallel,
+):
+    isolated_settings.apply(replace(isolated_settings.settings, parallel_projection=parallel), persist=False)
+    widget = viewport.PlotViewport()
+    try:
+        widget.show()
+        widget.rebuild(lambda plotter: plotter.add_mesh(pv.Cube(center=(10, 20, 30))))
+        app.processEvents()
+        # Include a raw VTK overlay as well as geometry.
+        widget.plotter.add_mesh(pv.Sphere(), scalars=pv.Sphere().points[:, 2])
+        camera = widget.plotter.camera.copy()
+        widget.flight_button.click()
+        app.processEvents()
+        flight = widget._flight_dialog
+        assert flight.isVisible()
+        assert not flight.viewport.plotter.camera.parallel_projection
+        assert not flight.viewport.controls.isVisible()
+        assert (flight.viewport.plotter.renderer.GetViewProps().GetNumberOfItems()
+                == widget.plotter.renderer.GetViewProps().GetNumberOfItems())
+        source_actor = widget.plotter.renderer.GetActors().GetItemAsObject(0)
+        flight_actor = flight.viewport.plotter.renderer.GetActors().GetItemAsObject(0)
+        assert flight_actor.GetMapper() is not source_actor.GetMapper()
+        assert flight_actor.GetMapper().GetInput() is source_actor.GetMapper().GetInput()
+        rendered = flight.viewport.plotter.screenshot(return_img=True)
+        assert len(np.unique(rendered.reshape(-1, rendered.shape[-1]), axis=0)) > 100
+        flight._pressed = {Qt.Key.Key_W}
+        flight._advance(0.1)
+        assert widget.plotter.camera == camera
+        isolated_settings.apply(replace(isolated_settings.settings, parallel_projection=True), persist=False)
+        app.processEvents()
+        assert not flight.viewport.plotter.camera.parallel_projection
+        widget.open_flight()
+        assert widget._flight_dialog is flight
+        flight.reject()
+        app.processEvents()
+        assert widget._flight_dialog is None
+        widget.open_flight()
+        assert widget._flight_dialog is not flight
+        widget._flight_dialog.reject()
+    finally:
+        widget.close()
+
+
+def test_closing_source_viewport_closes_flight_and_stops_movement(
+    app, isolated_settings, offscreen_viewports,
+):
+    widget = viewport.PlotViewport()
+    widget.show()
+    widget.plotter.add_mesh(pv.Cube())
+    widget.open_flight()
+    app.processEvents()
+    flight = widget._flight_dialog
+    QTest.keyPress(flight._input_widget, Qt.Key.Key_W)
+    assert flight._movement.isActive()
+    widget.close()
+    assert widget._flight_dialog is None
+    assert not flight.isVisible()
+    assert not flight._movement.isActive()
+    assert flight.viewport.plotter._closed
+
+
+def test_flight_mouse_looks_only_while_held_without_orbit_or_roll(
+    app, isolated_settings, offscreen_viewports,
+):
+    widget = viewport.PlotViewport()
+    widget.plotter.add_mesh(pv.Cube())
+    flight = viewport.FirstPersonDialog(widget)
+    try:
+        flight.show()
+        app.processEvents()
+        target = flight._input_widget
+        camera = flight.viewport.plotter.camera
+        position = camera.position
+        direction = camera.direction
+
+        def move(x, y):
+            event = QMouseEvent(QEvent.Type.MouseMove, QPointF(x, y), QPointF(x, y),
+                                Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+                                Qt.KeyboardModifier.NoModifier)
+            QApplication.sendEvent(target, event)
+
+        move(60, 60)
+        np.testing.assert_allclose(camera.direction, direction)
+        QTest.mousePress(target, Qt.MouseButton.LeftButton, pos=QPoint(60, 60))
+        move(110, 80)
+        assert not np.allclose(camera.direction, direction)
+        np.testing.assert_allclose(camera.position, position)
+        np.testing.assert_allclose(camera.up, [0, 0, 1])
+        move(110, 100000)
+        assert abs(np.degrees(flight._pitch)) == pytest.approx(89)
+        QTest.mouseRelease(target, Qt.MouseButton.LeftButton, pos=QPoint(110, 80))
+        direction = camera.direction
+        move(180, 120)
+        np.testing.assert_allclose(camera.direction, direction)
+        QTest.mousePress(target, Qt.MouseButton.RightButton, pos=QPoint(40, 40))
+        move(10, 10)
+        QTest.mouseRelease(target, Qt.MouseButton.RightButton)
+        np.testing.assert_allclose(camera.direction, direction)
+    finally:
+        flight.reject()
+        widget.close()
+
+
+@pytest.mark.parametrize("pitch", [-89, 0, 89])
+def test_flight_keyboard_movement_release_focus_loss_and_reset(
+    app, isolated_settings, offscreen_viewports, pitch,
+):
+    widget = viewport.PlotViewport()
+    widget.plotter.add_mesh(pv.Cube())
+    flight = viewport.FirstPersonDialog(widget)
+    try:
+        flight.show()
+        app.processEvents()
+        target = flight._input_widget
+        camera = flight.viewport.plotter.camera
+        home = np.array(camera.position)
+        forward = flight._forward()
+        forward[2] = 0
+        forward /= np.linalg.norm(forward)
+        right = np.cross(forward, [0, 0, 1])
+        right /= np.linalg.norm(right)
+        for key, direction in ((Qt.Key.Key_W, forward), (Qt.Key.Key_S, -forward),
+                               (Qt.Key.Key_D, right), (Qt.Key.Key_A, -right),
+                               (Qt.Key.Key_E, [0, 0, 1]), (Qt.Key.Key_Q, [0, 0, -1])):
+            flight._pitch = np.radians(pitch)
+            flight._apply_pose()
+            view_direction = camera.direction
+            QTest.keyPress(target, key)
+            assert flight._movement.isActive()
+            flight._advance(0.1)
+            np.testing.assert_allclose(camera.position, home + 0.1 * flight._speed * np.array(direction))
+            np.testing.assert_allclose(camera.direction, view_direction)
+            QTest.keyRelease(target, key)
+            assert not flight._movement.isActive()
+            position = camera.position
+            flight._advance(0.1)
+            np.testing.assert_allclose(camera.position, position)
+            QTest.keyClick(target, Qt.Key.Key_R)
+            np.testing.assert_allclose(camera.position, home)
+        QTest.keyPress(target, Qt.Key.Key_Shift)
+        QTest.keyPress(target, Qt.Key.Key_W)
+        flight._advance(0.1)
+        np.testing.assert_allclose(camera.position, home + 0.4 * flight._speed * forward)
+        QTest.mousePress(target, Qt.MouseButton.LeftButton)
+        QApplication.sendEvent(target, QEvent(QEvent.Type.FocusOut))
+        assert not flight._movement.isActive()
+        assert not flight._pressed
+        assert flight._look_position is None
+        QTest.keyClick(target, Qt.Key.Key_Escape)
+        assert not flight.isVisible()
+    finally:
+        widget.close()
+
+
+@pytest.mark.parametrize("parallel", [True, False])
+def test_first_geometry_after_an_empty_scene_is_fitted_and_fully_visible(
+    app, isolated_settings, offscreen_viewports, parallel,
+):
+    from itertools import product
+    isolated_settings.apply(replace(isolated_settings.settings, parallel_projection=parallel), persist=False)
+    widget = viewport.PlotViewport()
+    try:
+        widget.show()
+        widget.rebuild(lambda plotter: None)
+        app.processEvents()
+        assert not widget._scene_has_geometry
+        mesh = pv.Cylinder(center=(0, 0, 37), direction=(0, 0, 1), radius=4, height=74)
+        widget.rebuild(lambda plotter: plotter.add_mesh(mesh))
+        app.processEvents()
+        assert widget._scene_has_geometry
+        np.testing.assert_allclose(widget.plotter.camera.focal_point, mesh.center)
+        renderer = widget.plotter.renderer
+        projection = widget.plotter.camera.GetCompositeProjectionTransformMatrix(
+            renderer.GetTiledAspectRatio(), -1, 1,
+        )
+        matrix = np.array([[projection.GetElement(i, j) for j in range(4)] for i in range(4)])
+        corners = np.array(list(product(*np.array(mesh.bounds).reshape(3, 2))))
+        projected = np.c_[corners, np.ones(len(corners))] @ matrix.T
+        ndc = projected[:, :3] / projected[:, 3:]
+        assert np.abs(ndc).max() <= 1 + 1e-6
+        widget.plotter.camera.zoom(1.3)
+        camera = widget.plotter.camera_position
+        scale = widget.plotter.camera.parallel_scale
+        widget.rebuild(lambda plotter: plotter.add_mesh(mesh))
+        app.processEvents()
+        assert widget.plotter.camera_position == camera
+        assert widget.plotter.camera.parallel_scale == scale
+    finally:
+        widget.close()
+
+
+def test_definition_preview_fits_the_first_bsp_surface(app, isolated_settings, offscreen_viewports):
+    from morphopt.ui.application import ProblemLibrary
+    from morphopt.ui.model.node_types.parts import BoundaryPartNode, BoxPartNode
+    from morphopt.ui.model.node_types.surfaces import BspCylinderSurfaceNode
+    from morphopt.ui.model.node_types.structural import InstanceNode
+    from morphopt.ui.widgets.viewer import PreviewViewer
+
+    problem = ProblemLibrary.create_blank()
+    part = BoundaryPartNode(name="part1")
+    problem.add_part(part)
+    widget = PreviewViewer()
+    try:
+        widget.show()
+        widget.set_problem(problem)
+        app.processEvents()
+        assert not widget.host._scene_has_geometry
+        part.add_child(BspCylinderSurfaceNode(name="surface_0", r0=4, length=74, seed_size=1.4))
+        widget.set_problem(problem)  # Same definition: no explicit camera reset.
+        app.processEvents()
+        assert widget.host._scene_has_geometry
+        np.testing.assert_allclose(widget.host.plotter.camera.focal_point, [0, 0, 37], atol=1e-5)
+        assert widget.host.plotter.camera.parallel_scale > 30
+        widget.host.set_view("x")
+        widget.host.plotter.camera.zoom(2)
+        camera = widget.host.plotter.camera
+        camera.position = np.array(camera.position) + [0, 5, 0]
+        camera.focal_point = np.array(camera.focal_point) + [0, 5, 0]
+        direction = widget.host.plotter.camera.direction
+        zoomed_scale = widget.host.plotter.camera.parallel_scale
+        # An internal surface leaves the bounds unchanged, but it is still
+        # new geometry and must restore the complete model to the viewport.
+        part.add_child(BspCylinderSurfaceNode(
+            name="surface_1", r0=2, length=60, seed_size=1.4, init_location=[0, 0, 7],
+        ))
+        widget.set_problem(problem)
+        app.processEvents()
+        assert widget.host.plotter.camera.parallel_scale > zoomed_scale
+        np.testing.assert_allclose(widget.host.plotter.camera.focal_point, [0, 0, 37], atol=1e-5)
+        np.testing.assert_allclose(widget.host.plotter.camera.direction, direction)
+        instance = InstanceNode(name="part1-2")
+        instance.translation = [100, 0, 0]
+        part.add_instance(instance)
+        widget.set_problem(problem)
+        app.processEvents()
+        np.testing.assert_allclose(widget.host.plotter.camera.focal_point, [50, 0, 37], atol=1e-5)
+        new_part = BoxPartNode(name="second", length=2, height=2, depth=2)
+        new_part.instances[0].translation = [200, 0, 0]
+        problem.add_part(new_part)
+        widget.set_problem(problem)
+        app.processEvents()
+        np.testing.assert_allclose(widget.host.plotter.camera.focal_point, [99, 0, 37], atol=1e-5)
+        widget.host.plotter.camera.zoom(1.3)
+        camera = widget.host.plotter.camera_position
+        scale = widget.host.plotter.camera.parallel_scale
+        widget.set_problem(problem)
+        app.processEvents()
+        assert widget.host.plotter.camera_position == camera
+        assert widget.host.plotter.camera.parallel_scale == scale
+    finally:
+        widget.host.plotter.close()
+        widget.close()
+
+
+def test_shared_viewport_refits_new_geometry_keys_without_resetting_orientation(
+    app, isolated_settings, offscreen_viewports,
+):
+    widget = viewport.PlotViewport()
+    try:
+        widget.show()
+        widget.rebuild(lambda plotter: plotter.add_mesh(pv.Cube()), geometry_keys=("first",))
+        app.processEvents()
+        widget.set_view("z")
+        widget.plotter.camera.zoom(2)
+
+        def build(plotter):
+            plotter.add_mesh(pv.Cube())
+            plotter.add_mesh(pv.Cube(center=(20, 0, 0)))
+
+        widget.rebuild(build, geometry_keys=("first", "second"))
+        app.processEvents()
+        np.testing.assert_allclose(widget.plotter.camera.focal_point, [10, 0, 0])
+        np.testing.assert_allclose(widget.plotter.camera.direction, [0, 0, -1])
+        widget.plotter.camera.zoom(1.5)
+        camera = widget.plotter.camera_position
+        scale = widget.plotter.camera.parallel_scale
+        widget.rebuild(build, geometry_keys=("first", "second"))
+        app.processEvents()
+        assert widget.plotter.camera_position == camera
+        assert widget.plotter.camera.parallel_scale == scale
+    finally:
+        widget.close()

@@ -100,7 +100,16 @@ class MaterialModels:
             cls,
             material_parameters: MaterialParameters,
     ) -> torchfea.materials.Materials_Base:
-        """Create a TorchFEA material from its typed parameter object."""
+        """Create a TorchFEA material from its typed parameter object.
+
+        Args:
+            material_parameters (MaterialParameters): Constitutive-model parameter object used to
+                instantiate the TorchFEA material.
+
+        Returns:
+            torchfea.materials.Materials_Base: Concrete TorchFEA constitutive material initialized
+                from the typed declaration.
+        """
         if not isinstance(material_parameters, cls.MaterialParameters):
             raise TypeError(
                 "material_parameters must be a MaterialModels parameter object.")

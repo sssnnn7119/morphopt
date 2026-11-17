@@ -23,11 +23,20 @@ from ..model.problem import ProblemDefinition
 
 
 class WorkspaceObjectiveEditor(QWidget):
+    """Select existing load parameters and configure boundary quadrature for a workspace objective."""
     changed = Signal()
 
     def __init__(
         self, term: dict, problem: ProblemDefinition, parent: QWidget | None = None
     ) -> None:
+        """Initialize WorkspaceObjectiveEditor and its configuration state.
+
+        Args:
+            term (dict): Physical objective or metric configuration being edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.term, self.problem = term, problem
         self._rows = []
@@ -103,6 +112,7 @@ class WorkspaceObjectiveEditor(QWidget):
         self.refresh_status()
 
     def refresh_status(self) -> None:
+        """Refresh status."""
         self.status.setText(workspace_case_status(self.term, self.problem))
 
     def _set(self, key: str, value: object) -> None:

@@ -31,6 +31,11 @@ class FiniteElementResult:
 
     @property
     def is_original(self) -> bool:
+        """Return is original.
+
+        Returns:
+            bool: Is original.
+        """
         return self.number is None
 
 
@@ -38,6 +43,7 @@ class FiniteElementSession:
     """Own a private mesh/material/load model, independent of all optimization objects."""
 
     def __init__(self):
+        """Initialize FiniteElementSession and its configuration state."""
         self._workspace = TemporaryDirectory(prefix="morphopt-fea-")
         self.directory = Path(self._workspace.name)
         self.source: IterationModel | None = None
@@ -58,7 +64,16 @@ class FiniteElementSession:
     def result_options(
         self, folder: str, iteration: int
     ) -> tuple[FiniteElementResult, ...]:
-        """List original cases and all completed analyses for this exact model."""
+        """List original cases and all completed analyses for this exact model.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            tuple[FiniteElementResult, ...]: List original cases and all completed analyses for this
+                exact model.
+        """
         source = IterationModel(str(Path(folder).resolve()), iteration)
         originals = tuple(
             self._original_result(IterationModel(source.folder, iteration, case))
@@ -75,10 +90,20 @@ class FiniteElementSession:
         return originals + analyses
 
     def import_iteration(self, source: IterationModel) -> None:
+        """Return import iteration.
+
+        Args:
+            source (IterationModel): Source object, path, or metadata from which the operation reads
+                its input.
+        """
         self.select_result(self._original_result(source))
 
     def select_result(self, entry: FiniteElementResult) -> None:
-        """Load a fresh private model so edits never mutate stored results."""
+        """Load a fresh private model so edits never mutate stored results.
+
+        Args:
+            entry (FiniteElementResult): Navigation, schema, or history entry being inspected.
+        """
         if not entry.model_path.is_file():
             raise FileNotFoundError(
                 localized_message(
@@ -99,6 +124,11 @@ class FiniteElementSession:
         self.selected_result = entry
 
     def load_values(self) -> tuple[tuple[str, str, str, bool, np.ndarray], ...]:
+        """Load values.
+
+        Returns:
+            tuple[tuple[str, str, str, bool, np.ndarray], ...]: Load values.
+        """
         if self.controller is None:
             return ()
         return tuple(
@@ -137,7 +167,12 @@ class FiniteElementSession:
         )
 
     def apply_loads(self, values: dict[str, tuple[bool, list[float]]]) -> None:
-        """Validate all edits before changing any load in the private model."""
+        """Validate all edits before changing any load in the private model.
+
+        Args:
+            values (dict[str, tuple[bool, list[float]]]): Values aligned with the parameters or
+                records processed by this interface.
+        """
         loads = self.controller.assembly._loads
         parsed = {}
         for name, (enabled, data) in values.items():
@@ -168,6 +203,11 @@ class FiniteElementSession:
         self.result = None
 
     def solve_request(self) -> Path:
+        """Return solve request.
+
+        Returns:
+            Path: Solve request.
+        """
         with cpu_torch_defaults():
             self.controller.save_model(
                 str(self.directory / "analysis.npz"), if_save_source_code=False
@@ -183,6 +223,20 @@ class FiniteElementSession:
         location: str = "nodes",
         overwrite: bool = False,
     ) -> Path:
+        """Export request.
+
+        Args:
+            path (str): Filesystem path read, restored, or written by this operation.
+            format (str): Output table format; None selects the writer from the filename suffix.
+            fields (list[str]): Requested field keys; None selects the available defaults for the
+                record location.
+            location (str): Result record location: nodes, elements, reference points, or
+                integration points.
+            overwrite (bool): Allow replacing an existing output file when True.
+
+        Returns:
+            Path: Export request.
+        """
         if self.result is None:
             raise ValueError(localized_message("ui.fea.result_required"))
         with cpu_torch_defaults():
@@ -219,7 +273,15 @@ class FiniteElementSession:
         )
 
     def native_export_request(self, directory: str, name: str) -> Path:
-        """Export stored iteration snapshots, independently of unsolved UI edits."""
+        """Export stored iteration snapshots, independently of unsolved UI edits.
+
+        Args:
+            directory (str): Directory in which output files or child directories are created.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            Path: Export stored iteration snapshots, independently of unsolved UI edits.
+        """
         if self.source is None:
             raise ValueError(localized_message("ui.fea.result_required"))
         try:
@@ -259,7 +321,15 @@ class FiniteElementSession:
         return path
 
     def accept_solution(self, output: str = "") -> FiniteElementResult:
-        """Archive a successful solve before publishing it to the result selector."""
+        """Archive a successful solve before publishing it to the result selector.
+
+        Args:
+            output (str): Output path or subprocess text produced by the operation.
+
+        Returns:
+            FiniteElementResult: Archive a successful solve before publishing it to the result
+                selector.
+        """
         if self.source is None:
             raise ValueError(localized_message("ui.fea.result_required"))
         with cpu_torch_defaults():
@@ -297,4 +367,5 @@ class FiniteElementSession:
         return entry
 
     def close(self) -> None:
+        """Return close."""
         self._workspace.cleanup()

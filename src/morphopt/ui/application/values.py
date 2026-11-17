@@ -11,7 +11,12 @@ _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
 
 def _normalize(v, ints: bool = False):
-    """Convert values to float, or keep integral as int when ``ints``."""
+    """Convert values to float, or keep integral as int when ``ints``.
+
+    Args:
+        v: Input value being parsed or normalized.
+        ints (bool): Convert accepted numeric values to integers when True.
+    """
     if isinstance(v, float) and ints and v.is_integer():
         return int(v)
     if isinstance(v, int) and not ints:
@@ -24,8 +29,12 @@ def _normalize(v, ints: bool = False):
 def parse_vec_text(text: str, ints: bool = False):
     """Parse '0,1,2', '0 1 2' or '[1,[1]]' into numbers.
 
-    ``ints=False`` (default) -> floats (coordinates etc.).
-    ``ints=True`` -> keep integers as int (index lists).
+    ``ints=False`` (default) -> floats (coordinates etc.). ``ints=True`` -> keep integers as int
+    (index lists).
+
+    Args:
+        text (str): Text displayed, parsed, or inserted by this operation.
+        ints (bool): Convert accepted numeric values to integers when True.
     """
     text = text.strip()
     if not text:
@@ -45,7 +54,11 @@ def parse_vec_text(text: str, ints: bool = False):
 
 
 def parse_mat(text: str):
-    """Parse a python-literal matrix like [[1,2],[3,4]] (or flat numbers)."""
+    """Parse a python-literal matrix like [[1,2],[3,4]] (or flat numbers).
+
+    Args:
+        text (str): Text displayed, parsed, or inserted by this operation.
+    """
     text = text.strip()
     if not text:
         return []
@@ -57,7 +70,14 @@ def parse_mat(text: str):
 
 
 def field_text(value) -> str:
-    """Display numeric containers without flattening matrix structure."""
+    """Display numeric containers without flattening matrix structure.
+
+    Args:
+        value: Value assigned to or evaluated for the selected field.
+
+    Returns:
+        str: Display numeric containers without flattening matrix structure.
+    """
     if value is None:
         return ""
     if isinstance(value, (list, tuple)):
@@ -68,7 +88,14 @@ def field_text(value) -> str:
 
 
 def parse_field(text: str, spec: FieldSpec, helper_names=()):
-    """One conversion policy for node fields and updater parameter dictionaries."""
+    """One conversion policy for node fields and updater parameter dictionaries.
+
+    Args:
+        text (str): Text displayed, parsed, or inserted by this operation.
+        spec (FieldSpec): Field or interface schema describing valid values and available
+            controls.
+        helper_names: Names exposed by auxiliary constants, functions, and classes.
+    """
     kind = spec.type
     stripped = text.strip()
     if kind in {"int", "float"}:

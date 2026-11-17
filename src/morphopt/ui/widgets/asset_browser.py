@@ -34,17 +34,32 @@ class AssetPreview(QWidget):
     """Implement set_asset to provide the display for another asset category."""
 
     def set_asset(self, asset: DefinitionAsset, problem: ProblemDefinition) -> None:
+        """Set asset.
+
+        Args:
+            asset (DefinitionAsset): Embedded or file-backed definition asset to inspect or display.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         raise NotImplementedError
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         pass
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         pass
 
 
 class GeometryAssetPreview(AssetPreview):
+    """Display geometry-asset meshes and their point/cell counts using the shared renderer."""
     def __init__(self, parent=None):
+        """Initialize GeometryAssetPreview and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -59,6 +74,13 @@ class GeometryAssetPreview(AssetPreview):
         self.apply_language()
 
     def set_asset(self, asset: DefinitionAsset, problem: ProblemDefinition) -> None:
+        """Set asset.
+
+        Args:
+            asset (DefinitionAsset): Embedded or file-backed definition asset to inspect or display.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         scene = geometry_asset_scene(asset)
         self._counts = (
             sum(mesh.n_points for _, mesh, _ in scene.base_meshes),
@@ -70,14 +92,16 @@ class GeometryAssetPreview(AssetPreview):
             self.renderer.draw_scene(scene)
             add_orientation_axes(plotter)
 
-        self.viewport.rebuild(build_scene)
+        self.viewport.rebuild(build_scene, geometry_keys=((asset.node, asset.name),))
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.summary.setText(
             tr("ui.assets.mesh_counts", points=self._counts[0], cells=self._counts[1])
         )
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
 
 
@@ -85,6 +109,11 @@ class MetadataAssetPreview(AssetPreview):
     """Display structured asset metadata as text using the application font."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize MetadataAssetPreview and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         self.text = QPlainTextEdit(self)
@@ -92,11 +121,24 @@ class MetadataAssetPreview(AssetPreview):
         layout.addWidget(self.text)
 
     def set_asset(self, asset: DefinitionAsset, problem: ProblemDefinition) -> None:
+        """Set asset.
+
+        Args:
+            asset (DefinitionAsset): Embedded or file-backed definition asset to inspect or display.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.text.setPlainText(asset.content.decode("utf-8"))
 
 
 class AssetBrowser(QWidget):
+    """List definition assets and dispatch each asset category to its registered preview widget."""
     def __init__(self, parent=None):
+        """Initialize AssetBrowser and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._problem: ProblemDefinition | None = None
         self._assets: dict[str, DefinitionAsset] = {}
@@ -159,15 +201,34 @@ class AssetBrowser(QWidget):
         title_key: str,
         factory: Callable[[QWidget], AssetPreview],
     ) -> None:
-        """Register a category's title and lazily constructed preview component."""
+        """Register a category's title and lazily constructed preview component.
+
+        Args:
+            category (str): Interface or asset category used to select compatible editors or
+                renderers.
+            title_key (str): Translation key used for the section or dialog title.
+            factory (Callable[[QWidget], AssetPreview]): Callable constructing the registered model
+                or UI component.
+        """
         self._factories[category] = (title_key, factory)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         self._problem = context.problem
         if self.isVisible() and context.geometry_changed:
             self._reload()
 
     def showEvent(self, event) -> None:
+        """Refresh deferred content when the widget becomes visible.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().showEvent(event)
         self._reload()
         if not self._layout_initialized:
@@ -269,6 +330,7 @@ class AssetBrowser(QWidget):
             self._selected_signature = signature
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.hint.setText(tr("ui.assets.hint"))
         self.reload_button.setText(tr("ui.assets.reload"))
         self.tree.setHeaderLabels(
@@ -280,5 +342,6 @@ class AssetBrowser(QWidget):
             self._reload()
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         for preview in self._previews.values():
             preview.apply_theme()

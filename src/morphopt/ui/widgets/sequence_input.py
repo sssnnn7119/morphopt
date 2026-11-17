@@ -24,6 +24,15 @@ class SequenceInput(QWidget):
     def __init__(
         self, spec: FieldSpec, value: object, helper_names=(), parent: QWidget | None = None,
     ) -> None:
+        """Initialize SequenceInput and its configuration state.
+
+        Args:
+            spec (FieldSpec): Field or interface schema describing valid values and available
+                controls.
+            value (object): Value assigned to or evaluated for the selected field.
+            helper_names: Names exposed by auxiliary constants, functions, and classes.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.spec = spec
         self.helper_names = tuple(sorted(helper_names))
@@ -52,6 +61,11 @@ class SequenceInput(QWidget):
         self.setEnabled(not spec.read_only)
 
     def set_value(self, value: object) -> None:
+        """Set value.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+        """
         reference = value if isinstance(value, str) else None
         values = list(value) if isinstance(value, (list, tuple)) else self.spec.new_default()
         if not isinstance(values, list):
@@ -114,6 +128,11 @@ class SequenceInput(QWidget):
             self.grid.setColumnStretch(column, int(column < columns))
 
     def value(self) -> list[object] | str:
+        """Return value.
+
+        Returns:
+            list[object] | str: Value.
+        """
         if self._reference is not None:
             return self._reference
         scalar = replace(

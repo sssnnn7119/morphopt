@@ -49,6 +49,13 @@ class QuadraticHistory(ProtocalSavable):
         *,
         update_method: Literal["bfgs", "sr1"] = "bfgs",
     ) -> None:
+        """Initialize QuadraticHistory and its configuration state.
+
+        Args:
+            memory_size (int): Positive maximum number of retained design/gradient difference pairs.
+            update_method (Literal['bfgs', 'sr1']): Curvature update: "sr1" retains either sign;
+                "bfgs" accepts positive-curvature pairs.
+        """
         if (
             isinstance(memory_size, bool)
             or not isinstance(memory_size, int)
@@ -75,7 +82,11 @@ class QuadraticHistory(ProtocalSavable):
 
     @property
     def history_size(self) -> int:
-        """Number of retained observation pairs."""
+        """Number of retained observation pairs.
+
+        Returns:
+            int: Number of retained design/gradient difference pairs.
+        """
         return len(self._steps)
 
     def observe(
@@ -86,11 +97,18 @@ class QuadraticHistory(ProtocalSavable):
     ) -> None:
         """Record one point and the gradient of the consumer's objective.
 
-        A changed parameter count or block layout discards previous pairs.
-        BFGS requires positive curvature; SR1 requires a sufficiently large
-        residual denominator, of either sign. Rejected pairs still replace
-        the observation anchor. Physical objectives supply unscaled FEA gradients;
-        optimizers supply gradients of the complete inner objective.
+        A changed parameter count or block layout discards previous pairs. BFGS requires positive
+        curvature; SR1 requires a sufficiently large residual denominator, of either sign. Rejected
+        pairs still replace the observation anchor. Physical objectives supply unscaled FEA
+        gradients; optimizers supply gradients of the complete inner objective.
+
+        Args:
+            point (torch.Tensor): Current design coordinates, flattened and copied as the new
+                observation anchor.
+            gradient (torch.Tensor): Objective gradient in the same parameter coordinates;
+                physical-proxy consumers supply native, unscaled FEA derivatives.
+            layout (tuple[int, ...]): Parameter-block sizes used to invalidate history after a
+                variable-layout change.
         """
         point = point.detach().clone().flatten()
         gradient = gradient.detach().clone().flatten().to(point)
@@ -126,7 +144,16 @@ class QuadraticHistory(ProtocalSavable):
     def _sr1_factors(
         self, step: torch.Tensor, change: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor] | None:
-        """Form the signed rank-one correction; skip unreliable denominators."""
+        """Form the signed rank-one correction; skip unreliable denominators.
+
+        Args:
+            step (torch.Tensor): Registered load-case name whose work conditions must be active.
+            change (torch.Tensor): Difference between the current and previous physical gradients.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor] | None: Form the signed rank-one correction; skip
+                unreliable denominators.
+        """
         residual = change - self.hessian_product(step)
         denominator = residual @ step
         threshold = (
@@ -165,7 +192,15 @@ class QuadraticHistory(ProtocalSavable):
             self._curvatures.append(step @ change)
 
     def hessian_product(self, vector: torch.Tensor) -> torch.Tensor:
-        """Apply B, rather than the inverse-Hessian used for search directions."""
+        """Apply B, rather than the inverse-Hessian used for search directions.
+
+        Args:
+            vector (torch.Tensor): Vector multiplied by the stored Hessian or inverse-Hessian
+                approximation.
+
+        Returns:
+            torch.Tensor: Hessian-vector product in the observed design-parameter coordinates.
+        """
         if self.update_method == "sr1":
             result = torch.zeros_like(vector)
             for residual, denominator in zip(self._products, self._step_products):
@@ -184,9 +219,19 @@ class QuadraticHistory(ProtocalSavable):
     def inverse_hessian_product(self, vector: torch.Tensor) -> torch.Tensor:
         """Apply the matching inverse BFGS approximation by two-loop recursion.
 
-        Before the first retained pair, return the input for a steepest-descent
-        search direction. The outer objective independently uses a zero
-        quadratic term until physical curvature becomes available.
+        Before the first retained pair, return the input for a steepest-descent search direction.
+        The outer objective independently uses a zero quadratic term until physical curvature
+        becomes available.
+
+        Args:
+            vector (torch.Tensor): Vector multiplied by the stored Hessian or inverse-Hessian
+                approximation.
+
+        Returns:
+            torch.Tensor: Inverse-BFGS product used to construct the inner search direction.
+
+        Raises:
+            ValueError: The history uses SR1; inverse products are defined here only for the inner BFGS optimizer.
         """
         if self.update_method != "bfgs":
             raise ValueError("Inverse Hessian products are only used with BFGS history.")
@@ -208,7 +253,16 @@ class QuadraticHistory(ProtocalSavable):
         return result
 
     def __call__(self, point: torch.Tensor) -> torch.Tensor:
-        """Return g.T d + 0.5 d.T B d, with zero value at the anchor."""
+        """Return g.T d + 0.5 d.T B d, with zero value at the anchor.
+
+        Args:
+            point (torch.Tensor): Design-vector coordinates at which the physical gradient was
+                evaluated.
+
+        Returns:
+            torch.Tensor: Scalar g.T @ delta + 0.5 * delta.T @ B @ delta, with zero value at the
+                latest observed point.
+        """
         if self.point is None:
             raise RuntimeError(
                 "Observe a gradient before evaluating the quadratic model."
@@ -217,11 +271,24 @@ class QuadraticHistory(ProtocalSavable):
         return self.gradient @ delta + 0.5 * (delta @ self.hessian_product(delta))
 
     def _state_path(self, foldpath: str, iteration: int) -> Path:
-        """Locate this iteration inside the owner's history directory."""
+        """Locate this iteration inside the owner's history directory.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Path: Locate this iteration inside the owner's history directory.
+        """
         return Path(foldpath) / f"surrogate_{iteration}.npz"
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """Persist the latest observation and retained curvature pairs."""
+        """Persist the latest observation and retained curvature pairs.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         path = self._state_path(foldpath, iteration)
         path.parent.mkdir(parents=True, exist_ok=True)
         size = self.point.numel() if self.point is not None else 0
@@ -248,7 +315,12 @@ class QuadraticHistory(ProtocalSavable):
         )
 
     def load(self, foldpath: str, iteration: int) -> None:
-        """Restore observations on the active default device and rebuild B."""
+        """Restore observations on the active default device and rebuild B.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         with np.load(self._state_path(foldpath, iteration), allow_pickle=False) as state:
             observed = state["observed"].item()
             self.point = torch.tensor(state["point"]) if observed else None
@@ -318,11 +390,20 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
 
     @property
     def interface_name(self) -> str:
-        """Name of the interface this updater owns inside its collection."""
+        """Name of the interface this updater owns inside its collection.
+
+        Returns:
+            str: Name of the interface this updater owns inside its collection.
+        """
         return self._interface_name
 
     @interface_name.setter
     def interface_name(self, value: str) -> None:
+        """Set the interface name.
+
+        Args:
+            value (str): New interface name.
+        """
         new_name = str(value).strip() if value else ""
         if new_name != self._interface_name:
             self._target = None
@@ -330,7 +411,11 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
 
     @property
     def target(self) -> UpdaterTarget:
-        """The model interface resolved for this updater."""
+        """The model interface resolved for this updater.
+
+        Returns:
+            UpdaterTarget: The model interface resolved for this updater.
+        """
         if self._target is None:
             raise ValueError(
                 f"{type(self).__name__} has no target yet; the updater manager "
@@ -341,9 +426,14 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def bind_target(self, target: UpdaterTarget | None = None) -> UpdaterTarget:
         """Store the already-resolved model target.
 
-        Target lookup and type validation are centralized in :class:`Updaters`;
-        subclasses only expose a domain-specific property such as ``part`` or
-        ``material``.
+        Target lookup and type validation are centralized in :class:`Updaters`; subclasses only
+        expose a domain-specific property such as ``part`` or ``material``.
+
+        Args:
+            target (UpdaterTarget | None): Target interface or selection receiving the operation.
+
+        Returns:
+            UpdaterTarget: Store the already-resolved model target.
         """
         if target is None:
             raise ValueError(
@@ -356,13 +446,29 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         return target
 
     def _state_path(self, foldpath: str, iteration: int) -> str:
-        """Return the namespaced state-file path for this updater."""
+        """Return the namespaced state-file path for this updater.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            str: The namespaced state-file path for this updater.
+        """
         directory = self.save_directory(foldpath, self.interface_name or "all")
         return os.path.join(directory, f"step_length_{iteration}.npz")
 
     class Optimizer:
+        """Namespace for inner optimizers used by geometry and material updaters."""
         class BaseOpt:
+            """Provide a differentiable objective, its gradient, and backtracking line search."""
             def __init__(self, closure: Callable[[torch.Tensor], float]):
+                """Initialize BaseOpt and its configuration state.
+
+                Args:
+                    closure (Callable[[torch.Tensor], float]): Differentiable scalar subproblem objective
+                        called by the inner optimizer.
+                """
                 self.closure = closure
                 """
                 the objective function to be optimized, which should return the objective value
@@ -377,10 +483,9 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 self._rou1 = CONSTANT.KERNEL.OPTIMIZER.LINE_SEARCH_BACKTRACK_RATIO
 
             def set_line_search_params(self, c1: float = None, rou1: float = None):
-                """
-                Set the parameters for the line search method.
+                """Set the parameters for the line search method.
 
-                Parameters:
+                Args:
                     c1 (float): The parameter for the Wolfe condition.
                     rou1 (float): The parameter for the backtracking line search.
                 """
@@ -397,16 +502,13 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 alpha0: float = 1.0,
                 obj0: float = None,
             ):
-                """
-                Backtracking line search to find the step length for the optimization process.
+                """Backtracking line search to find the step length for the optimization process.
 
-                Parameters:
+                Args:
                     x0 (torch.Tensor): The current point in the optimization process.
                     dx (torch.Tensor): The gradient vector at the current point.
                     direction (torch.Tensor): The search direction.
                     alpha0 (float): The initial step length.
-                    c1 (float): The parameter for the Wolfe condition.
-                    rou1 (float): The parameter for the backtracking line search.
                     obj0 (float): The initial objective value.
 
                 Returns:
@@ -435,12 +537,25 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                         return 0.0, obj0
 
         class LBFGS(BaseOpt):
+            """Solve the current inner objective using limited-memory positive-curvature BFGS updates.
+
+            This optimizer approximates the complete inner loss. It is separate from the SR1 history
+            used to model physical curvature across outer finite-element iterations.
+            """
             def __init__(
                 self,
                 closure: Callable[[torch.Tensor], float],
                 num_limit: int = CONSTANT.KERNEL.OPTIMIZER.LBFGS_MEMORY_PAIRS,
                 tol_error: float = CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
             ) -> None:
+                """Initialize LBFGS and its configuration state.
+
+                Args:
+                    closure (Callable[[torch.Tensor], float]): Differentiable scalar subproblem objective
+                        called by the inner optimizer.
+                    num_limit (int): Maximum number of retained inner BFGS correction pairs.
+                    tol_error (float): Convergence tolerance for the optimization or solver residual.
+                """
                 super().__init__(closure=closure)
                 self.history = QuadraticHistory(memory_size=num_limit)
 
@@ -453,6 +568,17 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 self, x_now: torch.Tensor, gk_now: torch.Tensor | None = None
             ) -> tuple[float, torch.Tensor, torch.Tensor]:
 
+                """Perform one limited-memory BFGS step with backtracking line search.
+
+                Args:
+                    x_now (torch.Tensor): Current flattened inner-optimization iterate.
+                    gk_now (torch.Tensor | None): Gradient at x_now; None evaluates it using the objective
+                        closure.
+
+                Returns:
+                    tuple[float, torch.Tensor, torch.Tensor]: Accepted line-search factor, design increment,
+                        and gradient at the new inner iterate.
+                """
                 obj_now = self.closure(x_now)
                 if gk_now is None:
                     gk_now: torch.Tensor = self.grad(x_now).flatten()
@@ -502,11 +628,18 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         step_length_strategy: StepLengthStrategy | None = None,
         constraint_weight_strategy: ConstraintWeightStrategy | None = None,
     ) -> None:
-        """
-        Initialize the BaseUpdater.
+        """Initialize the BaseUpdater.
 
-        Only the name of the interface it owns is kept: the updater manager
-        resolves and hands over the interface while initializing.
+        Only the name of the interface it owns is kept: the updater manager resolves and hands over
+        the interface while initializing.
+
+        Args:
+            interface_name (str | None): Registered target name; None allows the updater collection
+                to supply the name.
+            step_length_strategy (StepLengthStrategy | None): Policy that freezes movement limits
+                before solving the inner subproblem.
+            constraint_weight_strategy (ConstraintWeightStrategy | None): Policy that freezes named
+                penalty coefficients before the inner solve.
         """
 
         self._interface_name: str = (
@@ -541,10 +674,14 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         """
 
     def history_data(self) -> dict[str, object]:
-        """Describe this iteration's coefficients without reevaluating the loss."""
+        """Describe this iteration's coefficients without reevaluating the loss.
+
+        Returns:
+            dict[str, object]: Component-owned scalar or nested observations for the current
+                iteration.
+        """
         return {
             "iterations": self.iteration_total,
-            "constraint_weight_strategy": type(self.constraint_weight_strategy).__name__,
             "constraint_weights": self.constraint_weights,
             "constraint_weight_state": self.constraint_weight_strategy.history_data(),
         }
@@ -555,7 +692,18 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         maximum: float,
         gradient: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
-        """Evaluate the selected policy and freeze its per-block limits."""
+        """Evaluate the selected policy and freeze its per-block limits.
+
+        Args:
+            parameters (Sequence[torch.Tensor]): Parameter values in the order required by the
+                selected interface.
+            maximum (float): Configured upper limit on each design-variable movement.
+            gradient (torch.Tensor | None): Unscaled physical objective gradient in the target's
+                design-variable order.
+
+        Returns:
+            list[torch.Tensor]: Frozen per-row movement limits, in target parameter-block order.
+        """
         steps = self.step_length_strategy(self, parameters, maximum, gradient)
         if len(steps) != len(parameters):
             raise ValueError("Step lengths must match the parameter blocks.")
@@ -567,7 +715,12 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         return [step.detach().clone() for step in steps]
 
     def _prepare_constraint_weights(self, gradient: torch.Tensor) -> None:
-        """Evaluate the selected policy once, after initializing all terms."""
+        """Evaluate the selected policy once, after initializing all terms.
+
+        Args:
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+        """
         weights = self.constraint_weight_strategy(self, gradient)
         if weights.keys() != self.constraints_funcs.keys():
             raise ValueError("Constraint weights must match the registered constraint names.")
@@ -576,7 +729,16 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         self.constraint_weights = {name: float(weight) for name, weight in weights.items()}
 
     def _weighted_constraints(self, values: list[torch.Tensor]) -> list[torch.Tensor]:
-        """Weighted penalty contributions shared by loss evaluation and logging."""
+        """Weighted penalty contributions shared by loss evaluation and logging.
+
+        Args:
+            values (list[torch.Tensor]): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            list[torch.Tensor]: Weighted penalty contributions shared by loss evaluation and
+                logging.
+        """
         return [
             self.constraint_weights[name] * value
             for name, value in zip(self.constraints_funcs, values, strict=True)
@@ -585,18 +747,23 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def define_objective(self) -> None:
         """Register this updater's objective functions and constraints.
 
-        Scheme-specific updaters override this hook and call
-        :meth:`add_objective_function` / :meth:`add_constraints`.  It is
-        called once by :meth:`Updaters.add_updater`, so this hook should only
-        declare the updater's functions and constraints and must not depend on
-        a bound target.
+        Scheme-specific updaters override this hook and call :meth:`add_objective_function` /
+        :meth:`add_constraints`.  It is called once by :meth:`Updaters.add_updater`, so this hook
+        should only declare the updater's functions and constraints and must not depend on a bound
+        target.
         """
 
     @staticmethod
     def _add_named_function(
         functions: dict[str, object], function: object, name: str | None = None
     ) -> None:
-        """Add a function under the existing ``name_0``, ``name_1`` policy."""
+        """Add a function under the existing ``name_0``, ``name_1`` policy.
+
+        Args:
+            functions (dict[str, object]): Named callable terms registered by the updater.
+            function (object): Callable registered or evaluated by this operation.
+            name (str | None): Name identifying the item in its owning collection.
+        """
         base_name = type(function).__name__ if name is None else name
         index = 0
         final_name = f"{base_name}_{index}"
@@ -606,20 +773,31 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         functions[final_name] = function
 
     def add_objective_function(self, obj_func: object, name: str | None = None) -> None:
-        """Register one objective function for this updater."""
+        """Register one objective function for this updater.
+
+        Args:
+            obj_func (object): Callable objective or penalty term evaluated inside the subproblem.
+            name (str | None): Name identifying the item in its owning collection.
+        """
         self._add_named_function(self.obj_funcs, obj_func, name)
 
     def add_constraints(self, obj_func: object, name: str | None = None) -> None:
-        """Register one constraint function for this updater."""
+        """Register one constraint function for this updater.
+
+        Args:
+            obj_func (object): Callable objective or penalty term evaluated inside the subproblem.
+            name (str | None): Name identifying the item in its owning collection.
+        """
         self._add_named_function(self.constraints_funcs, obj_func, name)
 
     def closure(self, x: torch.Tensor, return_list: bool = False) -> torch.Tensor:
-        """
-        This method is called to update the design variables based on the optimization algorithm used.
+        """This method is called to update the design variables based on the optimization algorithm
+        used.
 
-        Parameters:
+        Args:
             x (torch.Tensor): The current design variables.
-            return_list (bool): If True, returns a list of objective function values; otherwise, returns their sum.
+            return_list (bool): If True, returns a list of objective function values; otherwise,
+                returns their sum.
 
         Returns:
             torch.Tensor: The objective function value(s).
@@ -627,12 +805,18 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         raise NotImplementedError("This method should be overridden by subclasses.")
 
     def update_variables(self, dx: torch.Tensor) -> None:
-        """Write one updater's result back to its bound target."""
+        """Write one updater's result back to its bound target.
+
+        Args:
+            dx (torch.Tensor): Proposed design-variable increment in flattened parameter order.
+        """
         raise NotImplementedError
 
     def update(self) -> torch.Tensor:
-        """
-        Update the parameters of the optimization process.
+        """Update the parameters of the optimization process.
+
+        Returns:
+            torch.Tensor: Update the parameters of the optimization process.
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
@@ -679,17 +863,16 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         updaters: dict[str, BaseUpdater] | list[BaseUpdater] | None = None,
         device: str | None = None,
     ) -> None:
-        """
-        Initialize the updater collection.
+        """Initialize the updater collection.
 
         Args:
-            params (Params, optional): The model parameters shared by the
-                sub-updaters; they resolve their targets from it.
-            updaters (dict | list, optional): sub-updaters to register before
-                ``define_updater()`` runs.  A dict is used as is (name ->
-                updater), a list gets default names.
-            device (str, optional): The device used for the objective function
-                and the sensitivity analysis.  Defaults to the current one.
+            params (Params | None): The model parameters shared by the sub-updaters; they resolve
+                their targets from it.
+            updaters (dict[str, BaseUpdater] | list[BaseUpdater] | None): sub-updaters to register
+                before ``define_updater()`` runs.  A dict is used as is (name -> updater), a list
+                gets default names.
+            device (str | None): The device used for the objective function and the sensitivity
+                analysis.  Defaults to the current one.
         """
         self.params: Params = params
         """The model parameters the sub-updaters resolve their targets from."""
@@ -718,8 +901,8 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def define_updater(self) -> None:
         """Register the sub-updaters (override this hook).
 
-        The **adder** says what each sub-updater updates -- geometry or
-        materials -- so the kind is unambiguous and the target is the ``name``:
+        The **adder** says what each sub-updater updates -- geometry or materials -- so the kind is
+        unambiguous and the target is the ``name``:
 
         ```python
         def define_updater(self) -> None:
@@ -731,13 +914,31 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def add_geometry_updater(
         self, updater: BaseUpdater, name: str | None = None
     ) -> str:
-        """Register a sub-updater that owns a Part of ``params.geometry``."""
+        """Register a sub-updater that owns a Part of ``params.geometry``.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            name (str | None): Name identifying the item in its owning collection.
+
+        Returns:
+            str: Register a sub-updater that owns a Part of ``params.geometry``.
+        """
         return self.add_updater(updater, name=name, kind="geometry")
 
     def add_material_updater(
         self, updater: BaseUpdater, name: str | None = None
     ) -> str:
-        """Register a sub-updater that owns a material interface."""
+        """Register a sub-updater that owns a material interface.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            name (str | None): Name identifying the item in its owning collection.
+
+        Returns:
+            str: Register a sub-updater that owns a material interface.
+        """
         return self.add_updater(updater, name=name, kind="materials")
 
     def add_updater(
@@ -754,12 +955,21 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         *different* ``update_kind`` is rejected; one that declares none adopts
         the kind of the hook it was registered in.
 
-        ``name`` names the sub-updater *and* is the interface it owns (a Part
-        name for geometry, a material interface name for materials), unless the
-        constructor already got an explicit ``interface_name=``.  Nothing is
-        resolved here: the target object itself is looked up in
-        :meth:`initialize`.  The updater's :meth:`BaseUpdater.define_objective`
-        hook is called here, once, after registration validation succeeds.
+        ``name`` names the sub-updater *and* is the interface it owns (a Part name for geometry, a
+        material interface name for materials), unless the constructor already got an explicit
+        ``interface_name=``.  Nothing is resolved here: the target object itself is looked up in
+        :meth:`initialize`.  The updater's :meth:`BaseUpdater.define_objective` hook is called here,
+        once, after registration validation succeeds.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            name (str | None): Name identifying the item in its owning collection.
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+
+        Returns:
+            str: Register one sub-updater and return its final name.
         """
         if not isinstance(updater, BaseUpdater):
             raise TypeError(
@@ -817,8 +1027,14 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def _gradient_bounds(self, update_kind: str) -> dict[str, tuple[int, int]]:
         """Gradient slice (start, stop) of every target of one kind.
 
-        The design gradient of a kind is ordered like its collection: target by
-        target, so a sub-updater takes the block of the target it owns.
+        The design gradient of a kind is ordered like its collection: target by target, so a
+        sub-updater takes the block of the target it owns.
+
+        Args:
+            update_kind (str): Target parameter collection, such as geometry or materials.
+
+        Returns:
+            dict[str, tuple[int, int]]: Gradient slice (start, stop) of every target of one kind.
         """
         params = self.params
         accessor = self._KIND_TARGETS.get(update_kind)
@@ -842,7 +1058,17 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def _slice_of(
         updater: BaseUpdater, bounds: dict[str, tuple[int, int]]
     ) -> tuple[int, int]:
-        """Slice of one target inside already computed bounds."""
+        """Slice of one target inside already computed bounds.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            bounds (dict[str, tuple[int, int]]): Axis-aligned bounds in [xmin, xmax, ymin, ymax,
+                zmin, zmax] order.
+
+        Returns:
+            tuple[int, int]: Slice of one target inside already computed bounds.
+        """
         target = updater.interface_name
         if target in bounds:
             return bounds[target]
@@ -858,12 +1084,18 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     ) -> UpdaterTarget:
         """Resolve one updater's interface from its owning collection.
 
-        Geometry and material collections expose different collection methods,
-        but the selection policy is identical: an explicit name wins; without
-        one, exactly one interface of the updater's declared ``target_type``
-        must exist.
-        Keeping this policy here prevents every concrete updater from growing
-        its own copy of the same lookup and ambiguity checks.
+        Geometry and material collections expose different collection methods, but the selection
+        policy is identical: an explicit name wins; without one, exactly one interface of the
+        updater's declared ``target_type`` must exist. Keeping this policy here prevents every
+        concrete updater from growing its own copy of the same lookup and ambiguity checks.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            collection (UpdaterCollection | None): Owning named interface collection.
+
+        Returns:
+            UpdaterTarget: Resolve one updater's interface from its owning collection.
         """
         if collection is None:
             raise ValueError(
@@ -940,12 +1172,10 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def initialize(self) -> None:
         """Hand every sub-updater its collection, then initialize it.
 
-        The collection is the model's own (``params.geometry`` /
-        ``params.materials``, per the ``add_*_updater``
-        hook the sub-updater was registered in); this manager resolves **its**
-        interface by name and type, so an unknown or incompatible target fails
-        here, before the optimization loop, and the interface itself is the
-        only model object the sub-updater keeps.
+        The collection is the model's own (``params.geometry`` / ``params.materials``, per the
+        ``add_*_updater`` hook the sub-updater was registered in); this manager resolves **its**
+        interface by name and type, so an unknown or incompatible target fails here, before the
+        optimization loop, and the interface itself is the only model object the sub-updater keeps.
         """
         params = self.params
         if not self._updater_defined:
@@ -972,7 +1202,14 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             updater.initialize()
 
     def update(self, gradients: dict[str, torch.Tensor], objective_value: float) -> None:
-        """Supply the evaluated objective and each target's native gradient slice."""
+        """Supply the evaluated objective and each target's native gradient slice.
+
+        Args:
+            gradients (dict[str, torch.Tensor]): Unscaled physical gradients keyed by
+                model-parameter collection.
+            objective_value (float): Evaluated physical objective value for the current outer
+                iteration.
+        """
         controller = morphopt.controller
         default_device = torch.get_default_device()
         bounds = {
@@ -1009,7 +1246,12 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             updater.update_variables(dx=self._var_updaters.get(name))
 
     def history_data(self) -> dict[str, object]:
-        """Collect each updater under its registered name for the current row."""
+        """Collect each updater under its registered name for the current row.
+
+        Returns:
+            dict[str, object]: Component-owned scalar or nested observations for the current
+                iteration.
+        """
         return {
             "optimizers": {
                 name: updater.history_data() for name, updater in self.updaters.items()
@@ -1017,7 +1259,12 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         }
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save the state of every sub-updater."""
+        """Save the state of every sub-updater.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         for updater in self.updaters.values():
             updater.save(foldpath=foldpath, iteration=iteration)
             directory = updater.save_directory(
@@ -1033,7 +1280,12 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 )
 
     def load(self, foldpath: str, iteration: int) -> None:
-        """Restore the state of every sub-updater."""
+        """Restore the state of every sub-updater.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         for updater in self.updaters.values():
             updater.load(foldpath=foldpath, iteration=iteration)
             directory = updater.save_directory(
@@ -1049,7 +1301,11 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 )
 
     def pathlog_required(self) -> list[str]:
-        """The log sub-paths every sub-updater needs (deduplicated)."""
+        """The log sub-paths every sub-updater needs (deduplicated).
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         paths: list[str] = []
         for updater in self.updaters.values():
             for path in updater.pathlog_required():

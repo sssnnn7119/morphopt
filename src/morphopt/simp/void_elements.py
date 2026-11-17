@@ -4,6 +4,9 @@ import torchfea
 
 # region for void elements penalization
 class SIMPElementFgrad(torchfea.elements.Element_3D):
+    """Interpolate constitutive stiffness using the SIMP density field and deformation-gradient
+    regularization.
+    """
     _serialized_attributes_exclude = (
         torchfea.elements.Element_3D._serialized_attributes_exclude
         + ["_EmdUe_2", "_dN2WP"]
@@ -15,6 +18,13 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
         elems: torch.Tensor,
         penalfactor: torch.Tensor | float,
     ) -> None:
+        """Initialize SIMPElementFgrad and its configuration state.
+
+        Args:
+            elems_index (torch.Tensor): Element-node connectivity in the target element block.
+            elems (torch.Tensor): Element block whose stiffness or energy is being evaluated.
+            penalfactor (torch.Tensor | float): SIMP density-interpolation exponent.
+        """
         super().__init__(elems_index, elems)
 
         if isinstance(penalfactor, float):
@@ -27,6 +37,12 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
         """the penalization factor for SIMP material"""
 
     def initialize(self, *args: object, **kwargs: object) -> None:
+        """Initialize the SIMPElementFgrad state.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
 
         self._dN2WP = torch.einsum(
@@ -70,6 +86,17 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
         rotation_matrix: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
+        """Return potential  energy.
+
+        Args:
+            RGC (torch.Tensor): Reduced generalized coordinate tensor used to evaluate element
+                energy.
+            rotation_matrix (torch.Tensor | None): Optional matrix mapping local element coordinates
+                to the assembly frame.
+
+        Returns:
+            torch.Tensor: Potential  energy.
+        """
         U = RGC
 
         if rotation_matrix is not None:
@@ -96,6 +123,17 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
         U: torch.Tensor,
         if_onlyforce: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Get  epd ue  epd ue2.
+
+        Args:
+            U (torch.Tensor): Element displacement tensor used to differentiate the potential
+                energy.
+            if_onlyforce (bool): Return internal-force derivatives without constructing
+                tangent-stiffness derivatives when True.
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, torch.Tensor]:  epd ue  epd ue2.
+        """
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
@@ -117,6 +155,9 @@ class SIMPElementFgrad(torchfea.elements.Element_3D):
 
 
 class SIMPElementFskew(torchfea.elements.Element_3D):
+    """Interpolate constitutive stiffness using the SIMP density field and skew-gradient
+    stabilization.
+    """
     _serialized_attributes_exclude = (
         torchfea.elements.Element_3D._serialized_attributes_exclude
         + ["_EmdUe_2", "_dN2WP"]
@@ -128,6 +169,13 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         elems: torch.Tensor,
         penalfactor: torch.Tensor | float,
     ) -> None:
+        """Initialize SIMPElementFskew and its configuration state.
+
+        Args:
+            elems_index (torch.Tensor): Element-node connectivity in the target element block.
+            elems (torch.Tensor): Element block whose stiffness or energy is being evaluated.
+            penalfactor (torch.Tensor | float): SIMP density-interpolation exponent.
+        """
         super().__init__(elems_index, elems)
 
         if isinstance(penalfactor, float):
@@ -141,10 +189,20 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
     @property
     def penalfactor(self) -> torch.Tensor:
+        """Return penalfactor.
+
+        Returns:
+            torch.Tensor: Penalfactor.
+        """
         return self._penalfactor
 
     @penalfactor.setter
     def penalfactor(self, value: torch.Tensor) -> None:
+        """Set the penalfactor.
+
+        Args:
+            value (torch.Tensor): New penalfactor.
+        """
         if isinstance(value, float):
             value = torch.tensor([value], dtype=torch.float32)
 
@@ -154,13 +212,19 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         self._penalfactor = value.to(torch.float32)
 
     def initialize(self, *args: object, **kwargs: object) -> None:
+        """Initialize the SIMPElementFskew state.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
 
         self._initialize_simppenalty()
 
     def _initialize_simppenalty(self) -> None:
-        """
-        initialize the penalty for SIMP material, which will be used in the energy and force calculations.
+        """initialize the penalty for SIMP material, which will be used in the energy and force
+        calculations.
         """
         self._dN2WP = torch.einsum(
             "geija,ge->geija",
@@ -219,6 +283,17 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         rotation_matrix: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
+        """Return potential  energy.
+
+        Args:
+            RGC (torch.Tensor): Reduced generalized coordinate tensor used to evaluate element
+                energy.
+            rotation_matrix (torch.Tensor | None): Optional matrix mapping local element coordinates
+                to the assembly frame.
+
+        Returns:
+            torch.Tensor: Potential  energy.
+        """
         U = RGC
 
         if rotation_matrix is not None:
@@ -247,6 +322,17 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
         U: torch.Tensor,
         if_onlyforce: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Get  epd ue  epd ue2.
+
+        Args:
+            U (torch.Tensor): Element displacement tensor used to differentiate the potential
+                energy.
+            if_onlyforce (bool): Return internal-force derivatives without constructing
+                tangent-stiffness derivatives when True.
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, torch.Tensor]:  epd ue  epd ue2.
+        """
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ue = U[self._elems]
@@ -274,6 +360,7 @@ class SIMPElementFskew(torchfea.elements.Element_3D):
 
 
 class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
+    """Evaluate a SIMP-weighted element energy with the HuHu/LuLu stabilization terms."""
     _serialized_attributes_exclude = (
         torchfea.elements.Element_3D._serialized_attributes_exclude
         + ["_EmdUe_2", "_dN2WP"]
@@ -285,12 +372,25 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
         elems: torch.Tensor,
         penalfactor: torch.Tensor,
     ) -> None:
+        """Initialize SIMPElementHuHu_LuLu and its configuration state.
+
+        Args:
+            elems_index (torch.Tensor): Element-node connectivity in the target element block.
+            elems (torch.Tensor): Element block whose stiffness or energy is being evaluated.
+            penalfactor (torch.Tensor): SIMP density-interpolation exponent.
+        """
         super().__init__(elems_index, elems)
 
         self._penalfactor = penalfactor
         """the penalization factor for SIMP material"""
 
     def initialize(self, *args: object, **kwargs: object) -> None:
+        """Initialize the SIMPElementHuHu_LuLu state.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
 
         if self._penalfactor.dim() == 0 or self._penalfactor.shape == (1,):
@@ -352,6 +452,17 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
         rotation_matrix: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
+        """Return potential  energy.
+
+        Args:
+            RGC (torch.Tensor): Reduced generalized coordinate tensor used to evaluate element
+                energy.
+            rotation_matrix (torch.Tensor | None): Optional matrix mapping local element coordinates
+                to the assembly frame.
+
+        Returns:
+            torch.Tensor: Potential  energy.
+        """
         U = RGC
 
         if rotation_matrix is not None:
@@ -380,6 +491,17 @@ class SIMPElementHuHu_LuLu(torchfea.elements.Element_3D):
         U: torch.Tensor,
         if_onlyforce: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Get  epd ue  epd ue2.
+
+        Args:
+            U (torch.Tensor): Element displacement tensor used to differentiate the potential
+                energy.
+            if_onlyforce (bool): Return internal-force derivatives without constructing
+                tangent-stiffness derivatives when True.
+
+        Returns:
+            torch.Tensor | tuple[torch.Tensor, torch.Tensor]:  epd ue  epd ue2.
+        """
         result0 = super()._get_EpdUe_EpdUe2(U, if_onlyforce)
 
         Ugrad2 = torch.zeros([self._num_gaussian, self._elems.shape[0], 3, 3, 3])
@@ -416,14 +538,17 @@ class SIMPElementC3D4(torchfea.elements.C3D4, SIMPElementFskew):
 
 
 class SIMPElementC3D10(torchfea.elements.C3D10, SIMPElementFskew):
+    """Apply SIMP material interpolation to quadratic ten-node tetrahedral elements."""
     pass
 
 
 class SIMPElementC3D8(torchfea.elements.C3D8, SIMPElementFskew):
+    """Apply SIMP material interpolation to linear eight-node hexahedral elements."""
     pass
 
 
 class SIMPElementC3D20(torchfea.elements.C3D20, SIMPElementFskew):
+    """Apply SIMP material interpolation to quadratic twenty-node hexahedral elements."""
     pass
 
 

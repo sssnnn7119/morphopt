@@ -16,8 +16,11 @@ class BodyForce(BaseFEAComponent):
     """
 
     def __init__(self, element_name: str, instance_name: str = "final_model"):
-        """
-        Initialize the BodyForce class.
+        """Initialize the BodyForce class.
+
+        Args:
+            element_name (str): Name of the selected element block.
+            instance_name (str): Registered Instance name in the assembly.
         """
         super().__init__()
         self.instance_name = instance_name
@@ -56,6 +59,12 @@ class BodyForce(BaseFEAComponent):
         return 3
 
     def modify_fea(self, fe: FEAController, name: str) -> None:
+        """Create and register this declaration in the finite-element assembly.
+
+        Args:
+            fe (FEAController): TorchFEA controller whose assembly is modified or solved.
+            name (str): Name identifying the item in its owning collection.
+        """
         body_force = TorchFEABodyForce(
             instance_name=self.instance_name,
             element_name=self.element_name,
@@ -64,6 +73,12 @@ class BodyForce(BaseFEAComponent):
         fe.assembly.add_load(body_force, name)
 
     def apply_fea_value(self, fe: FEAController, name: str) -> None:
+        """Apply this load case's parameter values to the registered FE component.
+
+        Args:
+            fe (FEAController): TorchFEA controller whose assembly is modified or solved.
+            name (str): Name identifying the item in its owning collection.
+        """
         body_force: TorchFEABodyForce = fe.assembly.get_load(name)
         device = body_force.force_density.device
         body_force.force_density = torch.tensor(

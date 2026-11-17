@@ -31,10 +31,16 @@ def _start_headless_process(
 ) -> subprocess.Popen:
     """Start one UI-managed job in its own process group.
 
-    All launch paths use this helper so Stop can reliably terminate spawned
-    worker children and PyVista consistently selects PySide6 when a job
-    imports visualization-adjacent dependencies.  The job's combined output
-    is piped back to :class:`ObserverControls` for display in the UI.
+    All launch paths use this helper so Stop can reliably terminate spawned worker children and
+    PyVista consistently selects PySide6 when a job imports visualization-adjacent dependencies.
+    The job's combined output is piped back to :class:`ObserverControls` for display in the UI.
+
+    Args:
+        command (Sequence[str]): Subprocess command and arguments in execution order.
+        working_directory (str): Working directory of the launched process.
+
+    Returns:
+        subprocess.Popen: Start one UI-managed job in its own process group.
     """
     environment = worker_environment()
     process_options = (
@@ -54,7 +60,17 @@ def _start_headless_process(
 
 
 def run_root_for(problem: ProblemDefinition, base: str | None = None) -> str:
-    """Absolute directory that will contain ``<label>_T<timestamp>/`` folders."""
+    """Absolute directory that will contain ``<label>_T<timestamp>/`` folders.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        base (str | None): Base class or root configuration from which the selected declaration
+            is constructed.
+
+    Returns:
+        str: Absolute directory that will contain ``<label>_T<timestamp>/`` folders.
+    """
     if base is None:
         base = UI_RUN_DIR
     os.makedirs(base, exist_ok=True)
@@ -69,8 +85,17 @@ def run_job(
 ) -> tuple[str, subprocess.Popen]:
     """Export a private temporary script bundle and launch it headless.
 
-    The controller copies the bundle into the result's scripts directory.
-    Returns the staging script path and the process owning the worker tree.
+    The controller copies the bundle into the result's scripts directory. Returns the staging
+    script path and the process owning the worker tree.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        workdir (str | None): Working directory in which the subprocess executes.
+
+    Returns:
+        tuple[str, subprocess.Popen]: Export a private temporary script bundle and launch it
+            headless.
     """
     from .application.definitions import ProblemLibrary
 
@@ -91,7 +116,21 @@ def run_continue(
     restart_per_iteration: int = 10,
     workdir: str | None = None,
 ) -> subprocess.Popen:
-    """Continue an existing result folder (last step or a chosen step)."""
+    """Continue an existing result folder (last step or a chosen step).
+
+    Args:
+        path_result (str): Optimization result directory containing scripts and log
+            subdirectories.
+        target_iteration (int | None): Completed iteration to restore; None selects the latest
+            saved iteration.
+        device (str): PyTorch device used for tensor operations; None retains the owning
+            controller's device when supported.
+        restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+        workdir (str | None): Working directory in which the subprocess executes.
+
+    Returns:
+        subprocess.Popen: Continue an existing result folder (last step or a chosen step).
+    """
     if workdir is None:
         workdir = UI_RUN_DIR
     os.makedirs(workdir, exist_ok=True)
@@ -108,9 +147,15 @@ def parse_job_location(py_path: str) -> tuple[str, str]:
     """Read where a definition script writes its results.
 
     A runnable definition declares ``opt_label`` and ``path_result_folder`` in
-    ``Controller.__init__``; results go to ``<path_result_folder>/<opt_label>_T*``
-    relative to the script's directory.  Falls back to ``.results/`` + script
-    stem when the file does not carry them.
+    ``Controller.__init__``; results go to ``<path_result_folder>/<opt_label>_T*`` relative to
+    the script's directory.  Falls back to ``.results/`` + script stem when the file does not
+    carry them.
+
+    Args:
+        py_path (str): Path to the Python task script.
+
+    Returns:
+        tuple[str, str]: Read where a definition script writes its results.
     """
     label = os.path.splitext(os.path.basename(py_path))[0]
     folder = ".results/"
@@ -135,9 +180,17 @@ def run_py_definition(
 ) -> tuple[str, str, subprocess.Popen]:
     """Run an existing definition ``.py`` from scratch (headless job).
 
-    The script keeps its own result location (``opt_label`` +
-    ``path_result_folder``), so the caller can discover the fresh result with
-    :func:`latest_result_dir`.  Returns ``(root, label, process)``.
+    The script keeps its own result location (``opt_label`` + ``path_result_folder``), so the
+    caller can discover the fresh result with :func:`latest_result_dir`.  Returns ``(root,
+    label, process)``.
+
+    Args:
+        py_path (str): Path to the Python task script.
+        workdir (str | None): Working directory in which the subprocess executes.
+
+    Returns:
+        tuple[str, str, subprocess.Popen]: Run an existing definition ``.py`` from scratch
+            (headless job).
     """
     if workdir is None:
         workdir = os.path.dirname(os.path.abspath(py_path))
@@ -148,7 +201,11 @@ def run_py_definition(
 
 
 def stop_job(proc: subprocess.Popen | None) -> None:
-    """Terminate the launched task's process tree using the platform API."""
+    """Terminate the launched task's process tree using the platform API.
+
+    Args:
+        proc (subprocess.Popen | None): Subprocess instance being polled or stopped.
+    """
     if proc is None or proc.poll() is not None:
         return
     if os.name == "nt":
@@ -180,7 +237,16 @@ def stop_job(proc: subprocess.Popen | None) -> None:
 
 
 def latest_result_dir(run_root: str, label: str) -> str | None:
-    """Newest ``<run_root>/<label>_T*`` folder (for auto-discovering a run)."""
+    """Newest ``<run_root>/<label>_T*`` folder (for auto-discovering a run).
+
+    Args:
+        run_root (str): Root directory in which newly created optimization results are
+            discovered.
+        label (str): Human-readable label associated with the definition or result.
+
+    Returns:
+        str | None: Newest ``<run_root>/<label>_T*`` folder (for auto-discovering a run).
+    """
     if not run_root or not label or not Path(run_root).is_dir():
         return None
     matches = sorted(
@@ -192,7 +258,15 @@ def latest_result_dir(run_root: str, label: str) -> str | None:
 
 
 def parse_run_options(scripts_main: str) -> tuple[str, int]:
-    """Read device + restart_per_iteration from a job's restart main script."""
+    """Read device + restart_per_iteration from a job's restart main script.
+
+    Args:
+        scripts_main (str): Archived main script used to recover run options or restart the
+            task.
+
+    Returns:
+        tuple[str, int]: Read device + restart_per_iteration from a job's restart main script.
+    """
     device, restart = "cpu", 10
     try:
         text = Path(scripts_main).read_text(encoding="utf-8")

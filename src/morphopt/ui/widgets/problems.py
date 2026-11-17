@@ -19,6 +19,16 @@ class _ProblemDelegate(QStyledItemDelegate):
     """Show complete explanations while keeping location paths compact."""
 
     def sizeHint(self, option, index) -> QSize:
+        """Return size hint.
+
+        Args:
+            option: Qt style option describing the item's current drawing state and available
+                rectangle.
+            index: Zero-based position within the relevant collection.
+
+        Returns:
+            QSize: Size hint.
+        """
         size = super().sizeHint(option, index)
         if index.column() == 1:
             width = max(1, self.parent().columnWidth(1))
@@ -30,6 +40,7 @@ class _ProblemDelegate(QStyledItemDelegate):
 
 
 class ProblemsButton(QToolButton):
+    """Show the model-issue count and open a navigable list of validation problems."""
     nodeRequested = Signal(object)
 
     def __init__(
@@ -37,6 +48,13 @@ class ProblemsButton(QToolButton):
         diagnostics: Callable[[], tuple[tuple[Node, str, str], ...]],
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize ProblemsButton and its configuration state.
+
+        Args:
+            diagnostics (Callable[[], tuple[tuple[Node, str, str], ...]]): Validation diagnostics
+                associated with the current definition.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._diagnostics = diagnostics
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -45,11 +63,17 @@ class ProblemsButton(QToolButton):
         self.apply_language()
 
     def refresh(self, *_args: object) -> None:
+        """Refresh the ProblemsButton state.
+
+        Args:
+            *_args: Additional positional arguments accepted by the shared interface.
+        """
         count = len(self._diagnostics())
         self.setText(tr("ui.problems.count", count=count))
         self.setEnabled(bool(count))
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.setToolTip(tr("ui.problems.open_hint"))
         self.refresh()
 

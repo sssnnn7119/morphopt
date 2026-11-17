@@ -10,8 +10,10 @@ class MinRadius(BaseConstraints):
     """
 
     def __init__(self, radius: float) -> None:
-        """
-        Initialize the Cylinder objective function.
+        """Initialize the Cylinder objective function.
+
+        Args:
+            radius (float): Geometric radius in model length units.
         """
         super().__init__()
 
@@ -22,6 +24,18 @@ class MinRadius(BaseConstraints):
 
     def __call__(self, r, rdu, rdu2, *args, **kwargs):
 
+        """Evaluate MinRadius for the supplied inputs.
+
+        Args:
+            r: Current Cartesian surface samples; each surface block has shape (num_points, 3).
+            rdu: Current first surface derivatives; each block has shape (num_points, 3, 2).
+            rdu2: Current second surface derivatives; each block has shape (num_points, 3, 2, 2).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: One-element tensor containing the integrated minimum-radius penalty.
+        """
         thre = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_THRESHOLD
         degree = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.MIN_RADIUS_EXPONENT
 
@@ -48,8 +62,12 @@ class Cylinder(BaseConstraints):
     """
 
     def __init__(self, radius: float, height: float, bottom: float) -> None:
-        """
-        Initialize the Cylinder objective function.
+        """Initialize the Cylinder objective function.
+
+        Args:
+            radius (float): Geometric radius in model length units.
+            height (float): Geometric height in model length units.
+            bottom (float): Lower axial coordinate in model length units.
         """
         super().__init__()
 
@@ -70,6 +88,19 @@ class Cylinder(BaseConstraints):
 
     def __call__(self, r, rdu, rdu2, *args, **kwargs):
 
+        """Evaluate Cylinder for the supplied inputs.
+
+        Args:
+            r: Current Cartesian surface samples; each surface block has shape (num_points, 3).
+            rdu: Current first surface derivatives; each block has shape (num_points, 3, 2).
+            rdu2: Current second surface derivatives; each block has shape (num_points, 3, 2, 2).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: One-element tensor containing the integrated radial and axial containment
+                penalties.
+        """
         thre = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_THRESHOLD
         degree = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.CYLINDER_EXPONENT
 

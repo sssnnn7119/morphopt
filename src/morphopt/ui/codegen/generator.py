@@ -59,7 +59,18 @@ def _material_parameters_expression(
     parameters: dict[str, object],
     problem: ProblemDefinition | None = None,
 ) -> str:
-    """Render model parameters with their typed parameter constructor."""
+    """Render model parameters with their typed parameter constructor.
+
+    Args:
+        model (str): Model object supplying the data or geometry for this operation.
+        parameters (dict[str, object]): Parameter values in the order required by the selected
+            interface.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        str: Render model parameters with their typed parameter constructor.
+    """
     parameter_class = getattr(MaterialModels, f"{model}Params")
     parameter_type = parameter_class.__name__
     values = ", ".join(
@@ -69,7 +80,15 @@ def _material_parameters_expression(
 
 
 def indent_block(text: str, spaces: int) -> str:
-    """Indent every non-empty line of ``text`` by ``spaces``."""
+    """Indent every non-empty line of ``text`` by ``spaces``.
+
+    Args:
+        text (str): Text displayed, parsed, or inserted by this operation.
+        spaces (int): Indentation width in spaces for the generated source.
+
+    Returns:
+        str: Indent every non-empty line of ``text`` by ``spaces``.
+    """
     pad = " " * spaces
     return "\n".join(pad + ln if ln.strip() else ln for ln in text.splitlines())
 
@@ -83,7 +102,16 @@ def _helper_names(problem: ProblemDefinition | None) -> set[str]:
 
 
 def _render_value(value: object, problem: ProblemDefinition | None) -> str:
-    """Use a helper variable as an expression when a field names it exactly."""
+    """Use a helper variable as an expression when a field names it exactly.
+
+    Args:
+        value (object): Value assigned to or evaluated for the selected field.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        str: Use a helper variable as an expression when a field names it exactly.
+    """
     if isinstance(value, str) and value in _helper_names(problem):
         return value
     if isinstance(value, list):
@@ -104,7 +132,14 @@ def _render_value(value: object, problem: ProblemDefinition | None) -> str:
 
 
 def _asset_path_expression(path: str) -> str:
-    """Resolve an exported asset relative to the generated Python module."""
+    """Resolve an exported asset relative to the generated Python module.
+
+    Args:
+        path (str): Filesystem path read, restored, or written by this operation.
+
+    Returns:
+        str: Resolve an exported asset relative to the generated Python module.
+    """
     if not path:
         return repr("")
     return f"os.path.join(os.path.dirname(os.path.abspath(__file__)), {path!r})"
@@ -116,6 +151,18 @@ def render_surface_call(
     *,
     asset_paths: dict[int, str] | None = None,
 ) -> str:
+    """Render surface call.
+
+    Args:
+        surface (Node): Surface interface to register, evaluate, or constrain.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        str: Render surface call.
+    """
     factory = surface.factory
     if surface.type == "brep_surface":
         prefix = surface.custom_class or "self.BREPSurface"
@@ -176,7 +223,19 @@ def render_cad_operation_call(
     *,
     asset_paths: dict[int, str] | None = None,
 ) -> str:
-    """Render one structured UI CAD operation as a TorchFEA constructor."""
+    """Render one structured UI CAD operation as a TorchFEA constructor.
+
+    Args:
+        operation (CADOperationNode): CAD history operation or application action being
+            processed.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        str: Render one structured UI CAD operation as a TorchFEA constructor.
+    """
     operation_type = operation.operation_type
     spec = type(operation)
     if operation_type == "StepImport":
@@ -200,6 +259,16 @@ def render_cad_operation_call(
 def render_component_call(
     component: Node, problem: ProblemDefinition | None = None
 ) -> str:
+    """Render component call.
+
+    Args:
+        component (Node): Model, result, or interface component processed by the operation.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        str: Render component call.
+    """
     cls = component.backend_class
     kwargs = []
     for field in component.fields:
@@ -220,7 +289,17 @@ def render_component_call(
 def generate_source(
     problem: ProblemDefinition, *, asset_paths: dict[int, str] | None = None
 ) -> str:
-    """Read a synchronized definition and activate its custom subclasses."""
+    """Read a synchronized definition and activate its custom subclasses.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        str: Read a synchronized definition and activate its custom subclasses.
+    """
     source = generate_base_source(problem, asset_paths=asset_paths)
     custom_items = problem.updater and any(
         config.get("custom_class")
@@ -277,7 +356,15 @@ def generate_source(
 
 
 def _insert_helpers(source: str, helper_source: str) -> str:
-    """Place helper definitions before custom classes and ThisController."""
+    """Place helper definitions before custom classes and ThisController.
+
+    Args:
+        source (str): Source object, path, or metadata from which the operation reads its input.
+        helper_source (str): Auxiliary Python source inserted before the task declarations.
+
+    Returns:
+        str: Place helper definitions before custom classes and ThisController.
+    """
     if not helper_source.strip():
         return source
     try:
@@ -311,7 +398,17 @@ def _insert_helpers(source: str, helper_source: str) -> str:
 def _objective_values_body(
     objective: ObjectiveNode, problem: ProblemDefinition
 ) -> str:
-    """Generate ordered weighted contributions shared by the loss and metrics."""
+    """Generate ordered weighted contributions shared by the loss and metrics.
+
+    Args:
+        objective (ObjectiveNode): Objective configuration whose terms and metric expressions
+            are being processed.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        str: Generate ordered weighted contributions shared by the loss and metrics.
+    """
     terms = objective.objective_terms
     if not terms:
         return "return []"
@@ -494,7 +591,17 @@ def _objective_values_body(
 
 
 def _metrics_function_body(objective: ObjectiveNode, problem: ProblemDefinition) -> str:
-    """Record user measurements first, followed by weighted objective values."""
+    """Record user measurements first, followed by weighted objective values.
+
+    Args:
+        objective (ObjectiveNode): Objective configuration whose terms and metric expressions
+            are being processed.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        str: Record user measurements first, followed by weighted objective values.
+    """
     terms = objective.metrics_terms
     reference_points = {
         component.name
@@ -598,10 +705,21 @@ def generate_base_source(
 ) -> str:
     """Return the full source of a runnable problem module (always headless).
 
-    Code-launched runs never open an observer window; results are watched by
-    the MorphOpt UI's in-window observer (disk polling per iteration).
-    ``for_class_catalog`` emits inert objective methods and updater classes so
-    editor class discovery also works while terms are still being defined.
+    Code-launched runs never open an observer window; results are watched by the MorphOpt UI's
+    in-window observer (disk polling per iteration). ``for_class_catalog`` emits inert objective
+    methods and updater classes so editor class discovery also works while terms are still being
+    defined.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        for_class_catalog (bool): Generate declarations for class introspection without
+            requiring a complete executable task.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        str: The full source of a runnable problem module (always headless).
     """
     if asset_paths is None:
         asset_paths, _ = collect_python_assets(problem)
@@ -754,8 +872,19 @@ def _render_part_constructor(
 ) -> str:
     """Render ``self.<ClassName>(...)`` for one Part definition.
 
-    ``class_name`` overrides the schema type name, used when the model emits a
-    local subclass (the boundary part that carries symmetry constraints).
+    ``class_name`` overrides the schema type name, used when the model emits a local subclass
+    (the boundary part that carries symmetry constraints).
+
+    Args:
+        part (PartNode): Part whose geometry, mesh, or named sets are processed.
+        class_name (str | None): Python class name written to the generated source.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        str: Render ``self.<ClassName>(...)`` for one Part definition.
     """
     type_name = class_name or part.type
     spec = type(part)
@@ -780,7 +909,15 @@ def _render_part_constructor(
 
 
 def part_class_names(problem: ProblemDefinition) -> dict[str, str]:
-    """Name generated subclasses after their Part type."""
+    """Name generated subclasses after their Part type.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        dict[str, str]: Name generated subclasses after their Part type.
+    """
     names = {}
     counts: dict[str, int] = {}
     for part in problem.parts():
@@ -799,11 +936,21 @@ def _emit_part_classes(
 ) -> dict[str, str]:
     """Emit local Part subclasses carrying surfaces and Instances.
 
-    Every Part gets a local subclass so its ``define_instance`` method can
-    declare the UI's complete placement list. Boundary Parts additionally
-    declare their surfaces, local symmetry constraints and optional custom
-    ``apply_surface_constraints`` hook.
-    Returns the mapping from Part-definition names to emitted class names.
+    Every Part gets a local subclass so its ``define_instance`` method can declare the UI's
+    complete placement list. Boundary Parts additionally declare their surfaces, local symmetry
+    constraints and optional custom ``apply_surface_constraints`` hook. Returns the mapping from
+    Part-definition names to emitted class names.
+
+    Args:
+        a (Callable[[str], object]): Line-appending callback used to assemble generated Python
+            source.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+
+    Returns:
+        dict[str, str]: Emit local Part subclasses carrying surfaces and Instances.
     """
     class_names = part_class_names(problem)
 
@@ -882,7 +1029,18 @@ def _emit_part_init(
     *,
     asset_paths: dict[int, str] | None = None,
 ) -> None:
-    """Emit initial-geometry Part registration for the model."""
+    """Emit initial-geometry Part registration for the model.
+
+    Args:
+        a (Callable[[str], object]): Line-appending callback used to assemble generated Python
+            source.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        local_classes (dict[str, str]): Class declarations already emitted in the generated
+            scope.
+        asset_paths (dict[int, str] | None): Mapping from embedded asset references to paths
+            relative to the exported script.
+    """
     parts = problem.parts()
     if not parts:
         a("                pass")
@@ -906,7 +1064,16 @@ def _emit_part_init(
 def _geometry_config_for_part(
     problem: ProblemDefinition, part: PartNode
 ) -> dict | None:
-    """Return the geometry updater config bound to ``part``, if any."""
+    """Return the geometry updater config bound to ``part``, if any.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        part (PartNode): Part whose geometry, mesh, or named sets are processed.
+
+    Returns:
+        dict | None: The geometry updater config bound to ``part``, if any.
+    """
     updater = problem.updater
     if updater is None:
         return None
@@ -925,7 +1092,19 @@ def _surface_constraints_for_part(
     part: BoundaryPartNode,
     problem: ProblemDefinition,
 ) -> tuple[list[str], str]:
-    """Render surface-owned symmetry hooks and an optional Part code hook."""
+    """Render surface-owned symmetry hooks and an optional Part code hook.
+
+    Args:
+        config (dict | None): Configuration dictionary for the selected model or updater
+            interface.
+        part (BoundaryPartNode): Part whose geometry, mesh, or named sets are processed.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        tuple[list[str], str]: Render surface-owned symmetry hooks and an optional Part code
+            hook.
+    """
     if config is None:
         return [], ""
 
@@ -1128,8 +1307,15 @@ def _resolve_geometry_targets(
 ) -> list[str]:
     """Validate the Part every geometry sub-updater is bound to.
 
-    Only boundary Parts carry surfaces, so an updater must target one
-    of those Part objects.
+    Only boundary Parts carry surfaces, so an updater must target one of those Part objects.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        geom_cfgs (list[dict]): Geometry-updater configurations in registration order.
+
+    Returns:
+        list[str]: Validate the Part every geometry sub-updater is bound to.
     """
     if not geom_cfgs:
         return []
@@ -1168,8 +1354,16 @@ def _resolve_material_targets(
 ) -> list[str]:
     """Validate the material definition every material sub-updater targets.
 
-    Only design-carrying materials (SIMP density fields) have
-    variables, so an updater must target one of those material objects.
+    Only design-carrying materials (SIMP density fields) have variables, so an updater must
+    target one of those material objects.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        mat_cfgs (list[dict]): Material-updater configurations in registration order.
+
+    Returns:
+        list[str]: Validate the material definition every material sub-updater targets.
     """
     if not mat_cfgs:
         return []
@@ -1280,7 +1474,18 @@ def _emit_updater(
 def _render_updater_item(
     item: dict, category: str, problem: ProblemDefinition | None = None
 ) -> str:
-    """Render one valid structured objective/constraint item into source."""
+    """Render one valid structured objective/constraint item into source.
+
+    Args:
+        item (dict): Collection or view item selected for the operation.
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        str: Render one valid structured objective/constraint item into source.
+    """
     if not isinstance(item, dict):
         raise ValueError(
             localized_message(
@@ -1344,13 +1549,24 @@ def _emit_nested_updater(
 ) -> None:
     """Emit one sub-updater class.
 
-    The class is **target-free** -- it carries the objectives / constraints of
-    one sub-optimizer and nothing else. Which Part or material definition it
-    optimizes is stated by the ``name`` of the ``add_*_updater(...)`` call that
-    registers it, so the same class can be registered several times for
-    different targets.  Objectives are declared in ``define_objective()`` and
-    registered once when the updater is added, matching the model-parameter
-    registration pattern. The hook must not access the bound target.
+    The class is **target-free** -- it carries the objectives / constraints of one sub-optimizer
+    and nothing else. Which Part or material definition it optimizes is stated by the ``name``
+    of the ``add_*_updater(...)`` call that registers it, so the same class can be registered
+    several times for different targets.  Objectives are declared in ``define_objective()`` and
+    registered once when the updater is added, matching the model-parameter registration
+    pattern. The hook must not access the bound target.
+
+    Args:
+        a (Callable[[str], object]): Line-appending callback used to assemble generated Python
+            source.
+        cls_name (str): Python class name written to the generated source.
+        base (str): Base class or root configuration from which the selected declaration is
+            constructed.
+        cfg: Configuration dictionary for the selected updater or geometry interface.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        for_class_catalog (bool): Generate declarations for class introspection without
+            requiring a complete executable task.
     """
     cfg = cfg or {}
     if "code" in cfg:

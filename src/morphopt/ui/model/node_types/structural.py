@@ -44,6 +44,16 @@ class ProblemNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize ProblemNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.geometry: GeometryNode | None = None
         self.loads: LoadsNode | None = None
         self.steps: StepsNode | None = None
@@ -55,6 +65,11 @@ class ProblemNode(Node):
 
     @property
     def children(self) -> tuple[Node, ...]:
+        """Return children.
+
+        Returns:
+            tuple[Node, ...]: Children.
+        """
         return tuple(
             section
             for section in (
@@ -70,6 +85,15 @@ class ProblemNode(Node):
         )
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if isinstance(node, GeometryNode):
             if self.geometry is not None:
                 raise ValueError(
@@ -131,6 +155,11 @@ class ProblemNode(Node):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if node is self.geometry:
             self.geometry = None
         elif node is self.loads:
@@ -149,9 +178,25 @@ class ProblemNode(Node):
             super().remove_child(node)
 
     def add_section(self, node: Node) -> Node:
+        """Add section.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+
+        Returns:
+            Node: Add section.
+        """
         return self.add_child(node)
 
     def section(self, kind: str) -> Node | None:
+        """Return section.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Node | None: Section.
+        """
         return {
             "geometry": self.geometry,
             "loads": self.loads,
@@ -163,6 +208,11 @@ class ProblemNode(Node):
         }[kind]
 
     def sections(self) -> list[Node]:
+        """Return sections.
+
+        Returns:
+            list[Node]: Sections.
+        """
         return list(self.children)
 
 
@@ -188,9 +238,23 @@ class GeometryNode(Node):
 
     @property
     def children(self) -> tuple[PartNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[PartNode, ...]: Children.
+        """
         return tuple(self.parts)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, PartNode):
             return super().add_child(node, index)
         if index is None:
@@ -200,6 +264,11 @@ class GeometryNode(Node):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if not isinstance(node, PartNode):
             return super().remove_child(node)
         self.parts.remove(node)
@@ -211,17 +280,42 @@ class GeometryNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize GeometryNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.parts: list[PartNode] = []
         super().__init__(kind=kind, name=name, children=children)
 
     # --------------------------------------------------------------- Parts
     def add_part(self, part: PartNode, index: int | None = None) -> PartNode:
-        """Attach one Part definition and return it."""
+        """Attach one Part definition and return it.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            PartNode: Attach one Part definition and return it.
+        """
         self.add_child(part, index)
         return part
 
     def owner(self, surface: SurfaceNode) -> BoundaryPartNode | None:
-        """Part holding ``surface`` (``None`` when it is detached)."""
+        """Part holding ``surface`` (``None`` when it is detached).
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            BoundaryPartNode | None: Part holding ``surface`` (``None`` when it is detached).
+        """
         from .parts import BoundaryPartNode
 
         return next(
@@ -235,7 +329,11 @@ class GeometryNode(Node):
 
     # ------------------------------------------------------------- surfaces
     def surfaces(self) -> list[SurfaceNode]:
-        """All boundary surfaces of every Part, in the canonical order."""
+        """All boundary surfaces of every Part, in the canonical order.
+
+        Returns:
+            list[SurfaceNode]: All boundary surfaces of every Part, in the canonical order.
+        """
         from .parts import BoundaryPartNode
 
         return [
@@ -246,6 +344,11 @@ class GeometryNode(Node):
         ]
 
     def surface_count(self) -> int:
+        """Return surface count.
+
+        Returns:
+            int: Surface count.
+        """
         return len(self.surfaces())
 
 
@@ -284,6 +387,16 @@ class InstanceNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize InstanceNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         self.translation = self._vector3(data.get("translation"), "translation")
@@ -305,7 +418,11 @@ class InstanceNode(Node):
 
     @property
     def pose(self) -> list[float]:
-        """Return TorchFEA's six-component translation/rotation pose."""
+        """Return TorchFEA's six-component translation/rotation pose.
+
+        Returns:
+            list[float]: TorchFEA's six-component translation/rotation pose.
+        """
         if isinstance(self.translation, str) or isinstance(self.rotation, str):
             raise ValueError(
                 localized_message(
@@ -326,9 +443,23 @@ class LoadsNode(Node):
 
     @property
     def children(self) -> tuple[FEAComponentNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[FEAComponentNode, ...]: Children.
+        """
         return tuple(self.components)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, FEAComponentNode):
             return super().add_child(node, index)
         if index is None:
@@ -338,6 +469,11 @@ class LoadsNode(Node):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if not isinstance(node, FEAComponentNode):
             return super().remove_child(node)
         self.components.remove(node)
@@ -349,13 +485,32 @@ class LoadsNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize LoadsNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.components: list[FEAComponentNode] = []
         super().__init__(kind=kind, name=name, params=params, children=children)
 
     def add_component(
         self, component: FEAComponentNode, index: int | None = None
     ) -> FEAComponentNode:
-        """Attach an FEA component and return it."""
+        """Attach an FEA component and return it.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            FEAComponentNode: Attach an FEA component and return it.
+        """
         self.add_child(component, index)
         return component
 
@@ -375,6 +530,16 @@ class StepsNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize StepsNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         self.generated_by: dict[str, str] = dict(data.get("generated_by", {}))
@@ -385,9 +550,19 @@ class StepsNode(Node):
 
     @property
     def num_steps(self) -> int:
+        """Return num steps.
+
+        Returns:
+            int: Num steps.
+        """
         return len(self.step_values)
 
     def field_items(self) -> Iterator[tuple[str, object]]:
+        """Return field items.
+
+        Returns:
+            Iterator[tuple[str, object]]: Field items.
+        """
         yield "generated_by", dict(self.generated_by)
         yield (
             "step_values",
@@ -412,6 +587,13 @@ class LoadCaseNode(Node):
     backend_class = "LoadCase"
 
     def __init__(self, problem: ProblemDefinition, name: str) -> None:
+        """Initialize LoadCaseNode and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            name (str): Name identifying the item in its owning collection.
+        """
         self.problem = problem
         self.steps = problem.steps
         self.values = self.steps.step_values[name]
@@ -419,6 +601,11 @@ class LoadCaseNode(Node):
 
     @property
     def name(self) -> str:
+        """Return the registered component name.
+
+        Returns:
+            str: The registered component name.
+        """
         return next(
             (name for name, values in self.steps.step_values.items() if values is self.values),
             self._name,
@@ -426,6 +613,11 @@ class LoadCaseNode(Node):
 
     @name.setter
     def name(self, value: str) -> None:
+        """Set the registered component name.
+
+        Args:
+            value (str): New registered component name.
+        """
         self._name = value
 
     def __hash__(self) -> int:
@@ -435,12 +627,26 @@ class LoadCaseNode(Node):
         return isinstance(other, LoadCaseNode) and self.steps is other.steps and self.values is other.values
 
     def parameters(self) -> dict[str, tuple[FEAComponentNode, FieldSpec]]:
+        """Return parameters.
+
+        Returns:
+            dict[str, tuple[FEAComponentNode, FieldSpec]]: Parameters.
+        """
         return {
             f"{load.name}.{field.key}": (load, field)
             for load in self.problem.amplitude_components() for field in load.value_fields
         }
 
     def get_field(self, key: str, default: object = None) -> object:
+        """Get field.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            default (object): Value used when no explicit value is supplied.
+
+        Returns:
+            object: Field.
+        """
         parameter = self.parameters().get(key)
         if parameter is None:
             return super().get_field(key, default)
@@ -450,6 +656,12 @@ class LoadCaseNode(Node):
         return values[index] if index < len(values) else field.new_default()
 
     def set_field(self, key: str, value: object) -> None:
+        """Set field.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            value (object): Value assigned to or evaluated for the selected field.
+        """
         load, field = self.parameters()[key]
         values = [
             self.get_field(f"{load.name}.{entry.key}") for entry in load.value_fields
@@ -469,9 +681,23 @@ class MaterialsNode(Node):
 
     @property
     def children(self) -> tuple[MaterialNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[MaterialNode, ...]: Children.
+        """
         return tuple(self.assignments)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, MaterialNode):
             return super().add_child(node, index)
         if index is None:
@@ -481,6 +707,11 @@ class MaterialsNode(Node):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if not isinstance(node, MaterialNode):
             return super().remove_child(node)
         self.assignments.remove(node)
@@ -492,12 +723,32 @@ class MaterialsNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize MaterialsNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.assignments: list[MaterialNode] = []
         super().__init__(kind=kind, name=name, params=params, children=children)
 
     def add_material(
         self, material: MaterialNode, index: int | None = None
     ) -> MaterialNode:
+        """Add material.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            MaterialNode: Add material.
+        """
         self.add_child(material, index=index)
         return material
 
@@ -521,6 +772,16 @@ class ObjectiveNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize ObjectiveNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         self.objective_terms: list[dict[str, Any]] = [
@@ -534,7 +795,11 @@ class ObjectiveNode(Node):
         )
 
     def field_items(self) -> Iterator[tuple[str, object]]:
-        """Serialize objective, metric, and Jacobian selections."""
+        """Serialize objective, metric, and Jacobian selections.
+
+        Returns:
+            Iterator[tuple[str, object]]: Serialize objective, metric, and Jacobian selections.
+        """
         yield "objective_terms", self.objective_terms
         yield "metrics_terms", self.metrics_terms
         yield (
@@ -588,6 +853,16 @@ class SolverNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize SolverNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         # ---- explicit typed parameters ----------------------------------
@@ -612,7 +887,11 @@ class SolverNode(Node):
         self.task_step_list: list = list(data.get("task_step_list") or [])
 
     def resize_process_devices(self, count: int) -> None:
-        """Keep one device entry per process, defaulting added entries to CPU."""
+        """Keep one device entry per process, defaulting added entries to CPU.
+
+        Args:
+            count (int): Number of repeated objects or records requested.
+        """
         count = max(0, count)
         self.process_devices = (self.process_devices + ["cpu"] * count)[:count]
 
@@ -638,6 +917,16 @@ class UpdaterNode(Node):
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize UpdaterNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         data = dict(params or {})
         self.geometry: list[dict] = list(data.get("geometry") or [])
@@ -650,7 +939,12 @@ class UpdaterNode(Node):
             )
 
     def field_items(self) -> Iterator[tuple[str, object]]:
-        """Serialize object targets without retaining name references in memory."""
+        """Serialize object targets without retaining name references in memory.
+
+        Returns:
+            Iterator[tuple[str, object]]: Serialize object targets without retaining name references
+                in memory.
+        """
         yield (
             "geometry",
             [self._serialize_config(config, "part_name") for config in self.geometry],
@@ -674,7 +968,15 @@ class UpdaterNode(Node):
         return data
 
     def add_geometry_config(self, config: dict | None = None) -> dict:
-        """Append one geometry sub-updater config and return it."""
+        """Append one geometry sub-updater config and return it.
+
+        Args:
+            config (dict | None): Configuration dictionary for the selected model or updater
+                interface.
+
+        Returns:
+            dict: Append one geometry sub-updater config and return it.
+        """
         from ..configuration import geometry_updater_config
 
         config = config if config is not None else geometry_updater_config()
@@ -682,7 +984,15 @@ class UpdaterNode(Node):
         return config
 
     def add_materials_config(self, config: dict | None = None) -> dict:
-        """Append one material sub-updater config and return it."""
+        """Append one material sub-updater config and return it.
+
+        Args:
+            config (dict | None): Configuration dictionary for the selected model or updater
+                interface.
+
+        Returns:
+            dict: Append one material sub-updater config and return it.
+        """
         from ..configuration import materials_updater_config
 
         config = config if config is not None else materials_updater_config()

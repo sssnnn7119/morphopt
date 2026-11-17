@@ -86,6 +86,17 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         part_name: str | None = None,
         exterior_surface: str | None = "surface_0_All",
     ) -> None:
+        """Initialize BoundaryPart and its configuration state.
+
+        Args:
+            fea_seed_size (float): Target finite-element edge length, independent of surface
+                control-point sampling.
+            mesh_order (int): Finite-element interpolation order: 1 for linear, 2 for quadratic
+                elements.
+            part_name (str | None): Registered Part name referenced by instances, loads, or material
+                assignments.
+            exterior_surface (str | None): Name assigned to the Part's exterior surface selection.
+        """
         super().__init__(
             mesh_size=fea_seed_size,
             mesh_order=mesh_order,
@@ -104,18 +115,23 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     def define_surfaces(self) -> None:
         """Register this Part's boundary surfaces.
 
-        Override and call :meth:`add_surface_interface` once per surface, in
-        the order the surfaces should be indexed (``0`` = outer boundary,
-        ``1..n`` = cavities).  It is called once by this Part's
-        :meth:`initialize` method.  The surface factories (``BSP`` / ``CPGEO``
-        / ...) come with this class.
+        Override and call :meth:`add_surface_interface` once per surface, in the order the surfaces
+        should be indexed (``0`` = outer boundary, ``1..n`` = cavities).  It is called once by this
+        Part's :meth:`initialize` method.  The surface factories (``BSP`` / ``CPGEO`` / ...) come
+        with this class.
         """
 
     def add_surface_interface(self, surface: BaseSurface) -> BoundaryPart:
         """Register one boundary surface and return ``self`` (chainable).
 
-        Call this from :meth:`define_surfaces`; for surfaces that only exist at
-        runtime (the UI rebuilding a model) it may be called directly.
+        Call this from :meth:`define_surfaces`; for surfaces that only exist at runtime (the UI
+        rebuilding a model) it may be called directly.
+
+        Args:
+            surface (BaseSurface): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            BoundaryPart: Register one boundary surface and return ``self`` (chainable).
         """
         surface._flip = bool(self.surfaceinterfaces)
         self.surfaceinterfaces.append(surface)
@@ -123,20 +139,40 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         return self
 
     def surface_interfaces(self) -> list[BaseSurface]:
-        """Return the boundary surfaces in registration order."""
+        """Return the boundary surfaces in registration order.
+
+        Returns:
+            list[BaseSurface]: The boundary surfaces in registration order.
+        """
         return self.surfaceinterfaces
 
     @property
     def num_surface_interfaces(self) -> int:
+        """Count registered outer and cavity boundary surfaces.
+
+        Returns:
+            int: Number of surface interfaces in registration order.
+        """
         return len(self.surfaceinterfaces)
 
     def surface_interface(self, index: int) -> BaseSurface:
-        """One boundary surface by index."""
+        """One boundary surface by index.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+
+        Returns:
+            BaseSurface: One boundary surface by index.
+        """
         return self.surfaceinterfaces[index]
 
     @property
     def surface_set_names(self) -> tuple[str, ...]:
-        """Names known from geometry; no FE mesh or element indices are cached."""
+        """Names known from geometry; no FE mesh or element indices are cached.
+
+        Returns:
+            tuple[str, ...]: Names known from geometry; no FE mesh or element indices are cached.
+        """
         names = ["extern", self.exterior_surface or "extern"]
         names.extend(self._face_names.values())
         for index, surface in enumerate(self.surfaceinterfaces):
@@ -152,7 +188,11 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
 
     @property
     def node_set_names(self) -> tuple[str, ...]:
-        """Describe geometric selections; their node indices depend on the mesh."""
+        """Describe geometric selections; their node indices depend on the mesh.
+
+        Returns:
+            tuple[str, ...]: Describe geometric selections; their node indices depend on the mesh.
+        """
         names = ["all", "surface_all"]
         names.extend(f"{name}_nodes" for name in self._face_names.values())
         for index, surface in enumerate(self.surfaceinterfaces):
@@ -179,12 +219,21 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
 
     @property
     def num_variables(self) -> int:
-        """Total number of scalar design variables of all surfaces."""
+        """Total number of scalar design variables of all surfaces.
+
+        Returns:
+            int: Number of scalar coordinates in this interface's active design vector.
+        """
         return sum(surface.num_variables for surface in self.surfaceinterfaces)
 
     # -------------------------------------------------------------- lifecycle
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Declare and initialize every boundary surface once."""
+        """Declare and initialize every boundary surface once.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
         if not self._surfaces_defined:
             self.define_surfaces()
@@ -196,7 +245,13 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         self._apply_surface_constraints()
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
-        """Re-initialize every boundary surface (reconstruction / refinement)."""
+        """Re-initialize every boundary surface (reconstruction / refinement).
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         for index, surface in enumerate(self.surfaceinterfaces):
             surface._flip = index != 0
             surface.reinitialize(iteration, *args, **kwargs)
@@ -204,10 +259,12 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         self._apply_surface_constraints()
 
     def _reinitialize_constraints(self) -> None:
+        """Reinitialize constraints."""
         for surface in self.surfaceinterfaces:
             surface.reinitialize_constraints()
 
     def _apply_surface_constraints(self) -> None:
+        """Apply surface constraints."""
         for surface in self.surfaceinterfaces:
             surface.apply_constraints()
         self.apply_surface_constraints()
@@ -218,11 +275,20 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     # ---------------------------------------------------------------- meshing
     @property
     def fea_seed_size(self) -> float:
-        """Boundary terminology for the shared CADPart mesh size."""
+        """Boundary terminology for the shared CADPart mesh size.
+
+        Returns:
+            float: Boundary terminology for the shared CADPart mesh size.
+        """
         return self.mesh_size
 
     @fea_seed_size.setter
     def fea_seed_size(self, value: float) -> None:
+        """Set the target finite-element edge length in model length units.
+
+        Args:
+            value (float): New target finite-element edge length in model length units.
+        """
         self.mesh_size = float(value)
 
     def prepare_geometry(
@@ -230,7 +296,16 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         path_result: str | None = None,
         pools: Pool | None = None,
     ) -> list[BaseSurface]:
-        """Provide closed CAD shells or exported parametric/discrete boundaries."""
+        """Provide closed CAD shells or exported parametric/discrete boundaries.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            list[BaseSurface]: Geometry description consumed by the Part's assembly stage.
+        """
         self._face_names.clear()
         directory = self.workdir(path_result)
         for index, surface in enumerate(self.surfaceinterfaces):
@@ -243,7 +318,15 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         return list(self.surfaceinterfaces)
 
     def assemble_geometry(self, geometry: list[BaseSurface]) -> CADHistory:
-        """Declare this Part's exterior/cavity assembly operation."""
+        """Declare this Part's exterior/cavity assembly operation.
+
+        Args:
+            geometry (list[BaseSurface]): Geometry description or geometry collection processed by
+                this interface.
+
+        Returns:
+            CADHistory: CAD history describing the final volume to mesh.
+        """
         self._surface_groups.clear()
         action = partial(self._assemble_surfaces, surfaces=geometry)
         return CADHistory(
@@ -258,7 +341,18 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         *,
         surfaces: list[BaseSurface],
     ) -> list[tuple[int, int]]:
-        """Load closed boundaries and assemble one volume with optional cavities."""
+        """Load closed boundaries and assemble one volume with optional cavities.
+
+        Args:
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+            surfaces (list[BaseSurface]): Surface interfaces in boundary registration order:
+                exterior first, followed by cavities.
+
+        Returns:
+            list[tuple[int, int]]: Gmsh dimension/tag pairs identifying the assembled volume after
+                cavity construction.
+        """
         if not surfaces:
             raise ValueError("A BoundaryPart requires an exterior surface.")
         groups = [surface.load_geometry(self, context) for surface in surfaces]
@@ -293,7 +387,11 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         return [(3, volume)]
 
     def define_mesh_sets(self, part: torchfea.Part) -> None:
-        """Extend geometric face sets with this Part's closed-surface groups."""
+        """Extend geometric face sets with this Part's closed-surface groups.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+        """
         super().define_mesh_sets(part)
         for name, tags in self._surface_groups.items():
             sides = defaultdict(list)
@@ -316,7 +414,14 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         part.exterior_surface = exterior
 
     def postprocess_mesh(self, part: torchfea.Part) -> torchfea.Part:
-        """Map designable boundary nodes before element and order processing."""
+        """Map designable boundary nodes before element and order processing.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Map designable boundary nodes before element and order processing.
+        """
         nodes = part.nodes.detach().cpu().numpy()
         outer_nodes = part.set_nodes["surface_0_All"]
         for name, indices in (
@@ -340,7 +445,12 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         return part
 
     def export_data(self, dirpath: str, pools: Pool | None = None) -> None:
-        """Export every surface to ``__surface-<index>.stp|stl``."""
+        """Export every surface to ``__surface-<index>.stp|stl``.
+
+        Args:
+            dirpath (str): Directory receiving the exported geometry files.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+        """
         os.makedirs(dirpath, exist_ok=True)
         for index, surface in enumerate(self.surfaceinterfaces):
             surface.output_data(
@@ -351,14 +461,23 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
 
     # -------------------------------------------------------- design variables
     def get_parameters(self) -> list[torch.Tensor]:
-        """Control points of every surface, in surface order."""
+        """Control points of every surface, in surface order.
+
+        Returns:
+            list[torch.Tensor]: Parameter tensors in the interface's design-variable block order.
+        """
         return [
             surface.get_surface_parameters().flatten().detach().clone()
             for surface in self.surfaceinterfaces
         ]
 
     def set_parameters(self, values: list[torch.Tensor]) -> None:
-        """Restore the control points of every surface."""
+        """Restore the control points of every surface.
+
+        Args:
+            values (list[torch.Tensor]): Values aligned with the parameters or records processed by
+                this interface.
+        """
         if len(values) != self.num_surface_interfaces:
             raise ValueError("Surface parameter list does not match surfaces.")
         for surface, value in zip(self.surfaceinterfaces, values):
@@ -372,8 +491,14 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     ) -> None:
         """Apply the updater's per-control-point limits through ``atan``.
 
-        The updater supplies one step-length tensor per surface and owns its
-        initialization, resizing and adaptation.
+        The updater supplies one step-length tensor per surface and owns its initialization,
+        resizing and adaptation.
+
+        Args:
+            x_change (torch.Tensor): Design-variable increment in this interface's flattened
+                parameter order.
+            max_step_length (list[torch.Tensor]): Updater-owned movement limits in the target's
+                parameter-block order.
         """
         x_change = x_change.reshape(-1)
         start = 0
@@ -404,7 +529,13 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     def get_geometry_values(
         self,
     ) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
-        """``(r, rdu, rdu2)`` evaluated on every surface."""
+        """``(r, rdu, rdu2)`` evaluated on every surface.
+
+        Returns:
+            tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]: Per-surface positions
+                (n_i, 3), first derivatives (n_i, 3, 2), and second derivatives (n_i, 3, 2, 2), in
+                surface registration order.
+        """
         values = [surface.get_geometry_values() for surface in self.surfaceinterfaces]
         return (
             [value[0] for value in values],
@@ -413,7 +544,11 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         )
 
     def get_control_points_list(self) -> list[torch.Tensor]:
-        """Detached control points of every surface."""
+        """Detached control points of every surface.
+
+        Returns:
+            list[torch.Tensor]: Detached control points of every surface.
+        """
         return [
             surface.control_points.detach().clone()
             if surface.num_variables
@@ -422,14 +557,26 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         ]
 
     def get_points_weight(self) -> list[torch.Tensor]:
-        """Integration weights of every surface."""
+        """Integration weights of every surface.
+
+        Returns:
+            list[torch.Tensor]: Area integration weights aligned with the surface sampling points.
+        """
         return [surface.get_points_weight() for surface in self.surfaceinterfaces]
 
     # ----------------------------------------------------- adjoint sensitivity
     def obtain_design_sensitivity_vars(
         self, assembly: torchfea.Assembly
     ) -> torch.Tensor:
-        """Concatenate the control points of every surface."""
+        """Concatenate the control points of every surface.
+
+        Args:
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+
+        Returns:
+            torch.Tensor: Concatenate the control points of every surface.
+        """
         values = [
             surface.get_surface_parameters().flatten()
             for surface in self.surfaceinterfaces
@@ -440,7 +587,14 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
     def modify_assembly(
         self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly
     ) -> None:
-        """Map the design variables onto the mesh nodes of this Part."""
+        """Map the design variables onto the mesh nodes of this Part.
+
+        Args:
+            design_sensitivity_vars (torch.Tensor): Differentiable design-variable tensor used to
+                modify the assembly.
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+        """
         part = assembly.get_part(self.part_name)
         nodes_new = part.nodes.clone()
 
@@ -475,7 +629,12 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
 
     # ---------------------------------------------------------------- io/plot
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save every designable surface under this Part's geometry folder."""
+        """Save every designable surface under this Part's geometry folder.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         dirpath = self.save_directory(foldpath, self.name or "geometry")
         for index, surface in enumerate(self.surfaceinterfaces):
             if not surface.num_variables:
@@ -485,7 +644,12 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             )
 
     def load(self, foldpath: str, iteration: int) -> None:
-        """Load every designable surface saved for this Part."""
+        """Load every designable surface saved for this Part.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         dirpath = self.save_directory(foldpath, self.name or "geometry")
         for index, surface in enumerate(self.surfaceinterfaces):
             if not surface.num_variables:
@@ -498,12 +662,23 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                 surface.load(path)
 
     def get_meshes(self) -> list[pv.PolyData]:
-        """Visualisation mesh of every surface."""
+        """Visualisation mesh of every surface.
+
+        Returns:
+            list[pv.PolyData]: Visualization meshes in component registration order.
+        """
         return [surface.get_mesh() for surface in self.surfaceinterfaces]
 
     @staticmethod
     def _default_opacity(index: int) -> float:
-        """Default surface opacity: the outer boundary is semi-transparent."""
+        """Default surface opacity: the outer boundary is semi-transparent.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+
+        Returns:
+            float: Default surface opacity: the outer boundary is semi-transparent.
+        """
         return (
             CONSTANT.KERNEL.VISUALIZATION.BOUNDARY_OUTER_SURFACE_OPACITY
             if index == 0
@@ -516,7 +691,20 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         meshes: Sequence[pv.DataSet] | None = None,
         opacity: list[float] | None = None,
     ) -> pv.Plotter:
-        """Plot every boundary surface of this Part."""
+        """Plot every boundary surface of this Part.
+
+        Args:
+            plotter (pv.Plotter | None): PyVista plotter receiving the scene; None creates a new
+                plotter.
+            meshes (Sequence[pv.DataSet] | None): Optional precomputed visualization meshes; None
+                obtains meshes from the model.
+            opacity (list[float] | None): Surface opacities in boundary registration order; None
+                uses the visualization defaults.
+
+        Returns:
+            pv.Plotter: Plotter populated with the Part's boundary surfaces and optional control
+                nets.
+        """
         if plotter is None:
             plotter = pv.Plotter()
         if opacity is None:

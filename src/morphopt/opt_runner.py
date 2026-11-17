@@ -11,7 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 def _main_script(path_result: str | None) -> str:
-    """Locate the initial task or the archived script of a resumed run."""
+    """Locate the initial task or the archived script of a resumed run.
+
+    Args:
+        path_result (str | None): Optimization result directory containing scripts and log
+            subdirectories.
+
+    Returns:
+        str: Locate the initial task or the archived script of a resumed run.
+    """
     if path_result is None:
         import __main__
 
@@ -27,8 +35,17 @@ def start_optimization(
 ) -> None:
     """Run optimization in spawned processes and resume each completed segment.
 
-    ``path_result`` selects an existing run; otherwise the task in ``__main__``
-    starts a new run. ``target_iteration=None`` resumes its latest checkpoint.
+    ``path_result`` selects an existing run; otherwise the task in ``__main__`` starts a new
+    run. ``target_iteration=None`` resumes its latest checkpoint.
+
+    Args:
+        device (str): PyTorch device used for tensor operations; None retains the owning
+            controller's device when supported.
+        restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+        path_result (str | None): Optimization result directory containing scripts and log
+            subdirectories.
+        target_iteration (int | None): Completed iteration to restore; None selects the latest
+            saved iteration.
     """
     mp.set_start_method("spawn", force=True)
     process = mp.Process(
@@ -55,7 +72,17 @@ def debug_optimization(
     path_result: str | None = None,
     target_iteration: int | None = None,
 ) -> None:
-    """Run the task in the current process with serial, debugger-friendly FEA."""
+    """Run the task in the current process with serial, debugger-friendly FEA.
+
+    Args:
+        device (str): PyTorch device used for tensor operations; None retains the owning
+            controller's device when supported.
+        restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+        path_result (str | None): Optimization result directory containing scripts and log
+            subdirectories.
+        target_iteration (int | None): Completed iteration to restore; None selects the latest
+            saved iteration.
+    """
     mp.set_start_method("spawn", force=True)
     _run_worker(
         device=device,
@@ -74,7 +101,19 @@ def _run_task(
     target_iteration: int | None = None,
     restart_per_iteration: int = 20,
 ) -> None:
-    """Continue worker segments from the latest completed checkpoint."""
+    """Continue worker segments from the latest completed checkpoint.
+
+    Args:
+        path_result (str | None): Optimization result directory containing scripts and log
+            subdirectories.
+        main_filepath (str): Task script archived with the run; None resolves the current main
+            module.
+        device (str): PyTorch device used for tensor operations; None retains the owning
+            controller's device when supported.
+        target_iteration (int | None): Completed iteration to restore; None selects the latest
+            saved iteration.
+        restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+    """
     import warnings
     from queue import Empty
 
@@ -137,7 +176,25 @@ def _run_worker(
     pathqueue: Queue | None = None,
     debug: bool = False,
 ) -> str:
-    """Load one task and run a new or restored controller in this process."""
+    """Load one task and run a new or restored controller in this process.
+
+    Args:
+        main_filepath (str): Task script archived with the run; None resolves the current main
+            module.
+        device (str): PyTorch device used for tensor operations; None retains the owning
+            controller's device when supported.
+        target_iteration (int | None): Completed iteration to restore; None selects the latest
+            saved iteration.
+        path_result (str | None): Optimization result directory containing scripts and log
+            subdirectories.
+        restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+        pathqueue (Queue | None): Optional queue receiving the created optimization-result
+            directory.
+        debug (bool): Enable diagnostic execution or geometry output when True.
+
+    Returns:
+        str: Result directory of the completed or paused optimization worker.
+    """
     os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
     import sys
     import warnings

@@ -32,13 +32,21 @@ class EditorKind(Enum):
 
 @dataclass(frozen=True)
 class EditorRoute:
+    """Describe the editor page and focus target associated with one model-tree selection."""
     kind: EditorKind
     node: Node | None = None
     focus: Node | None = None
 
 
 def route_editor(node: Node | None) -> EditorRoute:
-    """Select an editor without touching Qt or mutating the definition."""
+    """Select an editor without touching Qt or mutating the definition.
+
+    Args:
+        node (Node | None): Definition node being inspected or edited.
+
+    Returns:
+        EditorRoute: Select an editor without touching Qt or mutating the definition.
+    """
     if node is None:
         return EditorRoute(EditorKind.PROPERTIES)
     if node.kind == "problem":
@@ -85,7 +93,17 @@ def route_editor(node: Node | None) -> EditorRoute:
 def managed_nodes(
     problem: ProblemDefinition | None, mode: str, focus: Node | None
 ) -> list[Node]:
-    """Return the items owned by a definition page, in model order."""
+    """Return the items owned by a definition page, in model order.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        mode (str): Operation mode selecting the applicable computation or visualization path.
+        focus (Node | None): Node or field to focus after synchronizing the editor.
+
+    Returns:
+        list[Node]: The items owned by a definition page, in model order.
+    """
     from ..model.problem import (
         CADOperationNode,
         InstanceNode,

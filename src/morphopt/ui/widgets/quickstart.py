@@ -58,6 +58,12 @@ class ChamberLayersEditor(QWidget):
     changed = Signal()
 
     def __init__(self, layers, parent=None):
+        """Initialize ChamberLayersEditor and its configuration state.
+
+        Args:
+            layers: Axial chamber-layer declarations in registration order.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._loading = False
         layout = QVBoxLayout(self)
@@ -102,6 +108,11 @@ class ChamberLayersEditor(QWidget):
         self.set_layers(layers or [ChamberLayer()])
 
     def set_layers(self, layers):
+        """Set layers.
+
+        Args:
+            layers: Axial chamber-layer declarations in registration order.
+        """
         self._loading = True
         self.table.setRowCount(0)
         for layer in layers:
@@ -154,7 +165,11 @@ class ChamberLayersEditor(QWidget):
         )
 
     def set_total_length(self, length: float) -> None:
-        """Scale layer lengths together, retaining their relative proportions."""
+        """Scale layer lengths together, retaining their relative proportions.
+
+        Args:
+            length (float): Axial or geometric length in model length units.
+        """
         layers = self.layers()
         if not all(np.isfinite(layer.length) and layer.length > 0 for layer in layers):
             raise ValueError(
@@ -169,6 +184,7 @@ class ChamberLayersEditor(QWidget):
         self.changed.emit()
 
     def layers(self):
+        """Handle layers for ChamberLayersEditor."""
         layers = []
         try:
             for row in range(self.table.rowCount()):
@@ -272,6 +288,11 @@ class WorkspaceChannelSelector(QWidget):
     changed = Signal()
 
     def __init__(self, parent=None):
+        """Initialize WorkspaceChannelSelector and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._updating = False
         self._required = None
@@ -289,6 +310,13 @@ class WorkspaceChannelSelector(QWidget):
         layout.addWidget(self.list)
 
     def set_channels(self, members, required=None, selected=()):
+        """Set channels.
+
+        Args:
+            members: Names or indices included in the selection.
+            required: Whether a missing value constitutes a validation error.
+            selected: Selection retained or applied while the view is rebuilt.
+        """
         available = sorted(members)
         chosen = [channel for channel in selected if channel in members]
         context_changed = required != self._required or available != self._channels
@@ -329,6 +357,7 @@ class WorkspaceChannelSelector(QWidget):
         self._updating = False
 
     def selected_channels(self):
+        """Handle selected channels for WorkspaceChannelSelector."""
         return [
             self.list.item(index).data(Qt.ItemDataRole.UserRole)
             for index in range(self.list.count())
@@ -356,6 +385,11 @@ class ChannelPressureEditor(QWidget):
     changed = Signal()
 
     def __init__(self, parent=None):
+        """Initialize ChannelPressureEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.form = QFormLayout(self)
         self.form.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -363,6 +397,12 @@ class ChannelPressureEditor(QWidget):
         self._updating = False
 
     def set_channels(self, members, pressures):
+        """Set channels.
+
+        Args:
+            members: Names or indices included in the selection.
+            pressures: Initial actuator pressure values in the quick-start model's declared units.
+        """
         self._updating = True
         while self.form.rowCount():
             self.form.removeRow(0)
@@ -394,6 +434,7 @@ class ChannelPressureEditor(QWidget):
         self._updating = False
 
     def values(self):
+        """Handle values for ChannelPressureEditor."""
         return {channel: spin.value() for channel, spin in self.fields.items()}
 
     def _value_changed(self, *_):
@@ -407,6 +448,15 @@ class ObjectiveListEditor(QWidget):
     changed = Signal()
 
     def __init__(self, objectives, method, channel_members, parent=None):
+        """Initialize ObjectiveListEditor and its configuration state.
+
+        Args:
+            objectives: Configured physical objectives in evaluation order.
+            method: Quick-start model family selecting the available geometry and objective
+                templates.
+            channel_members: Existing load parameters grouped into independent workspace inputs.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.draft = ObjectiveDraft(objectives, method, channel_members)
         self._current_index = -1
@@ -688,6 +738,12 @@ class ObjectiveListEditor(QWidget):
         self.changed.emit()
 
     def set_method(self, method):
+        """Set method.
+
+        Args:
+            method: Quick-start model family selecting the available geometry and objective
+                templates.
+        """
         if method == self.draft.method:
             return
         self._save_current()
@@ -700,6 +756,11 @@ class ObjectiveListEditor(QWidget):
         self._load_current()
 
     def set_geometry_channels(self, members):
+        """Set geometry channels.
+
+        Args:
+            members: Names or indices included in the selection.
+        """
         members = {key: list(value) for key, value in members.items()}
         if members == self.draft.members:
             return
@@ -708,6 +769,7 @@ class ObjectiveListEditor(QWidget):
         self._load_current()
 
     def values(self):
+        """Handle values for ObjectiveListEditor."""
         self._save_current()
         return self.draft.values()
 
@@ -716,6 +778,11 @@ class InitialDesignPreview(QWidget):
     """Orthographic isometric rendering of initial meshes supplied by the kernel."""
 
     def __init__(self, parent=None):
+        """Initialize InitialDesignPreview and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setMinimumSize(
             *deepcopy(theme_manager.palette.quickstart_preview.minimum_size)
@@ -726,6 +793,11 @@ class InitialDesignPreview(QWidget):
         self.destroyed.connect(lambda *_args: unsubscribe())
 
     def set_options(self, options):
+        """Set options.
+
+        Args:
+            options: Options passed to the selected model, renderer, or export operation.
+        """
         self.options = options
         try:
             self.geometry = InitialDesignGeometry(options)
@@ -741,6 +813,11 @@ class InitialDesignPreview(QWidget):
             self.update()
 
     def paintEvent(self, event):
+        """Handle paint event for InitialDesignPreview.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(
@@ -826,7 +903,14 @@ class InitialDesignPreview(QWidget):
 
 
 class QuickstartDialog(QDialog):
+    """Construct a complete optimization definition from guided actuator or material settings."""
     def __init__(self, problem=None, parent=None):
+        """Initialize QuickstartDialog and its configuration state.
+
+        Args:
+            problem: Editable problem definition shared by the UI application services.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.widgets.quickstart.quickstart"))
         self.resize(*deepcopy(theme_manager.palette.layout.quickstart.dialog_size))
@@ -1101,12 +1185,6 @@ class QuickstartDialog(QDialog):
         field.setValue(value)
         self._row(form, key, label, field, group)
 
-    def _integer(self, form, key, label, value, minimum, maximum, group=None):
-        field = QSpinBox()
-        field.setRange(minimum, maximum)
-        field.setValue(value)
-        self._row(form, key, label, field, group)
-
     def _combo(self, form, key, label, choices, group=None):
         field = QComboBox()
         for value, caption in choices:
@@ -1121,6 +1199,7 @@ class QuickstartDialog(QDialog):
         self._row(form, key, label, QLineEdit(value))
 
     def options(self):
+        """Handle options for QuickstartDialog."""
         values = {}
         for key, widget in self.fields.items():
             if isinstance(widget, QComboBox):

@@ -261,7 +261,16 @@ NODE_FAMILIES = {
 
 
 def resolve_node_type(kind: str, params: dict) -> type[Node]:
-    """Resolve a persisted kind and, for polymorphic nodes, its concrete type."""
+    """Resolve a persisted kind and, for polymorphic nodes, its concrete type.
+
+    Args:
+        kind (str): Registered category or provider identifier used to dispatch the operation.
+        params (dict): Editable parameter fields of this definition node or interface
+            configuration.
+
+    Returns:
+        type[Node]: Resolve a persisted kind and, for polymorphic nodes, its concrete type.
+    """
     if kind not in NODE_TYPES:
         raise ValueError(
             localized_message(
@@ -284,7 +293,11 @@ def resolve_node_type(kind: str, params: dict) -> type[Node]:
 
 
 def available_part_types() -> tuple[str, ...]:
-    """Part types offered directly in the add menus."""
+    """Part types offered directly in the add menus.
+
+    Returns:
+        tuple[str, ...]: Part types offered directly in the add menus.
+    """
     return tuple(
         name for name, spec in PART_TYPES.items()
         if not spec.hidden and not spec.custom_only
@@ -292,6 +305,14 @@ def available_part_types() -> tuple[str, ...]:
 
 
 def surface_factory_for_type(surface_type: str) -> str | None:
+    """Return surface factory for type.
+
+    Args:
+        surface_type (str): Registered boundary-surface implementation type.
+
+    Returns:
+        str | None: Surface factory for type.
+    """
     factory = SURFACE_TYPES[surface_type].factory
     return factory.split(".", 1)[0] if factory else None
 
@@ -299,6 +320,15 @@ def surface_factory_for_type(surface_type: str) -> str | None:
 def available_surface_symmetry_types(
     surface_types: Iterable[str],
 ) -> tuple[str, ...]:
+    """Return available surface symmetry types.
+
+    Args:
+        surface_types (Iterable[str]): Registered boundary-surface types allowed by this
+            interface.
+
+    Returns:
+        tuple[str, ...]: Available surface symmetry types.
+    """
     counts: dict[str, int] = {}
     for surface_type in surface_types:
         factory = surface_factory_for_type(surface_type)

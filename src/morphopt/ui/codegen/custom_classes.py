@@ -29,6 +29,7 @@ from ..model.registry import (
 
 @dataclass(frozen=True)
 class MethodSpec:
+    """Describe an overridable method, including its source and owning framework class."""
     name: str
     signature: str
     body: str
@@ -38,11 +39,17 @@ class MethodSpec:
 
     @property
     def header(self) -> str:
+        """Return header.
+
+        Returns:
+            str: Header.
+        """
         return f"{'async ' if self.asynchronous else ''}def {self.name}{self.signature}:"
 
 
 @dataclass
 class ClassSpec:
+    """Describe a generated or framework class that can be selected as a custom-class target."""
     path: str
     base_expression: str
     definition: ast.ClassDef
@@ -118,6 +125,17 @@ def _backend_methods(backend: type, expression: str) -> dict[str, MethodSpec]:
 
 
 def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict[str, ClassSpec]:
+    """Return class catalog.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        source (str | None): Source object, path, or metadata from which the operation reads its
+            input.
+
+    Returns:
+        dict[str, ClassSpec]: Class catalog.
+    """
     if source is None:
         from .generator import generate_base_source
 
@@ -166,12 +184,26 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
 
 
 def validate_class_name(name: str) -> None:
+    """Validate class name.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+    """
     if not name.isidentifier() or keyword.iskeyword(name) or name.startswith("__"):
         raise ValueError(localized_message("ui.errors.custom_classes.invalid_python_class_name"))
 
 
 def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[str, ClassSpec]:
-    """Framework parents for reusable top-level custom classes."""
+    """Framework parents for reusable top-level custom classes.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        targets: Framework target classes available for compatible custom overrides.
+
+    Returns:
+        dict[str, ClassSpec]: Framework parents for reusable top-level custom classes.
+    """
     parents = {}
     for target in (targets if targets is not None else class_catalog(problem)).values():
         expression = target.base_expression
@@ -217,6 +249,13 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
 
 
 def updater_item_base(item_type, category, group=None):
+    """Handle updater item base for .
+
+    Args:
+        item_type: Registered interface type used to create a new collection item.
+        category: Interface or asset category used to select compatible editors or renderers.
+        group: Named group containing the related interfaces or task configuration.
+    """
     if item_type == "Custom" and group is not None:
         updater = "morphopt.UpdaterBoundaryPart" if group == "geometry" else "morphopt.UpdaterSIMPMaterial"
         return updater + ".objectivefuncs." + ("BaseObjective" if category == "objectives" else "BaseConstraints")
@@ -234,7 +273,12 @@ def updater_item_base(item_type, category, group=None):
 
 
 def custom_options(problem, candidates):
-    """(Schema type, custom class) choices for an Add menu."""
+    """(Schema type, custom class) choices for an Add menu.
+
+    Args:
+        problem: Editable problem definition shared by the UI application services.
+        candidates: Compatible candidate interface or class names to inspect.
+    """
     parents = framework_class_catalog(problem)
     choices = []
     for item_type, expression in candidates.items():
@@ -249,6 +293,13 @@ def custom_options(problem, candidates):
 
 
 def validate_custom_name(name: str, catalog: dict[str, ClassSpec]) -> None:
+    """Validate custom name.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+        catalog (dict[str, ClassSpec]): Registered interface specifications used to validate or
+            construct entries.
+    """
     validate_class_name(name)
     reserved = {"os", "morphopt", "Any", "ThisController"}
     for spec in catalog.values():
@@ -262,7 +313,11 @@ def validate_custom_name(name: str, catalog: dict[str, ClassSpec]) -> None:
 
 
 def class_path_for_node(node):
-    """Generated configuration class selected by a model-tree row."""
+    """Generated configuration class selected by a model-tree row.
+
+    Args:
+        node: Definition node being inspected or edited.
+    """
     if node is None:
         return None
     if node.kind in {"updater_geometry", "updater_materials"} and node.config() is not None:
@@ -271,16 +326,40 @@ def class_path_for_node(node):
 
 
 def updater_class_name(group: str, index: int) -> str:
-    """Generated class name for one independently configured sub-updater."""
+    """Generated class name for one independently configured sub-updater.
+
+    Args:
+        group (str): Named group containing the related interfaces or task configuration.
+        index (int): Zero-based position within the relevant collection.
+
+    Returns:
+        str: Generated class name for one independently configured sub-updater.
+    """
     base = {"geometry": "UpdaterBoundaryPart", "materials": "UpdaterSIMPMaterial"}[group]
     return base if index == 0 else f"{base}{index}"
 
 
 def updater_class_path(group: str, index: int) -> str:
+    """Return updater class path.
+
+    Args:
+        group (str): Named group containing the related interfaces or task configuration.
+        index (int): Zero-based position within the relevant collection.
+
+    Returns:
+        str: Updater class path.
+    """
     return f"ThisController.Updater.{updater_class_name(group, index)}"
 
 
 def compatible_custom_classes(problem, target, parents=None):
+    """Handle compatible custom classes for .
+
+    Args:
+        problem: Editable problem definition shared by the UI application services.
+        target: Target interface or selection receiving the operation.
+        parents: Parent-class catalog used to resolve framework inheritance.
+    """
     parents = parents if parents is not None else framework_class_catalog(problem)
     return [custom for custom in problem.custom_classes
             if custom.class_type == "override"
@@ -289,6 +368,16 @@ def compatible_custom_classes(problem, target, parents=None):
 
 
 def apply_custom_classes(problem: ProblemDefinition, source: str) -> str:
+    """Apply custom classes.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        source (str): Source object, path, or metadata from which the operation reads its input.
+
+    Returns:
+        str: Apply custom classes.
+    """
     targets = class_catalog(problem, source)
     parents = framework_class_catalog(problem, targets)
     definitions = []

@@ -71,16 +71,30 @@ from .case_deletion import confirm_case_cleanup
 
 
 class DefinitionActions(QObject):
+    """Translate definition-tree actions into application-service mutations and change
+    notifications.
+    """
     changed = Signal(object, str)
     selectionRequested = Signal(object)
 
     def __init__(self, parent=None):
+        """Initialize DefinitionActions and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._problem: ProblemDefinition | None = None
         self.commands: DefinitionCommands
         self._cad_conversion: QProcess | None = None
 
     def set_problem(self, problem: ProblemDefinition) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._problem = problem
         self.commands = DefinitionCommands(problem)
 
@@ -91,6 +105,11 @@ class DefinitionActions(QObject):
         self.changed.emit(node, operation)
 
     def add_custom_class(self, class_type: str = "override") -> None:
+        """Add custom class.
+
+        Args:
+            class_type (str): Framework or custom class selected for this declaration.
+        """
         if self._problem is None:
             return
         session = CustomClassSession(self._problem)
@@ -165,6 +184,12 @@ class DefinitionActions(QObject):
     def remove_custom_class(
         self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
     ) -> None:
+        """Remove custom class.
+
+        Args:
+            node (CustomClassNode | MethodOverrideNode | CustomFunctionNode): Definition node being
+                inspected or edited.
+        """
         if self._problem is None:
             return
         session = CustomClassSession(self._problem)
@@ -177,6 +202,14 @@ class DefinitionActions(QObject):
         self._emit_change(node, "deleted")
 
     def add_helper(self, kind: str) -> Node | None:
+        """Add helper.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Node | None: Add helper.
+        """
         if self._problem is None:
             return None
         node = self.commands.add_helper(kind)
@@ -185,6 +218,11 @@ class DefinitionActions(QObject):
         return node
 
     def remove_helper(self, node: Node) -> None:
+        """Remove helper.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if self._problem is None or node.kind not in {
             "helper_variable",
             "helper_function",
@@ -195,6 +233,12 @@ class DefinitionActions(QObject):
         self._emit_change(node, "deleted")
 
     def move_helper(self, node: Node, delta: int) -> None:
+        """Move helper.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or node.kind not in {
             "helper_variable",
             "helper_function",
@@ -205,7 +249,11 @@ class DefinitionActions(QObject):
             self._emit_change(node, "modified")
 
     def populate_updater_menu(self, menu: QMenu) -> None:
-        """List concrete targets, shared by tree and editor creation menus."""
+        """List concrete targets, shared by tree and editor creation menus.
+
+        Args:
+            menu (QMenu): Qt menu populated with the applicable actions.
+        """
         menu.clear()
         targets = (
             self.commands.available_optimizer_targets()
@@ -224,7 +272,11 @@ class DefinitionActions(QObject):
             action.setEnabled(False)
 
     def add_updater(self, target: PartNode | MaterialNode) -> None:
-        """Create an updater for the component the user explicitly selected."""
+        """Create an updater for the component the user explicitly selected.
+
+        Args:
+            target (PartNode | MaterialNode): Target interface or selection receiving the operation.
+        """
         if self._problem is None or self._problem.updater is None:
             return
         if target not in self.commands.available_optimizer_targets():
@@ -244,6 +296,11 @@ class DefinitionActions(QObject):
         self._emit_change(updater, "added")
 
     def remove_geometry_updater(self, node: Node) -> None:
+        """Remove geometry updater.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if self._problem is None or self._problem.updater is None:
             return
         index = node.config_index if isinstance(node, UpdaterTreeNode) else 0
@@ -253,6 +310,11 @@ class DefinitionActions(QObject):
         self._emit_change(node, "deleted")
 
     def remove_materials_updater(self, node: Node) -> None:
+        """Remove materials updater.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if self._problem is None or self._problem.updater is None:
             return
         index = node.config_index if isinstance(node, UpdaterTreeNode) else 0
@@ -264,6 +326,14 @@ class DefinitionActions(QObject):
     def add_updater_item(
         self, node: UpdaterTreeNode, item_type: str, category: str
     ) -> None:
+        """Add updater item.
+
+        Args:
+            node (UpdaterTreeNode): Definition node being inspected or edited.
+            item_type (str): Registered interface type used to create a new collection item.
+            category (str): Interface or asset category used to select compatible editors or
+                renderers.
+        """
         config = node.config()
         if config is not None:
             self.commands.add_updater_item(config, item_type, category)
@@ -275,6 +345,12 @@ class DefinitionActions(QObject):
             self._emit_change(item_node, "added")
 
     def add_symmetry_constraint(self, node: UpdaterTreeNode, item_type: str) -> None:
+        """Add symmetry constraint.
+
+        Args:
+            node (UpdaterTreeNode): Definition node being inspected or edited.
+            item_type (str): Registered interface type used to create a new collection item.
+        """
         config = node.config()
         if (
             self._problem is not None
@@ -294,6 +370,11 @@ class DefinitionActions(QObject):
             self._emit_change(item_node, "added")
 
     def remove_updater_item(self, node: UpdaterItemTreeNode) -> None:
+        """Remove updater item.
+
+        Args:
+            node (UpdaterItemTreeNode): Definition node being inspected or edited.
+        """
         config = node.config()
         if self._problem is None or config is None:
             return
@@ -306,6 +387,12 @@ class DefinitionActions(QObject):
         self._emit_change(node, "deleted")
 
     def move_updater_item(self, node: UpdaterItemTreeNode, offset: int) -> None:
+        """Move updater item.
+
+        Args:
+            node (UpdaterItemTreeNode): Definition node being inspected or edited.
+            offset (int): Signed plane or surface offset in model length units.
+        """
         config = node.config()
         if self._problem is None or config is None:
             return
@@ -316,6 +403,13 @@ class DefinitionActions(QObject):
             self._emit_change(node, "modified")
 
     def custom_add_menu(self, menu, candidates, add):
+        """Handle custom add menu for DefinitionActions.
+
+        Args:
+            menu: Qt menu populated with the applicable actions.
+            candidates: Compatible candidate interface or class names to inspect.
+            add: Callback or flag enabling construction of a collection item.
+        """
         sub = menu.addMenu(tr("ui.widgets.model_tree.custom_class"))
         options = custom_options(self._problem, candidates)
         shown = set()
@@ -338,6 +432,11 @@ class DefinitionActions(QObject):
             action.setEnabled(False)
 
     def set_objective_class(self, custom_class):
+        """Set objective class.
+
+        Args:
+            custom_class: Name of the compatible custom class selected for this interface.
+        """
         if self._problem is None or self._problem.objective is None:
             return
         self._problem.objective.custom_class = custom_class
@@ -346,6 +445,13 @@ class DefinitionActions(QObject):
         self._emit_change(self._problem.objective, "modified")
 
     def add_part(self, itype: str, custom_class: str = "") -> None:
+        """Add part.
+
+        Args:
+            itype (str): Registered interface-type name used to dispatch construction or field
+                choices.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+        """
         if self._problem is None:
             return
         if PART_TYPES[itype].custom_only and not custom_class:
@@ -355,6 +461,11 @@ class DefinitionActions(QObject):
         self._emit_change(node, "added")
 
     def copy_part(self, part: Node) -> None:
+        """Copy part.
+
+        Args:
+            part (Node): Part whose geometry, mesh, or named sets are processed.
+        """
         if self._problem is None or not isinstance(part, PartNode):
             return
         copy = self._problem.clone_part(part)
@@ -362,7 +473,11 @@ class DefinitionActions(QObject):
         self._emit_change(copy, "added")
 
     def convert_cad_to_boundary(self, part: CADPartNode) -> None:
-        """Convert a snapshot in a subprocess and commit one reversible edit."""
+        """Convert a snapshot in a subprocess and commit one reversible edit.
+
+        Args:
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+        """
         if self._problem is None or self._cad_conversion is not None:
             return
         title = tr("ui.cad.convert_to_boundary")
@@ -448,6 +563,11 @@ class DefinitionActions(QObject):
         start_worker(process, request)
 
     def remove_part(self, part: Node) -> None:
+        """Remove part.
+
+        Args:
+            part (Node): Part whose geometry, mesh, or named sets are processed.
+        """
         if self._problem is None or not isinstance(part, PartNode):
             return
         if not self._confirm_remove_bound_updaters(part, "geometry"):
@@ -502,6 +622,12 @@ class DefinitionActions(QObject):
         return reply == QMessageBox.StandardButton.Yes
 
     def move_part(self, part: Node, delta: int) -> None:
+        """Move part.
+
+        Args:
+            part (Node): Part whose geometry, mesh, or named sets are processed.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(part, PartNode):
             return
         if not self._problem.move_part(part, delta):
@@ -510,6 +636,12 @@ class DefinitionActions(QObject):
         self._emit_change(part, "modified")
 
     def move_cad_operation(self, operation: Node, delta: int) -> None:
+        """Move cad operation.
+
+        Args:
+            operation (Node): CAD history operation or application action being processed.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(operation, CADOperationNode):
             return
         if not self._problem.move_cad_operation(operation, delta):
@@ -518,6 +650,11 @@ class DefinitionActions(QObject):
         self._emit_change(operation, "modified")
 
     def add_instance(self, part: Node) -> None:
+        """Add instance.
+
+        Args:
+            part (Node): Part whose geometry, mesh, or named sets are processed.
+        """
         if self._problem is None or not isinstance(part, PartNode):
             return
         name = self._problem.suggest_instance_name(part)
@@ -527,6 +664,11 @@ class DefinitionActions(QObject):
         self._emit_change(instance, "added")
 
     def remove_instance(self, instance: Node) -> None:
+        """Remove instance.
+
+        Args:
+            instance (Node): Assembly instance whose placement and geometry are used.
+        """
         if self._problem is None or not isinstance(instance, InstanceNode):
             return
         owner = self._problem.owner_of_instance(instance)
@@ -537,6 +679,12 @@ class DefinitionActions(QObject):
         self._emit_change(instance, "deleted")
 
     def move_instance(self, instance: Node, delta: int) -> None:
+        """Move instance.
+
+        Args:
+            instance (Node): Assembly instance whose placement and geometry are used.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(instance, InstanceNode):
             return
         if not self._problem.move_instance(instance, delta):
@@ -545,7 +693,12 @@ class DefinitionActions(QObject):
         self._emit_change(instance, "modified")
 
     def add_cad_operation_group(self, group: str, owner: CADPartNode) -> None:
-        """Choose an operation type from a CAD feature group."""
+        """Choose an operation type from a CAD feature group.
+
+        Args:
+            group (str): Named group containing the related interfaces or task configuration.
+            owner (CADPartNode): Owning definition node or collection.
+        """
         if group == "import":
             self.add_cad_operation("StepImport", owner)
             return
@@ -578,6 +731,12 @@ class DefinitionActions(QObject):
         self.add_cad_operation(operation_type, owner)
 
     def add_cad_operation(self, operation_type: str, owner: Node) -> None:
+        """Add cad operation.
+
+        Args:
+            operation_type (str): Registered CAD feature type used to create the operation.
+            owner (Node): Owning definition node or collection.
+        """
         if self._problem is None or not isinstance(owner, CADPartNode):
             return
         spec = CAD_OPERATION_TYPES[operation_type]
@@ -671,6 +830,11 @@ class DefinitionActions(QObject):
         self._emit_change(operation, "added")
 
     def remove_cad_operation(self, operation: Node) -> None:
+        """Remove cad operation.
+
+        Args:
+            operation (Node): CAD history operation or application action being processed.
+        """
         if self._problem is None or not isinstance(operation, CADOperationNode):
             return
         owner = self._problem.owner_of_cad_operation(operation)
@@ -691,6 +855,13 @@ class DefinitionActions(QObject):
         owner: BoundaryPartNode | None = None,
         custom_class: str = "",
     ) -> None:
+        """Add surface.
+
+        Args:
+            stype (str): Registered boundary-surface implementation type.
+            owner (BoundaryPartNode | None): Owning definition node or collection.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+        """
         if self._problem is None:
             return
         owner = (
@@ -735,6 +906,11 @@ class DefinitionActions(QObject):
         self._emit_change(node, "added")
 
     def copy_surface(self, srf: Node) -> None:
+        """Copy surface.
+
+        Args:
+            srf (Node): Surface mesh used to extract the requested physical field.
+        """
         if self._problem is None or not isinstance(srf, SurfaceNode):
             return
         copy = self._problem.clone_surface(srf)
@@ -742,6 +918,11 @@ class DefinitionActions(QObject):
         self._emit_change(copy, "added")
 
     def remove_surface(self, srf: Node) -> None:
+        """Remove surface.
+
+        Args:
+            srf (Node): Surface mesh used to extract the requested physical field.
+        """
         if self._problem is None or not isinstance(srf, SurfaceNode):
             return
         owner = self._problem.owner_of_surface(srf)
@@ -765,6 +946,12 @@ class DefinitionActions(QObject):
         self._emit_change(srf, "deleted")
 
     def move_surface(self, srf: Node, delta: int) -> None:
+        """Move surface.
+
+        Args:
+            srf (Node): Surface mesh used to extract the requested physical field.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(srf, SurfaceNode):
             return
         if not self._problem.move_surface(srf, delta):
@@ -773,6 +960,13 @@ class DefinitionActions(QObject):
         self._emit_change(srf, "modified")
 
     def add_component(self, itype: str, custom_class: str = "") -> None:
+        """Add component.
+
+        Args:
+            itype (str): Registered interface-type name used to dispatch construction or field
+                choices.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+        """
         if self._problem is None:
             return
         node = self.commands.add_component(itype, custom_class)
@@ -780,6 +974,12 @@ class DefinitionActions(QObject):
         self._emit_change(node, "added")
 
     def add_material(self, material_type: str, custom_class: str = "") -> None:
+        """Add material.
+
+        Args:
+            material_type (str): Registered material-interface implementation type.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+        """
         if self._problem is None:
             return
         node = self.commands.add_material(material_type, custom_class)
@@ -787,6 +987,11 @@ class DefinitionActions(QObject):
         self._emit_change(node, "added")
 
     def copy_material(self, material: Node) -> None:
+        """Copy material.
+
+        Args:
+            material (Node): Material interface whose assignments or design variables are processed.
+        """
         if self._problem is None or not isinstance(material, MaterialNode):
             return
         copy = self._problem.clone_material(material)
@@ -794,6 +999,12 @@ class DefinitionActions(QObject):
         self._emit_change(copy, "added")
 
     def move_material(self, material: Node, delta: int) -> None:
+        """Move material.
+
+        Args:
+            material (Node): Material interface whose assignments or design variables are processed.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(material, MaterialNode):
             return
         if not self._problem.move_material(material, delta):
@@ -802,6 +1013,11 @@ class DefinitionActions(QObject):
         self._emit_change(material, "modified")
 
     def remove_material(self, material: Node) -> None:
+        """Remove material.
+
+        Args:
+            material (Node): Material interface whose assignments or design variables are processed.
+        """
         if self._problem is None or not isinstance(material, MaterialNode):
             return
         if not self._confirm_remove_bound_updaters(material, "materials"):
@@ -811,6 +1027,11 @@ class DefinitionActions(QObject):
         self._emit_change(material, "deleted")
 
     def copy_component(self, component: Node) -> None:
+        """Copy component.
+
+        Args:
+            component (Node): Model, result, or interface component processed by the operation.
+        """
         if self._problem is None or not isinstance(component, FEAComponentNode):
             return
         # a copied load is a new load: give it a fresh unique name so it does
@@ -821,6 +1042,12 @@ class DefinitionActions(QObject):
         self._emit_change(copy, "added")
 
     def move_component(self, component: Node, delta: int) -> None:
+        """Move component.
+
+        Args:
+            component (Node): Model, result, or interface component processed by the operation.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if self._problem is None or not isinstance(component, FEAComponentNode):
             return
         if not self._problem.move_component(component, delta):
@@ -829,6 +1056,11 @@ class DefinitionActions(QObject):
         self._emit_change(component, "modified")
 
     def remove_component(self, component: Node) -> None:
+        """Remove component.
+
+        Args:
+            component (Node): Model, result, or interface component processed by the operation.
+        """
         if self._problem is None or not isinstance(component, FEAComponentNode):
             return
         self._problem.remove_component(component)
@@ -836,6 +1068,7 @@ class DefinitionActions(QObject):
         self._emit_change(component, "deleted")
 
     def add_load_case(self) -> None:
+        """Add load case."""
         if self._problem is None or self._problem.steps is None:
             return
         name = LoadCaseSession(self._problem.steps, self._problem).add()
@@ -844,11 +1077,22 @@ class DefinitionActions(QObject):
         self._emit_change(node, "added")
 
     def move_load_case(self, node: LoadCaseNode, delta: int) -> None:
+        """Move load case.
+
+        Args:
+            node (LoadCaseNode): Definition node being inspected or edited.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+        """
         if LoadCaseSession(node.steps, self._problem).move(node.name, delta):
             self._select(node)
             self._emit_change(node, "modified")
 
     def remove_load_case(self, node: LoadCaseNode) -> None:
+        """Remove load case.
+
+        Args:
+            node (LoadCaseNode): Definition node being inspected or edited.
+        """
         name = node.name
         terms = case_objectives(self._problem, name)
         remove_terms = False

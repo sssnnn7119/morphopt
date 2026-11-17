@@ -14,6 +14,7 @@ class ParamsTreeNode(Node):
     """Navigation parent for the persisted geometry, loads and materials."""
 
     def __init__(self) -> None:
+        """Initialize ParamsTreeNode and its configuration state."""
         super().__init__(kind="params_class", name="Params")
 
 
@@ -21,6 +22,7 @@ class CustomClassesTreeNode(Node):
     """Root-level collection of reusable custom classes."""
 
     def __init__(self) -> None:
+        """Initialize CustomClassesTreeNode and its configuration state."""
         super().__init__(kind="custom_classes", name=container_title("custom_classes"))
 
 
@@ -28,6 +30,11 @@ class CustomClassGroupTreeNode(Node):
     """Transient collection for new classes or framework overrides."""
 
     def __init__(self, kind: str) -> None:
+        """Initialize CustomClassGroupTreeNode and its configuration state.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+        """
         super().__init__(kind=kind, name=container_title(kind))
 
 
@@ -35,6 +42,11 @@ class HelperGroupTreeNode(Node):
     """Navigation group for helper variables or functions."""
 
     def __init__(self, kind: str) -> None:
+        """Initialize HelperGroupTreeNode and its configuration state.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+        """
         super().__init__(kind=kind, name=container_title(kind))
 
 
@@ -42,6 +54,7 @@ class HelperCodeBlockTreeNode(Node):
     """Navigation entry for the one free-form module code block."""
 
     def __init__(self) -> None:
+        """Initialize HelperCodeBlockTreeNode and its configuration state."""
         super().__init__(kind="helper_code_block", name=container_title("helper_code_block"))
 
 
@@ -49,6 +62,7 @@ class HelperCodeTreeNode(Node):
     """Root collection for free code, helper variables and functions."""
 
     def __init__(self) -> None:
+        """Initialize HelperCodeTreeNode and its configuration state."""
         super().__init__(kind="helper_code", name=container_title("helper_code"))
 
 
@@ -56,6 +70,7 @@ class LoadsTreeNode(Node):
     """Transient parent for load definitions and load-step cases."""
 
     def __init__(self) -> None:
+        """Initialize LoadsTreeNode and its configuration state."""
         super().__init__(kind="loads_group", name=tr('ui.widgets.model_tree.loads'))
 
 
@@ -70,6 +85,15 @@ class UpdaterTreeNode(Node):
     """
 
     def __init__(self, updater: UpdaterNode, group: str, config_index: int = 0) -> None:
+        """Initialize UpdaterTreeNode and its configuration state.
+
+        Args:
+            updater (UpdaterNode): Updater bound to the target whose policy or state is being
+                evaluated.
+            group (str): Named group containing the related interfaces or task configuration.
+            config_index (int): Zero-based position of the updater configuration in its owning
+                group.
+        """
         label = updater_group_title(group)
         configs = (
             updater.geometry if group.startswith("geometry") else updater.materials
@@ -86,11 +110,19 @@ class UpdaterTreeNode(Node):
 
     @property
     def section_group(self) -> str:
-        """Canonical updater section owning this navigation entry."""
+        """Canonical updater section owning this navigation entry.
+
+        Returns:
+            str: Canonical updater section owning this navigation entry.
+        """
         return "geometry" if self.group.startswith("geometry") else "materials"
 
     def config(self) -> dict | None:
-        """Config dict this entry points at."""
+        """Config dict this entry points at.
+
+        Returns:
+            dict | None: Config dict this entry points at.
+        """
         configs = (
             self.updater_parent.geometry
             if self.section_group == "geometry"
@@ -105,6 +137,16 @@ class UpdaterItemTreeNode(UpdaterTreeNode):
     def __init__(
         self, updater: UpdaterNode, group: str, config_index: int, item: dict
     ) -> None:
+        """Initialize UpdaterItemTreeNode and its configuration state.
+
+        Args:
+            updater (UpdaterNode): Updater bound to the target whose policy or state is being
+                evaluated.
+            group (str): Named group containing the related interfaces or task configuration.
+            config_index (int): Zero-based position of the updater configuration in its owning
+                group.
+            item (dict): Collection or view item selected for the operation.
+        """
         super().__init__(updater, group, config_index)
         self.kind = "updater_item"
         self.item = item
@@ -112,6 +154,11 @@ class UpdaterItemTreeNode(UpdaterTreeNode):
 
     @property
     def category(self) -> str:
+        """Return category.
+
+        Returns:
+            str: Category.
+        """
         if self.group.endswith("objectives"):
             return "objectives"
         if self.group.endswith("symmetry"):
@@ -129,6 +176,16 @@ class ObjectiveItemTreeNode(Node):
         index: int,
         item: dict,
     ) -> None:
+        """Initialize ObjectiveItemTreeNode and its configuration state.
+
+        Args:
+            objective (ObjectiveNode): Objective configuration whose terms and metric expressions
+                are being processed.
+            category (Literal['objective', 'metric']): Interface or asset category used to select
+                compatible editors or renderers.
+            index (int): Zero-based position within the relevant collection.
+            item (dict): Collection or view item selected for the operation.
+        """
         kind = "objective_term" if category == "objective" else "metric_term"
         super().__init__(kind=kind, name="")
         self.objective_parent: ObjectiveNode = objective
@@ -138,7 +195,11 @@ class ObjectiveItemTreeNode(Node):
 
 
 def node_key(node: Node | None):
-    """Stable identity for transient Params/updater entries across rebuilds."""
+    """Stable identity for transient Params/updater entries across rebuilds.
+
+    Args:
+        node (Node | None): Definition node being inspected or edited.
+    """
     if node is None:
         return None
     if isinstance(node, LoadCaseNode):
@@ -166,6 +227,7 @@ def node_key(node: Node | None):
 
 @dataclass
 class NavigationEntry:
+    """Describe one model-tree entry independently of the Qt tree widget."""
     node: Node
     title: str
     bold: bool = False
@@ -175,6 +237,12 @@ class NavigationEntry:
 class DefinitionNavigation:
     """Build the tree projection without creating widgets or changing data."""
     def __init__(self, problem: ProblemDefinition):
+        """Initialize DefinitionNavigation and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
 
     def entry(
@@ -185,6 +253,17 @@ class DefinitionNavigation:
         bold: bool = False,
         children=(),
     ) -> NavigationEntry:
+        """Return entry.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            title (str | None): User-facing title of the view, section, or action.
+            bold (bool): Use bold text when displaying the selected node or label.
+            children: Child definition nodes in registration order.
+
+        Returns:
+            NavigationEntry: Entry.
+        """
         return NavigationEntry(
             node,
             title or self.title(node),
@@ -193,9 +272,22 @@ class DefinitionNavigation:
         )
 
     def title(self, node: Node) -> str:
+        """Return title.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+
+        Returns:
+            str: Title.
+        """
         return node_title(self.problem, node)
 
     def build(self) -> list[NavigationEntry]:
+        """Build the DefinitionNavigation state.
+
+        Returns:
+            list[NavigationEntry]: Build the DefinitionNavigation state.
+        """
         problem = self.problem
         free_code = self.entry(HelperCodeBlockTreeNode(), bold=True)
         helper_groups = [
@@ -310,8 +402,17 @@ class DefinitionNavigation:
 def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] | None:
     """Locate a persisted or virtual node without retaining Python identities.
 
-    Paths are relative to one document snapshot, including helper and updater
-    groups. They are UI bookmarks, not part of the .morph file format.
+    Paths are relative to one document snapshot, including helper and updater groups. They are
+    UI bookmarks, not part of the .morph file format.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        node (Node | None): Definition node being inspected or edited.
+
+    Returns:
+        tuple[int, ...] | None: Locate a persisted or virtual node without retaining Python
+            identities.
     """
     key = node_key(node)
     if key is None:
@@ -331,7 +432,17 @@ def node_path(problem: ProblemDefinition, node: Node | None) -> tuple[int, ...] 
 
 
 def node_at_path(problem: ProblemDefinition, path: tuple[int, ...] | None) -> Node | None:
-    """Resolve a snapshot bookmark, retaining its parent if a child is absent."""
+    """Resolve a snapshot bookmark, retaining its parent if a child is absent.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        path (tuple[int, ...] | None): Filesystem path read, restored, or written by this
+            operation.
+
+    Returns:
+        Node | None: Resolve a snapshot bookmark, retaining its parent if a child is absent.
+    """
     entries = DefinitionNavigation(problem).build()
     node = None
     for index in path or ():

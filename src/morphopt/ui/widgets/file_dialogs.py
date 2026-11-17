@@ -19,7 +19,16 @@ def confirm_overwrite(
     *,
     message_key: str = "ui.mainwindow.overwrite_existing_file_value",
 ) -> bool:
-    """Ask for overwrite confirmation using the active UI language."""
+    """Ask for overwrite confirmation using the active UI language.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        path (Path): Filesystem path read, restored, or written by this operation.
+        message_key (str): Translation key used for the dialog message.
+
+    Returns:
+        bool: Ask for overwrite confirmation using the active UI language.
+    """
     message_box = QMessageBox(parent)
     message_box.setIcon(QMessageBox.Icon.Warning)
     message_box.setWindowTitle(tr("ui.mainwindow.overwrite_confirmation"))
@@ -37,7 +46,11 @@ def confirm_overwrite(
 
 
 def set_file_dialog_icons(dialog: QFileDialog) -> None:
-    """Draw visible navigation icons instead of relying on the desktop theme."""
+    """Draw visible navigation icons instead of relying on the desktop theme.
+
+    Args:
+        dialog (QFileDialog): Qt dialog whose geometry, icons, or result are configured.
+    """
     icons = {
         "backButton": "back",
         "forwardButton": "forward",
@@ -107,6 +120,17 @@ def set_file_dialog_icons(dialog: QFileDialog) -> None:
 def create_file_dialog(
     parent: QWidget, title: str, directory: str, *, save: bool
 ) -> QFileDialog:
+    """Create file dialog.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        title (str): User-facing title of the view, section, or action.
+        directory (str): Directory in which output files or child directories are created.
+        save (bool): Persist the selected preference or restored definition when True.
+
+    Returns:
+        QFileDialog: Create file dialog.
+    """
     dialog = QFileDialog(parent, title, directory)
     dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
     dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, save)
@@ -135,7 +159,17 @@ def create_file_dialog(
 def choose_open_file(
     parent: QWidget, title: str, directory: str, name_filter: str
 ) -> str:
-    """Choose one existing file with the shared appearance and file filters."""
+    """Choose one existing file with the shared appearance and file filters.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        title (str): User-facing title of the view, section, or action.
+        directory (str): Directory in which output files or child directories are created.
+        name_filter (str): Qt filename filter listing the accepted file suffixes.
+
+    Returns:
+        str: Choose one existing file with the shared appearance and file filters.
+    """
     dialog = create_file_dialog(parent, title, directory, save=False)
     dialog.setNameFilter(name_filter)
     if dialog.exec() != QFileDialog.DialogCode.Accepted:
@@ -145,7 +179,16 @@ def choose_open_file(
 
 
 def choose_directory(parent: QWidget, title: str, directory: str) -> str:
-    """Choose a directory with the shared icons, labels and theme."""
+    """Choose a directory with the shared icons, labels and theme.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        title (str): User-facing title of the view, section, or action.
+        directory (str): Directory in which output files or child directories are created.
+
+    Returns:
+        str: Choose a directory with the shared icons, labels and theme.
+    """
     dialog = create_file_dialog(parent, title, directory, save=False)
     dialog.setFileMode(QFileDialog.FileMode.Directory)
     dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
@@ -159,7 +202,17 @@ def choose_directory(parent: QWidget, title: str, directory: str) -> str:
 def choose_save_directory(
     parent: QWidget, title: str, directory: str, name: str
 ) -> str:
-    """Choose a new or existing output directory by entering its name."""
+    """Choose a new or existing output directory by entering its name.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        title (str): User-facing title of the view, section, or action.
+        directory (str): Directory in which output files or child directories are created.
+        name (str): Name identifying the item in its owning collection.
+
+    Returns:
+        str: Choose a new or existing output directory by entering its name.
+    """
     dialog = create_file_dialog(parent, title, directory, save=True)
     dialog.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
     dialog.setLabelText(QFileDialog.DialogLabel.FileName, tr("ui.files.directory_name"))
@@ -172,6 +225,7 @@ def choose_save_directory(
 
 @dataclass(frozen=True)
 class SaveFileSelection:
+    """Represent an accepted save-dialog path and its selected filename filter."""
     path: Path
     format: str
     overwrite: bool = False
@@ -180,7 +234,19 @@ class SaveFileSelection:
 def choose_save_file(
     parent: QWidget, title: str, directory: str, name: str, formats: dict[str, str]
 ) -> SaveFileSelection | None:
-    """Choose a filename and format in one dialog; approve replacement exactly once."""
+    """Choose a filename and format in one dialog; approve replacement exactly once.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        title (str): User-facing title of the view, section, or action.
+        directory (str): Directory in which output files or child directories are created.
+        name (str): Name identifying the item in its owning collection.
+        formats (dict[str, str]): Supported export format identifiers.
+
+    Returns:
+        SaveFileSelection | None: Choose a filename and format in one dialog; approve
+            replacement exactly once.
+    """
     dialog = create_file_dialog(parent, title, directory, save=True)
     filters = {label: key for key, label in formats.items()}
     dialog.setNameFilters(list(filters))

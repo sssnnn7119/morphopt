@@ -26,6 +26,11 @@ class OptimizationArchive:
     """
 
     def __init__(self, folder: str | Path) -> None:
+        """Initialize OptimizationArchive and its configuration state.
+
+        Args:
+            folder (str | Path): Directory containing the optimization run or archive.
+        """
         self.folder = Path(folder).resolve()
         self._controller_loaded = False
         self._controller_class: type[Any] | None = None
@@ -35,15 +40,29 @@ class OptimizationArchive:
 
     @property
     def log_folder(self) -> Path:
+        """Locate the log directory within the optimization archive.
+
+        Returns:
+            Path: Archive folder followed by log.
+        """
         return self.folder / "log"
 
     @property
     def log_files(self) -> tuple[Path, ...]:
-        """Saved text logs, available before the first completed iteration."""
+        """Saved text logs, available before the first completed iteration.
+
+        Returns:
+            tuple[Path, ...]: Saved text logs, available before the first completed iteration.
+        """
         return tuple(sorted(path for path in self.log_folder.glob("*.log") if path.is_file()))
 
     @property
     def controller_class(self) -> type[Any] | None:
+        """Lazily import and cache the controller declaration from the archived script.
+
+        Returns:
+            type | None: Archived ThisController class, or None if no declaration can be imported.
+        """
         if not self._controller_loaded:
             self._controller_class = _import_controller(self.folder)
             self._controller_loaded = True
@@ -51,10 +70,20 @@ class OptimizationArchive:
 
     @property
     def params(self) -> Any | None:
+        """Access the already initialized archived parameter collection.
+
+        Returns:
+            Params | None: Current cached parameters; None until initialization succeeds.
+        """
         return self._params
 
     def initialize_params(self) -> Any | None:
-        """Initialize the archived controller's geometry, FEA, and materials."""
+        """Initialize the archived controller's geometry, FEA, and materials.
+
+        Returns:
+            Params | None: Initialized parameter collection from the archived task; None if no
+                controller definition is available.
+        """
         if self._params is None:
             controller = self.controller_class
             if controller is None:
@@ -68,7 +97,15 @@ class OptimizationArchive:
         return self._params
 
     def load_parameters(self, iteration: int) -> Any | None:
-        """Restore the complete model parameter state at one iteration."""
+        """Restore the complete model parameter state at one iteration.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Params | None: Model parameters restored at iteration, or None when the archived
+                controller is unavailable.
+        """
         params = self.initialize_params()
         if params is None:
             return None
@@ -81,7 +118,15 @@ class OptimizationArchive:
         return params
 
     def load_geometry_part(self, name: str, iteration: int) -> Any:
-        """Restore one geometry part without loading unrelated model state."""
+        """Restore one geometry part without loading unrelated model state.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            BasePart: Registered geometry interface restored at the requested iteration.
+        """
         params = self.initialize_params()
         if params is None:
             raise ValueError("The archived geometry definition is unavailable.")
@@ -97,7 +142,16 @@ class OptimizationArchive:
         return part
 
     def load_history(self, iteration: int | None = None) -> Any:
-        """Load optimization history, optionally at a specific iteration."""
+        """Load optimization history, optionally at a specific iteration.
+
+        Args:
+            iteration (int | None): Iteration index associated with the saved or current model
+                state.
+
+        Returns:
+            History: Recorded history containing entries through the requested iteration, or all
+                saved entries when iteration is None.
+        """
         from ..optcore.history import History
 
         history = History()
@@ -109,7 +163,11 @@ class OptimizationArchive:
 
     @property
     def completed_iteration(self) -> int:
-        """Return the latest persisted iteration, or zero for an empty run."""
+        """Return the latest persisted iteration, or zero for an empty run.
+
+        Returns:
+            int: The latest persisted iteration, or zero for an empty run.
+        """
         try:
             history = self.load_history()
             return int(history.iteration or 0)
@@ -118,16 +176,44 @@ class OptimizationArchive:
 
     @property
     def fea_folder(self) -> Path:
+        """Locate saved finite-element models and solutions within the archive.
+
+        Returns:
+            Path: Log subdirectory named femodel&results.
+        """
         return self.log_folder / "femodel&results"
 
     def fea_model_path(self, iteration: int) -> Path:
+        """Resolve the native finite-element model filename for a completed iteration.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Path: Model archive path ending in femodel_ITERATION.npz; existence is not checked.
+        """
         return self.fea_folder / f"femodel_{iteration}.npz"
 
     def fea_result_path(self, case: str, iteration: int) -> Path:
+        """Resolve the native solution filename for a named case and iteration.
+
+        Args:
+            case (str): Registered load-case name selecting the saved or current finite-element
+                result.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Path: Solution archive path ending in result_CASE_iter_ITERATION.npz; existence is not
+                checked.
+        """
         return self.fea_folder / f"result_{case}_iter_{iteration}.npz"
 
     def fea_iterations(self) -> tuple[int, ...]:
-        """List iterations with an archived finite-element model."""
+        """List iterations with an archived finite-element model.
+
+        Returns:
+            tuple[int, ...]: List iterations with an archived finite-element model.
+        """
         return tuple(sorted(
             int(match[1])
             for path in self.fea_folder.glob("femodel_*.npz")
@@ -135,21 +221,39 @@ class OptimizationArchive:
         ))
 
     def deformation_cases(self) -> tuple[str, ...]:
-        """Return archived load-case names in their recorded order."""
+        """Return archived load-case names in their recorded order.
+
+        Returns:
+            tuple[str, ...]: Archived load-case names in their recorded order.
+        """
         path = self.fea_folder / "load_cases.json"
         if not path.is_file():
             return ()
         return tuple(json.loads(path.read_text(encoding="utf-8")))
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
-        """Read one saved load-case mesh, returning ``None`` if it is absent."""
+        """Read one saved load-case mesh, returning ``None`` if it is absent.
+
+        Args:
+            case (str): Registered load-case name selecting the saved or current finite-element
+                result.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            pv.DataSet | None: Saved deformed mesh for case and iteration, or None when the file is
+                absent.
+        """
         import pyvista as pv
 
         path = self.log_folder / "deformation" / f"task_{case}_iter_{iteration}.stl"
         return pv.read(path) if path.is_file() else None
 
     def visualizable_components(self) -> tuple[tuple[str, Any], ...]:
-        """Return updateable model interfaces that implement visualization."""
+        """Return updateable model interfaces that implement visualization.
+
+        Returns:
+            tuple[tuple[str, Any], ...]: Updateable model interfaces that implement visualization.
+        """
         from ..optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
 
         params = self._params
@@ -179,19 +283,42 @@ class IterationModel:
 
     @property
     def model_path(self) -> Path:
+        """Resolve this snapshot's saved finite-element model path.
+
+        Returns:
+            Path: Native model archive associated with the snapshot iteration.
+        """
         return OptimizationArchive(self.folder).fea_model_path(self.iteration)
 
     @property
     def result_path(self) -> Path | None:
+        """Resolve this snapshot's optional named load-case solution path.
+
+        Returns:
+            Path | None: Native solution archive path, or None when no case is selected.
+        """
         if self.case is None:
             return None
         return OptimizationArchive(self.folder).fea_result_path(self.case, self.iteration)
 
     @staticmethod
     def iterations(folder: str) -> tuple[int, ...]:
+        """List completed iterations with an available saved finite-element model.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+
+        Returns:
+            tuple[int, ...]: Available model iteration indices in increasing order.
+        """
         return OptimizationArchive(folder).fea_iterations()
 
     def cases(self) -> tuple[str, ...]:
+        """List load cases with an existing solution at this snapshot iteration.
+
+        Returns:
+            tuple[str, ...]: Available solution case names in archive registration order.
+        """
         archive = OptimizationArchive(self.folder)
         return tuple(
             case for case in archive.deformation_cases()
@@ -200,11 +327,27 @@ class IterationModel:
 
 
 def last_completed_iteration(folder: str | Path) -> int:
-    """Return a run's latest saved iteration without retaining an archive."""
+    """Return a run's latest saved iteration without retaining an archive.
+
+    Args:
+        folder (str | Path): Directory containing the optimization run or archive.
+
+    Returns:
+        int: A run's latest saved iteration without retaining an archive.
+    """
     return OptimizationArchive(folder).completed_iteration
 
 
 def _import_controller(folder: Path) -> type[Any] | None:
+    """Import the archived restart script under a path-specific module name.
+
+    Args:
+        folder (Path): Directory containing the optimization run or archive.
+
+    Returns:
+        type | None: ThisController declaration, or None when the script is missing or cannot be
+            imported.
+    """
     main = folder / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py"
     if not main.is_file():
         return None

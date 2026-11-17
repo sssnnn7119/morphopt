@@ -20,6 +20,12 @@ class ContinueDialog(QDialog):
     """Choose the persisted iteration from which a result should resume."""
 
     def __init__(self, max_step: int, parent=None):
+        """Initialize ContinueDialog and its configuration state.
+
+        Args:
+            max_step (int): Maximum completed iteration selectable in the result view.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.widgets.run_dialogs.continue_optimization"))
         self.setMinimumWidth(
@@ -66,4 +72,9 @@ class ContinueDialog(QDialog):
         layout.addLayout(buttons)
 
     def target_iteration(self) -> int | None:
+        """Return target iteration.
+
+        Returns:
+            int | None: Target iteration.
+        """
         return self.step.value() if self.chosen_step.isChecked() else None

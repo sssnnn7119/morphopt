@@ -35,6 +35,7 @@ from ..theme.fonts import font_manager
 
 
 class _PythonHighlighter(QSyntaxHighlighter):
+    """Apply the active code palette to Python syntax in a Qt text document."""
     KEYWORDS = (
         "and|as|assert|async|await|break|class|continue|def|del|elif|else|except|"
         "False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|"
@@ -42,6 +43,11 @@ class _PythonHighlighter(QSyntaxHighlighter):
     )
 
     def __init__(self, document):
+        """Initialize _PythonHighlighter and its configuration state.
+
+        Args:
+            document: Qt text document receiving syntax highlighting.
+        """
         super().__init__(document)
         self._string_re = re.compile(
             r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')'
@@ -82,6 +88,11 @@ class _PythonHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text: str) -> None:
         # comments first (but not inside strings): naive, good enough
+        """Return highlight block.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+        """
         for m in self._comment_re.finditer(text):
             self.setFormat(m.start(), m.end() - m.start(), self._f_comment)
         for m in self._string_re.finditer(text):
@@ -101,6 +112,11 @@ class _CodeEdit(QPlainTextEdit):
     focusReceived = Signal()
 
     def __init__(self, parent=None):
+        """Initialize _CodeEdit and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         # ensure undo / redo always work, even if native shortcuts are remapped
         for key, slot in (
@@ -121,7 +137,12 @@ class _CodeEdit(QPlainTextEdit):
 
     # ----------------------------------------------------------- completion
     def set_completion_context(self, slot_key: str, problem=None) -> None:
-        """Set the model code slot whose symbols should be suggested."""
+        """Set the model code slot whose symbols should be suggested.
+
+        Args:
+            slot_key (str): Class-binding slot identifying the framework declaration.
+            problem: Editable problem definition shared by the UI application services.
+        """
         if slot_key == self._completion_slot and problem is self._completion_problem:
             return
         self._completion_slot = slot_key
@@ -179,7 +200,11 @@ class _CodeEdit(QPlainTextEdit):
         return self._member_expression() is not None
 
     def _member_expression(self) -> str | None:
-        """Return the expression left of the current member-access dot."""
+        """Return the expression left of the current member-access dot.
+
+        Returns:
+            str | None: The expression left of the current member-access dot.
+        """
         cursor = self.textCursor()
         before_cursor = cursor.block().text()[: cursor.positionInBlock()]
         match = re.search(
@@ -192,7 +217,17 @@ class _CodeEdit(QPlainTextEdit):
     def _member_candidates(
         candidates: list[CompletionItem], expression: str
     ) -> list[CompletionItem]:
-        """Adapt full-path candidates to text inserted after ``expression.``."""
+        """Adapt full-path candidates to text inserted after ``expression.``.
+
+        Args:
+            candidates (list[CompletionItem]): Compatible candidate interface or class names to
+                inspect.
+            expression (str): Python parameter expression evaluated in the definition's auxiliary
+                namespace.
+
+        Returns:
+            list[CompletionItem]: Adapt full-path candidates to text inserted after ``expression.``.
+        """
         member_prefix = f"{expression}."
         items: list[CompletionItem] = []
         for item in candidates:
@@ -216,10 +251,20 @@ class _CodeEdit(QPlainTextEdit):
 
     # ---------------------------------------------------------- key events
     def focusInEvent(self, event) -> None:
+        """Return focus in event.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().focusInEvent(event)
         self.focusReceived.emit()
 
     def keyPressEvent(self, event) -> None:
+        """Return key press event.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         key = event.key()
         mods = event.modifiers()
         if self._completer.popup().isVisible() and key in (
@@ -295,8 +340,11 @@ class _CodeEdit(QPlainTextEdit):
     def _transform_lines(self, fn) -> None:
         """Apply ``fn`` to every fully-selected line (indent / outdent).
 
-        Each affected line's text is *replaced* by ``fn(line)`` instead of being
-        inserted in front of it, so indenting a selection never duplicates it.
+        Each affected line's text is *replaced* by ``fn(line)`` instead of being inserted in front
+        of it, so indenting a selection never duplicates it.
+
+        Args:
+            fn: Auxiliary function definition being edited.
         """
         tc = self.textCursor()
         doc = tc.document()
@@ -364,6 +412,15 @@ class CodeEditor(QWidget):
         completion_context: str = "",
         completion_problem=None,
     ):
+        """Initialize CodeEditor and its configuration state.
+
+        Args:
+            title (str | None): User-facing title of the view, section, or action.
+            parent: Parent Qt widget; None creates a top-level widget.
+            completion_context (str): Framework declaration path used to resolve completion
+                candidates.
+            completion_problem: Definition snapshot used to resolve code-completion symbols.
+        """
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -398,19 +455,40 @@ class CodeEditor(QWidget):
     def set_body(self, text: str) -> None:
         # Skip when unchanged so an automatic parent refresh (which feeds back
         # the same text) neither moves the caret nor clears the undo history.
+        """Set body.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+        """
         if self._edit.toPlainText() == text:
             return
         self._edit.setPlainText(text)
 
     def body(self) -> str:
+        """Return body.
+
+        Returns:
+            str: Body.
+        """
         return self._edit.toPlainText()
 
     def set_completion_context(self, slot_key: str, problem=None) -> None:
-        """Refresh completion symbols for the current code slot and problem."""
+        """Refresh completion symbols for the current code slot and problem.
+
+        Args:
+            slot_key (str): Class-binding slot identifying the framework declaration.
+            problem: Editable problem definition shared by the UI application services.
+        """
         self._edit.set_completion_context(slot_key, problem)
 
     def insert_snippet(self, text: str, *, at_cursor: bool = True) -> None:
-        """Insert source at the caret, or append it when no editor was active."""
+        """Insert source at the caret, or append it when no editor was active.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+            at_cursor (bool): Insert the source text at the current cursor rather than replacing the
+                editor contents when True.
+        """
         if not text:
             return
         cursor = self._edit.textCursor()
@@ -428,4 +506,9 @@ class CodeEditor(QWidget):
 
     @property
     def edit(self) -> _CodeEdit:
+        """Return edit.
+
+        Returns:
+            _CodeEdit: Edit.
+        """
         return self._edit

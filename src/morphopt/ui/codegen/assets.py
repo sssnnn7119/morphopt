@@ -32,13 +32,27 @@ class DefinitionAsset:
 
     @property
     def relative_path(self) -> str:
+        """Return relative path.
+
+        Returns:
+            str: Relative path.
+        """
         return (Path(PYTHON_ASSET_DIRECTORY) / self.name).as_posix()
 
 
 def collect_python_assets(
     problem: ProblemDefinition,
 ) -> tuple[dict[int, str], dict[str, DefinitionAsset]]:
-    """Return node paths and file contents using destination-independent names."""
+    """Return node paths and file contents using destination-independent names.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        tuple[dict[int, str], dict[str, DefinitionAsset]]: Node paths and file contents using
+            destination-independent names.
+    """
     paths: dict[int, str] = {}
     files: dict[str, DefinitionAsset] = {}
     asset_keys: dict[str, str] = {}

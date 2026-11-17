@@ -36,6 +36,13 @@ class OffsetBoundaryPart(BoundaryPart):
         num_layers: int = 1,
         **kwargs: object,
     ) -> None:
+        """Initialize OffsetBoundaryPart and its configuration state.
+
+        Args:
+            shell_thickness (float): Thickness of the generated shell region in model length units.
+            num_layers (int): Number of offset finite-element layers.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().__init__(**kwargs)
 
         self.shell_thickness: float = float(shell_thickness)
@@ -55,17 +62,39 @@ class OffsetBoundaryPart(BoundaryPart):
     # ------------------------------------------------------------- shell mesh
     @property
     def surface_set_names(self) -> tuple[str, ...]:
+        """Return surface set names.
+
+        Returns:
+            tuple[str, ...]: Surface set names.
+        """
         return (*super().surface_set_names, *self._offset_set_names())
 
     @property
     def node_set_names(self) -> tuple[str, ...]:
+        """Return node set names.
+
+        Returns:
+            tuple[str, ...]: Node set names.
+        """
         return (*super().node_set_names, *self._offset_set_names())
 
     def _offset_set_names(self) -> tuple[str, ...]:
+        """List the generated shell-offset selections for the inner boundaries.
+
+        Returns:
+            tuple[str, ...]: Names surface_N_offset for each cavity, beginning at surface index one.
+        """
         return tuple(f"surface_{index}_offset" for index in range(1, self.num_surface_interfaces))
 
     def _compute_normals(self, base_nodes: torch.Tensor) -> torch.Tensor:
-        """Cavity-surface normals evaluated on the current control points."""
+        """Cavity-surface normals evaluated on the current control points.
+
+        Args:
+            base_nodes (torch.Tensor): Reference Cartesian nodes before applying the surface offset.
+
+        Returns:
+            torch.Tensor: Cavity-surface normals evaluated on the current control points.
+        """
         normals = []
         for index in range(1, self.num_surface_interfaces):
             surface = self.surfaceinterfaces[index]
@@ -80,16 +109,39 @@ class OffsetBoundaryPart(BoundaryPart):
         return torch.cat(normals, dim=0)
 
     def _compute_offset_targets(self, base_nodes: torch.Tensor) -> torch.Tensor:
-        """Offset the base nodes by ``shell_thickness`` along the normals."""
+        """Offset the base nodes by ``shell_thickness`` along the normals.
+
+        Args:
+            base_nodes (torch.Tensor): Reference Cartesian nodes before applying the surface offset.
+
+        Returns:
+            torch.Tensor: Offset the base nodes by ``shell_thickness`` along the normals.
+        """
         direction = self._compute_normals(base_nodes)
         return base_nodes + float(self.shell_thickness) * direction
 
     def _postprocess_part(self, part: torchfea.Part) -> torchfea.Part:
-        """Add the offset shell wedge elements to the meshed Part."""
+        """Add the offset shell wedge elements to the meshed Part.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Add the offset shell wedge elements to the meshed Part.
+        """
         return self._build_shell_c3d6(part)
 
     def build_part(self, path_result=None, pools=None) -> torchfea.Part:
-        """Build and validate the offset wedges, including quadratic conversion."""
+        """Build and validate the offset wedges, including quadratic conversion.
+
+        Args:
+            path_result: Optimization result directory containing scripts and log subdirectories.
+            pools: Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: TorchFEA Part with geometry-derived selections and the requested element
+                order.
+        """
         part = super().build_part(path_result=path_result, pools=pools)
         shell = part.elems["C3D6"]
         shell.initialize(nodes=part.nodes)
@@ -100,6 +152,15 @@ class OffsetBoundaryPart(BoundaryPart):
 
     def _build_shell_c3d6(self, part: torchfea.Part) -> torchfea.Part:
         # Ensure surface elements exist so we can query triangle meshes.
+        """Build shell c3d6.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Offset shell discretized with six-node wedge elements and named boundary
+                selections.
+        """
         part.surfaces.initialize(part)
 
         tri_by_surface: dict[int, np.ndarray] = {}
@@ -236,7 +297,14 @@ class OffsetBoundaryPart(BoundaryPart):
     def modify_assembly(
         self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly
     ) -> None:
-        """Update the Part nodes and keep the offset layers consistent."""
+        """Update the Part nodes and keep the offset layers consistent.
+
+        Args:
+            design_sensitivity_vars (torch.Tensor): Differentiable design-variable tensor used to
+                modify the assembly.
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+        """
         super().modify_assembly(design_sensitivity_vars, assembly)
 
         part = assembly.get_part(self.part_name)
@@ -266,7 +334,14 @@ class OffsetBoundaryPart(BoundaryPart):
 
     @staticmethod
     def _default_opacity(index: int) -> float:
-        """The solid volume is hidden so the shell stays visible."""
+        """The solid volume is hidden so the shell stays visible.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+
+        Returns:
+            float: The solid volume is hidden so the shell stays visible.
+        """
         return (
             0.0
             if index == 0

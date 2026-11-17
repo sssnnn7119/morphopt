@@ -14,8 +14,11 @@ class Distance(BaseConstraints):
     """
 
     def __init__(self, min_distance: list[list[float]]):
-        """
-        Initialize the Distance objective function with a name.
+        """Initialize the Distance objective function with a name.
+
+        Args:
+            min_distance (list[list[float]]): Required minimum surface separation in model length
+                units.
         """
         super().__init__()
 
@@ -49,11 +52,13 @@ class Distance(BaseConstraints):
         """
 
     def initialize(self, r0, rdu0, *args, **kwargs) -> None:
-        """
-        Initialize the Distance objective function with the surface points and their derivatives.
-        Parameters:
-            r0 (list[torch.Tensor]): List of surface points.
-            rdu0 (list[torch.Tensor]): List of surface point derivatives.
+        """Initialize the Distance objective function with the surface points and their derivatives.
+
+        Args:
+            r0: List of surface points.
+            rdu0: List of surface point derivatives.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
 
         super().initialize(r0=r0, rdu0=rdu0, *args, **kwargs)
@@ -96,6 +101,19 @@ class Distance(BaseConstraints):
 
     def __call__(self, r: list[torch.Tensor], rdu: list[torch.Tensor], *args, **kwargs):
 
+        """Evaluate Distance for the supplied inputs.
+
+        Args:
+            r (list[torch.Tensor]): Current Cartesian surface samples; each surface block has shape
+                (num_points, 3).
+            rdu (list[torch.Tensor]): Current first surface derivatives; each block has shape
+                (num_points, 3, 2).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: Scalar tensor containing the area-weighted surface-separation penalty.
+        """
         R = torch.cat(r, dim=0)
         RDU = torch.cat(rdu, dim=0)
         normal_vector = torch.cross(RDU[:, :, 1], RDU[:, :, 0], dim=1)

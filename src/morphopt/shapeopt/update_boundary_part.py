@@ -64,22 +64,22 @@ class UpdaterBoundaryPart(BaseUpdater):
         step_length_strategy: StepLengthStrategy | None = None,
         constraint_weight_strategy: ConstraintWeightStrategy | None = None,
     ) -> None:
-        """
-        Initialize the Updater class with the given parameters.
+        """Initialize the Updater class with the given parameters.
 
-        Only the name of the Part is stored; :class:`Updaters` resolves and
-        hands over the Part while initializing, so a misplaced name fails
-        before the optimization loop and this updater never holds the whole
-        model parameters.
+        Only the name of the Part is stored; :class:`Updaters` resolves and hands over the Part
+        while initializing, so a misplaced name fails before the optimization loop and this updater
+        never holds the whole model parameters.
 
-        Parameters:
-            interface_name (str): Name of the boundary Part interface this
-                updater owns.  The registration ``name`` supplies it when
-                omitted.
+        Args:
+            interface_name (str | None): Name of the boundary Part interface this updater owns.  The
+                registration ``name`` supplies it when omitted.
             max_step_iter (int): The maximum number of iterations for the sub-optimization process.
-            max_step_length (float): The maximum step length for each surface in the optimization process.
-            step_length_strategy: Policy generating per-control-point step limits.
-            constraint_weight_strategy: Policy selecting named penalty coefficients.
+            max_step_length (float): The maximum step length for each surface in the optimization
+                process.
+            step_length_strategy (StepLengthStrategy | None): Policy generating per-control-point
+                step limits.
+            constraint_weight_strategy (ConstraintWeightStrategy | None): Policy selecting named
+                penalty coefficients.
         """
 
         super().__init__(
@@ -123,29 +123,34 @@ class UpdaterBoundaryPart(BaseUpdater):
 
     @property
     def part(self) -> BoundaryPart:
-        """The boundary part interface this updater updates."""
+        """The boundary part interface this updater updates.
+
+        Returns:
+            BoundaryPart: The boundary part interface this updater updates.
+        """
         return cast(BoundaryPart, self.target)
 
     @property
     def surface_interfaces(self) -> list[BaseSurface]:
-        """The surface interfaces of this updater's Part, in surface order."""
+        """The surface interfaces of this updater's Part, in surface order.
+
+        Returns:
+            list[BaseSurface]: The surface interfaces of this updater's Part, in surface order.
+        """
         return self.part.surface_interfaces()
 
     def pathlog_required(self) -> list[str]:
+        """Return log subdirectories required by this component.
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         return ["geometryupdater"]
 
-    def history_data(self) -> dict[str, object]:
-        return {
-            **super().history_data(),
-            "max_step_iter": self.max_step_iter,
-            "max_step_length": self._max_step_length_max,
-        }
-
     def reinitialize(self, gradient: torch.Tensor, *args, **kwargs) -> None:
-        """
-        Initialize the parameters of the optimization process.
+        """Initialize the parameters of the optimization process.
 
-        Parameters:
+        Args:
             gradient (torch.Tensor): The gradient of the objective function.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
@@ -201,11 +206,10 @@ class UpdaterBoundaryPart(BaseUpdater):
     def initialize(self) -> None:
         """Register this updater's terms, then size the Part's step lengths.
 
-        The Part is already bound (the updater manager resolves it and calls
-        :meth:`bind_target` before this runs), so a wrong name or a Part without
-        surfaces fails before the optimization loop.  Objective functions and
-        constraints were registered when this updater was added to its
-        :class:`Updaters` collection.
+        The Part is already bound (the updater manager resolves it and calls :meth:`bind_target`
+        before this runs), so a wrong name or a Part without surfaces fails before the optimization
+        loop.  Objective functions and constraints were registered when this updater was added to
+        its :class:`Updaters` collection.
         """
         self._max_step_length = self._prepare_step_lengths(
             [
@@ -216,6 +220,7 @@ class UpdaterBoundaryPart(BaseUpdater):
         )
 
     def _initialize_optimizer(self) -> None:
+        """Initialize optimizer."""
         self.optimizer = UpdaterBoundaryPart.Optimizer.LBFGS(
             closure=self.closure,
             num_limit=CONSTANT.KERNEL.OPTIMIZER.LBFGS_SHAPE_MEMORY_PAIRS,
@@ -228,7 +233,19 @@ class UpdaterBoundaryPart(BaseUpdater):
         x: torch.Tensor,
         return_list: bool = False,
     ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
-        """Evaluate the weighted total or the two lists of unweighted terms."""
+        """Evaluate the weighted total or the two lists of unweighted terms.
+
+        Args:
+            x (torch.Tensor): Flattened design parameters or perturbation vector evaluated by this
+                method.
+            return_list (bool): Return separate objective and penalty contributions instead of their
+                scalar sum.
+
+        Returns:
+            torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]: Weighted scalar objective,
+                or (physical_terms, raw_penalties) when return_list is True. Target parameters are
+                restored before returning.
+        """
         # save the current point
         x0 = self.part.get_parameters()
 
@@ -325,10 +342,20 @@ class UpdaterBoundaryPart(BaseUpdater):
         return variables.detach().clone()
 
     def update_variables(self, dx: torch.Tensor) -> None:
-        """Commit the update using the subproblem's frozen step limits."""
+        """Commit the update using the subproblem's frozen step limits.
+
+        Args:
+            dx (torch.Tensor): Proposed design-variable increment in flattened parameter order.
+        """
         self.part.update_variables(x_change=dx, max_step_length=self._max_step_length)
 
     def save(self, foldpath, iteration):
+        """Save the UpdaterBoundaryPart state.
+
+        Args:
+            foldpath: Root log directory containing this component's namespaced state files.
+            iteration: Iteration index associated with the saved or current model state.
+        """
         step_length_numpy = [
             self._max_step_length[i].detach().cpu().numpy()
             for i in range(len(self._max_step_length))
@@ -336,6 +363,12 @@ class UpdaterBoundaryPart(BaseUpdater):
         np.savez(self._state_path(foldpath, iteration), *step_length_numpy)
 
     def load(self, foldpath, iteration):
+        """Load the UpdaterBoundaryPart state.
+
+        Args:
+            foldpath: Root log directory containing this component's namespaced state files.
+            iteration: Iteration index associated with the saved or current model state.
+        """
         data = np.load(self._state_path(foldpath, iteration))
         for i in range(len(self._max_step_length)):
             self._max_step_length[i] = torch.tensor(data["arr_%d" % i]).to(

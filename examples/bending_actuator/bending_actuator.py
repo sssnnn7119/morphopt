@@ -130,7 +130,7 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: Any) -> None:
 
-            super().__init__(params=params, num_process=1, process_devices=['cpu'])
+            super().__init__(params=params, num_process=1, process_devices=['cuda:0'])
 
     class Updater(morphopt.Updaters):
 
@@ -158,10 +158,10 @@ class ThisController(morphopt.Controller):
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.QuadraticShapeDerivative(memory_size=10))
-                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=1.0))
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=2.0))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]]))
                 self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=10.0, height=80.0, bottom=0.0))
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device='cpu', restart_per_iteration=20)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=20)

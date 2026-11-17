@@ -29,7 +29,17 @@ from .viewport import PlotViewport
 def _qt_to_vtk_position(
     x: float, y: float, widget_size, render_size
 ) -> tuple[int, int]:
-    """Convert widget-local logical pixels to render-window device pixels."""
+    """Convert widget-local logical pixels to render-window device pixels.
+
+    Args:
+        x (float): Horizontal display coordinate in the input coordinate system.
+        y (float): Vertical display coordinate in the input coordinate system.
+        widget_size: Qt widget dimensions in logical display pixels.
+        render_size: Render-window dimensions in physical pixels.
+
+    Returns:
+        tuple[int, int]: Convert widget-local logical pixels to render-window device pixels.
+    """
     width, height = widget_size
     render_width, render_height = render_size
     return (
@@ -42,6 +52,13 @@ class _FaceClickFilter(QObject):
     """Capture Qt click coordinates before interactor-style event processing."""
 
     def __init__(self, widget: QWidget, plotter, renderer: PreviewRenderer):
+        """Initialize _FaceClickFilter and its configuration state.
+
+        Args:
+            widget (QWidget): Qt widget being configured or inspected.
+            plotter: PyVista plotter receiving the scene; None creates a new plotter.
+            renderer (PreviewRenderer): Renderer owning the current preview actors.
+        """
         super().__init__(widget)
         self.widget = widget
         self.plotter = plotter
@@ -51,6 +68,15 @@ class _FaceClickFilter(QObject):
         widget.installEventFilter(self)
 
     def eventFilter(self, watched, event) -> bool:
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            watched: Qt object receiving the filtered event.
+            event: Qt event delivered to this widget or event filter.
+
+        Returns:
+            bool: Handle relevant input events before the receiving Qt object processes them.
+        """
         kind = event.type()
         if (
             kind == QEvent.Type.MouseButtonPress
@@ -86,6 +112,7 @@ class _FaceClickFilter(QObject):
 
 
 class PreviewViewer(QWidget):
+    """Display the current definition geometry and loads using a shared camera viewport."""
     geometryChanged = Signal()
 
     def __init__(
@@ -95,6 +122,15 @@ class PreviewViewer(QWidget):
         geometry: PreviewGeometry | None = None,
         loads: LoadPreviewVisitor | None = None,
     ):
+        """Initialize PreviewViewer and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+            geometry (PreviewGeometry | None): Geometry description or geometry collection processed
+                by this interface.
+            loads (LoadPreviewVisitor | None): Prepared load-glyph scene associated with the current
+                geometry.
+        """
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -234,7 +270,13 @@ class PreviewViewer(QWidget):
             )
 
     def show_part_set(self, part: PartNode, kind: str, name: str) -> None:
-        """Show a named set in its owning Part's local view."""
+        """Show a named set in its owning Part's local view.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+            name (str): Name identifying the item in its owning collection.
+        """
         if self._problem is None:
             return
         if name and (
@@ -273,6 +315,12 @@ class PreviewViewer(QWidget):
             self.face_info.setText(tr("ui.part_sets.highlight_failed", error=exc))
 
     def set_problem(self, problem: ProblemDefinition) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         reset_camera = problem is not self._problem
         if reset_camera:
             self._selected_step = None
@@ -281,6 +329,12 @@ class PreviewViewer(QWidget):
         self._rebuild_all(reset_camera=reset_camera)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         if context.restoring:
             self._problem = context.problem
             self._rebuild_all(reset_camera=False)
@@ -330,6 +384,11 @@ class PreviewViewer(QWidget):
         self._rebuild_all(reset_camera=False)
 
     def showEvent(self, event) -> None:
+        """Refresh deferred content when the widget becomes visible.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().showEvent(event)
         # Exposing the native GL window needs a redraw even without new data.
         QTimer.singleShot(0, self._render_pending_view)
@@ -443,7 +502,6 @@ class PreviewViewer(QWidget):
         self._sync_step_combo()
         if self._problem is None:
             return
-        camera = self.host.plotter.camera_position
         scene = self.geometry.build(
             self._problem, self.view_combo.currentData(), self.part_combo.currentData()
         )
@@ -451,18 +509,19 @@ class PreviewViewer(QWidget):
         # definitions must not erase a working viewport during data preparation.
         loads = self._load_scene()
         selection = self._set_selection
-        self.renderer.draw_scene(scene)
-        self._update_section_coordinate()
-        self.host.plotter.show_axes()
-        if reset_camera:
-            self.host.plotter.view_isometric()
-        else:
-            self.host.plotter.camera_position = camera
-        self.renderer.draw_loads(loads)
-        if reset_camera:
-            self.host.plotter.reset_camera()
-            # Callout spacing is measured in screen pixels. Reflow against
-            # the fitted camera after including load glyphs in the bounds.
+        assembly_view = self.view_combo.currentData() == "assembly"
+        parts = self._problem.parts() if assembly_view else [self.part_combo.currentData()]
+        geometry_keys = (
+            node for part in parts if part is not None for node in part.iter_nodes()
+            if assembly_view or node.kind != "instance"
+        )
+        with self.host.scene_update(
+            reset_camera=reset_camera, has_geometry=scene.bounds is not None,
+            geometry_keys=geometry_keys,
+        ):
+            self.renderer.draw_scene(scene)
+            self._update_section_coordinate()
+            self.host.plotter.show_axes()
             self.renderer.draw_loads(loads)
         if selection is not None:
             self._draw_part_set(*selection)

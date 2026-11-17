@@ -49,6 +49,7 @@ GOALS = {
 
 @dataclass
 class QuickstartObjective:
+    """Describe one physical objective selected in the quick-start wizard."""
     kind: str = "bend"
     weight: float = CONSTANT.UI.QUICKSTART.DEFAULT.OBJECTIVE_WEIGHT
     target: float = CONSTANT.UI.QUICKSTART.DEFAULT.OBJECTIVE_TARGET
@@ -68,11 +69,15 @@ class QuickstartObjective:
 
     @property
     def is_workspace(self):
+        """Handle is workspace for QuickstartObjective."""
         return self.kind.startswith("workspace_")
 
 
 @dataclass
 class QuickstartOptions:
+    """Collect geometry, load, material, objective, and optimization settings for a quick-start
+    task.
+    """
     method: str = "shapeopt"
     label: str = "Quickstart"
     result_folder: str = ".results/"
@@ -93,6 +98,7 @@ class QuickstartOptions:
 
     @property
     def total_length(self):
+        """Handle total length for QuickstartOptions."""
         return (
             sum(layer.length for layer in self.layers)
             if self.method == "shapeopt"
@@ -101,16 +107,19 @@ class QuickstartOptions:
 
     @property
     def chambers(self):
+        """Handle chambers for QuickstartOptions."""
         return sum(layer.chambers for layer in self.layers)
 
     @property
     def channel_ids(self):
+        """Handle channel ids for QuickstartOptions."""
         return sorted(
             {channel for layer in self.layers for channel in layer.pressure_channels}
         )
 
     @property
     def channel_members(self):
+        """Handle channel members for QuickstartOptions."""
         members = {}
         chamber_index = 1
         for layer in self.layers:
@@ -121,6 +130,12 @@ class QuickstartOptions:
 
     @classmethod
     def for_method(cls, method):
+        """Handle for method for QuickstartOptions.
+
+        Args:
+            method: Quick-start model family selecting the available geometry and objective
+                templates.
+        """
         if method == "simp":
             return cls(
                 method="simp",
@@ -135,6 +150,11 @@ class QuickstartOptions:
 
     @classmethod
     def from_problem(cls, problem):
+        """Handle from problem for QuickstartOptions.
+
+        Args:
+            problem: Editable problem definition shared by the UI application services.
+        """
         for variable in problem.helper_variables:
             if variable.name == "quickstart_settings":
                 data = literal_eval(variable.value)
@@ -148,9 +168,11 @@ class QuickstartOptions:
         return cls.for_method(method)
 
     def geometry_layout(self):
+        """Handle geometry layout for QuickstartOptions."""
         return LayeredChambers(self.layers, self.radius, self.wall)
 
     def validate(self):
+        """Validate the QuickstartOptions state."""
         if self.method not in ("shapeopt", "simp"):
             raise ValueError(
                 localized_message("ui.errors.quickstart.select_an_optimization_method")
@@ -331,6 +353,15 @@ def _function(problem, name, parameters, body):
 
 
 def build_quickstart(options: QuickstartOptions) -> ProblemDefinition:
+    """Build quickstart.
+
+    Args:
+        options (QuickstartOptions): Options passed to the selected model, renderer, or export
+            operation.
+
+    Returns:
+        ProblemDefinition: Build quickstart.
+    """
     options.validate()
     problem = ProblemDefinition(
         label=options.label.strip(),
@@ -954,6 +985,15 @@ def _topology(options, geometry, loads, materials):
 
 
 def available_objectives(method: str) -> list[str]:
+    """Return available objectives.
+
+    Args:
+        method (str): Quick-start model family selecting the available geometry and objective
+            templates.
+
+    Returns:
+        list[str]: Available objectives.
+    """
     return (
         sorted(set(GOALS) - {"stiffness"})
         if method == "shapeopt"
@@ -962,6 +1002,16 @@ def available_objectives(method: str) -> list[str]:
 
 
 def select_workspace_channels(members, selected, required: int) -> list[int]:
+    """Select workspace channels.
+
+    Args:
+        members: Names or indices included in the selection.
+        selected: Selection retained or applied while the view is rebuilt.
+        required (int): Whether a missing value constitutes a validation error.
+
+    Returns:
+        list[int]: Select workspace channels.
+    """
     chosen = [channel for channel in selected if channel in members][:required]
     for channel in sorted(members):
         if len(chosen) >= required:
@@ -975,12 +1025,29 @@ class ObjectiveDraft:
     """Editable Quickstart terms, with one policy for method/channel changes."""
 
     def __init__(self, objectives, method: str, members):
+        """Initialize ObjectiveDraft and its configuration state.
+
+        Args:
+            objectives: Configured physical objectives in evaluation order.
+            method (str): Quick-start model family selecting the available geometry and objective
+                templates.
+            members: Names or indices included in the selection.
+        """
         self.method = method
         self.members = {key: list(value) for key, value in members.items()}
         self.objectives = [self.copy(item) for item in objectives]
 
     @staticmethod
     def copy(objective) -> QuickstartObjective:
+        """Copy the ObjectiveDraft state.
+
+        Args:
+            objective: Objective configuration whose terms and metric expressions are being
+                processed.
+
+        Returns:
+            QuickstartObjective: Copy the ObjectiveDraft state.
+        """
         from dataclasses import replace
 
         item = (
@@ -995,6 +1062,11 @@ class ObjectiveDraft:
         )
 
     def add(self) -> int:
+        """Add the ObjectiveDraft state.
+
+        Returns:
+            int: Add the ObjectiveDraft state.
+        """
         if len(self.objectives) >= CONSTANT.UI.QUICKSTART.LIMITS.OBJECTIVE_MAX_COUNT:
             raise ValueError(
                 localized_message(
@@ -1019,9 +1091,20 @@ class ObjectiveDraft:
         return len(self.objectives) - 1
 
     def remove(self, index: int) -> None:
+        """Remove the ObjectiveDraft state.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+        """
         self.objectives.pop(index)
 
     def set_method(self, method: str) -> None:
+        """Set method.
+
+        Args:
+            method (str): Quick-start model family selecting the available geometry and objective
+                templates.
+        """
         self.method = method
         allowed = available_objectives(method)
         for objective in self.objectives:
@@ -1029,6 +1112,11 @@ class ObjectiveDraft:
                 objective.kind = "bend" if method == "shapeopt" else "stiffness"
 
     def set_channels(self, members) -> None:
+        """Set channels.
+
+        Args:
+            members: Names or indices included in the selection.
+        """
         self.members = {key: list(value) for key, value in members.items()}
         for objective in self.objectives:
             objective.pressures_kpa = {
@@ -1046,4 +1134,9 @@ class ObjectiveDraft:
                 )
 
     def values(self) -> list[QuickstartObjective]:
+        """Return values.
+
+        Returns:
+            list[QuickstartObjective]: Values.
+        """
         return [self.copy(objective) for objective in self.objectives]

@@ -27,21 +27,26 @@ class InwardCurvatureRadius(BaseConstraints):
         hard_violation_beta: float = CONSTANT.KERNEL.CODESIGN.HARD_VIOLATION_BETA,
         normal_sign: float = 1.0,
     ) -> None:
-        """
-        Initialize the inward curvature radius constraint.
+        """Initialize the inward curvature radius constraint.
 
         Args:
-            surface_start (int, optional): The starting index of surfaces to apply the constraint. Defaults to 1.
-            surface_ids (list[int] | None, optional): The specific surface indices to apply the constraint. If None, applies to all surfaces starting from surface_start. Defaults to None.
-            margin (float, optional): The absolute margin added to thickness for curvature limit. Defaults to 0.4.
-            margin_ratio (float, optional): The ratio of thickness to determine margin if margin is None. Defaults to 0.45.
-            barrier_thre_ratio (float, optional): The ratio of curvature limit to determine the barrier threshold. Defaults to 0.1.
-            barrier_ratio (float, optional): The ratio to scale the barrier penalty. Defaults to 0.0.
-            p (int, optional): The power for the barrier function. Defaults to 8.
-            penalty_scale (float, optional): Global multiplier for this constraint penalty. Defaults to 1e3.
-            hard_violation_beta (float, optional): Exponential amplification factor for large violations. Defaults to 8.0.
-            normal_sign (float, optional): The sign to determine inward direction. Use 1.0 if normals point outward, -1.0 if normals point inward. Defaults to 1.0.
-
+            surface_start (int): The starting index of surfaces to apply the constraint. Defaults to
+                1.
+            surface_ids (list[int] | None): The specific surface indices to apply the constraint. If
+                None, applies to all surfaces starting from surface_start. Defaults to None.
+            margin (float): The absolute margin added to thickness for curvature limit. Defaults to
+                0.4.
+            margin_ratio (float): The ratio of thickness to determine margin if margin is None.
+                Defaults to 0.45.
+            barrier_thre_ratio (float): The ratio of curvature limit to determine the barrier
+                threshold. Defaults to 0.1.
+            barrier_ratio (float): The ratio to scale the barrier penalty. Defaults to 0.0.
+            p (int): The power for the barrier function. Defaults to 8.
+            penalty_scale (float): Global multiplier for this constraint penalty. Defaults to 1e3.
+            hard_violation_beta (float): Exponential amplification factor for large violations.
+                Defaults to 8.0.
+            normal_sign (float): The sign to determine inward direction. Use 1.0 if normals point
+                outward, -1.0 if normals point inward. Defaults to 1.0.
         """
 
         super().__init__()
@@ -76,6 +81,19 @@ class InwardCurvatureRadius(BaseConstraints):
         rdu2: torch.Tensor,
         eps: float = CONSTANT.KERNEL.CODESIGN.GEOMETRY_TOLERANCE,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute oriented principal curvatures from the first and second fundamental forms.
+
+        Args:
+            rdu (torch.Tensor): Current first surface derivatives; each block has shape (num_points,
+                3, 2).
+            rdu2 (torch.Tensor): Current second surface derivatives; each block has shape
+                (num_points, 3, 2, 2).
+            eps (float): Positive numerical regularization or finite-difference increment.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Principal curvature arrays k1 and k2, each with shape
+                (num_points,), using the cross(dv, du) normal.
+        """
         normal0 = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
         normal = normal0 / (normal0.norm(dim=1, keepdim=True) + eps)
 
@@ -99,8 +117,15 @@ class InwardCurvatureRadius(BaseConstraints):
         """Take the Part this constraint is evaluated for.
 
         The geometry updater hands over the Part it evaluates; only a
-        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a
-        shell, so anything else is rejected here.
+        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a shell, so anything else is rejected
+        here.
+
+        Args:
+            r0: Initial cylinder radius, or reference sample positions for a surface objective.
+            rdu0: Reference first derivatives with one surface block of shape (num_points, 3, 2).
+            part_interface: Kernel Part interface selected as the geometry target.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
         super().initialize(r0=r0, rdu0=rdu0, *args, **kwargs)
         if not isinstance(part_interface, OffsetBoundaryPart):
@@ -111,6 +136,14 @@ class InwardCurvatureRadius(BaseConstraints):
         self.shell_thickness = float(part_interface.shell_thickness)
 
     def _selected_surface_ids(self, n_surface: int) -> list[int]:
+        """Resolve the configured surface selection within the available boundary range.
+
+        Args:
+            n_surface (int): Number of boundary surfaces represented by the geometry configuration.
+
+        Returns:
+            list[int]: Valid zero-based surface indices in their configured order.
+        """
         if self.surface_ids is None:
             return [i for i in range(max(self.surface_start, 0), n_surface)]
         return [i for i in self.surface_ids if 0 <= i < n_surface]
@@ -123,6 +156,21 @@ class InwardCurvatureRadius(BaseConstraints):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        """Evaluate InwardCurvatureRadius for the supplied inputs.
+
+        Args:
+            r (list[torch.Tensor]): Current Cartesian surface samples; each surface block has shape
+                (num_points, 3).
+            rdu (list[torch.Tensor]): Current first surface derivatives; each block has shape
+                (num_points, 3, 2).
+            rdu2 (list[torch.Tensor]): Current second surface derivatives; each block has shape
+                (num_points, 3, 2, 2).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: One-element integrated penalty for excessive inward principal curvature.
+        """
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
 
         for i in self._selected_surface_ids(len(r)):
@@ -189,14 +237,29 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         normal_min: float = CONSTANT.KERNEL.CODESIGN.NORMAL_TRANSITION_MIN,
         normal_max: float = CONSTANT.KERNEL.CODESIGN.NORMAL_TRANSITION_MAX,
     ) -> None:
-        """
-        Initialize the minimum thickness constraint for the offset surface.
+        """Initialize the minimum thickness constraint for the offset surface.
 
         Args:
-            surface_start (int, optional): The starting index of surfaces to apply the constraint. Defaults to 1.
-            surface_ids (list[int] | None, optional): The specific surface indices to apply the constraint. If None, applies to all surfaces starting from surface_start. Defaults to None.
-            min_distance (float | None, optional): The required minimum distance.
-                Defaults to twice the shell thickness.
+            surface_start (int): The starting index of surfaces to apply the constraint. Defaults to
+                1.
+            surface_ids (list[int] | None): The specific surface indices to apply the constraint. If
+                None, applies to all surfaces starting from surface_start. Defaults to None.
+            min_distance (float | None): The required minimum distance. Defaults to twice the shell
+                thickness.
+            search_ratio (float): Distance-search radius relative to the configured geometric
+                spacing.
+            barrier_thre_ratio (float): Barrier activation threshold relative to the configured
+                geometric limit.
+            barrier_ratio (float): Activation threshold as a fraction of the barrier limit.
+            p (int): Polynomial penalty exponent.
+            penalty_scale (float): Scalar multiplying the constructed constraint contribution.
+            hard_violation_beta (float): Barrier-growth coefficient for strongly violated distance
+                constraints.
+            normal_sign (float): Orientation sign applied to the surface-normal comparison.
+            normal_opposition_thre (float): Normal-opposition threshold used to filter candidate
+                surface pairs.
+            normal_min (float): Lower bound on the normal-alignment criterion.
+            normal_max (float): Upper bound on the normal-alignment criterion.
         """
         super().__init__()
 
@@ -236,12 +299,28 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         """Stores the neighbor mindist used by OffsetSurfaceMinThickness."""
 
     def _selected_surface_ids(self, n_surface: int) -> list[int]:
+        """Resolve the configured surface selection within the available boundary range.
+
+        Args:
+            n_surface (int): Number of boundary surfaces represented by the geometry configuration.
+
+        Returns:
+            list[int]: Valid zero-based surface indices in their configured order.
+        """
         if self.surface_ids is None:
             return [i for i in range(max(self.surface_start, 0), n_surface)]
         return [i for i in self.surface_ids if 0 <= i < n_surface]
 
     @staticmethod
     def _surface_normals(rdu_sf: torch.Tensor) -> torch.Tensor:
+        """Compute regularized unit normals using the surface parameter orientation.
+
+        Args:
+            rdu_sf (torch.Tensor): Surface first derivatives used to construct the offset geometry.
+
+        Returns:
+            torch.Tensor: Cartesian normals with shape (num_points, 3), oriented by cross(dv, du).
+        """
         normal0 = torch.cross(rdu_sf[:, :, 1], rdu_sf[:, :, 0], dim=1)
         normals = normal0 / (
             normal0.norm(dim=1, keepdim=True)
@@ -252,11 +331,29 @@ class OffsetSurfaceMinThickness(BaseConstraints):
     def _offset_points(
         self, r_sf: torch.Tensor, rdu_sf: torch.Tensor, thickness: float
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Offset surface points and the normals they were offset along."""
+        """Offset surface points and the normals they were offset along.
+
+        Args:
+            r_sf (torch.Tensor): Reference Cartesian samples of the surface being offset.
+            rdu_sf (torch.Tensor): Surface first derivatives used to construct the offset geometry.
+            thickness (float): Offset-layer thickness in model length units.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Offset surface points and the normals they were
+                offset along.
+        """
         normals = self._surface_normals(rdu_sf=rdu_sf)
         return r_sf + self.normal_sign * thickness * normals, normals
 
     def _min_distance(self, thickness: float) -> float:
+        """Resolve the explicit separation requirement or the shell-thickness default.
+
+        Args:
+            thickness (float): Offset-layer thickness in model length units.
+
+        Returns:
+            float: Positive required separation in model length units; defaults to twice thickness.
+        """
         dmin = (
             float(self.min_distance)
             if self.min_distance is not None
@@ -268,8 +365,15 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         """Take the Part this constraint is evaluated for and pair its points.
 
         The geometry updater hands over the Part it evaluates; only a
-        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a
-        shell, so anything else is rejected here.
+        :class:`~morphopt.codesign.OffsetBoundaryPart` carries a shell, so anything else is rejected
+        here.
+
+        Args:
+            r0: Initial cylinder radius, or reference sample positions for a surface objective.
+            rdu0: Reference first derivatives with one surface block of shape (num_points, 3, 2).
+            part_interface: Kernel Part interface selected as the geometry target.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
         super().initialize(r0=r0, rdu0=rdu0, *args, **kwargs)
         if not isinstance(part_interface, OffsetBoundaryPart):
@@ -320,6 +424,22 @@ class OffsetSurfaceMinThickness(BaseConstraints):
         *args,
         **kwargs,
     ) -> torch.Tensor:
+        """Evaluate OffsetSurfaceMinThickness for the supplied inputs.
+
+        Args:
+            r (list[torch.Tensor]): Current Cartesian surface samples; each surface block has shape
+                (num_points, 3).
+            rdu (list[torch.Tensor]): Current first surface derivatives; each block has shape
+                (num_points, 3, 2).
+            rdu2 (list[torch.Tensor]): Current second surface derivatives; each block has shape
+                (num_points, 3, 2, 2).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: One-element penalty for insufficient separation of the offset shell
+                boundaries.
+        """
         loss = torch.zeros(1, device=r[0].device, dtype=r[0].dtype)
 
         for sf_idx in self._selected_surface_ids(len(r)):

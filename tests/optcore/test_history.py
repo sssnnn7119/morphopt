@@ -60,6 +60,7 @@ def test_optimizer_snapshots_are_named_copied_and_saved_per_iteration(tmp_path):
     strategy.state = {
         "Fairness_0": {"weight": 2e-5, "initial_weight": 1e-5, "violation": 0.3},
     }
+    strategy._violations = {"Fairness_0": 0.3, "Distance_0": 0.0}
     material.constraint_weights = {"VolFrac_0": 3.0}
     controller.objfun.value = torch.tensor(4.0)
     controller.record_history(0., 1., 2., 3., 4.)
@@ -67,20 +68,21 @@ def test_optimizer_snapshots_are_named_copied_and_saved_per_iteration(tmp_path):
     assert list(first) == ["body", "density"]
     assert first["body"] == {
         "iterations": 12,
-        "constraint_weight_strategy": "AdaptiveShapeWeights",
         "constraint_weights": {"Fairness_0": 2e-5, "Distance_0": 0.5},
         "constraint_weight_state": {
             "tolerance": 0.04,
-            "penalties": {"Fairness_0": {"initial_weight": 1e-5, "violation": 0.3}},
+            "penalties": {
+                "Fairness_0": {"violation": 0.3},
+                "Distance_0": {"violation": 0.0},
+            },
         },
-        "max_step_iter": 25,
-        "max_step_length": 0.2,
     }
     assert first["density"]["constraint_weights"] == {"VolFrac_0": 3.0}
     assert first["density"]["constraint_weight_state"] == {}
-    assert first["density"]["max_step_length"] == 0.1
+    assert set(first["density"]) == {"iterations", "constraint_weights", "constraint_weight_state"}
     shape.constraint_weights["Fairness_0"] = 1e-5
     strategy.state["Fairness_0"]["violation"] = 0.1
+    strategy._violations["Fairness_0"] = 0.1
     strategy.tolerance = 0.03
     controller.objfun.value = torch.tensor(3.0)
     controller.record_history(0., 1., 2., 3., 4.)

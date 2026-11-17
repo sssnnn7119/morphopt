@@ -44,6 +44,7 @@ class LoadPreviewVisitor:
     """Register handlers by component type; new loads do not change the viewport."""
 
     def __init__(self) -> None:
+        """Initialize LoadPreviewVisitor and its configuration state."""
         self._handlers: dict[type[FEAComponentNode], LoadHandler] = {
             PressureNode: self.pressure,
             ConcentratedForceNode: self.force,
@@ -67,11 +68,30 @@ class LoadPreviewVisitor:
         *,
         boundary: bool = False,
     ) -> None:
+        """Register the LoadPreviewVisitor state.
+
+        Args:
+            node_type (type[LoadT]): Registered definition-node class to instantiate or validate.
+            handler (Callable[[PreviewGeometry, LoadScene, LoadT, list[float]], None]): Callback
+                registered for the matching Qt or viewport event.
+            boundary (bool): Boundary-surface description supplying geometric selections or
+                constraints.
+        """
         (self._always_visible_handlers if boundary else self._handlers)[node_type] = (
             handler
         )
 
     def build(self, geometry: PreviewGeometry, step_name: str | None) -> LoadScene:
+        """Build the LoadPreviewVisitor state.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            step_name (str | None): Registered string name of the load case.
+
+        Returns:
+            LoadScene: Build the LoadPreviewVisitor state.
+        """
         scene = LoadScene(
             geometry.scene.glyph_scale,
             annotation_scale=geometry.scene.diagonal,
@@ -105,6 +125,19 @@ class LoadPreviewVisitor:
         *,
         boundary: bool = False,
     ) -> None:
+        """Visit the LoadPreviewVisitor state.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            raw_values (list): Unparsed load-parameter values from the definition.
+            boundary (bool): Boundary-surface description supplying geometric selections or
+                constraints.
+        """
         handlers = self._always_visible_handlers if boundary else self._handlers
         handler = next(
             (handlers[cls] for cls in type(component).__mro__ if cls in handlers), None
@@ -144,6 +177,17 @@ class LoadPreviewVisitor:
         geometry: PreviewGeometry,
         reference: ReferencePointNode | None,
     ) -> np.ndarray | None:
+        """Return rp location.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            reference (ReferencePointNode | None): Reference definition or geometric data used by
+                the operation.
+
+        Returns:
+            np.ndarray | None: Rp location.
+        """
         if reference is None:
             return None
         return np.asarray(
@@ -158,6 +202,18 @@ class LoadPreviewVisitor:
         component: PressureNode,
         values: list[float],
     ) -> None:
+        """Return pressure.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (PressureNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         pressure = values[0] if values else 0.0
         if abs(pressure) <= theme_manager.palette.viewer.loads.pressure_zero_tolerance:
             return
@@ -234,6 +290,18 @@ class LoadPreviewVisitor:
         component: ConcentratedForceNode,
         values: list[float],
     ) -> None:
+        """Return force.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (ConcentratedForceNode): Model, result, or interface component processed by
+                the operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
@@ -259,6 +327,18 @@ class LoadPreviewVisitor:
         component: ConcentratedMomentNode,
         values: list[float],
     ) -> None:
+        """Return moment.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (ConcentratedMomentNode): Model, result, or interface component processed by
+                the operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             vector = vector3(values)
@@ -282,6 +362,18 @@ class LoadPreviewVisitor:
         component: BodyForceNode,
         values: list[float],
     ) -> None:
+        """Return bodyforce.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (BodyForceNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         center = geometry.instance_center(component.instance_name or "")
         if center is not None:
             vector = vector3(values)
@@ -308,6 +400,18 @@ class LoadPreviewVisitor:
         component: SpringToGroundNode,
         values: list[float],
     ) -> None:
+        """Return spring to ground.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (SpringToGroundNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         point = cls.rp_location(geometry, component.reference_point)
         if (
             point is not None
@@ -337,6 +441,18 @@ class LoadPreviewVisitor:
         component: SpringBetweenRPsNode,
         values: list[float],
     ) -> None:
+        """Return spring between.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (SpringBetweenRPsNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         first = cls.rp_location(geometry, component.reference_point1)
         second = cls.rp_location(geometry, component.reference_point2)
         if (
@@ -367,6 +483,18 @@ class LoadPreviewVisitor:
         component: PenaltyDoFNode,
         values: list[float],
     ) -> None:
+        """Return penalty.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (PenaltyDoFNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         center = geometry.object_center(str(component.obj_name or ""))
         if center is not None and len(values) >= 2:
             scene.items.append(
@@ -392,6 +520,18 @@ class LoadPreviewVisitor:
         component: BoundaryConditionNode,
         values: list[float],
     ) -> None:
+        """Return boundary condition.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (BoundaryConditionNode): Model, result, or interface component processed by
+                the operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         name = str(component.set_nodes_name or "")
         mesh = geometry.mesh_for_surface(component, name)
         if mesh is not None:
@@ -453,6 +593,18 @@ class LoadPreviewVisitor:
         component: BoundaryConditionRPNode,
         values: list[float],
     ) -> None:
+        """Return boundary condition rp.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (BoundaryConditionRPNode): Model, result, or interface component processed by
+                the operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         point = cls.rp_location(geometry, component.reference_point)
         if point is not None:
             scene.items.append(
@@ -476,6 +628,18 @@ class LoadPreviewVisitor:
         component: ReferencePointNode,
         values: list[float],
     ) -> None:
+        """Return reference point.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (ReferencePointNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         point = cls.rp_location(geometry, component)
         if point is not None:
             scene.items.append(
@@ -501,6 +665,18 @@ class LoadPreviewVisitor:
         component: CoupleNode,
         values: list[float],
     ) -> None:
+        """Return couple.
+
+        Args:
+            geometry (PreviewGeometry): Geometry description or geometry collection processed by
+                this interface.
+            scene (LoadScene): Prepared visualization scene; geometry evaluation is performed before
+                rendering.
+            component (CoupleNode): Model, result, or interface component processed by the
+                operation.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         reference_point = cls.rp_location(geometry, component.reference_point)
         node_set_center = geometry.node_set_center(
             component.instance_name or "", component.set_nodes_name or ""
@@ -529,17 +705,45 @@ class LoadPreviewVisitor:
 
 
 def vector3(values: list[float]) -> np.ndarray:
+    """Return vector3.
+
+    Args:
+        values (list[float]): Values aligned with the parameters or records processed by this
+            interface.
+
+    Returns:
+        np.ndarray: Vector3.
+    """
     vector = np.zeros(3, dtype=float)
     vector[: min(3, len(values))] = values[:3]
     return vector
 
 
 def vector_text(values: Sequence[float] | np.ndarray) -> str:
-    """Format coordinates or vector components without assuming physical units."""
+    """Format coordinates or vector components without assuming physical units.
+
+    Args:
+        values (Sequence[float] | np.ndarray): Values aligned with the parameters or records
+            processed by this interface.
+
+    Returns:
+        str: Format coordinates or vector components without assuming physical units.
+    """
     return "[" + ", ".join(f"{value:.6g}" for value in values) + "]"
 
 
 def fixed_dofs_text(geometry: PreviewGeometry, component: FEAComponentNode) -> str:
+    """Return fixed dofs text.
+
+    Args:
+        geometry (PreviewGeometry): Geometry description or geometry collection processed by
+            this interface.
+        component (FEAComponentNode): Model, result, or interface component processed by the
+            operation.
+
+    Returns:
+        str: Fixed dofs text.
+    """
     names = ("X", "Y", "Z", "Rx", "Ry", "Rz")
     return (
         "["

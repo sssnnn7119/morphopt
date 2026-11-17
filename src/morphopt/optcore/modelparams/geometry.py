@@ -41,7 +41,11 @@ class GeometryParams(BaseParams):
     )
 
     def instance_names(self) -> list[str]:
-        """Instance names produced by the registered interfaces."""
+        """Instance names produced by the registered interfaces.
+
+        Returns:
+            list[str]: Instance names produced by the registered interfaces.
+        """
         return [
             name
             for interface in self.interfaces.values()
@@ -50,19 +54,38 @@ class GeometryParams(BaseParams):
 
     # -------------------------------------------------------------- lifecycle
     def pathlog_required(self) -> list[str]:
+        """Return log subdirectories required by this component.
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         return ["geometry"]
 
     # --------------------------------------------------------------- assembly
     def generate(
         self, path_result: str, pools: Pool | None = None
     ) -> torchfea.Assembly:
-        """Build the assembly holding every interface's Parts and Instances."""
+        """Build the assembly holding every interface's Parts and Instances.
+
+        Args:
+            path_result (str): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Assembly: Assembly containing the registered geometry interfaces' Parts and
+                Instances.
+        """
         assembly = torchfea.Assembly()
         for interface in self.interfaces.values():
             interface.add_to_assembly(assembly, path_result=path_result, pools=pools)
         return assembly
 
     def export_data(self, foldpath: str) -> None:
-        """Export the geometry description of every interface."""
+        """Export the geometry description of every interface.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+        """
         for interface in self.interfaces.values():
             interface.export_data(interface.workdir(foldpath))

@@ -196,6 +196,22 @@ def test_missing_or_incompatible_class_selection_is_rejected(bindings, tmp_path)
         ProblemLibrary.export_python_bundle(problem, tmp_path / "run")
 
 
+def test_model_title_includes_the_selected_controller_class():
+    from PySide6.QtWidgets import QApplication
+    from morphopt.ui.presentation.labels import node_title
+    from morphopt.ui.widgets.controller_editor import ControllerSettingsEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    assert node_title(problem, problem.root).endswith(" [Controller]")
+    customize(problem, "ThisController", "MyController")
+    assert node_title(problem, problem.root).endswith(" [MyController]")
+    editor = ControllerSettingsEditor()
+    editor.edit_problem(problem)
+    assert editor.group.title() == node_title(problem, problem.root)
+    editor.close()
+
+
 def test_part_class_names_use_part_types_and_old_paths_are_rejected():
     problem = ProblemLibrary.create("shapeopt")
     catalog = class_catalog(problem)
@@ -364,7 +380,10 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     helper_item = window.tree.topLevelItem(1)
     assert window.tree._item_node[root_item] is problem.root
     from morphopt.ui.i18n import tr
-    assert root_item.text(0) == tr("ui.widgets.model_tree.container.problem")
+    assert root_item.text(0) == tr(
+        "ui.naming.object_title", name=tr("ui.widgets.model_tree.container.problem"),
+        class_name="Controller",
+    )
     assert window.tree._item_node[helper_item].kind == "helper_code"
     assert [
         window.tree._item_node[root_item.child(i)].kind

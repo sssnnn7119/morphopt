@@ -61,6 +61,11 @@ class ObserverPanel(QWidget):
     selectionChanged = Signal(str, int)
 
     def __init__(self, parent=None):
+        """Initialize ObserverPanel and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._results = ResultSession()
         self._case_names: list[str] = []
@@ -176,15 +181,32 @@ class ObserverPanel(QWidget):
 
     @property
     def path_result(self) -> str | None:
+        """Return path result.
+
+        Returns:
+            str | None: Path result.
+        """
         return self._results.folder
 
     @property
     def iteration(self) -> int:
+        """Return iteration.
+
+        Returns:
+            int: Iteration.
+        """
         return self._results.iteration
 
     # ------------------------------------------------------------------ api
     def ensure_loaded(self, folder: str) -> bool:
-        """Bind the controller/params for a folder once (no rendering yet)."""
+        """Bind the controller/params for a folder once (no rendering yet).
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+
+        Returns:
+            bool: Bind the controller/params for a folder once (no rendering yet).
+        """
         if self.path_result != str(Path(folder).resolve()):
             self.reset()
         return self._results.bind(folder)
@@ -195,7 +217,12 @@ class ObserverPanel(QWidget):
             self._logs_page.refresh(self._results)
 
     def show_iteration(self, folder: str, iteration: int) -> None:
-        """Render one finished iteration (history + current option page)."""
+        """Render one finished iteration (history + current option page).
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         try:
             history = self._results.load_iteration(folder, iteration)
         except Exception as exc:
@@ -223,12 +250,20 @@ class ObserverPanel(QWidget):
         self.selectionChanged.emit(self.path_result, self.slider.value())
 
     def select_iteration(self, iteration: int) -> None:
-        """Pin the shared analysis selection, including when this page is hidden."""
+        """Pin the shared analysis selection, including when this page is hidden.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         self.chk_follow.setChecked(False)
         self.slider.setValue(iteration)
 
     def lock_selection(self, locked: bool) -> None:
-        """Keep an in-flight finite-element model bound to its source iteration."""
+        """Keep an in-flight finite-element model bound to its source iteration.
+
+        Args:
+            locked (bool): Prevent committing edits while the task is running when True.
+        """
         if locked:
             self.chk_follow.setChecked(False)
         for control in (self.slider, self.btn_prev, self.btn_next, self.chk_follow):
@@ -274,7 +309,12 @@ class ObserverPanel(QWidget):
     def _history_gif_view(
         self,
     ) -> tuple[dict[str, Any], tuple[int, int], dict[str, Any]]:
-        """Snapshot the active 3D camera, viewport size, and visual palette."""
+        """Snapshot the active 3D camera, viewport size, and visual palette.
+
+        Returns:
+            tuple[dict[str, Any], tuple[int, int], dict[str, Any]]: Snapshot the active 3D camera,
+                viewport size, and visual palette.
+        """
         page = (
             self._deformation_page
             if self._last_3d_page == "deformation"
@@ -317,8 +357,8 @@ class ObserverPanel(QWidget):
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
 
-        Called when a fresh (non-result) task source is chosen, so the viewer
-        no longer keeps showing the previously browsed result.
+        Called when a fresh (non-result) task source is chosen, so the viewer no longer keeps
+        showing the previously browsed result.
         """
         self._results.reset()
         self.action_export_surfaces.setEnabled(False)
@@ -386,6 +426,11 @@ class ObserverPanel(QWidget):
         self._update_surface_export_action()
 
     def showEvent(self, event) -> None:
+        """Refresh deferred content when the widget becomes visible.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().showEvent(event)
         self._refresh_current_option()
 
@@ -464,7 +509,12 @@ class ObserverPanel(QWidget):
             self.options.blockSignals(False)
 
     def _current_surface_export(self) -> tuple[list[dict[str, Any]], str] | None:
-        """Build the export request from the selected component and view."""
+        """Build the export request from the selected component and view.
+
+        Returns:
+            tuple[list[dict[str, Any]], str] | None: Build the export request from the selected
+                component and view.
+        """
         item = self.options.currentItem()
         data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
         if not data or data[0] != "component" or self._results.params is None:
@@ -535,6 +585,11 @@ class ObserverControls(QWidget):
     outputReceived = Signal(int, str)
 
     def __init__(self, parent=None):
+        """Initialize ObserverControls and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._run = OptimizationRunSession()
         self.task_label = ""
@@ -614,11 +669,22 @@ class ObserverControls(QWidget):
 
     # ------------------------------------------------------------------ api
     def is_running(self) -> bool:
-        """Whether an optimization task is currently running."""
+        """Whether an optimization task is currently running.
+
+        Returns:
+            bool: True if an optimization task is currently running.
+        """
         return self._run.active
 
     def start_definition(self, problem) -> bool:
-        """Launch a validated snapshot from the definition workspace."""
+        """Launch a validated snapshot from the definition workspace.
+
+        Args:
+            problem: Editable problem definition shared by the UI application services.
+
+        Returns:
+            bool: Launch a validated snapshot from the definition workspace.
+        """
         if self.is_running():
             return False
         source = RunSource(RunSourceKind.DEFINITION, label=problem.label)
@@ -629,7 +695,14 @@ class ObserverControls(QWidget):
         return True
 
     def start_python(self, path: str) -> bool:
-        """Launch the script chosen in the File menu."""
+        """Launch the script chosen in the File menu.
+
+        Args:
+            path (str): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            bool: Launch the script chosen in the File menu.
+        """
         source = RunSource(RunSourceKind.PYTHON, path=path)
         if not self._launch(source, lambda: self._run.start_python(path)):
             return False
@@ -639,10 +712,22 @@ class ObserverControls(QWidget):
 
     @staticmethod
     def is_result_folder(folder: str) -> bool:
+        """Return is result folder.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+
+        Returns:
+            bool: Is result folder.
+        """
         return OptimizationRunSession.is_result_folder(folder)
 
     def open_result(self, folder: str) -> None:
-        """Browse a saved result and prepare continuation without starting a worker."""
+        """Browse a saved result and prepare continuation without starting a worker.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+        """
         self._run.select_source(
             RunSource(
                 RunSourceKind.CONTINUE,
@@ -871,7 +956,13 @@ class ObserverControls(QWidget):
             self._refresh_status()
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         self.panel.apply_theme()
 
     def close_cleanup(self) -> bool:
+        """Return close cleanup.
+
+        Returns:
+            bool: Close cleanup.
+        """
         return self._stop_job()

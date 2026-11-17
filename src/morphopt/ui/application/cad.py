@@ -25,7 +25,18 @@ def cad_operation_from_node(
     operation: CADOperationNode,
     namespace: dict[str, object] | None = None,
 ) -> torchfea.cad.CADOperation:
-    """Create the corresponding TorchFEA CAD object for one UI operation."""
+    """Create the corresponding TorchFEA CAD object for one UI operation.
+
+    Args:
+        operation (CADOperationNode): CAD history operation or application action being
+            processed.
+        namespace (dict[str, object] | None): Python evaluation namespace containing imported
+            modules and auxiliary definitions.
+
+    Returns:
+        torchfea.cad.CADOperation: Create the corresponding TorchFEA CAD object for one UI
+            operation.
+    """
     operation_type = operation.operation_type
     spec = CAD_OPERATION_TYPES[operation_type]
 
@@ -51,7 +62,17 @@ def cad_operation_from_node(
 def cad_operations_from_node(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> tuple[torchfea.cad.CADOperation, ...]:
-    """Resolve the current UI CAD operations for preview or export."""
+    """Resolve the current UI CAD operations for preview or export.
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        tuple[torchfea.cad.CADOperation, ...]: Resolve the current UI CAD operations for preview
+            or export.
+    """
     namespace = DefinitionValues(problem).namespace
     return tuple(
         cad_operation_from_node(operation, namespace)
@@ -62,7 +83,16 @@ def cad_operations_from_node(
 def cad_preview_signature(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> tuple[str, ...]:
-    """Return a stable signature for the resolved CAD preview geometry."""
+    """Return a stable signature for the resolved CAD preview geometry.
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        tuple[str, ...]: A stable signature for the resolved CAD preview geometry.
+    """
     return tuple(
         f"{type(operation).__qualname__}:"
         f"{json.dumps(vars(operation), sort_keys=True, default=repr)}"
@@ -73,7 +103,16 @@ def cad_preview_signature(
 def cad_part_from_node(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> CADPart:
-    """Create a preview Part from its structured, ordered CAD feature list."""
+    """Create a preview Part from its structured, ordered CAD feature list.
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        CADPart: Create a preview Part from its structured, ordered CAD feature list.
+    """
     values = DefinitionValues(problem)
     operations = tuple(
         cad_operation_from_node(operation, values.namespace)
@@ -104,7 +143,16 @@ def cad_part_from_node(
 def cad_brep_records_from_node(
     node: CADPartNode, problem: ProblemDefinition | None = None
 ) -> list[dict]:
-    """Return OCC face and edge geometry for the CAD viewport."""
+    """Return OCC face and edge geometry for the CAD viewport.
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        list[dict]: OCC face and edge geometry for the CAD viewport.
+    """
     operations = cad_operations_from_node(node, problem)
     if not operations:
         return []
@@ -114,7 +162,14 @@ def cad_brep_records_from_node(
 def export_cad_step(
     node: CADPartNode, path: str | Path, problem: ProblemDefinition | None = None
 ) -> None:
-    """Export the Part's final CAD solids in local coordinates without meshing."""
+    """Export the Part's final CAD solids in local coordinates without meshing.
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        path (str | Path): Filesystem path read, restored, or written by this operation.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+    """
     operations = cad_operations_from_node(node, problem)
     torchfea.cad.export_step(operations, str(path))
 
@@ -126,8 +181,18 @@ def convert_cad_to_boundary(
 ) -> BoundaryPartNode:
     """Convert the generated CAD definition to embedded BREP boundary assets.
 
-    This function constructs the replacement without changing the problem.
-    The caller commits it through ProblemDefinition.replace_part().
+    This function constructs the replacement without changing the problem. The caller commits it
+    through ProblemDefinition.replace_part().
+
+    Args:
+        node (CADPartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        asset_directory (str | Path): Directory containing the exported script's companion asset
+            files.
+
+    Returns:
+        BoundaryPartNode: Convert the generated CAD definition to embedded BREP boundary assets.
     """
     from .definitions import ProblemLibrary
 

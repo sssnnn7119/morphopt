@@ -17,6 +17,18 @@ def _run_once(
     design_vars: dict[str, torch.Tensor],
 ) -> torch.Tensor:
     # Reuse one FE template and only deep-copy it to avoid remeshing each FD probe.
+    """Return run once.
+
+    Args:
+        controller (ThisController): Controller providing the current model and execution state.
+        fe_template (torchfea.FEAController): Finite-element model template supplying the
+            assembly for an analysis.
+        design_vars (dict[str, torch.Tensor]): Design-variable tensor with respect to which
+            derivatives are computed.
+
+    Returns:
+        torch.Tensor: Run once.
+    """
     fe = copy.deepcopy(fe_template)
     controller.params.modify_assembly(design_vars, fe.assembly)
     fe.initialize()
@@ -35,6 +47,22 @@ def _central_difference(
     sampled_ids: torch.Tensor,
     eps: float = 1e-2,
 ) -> torch.Tensor:
+    """Return central difference.
+
+    Args:
+        controller (ThisController): Controller providing the current model and execution state.
+        fe_template (torchfea.FEAController): Finite-element model template supplying the
+            assembly for an analysis.
+        x0_full (dict[str, torch.Tensor]): Complete reference design-variable vector before
+            perturbation.
+        key (str): Lookup key identifying the requested field or registered item.
+        sampled_ids (torch.Tensor): Flattened design-variable indices selected for
+            finite-difference checking.
+        eps (float): Positive numerical regularization or finite-difference increment.
+
+    Returns:
+        torch.Tensor: Central difference.
+    """
     grad_fd = torch.zeros(
         sampled_ids.numel(), dtype=x0_full[key].dtype, device=x0_full[key].device
     )
@@ -55,6 +83,17 @@ def _sample_ids_by_gradient(
     count: int,
     min_abs: float,
 ) -> torch.Tensor:
+    """Return sample ids by gradient.
+
+    Args:
+        grad_full (torch.Tensor): Analytic gradient aligned with the complete design-variable
+            vector.
+        count (int): Number of repeated objects or records requested.
+        min_abs (float): Minimum gradient magnitude used when selecting entries to check.
+
+    Returns:
+        torch.Tensor: Sample ids by gradient.
+    """
     grad_abs = grad_full.detach().abs().flatten()
     if grad_abs.numel() == 0:
         return torch.zeros(0, dtype=torch.long, device=grad_abs.device)
@@ -78,6 +117,15 @@ def check_gradients(
     MIN_GRAD_ABS: float = 1e-6,
     FD_EPS: float = 1e-2,
 ):
+    """Check gradients.
+
+    Args:
+        controller (ThisController): Controller providing the current model and execution state.
+        N_GEOM_CHECK (int): Maximum number of geometry variables sampled for gradient checking.
+        N_MAT_CHECK (int): Maximum number of material variables sampled for gradient checking.
+        MIN_GRAD_ABS (float): Smallest analytic-gradient magnitude included in the check.
+        FD_EPS (float): Finite-difference perturbation size.
+    """
     import tempfile
 
     import morphopt

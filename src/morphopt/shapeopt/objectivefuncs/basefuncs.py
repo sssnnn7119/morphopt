@@ -16,6 +16,7 @@ class BaseConstraints:
     """Geometric penalties evaluated with reference surface quadrature."""
 
     def __init__(self) -> None:
+        """Initialize BaseConstraints and its configuration state."""
         self.barrier_function = PolynomialBarrier()
         self.area_weights: list[torch.Tensor] = []
         """Reference area weights, fixed throughout one subproblem."""
@@ -33,14 +34,34 @@ class BaseConstraints:
         surfaces: Sequence[BaseSurface],
         **kwargs: object,
     ) -> None:
-        """Bind reference area weights without physical sensitivity scaling."""
+        """Bind reference area weights without physical sensitivity scaling.
+
+        Args:
+            r0 (list[torch.Tensor]): Reference Cartesian surface samples, with one (num_points, 3)
+                block per surface.
+            rdu0 (list[torch.Tensor]): Reference first derivatives with one surface block of shape
+                (num_points, 3, 2).
+            rdu20 (list[torch.Tensor]): Reference second derivatives with one surface block of shape
+                (num_points, 3, 2, 2).
+            weights (list[torch.Tensor]): Integration, basis, or rational weights aligned with the
+                corresponding points.
+            surfaces (Sequence[BaseSurface]): Surface interfaces in boundary registration order:
+                exterior first, followed by cavities.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         self.area_weights = [weight.detach().clone() for weight in weights]
         self.sample_weights = None
         self.surfaces = list(surfaces)
         self.barrier_function = PolynomialBarrier()
 
     def set_sample_weights(self, weights: list[torch.Tensor] | None) -> None:
-        """Bind the strategy's frozen factors in surface quadrature order."""
+        """Bind the strategy's frozen factors in surface quadrature order.
+
+        Args:
+            weights (list[torch.Tensor] | None): Integration, basis, or rational weights aligned
+                with the corresponding points.
+        """
         if weights is not None:
             if len(weights) != len(self.area_weights) or any(
                 value.shape != area.shape
@@ -57,7 +78,11 @@ class BaseConstraints:
 
     @property
     def integration_weights(self) -> list[torch.Tensor]:
-        """Compose area and pointwise factors without changing either input."""
+        """Compose area and pointwise factors without changing either input.
+
+        Returns:
+            list[torch.Tensor]: Compose area and pointwise factors without changing either input.
+        """
         if self.sample_weights is None:
             return self.area_weights
         return [area * value for area, value in zip(self.area_weights, self.sample_weights)]
@@ -70,8 +95,7 @@ class BaseConstraints:
         *args,
         **kwargs,
     ) -> float:
-        """
-        Call the objective function.
+        """Call the objective function.
 
         Args:
             r (list[torch.Tensor]): The point coordinates of the surfaces.
@@ -81,7 +105,7 @@ class BaseConstraints:
             **kwargs: Keyword arguments.
 
         Returns:
-            The value of the objective function.
+            torch.Tensor: Differentiable scalar or one-element penalty tensor.
         """
         raise NotImplementedError("Objective function not implemented.")
 
@@ -111,15 +135,13 @@ class BaseObjective(ProtocalSavable):
         surfaces: Sequence[BaseSurface],
         **kwargs: object,
     ) -> None:
-        """
-        Initialize the objective function with the given parameters.
+        """Initialize the objective function with the given parameters.
 
         Args:
             gradient (torch.Tensor): The gradient of the objective function.
             r0 (list[torch.Tensor]): The initial point coordinates of the surfaces.
             rdu0 (list[torch.Tensor]): The initial partial derivatives of the surfaces.
             rdu20 (list[torch.Tensor]): The initial second partial derivatives of the surfaces.
-            weights (list[torch.Tensor]): The weights for each point.
             surfaces (Sequence[BaseSurface]): Surfaces owned by the boundary Part.
             *args: Positional arguments.
             **kwargs: Keyword arguments.
@@ -134,8 +156,7 @@ class BaseObjective(ProtocalSavable):
         *args,
         **kwargs,
     ) -> float:
-        """
-        Call the objective function.
+        """Call the objective function.
 
         Args:
             r (list[torch.Tensor]): The point coordinates of the surfaces.
@@ -145,6 +166,6 @@ class BaseObjective(ProtocalSavable):
             **kwargs: Keyword arguments.
 
         Returns:
-            The value of the objective function.
+            torch.Tensor: Differentiable scalar or one-element objective tensor.
         """
         raise NotImplementedError("Objective function not implemented.")

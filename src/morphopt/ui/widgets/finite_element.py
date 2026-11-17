@@ -57,10 +57,18 @@ from .viewport import PlotViewport
 
 
 class FiniteElementPage(QWidget):
+    """Inspect finite-element results, edit analysis loads, run analyses, and export selected
+    fields.
+    """
     selectionChanged = Signal(str, int)
     busyChanged = Signal(bool)
 
     def __init__(self, parent=None):
+        """Initialize FiniteElementPage and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.session = FiniteElementSession()
         self._job = ""
@@ -220,10 +228,20 @@ class FiniteElementPage(QWidget):
         return label
 
     def is_running(self) -> bool:
+        """Return is running.
+
+        Returns:
+            bool: Is running.
+        """
         return self._process.state() != QProcess.ProcessState.NotRunning
 
     def synchronize_result(self, folder: str, iteration: int) -> None:
-        """Follow the analysis selection without discarding edits to the same model."""
+        """Follow the analysis selection without discarding edits to the same model.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         if self.is_running():
             return
         source = self.session.source
@@ -307,6 +325,12 @@ class FiniteElementPage(QWidget):
         )
 
     def import_iteration(self, folder: str, iteration: int) -> None:
+        """Return import iteration.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         if self.is_running():
             QMessageBox.information(
                 self, tr("ui.workspace.finite_element"), tr("ui.fea.busy")
@@ -391,6 +415,7 @@ class FiniteElementPage(QWidget):
         self._render()
 
     def start_analysis(self) -> None:
+        """Start analysis."""
         if self.is_running() or not self._has_selected_model():
             return
         try:
@@ -580,6 +605,7 @@ class FiniteElementPage(QWidget):
         )
 
     def export_fields(self) -> None:
+        """Export fields."""
         if self.is_running():
             return
         if not self._has_selected_model() or self.session.result is None:
@@ -624,6 +650,7 @@ class FiniteElementPage(QWidget):
         self._start_worker("export", request)
 
     def export_native_results(self) -> None:
+        """Export native results."""
         if self.is_running() or not self._has_selected_model():
             return
         name, accepted = QInputDialog.getText(
@@ -742,6 +769,11 @@ class FiniteElementPage(QWidget):
             self.output.appendPlainText(tr("ui.fea.preview_failed", error=exc))
 
     def showEvent(self, event):
+        """Refresh deferred content when the widget becomes visible.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().showEvent(event)
         if self._render_pending:
             self._render()
@@ -751,6 +783,7 @@ class FiniteElementPage(QWidget):
         self.status.setText(tr("ui.fea." + key, **values))
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         for widget, key in self._texts:
             if isinstance(widget, QGroupBox):
                 widget.setTitle(tr(key))
@@ -773,10 +806,12 @@ class FiniteElementPage(QWidget):
             self._set_status(self._status_key, **self._status_values)
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
         self._render()
 
     def close_cleanup(self) -> None:
+        """Return close cleanup."""
         if self.is_running():
             self._process.kill()
             self._process.waitForFinished()

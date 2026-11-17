@@ -11,6 +11,7 @@ import torch
 from .base_constraints import (
     BaseSurfaceConstraints,
     SurfaceRelationConstraint,
+    axis_rotation,
 )
 
 if TYPE_CHECKING:
@@ -18,7 +19,15 @@ if TYPE_CHECKING:
 
 
 class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
+    """Share CPGEO control-mesh reconstruction and tensor-assignment helpers between symmetry
+    projections.
+    """
     def validate_surface(self, surface: CPGEOSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         from .cpgeo_surface import CPGEOSurface
 
         if not isinstance(surface, CPGEOSurface):
@@ -30,6 +39,14 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
         vertices: np.ndarray,
         faces: np.ndarray,
     ) -> None:
+        """Install the reconstructed control mesh and rebuild the backend and preload caches.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+            vertices (np.ndarray): Cartesian vertex coordinates with shape (num_vertices, 3).
+            faces (np.ndarray): Face selection or mesh connectivity required by the selected surface
+                operation.
+        """
         surface.control_points = vertices
         surface.model._control_points = vertices
         surface.model._cp_faces = faces
@@ -39,6 +56,13 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
 
     @staticmethod
     def _set_control_points(surface: CPGEOSurface, points: torch.Tensor) -> None:
+        """Set control points.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+            points (torch.Tensor): Point coordinates in the representation expected by this
+                operation.
+        """
         surface.control_points = points.reshape(-1, 3)
 
 
@@ -46,12 +70,23 @@ class CPGEOMirrorConstraint(_CPGEOSymmetryConstraint):
     """Mirror a CPGEO control mesh across a coordinate plane."""
 
     def __init__(self, plane: str = "yz", offset: float = 0.0) -> None:
+        """Initialize CPGEOMirrorConstraint and its configuration state.
+
+        Args:
+            plane (str): Coordinate plane used for mirror symmetry.
+            offset (float): Signed plane or surface offset in model length units.
+        """
         self.plane = plane.lower()
         if self.plane not in {"xy", "xz", "yz"}:
             raise ValueError("plane must be one of 'xy', 'xz' or 'yz'.")
         self.offset = float(offset)
 
     def apply(self, surface: CPGEOSurface) -> None:
+        """Apply the CPGEOMirrorConstraint state.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         axis = {"yz": 0, "xz": 1, "xy": 2}[self.plane]
         points = surface.control_points.reshape(2, -1, 3)[0]
         reflected = points.clone()
@@ -59,6 +94,11 @@ class CPGEOMirrorConstraint(_CPGEOSymmetryConstraint):
         self._set_control_points(surface, torch.cat((points, reflected), dim=0))
 
     def reinitialize(self, surface: CPGEOSurface) -> None:
+        """Reinitialize the CPGEOMirrorConstraint state.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         import cpgeo
 
         axis = {"yz": 0, "xz": 1, "xy": 2}[self.plane]
@@ -82,6 +122,15 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
         order: int = 2,
         center: Sequence[float] = (0.0, 0.0, 0.0),
     ) -> None:
+        """Initialize CPGEORotationalSymmetryConstraint and its configuration state.
+
+        Args:
+            axis (str | Sequence[float]): Rotation or section axis in the form accepted by the
+                operation.
+            order (int): Rotational repetition count, or interpolation order for the selected
+                operation.
+            center (Sequence[float]): Cartesian center of the rotation or geometric construction.
+        """
         if isinstance(axis, str):
             axes = {
                 "x": (1.0, 0.0, 0.0),
@@ -104,13 +153,18 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
             raise ValueError("center must contain three coordinates.")
 
     def apply(self, surface: CPGEOSurface) -> None:
+        """Apply the CPGEORotationalSymmetryConstraint state.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         points = surface.control_points.reshape(self.order, -1, 3)[0]
         center = torch.as_tensor(self.center, dtype=points.dtype, device=points.device)
         sectors = []
         for step in range(self.order):
             angle = 2.0 * np.pi * step / self.order
             rotation = torch.as_tensor(
-                self._rotation_matrix(self.axis, angle),
+                axis_rotation(self.axis, angle),
                 dtype=points.dtype,
                 device=points.device,
             )
@@ -118,6 +172,11 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
         self._set_control_points(surface, torch.cat(sectors, dim=0))
 
     def reinitialize(self, surface: CPGEOSurface) -> None:
+        """Reinitialize the CPGEORotationalSymmetryConstraint state.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         import cpgeo
 
         vertices = surface.control_points.detach().cpu().numpy().copy()
@@ -133,6 +192,14 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
 
     @staticmethod
     def _align_axis_to_z(axis: np.ndarray) -> np.ndarray:
+        """Construct a rotation that aligns the normalized symmetry axis with positive Z.
+
+        Args:
+            axis (np.ndarray): Rotation or section axis in the form accepted by the operation.
+
+        Returns:
+            np.ndarray: Rotation matrix with shape (3, 3).
+        """
         target = np.array([0.0, 0.0, 1.0])
         cross = np.cross(axis, target)
         cosine = float(np.dot(axis, target))
@@ -147,36 +214,15 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
         )
         return np.eye(3) + skew + skew @ skew / (1.0 + cosine)
 
-    @staticmethod
-    def _rotation_matrix(axis: np.ndarray, angle: float) -> np.ndarray:
-        x, y, z = axis
-        cosine, sine = np.cos(angle), np.sin(angle)
-        one_minus_cosine = 1.0 - cosine
-        return np.array(
-            [
-                [
-                    cosine + x * x * one_minus_cosine,
-                    x * y * one_minus_cosine - z * sine,
-                    x * z * one_minus_cosine + y * sine,
-                ],
-                [
-                    y * x * one_minus_cosine + z * sine,
-                    cosine + y * y * one_minus_cosine,
-                    y * z * one_minus_cosine - x * sine,
-                ],
-                [
-                    z * x * one_minus_cosine - y * sine,
-                    z * y * one_minus_cosine + x * sine,
-                    cosine + z * z * one_minus_cosine,
-                ],
-            ]
-        )
-
-
 class CPGEOSurfaceRelationConstraint(SurfaceRelationConstraint["CPGEOSurface"]):
     """Copy CPGEO topology and transformed control points to another surface."""
 
     def validate_surface(self, surface: CPGEOSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         super().validate_surface(surface)
         from .cpgeo_surface import CPGEOSurface
 
@@ -184,6 +230,11 @@ class CPGEOSurfaceRelationConstraint(SurfaceRelationConstraint["CPGEOSurface"]):
             raise TypeError("CPGEO surface relations require CPGEO surfaces.")
 
     def _copy_surface_data(self, surface: CPGEOSurface) -> None:
+        """Copy surface data.
+
+        Args:
+            surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
+        """
         source = surface.model
         target = self.related.model
         target._cp_faces = source._cp_faces.copy()
@@ -197,6 +248,7 @@ class CPGEOSurfaceRelationConstraint(SurfaceRelationConstraint["CPGEOSurface"]):
             self.related._output_cpfaces = surface._output_cpfaces.copy()
 
     def _reinitialize_related(self) -> None:
+        """Reinitialize related."""
         self.related.initialize()
         self.related._num_knots = self.related.model._knots.shape[0]
         self.related.pre_load()

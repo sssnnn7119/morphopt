@@ -17,6 +17,16 @@ class MinValue(BaseConstraints):
         barrier_thre: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_THRESHOLD,
         barrier_ratio: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_RATIO,
     ) -> None:
+        """Initialize MinValue and its configuration state.
+
+        Args:
+            xmin (float): Lower bound of the material design variables.
+            threshold (float): Offset of the bound's activation range from the nominal material
+                limit.
+            p (int): Polynomial penalty exponent.
+            barrier_thre (float): Positive reference violation used by the material bound barrier.
+            barrier_ratio (float): Activation threshold as a fraction of the barrier limit.
+        """
         super().__init__()
         self.xmin = float(xmin)
         self.threshold = float(threshold)
@@ -27,17 +37,21 @@ class MinValue(BaseConstraints):
         self.barrier_ratio = float(barrier_ratio)
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Evaluate MinValue for the supplied inputs.
+
+        Args:
+            cps (torch.Tensor): Current SIMP design control variables.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: Integrated penalty for design values below the configured lower bound.
+        """
         viol = (self.xmin + self.threshold) - cps
-        mask = viol > 0
-        if not mask.any():
-            return torch.zeros(1, device=cps.device, dtype=cps.dtype)
-
-        index, loss = self.barrier_function(viol[mask], self.barrier_thre, self.barrier_ratio, self.p)
-        if index.numel() == 0:
-            return torch.zeros(1, device=cps.device, dtype=cps.dtype)
-
-        scale = self.scaler[mask][index] if self.scaler is not None else 1.0
-        return (scale * loss).sum().reshape(1)
+        _, loss = self.barrier_function(
+            viol.flatten(), self.barrier_thre, self.barrier_ratio, self.p
+        )
+        return loss.sum().reshape(1)
 
 
 class MaxValue(BaseConstraints):
@@ -53,6 +67,16 @@ class MaxValue(BaseConstraints):
         barrier_thre: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_THRESHOLD,
         barrier_ratio: float = CONSTANT.KERNEL.SIMP_CONSTRAINTS.BARRIER_RATIO,
     ) -> None:
+        """Initialize MaxValue and its configuration state.
+
+        Args:
+            xmax (float): Upper bound of the material design variables.
+            threshold (float): Offset of the bound's activation range from the nominal material
+                limit.
+            p (int): Polynomial penalty exponent.
+            barrier_thre (float): Positive reference violation used by the material bound barrier.
+            barrier_ratio (float): Activation threshold as a fraction of the barrier limit.
+        """
         super().__init__()
         self.xmax = float(xmax)
         self.threshold = float(threshold)
@@ -63,14 +87,18 @@ class MaxValue(BaseConstraints):
         self.barrier_ratio = float(barrier_ratio)
 
     def __call__(self, cps: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Evaluate MaxValue for the supplied inputs.
+
+        Args:
+            cps (torch.Tensor): Current SIMP design control variables.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: Integrated penalty for design values above the configured upper bound.
+        """
         viol = cps - (self.xmax - self.threshold)
-        mask = viol > 0
-        if not mask.any():
-            return torch.zeros(1, device=cps.device, dtype=cps.dtype)
-
-        index, loss = self.barrier_function(viol[mask], self.barrier_thre, self.barrier_ratio, self.p)
-        if index.numel() == 0:
-            return torch.zeros(1, device=cps.device, dtype=cps.dtype)
-
-        scale = self.scaler[mask][index] if self.scaler is not None else 1.0
-        return (scale * loss).sum().reshape(1)
+        _, loss = self.barrier_function(
+            viol.flatten(), self.barrier_thre, self.barrier_ratio, self.p
+        )
+        return loss.sum().reshape(1)

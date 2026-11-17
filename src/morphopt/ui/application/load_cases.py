@@ -24,6 +24,15 @@ WORKSPACE_AXES = {
 
 
 def code_fields(problem: ProblemDefinition) -> list[tuple[object, str]]:
+    """Return code fields.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        list[tuple[object, str]]: Code fields.
+    """
     fields = [(problem, "helper_code")]
     if problem.objective:
         fields.extend(
@@ -60,6 +69,14 @@ def _code_case_names(owner: object, key: str) -> set[str]:
 
 
 def term_case_names(term: dict) -> set[str]:
+    """Return term case names.
+
+    Args:
+        term (dict): Physical objective or metric configuration being edited.
+
+    Returns:
+        set[str]: Term case names.
+    """
     names = set(term.get("case_names", []))
     if term.get("step_name"):
         names.add(term["step_name"])
@@ -69,6 +86,15 @@ def term_case_names(term: dict) -> set[str]:
 
 
 def objective_terms(problem: ProblemDefinition) -> list[dict]:
+    """Return objective terms.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        list[dict]: Objective terms.
+    """
     if problem.objective is None:
         return []
     return [*problem.objective.objective_terms, *problem.objective.metrics_terms]
@@ -77,6 +103,16 @@ def objective_terms(problem: ProblemDefinition) -> list[dict]:
 def referenced_steps(
     problem: ProblemDefinition, exclude: tuple[dict, ...] = ()
 ) -> set[str]:
+    """Return referenced steps.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        exclude (tuple[dict, ...]): Entries omitted from the resulting selection.
+
+    Returns:
+        set[str]: Referenced steps.
+    """
     names = set()
     for term in objective_terms(problem):
         if not any(term is omitted for omitted in exclude):
@@ -92,12 +128,30 @@ def referenced_steps(
 
 
 def case_objectives(problem: ProblemDefinition, name: str) -> list[dict]:
-    """Return objective and metric terms that reference the named case."""
+    """Return objective and metric terms that reference the named case.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        name (str): Name identifying the item in its owning collection.
+
+    Returns:
+        list[dict]: Objective and metric terms that reference the named case.
+    """
     return [term for term in objective_terms(problem) if name in term_case_names(term)]
 
 
 def unused_cases(problem: ProblemDefinition, terms: list[dict]) -> list[str]:
-    """List cases made unreferenced by removing these terms, in registration order."""
+    """List cases made unreferenced by removing these terms, in registration order.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        terms (list[dict]): Objective or metric term configurations in evaluation order.
+
+    Returns:
+        list[str]: List cases made unreferenced by removing these terms, in registration order.
+    """
     candidates = set().union(*(term_case_names(term) for term in terms))
     owners = {term["id"] for term in terms if "id" in term}
     candidates.update(
@@ -114,7 +168,15 @@ def unused_cases(problem: ProblemDefinition, terms: list[dict]) -> list[str]:
 def remove_objectives(
     problem: ProblemDefinition, terms: list[dict], remove_unused: bool
 ) -> None:
-    """Remove selected terms and apply the user's case-retention choice."""
+    """Remove selected terms and apply the user's case-retention choice.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        terms (list[dict]): Objective or metric term configurations in evaluation order.
+        remove_unused (bool): Remove generated load cases that have no remaining references when
+            True.
+    """
     removable = unused_cases(problem, terms) if remove_unused else []
     for collection in (
         problem.objective.objective_terms,
@@ -155,7 +217,16 @@ def _replace_code_case(problem: ProblemDefinition, old: str, new: str | None) ->
 def remove_case(
     problem: ProblemDefinition, name: str, remove_terms: bool, remove_unused: bool
 ) -> None:
-    """Delete a case, removing its referring terms or clearing their references."""
+    """Delete a case, removing its referring terms or clearing their references.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        name (str): Name identifying the item in its owning collection.
+        remove_terms (bool): Remove dependent objective or penalty terms when True.
+        remove_unused (bool): Remove generated load cases that have no remaining references when
+            True.
+    """
     terms = case_objectives(problem, name)
     if remove_terms and terms:
         remove_objectives(problem, terms, remove_unused)
@@ -177,6 +248,14 @@ def remove_case(
 
 
 def rename_case(problem: ProblemDefinition, old: str, new: str) -> None:
+    """Return rename case.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        old (str): Previous value or snapshot before the edit.
+        new (str): New value or snapshot after the edit.
+    """
     new = new.strip()
     if (
         not new
@@ -215,6 +294,16 @@ def rename_case(problem: ProblemDefinition, old: str, new: str) -> None:
 
 
 def workspace_spec(term: dict, problem: ProblemDefinition) -> dict:
+    """Return workspace spec.
+
+    Args:
+        term (dict): Physical objective or metric configuration being edited.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        dict: Workspace spec.
+    """
     axes = WORKSPACE_AXES[term["kind"]]
     inputs = term.get("inputs", [])
     if len(inputs) != len(axes):
@@ -261,7 +350,16 @@ def workspace_spec(term: dict, problem: ProblemDefinition) -> dict:
 
 
 def workspace_case_status(term: dict, problem: ProblemDefinition) -> str:
-    """Describe registered Gauss-point cases or the missing workspace settings."""
+    """Describe registered Gauss-point cases or the missing workspace settings.
+
+    Args:
+        term (dict): Physical objective or metric configuration being edited.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        str: Describe registered Gauss-point cases or the missing workspace settings.
+    """
     try:
         spec = workspace_spec(term, problem)
     except (ValueError, TypeError, KeyError) as error:
@@ -280,6 +378,12 @@ def workspace_case_status(term: dict, problem: ProblemDefinition) -> str:
 
 
 def synchronize_workspaces(problem: ProblemDefinition) -> None:
+    """Return synchronize workspaces.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+    """
     if problem.steps is None or problem.objective is None:
         return
     steps = problem.steps

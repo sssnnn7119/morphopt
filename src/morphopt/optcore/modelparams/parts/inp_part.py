@@ -37,6 +37,15 @@ class INPPart(FixedPart):
         inp_part_name: str | None = None,
         exterior_surface: str | None = None,
     ) -> None:
+        """Initialize INPPart and its configuration state.
+
+        Args:
+            mesh_file (str): Input mesh-asset filename.
+            part_name (str | None): Registered Part name referenced by instances, loads, or material
+                assignments.
+            inp_part_name (str | None): Part name selected from the imported INP asset.
+            exterior_surface (str | None): Name assigned to the Part's exterior surface selection.
+        """
         super().__init__(
             part_name=part_name,
             exterior_surface=exterior_surface,
@@ -51,6 +60,12 @@ class INPPart(FixedPart):
                 f"Abaqus mesh file does not exist: {self.mesh_file}")
 
     def _mesh_cache_key(self) -> object:
+        """Identify the imported INP file version and selected source Part.
+
+        Returns:
+            tuple: Absolute asset path, modification/size signature, source Part selection, and
+                exterior selection name.
+        """
         try:
             stat = os.stat(self.mesh_file)
             stamp = (stat.st_mtime_ns, stat.st_size)
@@ -60,7 +75,17 @@ class INPPart(FixedPart):
 
     def build_part(self, path_result: str | None = None,
                    pools: Pool | None = None) -> torchfea.Part:
-        """Read the ``.inp`` file and return the selected Part."""
+        """Read the ``.inp`` file and return the selected Part.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: TorchFEA Part with geometry-derived selections and the requested element
+                order.
+        """
         inp = torchfea.FEA_INP()
         inp.read_inp(self.mesh_file)
         imported = torchfea.from_inp(inp).assembly

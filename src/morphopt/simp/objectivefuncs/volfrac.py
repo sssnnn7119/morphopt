@@ -16,6 +16,15 @@ class VolFrac(BaseConstraints):
             elementname: str,
             penalty: float = 1e0,
     ) -> None:
+        """Initialize VolFrac and its configuration state.
+
+        Args:
+            volfrac_min (float): Minimum permitted material volume fraction.
+            volfrac_max (float): Maximum permitted material volume fraction.
+            elementname (str): Element-family or element-set name; an empty selection applies to all
+                families when supported.
+            penalty (float): Nonnegative scalar multiplying the penalty contribution.
+        """
         super().__init__()
         self.volfrac_min = float(volfrac_min)
         self.volfrac_max = float(volfrac_max)
@@ -41,6 +50,14 @@ class VolFrac(BaseConstraints):
         # A material updater owns one concrete material interface, so its
         # objective functions receive that interface directly rather than the
         # whole MaterialsParams collection.
+        """Initialize the VolFrac state.
+
+        Args:
+            material_params (MaterialsParams): The concrete SIMP material interface bound to this
+                updater, not the full MaterialsParams collection.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         material = material_params
         if material.elementname and material.elementname != self.elementname:
             raise ValueError(
@@ -70,6 +87,18 @@ class VolFrac(BaseConstraints):
     ) -> torch.Tensor:
         
         
+        """Evaluate VolFrac for the supplied inputs.
+
+        Args:
+            material_params (MaterialsParams): SIMP material interface supplied by the updater;
+                evaluation uses the interface cached during initialize().
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: Sum of lower- and upper-volume-fraction quadratic penalties using the
+                reference element quadrature.
+        """
         material = self._material_interface
         num_pts = self.gaussian_points.shape[0]
         designfield = torch.zeros([num_pts, 1], dtype=material._cps.dtype, device=self.gaussian_points.device)

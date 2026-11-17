@@ -27,6 +27,14 @@ class TemplateInsertDialog(QDialog):
     def __init__(
         self, snippet: CodeSnippet, problem: ProblemDefinition, parent=None
     ) -> None:
+        """Initialize TemplateInsertDialog and its configuration state.
+
+        Args:
+            snippet (CodeSnippet): Python source fragment inserted into the selected code field.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.widgets.template_insert_dialog.insert_code_snippet"))
         self.inputs = SnippetInputs(problem)
@@ -97,7 +105,11 @@ class TemplateInsertDialog(QDialog):
         return False
 
     def parameter_values(self) -> dict[str, object]:
-        """Return the values currently selected (or typed) by the user."""
+        """Return the values currently selected (or typed) by the user.
+
+        Returns:
+            dict[str, object]: The values currently selected (or typed) by the user.
+        """
         return {key: combo_value(combo) for key, combo in self._fields.items()}
 
     def _parameter_combo(self, parameter: SnippetParameter) -> QComboBox:

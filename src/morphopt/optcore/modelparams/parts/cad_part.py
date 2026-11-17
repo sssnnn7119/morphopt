@@ -62,7 +62,16 @@ class CADMeshingMixin:
         non_parameter_fields: ClassVar[tuple[str, ...]] = ("action",)
 
         def apply_occ(self, context: OCCBuilder) -> list[tuple[int, int]]:
-            """Execute the callback and return Gmsh (dimension, entity tag) pairs."""
+            """Execute the callback and return Gmsh (dimension, entity tag) pairs.
+
+            Args:
+                context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                    session.
+
+            Returns:
+                list[tuple[int, int]]: Execute the callback and return Gmsh (dimension, entity tag)
+                    pairs.
+            """
             return self.action(context)
 
     def __init__(
@@ -71,6 +80,14 @@ class CADMeshingMixin:
         mesh_order: int = CONSTANT.KERNEL.MESH.DEFAULT_ELEMENT_ORDER,
         **kwargs: Any,
     ) -> None:
+        """Initialize CADMeshingMixin and its configuration state.
+
+        Args:
+            mesh_size (float): Target finite-element edge length in model length units.
+            mesh_order (int): Finite-element interpolation order: 1 for linear, 2 for quadratic
+                elements.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().__init__(**kwargs)
         if not math.isfinite(mesh_size) or mesh_size <= 0:
             raise ValueError("mesh_size must be finite and positive.")
@@ -85,14 +102,27 @@ class CADMeshingMixin:
         """Override to declare CAD operations in their execution order."""
 
     def add_operation(self, operation: torchfea_cad.CADOperation) -> Self:
-        """Append one native TorchFEA CAD operation to the history."""
+        """Append one native TorchFEA CAD operation to the history.
+
+        Args:
+            operation (torchfea_cad.CADOperation): CAD history operation or application action being
+                processed.
+
+        Returns:
+            Self: Append one native TorchFEA CAD operation to the history.
+        """
         if not isinstance(operation, torchfea_cad.CADOperation):
             raise TypeError("operation must be a TorchFEA CADOperation.")
         self.operations.append(operation)
         return self
 
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Declare Instances and the CAD history once during initialization."""
+        """Declare Instances and the CAD history once during initialization.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
         self.operations.clear()
         self.define_operations()
@@ -102,7 +132,17 @@ class CADMeshingMixin:
         path_result: str | None = None,
         pools: Pool | None = None,
     ) -> list[torchfea_cad.CADOperation]:
-        """Provide the declared CAD operations; subclasses prepare their inputs."""
+        """Provide the declared CAD operations; subclasses prepare their inputs.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            list[torchfea_cad.CADOperation]: Geometry description consumed by the Part's assembly
+                stage.
+        """
         self._face_names.clear()
         return self.operations
 
@@ -110,7 +150,15 @@ class CADMeshingMixin:
         self,
         geometry: Sequence[torchfea_cad.CADOperation],
     ) -> torchfea_cad.CADHistory:
-        """Construct the native CAD history used by the shared mesher."""
+        """Construct the native CAD history used by the shared mesher.
+
+        Args:
+            geometry (Sequence[torchfea_cad.CADOperation]): Geometry description or geometry
+                collection processed by this interface.
+
+        Returns:
+            torchfea_cad.CADHistory: CAD history describing the final volume to mesh.
+        """
         return torchfea_cad.CADHistory(
             operations=geometry,
             mesh_size=self.mesh_size,
@@ -118,22 +166,48 @@ class CADMeshingMixin:
         )
 
     def mesh_geometry(self, geometry: torchfea_cad.CADHistory) -> torchfea.Part:
-        """Use TorchFEA's shared Gmsh mesh extraction for either geometry kernel."""
+        """Use TorchFEA's shared Gmsh mesh extraction for either geometry kernel.
+
+        Args:
+            geometry (torchfea_cad.CADHistory): Geometry description or geometry collection
+                processed by this interface.
+
+        Returns:
+            torchfea.Part: Use TorchFEA's shared Gmsh mesh extraction for either geometry kernel.
+        """
         mesh_size = geometry.mesh_size
         if mesh_size is None:
             mesh_size = self.mesh_size
         return geometry.mesh(mesh_size)
 
     def define_mesh_sets(self, part: torchfea.Part) -> None:
-        """Map geometric face identities onto the FE mesh."""
+        """Map geometric face identities onto the FE mesh.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+        """
         self._name_geometry_faces(part)
 
     def _postprocess_part(self, part: torchfea.Part) -> torchfea.Part:
-        """Extend the linear mesh, for example with offset-layer elements."""
+        """Extend the linear mesh, for example with offset-layer elements.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Extend the linear mesh, for example with offset-layer elements.
+        """
         return part
 
     def postprocess_mesh(self, part: torchfea.Part) -> torchfea.Part:
-        """Apply element extensions before the shared quadratic conversion."""
+        """Apply element extensions before the shared quadratic conversion.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Apply element extensions before the shared quadratic conversion.
+        """
         part = self._postprocess_part(part)
         if self.mesh_order == 2:
             element_names = list(part.elems)
@@ -145,14 +219,28 @@ class CADMeshingMixin:
         path_result: str | None = None,
         pools: Pool | None = None,
     ) -> torchfea.Part:
-        """Prepare, assemble, mesh, name and postprocess one Part."""
+        """Prepare, assemble, mesh, name and postprocess one Part.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: TorchFEA Part with geometry-derived selections and the requested element
+                order.
+        """
         geometry = self.assemble_geometry(self.prepare_geometry(path_result, pools))
         part = self.mesh_geometry(geometry)
         self.define_mesh_sets(part)
         return self.postprocess_mesh(part)
 
     def _complete_face_names(self, tags: Iterable[int]) -> None:
-        """Assign unused face names while retaining identities from source CAD."""
+        """Assign unused face names while retaining identities from source CAD.
+
+        Args:
+            tags (Iterable[int]): Native OCC entity tags in the active geometry session.
+        """
         names = set(self._face_names.values())
         index = 0
         for tag in sorted(tags):
@@ -164,7 +252,11 @@ class CADMeshingMixin:
             names.add(f"face_{index}")
 
     def _name_geometry_faces(self, part: torchfea.Part) -> None:
-        """Name geometric boundary faces using source identities or tag order."""
+        """Name geometric boundary faces using source identities or tag order.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+        """
         face_names = [
             name for name in part.surfaces.keys() if name.startswith("gmsh_surface_")
         ]
@@ -203,7 +295,11 @@ class CADMeshingMixin:
             part.add_node_set(f"{name}_nodes", nodes)
 
     def get_face_names(self) -> list[str]:
-        """Return geometric face identities in the preview's face order."""
+        """Return geometric face identities in the preview's face order.
+
+        Returns:
+            list[str]: Geometric face identities in the preview's face order.
+        """
         history = self.assemble_geometry(self.prepare_geometry())
         if not history.operations:
             return []
@@ -215,7 +311,16 @@ class CADMeshingMixin:
     def _single_solid(
         operations: Sequence[torchfea_cad.CADOperation],
     ) -> tuple[int, list[int]]:
-        """Replay operations and return the single volume tag and sorted face tags."""
+        """Replay operations and return the single volume tag and sorted face tags.
+
+        Args:
+            operations (Sequence[torchfea_cad.CADOperation]): CAD feature declarations in replay
+                order.
+
+        Returns:
+            tuple[int, list[int]]: Replay operations and return the single volume tag and sorted
+                face tags.
+        """
         volumes = OCCBuilder(gmsh).replay(operations)
         if len(volumes) != 1:
             raise ValueError(
@@ -235,7 +340,16 @@ class CADMeshingMixin:
 
     @staticmethod
     def load_step_boundary(path: str | Path, context: OCCBuilder) -> list[int]:
-        """Import a STEP boundary while retaining its geometric faces."""
+        """Import a STEP boundary while retaining its geometric faces.
+
+        Args:
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+
+        Returns:
+            list[int]: Import a STEP boundary while retaining its geometric faces.
+        """
         before = set(gmsh.model.getEntities(2))
         imported = context.occ.importShapes(str(path))
         context.occ.synchronize()
@@ -250,7 +364,14 @@ class CADMeshingMixin:
 
     @staticmethod
     def load_mesh_boundary(path: str | Path) -> list[int]:
-        """Import a closed STL boundary into the active geometry session."""
+        """Import a closed STL boundary into the active geometry session.
+
+        Args:
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            list[int]: Import a closed STL boundary into the active geometry session.
+        """
         before = set(gmsh.model.getEntities(2))
         gmsh.merge(str(path))
         tags = sorted(tag for _, tag in set(gmsh.model.getEntities(2)) - before)
@@ -260,7 +381,14 @@ class CADMeshingMixin:
 
     @staticmethod
     def get_face_signature(tag: int) -> list[float]:
-        """Describe a face by its area, centroid and inertia in local coordinates."""
+        """Describe a face by its area, centroid and inertia in local coordinates.
+
+        Args:
+            tag (int): Native OCC entity tag in the active geometry session.
+
+        Returns:
+            list[float]: Describe a face by its area, centroid and inertia in local coordinates.
+        """
         return [
             float(gmsh.model.occ.getMass(2, tag)),
             *map(float, gmsh.model.occ.getCenterOfMass(2, tag)),
@@ -274,7 +402,20 @@ class CADMeshingMixin:
         operations: tuple[torchfea_cad.CADOperation, ...],
         shells: list[tuple[int, ...]],
     ) -> list[tuple[int, int]]:
-        """Fill shell face indices in exterior-first order inside a CAD session."""
+        """Fill shell face indices in exterior-first order inside a CAD session.
+
+        Args:
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+            operations (tuple[torchfea_cad.CADOperation, ...]): CAD feature declarations in replay
+                order.
+            shells (list[tuple[int, ...]]): Closed boundary shells assembled into the final CAD
+                volume.
+
+        Returns:
+            list[tuple[int, int]]: Fill shell face indices in exterior-first order inside a CAD
+                session.
+        """
         volume, faces = CADMeshingMixin._single_solid(operations)
         indices = {tag: index for index, tag in enumerate(faces)}
         loops, shell_faces = context.occ.getSurfaceLoops(volume)
@@ -302,6 +443,10 @@ class CADMeshingMixin:
         """Return copied operations and exterior-first closed-shell face indices.
 
         Each shell contains zero-based indices into the source CAD face order.
+
+        Returns:
+            tuple[tuple[torchfea_cad.CADOperation, ...], list[tuple[int, ...]]]: Copied operations
+                and exterior-first closed-shell face indices.
         """
         operations = tuple(deepcopy(self.operations))
         if not operations:
@@ -321,7 +466,21 @@ class CADMeshingMixin:
         face_indices: tuple[int, ...],
         face_map: dict[str, list[float]],
     ) -> list[tuple[int, int]]:
-        """Reconstruct one shell as a solid for standalone STEP export."""
+        """Reconstruct one shell as a solid for standalone STEP export.
+
+        Args:
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+            operations (tuple[torchfea_cad.CADOperation, ...]): CAD feature declarations in replay
+                order.
+            face_indices (tuple[int, ...]): Indices of the CAD faces or mesh cells belonging to the
+                requested selection.
+            face_map (dict[str, list[float]]): Logical face names mapped to geometric signatures
+                used for stable identity matching.
+
+        Returns:
+            list[tuple[int, int]]: Reconstruct one shell as a solid for standalone STEP export.
+        """
         volume, faces = CADMeshingMixin._single_solid(operations)
         context.occ.remove([(3, volume)], recursive=False)
         selected = [faces[index] for index in face_indices]
@@ -346,7 +505,15 @@ class CADMeshingMixin:
         face_indices: tuple[int, ...],
         path: str | Path,
     ) -> None:
-        """Export a closed shell and its original face identities as STEP assets."""
+        """Export a closed shell and its original face identities as STEP assets.
+
+        Args:
+            operations (tuple[torchfea_cad.CADOperation, ...]): CAD feature declarations in replay
+                order.
+            face_indices (tuple[int, ...]): Indices of the CAD faces or mesh cells belonging to the
+                requested selection.
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+        """
         path = Path(path)
         face_map: dict[str, list[float]] = {}
         action = partial(
@@ -369,9 +536,17 @@ class CADMeshingMixin:
     ) -> BoundaryPart:
         """Export an initialized single-solid CAD Part as fixed STEP boundaries.
 
-        Write one STEP and face map per shell under asset_directory/part_name.
-        Preserve original face identities, mesh settings and Instance poses;
-        the resulting surfaces retain file references, not source CAD history.
+        Write one STEP and face map per shell under asset_directory/part_name. Preserve original
+        face identities, mesh settings and Instance poses; the resulting surfaces retain file
+        references, not source CAD history.
+
+        Args:
+            asset_directory (str | Path): Directory containing the exported script's companion asset
+                files.
+
+        Returns:
+            BoundaryPart: Closed-shell STEP boundary representation preserving source instance
+                declarations and logical face sets.
         """
         from ....shapeopt.boundary_part import BoundaryPart
         from ....shapeopt.surfaces.brep_surface import BREPSurface
@@ -400,6 +575,12 @@ class CADPart(CADMeshingMixin, FixedPart):
     """A fixed CAD Part with shared CAD construction and cached FE mesh sets."""
 
     def _mesh_cache_key(self) -> object:
+        """Identify the meshing settings and ordered CAD operations used by the fixed-Part cache.
+
+        Returns:
+            tuple: Mesh size, interpolation order, exterior selection, and operation
+                representations.
+        """
         return (
             self.mesh_size,
             self.mesh_order,

@@ -13,9 +13,16 @@ from .definition_manager import DefinitionManagerEditor
 
 
 class LoadCaseEditor(DefinitionManagerEditor):
+    """Edit one named load case using explicitly labeled component-parameter fields."""
     objectiveRequested = Signal(object)
 
     def __init__(self, actions, parent=None) -> None:
+        """Initialize LoadCaseEditor and its configuration state.
+
+        Args:
+            actions: Definition action dispatcher used to commit model changes.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__("steps", actions, parent)
         self._workspace_status = QLabel()
         self._workspace_status.setWordWrap(True)
@@ -27,6 +34,16 @@ class LoadCaseEditor(DefinitionManagerEditor):
         self, node: StepsNode | None, problem: ProblemDefinition,
         focus: LoadCaseNode | None = None, *, scroll_to_focus: bool = True,
     ) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node (StepsNode | None): Definition node being inspected or edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            focus (LoadCaseNode | None): Node or field to focus after synchronizing the editor.
+            scroll_to_focus (bool): Scroll the editor to the selected item after rebuilding it when
+                True.
+        """
         summaries = []
         if problem.objective:
             for index, term in enumerate(problem.objective.objective_terms):

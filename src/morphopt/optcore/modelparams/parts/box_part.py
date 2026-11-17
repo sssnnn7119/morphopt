@@ -13,6 +13,11 @@ from .fixed_part import FixedPart
 
 
 def _positive(**values: float) -> None:
+    """Validate that every named geometric dimension is finite and strictly positive.
+
+    Args:
+        **values: Additional keyword arguments accepted by the shared interface.
+    """
     for name, value in values.items():
         if not math.isfinite(value) or value <= 0:
             raise ValueError(f"{name} must be finite and positive.")
@@ -30,6 +35,17 @@ class BoxPart(FixedPart):
         mesh_order: int = CONSTANT.UI.SCHEMA_FIELDS.PARTS.BOXPART.MESH_ORDER.DEFAULT,
         **kwargs,
     ) -> None:
+        """Initialize BoxPart and its configuration state.
+
+        Args:
+            length (float): Axial or geometric length in model length units.
+            height (float): Geometric height in model length units.
+            depth (float): Current recursion or tree depth.
+            mesh_size (float): Target finite-element edge length in model length units.
+            mesh_order (int): Finite-element interpolation order: 1 for linear, 2 for quadratic
+                elements.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().__init__(**kwargs)
         _positive(length=length, height=height, depth=depth, mesh_size=mesh_size)
         if mesh_order not in (1, 2):
@@ -38,9 +54,24 @@ class BoxPart(FixedPart):
         self.mesh_size, self.mesh_order = mesh_size, mesh_order
 
     def _mesh_cache_key(self) -> object:
+        """Identify the box dimensions and meshing settings that determine its cached mesh.
+
+        Returns:
+            tuple: Dimensions, target size, interpolation order, and exterior selection name.
+        """
         return (self.length, self.height, self.depth, self.mesh_size, self.mesh_order, self.exterior_surface)
 
     def build_part(self, path_result=None, pools=None) -> torchfea.Part:
+        """Build part.
+
+        Args:
+            path_result: Optimization result directory containing scripts and log subdirectories.
+            pools: Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: TorchFEA Part with geometry-derived selections and the requested element
+                order.
+        """
         dimensions = [self.length, self.height, self.depth]
         axes = [
             np.linspace(0.0, size, max(2, math.ceil(size / self.mesh_size)) + 1)

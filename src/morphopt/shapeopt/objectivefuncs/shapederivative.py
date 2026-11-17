@@ -20,6 +20,7 @@ class ShapeDerivative(BaseObjective):
     """
 
     def __init__(self) -> None:
+        """Initialize ShapeDerivative and its configuration state."""
         super().__init__()
 
         self._cp0: list[torch.Tensor] = []
@@ -41,8 +42,18 @@ class ShapeDerivative(BaseObjective):
     ) -> None:
         """Map the structural gradient onto the control points of this Part.
 
-        ``surfaces`` are the surface interfaces owned by the boundary Part this
-        objective belongs to; ``r0`` are that Part's surface points.
+        ``surfaces`` are the surface interfaces owned by the boundary Part this objective belongs
+        to; ``r0`` are that Part's surface points.
+
+        Args:
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+            r0 (list[torch.Tensor]): Reference Cartesian surface samples, with one (num_points, 3)
+                block per surface.
+            surfaces (Sequence[BaseSurface] | None): Surface interfaces in boundary registration
+                order: exterior first, followed by cavities.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
 
         if surfaces is None:
@@ -64,8 +75,10 @@ class ShapeDerivative(BaseObjective):
             ptidx += cp0_sf.numel()
 
     def show_sensitivity(self, ind: int) -> None:
-        """
-        Show the shape sensitivity
+        """Show the shape sensitivity
+
+        Args:
+            ind (int): Zero-based surface or parameter-block index.
         """
 
         import pyvista as pv
@@ -125,6 +138,18 @@ class ShapeDerivative(BaseObjective):
         *args: object,
         **kwargs: object,
     ) -> torch.Tensor:
+        """Evaluate ShapeDerivative for the supplied inputs.
+
+        Args:
+            r (list[torch.Tensor]): Current Cartesian surface samples; each surface block has shape
+                (num_points, 3).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: First-order physical objective change, equal to the raw gradient dotted
+                with the control-point displacement.
+        """
         loss_objective = 0.0
 
         if not self.surfaces:
@@ -152,6 +177,11 @@ class QuadraticShapeDerivative(ShapeDerivative):
         self,
         memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
     ) -> None:
+        """Initialize QuadraticShapeDerivative and its configuration state.
+
+        Args:
+            memory_size (int): Positive maximum number of retained design/gradient difference pairs.
+        """
         super().__init__()
         self.history = QuadraticHistory(memory_size, update_method="sr1")
 
@@ -163,6 +193,18 @@ class QuadraticShapeDerivative(ShapeDerivative):
         surfaces: Sequence[BaseSurface],
         **kwargs: object,
     ) -> None:
+        """Initialize the QuadraticShapeDerivative state.
+
+        Args:
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+            r0 (list[torch.Tensor]): Reference Cartesian surface samples, with one (num_points, 3)
+                block per surface.
+            surfaces (Sequence[BaseSurface]): Surface interfaces in boundary registration order:
+                exterior first, followed by cavities.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(gradient, r0, *args, surfaces=surfaces, **kwargs)
         active_gradient = torch.cat(
             [
@@ -179,7 +221,11 @@ class QuadraticShapeDerivative(ShapeDerivative):
         self.history.observe(self._active_parameters(), active_gradient, layout)
 
     def _active_parameters(self) -> torch.Tensor:
-        """Physical control coordinates of active surfaces, in gradient order."""
+        """Physical control coordinates of active surfaces, in gradient order.
+
+        Returns:
+            torch.Tensor: Physical control coordinates of active surfaces, in gradient order.
+        """
         return torch.cat(
             [
                 surface.get_surface_parameters().flatten()
@@ -191,10 +237,34 @@ class QuadraticShapeDerivative(ShapeDerivative):
     def __call__(
         self, r: list[torch.Tensor], *args: object, **kwargs: object
     ) -> torch.Tensor:
+        """Evaluate QuadraticShapeDerivative for the supplied inputs.
+
+        Args:
+            r (list[torch.Tensor]): Current Cartesian surface samples; each surface block has shape
+                (num_points, 3).
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            torch.Tensor: Physical objective-change approximation with the observed signed SR1
+                curvature term.
+        """
         return self.history(self._active_parameters())
 
     def save(self, foldpath: str, iteration: int) -> None:
+        """Save the QuadraticShapeDerivative state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         self.history.save(foldpath=foldpath, iteration=iteration)
 
     def load(self, foldpath: str, iteration: int) -> None:
+        """Load the QuadraticShapeDerivative state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         self.history.load(foldpath=foldpath, iteration=iteration)

@@ -16,11 +16,13 @@ from .definitions import ProblemLibrary
 
 
 class RunMode(str, Enum):
+    """Distinguish a new optimization process from continuation of an archived run."""
     FRESH = "fresh"
     CONTINUE = "continue"
 
 
 class RunSourceKind(str, Enum):
+    """Identify whether a run starts from a UI definition, Python script, or archived checkpoint."""
     DEFINITION = "definition"
     PYTHON = "py"
     CONTINUE = "continue"
@@ -39,6 +41,7 @@ class OptimizationRunSession:
     """Own one UI-launched process and its result-discovery state."""
 
     def __init__(self):
+        """Initialize OptimizationRunSession and its configuration state."""
         self.process: subprocess.Popen | None = None
         self.mode: RunMode | None = None
         self.folder: str | None = None
@@ -56,16 +59,31 @@ class OptimizationRunSession:
 
     @property
     def active(self) -> bool:
-        """Whether the observer still owns a process awaiting final polling."""
+        """Whether the observer still owns a process awaiting final polling.
+
+        Returns:
+            bool: True if the observer still owns a process awaiting final polling.
+        """
         return self.process is not None
 
     def set_definition(self, problem: ProblemDefinition) -> None:
-        """Stage an independent definition for the next run without stopping this one."""
+        """Stage an independent definition for the next run without stopping this one.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.definition = ProblemDefinition.from_dict(problem.to_dict())
         if not self.active:
             self.source = None
 
     def select_source(self, source: RunSource) -> None:
+        """Select source.
+
+        Args:
+            source (RunSource): Source object, path, or metadata from which the operation reads its
+                input.
+        """
         self._ensure_idle()
         if source.kind is RunSourceKind.CONTINUE:
             if not self.is_result_folder(source.path):
@@ -81,6 +99,15 @@ class OptimizationRunSession:
         self.source = source
 
     def start_selected(self, target_iteration: int | None = None) -> subprocess.Popen:
+        """Start selected.
+
+        Args:
+            target_iteration (int | None): Completed iteration to restore; None selects the latest
+                saved iteration.
+
+        Returns:
+            subprocess.Popen: Start selected.
+        """
         source = self.source
         if source is None:
             raise ValueError(
@@ -105,6 +132,11 @@ class OptimizationRunSession:
         return process
 
     def poll(self) -> RunProgress:
+        """Return poll.
+
+        Returns:
+            RunProgress: Poll.
+        """
         previous = self.folder
         if self.mode is RunMode.FRESH:
             self.discover_folder()
@@ -135,7 +167,11 @@ class OptimizationRunSession:
         return RunProgress(self.folder, iteration, changed, finished, exit_code)
 
     def stream_output(self, callback) -> None:
-        """Read the worker pipe off the UI thread; callback receives run id and text."""
+        """Read the worker pipe off the UI thread; callback receives run id and text.
+
+        Args:
+            callback: Callback invoked with the operation's documented result or change event.
+        """
         import threading
 
         self.output_id += 1
@@ -157,9 +193,24 @@ class OptimizationRunSession:
         ).start()
 
     def consume_output(self, output_id: int, text: str) -> str | None:
+        """Return consume output.
+
+        Args:
+            output_id (int): Run-output generation identifier used to reject stale subprocess
+                messages.
+            text (str): Text displayed, parsed, or inserted by this operation.
+
+        Returns:
+            str | None: Consume output.
+        """
         return self.log.consume(text) if output_id == self.output_id else None
 
     def adopt(self, folder: str) -> None:
+        """Return adopt.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+        """
         self._ensure_idle()
         self.folder = str(Path(folder).resolve())
         self.last_iteration = 0
@@ -176,6 +227,15 @@ class OptimizationRunSession:
         self.last_iteration = 0
 
     def start_definition(self, problem: ProblemDefinition) -> subprocess.Popen:
+        """Start definition.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+
+        Returns:
+            subprocess.Popen: Start definition.
+        """
         self._ensure_idle()
         definition = ProblemDefinition.from_dict(problem.to_dict())
         started_at = time.time()
@@ -195,6 +255,14 @@ class OptimizationRunSession:
         return process
 
     def start_python(self, path: str) -> subprocess.Popen:
+        """Start python.
+
+        Args:
+            path (str): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            subprocess.Popen: Start python.
+        """
         self._ensure_idle()
         started_at = time.time()
         root, label, process = launcher.run_py_definition(path)
@@ -215,6 +283,16 @@ class OptimizationRunSession:
         folder: str,
         target_iteration: int | None,
     ) -> subprocess.Popen:
+        """Start continue.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            target_iteration (int | None): Completed iteration to restore; None selects the latest
+                saved iteration.
+
+        Returns:
+            subprocess.Popen: Start continue.
+        """
         self._ensure_idle()
         scripts = Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py"
         device, restart_per_iteration = launcher.parse_run_options(str(scripts))
@@ -234,10 +312,22 @@ class OptimizationRunSession:
 
     @staticmethod
     def is_result_folder(folder: str) -> bool:
+        """Return is result folder.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+
+        Returns:
+            bool: Is result folder.
+        """
         return (Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py").is_file()
 
     def discover_folder(self) -> str | None:
-        """Resolve the timestamped result folder of a fresh process."""
+        """Resolve the timestamped result folder of a fresh process.
+
+        Returns:
+            str | None: Resolve the timestamped result folder of a fresh process.
+        """
         if self.mode is not RunMode.FRESH:
             return self.folder
         candidate = launcher.latest_result_dir(self.fresh_root, self.fresh_label)
@@ -249,9 +339,15 @@ class OptimizationRunSession:
         return self.folder
 
     def has_exited(self) -> bool:
+        """Return has exited.
+
+        Returns:
+            bool: Has exited.
+        """
         return self.process is not None and self.process.poll() is not None
 
     def release_finished(self) -> None:
+        """Return release finished."""
         if self.has_exited():
             self.process = None
             self.mode = None
@@ -296,6 +392,7 @@ class OptimizationRunSession:
 
 @dataclass(frozen=True)
 class RunProgress:
+    """Report result-directory discovery, completed iterations, and process termination to the UI."""
     folder: str | None
     iteration: int
     changed: bool
@@ -307,12 +404,22 @@ class RunLog:
     """Normalize terminal redraws into a text log with stable table headers."""
 
     def __init__(self):
+        """Initialize RunLog and its configuration state."""
         self.headers: set[str] = set()
 
     def clear(self) -> None:
+        """Clear the RunLog state."""
         self.headers.clear()
 
     def consume(self, text: str) -> str | None:
+        """Return consume.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+
+        Returns:
+            str | None: Consume.
+        """
         import re
 
         redraw = bool(re.search(r"\x1b\[[0-9;]*[ABEFG]", text))

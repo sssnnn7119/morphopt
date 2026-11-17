@@ -21,25 +21,52 @@ class _KnotBasis(bspmap.Basis):
     """Use a CAD knot vector with bspmap's existing basis implementation."""
 
     def __init__(self, knots: np.ndarray, num_cps: int, degree: int) -> None:
+        """Initialize _KnotBasis and its configuration state.
+
+        Args:
+            knots (np.ndarray): Expanded knot vectors for the u and v parameter directions.
+            num_cps (int): Number of control points associated with the basis.
+            degree (int): B-spline polynomial degree.
+        """
         self._cad_knots = np.asarray(knots, dtype=np.float64)
         super().__init__(num_cps, degree)
 
     def _build_knots(self, degree: int, num_cps: int) -> np.ndarray:
+        """Build knots.
+
+        Args:
+            degree (int): B-spline polynomial degree.
+            num_cps (int): Number of control points associated with the basis.
+
+        Returns:
+            np.ndarray: Expanded knot vector used for basis evaluation.
+        """
         return self._cad_knots
 
 
 class NURBSFace(ControlPointSurface):
-    """One tensor-product support with fixed weights and differentiable poles.
+    """Evaluate one rational B-spline support using bspmap basis coefficients.
 
-    UV coordinates use the native CAD parameterization. Trimming and face
-    membership belong to the owning BREPSurface; this object evaluates the
-    support and matches points already assigned to that face.
+    Control points have shape (nu * nv, 3); weights and knot vectors remain fixed during
+    optimization. Native CAD UV coordinates identify points on the support. Trimming belongs to
+    BREPSurface; matching only receives nodes already assigned to this face. A design mask fixes
+    poles whose basis functions influence a trim boundary.
     """
 
     def __init__(
         self, control_points: np.ndarray, weights: np.ndarray,
         degrees: tuple[int, int], knots: tuple[np.ndarray, np.ndarray],
     ) -> None:
+        """Initialize NURBSFace and its configuration state.
+
+        Args:
+            control_points (np.ndarray): Cartesian NURBS control-point array with shape (nu, nv, 3).
+            weights (np.ndarray): Positive rational weights with shape (nu, nv), fixed during shape
+                updates.
+            degrees (tuple[int, int]): Polynomial degrees (degree_u, degree_v) of the NURBS support.
+            knots (tuple[np.ndarray, np.ndarray]): Expanded knot vectors for the u and v parameter
+                directions.
+        """
         super().__init__()
         control_points = np.asarray(control_points, dtype=np.float64)
         weights = np.asarray(weights, dtype=np.float64)
@@ -72,7 +99,12 @@ class NURBSFace(ControlPointSurface):
         self._bound_basis: dict[tuple[int, int], tuple[torch.Tensor, torch.Tensor]] = {}
 
     def set_design_mask(self, mask: np.ndarray) -> None:
-        """Freeze poles whose basis influences a trim edge."""
+        """Freeze poles whose basis influences a trim edge.
+
+        Args:
+            mask (np.ndarray): Boolean selection aligned with the control points or records being
+                processed.
+        """
         mask = np.asarray(mask, dtype=bool).reshape(-1)
         if len(mask) != self._cps.shape[0]:
             raise ValueError("NURBS design mask must have one entry per pole.")
@@ -80,7 +112,12 @@ class NURBSFace(ControlPointSurface):
         self._fixed_poles = self._cps.detach().clone()
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
-        """Set poles while keeping trim-influencing poles fixed."""
+        """Set poles while keeping trim-influencing poles fixed.
+
+        Args:
+            x (torch.Tensor): Flattened design parameters or perturbation vector evaluated by this
+                method.
+        """
         values = x.reshape(self._cps.shape)
         if self.design_mask is not None:
             mask = torch.as_tensor(self.design_mask[:, None], device=values.device)
@@ -89,7 +126,14 @@ class NURBSFace(ControlPointSurface):
 
     @classmethod
     def from_occ(cls, surface: Geom_BSplineSurface) -> NURBSFace:
-        """Expand periodic poles/knots into a standard nonperiodic support."""
+        """Expand periodic poles/knots into a standard nonperiodic support.
+
+        Args:
+            surface (Geom_BSplineSurface): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            NURBSFace: Expand periodic poles/knots into a standard nonperiodic support.
+        """
         model = _expanded_support(surface)
         nu, nv = model.NbUPoles(), model.NbVPoles()
         poles = np.array([[list(model.Pole(u, v).Coord()) for v in range(1, nv + 1)]
@@ -103,7 +147,12 @@ class NURBSFace(ControlPointSurface):
         return cls(poles, weights, (model.UDegree(), model.VDegree()), (knots_u, knots_v))
 
     def to_occ(self) -> Geom_BSplineSurface:
-        """Create an OCC support from the current poles and fixed knot data."""
+        """Create an OCC support from the current poles and fixed knot data.
+
+        Returns:
+            Geom_BSplineSurface: OCC surface support with current poles and the stored rational
+                weights, knots, and degrees.
+        """
         from OCP import collections
         from OCP.Geom import Geom_BSplineSurface
         from OCP.gp import gp_Pnt
@@ -134,7 +183,17 @@ class NURBSFace(ControlPointSurface):
     def refine(
         self, u_knots: tuple[float, ...] = (), v_knots: tuple[float, ...] = (),
     ) -> NURBSFace:
-        """Insert knots without changing the represented CAD geometry."""
+        """Insert knots without changing the represented CAD geometry.
+
+        Args:
+            u_knots (tuple[float, ...]): Interior u-parameter knots to insert without changing the
+                represented surface.
+            v_knots (tuple[float, ...]): Interior v-parameter knots to insert without changing the
+                represented surface.
+
+        Returns:
+            NURBSFace: Insert knots without changing the represented CAD geometry.
+        """
         support = self.to_occ()
         for value in u_knots:
             support.InsertUKnot(float(value), 1, 1e-9)
@@ -143,11 +202,13 @@ class NURBSFace(ControlPointSurface):
         return type(self).from_occ(support)
 
     def refine_by_spacing(self, spacing: float) -> NURBSFace:
-        """Refine from physical lengths of isoparametric curves.
+        """Insert knots to meet a physical control-point spacing without changing the surface geometry.
 
-        The longest sampled curve in each direction determines the minimum
-        pole count. Spacing is a target average design resolution, not an
-        exact distance between off-surface control poles.
+        Args:
+            spacing (float): Target physical control-point spacing in model length units.
+
+        Returns:
+            NURBSFace: Refined rational support with an independent control-point layout.
         """
         if not np.isfinite(spacing) or spacing <= 0:
             raise ValueError("Control point spacing must be finite and positive.")
@@ -169,8 +230,14 @@ class NURBSFace(ControlPointSurface):
     def _refine_to(self, shape: tuple[int, int]) -> NURBSFace:
         """Reach minimum pole counts by splitting the largest native knot spans.
 
-        Existing finer supports are retained. Knot insertion preserves the
-        exact surface, including rational weights and native parameter bounds.
+        Existing finer supports are retained. Knot insertion preserves the exact surface, including
+        rational weights and native parameter bounds.
+
+        Args:
+            shape (tuple[int, int]): Requested control-grid dimensions.
+
+        Returns:
+            NURBSFace: Reach minimum pole counts by splitting the largest native knot spans.
         """
         support = self.to_occ()
         for axis, target in enumerate(shape):
@@ -187,7 +254,17 @@ class NURBSFace(ControlPointSurface):
     def get_weights(
         self, uv: np.ndarray, derivative: tuple[int, int] = (0, 0),
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Return rational basis coefficients and local pole indices."""
+        """Return rational basis coefficients and local pole indices.
+
+        Args:
+            uv (np.ndarray): Surface parameter coordinates with shape (num_queries, 2).
+            derivative (tuple[int, int]): Derivative orders (du, dv) applied to the two surface
+                parameters.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Rational basis coefficients and matching flattened
+                control-point indices, one local-support row per query.
+        """
         if derivative not in {(0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2)}:
             raise ValueError("NURBS derivatives support total order zero, one or two.")
         parameters = np.asarray(uv, dtype=np.float64).reshape(-1, 2)
@@ -224,14 +301,34 @@ class NURBSFace(ControlPointSurface):
         return rational[derivative], indices
 
     def map(self, uv: torch.Tensor, derivative: tuple[int, int] = (0, 0)) -> torch.Tensor:
-        """Evaluate with detached UV and a live PyTorch control-point graph."""
+        """Evaluate with detached UV and a live PyTorch control-point graph.
+
+        Args:
+            uv (torch.Tensor): Native CAD parameter coordinates with shape (num_queries, 2). UV
+                values are treated as fixed during differentiation.
+            derivative (tuple[int, int]): Derivative orders (du, dv) applied to the two surface
+                parameters.
+
+        Returns:
+            torch.Tensor: Evaluated Cartesian positions or derivatives with shape (num_queries, 3),
+                differentiable with respect to current control points.
+        """
         weights, indices = self.get_weights(uv.detach().cpu().numpy(), derivative)
         coefficients = torch.as_tensor(weights, dtype=self._cps.dtype, device=self._cps.device)
         indices_t = torch.as_tensor(indices, dtype=torch.long, device=self._cps.device)
         return (coefficients[:, :, None] * self._cps[indices_t]).sum(dim=1)
 
     def map_bound_nodes(self, derivative: tuple[int, int] = (0, 0)) -> torch.Tensor:
-        """Evaluate cached nodal basis inside autograd and torch.func transforms."""
+        """Evaluate cached nodal basis inside autograd and torch.func transforms.
+
+        Args:
+            derivative (tuple[int, int]): Derivative orders (du, dv) applied to the two surface
+                parameters.
+
+        Returns:
+            torch.Tensor: Cartesian positions or requested parameter derivatives, with shape
+                (num_bound_nodes, 3).
+        """
         coefficients, indices = self._bound_basis[derivative]
         coefficients = coefficients.to(dtype=self._cps.dtype, device=self._cps.device)
         indices = indices.to(device=self._cps.device)
@@ -242,7 +339,31 @@ class NURBSFace(ControlPointSurface):
         initial_uv: np.ndarray | None = None, batch_size: int = 4096,
         tolerance: float = 1e-9, max_iterations: int = 40,
     ) -> np.ndarray:
-        """Use KD-tree seeds and batched Newton projection, as in BspSurface."""
+        """Project assigned Cartesian FE nodes onto the NURBS support using KD-tree seeds and batched
+        Newton steps.
+
+        Store the resulting UV coordinates, projection errors, and cached basis derivatives for
+        subsequent differentiable evaluations. Face membership and trimming must already have been
+        established by the owning BREPSurface.
+
+        Args:
+            surf_node_idx (np.ndarray): Global FE node indices corresponding to surf_nodes.
+            surf_nodes (np.ndarray): Cartesian coordinates of assigned surface nodes, shape
+                (num_nodes, 3).
+            initial_uv (np.ndarray | None): Optional initial surface parameters with one row per
+                input node.
+            batch_size (int): Maximum number of points processed together during coordinate
+                matching.
+            tolerance (float): Convergence tolerance used by the numerical operation.
+            max_iterations (int): Maximum number of refinement or projection iterations.
+
+        Returns:
+            np.ndarray: Projected Cartesian positions with shape (num_nodes, 3), in the input-node
+                order.
+
+        Raises:
+            ValueError: Node-index counts, initial-UV counts, or batch-size settings are inconsistent.
+        """
         nodes = np.asarray(surf_nodes, dtype=np.float64).reshape(-1, 3)
         node_ids = np.asarray(surf_node_idx, dtype=np.int64).reshape(-1)
         if len(node_ids) != len(nodes):
@@ -308,7 +429,14 @@ class NURBSFace(ControlPointSurface):
 
 
 def _expanded_support(surface: Geom_BSplineSurface) -> Geom_BSplineSurface:
-    """Use one native parameter period with ordinary indexed poles."""
+    """Use one native parameter period with ordinary indexed poles.
+
+    Args:
+        surface (Geom_BSplineSurface): Surface interface to register, evaluate, or constrain.
+
+    Returns:
+        Geom_BSplineSurface: Use one native parameter period with ordinary indexed poles.
+    """
     model = surface.Copy()
     bounds = model.Bounds()
     if model.IsUPeriodic():
@@ -322,7 +450,17 @@ def _expanded_support(surface: Geom_BSplineSurface) -> Geom_BSplineSurface:
 def _matched_occ_faces(
     path: Path, probes: Mapping[str, np.ndarray],
 ) -> tuple[TopoDS_Shape, dict[str, tuple[TopoDS_Face, Geom_BSplineSurface]]]:
-    """Return the solid and uniquely identified trimmed NURBS faces."""
+    """Return the solid and uniquely identified trimmed NURBS faces.
+
+    Args:
+        path (Path): Filesystem path read, restored, or written by this operation.
+        probes (Mapping[str, np.ndarray]): Interior Cartesian face probes keyed by logical face
+            name for topology matching.
+
+    Returns:
+        tuple[TopoDS_Shape, dict[str, tuple[TopoDS_Face, Geom_BSplineSurface]]]: The solid and
+            uniquely identified trimmed NURBS faces.
+    """
     from OCP.BRep import BRep_Builder, BRep_Tool
     from OCP.BRepClass import BRepClass_FaceClassifier
     from OCP.BRepTools import BRepTools
@@ -358,7 +496,17 @@ def _matched_occ_faces(
 
 
 def read_nurbs_faces(path: Path, probes: Mapping[str, np.ndarray]) -> dict[str, NURBSFace]:
-    """Read OCC supports by geometric membership, independently of face order."""
+    """Read OCC supports by geometric membership, independently of face order.
+
+    Args:
+        path (Path): Filesystem path read, restored, or written by this operation.
+        probes (Mapping[str, np.ndarray]): Interior Cartesian face probes keyed by logical face
+            name for topology matching.
+
+    Returns:
+        dict[str, NURBSFace]: Differentiable surface supports keyed by logical face name,
+            matched independently of OCC face enumeration.
+    """
     _, faces = _matched_occ_faces(path, probes)
     return {name: NURBSFace.from_occ(support) for name, (_, support) in faces.items()}
 
@@ -369,8 +517,17 @@ def write_nurbs_faces(
 ) -> None:
     """Write changed poles while preserving the trimmed wires of a closed solid.
 
-    Edges remain fixed. A requested pole movement that displaces any existing
-    trim is rejected before the STEP file is written.
+    Edges remain fixed. A requested pole movement that displaces any existing trim is rejected
+    before the STEP file is written.
+
+    Args:
+        source (Path): Source object, path, or metadata from which the operation reads its
+            input.
+        destination (Path): Output file or directory selected by the caller.
+        probes (Mapping[str, np.ndarray]): Interior Cartesian face probes keyed by logical face
+            name for topology matching.
+        models (Mapping[str, NURBSFace]): Per-face NURBS supports keyed by logical face name.
+        tolerance (float): Convergence tolerance used by the numerical operation.
     """
     from OCP.BRep import BRep_Builder
     from OCP.BRepAdaptor import BRepAdaptor_Curve

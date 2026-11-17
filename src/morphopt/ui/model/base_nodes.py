@@ -83,14 +83,13 @@ SECTION_ORDER = (
 class Node:
     """A node in the problem-definition tree (generic base).
 
-    Subclasses pin :attr:`kind` to a fixed value; a bare ``Node`` still
-    accepts any ``kind`` for tree infrastructure and tests.
+    Subclasses pin :attr:`kind` to a fixed value; a bare ``Node`` still accepts any ``kind`` for
+    tree infrastructure and tests.
 
-    Concrete classes declare typed parameter attributes and immutable field
-    metadata. Containers own typed collections (parts, instances, surfaces,
-    operations, materials or class members); leaves cannot contain children.
-    ``children`` is a read-only traversal and persistence view. Dynamic forms
-    use ``get_field`` / ``set_field`` to edit the declared attributes.
+    Concrete classes declare typed parameter attributes and immutable field metadata. Containers
+    own typed collections (parts, instances, surfaces, operations, materials or class members);
+    leaves cannot contain children. ``children`` is a read-only traversal and persistence view.
+    Dynamic forms use ``get_field`` / ``set_field`` to edit the declared attributes.
 
     Parameters
     ----------
@@ -127,6 +126,16 @@ class Node:
         params: dict | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize Node and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.kind = kind or type(self).kind or ""
         self.name = name
         for child in children or ():
@@ -142,12 +151,22 @@ class Node:
     # the dynamic editors a keyed view over those attributes.
     @classmethod
     def field_names(cls) -> tuple[str, ...]:
+        """Return field names.
+
+        Returns:
+            tuple[str, ...]: Field names.
+        """
         return tuple(
             dict.fromkeys((*cls._FIELDS, *(field.key for field in cls.fields)))
         )
 
     @classmethod
     def default_parameters(cls) -> dict[str, Any]:
+        """Return default parameters.
+
+        Returns:
+            dict[str, Any]: Default parameters.
+        """
         return field_defaults(cls.fields)
 
     def _initialize_fields(self, values: dict) -> None:
@@ -178,10 +197,26 @@ class Node:
             )
 
     def has_field(self, key: str) -> bool:
+        """Return has field.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+
+        Returns:
+            bool: Has field.
+        """
         return key in self.field_names()
 
     def get_field(self, key: str, default: object = None) -> Any:
-        """Read one parameter; ``default`` is returned when it is unset."""
+        """Read one parameter; ``default`` is returned when it is unset.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            default (object): Value used when no explicit value is supplied.
+
+        Returns:
+            Any: Read one parameter; ``default`` is returned when it is unset.
+        """
         if key not in self.field_names():
             raise KeyError(
                 localized_message(
@@ -194,7 +229,15 @@ class Node:
         return default if value is None else value
 
     def set_field(self, key: str, value: object) -> Node:
-        """Write one parameter onto its attribute (chainable)."""
+        """Write one parameter onto its attribute (chainable).
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            value (object): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            Node: Write one parameter onto its attribute (chainable).
+        """
         if key not in self.field_names():
             raise KeyError(
                 localized_message(
@@ -209,8 +252,11 @@ class Node:
     def field_items(self) -> Iterator[tuple[str, object]]:
         """Yield ``(key, value)`` for every set parameter.
 
-        Unset parameters (attribute ``None``) are omitted so the on-disk
-        ``*.morph`` mapping never contains stray ``null`` entries.
+        Unset parameters (attribute ``None``) are omitted so the on-disk ``*.morph`` mapping never
+        contains stray ``null`` entries.
+
+        Returns:
+            Iterator[tuple[str, object]]: Yield ``(key, value)`` for every set parameter.
         """
         for key in self.field_names():
             value = getattr(self, key, None)
@@ -220,10 +266,23 @@ class Node:
     # ------------------------------------------------------------------ tree
     @property
     def children(self) -> tuple[Node, ...]:
-        """Read-only traversal view; containers own explicitly typed collections."""
+        """Read-only traversal view; containers own explicitly typed collections.
+
+        Returns:
+            tuple[Node, ...]: Read-only traversal view; containers own explicitly typed collections.
+        """
         return ()
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         raise TypeError(
             localized_message(
                 "ui.errors.nodes.invalid_child",
@@ -233,6 +292,11 @@ class Node:
         )
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         raise ValueError(
             localized_message(
                 "ui.errors.nodes.child_not_attached",
@@ -241,12 +305,24 @@ class Node:
         )
 
     def iter_nodes(self) -> Iterator[Node]:
+        """Return iter nodes.
+
+        Returns:
+            Iterator[Node]: Iter nodes.
+        """
         yield self
         for child in self.children:
             yield from child.iter_nodes()
 
     def find(self, predicate) -> Node | None:
-        """Depth-first search for the first node satisfying ``predicate``."""
+        """Depth-first search for the first node satisfying ``predicate``.
+
+        Args:
+            predicate: Callable deciding whether a candidate item belongs in the result.
+
+        Returns:
+            Node | None: Depth-first search for the first node satisfying ``predicate``.
+        """
         for node in self.iter_nodes():
             if predicate(node):
                 return node
@@ -254,7 +330,11 @@ class Node:
 
     # ----------------------------------------------------------- persistence
     def to_dict(self) -> dict:
-        """Return an independent persistence mapping for this subtree."""
+        """Return an independent persistence mapping for this subtree.
+
+        Returns:
+            dict: An independent persistence mapping for this subtree.
+        """
         params = deepcopy(dict(self.field_items()))
         if self.custom_class:
             params["custom_class"] = self.custom_class
@@ -267,7 +347,14 @@ class Node:
 
     @classmethod
     def from_dict(cls, data: dict) -> Self:
-        """Restore the concrete registered class, including its descendants."""
+        """Restore the concrete registered class, including its descendants.
+
+        Args:
+            data (dict): Serialized definition or result data to restore.
+
+        Returns:
+            Self: Restore the concrete registered class, including its descendants.
+        """
         from .registry import resolve_node_type
 
         params = deepcopy(data.get("params", {}))
@@ -307,6 +394,11 @@ class Node:
 
     # ---------------------------------------------------------------- misc
     def clone(self) -> Self:
+        """Return clone.
+
+        Returns:
+            Self: Clone.
+        """
         return type(self).from_dict(self.to_dict())
 
     def __repr__(self) -> str:
@@ -336,28 +428,47 @@ class TypedNode(Node):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize TypedNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         data = {**(params or {}), **values}
         super().__init__(kind=kind, name=name, params=data, children=children)
         self._initialize_fields(data)
 
     @property
     def type(self) -> str:
+        """Return type.
+
+        Returns:
+            str: Type.
+        """
         return self.type_name
 
 
 class ObjectiveTermNode(TypedNode):
+    """Represent one typed physical objective or metric in the definition tree."""
     kind = "objective_term"
     group: ClassVar[str] = ""
     gen: ClassVar[str] = ""
 
 
 class PenaltyTermNode(TypedNode):
+    """Represent one typed penalty term in an updater subproblem."""
     kind = "penalty_term"
     group: ClassVar[str] = ""
     gen: ClassVar[str] = ""
 
 
 class SurfaceConstraintNode(TypedNode):
+    """Represent one typed hard geometric projection applied to a boundary surface."""
     kind = "surface_constraint"
     factory: ClassVar[str | None] = None
     method: ClassVar[str | None] = None
@@ -379,6 +490,11 @@ class CADOperationNode(Node):
 
     @property
     def operation_type(self) -> str:
+        """Return operation type.
+
+        Returns:
+            str: Operation type.
+        """
         return self.type_name
 
     def __init__(
@@ -389,6 +505,17 @@ class CADOperationNode(Node):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize CADOperationNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         data = {**(params or {}), **values}
         super().__init__(kind=kind, name=name, params=data, children=children)
         self.operation_id = str(data.get("operation_id", name)).strip()
@@ -398,6 +525,16 @@ class CADOperationNode(Node):
     def create(
         cls, operation_type: str, operation_id: str, **overrides
     ) -> CADOperationNode:
+        """Create the CADOperationNode state.
+
+        Args:
+            operation_type (str): Registered CAD feature type used to create the operation.
+            operation_id (str): Stable identifier of the CAD history operation.
+            **overrides: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            CADOperationNode: Create the CADOperationNode state.
+        """
         from .registry import CAD_OPERATION_TYPES
 
         return CAD_OPERATION_TYPES[operation_type](
@@ -424,6 +561,17 @@ class PartNode(TypedNode):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize PartNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self.instances: list[InstanceNode] = []
         data = {**(params or {}), **values}
         # Older definitions stored a second, editable Assembly Part name.
@@ -440,18 +588,41 @@ class PartNode(TypedNode):
     # ----------------------------------------------------------- properties
     @property
     def assembly_name(self) -> str:
-        """Part name used in the assembly and generated script."""
+        """Part name used in the assembly and generated script.
+
+        Returns:
+            str: Part name used in the assembly and generated script.
+        """
         return self.name.strip()
 
     @property
     def instance_names(self) -> list[str]:
+        """Return instance names.
+
+        Returns:
+            list[str]: Instance names.
+        """
         return [instance.name for instance in self.instances]
 
     @property
     def children(self) -> tuple[Node, ...]:
+        """Return children.
+
+        Returns:
+            tuple[Node, ...]: Children.
+        """
         return tuple(self.instances)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         from .node_types.structural import InstanceNode
 
         if not isinstance(node, InstanceNode):
@@ -463,6 +634,11 @@ class PartNode(TypedNode):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         from .node_types.structural import InstanceNode
 
         if not isinstance(node, InstanceNode):
@@ -472,7 +648,15 @@ class PartNode(TypedNode):
     def add_instance(
         self, instance: InstanceNode, index: int | None = None
     ) -> InstanceNode:
-        """Attach one Instance declaration to this Part."""
+        """Attach one Instance declaration to this Part.
+
+        Args:
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            InstanceNode: Attach one Instance declaration to this Part.
+        """
         if not instance.name.strip():
             raise ValueError(
                 localized_message("ui.errors.nodes.instance_name_cannot_be_empty")
@@ -489,6 +673,16 @@ class PartNode(TypedNode):
 
     @classmethod
     def create(cls, part_type: str, name: str = "", **overrides) -> PartNode:
+        """Create the PartNode state.
+
+        Args:
+            part_type (str): Registered Part implementation type.
+            name (str): Name identifying the item in its owning collection.
+            **overrides: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            PartNode: Create the PartNode state.
+        """
         from .registry import PART_TYPES
 
         return PART_TYPES[part_type](name=name, **overrides)
@@ -511,19 +705,44 @@ class SurfaceNode(TypedNode):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize SurfaceNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         data = {**(params or {}), **values}
         super().__init__(kind=kind, name=name, params=data, children=children)
         self.is_updatable = bool(data.get("is_updatable", type(self).is_updatable))
 
     @property
     def surface_type(self) -> str:
-        """Backend surface class name, e.g. ``"bsp_cylinder"``."""
+        """Backend surface class name, e.g. ``"bsp_cylinder"``.
+
+        Returns:
+            str: Backend surface class name, e.g. ``"bsp_cylinder"``.
+        """
         return self.type
 
     @classmethod
     def create(
         cls, surface_type: str, name: str = "", **overrides
     ) -> SurfaceNode:
+        """Create the SurfaceNode state.
+
+        Args:
+            surface_type (str): Registered boundary-surface implementation type.
+            name (str): Name identifying the item in its owning collection.
+            **overrides: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            SurfaceNode: Create the SurfaceNode state.
+        """
         from .registry import SURFACE_TYPES
 
         return SURFACE_TYPES[surface_type](name=name, **overrides)
@@ -546,6 +765,17 @@ class FEAComponentNode(TypedNode):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize FEAComponentNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self._reference_names: dict[str, str] = {
             key: "" for key in (*INSTANCE_REFERENCE_FIELDS, *REFERENCE_POINT_FIELDS)
         }
@@ -560,7 +790,14 @@ class FEAComponentNode(TypedNode):
         )
 
     def reference_name(self, field: str) -> str:
-        """Display/serialized name of one node reference field."""
+        """Display/serialized name of one node reference field.
+
+        Args:
+            field (str): Field descriptor or result-field selection being evaluated.
+
+        Returns:
+            str: Display/serialized name of one node reference field.
+        """
         attr = INSTANCE_REFERENCE_FIELDS.get(field) or REFERENCE_POINT_FIELDS.get(field)
         if attr is None:
             raise KeyError(
@@ -572,7 +809,12 @@ class FEAComponentNode(TypedNode):
         return target.name if target is not None else self._reference_names[field]
 
     def set_reference(self, field: str, target: Node | None) -> None:
-        """Bind one reference field to an in-memory target node."""
+        """Bind one reference field to an in-memory target node.
+
+        Args:
+            field (str): Field descriptor or result-field selection being evaluated.
+            target (Node | None): Target interface or selection receiving the operation.
+        """
         attr = INSTANCE_REFERENCE_FIELDS.get(field) or REFERENCE_POINT_FIELDS.get(field)
         if attr is None:
             raise KeyError(
@@ -584,7 +826,14 @@ class FEAComponentNode(TypedNode):
         self._reference_names[field] = ""
 
     def pending_reference_name(self, field: str) -> str:
-        """Name read from persistence before the aggregate binds it."""
+        """Name read from persistence before the aggregate binds it.
+
+        Args:
+            field (str): Field descriptor or result-field selection being evaluated.
+
+        Returns:
+            str: Name read from persistence before the aggregate binds it.
+        """
         return self._reference_names[field]
 
     def _reference_property(field: str):
@@ -609,6 +858,16 @@ class FEAComponentNode(TypedNode):
     def create(
         cls, component_type: str, name: str | None = None, **overrides
     ) -> FEAComponentNode:
+        """Create the FEAComponentNode state.
+
+        Args:
+            component_type (str): Registered load or boundary-condition interface type.
+            name (str | None): Name identifying the item in its owning collection.
+            **overrides: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            FEAComponentNode: Create the FEAComponentNode state.
+        """
         from .registry import LOAD_TYPES
 
         node_type = LOAD_TYPES[component_type]
@@ -634,6 +893,17 @@ class MaterialNode(TypedNode):
         children: Sequence[Node] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize MaterialNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self._part_name = ""
         self.part: PartNode | None = None
         super().__init__(
@@ -642,44 +912,92 @@ class MaterialNode(TypedNode):
 
     @property
     def material_type(self) -> str:
+        """Return material type.
+
+        Returns:
+            str: Material type.
+        """
         return self.type
 
     @property
     def part_name(self) -> str:
-        """Physical Assembly Part name at the persistence/codegen boundary."""
+        """Physical Assembly Part name at the persistence/codegen boundary.
+
+        Returns:
+            str: Physical Assembly Part name at the persistence/codegen boundary.
+        """
         if self.part is not None:
             return self.part.assembly_name
         return self._part_name
 
     @part_name.setter
     def part_name(self, value: object) -> None:
+        """Set the Part name referenced by the assembly instances.
+
+        Args:
+            value (object): New Part name referenced by the assembly instances.
+        """
         self.part = None
         self._part_name = str(value or "").strip()
 
     def set_part(self, part: PartNode) -> None:
-        """Bind this material assignment to one geometry Part."""
+        """Bind this material assignment to one geometry Part.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+        """
         self.part = part
         self._part_name = ""
 
     @property
     def pending_part_name(self) -> str:
-        """Part name read from persistence before the aggregate binds it."""
+        """Part name read from persistence before the aggregate binds it.
+
+        Returns:
+            str: Part name read from persistence before the aggregate binds it.
+        """
         return self._part_name
 
     @classmethod
     def create(cls, material_type: str, name: str = "", **overrides) -> MaterialNode:
+        """Create the MaterialNode state.
+
+        Args:
+            material_type (str): Registered material-interface implementation type.
+            name (str): Name identifying the item in its owning collection.
+            **overrides: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            MaterialNode: Create the MaterialNode state.
+        """
         from .registry import MATERIAL_TYPES
 
         return MATERIAL_TYPES[material_type](name=name, **overrides)
 
 
 def find_node(root: Node, kind: str, name: str | None = None) -> Node | None:
-    """Find a node by kind (and optionally name)."""
+    """Find a node by kind (and optionally name).
+
+    Args:
+        root (Node): Root directory or root definition node owned by the operation.
+        kind (str): Registered category or provider identifier used to dispatch the operation.
+        name (str | None): Name identifying the item in its owning collection.
+
+    Returns:
+        Node | None: Find a node by kind (and optionally name).
+    """
     return root.find(lambda n: n.kind == kind and (name is None or n.name == name))
 
 
 def list_node_paths(root: Node) -> list[str]:
-    """Return human-readable paths of every node (for debugging / display)."""
+    """Return human-readable paths of every node (for debugging / display).
+
+    Args:
+        root (Node): Root directory or root definition node owned by the operation.
+
+    Returns:
+        list[str]: Human-readable paths of every node (for debugging / display).
+    """
     out: list[str] = []
 
     def walk(node: Node, prefix: str) -> None:

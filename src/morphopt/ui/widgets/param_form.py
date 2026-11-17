@@ -43,6 +43,23 @@ class ParamForm(QWidget):
         write: Callable[[str, object], bool | None] | None = None,
         choice_label: Callable[[str, object], str] = display_choice,
     ):
+        """Initialize ParamForm and its configuration state.
+
+        Args:
+            params (dict | None): Editable parameter fields of this definition node or interface
+                configuration.
+            fields: Requested field keys; None selects the available defaults for the record
+                location.
+            extra_choices: Additional selectable values appended to the schema-defined choices.
+            parent: Parent Qt widget; None creates a top-level widget.
+            helper_names: Names exposed by auxiliary constants, functions, and classes.
+            read (Callable[[str, object], object] | None): Callback returning the currently stored
+                field value.
+            write (Callable[[str, object], bool | None] | None): Callback committing a new field
+                value.
+            choice_label (Callable[[str, object], str]): Function formatting each selectable value
+                for display.
+        """
         super().__init__(parent)
         self.params = params
         self.helper_names = set(helper_names)
@@ -107,7 +124,13 @@ class ParamForm(QWidget):
     def refresh_choices(
         self, choices: dict, *, fields: Sequence[FieldSpec] | None = None,
     ) -> None:
-        """Update existing controls without rebuilding a changing form schema."""
+        """Update existing controls without rebuilding a changing form schema.
+
+        Args:
+            choices (dict): Available choices, optionally paired with display labels.
+            fields (Sequence[FieldSpec] | None): Requested field keys; None selects the available
+                defaults for the record location.
+        """
         if fields is not None:
             updated = {(field.key, field.type): field for field in fields}
             self.specs = tuple(updated.get((field.key, field.type), field) for field in self.specs)
@@ -304,7 +327,14 @@ class ParamForm(QWidget):
 
 
 def combo_value(combo: QComboBox) -> object:
-    """Read a combo's backend value, or custom text when it was edited."""
+    """Read a combo's backend value, or custom text when it was edited.
+
+    Args:
+        combo (QComboBox): Qt combo box whose available choices are synchronized.
+
+    Returns:
+        object: Read a combo's backend value, or custom text when it was edited.
+    """
     index = combo.currentIndex()
     if index >= 0 and combo.currentText() == combo.itemText(index):
         return combo.itemData(index)

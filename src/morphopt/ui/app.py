@@ -26,7 +26,11 @@ def configure_environment() -> None:
 
 
 def create_application(argv: list[str] | None = None):
-    """Create the shared QApplication with MorphOpt's process-wide settings."""
+    """Create the shared QApplication with MorphOpt's process-wide settings.
+
+    Args:
+        argv (list[str] | None): Command-line arguments passed to the Qt application.
+    """
     configure_environment()
 
     from PySide6.QtCore import QEvent, QObject, QPointF, QSettings
@@ -100,7 +104,11 @@ def create_application(argv: list[str] | None = None):
 
 
 def main() -> int:
-    """Launch the definition page in the main application window."""
+    """Launch the definition page in the main application window.
+
+    Returns:
+        int: Launch the definition page in the main application window.
+    """
     app = create_application()
 
     from .mainwindow import MainWindow

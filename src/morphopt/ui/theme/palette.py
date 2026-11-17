@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CodeEditorPalette:
+    """Collect syntax-highlighting colors and code-editor appearance settings."""
     font_family: str
     font_size: int
     keyword: str
@@ -17,6 +18,7 @@ class CodeEditorPalette:
 
 @dataclass(frozen=True)
 class ChartStyle:
+    """Collect shared chart colors, typography sizing, and line styling."""
     background: str
     text: str
     grid: str
@@ -28,6 +30,7 @@ class ChartStyle:
 
 @dataclass(frozen=True)
 class QuickstartPreviewStyle:
+    """Collect colors and rendering sizes for the quick-start geometry preview."""
     background: str
     text: str
     heading: str
@@ -62,6 +65,7 @@ class QuickstartPreviewStyle:
 
 @dataclass(frozen=True)
 class WorkbenchLayout:
+    """Collect shared spacing, panel sizes, and layout dimensions for the definition workbench."""
     problems_dialog_size: tuple[int, int] = (860, 340)
     output_name_width: int = 180
     path_minimum_width: int = 120
@@ -76,6 +80,7 @@ class WorkbenchLayout:
 
 @dataclass(frozen=True)
 class HistoryLayout:
+    """Collect sizing and column-width settings for history tables and controls."""
     row_height: int = 28
     column_widths: tuple[int, ...] = (96, 128, 168, 220, 280)
     column_width_padding: int = 24
@@ -91,6 +96,7 @@ class HistoryLayout:
 
 @dataclass(frozen=True)
 class ObserverLayout:
+    """Collect panel dimensions and navigation sizes for optimization observation."""
     step_button_width: int = 30
     iteration_label_minimum_width: int = 70
     option_panel_width: int = 160
@@ -101,6 +107,7 @@ class ObserverLayout:
 
 @dataclass(frozen=True)
 class UpdaterEditorLayout:
+    """Collect spacing and sizing settings for updater configuration forms."""
     selection_scroll_margins: tuple[int, int] = (10, 10)
     item_button_height: int = 30
     distance_matrix_button_minimum_width: int = 110
@@ -114,6 +121,8 @@ class UpdaterEditorLayout:
 
 @dataclass(frozen=True)
 class WidgetLayout:
+    """Collect dimensions shared by reusable editor widgets and dialogs."""
+    flythrough_size: tuple[int, int] = (1100, 760)
     action_button_height: int = 30
     item_action_button_width: int = 32
     objective_selector_height: int = 30
@@ -140,6 +149,7 @@ class WidgetLayout:
 
 @dataclass(frozen=True)
 class QuickstartLayout:
+    """Collect page dimensions and preview sizing for the quick-start wizard."""
     dialog_size: tuple[int, int] = (1250, 850)
     left_column_right_margin: int = 12
     scroll_minimum_width: int = 475
@@ -151,6 +161,7 @@ class QuickstartLayout:
 
 @dataclass(frozen=True)
 class FiniteElementLayout:
+    """Collect panel sizes and control dimensions for finite-element result views."""
     split_sizes: tuple[int, int] = (650, 850)
     iteration_selector_minimum_width: int = 100
     load_table_minimum_height: int = 210
@@ -180,6 +191,7 @@ DEFAULT_LAYOUT_STYLE = LayoutStyle()
 
 @dataclass(frozen=True)
 class ViewerGeometryStyle:
+    """Collect geometric sampling and rendering tolerances for definition previews."""
     instance_colors: tuple[str, ...]
     uninstanced_color: str
     cylinder_resolution: int = 64
@@ -211,6 +223,7 @@ class ViewerGeometryStyle:
 
 @dataclass(frozen=True)
 class ViewerLoadsStyle:
+    """Collect load-glyph sampling and annotation layout settings."""
     pressure_surface_color: str = "#38c7ce"
     pressure_arrow_color: str = "#a8f5da"
     pressure_opacity: float = 0.9
@@ -239,6 +252,7 @@ class ViewerLoadsStyle:
 
 @dataclass(frozen=True)
 class ViewerRenderStyle:
+    """Collect shared mesh colors, lighting settings, and visualization-glyph dimensions."""
     background: str
     result_colormap: str = "viridis"
     minimum_scalar_span: float = 1e-12
@@ -332,6 +346,7 @@ class ViewerRenderStyle:
 
 @dataclass(frozen=True)
 class ViewerStyle:
+    """Compose the geometry, load, and rendering styles of the shared visualization system."""
     geometry: ViewerGeometryStyle
     loads: ViewerLoadsStyle
     render: ViewerRenderStyle

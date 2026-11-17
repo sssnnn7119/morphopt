@@ -57,6 +57,12 @@ class DefinitionValidation:
     """
 
     def __init__(self, problem: ProblemDefinition) -> None:
+        """Initialize DefinitionValidation and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
         self.errors: dict[int | str, list[str]] = {}
         self.constant_nodes = {node.name: node for node in problem.helper_variables}
@@ -67,6 +73,13 @@ class DefinitionValidation:
         self.known_names: set[str] = set()
 
     def add(self, owner: object, key: str, **values: object) -> None:
+        """Add the DefinitionValidation state.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            key (str): Lookup key identifying the requested field or registered item.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         message = tr(f"ui.validation.{key}", **values)
         identity = owner if isinstance(owner, str) else id(owner)
         messages = self.errors.setdefault(identity, [])
@@ -81,6 +94,15 @@ class DefinitionValidation:
         expression: bool = False,
         check_names: bool = False,
     ) -> None:
+        """Check source.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            source (str): Source object, path, or metadata from which the operation reads its input.
+            expression (bool): Python parameter expression evaluated in the definition's auxiliary
+                namespace.
+            check_names (bool): Check registration-name validity and uniqueness when True.
+        """
         try:
             compile(source, "<definition>", "eval" if expression else "exec")
             if check_names:
@@ -104,7 +126,16 @@ class DefinitionValidation:
             self.add(owner, "code", reason=str(exc))
 
     def literal(self, expression: str, active: frozenset[str] = frozenset()) -> Any:
-        """Resolve literal constants only; calls and arbitrary expressions stay unknown."""
+        """Resolve literal constants only; calls and arbitrary expressions stay unknown.
+
+        Args:
+            expression (str): Python parameter expression evaluated in the definition's auxiliary
+                namespace.
+            active (frozenset[str]): Currently active registry or configuration entries.
+
+        Returns:
+            Any: Resolve literal constants only; calls and arbitrary expressions stay unknown.
+        """
         if expression in self.constants:
             if expression in active:
                 raise ValueError(tr("ui.validation.constant_cycle", name=expression))
@@ -141,6 +172,14 @@ class DefinitionValidation:
         return resolve(ast.parse(expression, mode="eval").body)
 
     def field(self, owner: object, spec: FieldSpec, value: object) -> None:
+        """Return field.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            spec (FieldSpec): Field or interface schema describing valid values and available
+                controls.
+            value (object): Value assigned to or evaluated for the selected field.
+        """
         if spec.hidden or spec.read_only:
             return
         label = (
@@ -228,11 +267,27 @@ class DefinitionValidation:
 
     @staticmethod
     def function_source(parameters: str, body: str) -> str:
+        """Return function source.
+
+        Args:
+            parameters (str): Parameter values in the order required by the selected interface.
+            body (str): Source-code body or geometry body processed by the operation.
+
+        Returns:
+            str: Function source.
+        """
         return f"def _definition({parameters}):\n" + textwrap.indent(
             body.strip() or "pass", "    "
         )
 
     def names(self, nodes: list[Node], *, identifiers: bool = False) -> None:
+        """Return names.
+
+        Args:
+            nodes (list[Node]): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+            identifiers (bool): Registered identifiers used to resolve the requested definitions.
+        """
         counts = Counter(
             node.name if identifiers else node.name.casefold() for node in nodes
         )
@@ -249,14 +304,33 @@ class DefinitionValidation:
                 self.add(node, "duplicate", name=node.name)
 
     def custom_class(self, owner: object, name: str) -> None:
+        """Return custom class.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            name (str): Name identifying the item in its owning collection.
+        """
         if name and name not in self.classes:
             self.add(owner, "reference", field="custom_class", name=name)
 
     def overridden(self, node: Node) -> bool:
+        """Return overridden.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+
+        Returns:
+            bool: Overridden.
+        """
         path = CONFIGURATION_CLASS_PATHS.get(node.kind, "")
         return bool(node.custom_class or self.problem.class_bindings.get(path))
 
     def node(self, node: Node) -> None:
+        """Return node.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         try:
             if isinstance(node, (FEAComponentNode, MaterialNode)):
                 fields = fields_for_node(node, self.problem)[0]
@@ -380,6 +454,7 @@ class DefinitionValidation:
                         self.add(op, "reference", field=key, name=op.get_field(key))
 
     def objectives(self) -> None:
+        """Return objectives."""
         objective = self.problem.objective
         if objective is None:
             return
@@ -453,6 +528,7 @@ class DefinitionValidation:
                     self.add(term, "definition", reason=str(exc))
 
     def steps(self) -> None:
+        """Return steps."""
         steps = self.problem.steps
         if steps is None:
             return
@@ -509,9 +585,14 @@ class DefinitionValidation:
     ) -> None:
         """Check analytic construction profiles without running user definitions.
 
-        The reported value estimates the initial geometry, not the maximum
-        curvature of the fitted spline. For a perturbed cylinder, the profile's
-        crest at z=0 already supplies a lower bound on its maximum curvature.
+        The reported value estimates the initial geometry, not the maximum curvature of the fitted
+        spline. For a perturbed cylinder, the profile's crest at z=0 already supplies a lower bound
+        on its maximum curvature.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            part (Node | None): Part whose geometry, mesh, or named sets are processed.
+            limit (float): Upper bound or constraint limit used by the selected operation.
         """
         if not isinstance(part, BoundaryPartNode) or self.overridden(part):
             return
@@ -554,6 +635,7 @@ class DefinitionValidation:
                 self.add(surface, "initial_curvature", **values)
 
     def updaters(self) -> None:
+        """Return updaters."""
         updater = self.problem.updater
         if updater is None:
             return
@@ -672,6 +754,11 @@ class DefinitionValidation:
                             self.add(item, "definition", reason=str(exc))
 
     def collect(self) -> dict[int | str, list[str]]:
+        """Collect the DefinitionValidation state.
+
+        Returns:
+            dict[int | str, list[str]]: Collect the DefinitionValidation state.
+        """
         problem = self.problem
         self.check_source(problem, problem.helper_code)
         helpers = [

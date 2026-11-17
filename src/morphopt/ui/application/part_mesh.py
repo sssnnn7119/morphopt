@@ -13,8 +13,17 @@ from .definitions import ProblemLibrary
 def build_part_mesh(node: PartNode, problem: ProblemDefinition) -> torchfea.Part:
     """Mesh one Part on demand, including its custom classes and embedded assets.
 
-    Other incomplete Parts, loads and material assignments do not participate in
-    a geometry selection. Temporary assets live until meshing has completed.
+    Other incomplete Parts, loads and material assignments do not participate in a geometry
+    selection. Temporary assets live until meshing has completed.
+
+    Args:
+        node (PartNode): Definition node being inspected or edited.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        torchfea.Part: Mesh one Part on demand, including its custom classes and embedded
+            assets.
     """
     definition = ProblemLibrary.create_blank()
     definition.helper_code = problem.helper_code

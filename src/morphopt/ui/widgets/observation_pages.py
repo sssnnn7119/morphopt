@@ -44,6 +44,11 @@ class LogsPage(QWidget):
     """Display saved task logs; polling is owned by ObserverControls."""
 
     def __init__(self, parent=None) -> None:
+        """Initialize LogsPage and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._reader = ResultLogReader()
         layout = QVBoxLayout(self)
@@ -70,6 +75,11 @@ class LogsPage(QWidget):
         self.file_selector.setEnabled(False)
 
     def refresh(self, results: ResultSession) -> None:
+        """Refresh the LogsPage state.
+
+        Args:
+            results (ResultSession): Results retained in their registered load-case or export order.
+        """
         files = results.log_files
         current_files = tuple(
             self.file_selector.itemData(index)
@@ -152,12 +162,14 @@ class LogsPage(QWidget):
             bar.setValue(bar.maximum())
 
     def clear(self) -> None:
+        """Clear the LogsPage state."""
         self._reader.clear()
         self.file_selector.clear()
         self.file_selector.setEnabled(False)
         self.text.clear()
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.file_label.setText(tr("ui.observe_panel.log_file"))
         self.follow.setText(tr("ui.observe_panel.log_follow"))
         self.follow.setToolTip(tr("ui.observe_panel.log_follow_hint"))
@@ -168,6 +180,11 @@ class MetricsPage(QWidget):
     """History table and a selectable objective or metric curve."""
 
     def __init__(self, parent=None):
+        """Initialize MetricsPage and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -200,7 +217,12 @@ class MetricsPage(QWidget):
         font_manager.changed.connect(self._font_changed)
 
     def update_from_history(self, history, iteration: int) -> None:
-        """Render all available history records up to ``iteration``."""
+        """Render all available history records up to ``iteration``.
+
+        Args:
+            history: Iteration records supplying the table, curves, or result selection.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         self._last_history = history
         self._last_iteration = iteration
         table = history_table(history)
@@ -312,6 +334,7 @@ class MetricsPage(QWidget):
             self.update_from_history(self._last_history, self._last_iteration)
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         if self._last_history is not None:
             self._configure_history_widths()
             self._draw_curve()
@@ -342,6 +365,11 @@ class UpdatableStructurePage(QWidget):
     viewChanged = Signal()
 
     def __init__(self, parent=None):
+        """Initialize UpdatableStructurePage and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -364,6 +392,13 @@ class UpdatableStructurePage(QWidget):
         self._theme_pending = False
 
     def build(self, results: ResultSession, iteration: int, component=None) -> None:
+        """Build the UpdatableStructurePage state.
+
+        Args:
+            results (ResultSession): Results retained in their registered load-case or export order.
+            iteration (int): Iteration index associated with the saved or current model state.
+            component: Model, result, or interface component processed by the operation.
+        """
         self._results = results
         self._iteration = iteration
         if component is None:
@@ -501,6 +536,7 @@ class UpdatableStructurePage(QWidget):
         self._sync_view_selector()
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
         if self.isVisible():
             self._last_rendered = None
@@ -509,6 +545,11 @@ class UpdatableStructurePage(QWidget):
             self._theme_pending = True
 
     def showEvent(self, event) -> None:
+        """Refresh deferred content when the widget becomes visible.
+
+        Args:
+            event: Qt event delivered to this widget or event filter.
+        """
         super().showEvent(event)
         if self._theme_pending:
             self._theme_pending = False
@@ -520,6 +561,11 @@ class DeformationCasePage(QWidget):
     """One persistent viewport shared by all load cases and result tasks."""
 
     def __init__(self, parent=None):
+        """Initialize DeformationCasePage and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -528,6 +574,13 @@ class DeformationCasePage(QWidget):
         self._last_rendered: tuple[str, int, str] | None = None
 
     def build(self, results: ResultSession, iteration: int, case_name: str) -> None:
+        """Build the DeformationCasePage state.
+
+        Args:
+            results (ResultSession): Results retained in their registered load-case or export order.
+            iteration (int): Iteration index associated with the saved or current model state.
+            case_name (str): Registered string load-case name.
+        """
         marker = (results.folder, iteration, case_name)
         if marker == self._last_rendered:
             return
@@ -549,6 +602,7 @@ class DeformationCasePage(QWidget):
         self.viewport.rebuild(lambda _plotter: None)
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
         actor = self.viewport.plotter.actors.get("deformation-mesh")
         if actor is not None:

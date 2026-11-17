@@ -9,11 +9,11 @@ from typing import Any
 
 from ...optcore.history import History
 from ..i18n import tr
-from ..model.strategies import STRATEGY_CATALOG
 
 
 @dataclass(frozen=True)
 class HistoryTable:
+    """Provide localized history headers, formatted table rows, and numeric plotting series."""
     headers: list[str]
     rows: list[list[str | None]]
     curves: list[tuple[str, list[float]]]
@@ -45,9 +45,6 @@ def _title(path: tuple[str, ...]) -> str:
     if path[0] == "optimizers" and len(path) > 2:
         fields = {
             ("iterations",): "inner_iterations",
-            ("max_step_iter",): "max_step_iter",
-            ("max_step_length",): "max_step_length",
-            ("constraint_weight_strategy",): "weight_strategy",
             ("constraint_weight_state", "tolerance"): "tolerance",
         }
         field = path[2:]
@@ -58,7 +55,7 @@ def _title(path: tuple[str, ...]) -> str:
         elif field[:2] == ("constraint_weight_state", "penalties") and len(field) == 4:
             label = (
                 tr(f"ui.history.{field[3]}")
-                if field[3] in ("initial_weight", "violation") else field[3]
+                if field[3] == "violation" else field[3]
             )
             title = tr("ui.history.penalty_field", penalty=field[2], field=label)
         else:
@@ -70,20 +67,23 @@ def _title(path: tuple[str, ...]) -> str:
 
 
 def history_table(history: History) -> HistoryTable:
+    """Return history table.
+
+    Args:
+        history (History): Iteration records supplying the table, curves, or result selection.
+
+    Returns:
+        HistoryTable: History table.
+    """
     cells = [dict(_flatten(record)) for record in history.records]
     paths = list(dict.fromkeys(path for row in cells for path in row if path != ("iteration",)))
     titles = [_title(path) for path in paths]
     headers = [tr("ui.widgets.observation_pages.iteration"), *titles]
-    weight_strategies = {spec.name: spec for spec in STRATEGY_CATALOG["constraint_weight_strategy"]}
     rows = []
     for index, row in enumerate(cells, 1):
         values: list[str | None] = [str(history.records[index - 1].get("iteration", index))]
         for path in paths:
             value = row.get(path)
-            if path[0] == "optimizers" and path[2:] == ("constraint_weight_strategy",):
-                strategy = weight_strategies.get(value)
-                if strategy is not None:
-                    value = tr(strategy.label_key)
             values.append(
                 f"{value:.6g}" if isinstance(value, Real)
                 else str(value) if value is not None else None

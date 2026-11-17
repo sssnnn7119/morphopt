@@ -19,6 +19,13 @@ class LocalizationManager:
     """Load keyed string tables, format messages, and notify locale listeners."""
 
     def __init__(self, locale: str = "zh-CN", fallback_locale: str = _FALLBACK_LOCALE):
+        """Initialize LocalizationManager and its configuration state.
+
+        Args:
+            locale (str): Locale identifier selecting the UI translation table.
+            fallback_locale (str): Locale used when a translation key is absent from the active
+                table.
+        """
         self._locale = self._normalize_locale(locale)
         self.fallback_locale = self._normalize_locale(fallback_locale)
         self._tables: dict[str, dict[str, str]] = {}
@@ -27,6 +34,11 @@ class LocalizationManager:
 
     @property
     def locale(self) -> str:
+        """Return locale.
+
+        Returns:
+            str: Locale.
+        """
         return self._locale
 
     @staticmethod
@@ -36,7 +48,14 @@ class LocalizationManager:
         return normalized if normalized in SUPPORTED_LOCALES else "zh-CN"
 
     def load_locale(self, locale: str) -> dict[str, str]:
-        """Load a locale file once and return its string table."""
+        """Load a locale file once and return its string table.
+
+        Args:
+            locale (str): Locale identifier selecting the UI translation table.
+
+        Returns:
+            dict[str, str]: Load a locale file once and return its string table.
+        """
         locale = self._normalize_locale(locale)
         if locale not in self._tables:
             path = _RESOURCE_DIR / f"{locale}.json"
@@ -51,6 +70,11 @@ class LocalizationManager:
         return self._tables[locale]
 
     def set_locale(self, locale: str) -> None:
+        """Set locale.
+
+        Args:
+            locale (str): Locale identifier selecting the UI translation table.
+        """
         locale = self._normalize_locale(locale)
         if locale == self._locale:
             return
@@ -59,7 +83,15 @@ class LocalizationManager:
         self._notify_locale_changed()
 
     def subscribe(self, callback: Callable[[str], None]) -> Callable[[], None]:
-        """Subscribe to locale changes and return a function that unsubscribes."""
+        """Subscribe to locale changes and return a function that unsubscribes.
+
+        Args:
+            callback (Callable[[str], None]): Callback invoked with the operation's documented
+                result or change event.
+
+        Returns:
+            Callable[[], None]: Subscribe to locale changes and return a function that unsubscribes.
+        """
         reference = (
             weakref.WeakMethod(callback)
             if getattr(callback, "__self__", None) is not None
@@ -84,7 +116,15 @@ class LocalizationManager:
         self._listeners = live
 
     def tr(self, key: str, **values: object) -> str:
-        """Resolve ``key`` in the active table, then the fallback table."""
+        """Resolve ``key`` in the active table, then the fallback table.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            **values: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            str: Resolve ``key`` in the active table, then the fallback table.
+        """
         text = self.load_locale(self._locale).get(key)
         if text is None:
             text = self.load_locale(self.fallback_locale).get(key)
@@ -121,14 +161,35 @@ class LocalizedMessage:
 
 
 def localized_message(key: str, **values: object) -> LocalizedMessage:
+    """Return localized message.
+
+    Args:
+        key (str): Lookup key identifying the requested field or registered item.
+        **values: Additional keyword arguments accepted by the shared interface.
+
+    Returns:
+        LocalizedMessage: Localized message.
+    """
     return LocalizedMessage(key, values)
 
 
 def tr(key: str, **values: object) -> str:
-    """Translate a stable message key and interpolate named values."""
+    """Translate a stable message key and interpolate named values.
+
+    Args:
+        key (str): Lookup key identifying the requested field or registered item.
+        **values: Additional keyword arguments accepted by the shared interface.
+
+    Returns:
+        str: Translate a stable message key and interpolate named values.
+    """
     return localization.tr(key, **values)
 
 
 def set_locale(locale: str) -> None:
-    """Set the active locale and notify subscribed UI components."""
+    """Set the active locale and notify subscribed UI components.
+
+    Args:
+        locale (str): Locale identifier selecting the UI translation table.
+    """
     localization.set_locale(locale)

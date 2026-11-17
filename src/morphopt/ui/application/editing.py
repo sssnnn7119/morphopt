@@ -37,9 +37,23 @@ class DefinitionCommands:
     """
 
     def __init__(self, problem: ProblemDefinition):
+        """Initialize DefinitionCommands and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
 
     def add_helper(self, kind: str) -> Node:
+        """Add helper.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Node: Add helper.
+        """
         types = {
             "helper_variable": (HelperVariableNode, "constant", {"value": "None"}),
             "helper_function": (
@@ -66,6 +80,14 @@ class DefinitionCommands:
         return node
 
     def remove_helper(self, node: Node) -> str:
+        """Remove helper.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+
+        Returns:
+            str: Remove helper.
+        """
         entries = (
             self.problem.helper_variables
             if node.kind == "helper_variable"
@@ -79,6 +101,15 @@ class DefinitionCommands:
         )
 
     def move_helper(self, node: Node, delta: int) -> bool:
+        """Move helper.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+
+        Returns:
+            bool: Move helper.
+        """
         entries = (
             self.problem.helper_variables
             if node.kind == "helper_variable"
@@ -92,6 +123,15 @@ class DefinitionCommands:
         return True
 
     def add_part(self, part_type: str, custom_class: str = "") -> PartNode:
+        """Add part.
+
+        Args:
+            part_type (str): Registered Part implementation type.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+
+        Returns:
+            PartNode: Add part.
+        """
         name = self.problem.suggest_part_name()
         if PART_TYPES[part_type].custom_only and not custom_class:
             raise ValueError(
@@ -111,6 +151,16 @@ class DefinitionCommands:
         owner: BoundaryPartNode,
         custom_class: str = "",
     ) -> SurfaceNode:
+        """Add surface.
+
+        Args:
+            surface_type (str): Registered boundary-surface implementation type.
+            owner (BoundaryPartNode): Owning definition node or collection.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+
+        Returns:
+            SurfaceNode: Add surface.
+        """
         node = SurfaceNode.create(surface_type)
         node.custom_class = custom_class
         self.problem.add_surface(node, part=owner)
@@ -119,6 +169,15 @@ class DefinitionCommands:
     def add_component(
         self, component_type: str, custom_class: str = ""
     ) -> FEAComponentNode:
+        """Add component.
+
+        Args:
+            component_type (str): Registered load or boundary-condition interface type.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+
+        Returns:
+            FEAComponentNode: Add component.
+        """
         reference_fields = {
             "instance_name", "instance_name1", "instance_name2",
             "surface_name", "surface_name1", "surface_name2", "set_nodes_name",
@@ -133,6 +192,15 @@ class DefinitionCommands:
         return node
 
     def add_material(self, material_type: str, custom_class: str = "") -> MaterialNode:
+        """Add material.
+
+        Args:
+            material_type (str): Registered material-interface implementation type.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+
+        Returns:
+            MaterialNode: Add material.
+        """
         node = MaterialNode.create(material_type)
         names = {material.name for material in self.problem.material_nodes()}
         index = 1
@@ -147,6 +215,15 @@ class DefinitionCommands:
         return node
 
     def next_operation_id(self, owner: CADPartNode, operation_type: str) -> str:
+        """Return next operation id.
+
+        Args:
+            owner (CADPartNode): Owning definition node or collection.
+            operation_type (str): Registered CAD feature type used to create the operation.
+
+        Returns:
+            str: Next operation id.
+        """
         used = {item.operation_id for item in owner.operations}
         index = 1
         while f"{operation_type}-{index}" in used:
@@ -160,12 +237,28 @@ class DefinitionCommands:
         operation_id: str,
         **values,
     ) -> CADOperationNode:
+        """Add cad operation.
+
+        Args:
+            owner (CADPartNode): Owning definition node or collection.
+            operation_type (str): Registered CAD feature type used to create the operation.
+            operation_id (str): Stable identifier of the CAD history operation.
+            **values: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            CADOperationNode: Add cad operation.
+        """
         node = CADOperationNode.create(operation_type, operation_id, **values)
         self.problem.add_cad_operation(owner, node)
         return node
 
     def available_optimizer_targets(self) -> list[PartNode | MaterialNode]:
-        """Actual components that can receive a new updater, in model order."""
+        """Actual components that can receive a new updater, in model order.
+
+        Returns:
+            list[PartNode | MaterialNode]: Actual components that can receive a new updater, in
+                model order.
+        """
         if self.problem.updater is None:
             return []
         candidates = [
@@ -187,10 +280,27 @@ class DefinitionCommands:
 
     @staticmethod
     def add_updater_item(config: dict, item_type: str, category: str) -> None:
+        """Add updater item.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            item_type (str): Registered interface type used to create a new collection item.
+            category (str): Interface or asset category used to select compatible editors or
+                renderers.
+        """
         key = "objective_functions" if category == "objectives" else "constraints"
         config.setdefault(key, []).append(updater_item(item_type, category))
 
     def add_symmetry_constraint(self, config: dict, item_type: str) -> bool:
+        """Add symmetry constraint.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            item_type (str): Registered interface type used to create a new collection item.
+
+        Returns:
+            bool: Add symmetry constraint.
+        """
         target = self.problem.config_part_node(config)
         surfaces = target.surfaces if target is not None else []
         item = symmetry_item(item_type, surfaces)
@@ -203,7 +313,18 @@ class DefinitionCommands:
 def set_node_field(
     node: Node, key: str, value, problem: ProblemDefinition | None = None
 ) -> bool:
-    """Apply fields through aggregate reference/rename rules, never through widgets."""
+    """Apply fields through aggregate reference/rename rules, never through widgets.
+
+    Args:
+        node (Node): Definition node being inspected or edited.
+        key (str): Lookup key identifying the requested field or registered item.
+        value: Value assigned to or evaluated for the selected field.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        bool: Apply fields through aggregate reference/rename rules, never through widgets.
+    """
     from ..model.problem import INSTANCE_REFERENCE_FIELDS, REFERENCE_POINT_FIELDS
 
     if problem is not None:
@@ -260,6 +381,17 @@ def set_node_field(
 def rename_node(
     node: Node, name: str, problem: ProblemDefinition | None = None
 ) -> bool:
+    """Return rename node.
+
+    Args:
+        node (Node): Definition node being inspected or edited.
+        name (str): Name identifying the item in its owning collection.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        bool: Rename node.
+    """
     name = name.strip()
     if not name or name == node.name:
         return False
@@ -281,9 +413,24 @@ class HelperCodeSession:
     """Bind and validate an editable helper definition without UI state."""
 
     def __init__(self, problem: ProblemDefinition, node: Node | None):
+        """Initialize HelperCodeSession and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            node (Node | None): Definition node being inspected or edited.
+        """
         self.problem, self.node = problem, node
 
     def save(self, name: str, value: str, parameters: str, body: str) -> None:
+        """Save the HelperCodeSession state.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            value (str): Value assigned to or evaluated for the selected field.
+            parameters (str): Parameter values in the order required by the selected interface.
+            body (str): Source-code body or geometry body processed by the operation.
+        """
         node = self.node
         if node is None:
             return
@@ -298,6 +445,7 @@ class HelperCodeSession:
                 node.parameters, node.body = parameters, body
 
     def validate(self) -> None:
+        """Validate the HelperCodeSession state."""
         import ast
         import keyword
         from textwrap import indent
@@ -328,14 +476,28 @@ class CustomClassSession:
     """Edit reusable classes and update every use through one reference policy."""
 
     def __init__(self, problem: ProblemDefinition):
+        """Initialize CustomClassSession and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
 
     def catalog(self):
+        """Handle catalog for CustomClassSession."""
         from ..codegen.custom_classes import framework_class_catalog
 
         return framework_class_catalog(self.problem)
 
     def validate_name(self, name: str, current: CustomClassNode | None = None) -> None:
+        """Validate name.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            current (CustomClassNode | None): Currently selected value retained while choices are
+                rebuilt.
+        """
         from ..codegen.custom_classes import validate_custom_name
 
         validate_custom_name(name, self.catalog())
@@ -352,6 +514,17 @@ class CustomClassSession:
     def add_class(
         self, name: str, base: str = "", class_type: str = "override"
     ) -> CustomClassNode:
+        """Add class.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            base (str): Base class or root configuration from which the selected declaration is
+                constructed.
+            class_type (str): Framework or custom class selected for this declaration.
+
+        Returns:
+            CustomClassNode: Add class.
+        """
         from ..model.problem import CustomClassNode
 
         if class_type not in {"new", "override"}:
@@ -390,6 +563,15 @@ class CustomClassSession:
                                 item.pop("custom_class", None)
 
     def rename(self, node: CustomClassNode, name: str) -> bool:
+        """Return rename.
+
+        Args:
+            node (CustomClassNode): Definition node being inspected or edited.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            bool: Rename.
+        """
         self.validate_name(name, current=node)
         if name == node.name:
             return False
@@ -398,7 +580,15 @@ class CustomClassSession:
         return True
 
     def dependent_classes(self, node: CustomClassNode) -> list[CustomClassNode]:
-        """Classes whose inheritance chain includes the selected custom class."""
+        """Classes whose inheritance chain includes the selected custom class.
+
+        Args:
+            node (CustomClassNode): Definition node being inspected or edited.
+
+        Returns:
+            list[CustomClassNode]: Classes whose inheritance chain includes the selected custom
+                class.
+        """
         names = {node.name}
         while True:
             children = {
@@ -418,6 +608,15 @@ class CustomClassSession:
     def remove(
         self, node: CustomClassNode | MethodOverrideNode | CustomFunctionNode
     ) -> CustomClassNode | None:
+        """Remove the CustomClassSession state.
+
+        Args:
+            node (CustomClassNode | MethodOverrideNode | CustomFunctionNode): Definition node being
+                inspected or edited.
+
+        Returns:
+            CustomClassNode | None: Remove the CustomClassSession state.
+        """
         from ..model.problem import CustomClassNode
 
         if isinstance(node, CustomClassNode):
@@ -433,6 +632,16 @@ class CustomClassSession:
 
     @staticmethod
     def add_override(custom: CustomClassNode, spec) -> MethodOverrideNode:
+        """Add override.
+
+        Args:
+            custom (CustomClassNode): Custom-class declaration selected for this framework
+                interface.
+            spec: Field or interface schema describing valid values and available controls.
+
+        Returns:
+            MethodOverrideNode: Add override.
+        """
         from ..model.problem import MethodOverrideNode
 
         override = MethodOverrideNode(name=spec.name, params={"body": spec.body})
@@ -443,6 +652,17 @@ class CustomClassSession:
     def add_function(
         custom: CustomClassNode, name: str, parameters: str = "self"
     ) -> CustomFunctionNode:
+        """Add function.
+
+        Args:
+            custom (CustomClassNode): Custom-class declaration selected for this framework
+                interface.
+            name (str): Name identifying the item in its owning collection.
+            parameters (str): Parameter values in the order required by the selected interface.
+
+        Returns:
+            CustomFunctionNode: Add function.
+        """
         function = CustomFunctionNode(
             name=name,
             params={"parameters": parameters, "body": "pass"},
@@ -452,6 +672,17 @@ class CustomClassSession:
 
     @staticmethod
     def move_member(custom: CustomClassNode, node: Node, delta: int) -> bool:
+        """Move member.
+
+        Args:
+            custom (CustomClassNode): Custom-class declaration selected for this framework
+                interface.
+            node (Node): Definition node being inspected or edited.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+
+        Returns:
+            bool: Move member.
+        """
         index = custom.members.index(node)
         target = index + delta
         if not 0 <= target < len(custom.members):
@@ -461,6 +692,12 @@ class CustomClassSession:
 
     @staticmethod
     def validate_body(override: MethodOverrideNode, spec) -> None:
+        """Validate body.
+
+        Args:
+            override (MethodOverrideNode): Framework method selected for a custom implementation.
+            spec: Field or interface schema describing valid values and available controls.
+        """
         from textwrap import indent
 
         compile(
@@ -473,6 +710,11 @@ class CustomClassSession:
 
     @staticmethod
     def validate_function(function: CustomFunctionNode) -> None:
+        """Validate function.
+
+        Args:
+            function (CustomFunctionNode): Callable registered or evaluated by this operation.
+        """
         import keyword
         from textwrap import indent
 
@@ -494,9 +736,21 @@ class LoadCaseSession:
     """Named case operations and amplitude editing, independent of widgets."""
 
     def __init__(self, steps: StepsNode, problem: ProblemDefinition) -> None:
+        """Initialize LoadCaseSession and its configuration state.
+
+        Args:
+            steps (StepsNode): Named load-case definitions in registration order.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.steps, self.problem = steps, problem
 
     def add(self) -> str:
+        """Add the LoadCaseSession state.
+
+        Returns:
+            str: Add the LoadCaseSession state.
+        """
         index = 1
         while f"load_case_{index}" in self.steps.step_values:
             index += 1
@@ -505,11 +759,26 @@ class LoadCaseSession:
         return name
 
     def rename(self, name: str, new_name: str) -> None:
+        """Return rename.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            new_name (str): Replacement name for the selected registered item.
+        """
         from .load_cases import rename_case
 
         rename_case(self.problem, name, new_name)
 
     def move(self, name: str, delta: int) -> bool:
+        """Move the LoadCaseSession state.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            delta (int): Signed collection displacement; -1 moves up and +1 moves down.
+
+        Returns:
+            bool: Move the LoadCaseSession state.
+        """
         names = list(self.steps.step_values)
         index = names.index(name)
         target = index + delta
@@ -522,11 +791,31 @@ class LoadCaseSession:
     def remove(
         self, name: str, *, remove_objectives: bool, remove_unused: bool
     ) -> None:
+        """Remove the LoadCaseSession state.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            remove_objectives (bool): Delete objectives referencing the removed load case when True;
+                otherwise clear their case selection.
+            remove_unused (bool): Remove generated load cases that have no remaining references when
+                True.
+        """
         from .load_cases import remove_case
 
         remove_case(self.problem, name, remove_objectives, remove_unused)
 
     def value(self, name: str, component: FEAComponentNode, key: str) -> float | str:
+        """Return value.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            key (str): Lookup key identifying the requested field or registered item.
+
+        Returns:
+            float | str: Value.
+        """
         index = next(i for i, field in enumerate(component.value_fields) if field.key == key)
         values = self.steps.step_values[name].get(component, [])
         return values[index] if index < len(values) else 0.0
@@ -534,7 +823,18 @@ class LoadCaseSession:
     def set_parameter(
         self, name: str, component: FEAComponentNode, key: str, value: float | str,
     ) -> bool:
-        """Change one named scalar without rewriting the load's other values."""
+        """Change one named scalar without rewriting the load's other values.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            key (str): Lookup key identifying the requested field or registered item.
+            value (float | str): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Change one named scalar without rewriting the load's other values.
+        """
         if name not in self.steps.step_values:
             return False
         constants = {constant.name for constant in self.problem.helper_variables}
@@ -552,10 +852,22 @@ class SolverTasks:
     """Read and write ordered load-case sequences for each process group."""
 
     def __init__(self, solver: SolverNode, problem: ProblemDefinition):
+        """Initialize SolverTasks and its configuration state.
+
+        Args:
+            solver (SolverNode): Solver configuration whose devices and ordered task groups are
+                edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.solver, self.problem = solver, problem
 
     def groups(self) -> list[list[str]]:
-        """Return each group's ordered cases; an empty definition means one per case."""
+        """Return each group's ordered cases; an empty definition means one per case.
+
+        Returns:
+            list[list[str]]: Each group's ordered cases; an empty definition means one per case.
+        """
         names = (
             list(self.problem.steps.step_values)
             if self.problem.steps is not None
@@ -580,7 +892,12 @@ class SolverTasks:
         return groups
 
     def assign_groups(self, groups: list[list[str]]) -> None:
-        """Store groups in display order and cases in their solve order."""
+        """Store groups in display order and cases in their solve order.
+
+        Args:
+            groups (list[list[str]]): Ordered load-case groups processed as independent solver
+                tasks.
+        """
         names = (
             list(self.problem.steps.step_values)
             if self.problem.steps is not None

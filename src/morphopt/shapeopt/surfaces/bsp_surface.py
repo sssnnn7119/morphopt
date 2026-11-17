@@ -29,8 +29,12 @@ if TYPE_CHECKING:
 
 
 class BspSurface(ControlPointSurface):
-    """
-    Class to handle a B-spline surface.
+    """Represent a periodic B-spline side surface and its closed end caps.
+
+    Control points and cached basis evaluations define the differentiable shape. Surface
+    constraints project the live control tensor; the first and last control-point rows remain
+    fixed during displacement updates. STEP export builds a closed solid suitable for the shared
+    CAD meshing pipeline.
     """
 
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
@@ -41,7 +45,16 @@ class BspSurface(ControlPointSurface):
     periodic_z: type[BspZPeriodicityConstraint] = BspZPeriodicityConstraint
 
     def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
-        """Identify the bottom and head nodes of this BSP boundary."""
+        """Identify the bottom and head nodes of this BSP boundary.
+
+        Args:
+            nodes (np.ndarray): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+
+        Returns:
+            dict[str, np.ndarray]: Bottom and Head selections containing zero-based indices into
+                nodes, classified by the minimum and maximum supplied Z coordinates.
+        """
         z = nodes[:, 2]
         tolerance = CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
         return {
@@ -50,16 +63,20 @@ class BspSurface(ControlPointSurface):
         }
 
     class BSplineSolidGenerator:
+        """Build and export a closed OCC solid from the periodic B-spline side surface and its end
+        caps.
+        """
         def __init__(self, P0, degree_u=3, degree_v=3):
-            """
-            初始化 B-Spline 实体生成器 (使用 Gmsh)
+            """Store the periodic side-surface poles and polynomial degrees for solid construction.
 
-            参数:
-                P0: numpy array, shape (numV, numU, 3).
-                    代表控制点 (Poles).
-                    注意: U方向应为非重复的唯一控制点 (Periodic).
-                degree_u: U方向次数（多项式最高次数，如degree=3表示三次B样条）
-                degree_v: V方向次数（多项式最高次数，如degree=3表示三次B样条）
+            The Gmsh session is initialized by build(), and must be released with finalize() after
+            construction and export.
+
+            Args:
+                P0: Cartesian control points with shape (num_axial, num_circumferential, 3).
+                    Circumferential poles normally contain no repeated closing column.
+                degree_u: Circumferential B-spline degree; defaults to 3.
+                degree_v: Axial B-spline degree; defaults to 3.
             """
             self.P0 = P0
             self.degree_u = degree_u
@@ -67,9 +84,15 @@ class BspSurface(ControlPointSurface):
             self.volume_tag = None
 
         def build(self):
-            """
-            构建版本 - 改用 addBSplineSurface + Wrapping + Trim
-            通过上下游双重延伸(Padding)确保接缝处C2连续性
+            """Construct, cap, and heal a periodic B-spline boundary in a new Gmsh model.
+
+            A periodic extension of the control net forms the side surface. End caps close the solid,
+            which is reimported to isolate its BREP topology before export.
+
+            Returns:
+                int | None: OCC volume tag after successful closure; the side-surface tag is returned
+                    when solid construction falls back to a surface. A missing reimported volume can
+                    produce None.
             """
             self.volume_tag = None
 
@@ -372,15 +395,22 @@ class BspSurface(ControlPointSurface):
                 return side_surface  # Fallback
 
         def export_step(self, filename: str | Path) -> None:
-            """Write the solid; propagate export errors to the optimization worker."""
+            """Write the solid; propagate export errors to the optimization worker.
+
+            Args:
+                filename (str | Path): Destination STEP file path, including the .step or .stp suffix.
+            """
             gmsh.write(str(filename))
 
         def finalize(self):
-            """清理 Gmsh 资源"""
+            """Release the Gmsh session used to construct and export this solid."""
             gmsh.finalize()
 
         def visualize(self):
-            """启动 Gmsh GUI 进行可视化（可选）"""
+            """Open the Gmsh viewer for the currently constructed model.
+
+            This interactive operation requires a graphical display and returns when the viewer closes.
+            """
             gmsh.fltk.run()
 
     def __init__(
@@ -388,6 +418,13 @@ class BspSurface(ControlPointSurface):
         surface: bspmap.BSP,
         init_size: float,
     ):
+        """Wrap an existing BSP model as a differentiable boundary surface.
+
+        Args:
+            surface (bspmap.BSP): BSP backend whose control points initialize the live PyTorch
+                design tensor.
+            init_size (float): Target surface sampling spacing in model length units.
+        """
         super().__init__()
         self.is_updatable = True
 
@@ -404,10 +441,19 @@ class BspSurface(ControlPointSurface):
         """The preloaded size of the UV grid."""
 
     def synchronize(self):
+        """Copy live geometric parameters to the external geometry representation."""
         self.model._control_points = self._cps.detach().cpu().numpy()
 
     def map(self, uv: torch.Tensor) -> torch.Tensor:
-        """Map from UV space to 3D space using the B-spline surface model."""
+        """Map from UV space to 3D space using the B-spline surface model.
+
+        Args:
+            uv (torch.Tensor): Surface parameter coordinates with shape (num_queries, 2).
+
+        Returns:
+            torch.Tensor: Evaluated Cartesian positions with shape (num_queries, 3), retaining
+                control-point gradients.
+        """
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
         weights, indices = self.model.get_weights(uv_np, derivative=[0, 0])
 
@@ -430,7 +476,14 @@ class BspSurface(ControlPointSurface):
         )
 
     def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
-        """Get the normals of the surface at the given UV coordinates."""
+        """Get the normals of the surface at the given UV coordinates.
+
+        Args:
+            uv (torch.Tensor): Surface parameter coordinates with shape (num_queries, 2).
+
+        Returns:
+            torch.Tensor: Oriented unit normals with shape (num_queries, 3).
+        """
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
         weightsdu, indices = self.model.get_weights(uv_np, derivative=[1, 0])
         weightsdv, _ = self.model.get_weights(uv_np, derivative=[0, 1])
@@ -463,11 +516,20 @@ class BspSurface(ControlPointSurface):
 
     def initialize(self):
 
+        """Initialize the BspSurface state."""
         self.pre_load()
 
     def pre_load(
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
     ) -> None:
+        """Build and install sampling connectivity and cached basis derivatives.
+
+        Args:
+            pre_points (torch.Tensor): Optional surface sample coordinates supplied with the
+                matching face connectivity.
+            faces (torch.Tensor): Face selection or mesh connectivity required by the selected
+                surface operation.
+        """
         preload_data = self.get_preloaddata(pre_points=pre_points, faces=faces)
         self.apply_preload_data(preload_data)
 
@@ -475,6 +537,17 @@ class BspSurface(ControlPointSurface):
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
     ):
 
+        """Precompute basis coefficients and derivative stencils on a surface sampling mesh.
+
+        Args:
+            pre_points (torch.Tensor): Optional parameter-space samples with shape (num_points, 2).
+                Supply together with faces; omitting both creates a structured periodic grid.
+            faces (torch.Tensor): Optional quadrilateral connectivity indexing pre_points.
+
+        Returns:
+            ControlPointSurface.PreLoadData: Sample parameters, connectivity, and cached basis
+                stencils through second derivatives.
+        """
         if pre_points is None and faces is None:
             # preload the uv grid
             ratio = CONSTANT.KERNEL.SURFACE.BSP_PROJECTION_SUBDIVISION_RATIO
@@ -561,6 +634,15 @@ class BspSurface(ControlPointSurface):
         path_output: str | Path,
         name_output: str,
     ) -> None:
+        """Construct and write a closed BSP solid, releasing the Gmsh session on exit.
+
+        Args:
+            control_points (np.ndarray): Cartesian NURBS control-point array with shape (nu, nv, 3).
+            degree_u (int): B-spline polynomial degree in the circumferential parameter direction.
+            degree_v (int): B-spline polynomial degree in the axial parameter direction.
+            path_output (str | Path): Directory in which geometry files are written.
+            name_output (str): Output geometry filename stem, without the generated format suffix.
+        """
         generator = BspSurface.BSplineSolidGenerator(
             P0=control_points, degree_u=degree_u, degree_v=degree_v
         )
@@ -577,6 +659,17 @@ class BspSurface(ControlPointSurface):
         seed_size: float = -1,
         pools: Pool | None = None,
     ) -> str:
+        """Return output data.
+
+        Args:
+            path_output (str | Path): Directory in which geometry files are written.
+            name_output (str): Output geometry filename stem, without the generated format suffix.
+            seed_size (float): Geometry sampling or meshing spacing in model length units.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            str: Geometry filename relative to path_output, including its format suffix.
+        """
         arguments = (
             self._cps.detach().cpu().numpy().reshape([*self.model.size, 3]),
             self.model.degree,
@@ -596,10 +689,28 @@ class BspSurface(ControlPointSurface):
         part: CADMeshingMixin,
         context: OCCBuilder,
     ) -> list[int]:
+        """Load geometry.
+
+        Args:
+            part (CADMeshingMixin): Part whose geometry, mesh, or named sets are processed.
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+
+        Returns:
+            list[int]: OCC face tags of the closed BSP boundary imported into the active assembly
+                session.
+        """
         return part.load_step_boundary(self._geometry_path, context)
 
     def constrain_displacements(self, change: torch.Tensor) -> torch.Tensor:
-        """Apply the same fixed-end mask to updates and symmetry projections."""
+        """Apply the same fixed-end mask to updates and symmetry projections.
+
+        Args:
+            change (torch.Tensor): Difference between the current and previous physical gradients.
+
+        Returns:
+            torch.Tensor: Apply the same fixed-end mask to updates and symmetry projections.
+        """
         constrained = change.reshape(*self.model.size, 3).clone()
         fixed_rows = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
         constrained[:fixed_rows, :, 2] = 0
@@ -609,24 +720,55 @@ class BspSurface(ControlPointSurface):
         return constrained.reshape_as(change)
 
     def update_variables(self, x_change: torch.Tensor) -> None:
+        """Update variables.
+
+        Args:
+            x_change (torch.Tensor): Design-variable increment in this interface's flattened
+                parameter order.
+        """
         ControlPointSurface.update_variables(self, self.constrain_displacements(x_change))
 
     def get_points_weight(self):
-        """Get vertex-based integration weights for the preload mesh."""
+        """Get vertex-based integration weights for the preload mesh.
+
+        Returns:
+            torch.Tensor: Surface-area quadrature weights aligned with the preloaded sample points.
+        """
         r = self.get_r().detach()
         return self.preload_data.compute_point_weights(r)
 
     def save(self, filename):
+        """Save the BspSurface state.
+
+        Args:
+            filename: State-file path or filename prefix accepted by this component's save/load
+                pair.
+        """
         self.model.control_points = self._cps.detach().cpu().numpy()
         self.model.save(filename)
 
     def load(self, filename):
+        """Load the BspSurface state.
+
+        Args:
+            filename: State-file path or filename prefix accepted by this component's save/load
+                pair.
+        """
         self.model = bspmap.BSP.load(filename + ".npz")
         self._cps = torch.from_numpy(self.model.control_points).to(
             torch.get_default_device()
         )
 
     def get_mesh(self):
+        """Get a display mesh of the synchronized B-spline surface and its end caps.
+
+        Returns:
+            pv.PolyData: Closed display surface assembled from the sampled side surface and caps.
+
+        Notes:
+            This visualization mesh is independent of finite-element volume meshing. Synchronize the
+            backend before displaying newly assigned live control points.
+        """
         import pyvista as pv
 
         ratio = CONSTANT.KERNEL.SURFACE.BSP_PROJECTION_SUBDIVISION_RATIO
@@ -673,18 +815,21 @@ class BspSurface(ControlPointSurface):
         init_location=[0.0, 0.0, 0.0],
         perturbation_L=-1.0,
     ):
-        """
-        Initialize the B-spline surface for the optimization process.
+        """Initialize the B-spline surface for the optimization process.
 
-        Parameters:
+        Args:
             r0 (float): The radius of the cylinder.
             length (float): The length of the cylinder.
-            seed_size (float): Initial control-net and surface sampling spacing, separate from the Part's FE mesh size.
-            num_U_ratio (int, optional): Circumferential control-point count alignment factor, combined with 12 by LCM.
-            num_V_ratio (int, optional): Axial period-count alignment. Values above one reserve fixed end rows and periodic wrapping rows.
-            degree (int, optional): The degree of the B-spline surface. Default is 3.
-            init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
-            perturbation_L (float, optional): The perturbation length for the surface. Default is -1. If < 0, no perturbation is applied.
+            seed_size (float): Initial control-net and surface sampling spacing, separate from the
+                Part's FE mesh size.
+            num_U_ratio (int): Circumferential control-point count alignment factor, combined with
+                12 by LCM.
+            num_V_ratio (int): Axial period-count alignment. Values above one reserve fixed end rows
+                and periodic wrapping rows.
+            degree: The degree of the B-spline surface. Default is 3.
+            init_location: The initial location of the surface. Default is [0., 0., 0.].
+            perturbation_L: The perturbation length for the surface. Default is -1. If < 0, no
+                perturbation is applied.
 
         Returns:
             BspSurface: The cylindrical B-spline surface.
@@ -756,12 +901,21 @@ class BspSurface(ControlPointSurface):
         surf_nodes: np.ndarray,
         batch_size: int | None = None,
     ):
-        """Find closest (u, v) on `bspsurf` for each 3D point in `nodes`.
+        """Project finite-element side nodes onto the synchronized BSP geometry.
 
-        Improvements (memory-efficient):
-        - use a KD-tree (if available) to find nearest initial grid seed without forming MxN distance matrix
-        - perform Newton refinement in configurable batches to reduce peak memory
-        - fallback to chunked search if scipy is not present
+        Nodes on the end caps are excluded. The surviving global indices and matched parameters are
+        stored in surf_node_idx and surf_node_uv for subsequent differentiable updates.
+
+        Args:
+            surf_node_idx (np.ndarray): Global FE node indices corresponding to surf_nodes.
+            surf_nodes (np.ndarray): Cartesian coordinates of assigned surface nodes, shape
+                (num_nodes, 3).
+            batch_size (int | None): Maximum number of points processed together during coordinate
+                matching.
+
+        Returns:
+            np.ndarray: Projected Cartesian positions with shape (num_side_nodes, 3), aligned with
+                the stored filtered node indices.
         """
 
         # filter out the head and bottom nodes

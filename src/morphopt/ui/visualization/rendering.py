@@ -15,12 +15,22 @@ from ..theme.visualization import VisualizationSettings, visualization_manager
 
 
 def apply_plotter_theme(plotter: BasePlotter, background: str | None = None) -> None:
-    """Apply the active viewer background, or an explicit render background."""
+    """Apply the active viewer background, or an explicit render background.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        background (str | None): Optional background color; None uses the active visualization
+            palette.
+    """
     plotter.set_background(background or theme_manager.palette.viewer.render.background)
 
 
 def add_orientation_axes(plotter: BasePlotter) -> None:
-    """Add labelled global XYZ directions in the lower-left corner."""
+    """Add labelled global XYZ directions in the lower-left corner.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+    """
     style = theme_manager.palette.viewer.render
     x_color, y_color, z_color = style.orientation_axis_colors
     plotter.add_axes(
@@ -39,7 +49,15 @@ def configure_plotter(
     *,
     settings: VisualizationSettings | None = None,
 ) -> None:
-    """Apply the UI palette through the shared post-processing renderer."""
+    """Apply the UI palette through the shared post-processing renderer.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        background (str | None): Optional background color; None uses the active visualization
+            palette.
+        settings (VisualizationSettings | None): Visualization preference snapshot; None uses
+            the current global settings.
+    """
     settings = settings or visualization_manager.settings
     configure_result_plotter(
         plotter,
@@ -56,6 +74,13 @@ def configure_plotter(
 def apply_visualization(
     plotter: BasePlotter, settings: VisualizationSettings | None = None
 ) -> None:
+    """Apply visualization.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        settings (VisualizationSettings | None): Visualization preference snapshot; None uses
+            the current global settings.
+    """
     apply_mesh_style(
         plotter, **(settings or visualization_manager.settings).material_options()
     )

@@ -12,14 +12,24 @@ def actuation_boundary_gauss_points(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Return Gauss points, weights, oriented tangents, and signs on a box boundary.
 
-    ``bounds`` contains one finite ``(lower, upper)`` pair per actuation input.
-    Two-dimensional domains return their four oriented edges; three-dimensional
-    domains return their six outward-oriented faces. ``order`` Gauss points are
-    used along every free coordinate of each edge or face.
+    ``bounds`` contains one finite ``(lower, upper)`` pair per actuation input. Two-dimensional
+    domains return their four oriented edges; three-dimensional domains return their six
+    outward-oriented faces. ``order`` Gauss points are used along every free coordinate of each
+    edge or face.
 
-    The tangent array has shape ``(n_points, 2)``. For a 2-D domain its second
-    column is ``-1``; for a 3-D domain both columns identify the face tangents.
-    Weights are scaled to the physical actuation bounds.
+    The tangent array has shape ``(n_points, 2)``. For a 2-D domain its second column is ``-1``;
+    for a 3-D domain both columns identify the face tangents. Weights are scaled to the physical
+    actuation bounds.
+
+    Args:
+        bounds (Sequence[Sequence[float]] | np.ndarray): Axis-aligned bounds in [xmin, xmax,
+            ymin, ymax, zmin, zmax] order.
+        order (int): Rotational repetition count, or interpolation order for the selected
+            operation.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Gauss points, weights, oriented
+            tangents, and signs on a box boundary.
     """
     bounds = np.asarray(bounds, dtype=float)
     if (

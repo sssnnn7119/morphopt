@@ -29,7 +29,13 @@ theme_manager = ThemeManager(BUILTIN_THEMES)
 
 
 def register_theme(name: str, palette: ThemePalette) -> None:
-    """Register a theme for the current application session."""
+    """Register a theme for the current application session.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+        palette (ThemePalette): Active theme palette containing shared colors and layout
+            settings.
+    """
     theme_manager.register_theme(name, palette)
 
 

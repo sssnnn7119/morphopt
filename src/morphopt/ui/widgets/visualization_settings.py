@@ -26,7 +26,13 @@ from .viewport import PlotViewport
 
 
 class VisualizationSettingsDialog(QDialog):
+    """Preview and apply global projection, lighting, and surface-material preferences."""
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize VisualizationSettingsDialog and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.visualization.title"))
         self.resize(880, 500)
@@ -145,5 +151,10 @@ class VisualizationSettingsDialog(QDialog):
         add_orientation_axes(plotter)
 
     def done(self, result: int) -> None:
+        """Return done.
+
+        Args:
+            result (int): Finite-element solution or completed operation result.
+        """
         self.preview.plotter.close()
         super().done(result)

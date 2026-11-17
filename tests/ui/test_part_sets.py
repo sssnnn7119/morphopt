@@ -20,14 +20,19 @@ from morphopt.ui.visualization.geometry import PreviewGeometry
 def window(monkeypatch):
     from morphopt.ui import workbench
     from morphopt.ui.widgets import viewer
+    from morphopt.ui.widgets.viewport import PlotViewport
 
     app = QApplication.instance() or QApplication([])
 
     class Host(QWidget):
+        scene_update = PlotViewport.scene_update
         viewChanged = Signal()
         def __init__(self, parent=None):
             super().__init__(parent)
             self.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
+            self._camera_initialized = False
+            self._scene_has_geometry = False
+            self._geometry_keys = frozenset()
 
     monkeypatch.setattr(viewer, "PlotViewport", Host)
     problem = ProblemLibrary.create_blank()

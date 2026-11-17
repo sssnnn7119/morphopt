@@ -128,6 +128,28 @@ class ProblemDefinition:
         helper_variables: list[HelperVariableNode] | None = None,
         helper_functions: list[HelperFunctionNode] | None = None,
     ) -> None:
+        """Initialize ProblemDefinition and its configuration state.
+
+        Args:
+            label (str): Human-readable label associated with the definition or result.
+            result_folder (str): Configured parent directory for optimization results.
+            device (str): PyTorch device used for tensor operations; None retains the owning
+                controller's device when supported.
+            updater_device (str | None): Explicit updater device override; None follows the
+                controller device.
+            restart_per_iteration (int): Number of outer iterations between worker-process restarts.
+            root (ProblemNode | None): Root directory or root definition node owned by the
+                operation.
+            custom_classes (list[CustomClassNode] | None): Module-level custom-class declarations
+                included in the task source.
+            class_bindings (dict[str, str] | None): Mapping from framework declaration slots to
+                compatible custom classes.
+            helper_code (str): Free auxiliary Python code included before the task declarations.
+            helper_variables (list[HelperVariableNode] | None): Auxiliary constant declarations
+                available to expressions and task methods.
+            helper_functions (list[HelperFunctionNode] | None): Auxiliary function declarations
+                available to expressions and task methods.
+        """
         self.label = label
         self.result_folder = result_folder
         self.device = device
@@ -145,24 +167,51 @@ class ProblemDefinition:
 
     # ------------------------------------------------------------ accessors
     def node(self, kind: str) -> Node | None:
-        """First node anywhere in the tree with the given kind."""
+        """First node anywhere in the tree with the given kind.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Node | None: First node anywhere in the tree with the given kind.
+        """
         return self.root.find(lambda n: n.kind == kind)
 
     def nodes(self, kind: str) -> list[Node]:
+        """Return nodes.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            list[Node]: Nodes.
+        """
         return [n for n in self.root.iter_nodes() if n.kind == kind]
 
     def surfaces(self) -> list[SurfaceNode]:
-        """All geometry surfaces in their canonical tree order."""
+        """All geometry surfaces in their canonical tree order.
+
+        Returns:
+            list[SurfaceNode]: All geometry surfaces in their canonical tree order.
+        """
         geometry = self.geometry
         return geometry.surfaces() if geometry is not None else []
 
     def parts(self) -> list[PartNode]:
-        """All geometry Part definitions in their canonical tree order."""
+        """All geometry Part definitions in their canonical tree order.
+
+        Returns:
+            list[PartNode]: All geometry Part definitions in their canonical tree order.
+        """
         geometry = self.geometry
         return geometry.parts if geometry is not None else []
 
     def boundary_part_nodes(self) -> list[BoundaryPartNode]:
-        """Parts that own design boundary surfaces."""
+        """Parts that own design boundary surfaces.
+
+        Returns:
+            list[BoundaryPartNode]: Parts that own design boundary surfaces.
+        """
         return [
             part
             for part in self.parts()
@@ -172,20 +221,37 @@ class ProblemDefinition:
     def design_material_names(self) -> list[str]:
         """Material definitions that carry design variables (SIMP density fields).
 
-        A material optimizer owns one of these; a homogeneous material has no
-        variables, so it cannot be a target.
+        A material optimizer owns one of these; a homogeneous material has no variables, so it
+        cannot be a target.
+
+        Returns:
+            list[str]: Material definitions that carry design variables (SIMP density fields).
         """
         return [
             material.name for material in self.material_nodes() if material.is_updatable
         ]
 
     def owner_of_surface(self, surface: SurfaceNode) -> BoundaryPartNode | None:
-        """Part holding ``surface``."""
+        """Part holding ``surface``.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            BoundaryPartNode | None: Part holding ``surface``.
+        """
         geometry = self.geometry
         return geometry.owner(surface) if geometry is not None else None
 
     def owner_of_instance(self, instance: InstanceNode) -> PartNode | None:
-        """Part holding ``instance``."""
+        """Part holding ``instance``.
+
+        Args:
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+
+        Returns:
+            PartNode | None: Part holding ``instance``.
+        """
         return next(
             (
                 part
@@ -196,7 +262,15 @@ class ProblemDefinition:
         )
 
     def owner_of_cad_operation(self, operation: CADOperationNode) -> CADPartNode | None:
-        """CAD Part holding ``operation``."""
+        """CAD Part holding ``operation``.
+
+        Args:
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+
+        Returns:
+            CADPartNode | None: CAD Part holding ``operation``.
+        """
         return next(
             (
                 part
@@ -208,16 +282,25 @@ class ProblemDefinition:
         )
 
     def fea_components(self) -> list[FEAComponentNode]:
-        """All loads, constraints, reference points and contacts in tree order."""
+        """All loads, constraints, reference points and contacts in tree order.
+
+        Returns:
+            list[FEAComponentNode]: All loads, constraints, reference points and contacts in tree
+                order.
+        """
         loads = self.loads
         return loads.components if loads is not None else []
 
     def amplitude_components(self) -> list[FEAComponentNode]:
         """Amplitude-bearing components represented in the load-step matrix.
 
-        A component is amplitude-bearing when its schema declares one or more
-        ``num_values``. Boundary conditions and reference points are
-        therefore excluded, while pressure, forces and moments are included.
+        A component is amplitude-bearing when its schema declares one or more ``num_values``.
+        Boundary conditions and reference points are therefore excluded, while pressure, forces and
+        moments are included.
+
+        Returns:
+            list[FEAComponentNode]: Amplitude-bearing components represented in the load-step
+                matrix.
         """
 
         return [
@@ -230,6 +313,9 @@ class ProblemDefinition:
         """Known FEA instance names, in first-use order.
 
         Part definitions contribute their persisted Instance children.
+
+        Returns:
+            list[str]: Known FEA instance names, in first-use order.
         """
         names: list[str] = []
         for part in self.parts():
@@ -239,7 +325,15 @@ class ProblemDefinition:
     def part_for_instance(
         self, instance: InstanceNode | str | None
     ) -> PartNode | None:
-        """Return the geometry Part that owns one Instance."""
+        """Return the geometry Part that owns one Instance.
+
+        Args:
+            instance (InstanceNode | str | None): Assembly instance whose placement and geometry are
+                used.
+
+        Returns:
+            PartNode | None: The geometry Part that owns one Instance.
+        """
         if isinstance(instance, InstanceNode):
             return self.owner_of_instance(instance)
         name = str(instance or "").strip()
@@ -255,17 +349,29 @@ class ProblemDefinition:
         )
 
     def part_names(self) -> list[str]:
-        """Names of defined Parts, in tree order."""
+        """Names of defined Parts, in tree order.
+
+        Returns:
+            list[str]: Names of defined Parts, in tree order.
+        """
         names = [part.assembly_name for part in self.parts()]
         return list(dict.fromkeys(name for name in names if name))
 
     def material_nodes(self) -> list[MaterialNode]:
-        """All material assignment nodes in their stable tree order."""
+        """All material assignment nodes in their stable tree order.
+
+        Returns:
+            list[MaterialNode]: All material assignment nodes in their stable tree order.
+        """
         section = self.section(KIND_MATERIALS)
         return section.assignments if isinstance(section, MaterialsNode) else []
 
     def reference_point_names(self) -> list[str]:
-        """Names of reference points declared by the FEA component tree."""
+        """Names of reference points declared by the FEA component tree.
+
+        Returns:
+            list[str]: Names of reference points declared by the FEA component tree.
+        """
         return [
             component.name
             for component in self.fea_components()
@@ -273,7 +379,11 @@ class ProblemDefinition:
         ]
 
     def element_names(self) -> list[str]:
-        """Material and load element-family names, in stable unique order."""
+        """Material and load element-family names, in stable unique order.
+
+        Returns:
+            list[str]: Material and load element-family names, in stable unique order.
+        """
         names: list[str] = []
         for material in self.material_nodes():
             for field in ("elementname",):
@@ -287,44 +397,86 @@ class ProblemDefinition:
 
     # typed top-level section accessors (return None when the section is absent)
     def section(self, kind: str) -> Node | None:
+        """Return section.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Node | None: Section.
+        """
         return self.root.section(kind)
 
     @property
     def geometry(self) -> GeometryNode | None:
+        """Return geometry.
+
+        Returns:
+            GeometryNode | None: Geometry.
+        """
         return self.root.geometry
 
     @property
     def loads(self) -> LoadsNode | None:
+        """Return loads.
+
+        Returns:
+            LoadsNode | None: Loads.
+        """
         return self.root.loads
 
     @property
     def steps(self) -> StepsNode | None:
+        """Return steps.
+
+        Returns:
+            StepsNode | None: Steps.
+        """
         return self.root.steps
 
     @property
     def materials(self) -> MaterialsNode | None:
+        """Return materials.
+
+        Returns:
+            MaterialsNode | None: Materials.
+        """
         return self.root.materials
 
     @property
     def objective(self) -> ObjectiveNode | None:
+        """Return objective.
+
+        Returns:
+            ObjectiveNode | None: Objective.
+        """
         return self.root.objective
 
     @property
     def solver(self) -> SolverNode | None:
+        """Return solver.
+
+        Returns:
+            SolverNode | None: Solver.
+        """
         return self.root.solver
 
     @property
     def updater(self) -> UpdaterNode | None:
+        """Return updater.
+
+        Returns:
+            UpdaterNode | None: Updater.
+        """
         return self.root.updater
 
     # ---------------------------------------------------------- references
     def resolve_references(self) -> None:
         """Bind every cross-node relation to its target object.
 
-        A loaded ``.morph`` only contains names.  They are consumed here once
-        and replaced by direct object links; UI widgets and code generation
-        subsequently follow those links, so renaming a node never requires a
-        string-replacement pass.
+        A loaded ``.morph`` only contains names.  They are consumed here once and replaced by direct
+        object links; UI widgets and code generation subsequently follow those links, so renaming a
+        node never requires a string-replacement pass.
         """
         instances = {
             instance.name: instance
@@ -465,7 +617,17 @@ class ProblemDefinition:
     def set_component_reference(
         self, component: FEAComponentNode, field: str, value: Node | str | None
     ) -> bool:
-        """Set one load-to-Instance or load-to-reference-point link."""
+        """Set one load-to-Instance or load-to-reference-point link.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            field (str): Field descriptor or result-field selection being evaluated.
+            value (Node | str | None): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Set one load-to-Instance or load-to-reference-point link.
+        """
         if component not in self.fea_components():
             return False
         if field in INSTANCE_REFERENCE_FIELDS:
@@ -504,7 +666,16 @@ class ProblemDefinition:
     def set_material_part(
         self, material: MaterialNode, value: PartNode | str | None
     ) -> bool:
-        """Bind one material definition to a geometry Part."""
+        """Bind one material definition to a geometry Part.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+            value (PartNode | str | None): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Bind one material definition to a geometry Part.
+        """
         if material not in self.material_nodes():
             return False
         if isinstance(value, PartNode):
@@ -530,7 +701,15 @@ class ProblemDefinition:
     def set_geometry_updater_target(
         self, config: dict, value: PartNode | str | None
     ) -> bool:
-        """Bind a geometry optimizer config to one boundary Part object."""
+        """Bind a geometry optimizer config to one boundary Part object.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            value (PartNode | str | None): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Bind a geometry optimizer config to one boundary Part object.
+        """
         if self.updater is None or config not in self.updater.geometry:
             return False
         target = (
@@ -549,7 +728,16 @@ class ProblemDefinition:
     def set_material_updater_target(
         self, config: dict, value: MaterialNode | str | None
     ) -> bool:
-        """Bind a material optimizer config to one design-material object."""
+        """Bind a material optimizer config to one design-material object.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            value (MaterialNode | str | None): Value assigned to or evaluated for the selected
+                field.
+
+        Returns:
+            bool: Bind a material optimizer config to one design-material object.
+        """
         if self.updater is None or config not in self.updater.materials:
             return False
         target = (
@@ -571,7 +759,14 @@ class ProblemDefinition:
         return True
 
     def add_geometry_updater(self, target: PartNode) -> dict:
-        """Create a geometry optimizer bound directly to one boundary Part."""
+        """Create a geometry optimizer bound directly to one boundary Part.
+
+        Args:
+            target (PartNode): Target interface or selection receiving the operation.
+
+        Returns:
+            dict: Create a geometry optimizer bound directly to one boundary Part.
+        """
         if self.updater is None or target not in self.boundary_part_nodes():
             raise ValueError(
                 localized_message(
@@ -585,7 +780,14 @@ class ProblemDefinition:
         return config
 
     def add_material_updater(self, target: MaterialNode) -> dict:
-        """Create a material optimizer bound directly to one design material."""
+        """Create a material optimizer bound directly to one design material.
+
+        Args:
+            target (MaterialNode): Target interface or selection receiving the operation.
+
+        Returns:
+            dict: Create a material optimizer bound directly to one design material.
+        """
         if self.updater is None or target.name not in self.design_material_names():
             raise ValueError(
                 localized_message(
@@ -598,7 +800,12 @@ class ProblemDefinition:
         return config
 
     def set_jacobian_components(self, values: list[FEAComponentNode | str]) -> None:
-        """Bind the objective's Jacobian list to amplitude-load objects."""
+        """Bind the objective's Jacobian list to amplitude-load objects.
+
+        Args:
+            values (list[FEAComponentNode | str]): Values aligned with the parameters or records
+                processed by this interface.
+        """
         if self.objective is None:
             return
         available = {item.name: item for item in self.amplitude_components()}
@@ -617,8 +824,8 @@ class ProblemDefinition:
     def align_surface_dependent_state(self) -> None:
         """Normalise updater state whose shape follows ``surfaces()``.
 
-        Stored Distance matrices grow with the catalogue default of ``2.5``.
-        Surface update settings belong to the surfaces themselves.
+        Stored Distance matrices grow with the catalogue default of ``2.5``. Surface update settings
+        belong to the surfaces themselves.
         """
         updater = self.updater
         if updater is None:
@@ -644,8 +851,15 @@ class ProblemDefinition:
     ) -> SurfaceNode:
         """Insert ``surface`` and synchronise all surface-indexed state.
 
-        ``part`` selects the owning Part; by default the last surface-carrying
-        Part is used.
+        ``part`` selects the owning Part; by default the last surface-carrying Part is used.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+            index (int | None): Zero-based position within the relevant collection.
+            part (BoundaryPartNode | None): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            SurfaceNode: Insert ``surface`` and synchronise all surface-indexed state.
         """
         geometry = self._require_geometry()
         owner = part or self.default_surface_part_node()
@@ -674,12 +888,23 @@ class ProblemDefinition:
         return surface
 
     def default_surface_part_node(self) -> BoundaryPartNode | None:
-        """Last Part able to hold boundary surfaces."""
+        """Last Part able to hold boundary surfaces.
+
+        Returns:
+            BoundaryPartNode | None: Last Part able to hold boundary surfaces.
+        """
         candidates = self.boundary_part_nodes()
         return candidates[-1] if candidates else None
 
     def clone_surface(self, surface: SurfaceNode) -> SurfaceNode:
-        """Duplicate ``surface`` directly below itself and return the copy."""
+        """Duplicate ``surface`` directly below itself and return the copy.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            SurfaceNode: Duplicate ``surface`` directly below itself and return the copy.
+        """
         geometry = self._require_geometry()
         owner = geometry.owner(surface)
         if owner is None:
@@ -699,7 +924,11 @@ class ProblemDefinition:
         return self.add_surface(clone, position + 1, part=owner)
 
     def remove_surface(self, surface: SurfaceNode) -> None:
-        """Remove one surface while preserving the remaining updater mapping."""
+        """Remove one surface while preserving the remaining updater mapping.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+        """
         geometry = self._require_geometry()
         owner = geometry.owner(surface)
         if owner is None:
@@ -734,7 +963,15 @@ class ProblemDefinition:
         self.align_surface_dependent_state()
 
     def move_surface(self, surface: SurfaceNode, offset: int) -> bool:
-        """Move a surface by ``offset`` positions inside its owning Part."""
+        """Move a surface by ``offset`` positions inside its owning Part.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move a surface by ``offset`` positions inside its owning Part.
+        """
         geometry = self._require_geometry()
         owner = geometry.owner(surface)
         if owner is None:
@@ -749,7 +986,14 @@ class ProblemDefinition:
         return True
 
     def suggest_component_name(self, prefix: str) -> str:
-        """Return the first unused ``<prefix><number>`` component name."""
+        """Return the first unused ``<prefix><number>`` component name.
+
+        Args:
+            prefix (str): Namespace or filename prefix applied to generated entries.
+
+        Returns:
+            str: The first unused ``<prefix><number>`` component name.
+        """
         names = {component.name for component in self.fea_components()}
         index = 1
         while f"{prefix}{index}" in names:
@@ -757,7 +1001,14 @@ class ProblemDefinition:
         return f"{prefix}{index}"
 
     def suggest_part_name(self, prefix: str = "part") -> str:
-        """First unused Part definition name."""
+        """First unused Part definition name.
+
+        Args:
+            prefix (str): Namespace or filename prefix applied to generated entries.
+
+        Returns:
+            str: First unused Part definition name.
+        """
         names = {name for part in self.parts() for name in (part.name, part.assembly_name)}
         index = 1
         while f"{prefix}{index}" in names:
@@ -767,7 +1018,15 @@ class ProblemDefinition:
     def suggest_instance_name(
         self, part: PartNode, prefix: str | None = None
     ) -> str:
-        """Return the first unused Instance name in the Assembly."""
+        """Return the first unused Instance name in the Assembly.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            prefix (str | None): Namespace or filename prefix applied to generated entries.
+
+        Returns:
+            str: The first unused Instance name in the Assembly.
+        """
         base = (prefix or part.assembly_name or "instance").strip()
         names = {
             instance.name
@@ -782,7 +1041,15 @@ class ProblemDefinition:
         return candidate
 
     def add_instance(self, part: PartNode, instance: InstanceNode) -> InstanceNode:
-        """Add one uniquely named Instance to a geometry Part."""
+        """Add one uniquely named Instance to a geometry Part.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+
+        Returns:
+            InstanceNode: Add one uniquely named Instance to a geometry Part.
+        """
         if part not in self.parts():
             raise ValueError(
                 localized_message(
@@ -811,7 +1078,11 @@ class ProblemDefinition:
         return added
 
     def remove_instance(self, instance: InstanceNode) -> None:
-        """Remove an Instance and clear its optional references."""
+        """Remove an Instance and clear its optional references.
+
+        Args:
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+        """
         owner = self.owner_of_instance(instance)
         if owner is None:
             raise ValueError(
@@ -835,7 +1106,15 @@ class ProblemDefinition:
         self._clear_objective_reference("instance_name", instance.name)
 
     def move_instance(self, instance: InstanceNode, offset: int) -> bool:
-        """Move an Instance in its Part's declaration order."""
+        """Move an Instance in its Part's declaration order.
+
+        Args:
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move an Instance in its Part's declaration order.
+        """
         owner = self.owner_of_instance(instance)
         if owner is None:
             return False
@@ -850,7 +1129,16 @@ class ProblemDefinition:
     def add_cad_operation(
         self, part: PartNode, operation: CADOperationNode
     ) -> CADOperationNode:
-        """Append one CAD operation to a CAD Part's feature history."""
+        """Append one CAD operation to a CAD Part's feature history.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+
+        Returns:
+            CADOperationNode: Append one CAD operation to a CAD Part's feature history.
+        """
         if part not in self.parts():
             raise ValueError(
                 localized_message(
@@ -866,7 +1154,15 @@ class ProblemDefinition:
         return part.add_cad_operation(operation)
 
     def cad_operation_dependents(self, operation: CADOperationNode) -> list[CADOperationNode]:
-        """Return all features transitively dependent on this operation."""
+        """Return all features transitively dependent on this operation.
+
+        Args:
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+
+        Returns:
+            list[CADOperationNode]: All features transitively dependent on this operation.
+        """
         owner = self.owner_of_cad_operation(operation)
         if owner is None:
             raise ValueError(
@@ -887,7 +1183,12 @@ class ProblemDefinition:
                 if item is not operation and item.operation_id in removed]
 
     def remove_cad_operation(self, operation: CADOperationNode) -> None:
-        """Remove a CAD feature and its dependent features after UI confirmation."""
+        """Remove a CAD feature and its dependent features after UI confirmation.
+
+        Args:
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+        """
         dependents = self.cad_operation_dependents(operation)
         owner = self.owner_of_cad_operation(operation)
         for item in [operation, *dependents]:
@@ -904,7 +1205,16 @@ class ProblemDefinition:
                         component.set_field(key, "")
 
     def move_cad_operation(self, operation: CADOperationNode, offset: int) -> bool:
-        """Move one CAD feature without disturbing other Part children."""
+        """Move one CAD feature without disturbing other Part children.
+
+        Args:
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move one CAD feature without disturbing other Part children.
+        """
         owner = self.owner_of_cad_operation(operation)
         if owner is None:
             return False
@@ -919,7 +1229,15 @@ class ProblemDefinition:
         return True
 
     def rename_instance(self, instance: InstanceNode, new_name: str) -> bool:
-        """Rename an Instance without disturbing loads that reference it."""
+        """Rename an Instance without disturbing loads that reference it.
+
+        Args:
+            instance (InstanceNode): Assembly instance whose placement and geometry are used.
+            new_name (str): Replacement name for the selected registered item.
+
+        Returns:
+            bool: Rename an Instance without disturbing loads that reference it.
+        """
         owner = self.owner_of_instance(instance)
         if owner is None:
             return False
@@ -937,7 +1255,15 @@ class ProblemDefinition:
         return True
 
     def add_part(self, part: PartNode, index: int | None = None) -> PartNode:
-        """Insert one Part and its Instances into the geometry tree."""
+        """Insert one Part and its Instances into the geometry tree.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            PartNode: Insert one Part and its Instances into the geometry tree.
+        """
         geometry = self._require_geometry()
         unnamed = not part.name
         if not part.name:
@@ -987,7 +1313,14 @@ class ProblemDefinition:
         return part
 
     def clone_part(self, part: PartNode) -> PartNode:
-        """Duplicate a Part definition, including its surfaces."""
+        """Duplicate a Part definition, including its surfaces.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            PartNode: Duplicate a Part definition, including its surfaces.
+        """
         geometry = self._require_geometry()
         if part not in geometry.parts:
             raise ValueError(
@@ -1005,7 +1338,16 @@ class ProblemDefinition:
         return self.add_part(clone, index=position + 1)
 
     def replace_part(self, source: PartNode, replacement: PartNode) -> PartNode:
-        """Replace geometry while retaining placement objects and model references."""
+        """Replace geometry while retaining placement objects and model references.
+
+        Args:
+            source (PartNode): Source object, path, or metadata from which the operation reads its
+                input.
+            replacement (PartNode): New declaration replacing the selected definition item.
+
+        Returns:
+            PartNode: Replace geometry while retaining placement objects and model references.
+        """
         geometry = self._require_geometry()
         index = geometry.parts.index(source)
         replacement.name = source.name
@@ -1023,7 +1365,11 @@ class ProblemDefinition:
         return replacement
 
     def remove_part(self, part: PartNode) -> None:
-        """Remove a Part, its surfaces and the geometry updaters bound to it."""
+        """Remove a Part, its surfaces and the geometry updaters bound to it.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+        """
         geometry = self._require_geometry()
         if part not in geometry.parts:
             raise ValueError(
@@ -1052,7 +1398,15 @@ class ProblemDefinition:
         self.align_surface_dependent_state()
 
     def move_part(self, part: PartNode, offset: int) -> bool:
-        """Move a Part definition by ``offset`` positions."""
+        """Move a Part definition by ``offset`` positions.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move a Part definition by ``offset`` positions.
+        """
         geometry = self._require_geometry()
         source = geometry.parts.index(part)
         target = source + offset
@@ -1067,7 +1421,16 @@ class ProblemDefinition:
     def add_component(
         self, component: FEAComponentNode, index: int | None = None
     ) -> FEAComponentNode:
-        """Insert an FEA component into the load section."""
+        """Insert an FEA component into the load section.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            FEAComponentNode: Insert an FEA component into the load section.
+        """
         self._require_loads().add_component(component, index=index)
         self.resolve_references()
         return component
@@ -1075,7 +1438,16 @@ class ProblemDefinition:
     def add_material(
         self, material: MaterialNode, index: int | None = None
     ) -> MaterialNode:
-        """Insert one material assignment into the Materials section."""
+        """Insert one material assignment into the Materials section.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            MaterialNode: Insert one material assignment into the Materials section.
+        """
         section = self.materials
         if section is None:
             section = MaterialsNode(name="Materials")
@@ -1085,6 +1457,15 @@ class ProblemDefinition:
         return material
 
     def clone_material(self, material: MaterialNode) -> MaterialNode:
+        """Return clone material.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+
+        Returns:
+            MaterialNode: Clone material.
+        """
         section = self.materials
         if section is None or material not in section.assignments:
             raise ValueError(
@@ -1109,7 +1490,12 @@ class ProblemDefinition:
         return self.add_material(clone, section.assignments.index(material) + 1)
 
     def remove_material(self, material: MaterialNode) -> None:
-        """Remove a material and the material updaters bound to it."""
+        """Remove a material and the material updaters bound to it.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+        """
         section = self.materials
         if section is None or material not in section.assignments:
             raise ValueError(
@@ -1126,6 +1512,16 @@ class ProblemDefinition:
             ]
 
     def move_material(self, material: MaterialNode, offset: int) -> bool:
+        """Move material.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move material.
+        """
         section = self.materials
         if section is None or material not in section.assignments:
             return False
@@ -1142,7 +1538,16 @@ class ProblemDefinition:
     def clone_component(
         self, component: FEAComponentNode, name_prefix: str
     ) -> FEAComponentNode:
-        """Duplicate a component below itself with a fresh reference name."""
+        """Duplicate a component below itself with a fresh reference name.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            name_prefix (str): Prefix used when generating a unique registration name.
+
+        Returns:
+            FEAComponentNode: Duplicate a component below itself with a fresh reference name.
+        """
         loads = self._require_loads()
         clone = component.clone()
         if not isinstance(clone, FEAComponentNode):  # defensive for custom nodes
@@ -1155,7 +1560,16 @@ class ProblemDefinition:
         return self.add_component(clone, loads.components.index(component) + 1)
 
     def move_component(self, component: FEAComponentNode, offset: int) -> bool:
-        """Move a component without changing its name."""
+        """Move a component without changing its name.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move a component without changing its name.
+        """
         loads = self._require_loads()
         source = loads.components.index(component)
         target = source + offset
@@ -1168,7 +1582,12 @@ class ProblemDefinition:
         return True
 
     def remove_component(self, component: FEAComponentNode) -> None:
-        """Remove a component and every reference to it."""
+        """Remove a component and every reference to it.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+        """
         self._require_loads().remove_child(component)
         if self.steps is not None:
             for values in self.steps.step_values.values():
@@ -1199,7 +1618,12 @@ class ProblemDefinition:
                                       if entry["parameters"]]
 
     def _clear_objective_reference(self, key: str, name: str) -> None:
-        """Clear explicit objective and metric references to a deleted object."""
+        """Clear explicit objective and metric references to a deleted object.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            name (str): Name identifying the item in its owning collection.
+        """
         if self.objective is None:
             return
         for term in [*self.objective.objective_terms, *self.objective.metrics_terms]:
@@ -1213,12 +1637,18 @@ class ProblemDefinition:
     ) -> bool:
         """Rename a Part, material or FEA component and retain references.
 
-        Parts, materials and FEA components share this entry point. Their names
-        belong to separate collections, but each
-        may be referenced elsewhere in the problem definition.  Keeping the
-        dispatch here prevents Qt editors from having to know those links.
-        Existing object references follow their target automatically; only the
-        persisted/UI name projection changes.
+        Parts, materials and FEA components share this entry point. Their names belong to separate
+        collections, but each may be referenced elsewhere in the problem definition.  Keeping the
+        dispatch here prevents Qt editors from having to know those links. Existing object
+        references follow their target automatically; only the persisted/UI name projection changes.
+
+        Args:
+            definition (FEAComponentNode | PartNode | MaterialNode): Definition snapshot or script
+                used to create the task.
+            new_name (str): Replacement name for the selected registered item.
+
+        Returns:
+            bool: Rename a Part, material or FEA component and retain references.
         """
         if isinstance(definition, PartNode):
             return self._rename_part_node(definition, new_name)
@@ -1229,13 +1659,31 @@ class ProblemDefinition:
         return False
 
     def rename_part(self, part: PartNode, part_name: str) -> bool:
-        """Rename the single Part identity; Instance names remain independent."""
+        """Rename the single Part identity; Instance names remain independent.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            part_name (str): Registered Part name referenced by instances, loads, or material
+                assignments.
+
+        Returns:
+            bool: Rename the single Part identity; Instance names remain independent.
+        """
         return self._rename_part_node(part, part_name)
 
     def _rename_component(
         self, component: FEAComponentNode, new_name: str
     ) -> bool:
-        """Rename an FEA component; object references follow automatically."""
+        """Rename an FEA component; object references follow automatically.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            new_name (str): Replacement name for the selected registered item.
+
+        Returns:
+            bool: Rename an FEA component; object references follow automatically.
+        """
         if component not in self.fea_components():
             return False
         new_name = new_name.strip()
@@ -1262,7 +1710,15 @@ class ProblemDefinition:
         return True
 
     def _rename_part_node(self, part: PartNode, new_name: str) -> bool:
-        """Rename a Part definition while dependants retain the object."""
+        """Rename a Part definition while dependants retain the object.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            new_name (str): Replacement name for the selected registered item.
+
+        Returns:
+            bool: Rename a Part definition while dependants retain the object.
+        """
         if part not in self.parts():
             return False
         new_name = new_name.strip()
@@ -1283,7 +1739,16 @@ class ProblemDefinition:
     def _rename_material(
         self, material: MaterialNode, new_name: str
     ) -> bool:
-        """Rename a material definition while its updater retains the object."""
+        """Rename a material definition while its updater retains the object.
+
+        Args:
+            material (MaterialNode): Material interface whose assignments or design variables are
+                processed.
+            new_name (str): Replacement name for the selected registered item.
+
+        Returns:
+            bool: Rename a material definition while its updater retains the object.
+        """
         if material not in self.material_nodes():
             return False
         new_name = new_name.strip()
@@ -1366,7 +1831,14 @@ class ProblemDefinition:
                 yield constraint["params"]
 
     def part_node(self, name: str) -> PartNode | None:
-        """Boundary Part node by name (``None`` when unknown)."""
+        """Boundary Part node by name (``None`` when unknown).
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            PartNode | None: Boundary Part node by name (``None`` when unknown).
+        """
         if not name:
             return None
         return next(
@@ -1374,17 +1846,38 @@ class ProblemDefinition:
         )
 
     def config_part_node(self, config: dict) -> BoundaryPartNode | None:
-        """Boundary Part object bound to a geometry sub-optimizer config."""
+        """Boundary Part object bound to a geometry sub-optimizer config.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+
+        Returns:
+            BoundaryPartNode | None: Boundary Part object bound to a geometry sub-optimizer config.
+        """
         target = config.get("target") if config is not None else None
         return target if isinstance(target, BoundaryPartNode) else None
 
     def config_material_node(self, config: dict) -> MaterialNode | None:
-        """Design-material object bound to a material sub-optimizer config."""
+        """Design-material object bound to a material sub-optimizer config.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+
+        Returns:
+            MaterialNode | None: Design-material object bound to a material sub-optimizer config.
+        """
         target = config.get("target") if config is not None else None
         return target if isinstance(target, MaterialNode) else None
 
     def _geometry_config_for_part(self, part: PartNode) -> dict | None:
-        """Return the geometry updater config targeting ``part``."""
+        """Return the geometry updater config targeting ``part``.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            dict | None: The geometry updater config targeting ``part``.
+        """
         updater = self.updater
         if updater is None:
             return None
@@ -1395,7 +1888,14 @@ class ProblemDefinition:
 
     @staticmethod
     def _surface_symmetry_references(config: dict) -> Iterator[dict]:
-        """Mutable surface indices owned by symmetry constraints."""
+        """Mutable surface indices owned by symmetry constraints.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+
+        Returns:
+            Iterator[dict]: Mutable surface indices owned by symmetry constraints.
+        """
         for constraint in config.get("symmetry_constraints", []) or []:
             if isinstance(constraint, dict) and constraint.get("type") != "Custom":
                 yield constraint
@@ -1482,6 +1982,11 @@ class ProblemDefinition:
 
     # ----------------------------------------------------------- persistence
     def to_dict(self) -> dict:
+        """Return to dict.
+
+        Returns:
+            dict: To dict.
+        """
         self.resolve_references()
         return {
             "version": 4,
@@ -1502,9 +2007,14 @@ class ProblemDefinition:
     def _normalize_part_names(root: dict) -> dict:
         """Read legacy aliases without retaining a second editable Part name.
 
-        Physical Part and Instance names remain unchanged. Only old geometry
-        registration keys referenced by updaters/materials need remapping.
-        The caller's document is never mutated.
+        Physical Part and Instance names remain unchanged. Only old geometry registration keys
+        referenced by updaters/materials need remapping. The caller's document is never mutated.
+
+        Args:
+            root (dict): Root directory or root definition node owned by the operation.
+
+        Returns:
+            dict: Read legacy aliases without retaining a second editable Part name.
         """
         root = deepcopy(root)
 
@@ -1549,6 +2059,14 @@ class ProblemDefinition:
 
     @classmethod
     def from_dict(cls, data: dict) -> ProblemDefinition:
+        """Return from dict.
+
+        Args:
+            data (dict): Serialized definition or result data to restore.
+
+        Returns:
+            ProblemDefinition: From dict.
+        """
         if data.get("version") != 4:
             raise ValueError(
                 localized_message(

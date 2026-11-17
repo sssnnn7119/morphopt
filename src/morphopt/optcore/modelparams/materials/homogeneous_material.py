@@ -12,7 +12,11 @@ class HomogeneousMaterial(BaseMaterial):
     """Assign one uniform TorchFEA material to a Part."""
 
     def set_materials(self, fe: torchfea.FEAController) -> None:
-        """Assign the uniform material and density to target elements."""
+        """Assign the uniform material and density to target elements.
+
+        Args:
+            fe (torchfea.FEAController): TorchFEA controller whose assembly is modified or solved.
+        """
         for _name, elements in self.target_elements(fe.assembly):
             elements.delete_material()
             elements.set_materials(MaterialModels.create_material(

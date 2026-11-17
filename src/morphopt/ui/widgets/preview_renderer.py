@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from copy import deepcopy
 from functools import singledispatchmethod
-from pathlib import Path
 
 import numpy as np
 import pyvista as pv
@@ -15,6 +13,7 @@ from vtkmodules.vtkRenderingCore import vtkCellPicker
 
 from ..i18n import localized_message
 from ..theme import theme_manager
+from ..theme.fonts import cjk_font_file
 from ..visualization.rendering import apply_visualization, configure_plotter
 from ..visualization.scene import (
     ArrowLoad,
@@ -33,19 +32,8 @@ from ..visualization.scene import (
 _SOURCE_CELL_ID = "morphopt_source_cell_id"
 
 
-def _cjk_font_file() -> str | None:
-    windows = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
-    candidates = (
-        Path("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/System/Library/Fonts/PingFang.ttc"),
-        windows / "msyh.ttc",
-    )
-    return next((str(path) for path in candidates if path.is_file()), None)
-
-
 class PreviewRenderer:
+    """Render prepared geometry and load scenes, and own actor picking and section clipping."""
     def __init__(
         self,
         plotter,
@@ -53,6 +41,14 @@ class PreviewRenderer:
         on_face_picked: Callable[[FaceSelection | None], None] | None = None,
         track_mouse_events: bool = True,
     ):
+        """Initialize PreviewRenderer and its configuration state.
+
+        Args:
+            plotter: PyVista plotter receiving the scene; None creates a new plotter.
+            on_face_picked (Callable[[FaceSelection | None], None] | None): Callback receiving the
+                selected logical face, or None when selection is cleared.
+            track_mouse_events (bool): Install mouse tracking and face-picking handlers when True.
+        """
         self.plotter = plotter
         configure_plotter(self.plotter)
         self._overlay_actors: list = []
@@ -82,6 +78,12 @@ class PreviewRenderer:
             plotter.iren.add_observer("LeftButtonReleaseEvent", self._face_release)
 
     def draw_scene(self, scene: PreviewScene) -> None:
+        """Draw scene.
+
+        Args:
+            scene (PreviewScene): Prepared visualization scene; geometry evaluation is performed
+                before rendering.
+        """
         self.clear_set_selection(render=False)
         self.clear_face_selection(render=False)
         self._face_picker.InitializePickList()
@@ -147,6 +149,11 @@ class PreviewRenderer:
 
     @property
     def section_position(self) -> float | None:
+        """Return section position.
+
+        Returns:
+            float | None: Section position.
+        """
         if not self._section_enabled or self._geometry_bounds is None:
             return None
         lower, upper = self._geometry_bounds
@@ -162,7 +169,15 @@ class PreviewRenderer:
         *,
         render: bool = True,
     ) -> None:
-        """Move a mapper clipping plane without rebuilding any CAD geometry."""
+        """Move a mapper clipping plane without rebuilding any CAD geometry.
+
+        Args:
+            enabled (bool): Enable the requested control or action when True.
+            axis (int): Rotation or section axis in the form accepted by the operation.
+            fraction (float): Section-plane position normalized to the current geometry bounds.
+            reverse (bool): Keep the opposite side of the section plane when True.
+            render (bool): Render the viewport immediately after changing the scene when True.
+        """
         if axis not in (0, 1, 2):
             raise ValueError("Section axis must be 0, 1 or 2.")
         self._section_enabled = enabled
@@ -209,6 +224,11 @@ class PreviewRenderer:
             self.pick_face(*self.plotter.iren.get_event_position())
 
     def clear_face_selection(self, *, render: bool = True) -> None:
+        """Clear face selection.
+
+        Args:
+            render (bool): Render the viewport immediately after changing the scene when True.
+        """
         if self._selection_actor is not None:
             self.plotter.remove_actor(self._selection_actor, render=False)
             self._selection_actor = None
@@ -218,7 +238,16 @@ class PreviewRenderer:
             self.plotter.render()
 
     def pick_face(self, x: int, y: int) -> FaceSelection | None:
-        """Pick base geometry only; load glyphs and highlights cannot intercept it."""
+        """Pick base geometry only; load glyphs and highlights cannot intercept it.
+
+        Args:
+            x (int): Horizontal display coordinate in the input coordinate system.
+            y (int): Vertical display coordinate in the input coordinate system.
+
+        Returns:
+            FaceSelection | None: Pick base geometry only; load glyphs and highlights cannot
+                intercept it.
+        """
         self.clear_set_selection(render=False)
         self.clear_face_selection(render=False)
         self._face_picker.Pick(x, y, 0, self.plotter.renderer)
@@ -266,9 +295,19 @@ class PreviewRenderer:
 
     @property
     def has_set_selection(self) -> bool:
+        """Return has set selection.
+
+        Returns:
+            bool: Has set selection.
+        """
         return bool(self._set_actors)
 
     def clear_set_selection(self, *, render: bool = True) -> None:
+        """Clear set selection.
+
+        Args:
+            render (bool): Render the viewport immediately after changing the scene when True.
+        """
         for actor in self._set_actors:
             self.plotter.remove_actor(actor, render=False)
         self._set_actors.clear()
@@ -279,7 +318,14 @@ class PreviewRenderer:
             self.plotter.render()
 
     def highlight_set(self, meshes: list[pv.DataSet], *, nodes: bool = False) -> None:
-        """Show set faces or actual mesh nodes independently of load overlays."""
+        """Show set faces or actual mesh nodes independently of load overlays.
+
+        Args:
+            meshes (list[pv.DataSet]): Optional precomputed visualization meshes; None obtains
+                meshes from the model.
+            nodes (bool): Cartesian node coordinates with shape (num_nodes, 3), in model length
+                units.
+        """
         self.clear_set_selection(render=False)
         self.clear_face_selection(render=False)
         meshes = [mesh for mesh in meshes if mesh.n_points]
@@ -308,6 +354,12 @@ class PreviewRenderer:
         self.plotter.render()
 
     def draw_loads(self, scene: LoadScene | None) -> None:
+        """Draw loads.
+
+        Args:
+            scene (LoadScene | None): Prepared visualization scene; geometry evaluation is performed
+                before rendering.
+        """
         for actor in self._overlay_actors:
             self.plotter.remove_actor(actor, render=False)
         self._overlay_actors.clear()
@@ -354,13 +406,18 @@ class PreviewRenderer:
         text.SetColor(*deepcopy(theme_manager.palette.viewer.render.legend_text_color))
         text.SetFontSize(theme_manager.palette.viewer.render.legend_font_size)
         text.SetShadow(False)
-        font_file = _cjk_font_file()
+        font_file = cjk_font_file()
         if font_file:
             text.SetFontFamilyAsString("File")
             text.SetFontFile(font_file)
 
     @singledispatchmethod
     def draw(self, item):
+        """Draw the PreviewRenderer state.
+
+        Args:
+            item: Collection or view item selected for the operation.
+        """
         raise TypeError(
             localized_message(
                 "ui.errors.preview_renderer.unsupported_scene_item_value",
@@ -386,12 +443,12 @@ class PreviewRenderer:
 
     @draw.register
     def _(self, item: LabelItem):
-        options = {"font_file": _cjk_font_file(), **item.options}
+        options = {"font_file": cjk_font_file(), **item.options}
         return self.plotter.add_point_labels(item.points, item.labels, **options)
 
     @draw.register
     def _(self, item: MessageItem):
-        options = {"font_file": _cjk_font_file(), **item.options}
+        options = {"font_file": cjk_font_file(), **item.options}
         return self.plotter.add_text(item.text, **options)
 
     @draw.register
@@ -767,7 +824,7 @@ class PreviewRenderer:
             margin=theme_manager.palette.viewer.render.annotation_margin,
             show_points=False,
             always_visible=True,
-            font_file=_cjk_font_file(),
+            font_file=cjk_font_file(),
         )
         self._overlay_actors.append(actor)
 
@@ -896,7 +953,16 @@ class PreviewRenderer:
 def _spread_surface_points(
     points: np.ndarray, center: np.ndarray, *, count: int
 ) -> np.ndarray:
-    """Choose well-spaced deterministic endpoints for coupling spokes."""
+    """Choose well-spaced deterministic endpoints for coupling spokes.
+
+    Args:
+        points (np.ndarray): Point coordinates in the representation expected by this operation.
+        center (np.ndarray): Cartesian center of the rotation or geometric construction.
+        count (int): Number of repeated objects or records requested.
+
+    Returns:
+        np.ndarray: Choose well-spaced deterministic endpoints for coupling spokes.
+    """
     candidates = np.unique(np.asarray(points, dtype=float).reshape(-1, 3), axis=0)
     if not len(candidates):
         return np.empty((0, 3), dtype=float)

@@ -58,6 +58,19 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         violation_tolerance: float = _SETTINGS.VIOLATION_TOLERANCE,
         weight_change_limit: float = _SETTINGS.WEIGHT_CHANGE_LIMIT,
     ) -> None:
+        """Initialize AdaptiveShapeWeights and its configuration state.
+
+        Args:
+            initial_tolerance (float): Initial relative geometric relaxation before continuation
+                begins.
+            final_tolerance (float): Smallest permitted relative relaxation after continuation.
+            tightening_increment (float): Relaxation decrement applied while monitored violations
+                remain mild.
+            violation_tolerance (float): Reference violation magnitude expressed in barrier
+                transition-width units.
+            weight_change_limit (float): Upper bound on a single coefficient increase relative to
+                its previous value.
+        """
         parameters = (
             initial_tolerance,
             final_tolerance,
@@ -83,14 +96,27 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         self.tolerance = initial_tolerance
         self._started = False
         self.state: dict[str, dict[str, float]] = {}
+        self._violations: dict[str, float] = {}
 
     def __call__(
         self, updater: BaseUpdater, gradient: torch.Tensor
     ) -> dict[str, float]:
-        """Freeze violation-driven coefficients for the next inner solve."""
+        """Freeze violation-driven coefficients for the next inner solve.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+
+        Returns:
+            dict[str, float]: Scalar coefficient for each registered geometric penalty, frozen
+                during the inner solve.
+        """
         if updater.update_kind != "geometry":
             raise TypeError("AdaptiveShapeWeights requires a geometry updater.")
         names = list(updater.constraints_funcs)
+        self._violations = {}
         self.state = {
             name: value for name, value in self.state.items() if name in names
         }
@@ -111,6 +137,9 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
             for constraint in updater.constraints_funcs.values():
                 constraint.barrier_function.tolerance = self.tolerance
             penalties, violations = self._measure(updater, origin)
+        # Measurements exist before calibration succeeds. Keep pending terms
+        # visible in history without marking their weights as calibrated.
+        self._violations = violations
         logger.info(
             "Shape distance continuation: tolerance=%.6g max_violation=%.6g action=%s",
             self.tolerance,
@@ -199,7 +228,17 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         updater: BaseUpdater,
         origin: torch.Tensor,
     ) -> tuple[dict[str, float], dict[str, float]]:
-        """Reuse each penalty's barrier calls; no geometry formulas are duplicated."""
+        """Reuse each penalty's barrier calls; no geometry formulas are duplicated.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            origin (torch.Tensor): Zero design perturbation representing the current outer iterate.
+
+        Returns:
+            tuple[dict[str, float], dict[str, float]]: Raw penalty values and maximum sampled
+                violations, each keyed by registered penalty name.
+        """
         with ExitStack() as stack, torch.no_grad():
             for constraint in updater.constraints_funcs.values():
                 stack.enter_context(constraint.barrier_function.measure_violation())
@@ -213,7 +252,18 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
 
     @staticmethod
     def _values(updater: BaseUpdater, variables: torch.Tensor) -> torch.Tensor:
-        """Evaluate the physical proxy followed by raw geometric penalties."""
+        """Evaluate the physical proxy followed by raw geometric penalties.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            variables (torch.Tensor): Flattened dimensionless design perturbation passed to the
+                updater closure.
+
+        Returns:
+            torch.Tensor: One-dimensional vector containing the summed physical proxy followed by
+                raw penalties in registration order.
+        """
         objectives, penalties = updater.closure(variables, return_list=True)
         values = torch.stack(
             [sum(objectives).reshape(())] + [p.reshape(()) for p in penalties]
@@ -229,7 +279,22 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         selected: dict[str, int],
         physical: torch.Tensor,
     ) -> dict[str, float]:
-        """Set each selected term's initial physical-to-penalty gradient balance."""
+        """Set each selected term's initial physical-to-penalty gradient balance.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+            selected (dict[str, int]): Penalty names mapped to their component indices in _values():
+                the physical objective occupies index zero.
+            physical (torch.Tensor): Gradient of the physical proxy at zero perturbation, in the
+                inner subproblem's coordinates.
+
+        Returns:
+            dict[str, float]: Initial scalar coefficients for selected penalties with nonzero probe
+                gradients; inactive terms remain absent.
+        """
         if not selected:
             return {}
         physical_norm = physical.norm().item()
@@ -262,19 +327,29 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         return weights
 
     def history_data(self) -> dict[str, object]:
-        """Report the frozen tolerance and calibration used by this subproblem."""
+        """Report the current tolerance and sampled constraint violations.
+
+        Returns:
+            dict[str, object]: Component-owned scalar or nested observations for the current
+                iteration.
+        """
         return {
             "tolerance": self.tolerance,
             "penalties": {
                 name: {
-                    "initial_weight": record["initial_weight"],
-                    "violation": record["violation"],
+                    "violation": violation,
                 }
-                for name, record in self.state.items()
+                for name, violation in self._violations.items()
             },
         }
 
     def save(self, foldpath: str, iteration: int) -> None:
+        """Save the AdaptiveShapeWeights state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         directory = Path(foldpath)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / f"adaptive_weights_{iteration}.json").write_text(
@@ -290,6 +365,12 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         )
 
     def load(self, foldpath: str, iteration: int) -> None:
+        """Load the AdaptiveShapeWeights state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         data = json.loads(
             (Path(foldpath) / f"adaptive_weights_{iteration}.json").read_text(
                 encoding="utf-8"
@@ -314,6 +395,18 @@ class SensitivityShapeWeights(ConstraintWeightStrategy):
         updater: BaseUpdater,
         gradient: torch.Tensor,
     ) -> dict[str, float]:
+        """Evaluate SensitivityShapeWeights for the supplied inputs.
+
+        Args:
+            updater (BaseUpdater): Updater bound to the target whose policy or state is being
+                evaluated.
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+
+        Returns:
+            dict[str, float]: Default outer coefficients for all penalty terms. Pointwise weights
+                are installed on the terms as a side effect.
+        """
         from scipy.interpolate import NearestNDInterpolator
 
         if updater.update_kind != "geometry":

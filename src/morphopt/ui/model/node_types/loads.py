@@ -10,7 +10,14 @@ from ..fields import FieldSpec
 
 
 def _value_fields(*names: str) -> tuple[FieldSpec, ...]:
-    """Declare load-case scalar parameters in the kernel's value order."""
+    """Declare load-case scalar parameters in the kernel's value order.
+
+    Args:
+        *names: Additional positional arguments accepted by the shared interface.
+
+    Returns:
+        tuple[FieldSpec, ...]: Declare load-case scalar parameters in the kernel's value order.
+    """
     return tuple(
         FieldSpec(name, f"ui.load_parameters.{name}", "float", 0.0)
         for name in names
@@ -231,20 +238,46 @@ class PenaltyDoFNode(FEAComponentNode):
 
     @property
     def node_index(self) -> int | str:
-        """Zero-based mesh node, derived from the solver's flattened DoF."""
+        """Zero-based mesh node, derived from the solver's flattened DoF.
+
+        Returns:
+            int | str: Zero-based mesh node, derived from the solver's flattened DoF.
+        """
         return self.s // 3 if isinstance(self.s, int) else self.s
 
     @property
     def direction(self) -> int | None:
-        """Cartesian component: 0 = X, 1 = Y, 2 = Z."""
+        """Cartesian component: 0 = X, 1 = Y, 2 = Z.
+
+        Returns:
+            int | None: Cartesian component: 0 = X, 1 = Y, 2 = Z.
+        """
         return self.s % 3 if isinstance(self.s, int) else None
 
     def get_field(self, key: str, default: object = None) -> object:
+        """Get field.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            default (object): Value used when no explicit value is supplied.
+
+        Returns:
+            object: Field.
+        """
         if key in {"node_index", "direction"}:
             return getattr(self, key)
         return super().get_field(key, default)
 
     def set_field(self, key: str, value: object) -> PenaltyDoFNode:
+        """Set field.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            value (object): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            PenaltyDoFNode: Set field.
+        """
         if key not in {"node_index", "direction"}:
             return super().set_field(key, value)
         if type(value) is not int or value < 0 or key == "direction" and value > 2:

@@ -93,14 +93,19 @@ def test_source_generation_does_not_rebind_a_synchronized_model(monkeypatch):
 def workbench_with_vtk(app, monkeypatch):
     from morphopt.ui import workbench
     from morphopt.ui.widgets import viewer
+    from morphopt.ui.widgets.viewport import PlotViewport
 
     class OffscreenHost(QWidget):
+        scene_update = PlotViewport.scene_update
         viewChanged = Signal()
         """Use real PyVista actors without requiring a Qt OpenGL widget."""
 
         def __init__(self, parent=None):
             super().__init__(parent)
             self.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
+            self._camera_initialized = False
+            self._scene_has_geometry = False
+            self._geometry_keys = frozenset()
 
     monkeypatch.setattr(viewer, "PlotViewport", OffscreenHost)
     problem = ProblemLibrary.create("shapeopt")

@@ -24,11 +24,18 @@ if TYPE_CHECKING:
 
 
 class BaseSurface(BaseModelComponent):
-    """Base surface with lifecycle, persistence, and visualization protocols."""
+    """Define geometry, named sets, quadrature, and export hooks for one closed boundary.
+
+    The base surface is not updatable. The owning BoundaryPart derives orientation from
+    registration order: the exterior is first and cavity boundaries follow. Parameterized
+    subclasses provide differentiable control variables; fixed surfaces use triangle-centroid
+    quadrature.
+    """
 
     is_discrete: ClassVar[bool] = False
 
     def __init__(self) -> None:
+        """Initialize BaseSurface and its configuration state."""
         super().__init__()
 
         self.is_updatable: bool = False
@@ -47,14 +54,24 @@ class BaseSurface(BaseModelComponent):
 
     @property
     def flip(self) -> bool:
-        """BoundaryPart owns orientation: outer boundary false, cavities true."""
+        """BoundaryPart owns orientation: outer boundary false, cavities true.
+
+        Returns:
+            bool: BoundaryPart owns orientation: outer boundary false, cavities true.
+        """
         return self._flip
 
     def add_constraint(self, constraint: BaseSurfaceConstraints[Any]) -> BaseSurface:
         """Append a lifecycle constraint to this surface and return ``self``.
 
-        Constraints run in insertion order and must inherit
-        :class:`BaseSurfaceConstraints`.
+        Constraints run in insertion order and must inherit :class:`BaseSurfaceConstraints`.
+
+        Args:
+            constraint (BaseSurfaceConstraints[Any]): Hard geometric projection or penalty object
+                being registered.
+
+        Returns:
+            BaseSurface: Append a lifecycle constraint to this surface and return ``self``.
         """
         if not isinstance(constraint, BaseSurfaceConstraints):
             raise TypeError("A surface constraint must inherit BaseSurfaceConstraints.")
@@ -73,10 +90,9 @@ class BaseSurface(BaseModelComponent):
             constraint.reinitialize(self)
 
     def map(self, uv: torch.Tensor) -> torch.Tensor:
-        """
-        Map from UV space to 3D space using the surface model.
+        """Map from UV space to 3D space using the surface model.
 
-        Parameters:
+        Args:
             uv (torch.Tensor): The UV coordinates to be mapped.
 
         Returns:
@@ -85,10 +101,9 @@ class BaseSurface(BaseModelComponent):
         return torch.zeros((uv.shape[0], 3), dtype=uv.dtype, device=uv.device)
 
     def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
-        """
-        Get the normals of the surface at the given UV coordinates.
+        """Get the normals of the surface at the given UV coordinates.
 
-        Parameters:
+        Args:
             uv (torch.Tensor): The UV coordinates to get the normals.
 
         Returns:
@@ -99,9 +114,9 @@ class BaseSurface(BaseModelComponent):
     def synchronize(self) -> None:
         """Synchronize external geometry state before meshing.
 
-        Parameterised surfaces override this when their backing model needs to
-        be copied back to a CAD object.  Fixed surfaces have no external state
-        to update, so the default is intentionally a no-op.
+        Parameterised surfaces override this when their backing model needs to be copied back to a
+        CAD object.  Fixed surfaces have no external state to update, so the default is
+        intentionally a no-op.
         """
 
     def output_data(
@@ -111,8 +126,16 @@ class BaseSurface(BaseModelComponent):
         seed_size: float = -1,
         pools: Pool | None = None,
     ) -> str:
-        """
-        Output the surface data to a file.
+        """Output the surface data to a file.
+
+        Args:
+            path_output (str | Path): Directory in which geometry files are written.
+            name_output (str): Output geometry filename stem, without the generated format suffix.
+            seed_size (float): Geometry sampling or meshing spacing in model length units.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            str: Geometry filename relative to path_output, including its format suffix.
         """
         raise NotImplementedError(
             "The output_data method is not implemented in the BaseSurface class. Please implement it in the derived class."
@@ -124,7 +147,13 @@ class BaseSurface(BaseModelComponent):
         name_output: str,
         pools: Pool | None = None,
     ) -> None:
-        """Export file-backed geometry before entering the meshing session."""
+        """Export file-backed geometry before entering the meshing session.
+
+        Args:
+            path_output (str | Path): Directory in which geometry files are written.
+            name_output (str): Output geometry filename stem, without the generated format suffix.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+        """
         filename = self.output_data(path_output, name_output, pools=pools)
         self._geometry_path = Path(path_output) / filename
 
@@ -133,7 +162,17 @@ class BaseSurface(BaseModelComponent):
         part: CADMeshingMixin,
         context: OCCBuilder,
     ) -> list[int]:
-        """Load this boundary inside the Part's active geometry session."""
+        """Load this boundary inside the Part's active geometry session.
+
+        Args:
+            part (CADMeshingMixin): Part whose geometry, mesh, or named sets are processed.
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+
+        Returns:
+            list[int]: Gmsh face tags belonging to this closed boundary in the active assembly
+                session.
+        """
         raise NotImplementedError("The surface must implement load_geometry().")
 
     def get_surface_parameters(self) -> torch.Tensor:
@@ -146,37 +185,66 @@ class BaseSurface(BaseModelComponent):
         return torch.zeros([0], dtype=torch.float32)
 
     def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
-        """Return surface-specific node sets as indices into ``nodes``."""
+        """Return surface-specific node sets as indices into ``nodes``.
+
+        Args:
+            nodes (np.ndarray): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+
+        Returns:
+            dict[str, np.ndarray]: Surface-specific node sets as indices into ``nodes``.
+        """
         return {}
 
     def define_mesh_sets(self, part: torchfea.Part, prefix: str) -> None:
-        """Add topology-owned sets after the Part's mesh has been extracted."""
+        """Add topology-owned sets after the Part's mesh has been extracted.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+            prefix (str): Namespace or filename prefix applied to generated entries.
+        """
 
     def bind_mesh(self, part: torchfea.Part) -> None:
-        """Bind surface parameters after element-order processing is complete."""
+        """Bind surface parameters after element-order processing is complete.
+
+        Args:
+            part (torchfea.Part): Part whose geometry, mesh, or named sets are processed.
+        """
 
     @property
     def uses_facewise_binding(self) -> bool:
-        """Whether a surface has multiple independent parameter domains."""
+        """Whether a surface has multiple independent parameter domains.
+
+        Returns:
+            bool: True if a surface has multiple independent parameter domains.
+        """
         return False
 
     def map_design_nodes(self) -> tuple[np.ndarray, torch.Tensor]:
-        """Return bound FE indices and differentiable updated coordinates."""
+        """Return bound FE indices and differentiable updated coordinates.
+
+        Returns:
+            tuple[np.ndarray, torch.Tensor]: Bound FE indices and differentiable updated
+                coordinates.
+        """
         parameters = self.get_surface_parameters()
         uv = torch.as_tensor(self.surf_node_uv, dtype=parameters.dtype, device=parameters.device)
         return self.surf_node_idx, self.map(uv)
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
-        """
-        Set the design variables of the surface.
+        """Set the design variables of the surface.
 
-        Parameters:
+        Args:
             x (torch.Tensor): The new design variables to be set.
         """
 
     @cached_property
     def _fixed_triangles(self) -> torch.Tensor:
-        """Cache outward-oriented triangles for fixed-boundary quadrature."""
+        """Cache outward-oriented triangles for fixed-boundary quadrature.
+
+        Returns:
+            torch.Tensor: Cache outward-oriented triangles for fixed-boundary quadrature.
+        """
         mesh = (
             self.get_mesh()
             .triangulate()
@@ -197,9 +265,13 @@ class BaseSurface(BaseModelComponent):
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample a fixed mesh at triangle centroids for geometric constraints.
 
-        Parametric surfaces override this method with their analytic map.
-        Tangents follow the same inward-outer/outward-cavity convention as
-        ControlPointSurface.get_rdu(); local planar second derivatives are zero.
+        Parametric surfaces override this method with their analytic map. Tangents follow the same
+        inward-outer/outward-cavity convention as ControlPointSurface.get_rdu(); local planar second
+        derivatives are zero.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Triangle-centroid positions (n, 3),
+                local tangents (n, 3, 2), and zero planar second derivatives (n, 3, 2, 2).
         """
         triangles = self._fixed_triangles
         first = triangles[:, 1] - triangles[:, 0]
@@ -214,7 +286,11 @@ class BaseSurface(BaseModelComponent):
         )
 
     def get_points_weight(self) -> torch.Tensor:
-        """Return triangle areas for fixed-boundary centroid quadrature."""
+        """Return triangle areas for fixed-boundary centroid quadrature.
+
+        Returns:
+            torch.Tensor: Area integration weights aligned with the surface sampling points.
+        """
         triangles = self._fixed_triangles
         return (
             torch.linalg.cross(
@@ -236,18 +312,21 @@ class BaseSurface(BaseModelComponent):
         return 0
 
     def get_mesh(self) -> pv.PolyData:
-        """
-        Get the mesh for the surface.
+        """Get the mesh for the surface.
 
         Returns:
-            object: The mesh object.
+            pv.PolyData: Surface display mesh supplied by the concrete geometry implementation.
         """
         raise NotImplementedError(
             "The get_mesh method is not implemented in the BaseSurface class. Please implement it in the derived class."
         )
 
     def get_meshes(self) -> list[pv.DataSet]:
-        """Return the surface mesh for the visualization protocol."""
+        """Return the surface mesh for the visualization protocol.
+
+        Returns:
+            list[pv.DataSet]: Visualization meshes in component registration order.
+        """
         return [self.get_mesh()]
 
     def plot(
@@ -255,8 +334,16 @@ class BaseSurface(BaseModelComponent):
         plotter: pv.Plotter | None = None,
         meshes: list[pv.DataSet] | None = None,
     ) -> pv.Plotter:
-        """
-        Plot the surface mesh.
+        """Plot the surface mesh.
+
+        Args:
+            plotter (pv.Plotter | None): PyVista plotter receiving the scene; None creates a new
+                plotter.
+            meshes (list[pv.DataSet] | None): Optional precomputed visualization meshes; None
+                obtains meshes from the model.
+
+        Returns:
+            pv.Plotter: Supplied or newly created plotter containing the surface mesh actors.
         """
         if plotter is None:
             plotter = pv.Plotter()
@@ -270,12 +357,20 @@ class BaseSurface(BaseModelComponent):
         """A class to convert a mesh surface (defined by vertices and faces) into a STEP file format."""
 
         def __init__(self):
+            """Initialize MeshSurfaceConverter and its configuration state."""
             self.vertices: np.ndarray
             self.faces: np.ndarray
             self.entity_counter = 10
 
         def parse_obj_file(self, obj_content):
-            """解析OBJ文件内容"""
+            """Read OBJ vertex and polygon records into the converter state.
+
+            Face indices are converted from OBJ numbering to zero-based vertex indices; texture and
+            normal indices are ignored.
+
+            Args:
+                obj_content: Wavefront OBJ text containing vertices and surface connectivity.
+            """
             self.vertices = []
             self.faces = []
 
@@ -300,7 +395,14 @@ class BaseSurface(BaseModelComponent):
                     self.faces.append(face_vertices)
 
         def _generate_stp_header(self, filename="model"):
-            """生成STP文件头部"""
+            """Generate the STEP exchange header with the current timestamp.
+
+            Args:
+                filename: Model name recorded in the STEP FILE_NAME header.
+
+            Returns:
+                str: STEP header ending at the start of the DATA section.
+            """
             timestamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
             header = f"""ISO-10303-21;
@@ -327,11 +429,20 @@ class BaseSurface(BaseModelComponent):
             return header
 
         def _generate_stp_footer(self):
-            """生成STP文件尾部"""
+            """Generate the closing STEP data and exchange-file markers.
+
+            Returns:
+                str: STEP DATA-section terminator and exchange-file footer.
+            """
             return "ENDSEC;\nEND-ISO-10303-21;"
 
         def _find_unique_vertices(self):
-            """去重顶点，合并重复的顶点"""
+            """Merge vertex coordinates using the configured geometric tolerance.
+
+            Returns:
+                tuple[list, dict[int, int]]: Unique Cartesian vertices and a mapping from each original
+                    vertex index to its merged index.
+            """
             unique_vertices = []
             vertex_map = {}
             tolerance = CONSTANT.KERNEL.SURFACE.OBJ_VERTEX_MERGE_TOLERANCE
@@ -355,7 +466,15 @@ class BaseSurface(BaseModelComponent):
             return unique_vertices, vertex_map
 
         def _find_shared_edges(self, vertex_map):
-            """找到共享的边"""
+            """Count polygon uses of each undirected edge after vertex merging.
+
+            Args:
+                vertex_map: Original vertex indices mapped to their merged zero-based indices.
+
+            Returns:
+                dict[tuple[int, int], int]: Sorted endpoint-index pairs mapped to their polygon
+                    incidence counts.
+            """
             edge_usage = {}
 
             for face in self.faces:
@@ -375,7 +494,20 @@ class BaseSurface(BaseModelComponent):
         def convert_mesh_to_stp(
             self, faces: np.ndarray, vertices: np.ndarray, filename="model"
         ):
-            """将OBJ内容转换为STP格式，严格按照原始STP结构"""
+            """Serialize a polygon mesh as faceted STEP geometry.
+
+            Vertices are merged within the configured tolerance and shared edge entities are reused
+            between faces. This method returns text; the caller writes the destination file.
+
+            Args:
+                faces (np.ndarray): Polygon connectivity with zero-based indices into vertices.
+                vertices (np.ndarray): Cartesian vertex coordinates with shape (num_vertices, 3).
+                filename: Model name embedded in the STEP header; no file is opened here.
+
+            Returns:
+                str: Complete STEP exchange text containing the faceted boundary and supporting product
+                    entities.
+            """
             # 解析OBJ文件
             self.vertices = vertices
             self.faces = faces
@@ -664,7 +796,38 @@ class BaseSurface(BaseModelComponent):
             cartesian_point_1_id,
             cartesian_point_2_id,
         ):
-            """添加支持实体，使用唯一ID避免冲突"""
+            """Append STEP product, unit, and representation entities to the supplied content list.
+
+            Args:
+                stp_content: STEP text assembled from the geometry declarations.
+                unique_vertices: Distinct Cartesian vertices used by the generated geometry asset.
+                vertex_map: Logical vertex names mapped to their identifying Cartesian coordinates.
+                cartesian_point_map: Mapping of cartesian point identifiers to their geometry
+                    declarations.
+                spline_point_map: Mapping of spline point identifiers to their geometry declarations.
+                direction_ids: STEP entity identifiers of the direction.
+                axis_placement_ids: STEP entity identifiers of the axis placement.
+                product_def_id: STEP entity identifier of the product def.
+                product_def_context_id: STEP entity identifier of the product def context.
+                product_def_formation_id: STEP entity identifier of the product def formation.
+                application_context_id: STEP entity identifier of the application context.
+                product_id: STEP entity identifier of the product.
+                product_context_id: STEP entity identifier of the product context.
+                length_unit_id: STEP entity identifier of the length unit.
+                plane_angle_unit_id: STEP entity identifier of the plane angle unit.
+                solid_angle_unit_id: STEP entity identifier of the solid angle unit.
+                uncertainty_measure_id: STEP entity identifier of the uncertainty measure.
+                geometric_rep_context_id: STEP entity identifier of the geometric rep context.
+                shape_representation_id: STEP entity identifier of the shape representation.
+                axis2_placement_1_id: STEP entity identifier of the axis2 placement 1.
+                axis2_placement_2_id: STEP entity identifier of the axis2 placement 2.
+                direction_1_id: STEP entity identifier of the direction 1.
+                direction_2_id: STEP entity identifier of the direction 2.
+                direction_3_id: STEP entity identifier of the direction 3.
+                direction_4_id: STEP entity identifier of the direction 4.
+                cartesian_point_1_id: STEP entity identifier of the cartesian point 1.
+                cartesian_point_2_id: STEP entity identifier of the cartesian point 2.
+            """
 
             # 产品定义结构
             stp_content.append(
@@ -787,12 +950,13 @@ class BaseSurface(BaseModelComponent):
     def match_coordinates(
         self, surf_node_idx: np.ndarray, surf_nodes: np.ndarray, *args, **kwargs
     ) -> np.ndarray:
-        """
-        Match the coordinates of the nodes to the surface.
+        """Match the coordinates of the nodes to the surface.
 
-        Parameters:
+        Args:
             surf_node_idx (np.ndarray): The indices of the surface nodes.
             surf_nodes (np.ndarray): The coordinates of the surface nodes.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
 
         Returns:
             np.ndarray: The nodes position updated to match the surface.
@@ -801,8 +965,12 @@ class BaseSurface(BaseModelComponent):
 
 
 class ControlPointSurface(BaseSurface):
-    """
-    Class to handle the surface of the morphable model.
+    """Evaluate a control-point surface with cached sparse basis coefficients.
+
+    Positions and parameter derivatives remain differentiable with respect to the live
+    control-point tensor. Preloaded basis coefficients and FE-node parameter coordinates are
+    reused during the inner solve; external geometry is synchronized separately before export or
+    remeshing.
     """
 
     class PreLoadData:
@@ -833,6 +1001,26 @@ class ControlPointSurface(BaseSurface):
             indices: torch.Tensor,
             faces: torch.Tensor,
         ) -> None:
+            """Initialize PreLoadData and its configuration state.
+
+            Args:
+                uv (torch.Tensor): Surface parameter coordinates with shape (num_queries, 2).
+                cp_weights (torch.Tensor): Sparse control-point coefficients for surface positions.
+                cp_weights_du (torch.Tensor): Sparse control-point coefficients for the first u
+                    derivative.
+                cp_weights_dv (torch.Tensor): Sparse control-point coefficients for the first v
+                    derivative.
+                cp_weights_du2 (torch.Tensor): Sparse control-point coefficients for the second u
+                    derivative.
+                cp_weights_dudv (torch.Tensor): Sparse control-point coefficients for the mixed u/v
+                    derivative.
+                cp_weights_dv2 (torch.Tensor): Sparse control-point coefficients for the second v
+                    derivative.
+                indices (torch.Tensor): Indices aligned with the input points, variables, or mesh
+                    records.
+                faces (torch.Tensor): Face selection or mesh connectivity required by the selected
+                    surface operation.
+            """
             self.uv = uv
             self.cp_weights = cp_weights
             self.cp_weights_du = cp_weights_du
@@ -845,11 +1033,25 @@ class ControlPointSurface(BaseSurface):
 
         @property
         def num_points(self) -> int:
+            """Count cached parameter-space evaluation points.
+
+            Returns:
+                int: Number of rows in the preload UV array.
+            """
             return int(self.uv.shape[0])
 
         def to_device(
             self, device: torch.device
         ) -> BaseSurface.ControlPointSurface.PreLoadData:
+            """Move cached parameters, basis stencils, and connectivity to the requested device.
+
+            Args:
+                device (torch.device): PyTorch device used for tensor operations; None retains the
+                    owning controller's device when supported.
+
+            Returns:
+                Self: The same preload object after its tensors have been moved.
+            """
             self.uv = self.uv.to(device)
             self.cp_weights = self.cp_weights.to(device)
             self.cp_weights_du = self.cp_weights_du.to(device)
@@ -864,8 +1066,15 @@ class ControlPointSurface(BaseSurface):
         def compute_point_weights(self, r: torch.Tensor) -> torch.Tensor:
             """Compute integration weights for preload points from mesh faces.
 
-            Each triangular face contributes one-third of its area to each vertex.
-            For quad faces, the face is split into two triangles.
+            Each triangular face contributes one-third of its area to each vertex. For quad faces, the
+            face is split into two triangles.
+
+            Args:
+                r (torch.Tensor): Current Cartesian surface samples; each surface block has shape
+                    (num_points, 3).
+
+            Returns:
+                torch.Tensor: Per-sample integration weights derived from the preload mesh connectivity.
             """
             faces = self.faces
             if faces.ndim != 2 or faces.shape[1] not in (3, 4):
@@ -896,6 +1105,7 @@ class ControlPointSurface(BaseSurface):
             return weights
 
     def __init__(self) -> None:
+        """Initialize ControlPointSurface and its configuration state."""
         super().__init__()
 
         self._cps: torch.Tensor
@@ -910,6 +1120,19 @@ class ControlPointSurface(BaseSurface):
         self, weights: torch.Tensor, indices: torch.Tensor, num_pts: int = None
     ) -> torch.Tensor:
 
+        """Accumulate sparse basis contributions from the live control-point tensor.
+
+        Args:
+            weights (torch.Tensor): Integration, basis, or rational weights aligned with the
+                corresponding points.
+            indices (torch.Tensor): Indices aligned with the input points, variables, or mesh
+                records.
+            num_pts (int): Number of surface queries represented by the sparse coefficients.
+
+        Returns:
+            torch.Tensor: Evaluated Cartesian values or derivatives with shape (num_pts, 3),
+                retaining control-point gradients.
+        """
         if num_pts is None:
             num_pts = indices[0].max().item() + 1
 
@@ -919,25 +1142,37 @@ class ControlPointSurface(BaseSurface):
         return result
 
     def apply_preload_data(self, preload: ControlPointSurface.PreLoadData) -> None:
-        """Apply a standardized preload container to the interface."""
+        """Apply a standardized preload container to the interface.
+
+        Args:
+            preload (ControlPointSurface.PreLoadData): Precomputed surface sampling data and sparse
+                basis coefficients.
+        """
         self._preload_data = preload
 
     def pre_load(self, *args, **kwargs) -> None:
-        """Preload data for surface evaluation. This method should be called before any geometry evaluation."""
+        """Preload data for surface evaluation. This method should be called before any geometry
+        evaluation.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         self._preload_data = self.get_preloaddata(*args, **kwargs)
 
     def get_preloaddata(
         self, pre_points: torch.Tensor | None = None, faces: torch.Tensor | None = None
     ) -> ControlPointSurface.PreLoadData:
-        """
-        Create and return preload data for the surface.
+        """Create and return preload data for the surface.
 
         Args:
             pre_points (torch.Tensor | None): Optional sample points used for preload evaluation.
-            faces (torch.Tensor | None): Optional face connectivity information used for point-weight calculations.
+            faces (torch.Tensor | None): Optional face connectivity information used for
+                point-weight calculations.
 
         Returns:
-            ControlPointSurface.PreLoadData: The computed preload data. The returned object must include explicit face connectivity.
+            ControlPointSurface.PreLoadData: The computed preload data. The returned object must
+                include explicit face connectivity.
         """
         raise NotImplementedError(
             "The preload method is not implemented in the ControlPointSurface class. Please implement it in the derived class."
@@ -945,16 +1180,24 @@ class ControlPointSurface(BaseSurface):
 
     @property
     def preload_data(self) -> ControlPointSurface.PreLoadData:
+        """Access the initialized sampling mesh and basis-evaluation cache.
+
+        Returns:
+            ControlPointSurface.PreLoadData: Cached parameters, connectivity, and derivative
+                stencils.
+
+        Raises:
+            RuntimeError: Sampling data has not been initialized.
+        """
         if self._preload_data is None:
             raise RuntimeError("Preload data has not been initialized.")
         return self._preload_data
 
     def get_r(self, preload_data: ControlPointSurface.PreLoadData | None = None):
-        """
-        Get the point coordinates of the surface.
+        """Get the point coordinates of the surface.
 
         Args:
-            preload_data (Optional[ControlPointSurface.PreLoadData]): Optional external preload data.
+            preload_data (ControlPointSurface.PreLoadData | None): Optional external preload data.
 
         Returns:
             torch.Tensor: The point coordinates of the surface.
@@ -965,15 +1208,15 @@ class ControlPointSurface(BaseSurface):
         )
 
     def get_rdu(self, preload_data: ControlPointSurface.PreLoadData | None = None):
-        """
-        Get the first partial derivatives of the surface.
+        """Get the first partial derivatives of the surface.
 
         Args:
-            preload_data (Optional[ControlPointSurface.PreLoadData]): Optional external preload data.
+            preload_data (ControlPointSurface.PreLoadData | None): Optional external preload data.
 
         Returns:
             torch.Tensor: The first partial derivatives of the surface.
-                - shape: (num_points, 3, 2), the first derivative with respect to the first parameter and the second parameter.
+            - shape: (num_points, 3, 2), the first derivative with respect to the first parameter
+                and the second parameter.
         """
         preload = preload_data if preload_data is not None else self.preload_data
         rdu = self._map(
@@ -988,15 +1231,15 @@ class ControlPointSurface(BaseSurface):
         return torch.stack([rdu, rdv], dim=2)
 
     def get_rdu2(self, preload_data: ControlPointSurface.PreLoadData | None = None):
-        """
-        Get the second partial derivatives of the surface.
+        """Get the second partial derivatives of the surface.
 
         Args:
-            preload_data (Optional[ControlPointSurface.PreLoadData]): Optional external preload data.
+            preload_data (ControlPointSurface.PreLoadData | None): Optional external preload data.
 
         Returns:
             torch.Tensor: The second partial derivatives of the surface.
-                - shape: (num_points, 3, 2, 2), the second derivative with respect to the first parameter and the second parameter.
+            - shape: (num_points, 3, 2, 2), the second derivative with respect to the first
+                parameter and the second parameter.
         """
 
         preload = preload_data if preload_data is not None else self.preload_data
@@ -1028,7 +1271,12 @@ class ControlPointSurface(BaseSurface):
 
     @control_points.setter
     def control_points(self, points: torch.Tensor | np.ndarray) -> None:
-        """Replace the control points while preserving tensor dtype and device."""
+        """Replace the control points while preserving tensor dtype and device.
+
+        Args:
+            points (torch.Tensor | np.ndarray): Point coordinates in the representation expected by
+                this operation.
+        """
         points = torch.as_tensor(points, dtype=self._cps.dtype, device=self._cps.device)
         if points.ndim != 2 or points.shape[1] != 3:
             raise ValueError("Control points must have shape (num_points, 3).")
@@ -1044,33 +1292,29 @@ class ControlPointSurface(BaseSurface):
         return self._cps.flatten()
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
-        """
-        Set the design variables of the surface.
+        """Set the design variables of the surface.
 
-        Parameters:
+        Args:
             x (torch.Tensor): The new design variables to be set.
         """
         self._cps = x.reshape(self._cps.shape)
 
     def update_variables(self, x_change: torch.Tensor) -> None:
-        """
-        Update the surface with the new design variables.
+        """Update the surface with the new design variables.
 
-        Parameters:
+        Args:
             x_change (torch.Tensor): The change of design variables to be applied.
         """
         if self.is_updatable:
             self._cps = self._cps + x_change.reshape(self._cps.shape)
 
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Get the geometry values of the surface.
+        """Evaluate the current surface position and first and second parameter derivatives.
 
         Returns:
-            tuple: A tuple containing the geometry values of the surface.
-                - r (torch.Tensor): The point coordinates of the surface.
-                - rdu (torch.Tensor): The partial derivatives of the surface.
-                - rdu2 (torch.Tensor): The second partial derivatives of the surface.
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Positions r with shape (n, 3), first
+                derivatives rdu with shape (n, 3, 2), and second derivatives rdu2 with shape (n, 3,
+                2, 2). All values retain gradients to live control points.
         """
         r = self.get_r()
         rdu = self.get_rdu()

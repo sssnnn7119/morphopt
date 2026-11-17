@@ -1,13 +1,14 @@
 def get_controller(path_result: str, iteration: int = None):
-    """
-    Load the controller from a specified result folder and iteration.
+    """Load the controller from a specified result folder and iteration.
 
     Args:
         path_result (str): The folder path of the optimization result.
-        iteration (int, optional): The iteration number to load. If None, the latest iteration will be loaded.
+        iteration (int): The iteration number to load. If None, the latest iteration will be
+            loaded.
 
     Returns:
-        ThisController: The controller instance loaded from the specified result folder and iteration.
+        ThisController: The controller instance loaded from the specified result folder and
+            iteration.
     """
     import importlib.util
 

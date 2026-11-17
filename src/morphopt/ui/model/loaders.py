@@ -30,7 +30,16 @@ MORPH_SUFFIX = ".morph"
 
 
 def save_morph(problem: ProblemDefinition, path: str | Path) -> str:
-    """Write ``problem`` to a ``*.morph`` file (appends suffix if missing)."""
+    """Write ``problem`` to a ``*.morph`` file (appends suffix if missing).
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        path (str | Path): Filesystem path read, restored, or written by this operation.
+
+    Returns:
+        str: Write ``problem`` to a ``*.morph`` file (appends suffix if missing).
+    """
     path = str(path)
     if not path.endswith(MORPH_SUFFIX):
         path += MORPH_SUFFIX
@@ -40,7 +49,17 @@ def save_morph(problem: ProblemDefinition, path: str | Path) -> str:
 
 
 def load_morph(path: str | Path, *, issues: list[LocalizedMessage] | None = None) -> ProblemDefinition:
-    """Read supported fields, default omissions and report discarded content."""
+    """Read supported fields, default omissions and report discarded content.
+
+    Args:
+        path (str | Path): Filesystem path read, restored, or written by this operation.
+        issues (list[LocalizedMessage] | None): Optional list receiving recoverable import or
+            validation messages.
+
+    Returns:
+        ProblemDefinition: Read supported fields, default omissions and report discarded
+            content.
+    """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(localized_message("ui.import.invalid_document"))
@@ -58,12 +77,32 @@ class _DefinitionReader:
     """Project a file onto the current schema without weakening model constructors."""
 
     def __init__(self) -> None:
+        """Initialize _DefinitionReader and its configuration state."""
         self.issues: list[LocalizedMessage] = []
 
     def note(self, key: str, path: str, **values: object) -> None:
+        """Return note.
+
+        Args:
+            key (str): Lookup key identifying the requested field or registered item.
+            path (str): Filesystem path read, restored, or written by this operation.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self.issues.append(localized_message(f"ui.import.{key}", path=path, **values))
 
     def mapping(self, value: object, defaults: dict, path: str, optional: tuple[str, ...] = ()) -> dict:
+        """Return mapping.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+            defaults (dict): Default configuration values used when a field is absent.
+            path (str): Filesystem path read, restored, or written by this operation.
+            optional (tuple[str, ...]): Additional accepted mapping keys beyond the declared
+                defaults.
+
+        Returns:
+            dict: Mapping.
+        """
         if not isinstance(value, dict):
             self.note("skipped", path, reason=localized_message("ui.import.expected_object"))
             return deepcopy(defaults)
@@ -79,12 +118,30 @@ class _DefinitionReader:
         }
 
     def sequence(self, value: object, path: str) -> list:
+        """Return sequence.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+            path (str): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            list: Sequence.
+        """
         if isinstance(value, list):
             return value
         self.note("skipped", path, reason=localized_message("ui.import.expected_list"))
         return []
 
     def node(self, value: object, path: str) -> Node | None:
+        """Return node.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+            path (str): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            Node | None: Node.
+        """
         if not isinstance(value, dict) or not isinstance(value.get("kind"), str) or value["kind"] not in NODE_TYPES:
             self.note("skipped", path, reason=str(value.get("kind") if isinstance(value, dict) else type(value).__name__))
             return None
@@ -136,6 +193,19 @@ class _DefinitionReader:
         return node
 
     def terms(self, value: object, factory: Callable[[str], dict], path: str, default_type: str) -> list[dict]:
+        """Return terms.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+            factory (Callable[[str], dict]): Callable constructing the registered model or UI
+                component.
+            path (str): Filesystem path read, restored, or written by this operation.
+            default_type (str): Registered type used when an imported declaration omits its type
+                field.
+
+        Returns:
+            list[dict]: Terms.
+        """
         terms = []
         for index, term in enumerate(self.sequence(value, path)):
             item_path = f"{path}[{index}]"
@@ -154,6 +224,17 @@ class _DefinitionReader:
         return terms
 
     def updater(self, value: object, defaults: dict, group: str, path: str) -> dict:
+        """Return updater.
+
+        Args:
+            value (object): Value assigned to or evaluated for the selected field.
+            defaults (dict): Default configuration values used when a field is absent.
+            group (str): Named group containing the related interfaces or task configuration.
+            path (str): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            dict: Updater.
+        """
         config = self.mapping(value, defaults, path, ("custom_class",))
         categories = [("objective_functions", UPDATER_OBJECTIVES), ("constraints", UPDATER_CONSTRAINTS)]
         if group == "geometry":
@@ -202,6 +283,14 @@ class _DefinitionReader:
         return config
 
     def read(self, data: dict) -> ProblemDefinition:
+        """Read the _DefinitionReader state.
+
+        Args:
+            data (dict): Serialized definition or result data to restore.
+
+        Returns:
+            ProblemDefinition: Read the _DefinitionReader state.
+        """
         defaults = ProblemDefinition().to_dict()
         if data.get("version") != defaults["version"]:
             self.note("version", "version", version=data.get("version"), current=defaults["version"])

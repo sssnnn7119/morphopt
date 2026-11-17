@@ -37,6 +37,30 @@ def double_precision():
     torch.set_default_dtype(previous)
 
 
+@pytest.mark.parametrize("bound", ["MinValue", "MaxValue"])
+@pytest.mark.parametrize("sensitivity_scale", [0.0, 1e-12, 1e12])
+def test_material_bound_penalties_preserve_values_and_native_derivatives(
+    bound, sensitivity_scale,
+):
+    from morphopt.simp.objectivefuncs import boundarys
+
+    points = torch.tensor([[-1.0], [-0.3], [0.6], [1.5]])
+    factory = getattr(boundarys, bound)
+    kwargs = {"xmin": 0.0} if bound == "MinValue" else {"xmax": 0.5}
+    penalty = factory(**kwargs, threshold=0.2, barrier_thre=1.0, barrier_ratio=0.5, p=3)
+    penalty.initialize(cps0=points, sensitivity=torch.full_like(points, sensitivity_scale))
+
+    def reference(values):
+        violation = 0.2 - values if bound == "MinValue" else values - 0.3
+        return torch.clamp((violation - 0.5) / 0.5, min=0).pow(3).sum().reshape(1)
+
+    torch.testing.assert_close(penalty(points), reference(points))
+    torch.testing.assert_close(torch.func.jacrev(penalty)(points), torch.func.jacrev(reference)(points))
+    feasible = torch.ones_like(points) if bound == "MinValue" else torch.zeros_like(points)
+    torch.testing.assert_close(penalty(feasible), torch.zeros(1))
+    torch.testing.assert_close(torch.func.jacrev(penalty)(feasible), torch.zeros((1, 4, 1)))
+
+
 def test_direct_hessian_matches_independent_dense_bfgs():
     model = QuadraticHistory(memory_size=3)
     hessian = torch.tensor([[4.0, 0.4, 0.0], [0.4, 2.0, 0.2], [0.0, 0.2, 3.0]])
@@ -489,7 +513,7 @@ def test_adaptive_shape_weights_probe_restore_solve_and_restart(tmp_path: Path):
     snapshot = updater.history_data()
     assert snapshot["constraint_weights"] == updater.constraint_weights
     assert snapshot["constraint_weight_state"]["tolerance"] == strategy.tolerance
-    assert snapshot["constraint_weight_state"]["penalties"]["MinRadius_0"]["initial_weight"] == state["MinRadius_0"]["initial_weight"]
+    assert snapshot["constraint_weight_state"]["penalties"]["MinRadius_0"] == {"violation": state["MinRadius_0"]["violation"]}
     assert strategy.state == state
     change = updater.update()
     assert updater.history_data()["iterations"] == updater.iteration_total > 0

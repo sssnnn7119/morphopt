@@ -16,6 +16,12 @@ class ThemeManager:
         *,
         default: str = "dark",
     ) -> None:
+        """Initialize ThemeManager and its configuration state.
+
+        Args:
+            themes (dict[str, ThemePalette]): Available theme identifiers or palettes.
+            default (str): Value used when no explicit value is supplied.
+        """
         if default not in themes:
             raise ValueError(f"Default theme {default!r} is not registered.")
         self._themes = dict(themes)
@@ -26,21 +32,39 @@ class ThemeManager:
 
     @property
     def name(self) -> str:
-        """Name of the currently selected theme."""
+        """Name of the currently selected theme.
+
+        Returns:
+            str: Name of the currently selected theme.
+        """
         return self._name
 
     @property
     def names(self) -> tuple[str, ...]:
-        """Registered theme names in selector order."""
+        """Registered theme names in selector order.
+
+        Returns:
+            tuple[str, ...]: Registered theme names in selector order.
+        """
         return tuple(self._themes)
 
     @property
     def palette(self) -> ThemePalette:
-        """Complete immutable visual configuration for the active theme."""
+        """Complete immutable visual configuration for the active theme.
+
+        Returns:
+            ThemePalette: Complete immutable visual configuration for the active theme.
+        """
         return self._themes[self._name]
 
     def register_theme(self, name: str, palette: ThemePalette) -> None:
-        """Register an additional theme before or during application use."""
+        """Register an additional theme before or during application use.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            palette (ThemePalette): Active theme palette containing shared colors and layout
+                settings.
+        """
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Theme name cannot be empty.")
@@ -52,20 +76,34 @@ class ThemeManager:
         self._notify_catalog()
 
     def restore(self, app) -> None:
-        """Apply the last selected theme before constructing the main window."""
+        """Apply the last selected theme before constructing the main window.
+
+        Args:
+            app: Application whose widgets and preferences are updated.
+        """
         from PySide6.QtCore import QSettings
 
         name = QSettings("MorphOptUI", "ui").value("theme", self._default, str)
         self.apply(app, name, persist=False)
 
     def set_theme(self, name: str) -> None:
-        """Apply a registered theme to the live application and persist the choice."""
+        """Apply a registered theme to the live application and persist the choice.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+        """
         if name not in self._themes:
             raise ValueError(f"Theme {name!r} is not registered.")
         self.apply(None, name, persist=True)
 
     def apply(self, app=None, name: str | None = None, *, persist: bool) -> None:
-        """Apply a registered theme, falling back only for stale saved settings."""
+        """Apply a registered theme, falling back only for stale saved settings.
+
+        Args:
+            app: Application whose widgets and preferences are updated.
+            name (str | None): Name identifying the item in its owning collection.
+            persist (bool): Write the accepted preference to application settings when True.
+        """
         if name not in self._themes:
             name = self._default
         changed = name != self._name
@@ -84,7 +122,15 @@ class ThemeManager:
             self._notify()
 
     def subscribe(self, callback: Callable[[str], None]) -> Callable[[], None]:
-        """Subscribe to active-theme changes; return a function to unsubscribe."""
+        """Subscribe to active-theme changes; return a function to unsubscribe.
+
+        Args:
+            callback (Callable[[str], None]): Callback invoked with the operation's documented
+                result or change event.
+
+        Returns:
+            Callable[[], None]: Subscribe to active-theme changes; return a function to unsubscribe.
+        """
         reference = (
             weakref.WeakMethod(callback)
             if getattr(callback, "__self__", None) is not None
@@ -102,7 +148,15 @@ class ThemeManager:
         self,
         callback: Callable[[tuple[str, ...]], None],
     ) -> Callable[[], None]:
-        """Subscribe to registration changes in the available-theme catalog."""
+        """Subscribe to registration changes in the available-theme catalog.
+
+        Args:
+            callback (Callable[[tuple[str, ...]], None]): Callback invoked with the operation's
+                documented result or change event.
+
+        Returns:
+            Callable[[], None]: Subscribe to registration changes in the available-theme catalog.
+        """
         reference = (
             weakref.WeakMethod(callback)
             if getattr(callback, "__self__", None) is not None

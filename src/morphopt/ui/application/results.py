@@ -29,9 +29,11 @@ class ResultSession:
     """
 
     def __init__(self) -> None:
+        """Initialize ResultSession and its configuration state."""
         self.reset()
 
     def reset(self) -> None:
+        """Reset the ResultSession state."""
         self.folder: str | None = None
         self._archive: OptimizationArchive | None = None
         self.history: Any | None = None
@@ -39,13 +41,31 @@ class ResultSession:
 
     @property
     def controller(self) -> type[Any] | None:
+        """Return controller.
+
+        Returns:
+            type[Any] | None: Controller.
+        """
         return self._archive.controller_class if self._archive is not None else None
 
     @property
     def params(self) -> Any | None:
+        """Return params.
+
+        Returns:
+            Any | None: Params.
+        """
         return self._archive.params if self._archive is not None else None
 
     def bind(self, folder: str) -> bool:
+        """Bind the ResultSession state.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+
+        Returns:
+            bool: Bind the ResultSession state.
+        """
         normalized = str(Path(folder).resolve())
         if self.folder == normalized and self.controller is not None:
             return True
@@ -62,6 +82,15 @@ class ResultSession:
         return True
 
     def load_iteration(self, folder: str, iteration: int) -> Any:
+        """Load iteration.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Any: Load iteration.
+        """
         normalized = str(Path(folder).resolve())
         if normalized != self.folder:
             self.bind(normalized)
@@ -74,21 +103,54 @@ class ResultSession:
         return history
 
     def load_parameters(self, iteration: int) -> Any | None:
+        """Load parameters.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Any | None: Load parameters.
+        """
         return self._archive.load_parameters(iteration) if self._archive else None
 
     def fea_components(self) -> tuple[tuple[str, Any], ...]:
+        """Return fea components.
+
+        Returns:
+            tuple[tuple[str, Any], ...]: Fea components.
+        """
         return self._archive.visualizable_components() if self._archive else ()
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
+        """Return deformation mesh.
+
+        Args:
+            case (str): Registered load-case name selecting the saved or current finite-element
+                result.
+            iteration (int): Iteration index associated with the saved or current model state.
+
+        Returns:
+            Any | None: Deformation mesh.
+        """
         return (
             self._archive.deformation_mesh(case, iteration) if self._archive else None
         )
 
     def deformation_cases(self) -> tuple[str, ...]:
+        """Return deformation cases.
+
+        Returns:
+            tuple[str, ...]: Deformation cases.
+        """
         return self._archive.deformation_cases() if self._archive else ()
 
     @property
     def log_files(self) -> tuple[Path, ...]:
+        """Return log files.
+
+        Returns:
+            tuple[Path, ...]: Log files.
+        """
         return self._archive.log_files if self._archive else ()
 
 
@@ -96,9 +158,11 @@ class ResultLogReader:
     """Read appended UTF-8 log text without retaining open file handles."""
 
     def __init__(self) -> None:
+        """Initialize ResultLogReader and its configuration state."""
         self.clear()
 
     def clear(self) -> None:
+        """Clear the ResultLogReader state."""
         self.path: Path | None = None
         self._offset = 0
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -106,9 +170,15 @@ class ResultLogReader:
     def read(self, path: Path) -> tuple[bool, str]:
         """Return whether to replace the view and the newly available text.
 
-        A new or truncated file replaces the view. Large files start at their
-        last complete lines; each poll reads a bounded amount of recent text.
-        The decoder retains UTF-8 characters split across writes.
+        A new or truncated file replaces the view. Large files start at their last complete lines;
+        each poll reads a bounded amount of recent text. The decoder retains UTF-8 characters split
+        across writes.
+
+        Args:
+            path (Path): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            tuple[bool, str]: Whether to replace the view and the newly available text.
         """
         with path.open("rb") as stream:
             size = stream.seek(0, 2)

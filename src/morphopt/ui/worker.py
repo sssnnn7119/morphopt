@@ -9,7 +9,15 @@ from typing import Any
 
 
 def execute(request_path: str | Path) -> dict[str, Any]:
-    """Execute a named task and write its structured response beside the request."""
+    """Execute a named task and write its structured response beside the request.
+
+    Args:
+        request_path (str | Path): JSON request-file path passed to the isolated worker process.
+
+    Returns:
+        dict[str, Any]: Execute a named task and write its structured response beside the
+            request.
+    """
     path = Path(request_path)
     directory = path.parent
     request = json.loads(path.read_text(encoding="utf-8"))

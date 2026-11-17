@@ -47,6 +47,12 @@ class PropertyEditor(QWidget):
     activated = Signal(object)  # Node whose controls received keyboard focus
 
     def __init__(self, parent=None, compact: bool = False):
+        """Initialize PropertyEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+            compact (bool): Use the reduced-spacing layout when True.
+        """
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -101,6 +107,20 @@ class PropertyEditor(QWidget):
         completion_problem=None,
         actions: list[tuple[str, Callable[[], None], bool]] | None = None,
     ) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            fields: Requested field keys; None selects the available defaults for the record
+                location.
+            code_slots: Named Python-code fields associated with the selected definition node.
+            extra_choices: Additional selectable values appended to the schema-defined choices.
+            subtitle (str): Explanatory secondary text shown below the section title.
+            title (str | None): User-facing title of the view, section, or action.
+            completion_problem: Definition snapshot used to resolve code-completion symbols.
+            actions (list[tuple[str, Callable[[], None], bool]] | None): Definition action
+                dispatcher used to commit model changes.
+        """
         self._completion_problem = completion_problem
         title = title if title is not None else node_title(completion_problem, node)
         if fields is None:
@@ -258,15 +278,28 @@ class PropertyEditor(QWidget):
             widget.installEventFilter(self)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         if self._node is not None:
             self.edit_node(self._node, completion_problem=context.problem)
 
     def eventFilter(self, watched, event):
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            watched: Qt object receiving the filtered event.
+            event: Qt event delivered to this widget or event filter.
+        """
         if event.type() == QEvent.Type.FocusIn and self._node is not None:
             self.activated.emit(self._node)
         return super().eventFilter(watched, event)
 
     def refresh_choices(self) -> None:
+        """Refresh choices."""
         if self._node is not None and self._parameter_form is not None:
             fields, _, choices = fields_for_node(self._node, self._completion_problem)
             self._parameter_form.refresh_choices(choices, fields=fields)

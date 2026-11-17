@@ -36,7 +36,11 @@ from __future__ import annotations
 
 
 def run_app() -> int:
-    """Launch the MorphOpt UI (creates the QApplication and enters the loop)."""
+    """Launch the MorphOpt UI (creates the QApplication and enters the loop).
+
+    Returns:
+        int: Launch the MorphOpt UI (creates the QApplication and enters the loop).
+    """
     from .app import main
 
     return main()

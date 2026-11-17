@@ -13,7 +13,13 @@ from .protocal import ProtocalHistory, ProtocalInitializable, ProtocalSavable
 
 
 class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
-    """Schedule ordered load-case groups across the FEA worker pool."""
+    """Solve ordered groups of named load cases on explicitly assigned worker devices.
+
+    Groups are independent tasks; cases within one group run sequentially and can warm-start
+    from the preceding result. Results are returned in load-case registration order. Debug mode
+    executes every group once in the calling process and restores the caller's default tensor
+    device and dtype.
+    """
 
     def __init__(
         self,
@@ -22,23 +28,22 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         process_devices: list[str] | None = None,
         task_step_list: list[list[str]] | None = None,
     ) -> None:
-        """
-        Initialize the Solver class with a list of pressure values.
+        """Configure worker devices and ordered groups of named load cases.
 
-        Parameters:
-            params (Params):
-            num_process (int): The number of processes to use for parallel computation.
-                Defaults to one process.
-            process_devices (list[str] | None): One device name for each process.
-                Defaults to CPU for every process.
+        Args:
+            params (Params): Model parameters containing geometry, finite-element declarations, and
+                materials.
+            num_process (int): The number of processes to use for parallel computation. Defaults to
+                one process.
+            process_devices (list[str] | None): One device name for each process. Defaults to CPU
+                for every process.
+            task_step_list (list[list[str]] | None): Ordered groups of named load cases; cases
+                within a group use sequential warm starts.
         """
 
         super().__init__()
 
         self.params: Params = params
-        """
-        Pressures: An instance of the params of the optimization problem.
-        """
 
         self.num_process = num_process
         """
@@ -58,6 +63,7 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         """
 
     def initialize(self) -> None:
+        """Initialize the Solver state."""
         names = list(self.params.feamodel.fea_steps_params)
         if not names:
             raise ValueError("At least one named load case is required.")
@@ -70,73 +76,78 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         self.task_step_list = [*groups, *[[name] for name in names if name not in registered]]
 
     def reinitialize(self, iteration: int) -> None:
-        """
-        Reinitialize the solver for a new iteration.
+        """Reinitialize the solver for a new iteration.
 
-        Parameters:
+        Args:
             iteration (int): The current iteration number.
         """
 
     def solve(self, U_guess: dict[str, np.ndarray | None] | None = None) -> dict[str, torchfea.solver.StaticResult]:
-        """
-        Solve the optimization problem using the specified solver.
+        """Solve every configured load-case group and restore registration-order results.
+
+        When no explicit guesses are supplied, try previous-iteration solutions only for fixed
+        geometry. Each worker group solves its cases sequentially; an absent case guess uses the
+        preceding case's solution within that group.
+
+        Args:
+            U_guess (dict[str, np.ndarray | None] | None): Optional mapping from every requested
+                load-case name to generalized coordinates or None. None enables automatic
+                previous-iteration guesses.
 
         Returns:
-            The result of the optimization problem.
+            dict[str, torchfea.solver.StaticResult]: Converged results keyed in load-case
+                registration order, moved to the caller's default device.
+
+        Raises:
+            ValueError: A finite-element load case fails to converge.
         """
 
         if U_guess is None:
             U_guess = self._previous_solution()
 
         pool = morphopt.controller.pools
-        process_devices = {
-            worker.name: self.process_devices[index]
-            for index, worker in enumerate(pool._pool)
-        }
-
-        # multiprocess FEA
+        debug_mode = morphopt.controller._debug_mode
+        process_devices = (
+            {mp.current_process().name: self.process_devices[0]}
+            if debug_mode else {
+                worker.name: self.process_devices[index]
+                for index, worker in enumerate(pool._pool)
+            }
+        )
 
         fe_cpu = copy.deepcopy(morphopt.controller.objfun.fe)
         fe_cpu.change_device(torch.device("cpu"))
 
-        if morphopt.controller._debug_mode:
-            self._solve_FEA(
-                fe=fe_cpu,
-                feamodel=self.params.feamodel,
-                step_names=self.task_step_list[0],
-                process_devices={mp.current_process().name: self.process_devices[0]},
-                U_guess=[U_guess[step] for step in self.task_step_list[0]]
-                if U_guess is not None else None,
-                path_result=morphopt.controller.path_result,
-            )
-
-        # pools.close()
-        # pools.join()
-        # pools = mp.Pool(processes=self.num_process)
-        # morphopt.controller.pools = pools
-        result = []
-        for i in range(len(self.task_step_list)):
-            result.append(
-                pool.apply_async(
-                    self._solve_FEA,
-                    kwds={
-                        "fe": fe_cpu,
-                        "feamodel": self.params.feamodel,
-                        "step_names": self.task_step_list[i],
-                        "process_devices": process_devices,
-                        "U_guess": [U_guess[step] for step in self.task_step_list[i]]
-                        if U_guess is not None
-                        else None,
-                        "path_result": morphopt.controller.path_result,
-                    },
-                )
-            )
-
-        # get the result
-        indexed_results = []
-        for i in range(len(result)):
-            indexed_results.extend(zip(self.task_step_list[i], result[i].get()))
-        indexed_results = dict(indexed_results)
+        tasks = [
+            {
+                "fe": fe_cpu,
+                "feamodel": self.params.feamodel,
+                "step_names": group,
+                "process_devices": process_devices,
+                "U_guess": [U_guess[step] for step in group] if U_guess is not None else None,
+                "path_result": morphopt.controller.path_result,
+            }
+            for group in self.task_step_list
+        ]
+        if debug_mode:
+            # Keep every case in the debugger process and solve it only once.
+            device, dtype = torch.get_default_device(), torch.get_default_dtype()
+            try:
+                grouped_results = [
+                    self._solve_FEA(**{**task, "fe": copy.deepcopy(fe_cpu)})
+                    for task in tasks
+                ]
+            finally:
+                torch.set_default_device(device)
+                torch.set_default_dtype(dtype)
+        else:
+            pending = [pool.apply_async(self._solve_FEA, kwds=task) for task in tasks]
+            grouped_results = [result.get() for result in pending]
+        indexed_results = {
+            name: result
+            for group, results in zip(self.task_step_list, grouped_results)
+            for name, result in zip(group, results)
+        }
 
         output: dict[str, torchfea.solver.StaticResult] = {}
         for step_name in self.params.feamodel.fea_steps_params:
@@ -156,8 +167,12 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     def _previous_solution(self) -> dict[str, np.ndarray | None] | None:
         """Load previous-iteration coordinates only for fixed-geometry models.
 
-        ``history.iteration`` counts completed iterations and names the most
-        recently saved result. Missing load-step files have no initial guess.
+        ``history.iteration`` counts completed iterations and names the most recently saved result.
+        Missing load-step files have no initial guess.
+
+        Returns:
+            dict[str, np.ndarray | None] | None: Saved generalized coordinates by case, or None for
+                variable geometry, the first iteration, or an archive without usable results.
         """
         if any(part.is_variable for part in self.params.geometry.interfaces.values()):
             return None
@@ -166,7 +181,7 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
 
         iteration = morphopt.controller.history.iteration
         guesses = {}
-        for taskidx, step_name in enumerate(self.params.feamodel.fea_steps_params):
+        for step_name in self.params.feamodel.fea_steps_params:
             path = (
                 morphopt.controller.path_result
                 + f"/log/femodel&results/result_{step_name}_iter_{iteration}.npz"
@@ -189,17 +204,27 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         U_guess: list[np.ndarray | None] | None = None,
         path_result: str | None = None,
     ) -> list[torchfea.solver.StaticResult]:
+        """Solve one ordered load-case group on its assigned worker device.
+
+        Args:
+            fe (torchfea.FEAController): TorchFEA controller whose assembly is modified or solved.
+            feamodel (FEAParams): Finite-element declarations and named load-case parameters.
+            step_names (list[str]): Load-case names in the order solved within this worker task.
+            process_devices (dict[str, str]): Worker process names mapped to their assigned PyTorch
+                device strings. This worker's process name must be present.
+            U_guess (list[np.ndarray | None] | None): Optional per-case initial generalized
+                coordinate arrays in step_names order; a None entry uses the preceding solved state
+                or the assembly initial state.
+            path_result (str | None): Existing optimization result directory containing the log
+                subdirectory used for solver output.
+
+        Returns:
+            list[torchfea.solver.StaticResult]: Solutions in step_names order; each converged state
+                initializes the next case unless an explicit guess is supplied.
+        """
         import os
 
         os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
-        import sys
-
-        import torch
-
-        sys.path.append(os.getcwd())
-
-        import torchfea
-
         torchfea.enable_logging(
             log_file=os.path.join(path_result, "log", "torchfea.log")
         )
@@ -209,7 +234,6 @@ class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         torch.set_default_device(device_now)
         print(f"Process {current_process_name} uses device: {device_now}")
 
-        # torch.set_default_device(torch.device('cuda:0'))
         torch.set_default_dtype(torch.float64)
         torch.cuda.empty_cache()
         # construct the FEA

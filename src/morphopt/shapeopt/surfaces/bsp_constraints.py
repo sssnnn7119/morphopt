@@ -23,6 +23,12 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
     """
 
     def __init__(self, plane: str = "xz", offset: float = 0.0) -> None:
+        """Initialize BspMirrorConstraint and its configuration state.
+
+        Args:
+            plane (str): Coordinate plane used for mirror symmetry.
+            offset (float): Signed plane or surface offset in model length units.
+        """
         self.plane = plane.lower()
         if self.plane not in {"xz", "xy"}:
             raise NotImplementedError(
@@ -35,15 +41,34 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
         self.offset = float(offset)
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         from .bsp_surface import BspSurface
 
         if not isinstance(surface, BspSurface):
             raise TypeError("BSP symmetry constraints require a BSP surface.")
 
     def apply(self, surface: BspSurface) -> None:
+        """Apply the BspMirrorConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         surface.control_points = self._project(surface)
 
     def _project(self, surface: BspSurface) -> torch.Tensor:
+        """Project the live BSP control net onto the configured mirror relation.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            torch.Tensor: Projected Cartesian control points with the same shape as
+                surface.control_points.
+        """
         num_v, num_u = surface.model.size
         control_points = surface.control_points.reshape(num_v, num_u, 3)
 
@@ -71,6 +96,11 @@ class BspMirrorConstraint(BaseSurfaceConstraints["BspSurface"]):
         return projected.reshape_as(surface.control_points)
 
     def reinitialize(self, surface: BspSurface) -> None:
+        """Reinitialize the BspMirrorConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         self.apply(surface)
         surface.synchronize()
 
@@ -79,18 +109,34 @@ class BspZMirrorConstraint(BspMirrorConstraint):
     """Mirror about the initial axial mid-plane and preserve fixed end coordinates."""
 
     def __init__(self) -> None:
+        """Initialize BspZMirrorConstraint and its configuration state."""
         super().__init__(plane="xy")
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         super().validate_surface(surface)
         points = surface.model.control_points.reshape(*surface.model.size, 3)
         self.offset = float((points[0, :, 2].mean() + points[-1, :, 2].mean()) / 2)
 
     def apply(self, surface: BspSurface) -> None:
+        """Apply the BspZMirrorConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         change = self._project(surface) - surface.control_points
         surface.control_points = surface.control_points + surface.constrain_displacements(change)
 
     def reinitialize(self, surface: BspSurface) -> None:
+        """Reinitialize the BspZMirrorConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         self.validate_surface(surface)
         super().reinitialize(surface)
 
@@ -104,11 +150,24 @@ class BspZAntisymmetryConstraint(BspZMirrorConstraint):
     """
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         super().validate_surface(surface)
         points = surface.model.control_points.reshape(*surface.model.size, 3)
         self._center_y = float(points[0, :, 1].mean())
 
     def _project(self, surface: BspSurface) -> torch.Tensor:
+        """Project the control net onto the axial reflection and circumferential antisymmetry relation.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            torch.Tensor: Projected control points with the original flattened control-net layout.
+        """
         points = surface.control_points.reshape(*surface.model.size, 3)
         reflected = torch.roll(points.flip(dims=(0, 1)), shifts=-1, dims=1)
         projected = torch.stack((
@@ -129,12 +188,22 @@ class BspZPeriodicityConstraint(BaseSurfaceConstraints["BspSurface"]):
     """
 
     def __init__(self, periods: int = 2) -> None:
+        """Initialize BspZPeriodicityConstraint and its configuration state.
+
+        Args:
+            periods (int): Number of axial repetitions applied between the fixed end regions.
+        """
         if periods < 2 or int(periods) != periods:
             raise ValueError("periods must be an integer of at least 2.")
         self.periods = int(periods)
         self.period_length: float
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         from .bsp_surface import BspSurface
 
         if not isinstance(surface, BspSurface):
@@ -153,6 +222,11 @@ class BspZPeriodicityConstraint(BaseSurfaceConstraints["BspSurface"]):
         self.period_length = height * intervals / ((num_v - 1) * self.periods)
 
     def apply(self, surface: BspSurface) -> None:
+        """Apply the BspZPeriodicityConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         points = surface.control_points.reshape(*surface.model.size, 3)
         guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
         degree = surface.model.degree
@@ -166,6 +240,11 @@ class BspZPeriodicityConstraint(BaseSurfaceConstraints["BspSurface"]):
         ).reshape_as(surface.control_points)
 
     def reinitialize(self, surface: BspSurface) -> None:
+        """Reinitialize the BspZPeriodicityConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         self.validate_surface(surface)
         self.apply(surface)
         surface.synchronize()
@@ -181,11 +260,22 @@ class BspRotationalSymmetryConstraint(BaseSurfaceConstraints["BspSurface"]):
     """
 
     def __init__(self, order: int = 2) -> None:
+        """Initialize BspRotationalSymmetryConstraint and its configuration state.
+
+        Args:
+            order (int): Rotational repetition count, or interpolation order for the selected
+                operation.
+        """
         if order < 2 or int(order) != order:
             raise ValueError("order must be an integer of at least 2.")
         self.order = int(order)
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         from .bsp_surface import BspSurface
 
         if not isinstance(surface, BspSurface):
@@ -197,6 +287,11 @@ class BspRotationalSymmetryConstraint(BaseSurfaceConstraints["BspSurface"]):
             )
 
     def apply(self, surface: BspSurface) -> None:
+        """Apply the BspRotationalSymmetryConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         num_v, num_u = surface.model.size
         points = surface.control_points.reshape(num_v, num_u, 3)
         sector = points[:, :num_u // self.order]
@@ -214,6 +309,11 @@ class BspRotationalSymmetryConstraint(BaseSurfaceConstraints["BspSurface"]):
         )
 
     def reinitialize(self, surface: BspSurface) -> None:
+        """Reinitialize the BspRotationalSymmetryConstraint state.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         self.validate_surface(surface)
         self.apply(surface)
         surface.synchronize()
@@ -223,6 +323,11 @@ class BspSurfaceRelationConstraint(SurfaceRelationConstraint["BspSurface"]):
     """Copy a BSP basis and transformed control points to another BSP surface."""
 
     def validate_surface(self, surface: BspSurface) -> None:
+        """Validate surface.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         super().validate_surface(surface)
         from .bsp_surface import BspSurface
 
@@ -230,9 +335,15 @@ class BspSurfaceRelationConstraint(SurfaceRelationConstraint["BspSurface"]):
             raise TypeError("BSP surface relations require BSP surfaces.")
 
     def _copy_surface_data(self, surface: BspSurface) -> None:
+        """Copy surface data.
+
+        Args:
+            surface (BspSurface): Surface interface to register, evaluate, or constrain.
+        """
         self.related.model._basis = surface.model._basis
         self.related.model._size = surface.model._size
         self.related.model._degree = surface.model._degree
 
     def _reinitialize_related(self) -> None:
+        """Reinitialize related."""
         self.related.initialize()

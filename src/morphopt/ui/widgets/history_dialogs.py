@@ -22,6 +22,13 @@ class HistoryCapacityDialog(QDialog):
     """Keep the current history until the user chooses clear or expand."""
 
     def __init__(self, count: int, limit: int, parent: QWidget | None = None) -> None:
+        """Initialize HistoryCapacityDialog and its configuration state.
+
+        Args:
+            count (int): Number of repeated objects or records requested.
+            limit (int): Upper bound or constraint limit used by the selected operation.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.choice: Literal["clear", "expand"] | None = None
         self.setWindowTitle(tr("ui.history.capacity_title"))

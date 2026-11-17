@@ -32,9 +32,15 @@ from .collection_controls import ActionButton
 
 
 class SolverEditor(QWidget):
+    """Edit worker-device assignments and ordered groups of named load cases."""
     changed = Signal(object)
 
     def __init__(self, parent=None):
+        """Initialize SolverEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -109,6 +115,13 @@ class SolverEditor(QWidget):
 
     # ------------------------------------------------------------------ api
     def edit_node(self, node: SolverNode, problem: ProblemDefinition) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node (SolverNode): Definition node being inspected or edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._node = node
         self._problem = problem
         self._heading.setText(node_title(problem, node))
@@ -123,6 +136,12 @@ class SolverEditor(QWidget):
             self._loading = False
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         if context.problem.solver is not None:
             self.edit_node(context.problem.solver, context.problem)
 

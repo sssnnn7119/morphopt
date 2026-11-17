@@ -38,6 +38,14 @@ class HelperCodeEditor(QWidget):
         *,
         embedded: bool = False,
     ):
+        """Initialize HelperCodeEditor and its configuration state.
+
+        Args:
+            actions (DefinitionActions): Definition action dispatcher used to commit model changes.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+            embedded (bool): Use the embedded asset contents rather than reading an external file
+                when True.
+        """
         super().__init__(parent)
         self.actions = actions
         self.embedded = embedded
@@ -91,6 +99,7 @@ class HelperCodeEditor(QWidget):
         self.apply_language()
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.hint.setText(
             tr(
                 "ui.workbench.use_the_free_code_block_for_module_code_variables_have_a_name_and_python"
@@ -117,6 +126,13 @@ class HelperCodeEditor(QWidget):
         self.parameters.setPlaceholderText(tr("ui.workbench.parameters_e_g_x_scale_1"))
 
     def edit_node(self, node: Node | None, problem: ProblemDefinition) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node (Node | None): Definition node being inspected or edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         binding_changed = (
             self.session is None
             or self.session.node is not node
@@ -187,10 +203,25 @@ class HelperCodeEditor(QWidget):
         self._validate()
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         if self.session is not None:
             self.edit_node(self.session.node, context.problem)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            watched (QObject): Qt object receiving the filtered event.
+            event (QEvent): Qt event delivered to this widget or event filter.
+
+        Returns:
+            bool: Handle relevant input events before the receiving Qt object processes them.
+        """
         if (
             event.type() == QEvent.Type.FocusIn
             and self.session is not None

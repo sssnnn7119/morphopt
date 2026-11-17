@@ -11,7 +11,25 @@ def workspace_integral_body(
     tangents: list[list[int]],
     orientations: list[float],
 ) -> str:
-    """Render a function body; the emitted script performs the integral itself."""
+    """Render a function body; the emitted script performs the integral itself.
+
+    Args:
+        reference_point_name (str): Registered reference point whose displacement or rotation
+            defines the workspace output.
+        axes (list[int]): Workspace input/output axes included in the objective.
+        load_groups (list[list[tuple[str, int]]]): Independent input groups of existing load
+            parameters.
+        case_names (list[str]): Names of the registered load cases used by the workspace
+            quadrature.
+        weights (list[float]): Integration, basis, or rational weights aligned with the
+            corresponding points.
+        tangents (list[list[int]]): Workspace boundary tangent vectors aligned with quadrature
+            samples.
+        orientations (list[float]): Signed quadrature-boundary orientations in sample order.
+
+    Returns:
+        str: Render a function body; the emitted script performs the integral itself.
+    """
     planar = len(axes) == 2
     rotational = axes == [3, 4, 5]
     lines = [

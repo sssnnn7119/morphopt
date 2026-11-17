@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from ..application.devices import detect_devices
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
+from ..presentation.labels import container_title, node_title
 from ..refresh import RefreshContext
 from ..theme import theme_manager
 from .file_dialogs import choose_directory
@@ -33,6 +34,11 @@ class ControllerSettingsEditor(QWidget):
     deviceChanged = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize ControllerSettingsEditor and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._problem: ProblemDefinition | None = None
         self._device_block = False
@@ -87,7 +93,11 @@ class ControllerSettingsEditor(QWidget):
         self.apply_language()
 
     def apply_language(self) -> None:
-        self.group.setTitle(tr("ui.widgets.model_tree.container.problem"))
+        """Update visible labels using the active application locale."""
+        self.group.setTitle(
+            node_title(self._problem, self._problem.root)
+            if self._problem is not None else container_title("problem")
+        )
         self.name_label.setText(tr("ui.workbench.optimization_name"))
         self.path_label.setText(tr("ui.workbench.output_folder"))
         self.device_label.setText(tr("ui.workbench.device"))
@@ -105,7 +115,14 @@ class ControllerSettingsEditor(QWidget):
         self.browse_button.setToolTip(tr("ui.workbench.select_output_folder"))
 
     def edit_problem(self, problem: ProblemDefinition) -> None:
+        """Return edit problem.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._problem = problem
+        self.group.setTitle(node_title(problem, problem.root))
         if not self.name.hasFocus() and self.name.text() != problem.label:
             self.name.setText(problem.label)
         if not self.path.hasFocus() and self.path.text() != problem.result_folder:
@@ -121,9 +138,20 @@ class ControllerSettingsEditor(QWidget):
             self._device_block = False
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         self.edit_problem(context.problem)
 
     def set_name(self, value: str) -> None:
+        """Set name.
+
+        Args:
+            value (str): Value assigned to or evaluated for the selected field.
+        """
         self.name.setText(value)
 
     def _emit_device(self, text: str) -> None:

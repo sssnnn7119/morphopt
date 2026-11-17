@@ -208,12 +208,25 @@ def test_pending_term_calibrates_on_its_first_nonzero_response():
     strategy = AdaptiveShapeWeights()
     assert strategy(updater, updater.gradient()) == {"limit": 1.0}
     assert strategy.state == {}
+    assert strategy.history_data()["penalties"] == {"limit": {"violation": 0.0}}
     updater.z = 0.0
     initial = strategy(updater, updater.gradient())["limit"]
     assert initial == pytest.approx(2 / 3)
     updater.scale = 10000.0
     assert strategy(updater, updater.gradient())["limit"] == pytest.approx(0.9 * initial)
     assert strategy.state["limit"]["initial_weight"] == initial
+
+
+def test_history_records_violations_even_when_calibration_has_no_physical_gradient():
+    updater = AnalyticUpdater(scale=0.0)
+    updater.z = 2.0
+    strategy = AdaptiveShapeWeights()
+    assert strategy(updater, updater.gradient()) == {"limit": 1.0}
+    assert strategy.state == {}
+    assert strategy.history_data()["penalties"]["limit"]["violation"] == pytest.approx(1.0)
+    updater.constraints_funcs.clear()
+    assert strategy(updater, updater.gradient()) == {}
+    assert strategy.history_data()["penalties"] == {}
 
 
 def test_zero_physical_gradient_does_not_freeze_a_placeholder_as_calibration():

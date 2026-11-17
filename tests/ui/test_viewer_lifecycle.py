@@ -1,5 +1,7 @@
 """Qt preview lifecycle tests without creating a native OpenGL context."""
 
+from contextlib import contextmanager
+from types import SimpleNamespace
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -29,6 +31,11 @@ def test_viewer_defers_vtk_scene_render_until_the_widget_is_shown(monkeypatch):
             super().__init__(parent)
             self.plotter = Plotter(self)
 
+        @contextmanager
+        def scene_update(self, **kwargs):
+            yield
+            self.viewChanged.emit()
+
     class Renderer:
         section_position = None
 
@@ -44,7 +51,7 @@ def test_viewer_defers_vtk_scene_render_until_the_widget_is_shown(monkeypatch):
     class Geometry:
         def build(self, *_args):
             rendered.append("build")
-            return object()
+            return SimpleNamespace(bounds=(0, 1, 0, 1, 0, 1))
 
     class Loads:
         def build(self, *_args):
@@ -79,6 +86,7 @@ def test_result_viewport_keeps_latest_scene_until_visible_and_redraws_on_return(
             assert auto_update is False
             self.interactor = QWidget(parent)
             self.camera = pv.Camera()
+            self.renderer = SimpleNamespace(ComputeVisiblePropBounds=lambda: (-1, 1, -1, 1, -1, 1))
 
         def clear(self):
             events.append("clear")
@@ -87,6 +95,9 @@ def test_result_viewport_keeps_latest_scene_until_visible_and_redraws_on_return(
             events.append("camera")
 
         def reset_camera_clipping_range(self):
+            pass
+
+        def reset_camera(self, *, render):
             pass
 
         def render(self):

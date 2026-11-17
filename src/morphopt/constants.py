@@ -24,6 +24,14 @@ class _Constants:
             LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
+        class CAMERA:
+            FRAME_INTERVAL_MS = 16
+            MOVEMENT_SPEED_RATIO = 0.3
+            FAST_MULTIPLIER = 4.0
+            MOUSE_DEGREES_PER_PIXEL = 0.2
+            PITCH_LIMIT_DEGREES = 89.0
+            MAX_FRAME_SECONDS = 0.1
+
         class UPDATER_EDITOR:
             DEFAULT_MAX_STEP_ITERATIONS = 50
             DEFAULT_INTER_SURFACE_DISTANCE = 2.5

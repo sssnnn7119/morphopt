@@ -2,7 +2,11 @@
 
 
 def detect_devices() -> list[str]:
-    """Return a list of usable devices: CPU plus any torch cuda devices."""
+    """Return a list of usable devices: CPU plus any torch cuda devices.
+
+    Returns:
+        list[str]: A list of usable devices: CPU plus any torch cuda devices.
+    """
     devs = ["cpu"]
     try:
         import torch
