@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..constants import CONSTANT
-from .protocal import ProtocalSavable
+from .protocal import ProtocalHistory, ProtocalSavable
 
 if TYPE_CHECKING:
     from .updaters import BaseUpdater
@@ -54,7 +54,7 @@ class FixedStepLength(StepLengthStrategy):
         return [value.new_full((len(value),), maximum) for value in parameters]
 
 
-class ConstraintWeightStrategy(ProtocalSavable):
+class ConstraintWeightStrategy(ProtocalSavable, ProtocalHistory):
     """Choose fixed coefficients for one outer-iteration subproblem."""
 
     # Stateful strategies implement save/load; stateless ones inherit no-op hooks.

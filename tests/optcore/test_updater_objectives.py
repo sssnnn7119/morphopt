@@ -486,7 +486,13 @@ def test_adaptive_shape_weights_probe_restore_solve_and_restart(tmp_path: Path):
     zero = torch.zeros(updater.part.num_variables)
     penalty_before = updater.closure(zero, return_list=True)[1][0]
     state = {name: dict(record) for name, record in strategy.state.items()}
+    snapshot = updater.history_data()
+    assert snapshot["constraint_weights"] == updater.constraint_weights
+    assert snapshot["constraint_weight_state"]["tolerance"] == strategy.tolerance
+    assert snapshot["constraint_weight_state"]["penalties"]["MinRadius_0"]["initial_weight"] == state["MinRadius_0"]["initial_weight"]
+    assert strategy.state == state
     change = updater.update()
+    assert updater.history_data()["iterations"] == updater.iteration_total > 0
     assert torch.isfinite(change).all()
     assert updater.closure(change, return_list=True)[1][0] < penalty_before
     assert strategy.state == state
@@ -913,6 +919,9 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         observations.append(("commit",))
         geometry["value"] = 100.0
 
+    objective_provider = ObjectiveFunction()
+    objective_provider.sensitivity_analysis = lambda **kwargs: gradients
+    objective_provider.objective_function = objective
     controller = SimpleNamespace(
         history=SimpleNamespace(iteration=0), path_result="/tmp/test-objective", pools=None,
         params=SimpleNamespace(
@@ -923,14 +932,13 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         updater=SimpleNamespace(
             reinitialize=lambda **kwargs: None, update=update, update_variables=commit,
         ),
-        objfun=SimpleNamespace(
-            reinitialize=lambda **kwargs: None,
-            sensitivity_analysis=lambda **kwargs: gradients, objective_function=objective,
-        ),
+        objfun=objective_provider,
     )
     loss, *_ = Controller.step(controller)
     assert observations == [("objective", 3.0), ("update", 3.0), ("commit",)]
     assert loss.item() == 3.0
+    assert objective_provider.history_data()["objective"] == 3.0
+    assert observations == [("objective", 3.0), ("update", 3.0), ("commit",)]
 
 
 def test_pointwise_shape_policy_preserves_native_objective_and_resets_between_policies():

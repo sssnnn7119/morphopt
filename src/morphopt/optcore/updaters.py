@@ -13,7 +13,7 @@ from ..constants import CONSTANT
 from .modelparams import GeometryParams, MaterialsParams, Params
 from .modelparams.materials.base_material import BaseMaterial
 from .modelparams.parts.base_part import BasePart
-from .protocal import ProtocalInitializable, ProtocalSavable
+from .protocal import ProtocalHistory, ProtocalInitializable, ProtocalSavable
 from .strategies import (
     ConstantConstraintWeights,
     ConstraintWeightStrategy,
@@ -263,7 +263,7 @@ class QuadraticHistory(ProtocalSavable):
         self._build_hessian()
 
 
-class BaseUpdater(ProtocalInitializable, ProtocalSavable):
+class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     """Base class for all sub-updaters.
 
     A sub-updater updates **one interface of one params collection**.  Both come
@@ -531,6 +531,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
             if constraint_weight_strategy is None else constraint_weight_strategy
         )
         self.constraint_weights: dict[str, float] = {}
+        self.iteration_total: int = 0
         self.objective_value: float | None = None
         """Current high-fidelity objective, supplied before building a subproblem."""
 
@@ -538,6 +539,15 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
         """The optimization algorithm used to update the design variables.
         This should be set to an instance of a subclass of Optimizer.BaseOpt.
         """
+
+    def history_data(self) -> dict[str, object]:
+        """Describe this iteration's coefficients without reevaluating the loss."""
+        return {
+            "iterations": self.iteration_total,
+            "constraint_weight_strategy": type(self.constraint_weight_strategy).__name__,
+            "constraint_weights": self.constraint_weights,
+            "constraint_weight_state": self.constraint_weight_strategy.history_data(),
+        }
 
     def _prepare_step_lengths(
         self,
@@ -627,7 +637,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable):
         raise NotImplementedError("This method should be overridden by subclasses.")
 
 
-class Updaters(ProtocalInitializable, ProtocalSavable):
+class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     """
     The sub-updaters of the optimization problem, held in a named dict.
 
@@ -997,6 +1007,14 @@ class Updaters(ProtocalInitializable, ProtocalSavable):
         """Write the updated design variables back to their targets."""
         for name, updater in self.updaters.items():
             updater.update_variables(dx=self._var_updaters.get(name))
+
+    def history_data(self) -> dict[str, object]:
+        """Collect each updater under its registered name for the current row."""
+        return {
+            "optimizers": {
+                name: updater.history_data() for name, updater in self.updaters.items()
+            },
+        }
 
     def save(self, foldpath: str, iteration: int) -> None:
         """Save the state of every sub-updater."""

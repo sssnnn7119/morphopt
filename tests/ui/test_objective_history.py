@@ -230,6 +230,49 @@ def test_custom_history_fields_appear_without_registering_columns():
     page.close()
 
 
+def test_saved_optimizer_parameters_appear_as_named_columns_and_curves(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    data = History()
+    data.append(objective=4.)
+    for weight, violation in ((0.5, 0.3), (0.2, 0.1)):
+        data.append(objective=3., optimizers={
+            "body": {
+                "iterations": 12, "max_step_iter": 25, "max_step_length": 0.2,
+                "constraint_weight_strategy": "AdaptiveShapeWeights",
+                "constraint_weights": {"Distance_0": weight},
+                "constraint_weight_state": {
+                    "tolerance": 0.04,
+                    "penalties": {"Distance_0": {"initial_weight": 0.5, "violation": violation}},
+                },
+            },
+            "density": {"constraint_weights": {"Distance_0": 2.0}},
+        })
+    data.save(str(tmp_path))
+    restored = History()
+    restored.load(str(tmp_path))
+    page = MetricsPage()
+    page.update_from_history(restored, 3)
+    headers = [page.table.horizontalHeaderItem(index).text() for index in range(page.table.columnCount())]
+    weight_field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr("ui.history.weight"))
+    body_weight = tr("ui.history.optimizer_field", updater="body", field=weight_field)
+    density_weight = tr("ui.history.optimizer_field", updater="density", field=weight_field)
+    assert body_weight in headers and density_weight in headers
+    column = headers.index(body_weight)
+    assert [page.table.item(row, column).text() for row in range(3)] == ["", "0.5", "0.2"]
+    for key in ("inner_iterations", "max_step_iter", "max_step_length", "weight_strategy", "tolerance"):
+        assert tr("ui.history.optimizer_field", updater="body", field=tr(f"ui.history.{key}")) in headers
+    strategy_column = headers.index(tr("ui.history.optimizer_field", updater="body", field=tr("ui.history.weight_strategy")))
+    assert page.table.item(1, strategy_column).text() == tr("ui.strategies.adaptive_shape_weights")
+    assert restored.records[1]["optimizers"]["body"]["constraint_weight_strategy"] == "AdaptiveShapeWeights"
+    for key in ("initial_weight", "violation"):
+        field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr(f"ui.history.{key}"))
+        assert tr("ui.history.optimizer_field", updater="body", field=field) in headers
+    labels = [page.curve_selector.itemText(index) for index in range(page.curve_selector.count())]
+    page.curve_selector.setCurrentIndex(labels.index(body_weight))
+    np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [np.nan, 0.5, 0.2])
+    page.close()
+
+
 def test_custom_curve_labels_do_not_overwrite_other_series():
     app = QApplication.instance() or QApplication([])
     data = History()

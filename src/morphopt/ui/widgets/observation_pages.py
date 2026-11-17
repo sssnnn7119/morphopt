@@ -210,10 +210,12 @@ class MetricsPage(QWidget):
         self.table.clearContents()
         for row_index, values in enumerate(table.rows):
             for column_index, value in enumerate(values):
+                item = QTableWidgetItem("" if value is None else value)
+                item.setToolTip(item.text())
                 self.table.setItem(
                     row_index,
                     column_index,
-                    QTableWidgetItem("" if value is None else value),
+                    item,
                 )
         for column, title in enumerate(table.headers):
             item = self.table.horizontalHeaderItem(column)

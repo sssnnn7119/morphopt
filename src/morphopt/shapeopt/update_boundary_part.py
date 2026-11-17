@@ -134,6 +134,13 @@ class UpdaterBoundaryPart(BaseUpdater):
     def pathlog_required(self) -> list[str]:
         return ["geometryupdater"]
 
+    def history_data(self) -> dict[str, object]:
+        return {
+            **super().history_data(),
+            "max_step_iter": self.max_step_iter,
+            "max_step_length": self._max_step_length_max,
+        }
+
     def reinitialize(self, gradient: torch.Tensor, *args, **kwargs) -> None:
         """
         Initialize the parameters of the optimization process.

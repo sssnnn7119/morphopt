@@ -12,11 +12,24 @@ import torchfea
 from ..constants import CONSTANT
 
 __all__ = [
+    "ProtocalHistory",
     "ProtocalInitializable",
     "ProtocalSavable",
     "ProtocalUpdatable",
     "ProtocalVisualizable",
 ]
+
+
+class ProtocalHistory(ABC):
+    """Expose this object's iteration fields as an ordinary dictionary.
+
+    Providers own their field names and may return nested data. History copies
+    tensors and arrays when appending; this hook must not advance optimization.
+    Objects without history information contribute no fields.
+    """
+
+    def history_data(self) -> dict[str, object]:
+        return {}
 
 
 class ProtocalInitializable(ABC):

@@ -280,10 +280,10 @@ class Controller:
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            loss, t0, t1, t2, t3, t4 = self.step()
+            _, t0, t1, t2, t3, t4 = self.step()
 
             # Record the history of the optimization process
-            self.record_history(loss, t0, t1, t2, t3, t4)
+            self.record_history(t0, t1, t2, t3, t4)
 
             # Print the information
             self.print_info(t0, t1, t2, t3, t4)
@@ -364,7 +364,7 @@ class Controller:
 
         # Update the surfaces based on the FEA results
         logger.info(f"Updating surfaces for iteration {self.history.iteration}...")
-        loss = self.objfun.objective_function()
+        loss = self.objfun.evaluate()
         self.updater.update(gradients=gradients, objective_value=loss.detach().item())
         self.updater.update_variables()
 
@@ -373,44 +373,21 @@ class Controller:
         return loss, t0, t1, t2, t3, t4
 
     def record_history(
-        self, loss: torch.Tensor, t0: float, t1: float, t2: float, t3: float, t4: float
+        self, t0: float, t1: float, t2: float, t3: float, t4: float
     ) -> None:
-        """
-        Record the history of the optimization process.
-        """
-        metrics = self.objfun.get_metrics()
-        if isinstance(metrics, (list, tuple)):
-            metrics = {str(index): value for index, value in enumerate(metrics)}
-        metrics = {
-            name: value.item() if isinstance(value, torch.Tensor) else value
-            for name, value in metrics.items()
-        }
-        # A model may hold any number of Parts and Instances (shape/codesign
-        # geometry interfaces, SIMP assemblies imported from torchfea-ui), so
-        # statistics are read from the actual Assembly instead of assuming a
-        # name.
-        instances = self.objfun.fe.assembly._instances.values()
-        num_elements = sum(
-            element._elems.shape[0]
-            for instance in instances
-            for element in instance.elems.values()
-        )
-        num_nodes = sum(
-            instance.nodes.shape[0]
-            for instance in self.objfun.fe.assembly._instances.values()
-        )
+        """Merge component-owned fields with the controller's iteration timing."""
         self.history.append(
             iteration=self.history.iteration + 1,
-            objective=loss.item(),
-            metrics=metrics,
+            **self.objfun.history_data(),
             time={
                 "init": t1 - t0,
                 "fea": t2 - t1,
                 "sens": t3 - t2,
                 "update": t4 - t3,
             },
-            num_elements=num_elements,
-            num_nodes=num_nodes,
+            **self.params.history_data(),
+            **self.solver.history_data(),
+            **self.updater.history_data(),
         )
 
     def print_info(self, t0, t1, t2, t3, t4) -> None:

@@ -9,10 +9,10 @@ import morphopt
 
 from ..constants import CONSTANT
 from .modelparams import FEAParams, Params
-from .protocal import ProtocalInitializable, ProtocalSavable
+from .protocal import ProtocalHistory, ProtocalInitializable, ProtocalSavable
 
 
-class Solver(ProtocalInitializable, ProtocalSavable):
+class Solver(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     """Schedule ordered load-case groups across the FEA worker pool."""
 
     def __init__(

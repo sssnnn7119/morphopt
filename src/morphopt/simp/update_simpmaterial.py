@@ -111,6 +111,13 @@ class UpdaterSIMPMaterial(BaseUpdater):
     def pathlog_required(self) -> list[str]:
         return ["materialupdater"]
 
+    def history_data(self) -> dict[str, object]:
+        return {
+            **super().history_data(),
+            "max_step_iter": self.max_step_iter,
+            "max_step_length": self._max_step_length_max,
+        }
+
     @property
     def material(self) -> SIMP_BSPFieldMaterials:
         """The material interface this updater updates."""

@@ -9,6 +9,7 @@ from torchfea import Assembly
 
 from ...constants import CONSTANT
 from ..protocal import (
+    ProtocalHistory,
     ProtocalInitializable,
     ProtocalSavable,
     ProtocalVisualizable,
@@ -18,7 +19,7 @@ from .geometry import GeometryParams
 from .materialsparams import MaterialsParams
 
 
-class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
+class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable, ProtocalHistory):
     """
     Class to handle the parameters of the model.
     """
@@ -41,6 +42,11 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
         """
         Materials: An instance of the Materials class from the ModelParams module.
         """
+        self._mesh_statistics: dict[str, int] = {"num_elements": 0, "num_nodes": 0}
+
+    def history_data(self) -> dict[str, object]:
+        """Report the mesh generated for the current finite element evaluation."""
+        return dict(self._mesh_statistics)
 
     def pathlog_required(self) -> list[str]:
         """Declare this object's save directory before its child directories."""
@@ -87,6 +93,18 @@ class Params(ProtocalInitializable, ProtocalSavable, ProtocalVisualizable):
         fe = self.feamodel.create_fea(assembly=assembly)
         self.materials.set_materials(fe)
         fe.initialize()
+
+        # Count the initialized Assembly, including every Part, Instance and
+        # element family. Retain only scalars, not another reference to FEA.
+        instances = list(fe.assembly._instances.values())
+        self._mesh_statistics = {
+            "num_elements": sum(
+                element._elems.shape[0]
+                for instance in instances
+                for element in instance.elems.values()
+            ),
+            "num_nodes": sum(instance.nodes.shape[0] for instance in instances),
+        }
 
         return fe
 

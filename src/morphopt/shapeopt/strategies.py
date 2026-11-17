@@ -261,6 +261,19 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
                 weights[name] = max(weights.get(name, 0.0), weight)
         return weights
 
+    def history_data(self) -> dict[str, object]:
+        """Report the frozen tolerance and calibration used by this subproblem."""
+        return {
+            "tolerance": self.tolerance,
+            "penalties": {
+                name: {
+                    "initial_weight": record["initial_weight"],
+                    "violation": record["violation"],
+                }
+                for name, record in self.state.items()
+            },
+        }
+
     def save(self, foldpath: str, iteration: int) -> None:
         directory = Path(foldpath)
         directory.mkdir(parents=True, exist_ok=True)

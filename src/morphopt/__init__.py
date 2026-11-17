@@ -69,6 +69,7 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
 from . import codesign, shapeopt, simp
 from .codesign import OffsetBoundaryPart, UpdaterOffsetBoundaryPart
 from .opt_runner import debug_optimization, start_optimization
+from .optcore import strategies
 from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
@@ -76,8 +77,8 @@ from .optcore.modelparams import (
     BasePart,
     BoxPart,
     CADPart,
-    FixedPart,
     FEAParams,
+    FixedPart,
     GeometryParams,
     INPPart,
     MaterialsParams,
@@ -86,13 +87,13 @@ from .optcore.modelparams import (
 from .optcore.modelparams.materials import HomogeneousMaterial
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.protocal import (
+    ProtocalHistory,
     ProtocalInitializable,
     ProtocalSavable,
     ProtocalUpdatable,
     ProtocalVisualizable,
 )
 from .optcore.solver import Solver
-from .optcore import strategies
 from .optcore.updaters import Updaters
 from .shapeopt import (
     BaseSurfaceConstraints,
@@ -133,6 +134,7 @@ __all__ = [
     "ObjectiveFunction",
     "OffsetBoundaryPart",
     "Params",
+    "ProtocalHistory",
     "ProtocalInitializable",
     "ProtocalSavable",
     "ProtocalUpdatable",
