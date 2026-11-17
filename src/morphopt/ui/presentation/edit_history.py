@@ -5,7 +5,15 @@ from ..i18n import tr
 
 
 def edit_description(snapshot: EditSnapshot) -> str:
-    """Format an edit's action and target in the active UI language."""
+    """Format an edit's action and target in the active UI language.
+
+    Args:
+        snapshot (EditSnapshot): Immutable state captured for a history operation or result
+            export.
+
+    Returns:
+        str: Format an edit's action and target in the active UI language.
+    """
     return tr(
         f"ui.history.operation_{snapshot.operation}",
         target=snapshot.description,

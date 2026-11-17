@@ -20,15 +20,25 @@ class BaseParams(
     """
 
     def __init__(self, **kwargs):
-        """
-        Initialize the parameters with the given keyword arguments.
+        """Initialize the parameters with the given keyword arguments.
+
+        Args:
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
         super().__init__()
         self.interfaces: dict[str, object] = {}
         """Interfaces owned by this parameter collection."""
 
     def add_interface(self, interface: object, name: str | None = None) -> str:
-        """Register one named interface and return its final name."""
+        """Register one named interface and return its final name.
+
+        Args:
+            interface (object): Kernel model interface being registered or resolved.
+            name (str | None): Name identifying the item in its owning collection.
+
+        Returns:
+            str: Register one named interface and return its final name.
+        """
         if name is None:
             prefix = type(interface).__name__
             index = 0
@@ -49,18 +59,26 @@ class BaseParams(
 
     @property
     def num_interfaces(self) -> int:
-        """Number of registered interfaces."""
+        """Number of registered interfaces.
+
+        Returns:
+            int: Number of registered interfaces.
+        """
         return len(self.interfaces)
 
     def __repr__(self):
-        """
-        Return a string representation of the parameters.
+        """Return a string representation of the parameters.
+
+        Returns:
+            str: Representation listing the registered model interfaces.
         """
         return f"{self.__class__.__name__}({self.__dict__})"
 
     def __str__(self):
-        """
-        Return a string representation of the parameters.
+        """Return a string representation of the parameters.
+
+        Returns:
+            str: Human-readable representation of the parameter collection.
         """
         return self.__repr__()
 
@@ -68,32 +86,49 @@ class BaseParams(
         """Declare the interfaces owned by this parameter collection."""
 
     def initialize_interfaces(self, *args: object, **kwargs: object) -> None:
-        """Declare and initialize interfaces independently of analysis tasks."""
+        """Declare and initialize interfaces independently of analysis tasks.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         if not self.interfaces:
             self.define_interface()
         for interface in self.interfaces.values():
             interface.initialize(*args, **kwargs)
 
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Initialize every registered interface."""
+        """Initialize every registered interface.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         self.initialize_interfaces(*args, **kwargs)
 
     def reinitialize(self, iteration: int, *args, **kwargs) -> None:
-        """Re-initialize every registered interface."""
+        """Re-initialize every registered interface.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         for interface in self.interfaces.values():
             interface.reinitialize(iteration, *args, **kwargs)
 
     def plot(
         self, plotter: pv.Plotter = None, meshes: list[pv.DataSet] = None
     ) -> pv.Plotter:
-        """
-        Plot the parameters.
+        """Plot the parameters.
 
         This method should be implemented in subclasses to plot specific parameters.
 
         Args:
-            plotter (pv.Plotter, optional): An optional PyVista Plotter object to use for plotting. If None, a new Plotter will be created. Defaults to None.
-            meshes (list[pv.DataSet], optional): An optional list of PyVista DataSet objects to plot. Defaults to None.
+            plotter (pv.Plotter): An optional PyVista Plotter object to use for plotting. If None, a
+                new Plotter will be created. Defaults to None.
+            meshes (list[pv.DataSet]): An optional list of PyVista DataSet objects to plot. Defaults
+                to None.
 
         Returns:
             pv.Plotter: The PyVista Plotter object used for plotting.
@@ -107,14 +142,22 @@ class BaseParams(
         return plotter
 
     def get_meshes(self):
-        """Return the meshes contributed by every registered interface."""
+        """Return the meshes contributed by every registered interface.
+
+        Returns:
+            list[pv.DataSet]: Visualization meshes collected from the registered interfaces.
+        """
         meshes: list[pv.DataSet] = []
         for interface in self.interfaces.values():
             meshes.extend(interface.get_meshes())
         return meshes
 
     def design_interfaces(self) -> list[ProtocalUpdatable]:
-        """Return interfaces that carry updateable design variables."""
+        """Return interfaces that carry updateable design variables.
+
+        Returns:
+            list[ProtocalUpdatable]: Interfaces that carry updateable design variables.
+        """
         return [
             interface
             for interface in self.interfaces.values()
@@ -124,7 +167,15 @@ class BaseParams(
     def obtain_design_sensitivity_vars(
         self, assembly: torchfea.Assembly
     ) -> torch.Tensor:
-        """Concatenate the design sensitivity variables of every interface."""
+        """Concatenate the design sensitivity variables of every interface.
+
+        Args:
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+
+        Returns:
+            torch.Tensor: Concatenate the design sensitivity variables of every interface.
+        """
         values = [
             interface.obtain_design_sensitivity_vars(assembly).flatten()
             for interface in self.design_interfaces()
@@ -133,7 +184,14 @@ class BaseParams(
         return torch.cat(values) if values else torch.zeros(0)
 
     def interface(self, name: str) -> object:
-        """Return one registered interface by name."""
+        """Return one registered interface by name.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            object: One registered interface by name.
+        """
         try:
             return self.interfaces[str(name)]
         except KeyError:
@@ -151,19 +209,36 @@ class BaseParams(
         """
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save the state of every registered interface."""
+        """Save the state of every registered interface.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         for interface in self.interfaces.values():
             interface.save(foldpath=foldpath, iteration=iteration)
 
     def load(self, foldpath: str, iteration: int) -> None:
-        """Load the state of every registered interface."""
+        """Load the state of every registered interface.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         for interface in self.interfaces.values():
             interface.load(foldpath=foldpath, iteration=iteration)
 
     def modify_assembly(
         self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly
     ) -> None:
-        """Dispatch design sensitivity variables to every updateable interface."""
+        """Dispatch design sensitivity variables to every updateable interface.
+
+        Args:
+            design_sensitivity_vars (torch.Tensor): Differentiable design-variable tensor used to
+                modify the assembly.
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+        """
         values = torch.as_tensor(design_sensitivity_vars).flatten()
         offset = 0
         for interface in self.design_interfaces():

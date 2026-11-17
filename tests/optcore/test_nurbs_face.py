@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from torchfea import cad
 
 from morphopt.shapeopt.boundary_part import BoundaryPart
 from morphopt.shapeopt.surfaces.brep_surface import BREPSurface
@@ -151,6 +152,7 @@ def test_final_mesh_nodes_bind_to_trimmed_nurbs_and_have_gradients(
 @pytest.mark.parametrize("order", [1, 2])
 def test_brep_poles_write_step_and_remesh_next_iteration(
     kind: str, order: int, step_factory: Callable[[str], Path], tmp_path: Path,
+    monkeypatch,
 ) -> None:
     brep = BREPSurface(step_factory(kind), control_point_spacing=0.7)
     if kind == "cylinder":
@@ -203,8 +205,14 @@ def test_brep_poles_write_step_and_remesh_next_iteration(
     # The exported support and the live differentiable map use the same poles.
     np.testing.assert_allclose(restored.evaluate_face(name, uv),
                                model.map(torch.from_numpy(uv)).detach().numpy(), atol=1e-7)
-    if kind == "box" and order == 1:
+    with monkeypatch.context() as context:
+        def unexpected_tessellation(*args, **kwargs):
+            pytest.fail("Bound design previews must reuse the existing surface mesh")
+
+        context.setattr(cad, "preview_brep", unexpected_tessellation)
         preview = brep.get_mesh()
+    assert set(preview.cell_data["face_index"]) == {int(name[5:]) for name in brep.faces}
+    if kind == "box" and order == 1:
         assert preview.points[:, 2].max() > 3
     next_mesh = body.build_part(str(tmp_path))
     assert len(next_mesh.nodes) > 0

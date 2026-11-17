@@ -1,5 +1,6 @@
 import os
 os.environ["MPLBACKEND"] = "Agg"
+import math
 import morphopt
 import torchfea
 from typing import Any
@@ -129,7 +130,7 @@ class ThisController(morphopt.Controller):
 
         def __init__(self, params: Any) -> None:
 
-            super().__init__(params=params, num_process=1, process_devices=['cpu'])
+            super().__init__(params=params, num_process=1, process_devices=['cuda:0'])
 
     class Updater(morphopt.Updaters):
 
@@ -137,7 +138,7 @@ class ThisController(morphopt.Controller):
             self.add_geometry_updater(self.UpdaterBoundaryPart(), name='part1')
 
         def __init__(self, params: Any) -> None:
-            super().__init__(params=params, device='cpu')
+            super().__init__(params=params, device=None)
 
         class UpdaterBoundaryPart(morphopt.UpdaterBoundaryPart):
 
@@ -149,18 +150,18 @@ class ThisController(morphopt.Controller):
                     constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
                         initial_tolerance=0.05,
                         final_tolerance=0.0,
-                        objective_tolerance=0.01,
-                        tightening_increment=0.001,
-                        penalty_growth_limit=2.0,
+                        tightening_increment=0.0002,
+                        violation_tolerance=0.1,
+                        weight_change_limit=10.0,
                     ),
                 )
 
             def define_objective(self) -> None:
                 self.add_objective_function(self.objectivefuncs.QuadraticShapeDerivative(memory_size=10))
-                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=1.0))
+                self.add_constraints(self.objectivefuncs.Fairness(max_curvature=2.0))
                 self.add_constraints(self.objectivefuncs.Distance(min_distance=[[2.5, 2.5], [2.5, 2.5]]))
                 self.add_constraints(self.objectivefuncs.boundarys.Cylinder(radius=10.0, height=80.0, bottom=0.0))
 
 
 if __name__ == "__main__":
-    morphopt.start_optimization(device='cpu', restart_per_iteration=20)
+    morphopt.start_optimization(device='cuda:0', restart_per_iteration=20)

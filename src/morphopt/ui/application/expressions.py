@@ -8,12 +8,26 @@ from ..model.problem import ProblemDefinition
 
 
 class DefinitionValues:
+    """Evaluate parameter expressions against the auxiliary definitions without creating UI
+    widgets.
+    """
     def __init__(self, problem: ProblemDefinition | None):
+        """Initialize DefinitionValues and its configuration state.
+
+        Args:
+            problem (ProblemDefinition | None): Editable problem definition shared by the UI
+                application services.
+        """
         self.problem = problem
         self._namespace: dict[str, object] | None = None
 
     @property
     def namespace(self) -> dict[str, object]:
+        """Return namespace.
+
+        Returns:
+            dict[str, object]: Namespace.
+        """
         if self._namespace is None:
             import numpy as np
             import torch
@@ -44,6 +58,11 @@ class DefinitionValues:
         return self._namespace
 
     def resolve(self, value):
+        """Resolve the DefinitionValues state.
+
+        Args:
+            value: Value assigned to or evaluated for the selected field.
+        """
         if isinstance(value, str):
             return eval(compile(value, "<definition value>", "eval"), self.namespace)
         if isinstance(value, (list, tuple)):

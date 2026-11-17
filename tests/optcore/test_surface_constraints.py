@@ -2,10 +2,12 @@
 
 import math
 
+import numpy as np
 import pytest
 import torch
 
 from morphopt import BoundaryPart, UpdaterBoundaryPart
+from morphopt.constants import CONSTANT
 from morphopt.shapeopt import strategies
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
 from morphopt.shapeopt.surfaces.bsp_surface import BspSurface
@@ -26,10 +28,19 @@ def cylinder(factory, radius=2.0):
     )
 
 
-def test_bsp_step_export_contains_one_meshable_closed_solid(tmp_path):
+@pytest.mark.parametrize("method", [None, "mirror_z", "antisymmetry_z", "periodic_z"])
+def test_bsp_step_export_contains_one_meshable_closed_solid(tmp_path, method):
     import gmsh
 
     surface = cylinder(BspSurface)
+    if method:
+        surface = BspSurface.initialize_cylinder(
+            r0=2, length=4, seed_size=1, num_V_ratio=2 if method == "periodic_z" else 1,
+        )
+        surface.add_constraint(getattr(surface, method)())
+        delta = 0.01 * torch.sin(torch.arange(surface.control_points.numel()))
+        surface.update_variables(delta.reshape_as(surface.control_points))
+        surface.apply_constraints()
     surface.initialize()
     output = tmp_path / surface.output_data(tmp_path, "boundary")
     assert output.is_file()
@@ -156,6 +167,35 @@ def test_mirror_can_run_inside_torch_func(factory):
     torch.testing.assert_close(gradient[:, 1:], torch.zeros_like(gradient[:, 1:]))
 
 
+@pytest.mark.parametrize("plane,axis", [("yz", 0), ("xz", 1), ("xy", 2)])
+@pytest.mark.parametrize("offset", [0.0, 1.25])
+def test_cpgeo_mirror_reinitializes_coordinates_and_topology(plane, axis, offset):
+    center = [0.0, 0.0, 0.0]
+    center[axis] = offset
+    surface = CPGEOSurface.initialize_Sphere(
+        r0=2.0, seed_size=0.5, init_location=center,
+    )
+    surface.add_constraint(surface.mirror(plane, offset))
+    surface.initialize()
+    surface.reinitialize_constraints()
+    surface.apply_constraints()
+
+    vertices = surface.model.control_points
+    faces = surface.model._cp_faces
+    assert np.issubdtype(vertices.dtype, np.floating)
+    assert np.issubdtype(faces.dtype, np.integer)
+    assert faces.min() >= 0 and faces.max() < len(vertices)
+    assert np.max(np.abs(vertices - center)) <= 2.0 + 1e-10
+    edges = np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
+    assert np.all(np.unique(edges, axis=0, return_counts=True)[1] == 2)
+
+    source, reflected = surface.control_points.chunk(2)
+    expected = source.clone()
+    expected[:, axis] = 2 * offset - expected[:, axis]
+    torch.testing.assert_close(reflected, expected)
+    assert torch.isfinite(surface.get_r()).all()
+
+
 def test_cpgeo_rotation_can_run_inside_torch_func():
     surface = cylinder(CPGEOSurface)
     rotation = surface.rotate(axis="z", order=3)
@@ -172,11 +212,254 @@ def test_cpgeo_rotation_can_run_inside_torch_func():
     torch.testing.assert_close(gradient[count:], torch.zeros_like(gradient[count:]))
 
 
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+def test_bsp_rotation_repeats_each_row_clockwise(order):
+    surface = BspSurface.initialize_cylinder(
+        r0=2.0, length=4.0, seed_size=1.0, num_U_ratio=order,
+    )
+    points = surface.control_points.clone()
+    points += torch.linspace(-0.1, 0.2, points.numel()).reshape_as(points)
+    surface.control_points = points
+    surface.add_constraint(surface.rotate(order=order))
+    surface.apply_constraints()
+    num_v, num_u = surface.model.size
+    result = surface.control_points.reshape(num_v, num_u, 3)
+    count = num_u // order
+    sector = points.reshape(num_v, num_u, 3)[:, :count]
+    torch.testing.assert_close(result[:, :count], sector)
+    for step in range(order):
+        angle = -math.tau * step / order
+        rotation = points.new_tensor([
+            [math.cos(angle), -math.sin(angle), 0],
+            [math.sin(angle), math.cos(angle), 0],
+            [0, 0, 1],
+        ])
+        torch.testing.assert_close(
+            result[:, step * count:(step + 1) * count], sector @ rotation.T,
+        )
+    surface.apply_constraints()
+    torch.testing.assert_close(surface.control_points.reshape_as(result), result)
+    uv = points.new_tensor([[0.2, 0.14], [0.5, 0.37], [0.8, 0.62]])
+    shifted_uv = uv.clone()
+    shifted_uv[:, 1] = (shifted_uv[:, 1] + 1 / order) % 1
+    angle = -math.tau / order
+    rotation = points.new_tensor([
+        [math.cos(angle), -math.sin(angle), 0],
+        [math.sin(angle), math.cos(angle), 0],
+        [0, 0, 1],
+    ])
+    torch.testing.assert_close(
+        surface.map(shifted_uv), surface.map(uv) @ rotation.T,
+        atol=1e-8, rtol=1e-7,
+    )
+
+
+def test_bsp_rotation_matches_ui_custom_rotation_and_mirror():
+    surface = cylinder(BspSurface)
+    points = surface.control_points.clone()
+    points += torch.linspace(-0.1, 0.2, points.numel()).reshape_as(points)
+    num_v, num_u = surface.model.size
+    sector = points.reshape(num_v, num_u, 3)[:, :num_u // 3]
+    copies = []
+    for angle in (0, -2 * math.pi / 3, -4 * math.pi / 3):
+        cosine, sine = math.cos(angle), math.sin(angle)
+        copies.append(torch.stack((
+            cosine * sector[..., 0] - sine * sector[..., 1],
+            sine * sector[..., 0] + cosine * sector[..., 1],
+            sector[..., 2],
+        ), dim=-1))
+    expected = torch.cat(copies, dim=1)
+    reflected = expected.flip(dims=[1])
+    expected = torch.stack((
+        (expected[..., 0] + reflected[..., 0]) / 2,
+        (expected[..., 1] - reflected[..., 1]) / 2,
+        (expected[..., 2] + reflected[..., 2]) / 2,
+    ), dim=-1)
+
+    surface.control_points = points
+    surface.add_constraint(surface.rotate(order=3))
+    surface.add_constraint(surface.mirror("xz"))
+    surface.apply_constraints()
+    torch.testing.assert_close(surface.control_points.reshape_as(expected), expected)
+    surface.reinitialize_constraints()
+    torch.testing.assert_close(
+        torch.as_tensor(surface.model.control_points), surface.control_points,
+    )
+    torch.testing.assert_close(surface.control_points.reshape_as(expected), expected)
+
+
+def test_bsp_rotation_preserves_gradients_inside_torch_func():
+    surface = cylinder(BspSurface)
+    rotation = surface.rotate(order=3)
+    points = surface.control_points.clone()
+    weights = torch.linspace(-1, 2, points.numel()).reshape_as(points)
+
+    def loss(values):
+        surface.control_points = values
+        rotation.apply(surface)
+        return (surface.control_points * weights).sum()
+
+    gradient = torch.func.grad(loss)(points)
+    direction = torch.linspace(-0.3, 0.7, points.numel()).reshape_as(points)
+    difference = (loss(points + 1e-5 * direction) - loss(points - 1e-5 * direction)) / 2e-5
+    torch.testing.assert_close((gradient * direction).sum(), difference)
+    num_v, num_u = surface.model.size
+    gradient = gradient.reshape(num_v, num_u, 3)
+    torch.testing.assert_close(
+        gradient[:, num_u // 3:], torch.zeros_like(gradient[:, num_u // 3:]),
+    )
+    assert gradient[:, :num_u // 3].abs().sum() > 0
+
+
+@pytest.mark.parametrize("order", [0, 1, -3, 2.5])
+def test_bsp_rotation_rejects_invalid_order(order):
+    with pytest.raises(ValueError, match="integer of at least 2"):
+        BspSurface.rotate(order=order)
+
+
+def test_bsp_rotation_rejects_unequal_sectors():
+    surface = cylinder(BspSurface)
+    with pytest.raises(ValueError, match="num_U_ratio=order"):
+        surface.add_constraint(surface.rotate(order=5))
+
+
+@pytest.mark.parametrize("method", ["mirror_z", "antisymmetry_z"])
+def test_bsp_axial_symmetry_preserves_end_constraints_and_shifted_cylinder(method):
+    surface = BspSurface.initialize_cylinder(
+        r0=2, length=30, seed_size=1, init_location=[2, 3, 7],
+    )
+    surface.add_constraint(getattr(surface, method)())
+    initial = surface.control_points.clone()
+    surface.reinitialize_constraints()
+    torch.testing.assert_close(surface.control_points, initial)
+    delta = 0.05 * torch.sin(torch.arange(initial.numel())).reshape_as(initial)
+    surface.update_variables(delta)
+    before = surface.control_points.clone().reshape(*surface.model.size, 3)
+    surface.apply_constraints()
+    points = surface.control_points.reshape_as(before)
+    guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+    torch.testing.assert_close(points[[0, -1]], before[[0, -1]], atol=0, rtol=0)
+    torch.testing.assert_close(points[:guard, :, 2], before[:guard, :, 2], atol=0, rtol=0)
+    torch.testing.assert_close(points[-guard:, :, 2], before[-guard:, :, 2], atol=0, rtol=0)
+    if method == "mirror_z":
+        paired = points.flip((0,))
+        expected = torch.stack((points[..., 0], points[..., 1], 44 - points[..., 2]), dim=-1)
+    else:
+        paired = torch.roll(points.flip((0, 1)), -1, 1)
+        expected = torch.stack((points[..., 0], 6 - points[..., 1], 44 - points[..., 2]), dim=-1)
+    torch.testing.assert_close(paired, expected)
+    projected = surface.control_points.clone()
+    surface.apply_constraints()
+    torch.testing.assert_close(surface.control_points, projected)
+
+
+@pytest.mark.parametrize("periods", [2, 3, 5])
+@pytest.mark.parametrize("degree", [2, 3, 4])
+def test_bsp_axial_periods_preserve_ends_and_surface_derivatives(periods, degree):
+    surface = BspSurface.initialize_cylinder(
+        r0=2, length=40, seed_size=1, degree=degree, num_V_ratio=periods,
+        init_location=[2, 3, 7],
+    )
+    constraint = surface.periodic_z(periods=periods)
+    surface.add_constraint(constraint)
+    initial = surface.control_points.clone()
+    delta = 0.02 * torch.sin(torch.arange(initial.numel())).reshape_as(initial)
+    surface.update_variables(delta)
+    before = surface.control_points.clone().reshape(*surface.model.size, 3)
+    surface.apply_constraints()
+    points = surface.control_points.reshape_as(before)
+    guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+    torch.testing.assert_close(points[:guard], before[:guard], atol=0, rtol=0)
+    torch.testing.assert_close(points[-guard:], before[-guard:], atol=0, rtol=0)
+    num_v, _num_u = surface.model.size
+    count = (num_v - 2 * guard - degree) // periods
+    shift = points.new_tensor([0, 0, constraint.period_length])
+    block = points[guard:guard + count]
+    for step in range(periods):
+        start = guard + step * count
+        torch.testing.assert_close(points[start:start + count], block + step * shift)
+    torch.testing.assert_close(points[-guard - degree:-guard], block[:degree] + periods * shift)
+
+    # The wrapping rows give exactly `periods` full spans in the interior.
+    parameter_step = count / (num_v - degree)
+    lower = guard / (num_v - degree)
+    # Avoid knots: quadratic splines have a discontinuous second derivative.
+    uv = points.new_tensor([[lower + 0.237 * parameter_step, 0.17],
+                            [lower + 0.673 * parameter_step, 0.63]])
+
+    def evaluate(parameters, derivative):
+        weights, indices = surface.model.get_weights(parameters.numpy(), derivative=derivative)
+        weights = torch.as_tensor(weights).reshape(len(parameters), -1, 1)
+        indices = torch.as_tensor(indices).reshape(len(parameters), -1)
+        return (weights * surface.control_points[indices]).sum(dim=1)
+
+    for step in range(1, periods):
+        shifted_uv = uv + points.new_tensor([step * parameter_step, 0])
+        torch.testing.assert_close(
+            surface.map(shifted_uv), surface.map(uv) + step * shift,
+            atol=1e-7, rtol=1e-7,
+        )
+        for derivative in ([1, 0], [2, 0], [0, 1]):
+            torch.testing.assert_close(
+                evaluate(shifted_uv, derivative), evaluate(uv, derivative),
+                atol=1e-6, rtol=1e-6,
+            )
+    projected = surface.control_points.clone()
+    period_length = constraint.period_length
+    surface.reinitialize_constraints()
+    assert constraint.period_length == period_length
+    torch.testing.assert_close(surface.control_points, projected)
+
+
+@pytest.mark.parametrize("method", ["mirror_z", "antisymmetry_z", "periodic_z"])
+def test_bsp_axial_constraints_are_differentiable_with_fixed_ends(method):
+    surface = BspSurface.initialize_cylinder(
+        r0=2, length=30, seed_size=1, num_V_ratio=2 if method == "periodic_z" else 1,
+    )
+    surface.add_constraint(getattr(surface, method)())
+    initial = surface.control_points.clone()
+    weights = torch.linspace(-1, 2, initial.numel()).reshape_as(initial)
+
+    def loss(change):
+        surface.control_points = initial
+        surface.update_variables(change)
+        surface.apply_constraints()
+        return (surface.control_points * weights).sum()
+
+    change = torch.zeros_like(initial)
+    gradient = torch.func.grad(loss)(change)
+    direction = torch.linspace(-0.3, 0.7, initial.numel()).reshape_as(initial)
+    difference = (loss(change + 1e-5 * direction) - loss(change - 1e-5 * direction)) / 2e-5
+    torch.testing.assert_close((gradient * direction).sum(), difference)
+    gradient = gradient.reshape(*surface.model.size, 3)
+    guard = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
+    torch.testing.assert_close(gradient[[0, -1]], torch.zeros_like(gradient[[0, -1]]))
+    torch.testing.assert_close(gradient[:guard, :, 2], torch.zeros_like(gradient[:guard, :, 2]))
+    torch.testing.assert_close(gradient[-guard:, :, 2], torch.zeros_like(gradient[-guard:, :, 2]))
+    assert gradient.abs().sum() > 0
+
+
+@pytest.mark.parametrize("periods", [0, 1, -2, 2.5])
+def test_bsp_axial_periods_reject_invalid_counts(periods):
+    with pytest.raises(ValueError, match="integer of at least 2"):
+        BspSurface.periodic_z(periods=periods)
+
+
+def test_bsp_axial_periods_require_reserved_control_rows():
+    surface = cylinder(BspSurface)
+    with pytest.raises(ValueError, match="num_V_ratio=periods"):
+        surface.add_constraint(surface.periodic_z(periods=2))
+
+
 @pytest.mark.parametrize("adaptive", [False, True])
-def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adaptive):
+@pytest.mark.parametrize("symmetry", ["mirror", "rotate", "mirror_z", "antisymmetry_z", "periodic_z"])
+def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adaptive, symmetry):
     part = BoundaryPart(part_name="body")
     source, target = cylinder(BspSurface, 2.0), cylinder(BspSurface, 0.5)
-    source.add_constraint(source.mirror("xz"))
+    if symmetry == "periodic_z":
+        source = BspSurface.initialize_cylinder(r0=2, length=4, seed_size=1, num_V_ratio=2)
+    kwargs = {"order": 3} if symmetry == "rotate" else {}
+    source.add_constraint(getattr(source, symmetry)(**kwargs))
     source.add_constraint(source.relate(target, pose=[0.0, 0.0, 0.0, 0.0, 0.0, math.pi / 2]))
     part.add_surface_interface(source)
     part.add_surface_interface(target)

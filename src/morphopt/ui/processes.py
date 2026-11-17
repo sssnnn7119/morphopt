@@ -12,7 +12,11 @@ if TYPE_CHECKING:
 
 
 def worker_environment() -> dict[str, str]:
-    """Match worker output to the UI's UTF-8 decoder on Windows and Linux."""
+    """Match worker output to the UI's UTF-8 decoder on Windows and Linux.
+
+    Returns:
+        dict[str, str]: Match worker output to the UI's UTF-8 decoder on Windows and Linux.
+    """
     environment = dict(os.environ)
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUNBUFFERED"] = "1"
@@ -21,7 +25,12 @@ def worker_environment() -> dict[str, str]:
 
 
 def start_worker(process: QProcess, request: str | Path) -> None:
-    """Launch the shared worker with UTF-8 output and merged diagnostic channels."""
+    """Launch the shared worker with UTF-8 output and merged diagnostic channels.
+
+    Args:
+        process (QProcess): Qt subprocess instance receiving worker configuration and signals.
+        request (str | Path): Serializable worker-operation request.
+    """
     from PySide6.QtCore import QProcess, QProcessEnvironment
 
     environment = QProcessEnvironment()

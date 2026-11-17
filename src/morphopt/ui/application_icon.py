@@ -12,7 +12,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _configure_windows_taskbar() -> bool:
-    """Give running windows a stable taskbar identity without installing launchers."""
+    """Give running windows a stable taskbar identity without installing launchers.
+
+    Returns:
+        bool: Give running windows a stable taskbar identity without installing launchers.
+    """
     if sys.platform != "win32":
         return False
 
@@ -33,7 +37,11 @@ def _configure_windows_taskbar() -> bool:
 
 
 def application_icon() -> QIcon:
-    """Let Qt render the same SVG at native icon sizes on every platform."""
+    """Let Qt render the same SVG at native icon sizes on every platform.
+
+    Returns:
+        QIcon: Let Qt render the same SVG at native icon sizes on every platform.
+    """
     return QIcon(str(ICON_PATH))
 
 
@@ -45,5 +53,9 @@ def prepare_application_identity() -> None:
 
 
 def configure_application_identity(app) -> None:
-    """Set the process-wide window icon after QApplication exists."""
+    """Set the process-wide window icon after QApplication exists.
+
+    Args:
+        app: Application whose widgets and preferences are updated.
+    """
     app.setWindowIcon(application_icon())

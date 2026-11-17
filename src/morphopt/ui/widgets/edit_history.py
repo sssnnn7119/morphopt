@@ -35,11 +35,23 @@ class _HistoryGraphList(QListWidget):
     """Flat history rows with a fixed-width Git-style graph gutter."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize _HistoryGraphList and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.graph_width = 0
         self._segments_by_row: dict[int, list[_GraphSegment]] = {}
 
     def set_graph(self, max_lane: int, edges: list[_GraphEdge]) -> None:
+        """Set graph.
+
+        Args:
+            max_lane (int): Largest branch-lane index used by the history graph.
+            edges (list[_GraphEdge]): Edge connectivity or graph relationships included in the
+                display.
+        """
         graph = theme_manager.palette.layout.history
         self.graph_width = (
             graph.graph_left_margin
@@ -71,6 +83,14 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         option: QStyleOptionViewItem,
         index: QModelIndex,
     ) -> None:
+        """Return paint.
+
+        Args:
+            painter (QPainter): Qt painter used to draw the current item.
+            option (QStyleOptionViewItem): Qt style option describing the item's current drawing
+                state and available rectangle.
+            index (QModelIndex): Zero-based position within the relevant collection.
+        """
         view_option = QStyleOptionViewItem(option)
         self.initStyleOption(view_option, index)
         view_option.font.setBold(bool(index.data(_CURRENT_ROLE)))
@@ -158,6 +178,16 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
         painter.restore()
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        """Return size hint.
+
+        Args:
+            option (QStyleOptionViewItem): Qt style option describing the item's current drawing
+                state and available rectangle.
+            index (QModelIndex): Zero-based position within the relevant collection.
+
+        Returns:
+            QSize: Size hint.
+        """
         size = super().sizeHint(option, index)
         size.setHeight(theme_manager.palette.layout.history.row_height)
         return size
@@ -174,11 +204,17 @@ class _HistoryGraphDelegate(QStyledItemDelegate):
 
 
 class EditHistoryPanel(QWidget):
+    """Display branched edit history and dispatch undo, redo, and snapshot selection."""
     jumpRequested = Signal(int)
     undoRequested = Signal()
     redoRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize EditHistoryPanel and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._version: tuple[int, int] | None = None
         self._items: dict[int, QListWidgetItem] = {}
@@ -211,16 +247,24 @@ class EditHistoryPanel(QWidget):
         self.apply_language()
 
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         self.title.setText(tr("ui.history.panel"))
         self.history_list.setToolTip(tr("ui.history.tree_hint"))
         self._version = None
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         current = self.history_list.currentItem()
         if current is not None:
             current.setForeground(QColor(theme_manager.palette.accent_hover))
 
     def set_history(self, history: EditHistory) -> None:
+        """Set history.
+
+        Args:
+            history (EditHistory): Iteration records supplying the table, curves, or result
+                selection.
+        """
         version = (id(history), history.revision)
         if self._version == version:
             return
@@ -307,7 +351,17 @@ class EditHistoryPanel(QWidget):
     def _layout_nodes(
         history: EditHistory, current_id: int
     ) -> tuple[list[tuple[int, int]], dict[int, int]]:
-        """Put the current path in lane zero and each side branch to its right."""
+        """Put the current path in lane zero and each side branch to its right.
+
+        Args:
+            history (EditHistory): Iteration records supplying the table, curves, or result
+                selection.
+            current_id (int): Stable identifier of the currently selected history entry.
+
+        Returns:
+            tuple[list[tuple[int, int]], dict[int, int]]: Put the current path in lane zero and each
+                side branch to its right.
+        """
         main_path: list[int] = []
         step_id = current_id
         while True:

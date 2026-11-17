@@ -10,7 +10,7 @@
 - [2 定义会话与文件入口](#section-定义会话与文件入口)
 - [3 编辑命令与参数查询](#section-编辑命令与参数查询)
 - [4 编辑历史与恢复](#section-编辑历史与恢复)
-- [5 Quickstart 与方案策略](#section-quickstart-与方案策略)
+- [5 Quickstart 与初始模型](#section-quickstart-与初始模型)
 - [6 代码生成边界](#section-代码生成边界)
 - [7 自定义类的选择与绑定](#custom-classes)
 - [8 CAD 转换与 STEP 导出](#cad)
@@ -32,7 +32,8 @@
 | [`application/expressions.py`](../../src/morphopt/ui/application/expressions.py)、[`part_sets.py`](../../src/morphopt/ui/application/part_sets.py) | 表达式上下文与 Part 集合查询 |
 | [`application/cad.py`](../../src/morphopt/ui/application/cad.py)、[`worker.py`](../../src/morphopt/ui/worker.py) | CAD 几何预览、STEP 导出与部件转换进程 |
 | [`application/updaters.py`](../../src/morphopt/ui/application/updaters.py) | 子优化器分节及有序条目编辑 |
-| [`application/quickstart.py`](../../src/morphopt/ui/application/quickstart.py)、[`schemes/`](../../src/morphopt/ui/schemes) | 起始问题构造与方案策略 |
+| [`application/quickstart.py`](../../src/morphopt/ui/application/quickstart.py) | 起始模型构造 |
+| [`codegen/snippets.py`](../../src/morphopt/ui/codegen/snippets.py) | 目标函数中的有限元数据提取模板 |
 | [`codegen/`](../../src/morphopt/ui/codegen) | Python 生成及自定义类投影 |
 | [`application/runs.py`](../../src/morphopt/ui/application/runs.py)、[`launcher.py`](../../src/morphopt/ui/launcher.py) | 任务来源、运行会话与进程基础设施 |
 
@@ -53,7 +54,7 @@
 | `record_edit()`、`restore_edit_step()` | 提交和恢复定义快照 |
 | `set_label/result_folder/device()` | 修改任务配置 |
 
-`ProblemLibrary` 是创建空白定义、选择方案、打开/保存 `.morph`、导出 Python 和保存运行伴随定义的文件入口。对话框由窗口提供路径，服务层负责文件内容。导入阶段的额外字段、缺失默认项和不支持条目由导入器统一汇总，窗口只负责显示警告；运行校验继续检查当前定义的完整性。
+`ProblemLibrary` 是创建空白定义与快速开始模型、打开/保存 `.morph`、导出 Python 和保存运行伴随定义的文件入口。对话框由窗口提供路径，服务层负责文件内容。导入阶段的额外字段、缺失默认项和不支持条目由导入器统一汇总，窗口只负责显示警告；运行校验继续检查当前定义的完整性。
 
 字段编辑、结构操作和恢复历史分别触发相应同步。刷新组件消费已同步的上下文，不各自重复调用生成与领域同步。
 
@@ -98,13 +99,13 @@
 
 新建、打开和 Quickstart 建立新起点；保存标记已保存内容，但保留历史分支。相机、语言和选择变化不进入文档历史。优化进程、外部文件及结果状态不随定义撤销回滚。
 
-<a id="section-quickstart-与方案策略"></a>
+<a id="section-quickstart-与初始模型"></a>
 
-## 5 Quickstart 与方案策略
+## 5 Quickstart 与初始模型
 
 `application/quickstart.py` 的类型化配置进行输入校验，生成几何、材料、载荷工况、加权目标与更新器。`ObjectiveDraft` 维护目标和压力通道草稿；`model/chamberlayout.py` 维护分层气腔排布。输出仍为普通 `ProblemDefinition`，设置可保存为辅助变量 `quickstart_settings`。
 
-`SchemeTemplate` 提供共享节点工厂、类型选项及目标代码片段，内置策略在 `schemes/base.py` 注册。新增策略是 Python 类注册，不以新增 `.morph` 文件注册方案。
+快速开始选项只决定初始模型中登记的对象。生成后，几何、材料、目标和更新器均由普通类型化节点表达；`ProblemDefinition` 不保留全局方案标识。添加菜单直接读取 `model/registry.py`，节点构造直接使用各节点类型的默认字段。有限元数据提取模板由 `codegen/snippets.py` 提供，与初始模型类型无关。
 
 几何工厂与网格生成由内核实现，Quickstart 组合现有 Part/曲面类型。工作空间目标的边界积分点与权重由 `utils/quadrature.py` 提供，应用层将压力通道映射为载荷工况和目标中的 Jacobian 列。
 

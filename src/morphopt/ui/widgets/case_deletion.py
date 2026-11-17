@@ -8,7 +8,15 @@ from ..i18n import tr
 
 
 def confirm_case_cleanup(parent: QWidget, cases: list[str]) -> bool | None:
-    """Return delete/keep, or None when the user cancels the whole operation."""
+    """Return delete/keep, or None when the user cancels the whole operation.
+
+    Args:
+        parent (QWidget): Parent Qt widget; None creates a top-level widget.
+        cases (list[str]): Named load cases in their registered or selected order.
+
+    Returns:
+        bool | None: Delete/keep, or None when the user cancels the whole operation.
+    """
     if not cases:
         return False
     dialog = QMessageBox(parent)

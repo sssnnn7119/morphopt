@@ -1,6 +1,6 @@
 [project]
 name = "morphopt"
-version = "4.0.8"
+version = "4.0.9"
 description = "A morphing optimization framework using PyTorch and torchfea."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,11 +19,11 @@ dependencies = [
     "imageio>=2.37.3",
     "fonttools>=4.0",
     "bspmap>=1.0.3",
-    "torchfea>=1.1.5",
+    "torchfea>=1.1.6",
     "trimesh>=4.11.5",
     "networkx>=3.6.1",
     "scipy>=1.17.1",
-    "cpgeo>=1.0.12",
+    "cpgeo>=1.0.13",
 ]
 
 [project.scripts]

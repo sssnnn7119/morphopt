@@ -27,12 +27,7 @@ class FEAParams(BaseParams):
     )
 
     def __init__(self):
-        """
-        Initialize the Loads class.
-
-        Args:
-            fea_mesh_order (int): The FE mesh order used by the analysis.
-        """
+        """Initialize the Loads class."""
         super().__init__()
 
         self.fea_steps_params: dict[str, dict[str, list[float]]] = {}
@@ -42,13 +37,24 @@ class FEAParams(BaseParams):
         """Configure the amplitude of every load in every load step."""
 
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Register this model's loads and load steps."""
+        """Register this model's loads and load steps.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
         if not self.fea_steps_params:
             self.define_steps()
 
     def add_step(self, name: str, values: dict[str, list[float]] | None = None) -> None:
-        """Register a named load case in execution order."""
+        """Register a named load case in execution order.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+            values (dict[str, list[float]] | None): Values aligned with the parameters or records
+                processed by this interface.
+        """
         if not isinstance(name, str) or not name.strip() or any(char in name for char in ("/", "\\", "\0")):
             raise ValueError("A load case requires a nonempty string name.")
         if name in self.fea_steps_params:
@@ -60,7 +66,14 @@ class FEAParams(BaseParams):
             self.set_step_params(name, load, amplitudes)
 
     def set_step_params(self, step_name: str, load_name: str, values: list[float]) -> None:
-        """Assign load parameters to a registered named case."""
+        """Assign load parameters to a registered named case.
+
+        Args:
+            step_name (str): Registered string name of the load case.
+            load_name (str): Registered load-component name whose parameters are assigned.
+            values (list[float]): Values aligned with the parameters or records processed by this
+                interface.
+        """
         if load_name not in self.interfaces:
             raise KeyError(f"Unknown load: {load_name!r}")
         self.fea_steps_params[step_name][load_name] = list(values)
@@ -76,10 +89,11 @@ class FEAParams(BaseParams):
         return len(self.fea_steps_params)
 
     def create_fea(self, assembly: torchfea.Assembly) -> FEAController:
-        """
-        Create an FEAController instance from the given FEA_INP file and add load interfaces
+        """Create an FEAController instance from the given FEA_INP file and add load interfaces
+
         Args:
             assembly (torchfea.Assembly): The FEA assembly.
+
         Returns:
             FEAController: The created FEAController instance with load interfaces added.
         """

@@ -15,13 +15,21 @@ from ..refresh import Refreshable, RefreshContext
 
 @dataclass(frozen=True)
 class EditorPage:
+    """Pair an editor widget with its refresh behavior and navigation identity."""
     widget: QWidget
     bind: Callable[[EditorRoute, ProblemDefinition], None]
     refreshable: Refreshable | None
 
 
 class EditorPages:
+    """Route tree selections and refresh contexts to lazily constructed editor pages."""
     def __init__(self, stack: QStackedWidget, on_change: Callable | None = None):
+        """Initialize EditorPages and its configuration state.
+
+        Args:
+            stack (QStackedWidget): Qt stacked widget containing the editor pages.
+            on_change (Callable | None): Callback invoked after committing a value change.
+        """
         self.stack = stack
         self.on_change = on_change
         self._pages: dict[EditorKind, EditorPage] = {}
@@ -36,6 +44,19 @@ class EditorPages:
         changed: SignalInstance | None = None,
         refreshable: Refreshable | None = None,
     ) -> None:
+        """Register the EditorPages state.
+
+        Args:
+            kind (EditorKind): Registered category or provider identifier used to dispatch the
+                operation.
+            widget (QWidget): Qt widget being configured or inspected.
+            bind (Callable[[EditorRoute, ProblemDefinition], None]): Callback binding the selected
+                definition to the page.
+            changed (SignalInstance | None): Signal or callback reporting a committed definition
+                change.
+            refreshable (Refreshable | None): Component implementing refresh_ui for the registered
+                editor page.
+        """
         self._pages[kind] = EditorPage(widget, bind, refreshable)
         self.stack.addWidget(widget)
         if changed is not None and self.on_change is not None:
@@ -49,12 +70,24 @@ class EditorPages:
         self._change_signals.clear()
 
     def select(self, route: EditorRoute, problem: ProblemDefinition) -> None:
+        """Select the EditorPages state.
+
+        Args:
+            route (EditorRoute): Editor route identifying the page and focused item.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         page = self._pages[route.kind]
         page.bind(route, problem)
         self.stack.setCurrentWidget(page.widget)
 
     def refresh_ui(self, context: RefreshContext) -> None:
-        """Refresh the active editor in place, retaining its focus and scroll."""
+        """Refresh the active editor in place, retaining its focus and scroll.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         for page in self._pages.values():
             if (
                 page.widget is self.stack.currentWidget()

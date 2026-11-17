@@ -21,7 +21,6 @@ from ..model.problem import (
     StepsNode,
     UpdaterNode,
 )
-from ..schemes.base import SchemeTemplate, available_templates, get_template
 from .edit_history import EditHistory, EditOperation, EditSnapshot
 
 
@@ -42,15 +41,32 @@ class ProblemSession:
     """
 
     def __init__(self, problem: ProblemDefinition):
+        """Initialize ProblemSession and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._problem = problem
         self.history = EditHistory()
         self.reset_history()
 
     @property
     def problem(self) -> ProblemDefinition:
+        """Return problem.
+
+        Returns:
+            ProblemDefinition: Problem.
+        """
         return self._problem
 
     def replace(self, problem: ProblemDefinition) -> None:
+        """Return replace.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._problem = problem
         self.reset_history()
 
@@ -60,6 +76,17 @@ class ProblemSession:
         selection: tuple[int, ...] | None = None,
         operation: EditOperation = "modified",
     ) -> EditSnapshot:
+        """Return snapshot.
+
+        Args:
+            description (str): Human-readable explanation associated with the entry.
+            selection (tuple[int, ...] | None): Selection identifying the active model or result
+                item.
+            operation (EditOperation): CAD history operation or application action being processed.
+
+        Returns:
+            EditSnapshot: Snapshot.
+        """
         state = json.dumps(
             self._problem.to_dict(),
             ensure_ascii=False,
@@ -68,6 +95,7 @@ class ProblemSession:
         return EditSnapshot(state, description, selection, operation=operation)
 
     def reset_history(self) -> None:
+        """Reset history."""
         self.history.reset(self.snapshot())
 
     def record_edit(
@@ -78,15 +106,44 @@ class ProblemSession:
         merge_key: object | None = None,
         operation: EditOperation = "modified",
     ) -> bool:
+        """Return record edit.
+
+        Args:
+            description (str): Human-readable explanation associated with the entry.
+            selection (tuple[int, ...] | None): Selection identifying the active model or result
+                item.
+            merge_key (object | None): Key identifying edits that can be coalesced into one history
+                operation.
+            operation (EditOperation): CAD history operation or application action being processed.
+
+        Returns:
+            bool: Record edit.
+        """
         return self.history.commit(
             self.snapshot(description, selection, operation), merge_key=merge_key
         )
 
     def restore_edit(self, offset: int) -> EditSnapshot:
+        """Restore edit.
+
+        Args:
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            EditSnapshot: Restore edit.
+        """
         return self.restore_edit_step(self.history.target(offset).step_id)
 
     def restore_edit_step(self, step_id: int) -> EditSnapshot:
-        """Decode before moving the cursor, so invalid snapshots cannot lose history."""
+        """Decode before moving the cursor, so invalid snapshots cannot lose history.
+
+        Args:
+            step_id (int): Stable edit-history node identifier, independent of the displayed row
+                index.
+
+        Returns:
+            EditSnapshot: Decode before moving the cursor, so invalid snapshots cannot lose history.
+        """
         snapshot = self.history.node(step_id).snapshot
         problem = ProblemDefinition.from_dict(json.loads(snapshot.state))
         self._problem = problem
@@ -98,7 +155,15 @@ class ProblemSession:
         _synchronize_problem(self._problem)
 
     def source(self, *, synchronize: bool = True) -> str:
-        """Return runnable source for the current, synchronized definition."""
+        """Return runnable source for the current, synchronized definition.
+
+        Args:
+            synchronize (bool): Synchronize derived definition state after applying the edit when
+                True.
+
+        Returns:
+            str: Runnable source for the current, synchronized definition.
+        """
         if synchronize:
             self.synchronize()
         return generate_source(self._problem)
@@ -167,6 +232,14 @@ class ProblemSession:
                 )
 
     def set_label(self, value: str) -> bool:
+        """Set label.
+
+        Args:
+            value (str): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Set label.
+        """
         value = value.strip()
         if not value or value == self._problem.label:
             return False
@@ -175,6 +248,14 @@ class ProblemSession:
         return True
 
     def set_result_folder(self, value: str) -> bool:
+        """Set result folder.
+
+        Args:
+            value (str): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Set result folder.
+        """
         value = value.strip()
         if value == self._problem.result_folder:
             return False
@@ -182,6 +263,14 @@ class ProblemSession:
         return True
 
     def set_device(self, value: str) -> bool:
+        """Set device.
+
+        Args:
+            value (str): Value assigned to or evaluated for the selected field.
+
+        Returns:
+            bool: Set device.
+        """
         value = value.strip()
         if not value or value == self._problem.device:
             return False
@@ -192,25 +281,40 @@ class ProblemSession:
 class ProblemLibrary:
     """Problem creation, serialization and export gateway.
 
-    Built-in starters are generated by scheme classes and Quickstart. Dialog
+    Initial models are built by Quickstart. Dialog
     ownership remains in the Qt window; definition IO stays centralized here.
     """
 
     @staticmethod
-    def templates() -> tuple[SchemeTemplate, ...]:
-        return tuple(available_templates())
+    def create(method: str = "shapeopt", label: str | None = None) -> ProblemDefinition:
+        """Create a Quickstart model; its method only selects initial components.
 
-    @staticmethod
-    def create(template_id: str, label: str | None = None) -> ProblemDefinition:
-        template = get_template(template_id)
-        problem = template.create_problem(label or f"{template_id}_untitled")
-        _synchronize_problem(problem)
-        return problem
+        Args:
+            method (str): Quick-start model family selecting the available geometry and objective
+                templates.
+            label (str | None): Human-readable label associated with the definition or result.
+
+        Returns:
+            ProblemDefinition: Create a Quickstart model; its method only selects initial
+                components.
+        """
+        from .quickstart import QuickstartOptions, build_quickstart
+
+        options = QuickstartOptions.for_method(method)
+        options.label = label or "Untitled"
+        return build_quickstart(options)
 
     @staticmethod
     def create_blank(label: str = "Untitled") -> ProblemDefinition:
-        """Create an empty editable definition with the standard tree sections."""
-        problem = ProblemDefinition(scheme="shapeopt", label=label)
+        """Create an empty editable definition with the standard tree sections.
+
+        Args:
+            label (str): Human-readable label associated with the definition or result.
+
+        Returns:
+            ProblemDefinition: Create an empty editable definition with the standard tree sections.
+        """
+        problem = ProblemDefinition(label=label)
         problem.root = ProblemNode(
             name=label,
             children=[
@@ -229,17 +333,47 @@ class ProblemLibrary:
     def load(
         path: str | Path, *, issues: list[LocalizedMessage] | None = None,
     ) -> ProblemDefinition:
+        """Load the ProblemLibrary state.
+
+        Args:
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+            issues (list[LocalizedMessage] | None): Optional list receiving recoverable import or
+                validation messages.
+
+        Returns:
+            ProblemDefinition: Load the ProblemLibrary state.
+        """
         problem = load_morph(str(path), issues=issues)
         _synchronize_problem(problem)
         return problem
 
     @staticmethod
     def save(problem: ProblemDefinition, path: str | Path) -> str:
+        """Save the ProblemLibrary state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            str: Save the ProblemLibrary state.
+        """
         _synchronize_problem(problem)
         return save_morph(problem, str(path))
 
     @staticmethod
     def export_python(problem: ProblemDefinition, path: str | Path) -> str:
+        """Export python.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            path (str | Path): Filesystem path read, restored, or written by this operation.
+
+        Returns:
+            str: Export python.
+        """
         _synchronize_problem(problem)
         paths, files = collect_python_assets(problem)
         source = generate_source(problem, asset_paths=paths)
@@ -253,14 +387,32 @@ class ProblemLibrary:
 
     @staticmethod
     def export_python_bundle(problem: ProblemDefinition, folder: str | Path) -> str:
-        """Export a runnable module and its assets into a named folder."""
+        """Export a runnable module and its assets into a named folder.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            folder (str | Path): Directory containing the optimization run or archive.
+
+        Returns:
+            str: Export a runnable module and its assets into a named folder.
+        """
         directory = Path(folder)
         output = directory / f"{directory.name}.py"
         return ProblemLibrary.export_python(problem, output)
 
     @staticmethod
     def save_result_copy(problem: ProblemDefinition, folder: str | Path) -> str:
-        """Save the editable definition beside a run's frozen Python script."""
+        """Save the editable definition beside a run's frozen Python script.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            folder (str | Path): Directory containing the optimization run or archive.
+
+        Returns:
+            str: Save the editable definition beside a run's frozen Python script.
+        """
         result = Path(folder)
         scripts = result / "scripts"
         destination = scripts if scripts.is_dir() else result

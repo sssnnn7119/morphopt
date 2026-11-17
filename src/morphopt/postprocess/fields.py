@@ -20,10 +20,20 @@ from ._runtime import evaluation_defaults
 
 
 def _as_array(value: torch.Tensor | np.ndarray) -> np.ndarray:
+    """Convert numerical result data to a detached CPU NumPy view or array.
+
+    Args:
+        value (torch.Tensor | np.ndarray): Value assigned to or evaluated for the selected
+            field.
+
+    Returns:
+        np.ndarray: CPU array containing the input values without an autograd graph.
+    """
     return value.detach().cpu().numpy() if isinstance(value, torch.Tensor) else np.asarray(value)
 
 
 class ResultLocation(str, Enum):
+    """Identify the physical record location used by finite-element tables and exports."""
     NODES = 'nodes'
     REFERENCE_POINTS = 'reference_points'
     ELEMENTS = 'elements'
@@ -75,6 +85,15 @@ CONTOUR_FIELDS = (
 
 
 def _record_keys(location: ResultLocation) -> tuple[str, ...]:
+    """Select the identifying columns for a physical-field record location.
+
+    Args:
+        location (ResultLocation): Result record location: nodes, elements, reference points, or
+            integration points.
+
+    Returns:
+        tuple[str, ...]: Node, reference-point, or element record keys in table-column order.
+    """
     return {
         ResultLocation.NODES: _NODE_KEYS,
         ResultLocation.REFERENCE_POINTS: _REFERENCE_POINT_KEYS,
@@ -93,6 +112,16 @@ class ResultField:
     gauss_kind: str | None = None
 
     def available(self, context: FiniteElementResults) -> bool:
+        """Check whether the saved model supports this field at its record location.
+
+        Args:
+            context (FiniteElementResults): Finite-element result context providing the model,
+                solution, and cached field evaluations.
+
+        Returns:
+            bool: True when the required reference points or integration-point element capabilities
+                are available.
+        """
         if self.location is ResultLocation.REFERENCE_POINTS:
             return next(context.reference_points(), None) is not None
         return (
@@ -105,11 +134,25 @@ class FiniteElementResults:
     """Evaluate fields and cache contour projections for one model and solution."""
 
     def __init__(self, controller: Any, result: Any) -> None:
+        """Initialize FiniteElementResults and its configuration state.
+
+        Args:
+            controller (Any): Controller providing the current model and execution state.
+            result (Any): Finite-element solution or completed operation result.
+        """
         self.controller, self.result = controller, result
         self._contour_groups: dict[str, dict[str, np.ndarray]] = {}
 
     def available_fields(self, location: ResultLocation | str) -> tuple[str, ...]:
-        """List supported table fields at one record location."""
+        """List supported table fields at one record location.
+
+        Args:
+            location (ResultLocation | str): Result record location: nodes, elements, reference
+                points, or integration points.
+
+        Returns:
+            tuple[str, ...]: List supported table fields at one record location.
+        """
         location = ResultLocation(location)
         with evaluation_defaults(self.result):
             return tuple(
@@ -124,8 +167,17 @@ class FiniteElementResults:
     ) -> ResultTable:
         """Join selected physical quantities onto stable record identifiers.
 
-        Rows are evaluated lazily under the solution's Torch defaults. Fields
-        unavailable for the model are omitted; an empty selection is rejected.
+        Rows are evaluated lazily under the solution's Torch defaults. Fields unavailable for the
+        model are omitted; an empty selection is rejected.
+
+        Args:
+            location (ResultLocation | str): Result record location: nodes, elements, reference
+                points, or integration points.
+            fields (Sequence[str] | None): Requested field keys; None selects the available defaults
+                for the record location.
+
+        Returns:
+            ResultTable: Join selected physical quantities onto stable record identifiers.
         """
         location = ResultLocation(location)
         keys = (
@@ -145,6 +197,11 @@ class FiniteElementResults:
 
     @cached_property
     def contour_fields(self) -> tuple[ContourField, ...]:
+        """List supported contour choices for the current model and solution.
+
+        Returns:
+            tuple: Registered contour descriptors whose physical source is available on the model.
+        """
         with evaluation_defaults(self.result), torch.no_grad():
             supported = {"displacement"}
             for kind in ("stress", "strain", "energy"):
@@ -153,7 +210,14 @@ class FiniteElementResults:
         return tuple(field for field in CONTOUR_FIELDS if field.source in supported)
 
     def contour_values(self, field: ContourField) -> dict[str, np.ndarray]:
-        """Return a scalar node array for each supported instance."""
+        """Return a scalar node array for each supported instance.
+
+        Args:
+            field (ContourField): Field descriptor or result-field selection being evaluated.
+
+        Returns:
+            dict[str, np.ndarray]: A scalar node array for each supported instance.
+        """
         if field.source not in self._contour_groups:
             with evaluation_defaults(self.result), torch.no_grad():
                 self._contour_groups[field.source] = self._evaluate_contours(field.source)
@@ -164,10 +228,21 @@ class FiniteElementResults:
 
     @cached_property
     def coordinates(self) -> torch.Tensor:
+        """Expand the saved generalized coordinates to the assembly result coordinates.
+
+        Returns:
+            torch.Tensor: Reduced generalized coordinate vector containing nodal translations and
+                reference-point degrees of freedom.
+        """
         with evaluation_defaults(self.result):
             return self.controller.GC2RGC(self.result.GC)
 
     def instances(self) -> Iterator[tuple[str, Any, torch.Tensor]]:
+        """Iterate enabled assembly instances and their solved nodal translations.
+
+        Yields:
+            tuple: (instance_name, instance, displacement), where displacement has shape (num_nodes, 3) in assembly axes.
+        """
         for name, instance in self.controller.assembly._instances.items():
             if instance.enabled is False:
                 continue
@@ -175,6 +250,11 @@ class FiniteElementResults:
             yield name, instance, displacement
 
     def reference_points(self) -> Iterator[tuple[int, str, Any, np.ndarray]]:
+        """Iterate enabled reference points and their solved generalized displacements.
+
+        Yields:
+            tuple: (one_based_index, name, point, values), with translation followed by rotational degrees of freedom.
+        """
         for index, (name, point) in enumerate(self.controller.assembly._reference_points.items(), start=1):
             if point.enabled is False:
                 continue
@@ -182,6 +262,11 @@ class FiniteElementResults:
             yield index, name, point, values
 
     def element_blocks(self) -> Iterator[tuple[str, Any, str, Any, torch.Tensor]]:
+        """Iterate nonempty element blocks with instance-local nodal displacements.
+
+        Yields:
+            tuple: (instance_name, instance, block_name, element, local_displacement).
+        """
         for name, instance, displacement in self.instances():
             rotation = instance.rotation_matrix
             local = (
@@ -194,6 +279,12 @@ class FiniteElementResults:
 
     @cached_property
     def gauss_positions(self) -> dict[tuple[str, str], np.ndarray]:
+        """Cache reference integration-point positions for supported element blocks.
+
+        Returns:
+            dict[tuple[str, str], np.ndarray]: Positions keyed by (instance_name,
+                element_block_name).
+        """
         positions = {}
         for name, instance, block, element, _ in self.element_blocks():
             getter = getattr(element, 'get_gaussian_points', None)
@@ -211,6 +302,14 @@ class FiniteElementResults:
     def gauss_blocks(
         self, kind: str
     ) -> Iterator[tuple[str, Any, str, Any, torch.Tensor]]:
+        """Iterate element blocks supporting the requested integration-point quantity.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Yields:
+            tuple: Enabled element-block records with integration-point coordinates and the required physical evaluation methods.
+        """
         required = {
             'gauss_coordinates': (),
             'energy': ('get_potential_energy_density', 'gaussian_weight'),
@@ -225,7 +324,15 @@ class FiniteElementResults:
                 yield item
 
     def gauss_values(self, kind: str) -> Iterator[tuple[str, str, Any, np.ndarray]]:
-        """Yield block arrays (Gauss point, element, component) for export and display."""
+        """Yield block arrays (Gauss point, element, component) for export and display.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            Iterator[tuple[str, str, Any, np.ndarray]]: Yield block arrays (Gauss point, element,
+                component) for export and display.
+        """
         for name, instance, block, element, local in self.gauss_blocks(kind):
             with evaluation_defaults(self.result):
                 positions = self.gauss_positions[name, block]
@@ -267,6 +374,14 @@ class FiniteElementResults:
             yield name, block, element, values
 
     def _evaluate_contours(self, source: str) -> dict[str, np.ndarray]:
+        """Evaluate contours.
+
+        Args:
+            source (str): Source object, path, or metadata from which the operation reads its input.
+
+        Returns:
+            dict[str, np.ndarray]: Computed contour arrays keyed by physical field name.
+        """
         if source == "displacement":
             values = {}
             for name, _instance, displacement in self.instances():
@@ -312,6 +427,15 @@ class FiniteElementResults:
         }
 
     def _record_rows(self, location: ResultLocation) -> Iterator[tuple]:
+        """Generate identifying column values for each exported record.
+
+        Args:
+            location (ResultLocation): Result record location: nodes, elements, reference points, or
+                integration points.
+
+        Yields:
+            tuple: Node, reference-point, or element/integration-point identifiers using one-based exported indices.
+        """
         if location is ResultLocation.NODES:
             for name, instance, _ in self.instances():
                 for index in range(len(instance.nodes)):
@@ -330,6 +454,15 @@ class FiniteElementResults:
                             yield name, block, int(element_id) + 1, point + 1
 
     def _nodal_table(self, kind: str) -> ResultTable:
+        """Build a lazy table of one nodal coordinate or displacement field.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            ResultTable: Identifying columns and the requested Cartesian values, with one row per
+                enabled node.
+        """
         columns = {
             'coordinates': ('X', 'Y', 'Z'),
             'displacement': ('U1', 'U2', 'U3', 'U'),
@@ -350,6 +483,12 @@ class FiniteElementResults:
         return ResultTable(kind, (*_NODE_KEYS, *columns), rows())
 
     def _element_coordinate_table(self) -> ResultTable:
+        """Build a table of reference element-centroid coordinates.
+
+        Returns:
+            ResultTable: Element identifiers and CX, CY, CZ; rows are repeated for each integration
+                point when supported.
+        """
         def rows() -> Iterator[tuple]:
             for name, instance, block, element, _ in self.element_blocks():
                 centers = _as_array(instance.nodes[element._elems].mean(dim=1))
@@ -364,6 +503,15 @@ class FiniteElementResults:
         return ResultTable('element_coordinates', (*_ELEMENT_KEYS, 'CX', 'CY', 'CZ'), rows())
 
     def _reference_point_table(self, kind: str) -> ResultTable:
+        """Build a lazy table of reference-point coordinates, translations, or rotations.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            ResultTable: One row per enabled reference point with identifiers and the requested
+                components.
+        """
         columns = {
             'coordinates': ('X', 'Y', 'Z'),
             'displacement': ('U1', 'U2', 'U3', 'U'),
@@ -385,6 +533,15 @@ class FiniteElementResults:
         return ResultTable('rp_' + kind, (*_REFERENCE_POINT_KEYS, *columns), rows())
 
     def _gauss_table(self, kind: str) -> ResultTable:
+        """Build a lazy table of integration-point physical values.
+
+        Args:
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+
+        Returns:
+            ResultTable: Instance, element, and integration-point identifiers followed by the
+                requested physical components.
+        """
         def rows() -> Iterator[tuple]:
             for name, block, element, values in self.gauss_values(kind):
                 element_ids = _as_array(element._elems_index).reshape(-1)
@@ -400,7 +557,18 @@ class FiniteElementResults:
         location: ResultLocation,
         providers: tuple[ResultField, ...],
     ) -> ResultTable:
-        """Join provider columns onto stable record IDs without materializing the full table."""
+        """Join provider columns onto stable record IDs without materializing the full table.
+
+        Args:
+            location (ResultLocation): Result record location: nodes, elements, reference points, or
+                integration points.
+            providers (tuple[ResultField, ...]): Physical-field providers joined by the result-table
+                operation.
+
+        Returns:
+            ResultTable: Join provider columns onto stable record IDs without materializing the full
+                table.
+        """
         keys = _record_keys(location)
         # Omit the integration-point identifier completely when no block has Gauss points.
         include_gauss = location is ResultLocation.ELEMENTS and bool(self.gauss_positions)

@@ -23,6 +23,7 @@ class MeshFaces:
 
 @dataclass(frozen=True)
 class FaceSelection:
+    """Identify a picked Part or Instance face and the named selection it represents."""
     part_name: str
     instance_name: str | None
     surface_names: tuple[str, ...]
@@ -30,6 +31,7 @@ class FaceSelection:
 
 @dataclass
 class MeshItem:
+    """Describe a renderable mesh, its stable scene identity, and visualization options."""
     mesh: pv.DataSet
     options: dict[str, Any] = field(default_factory=dict)
     faces: MeshFaces | None = None
@@ -37,6 +39,7 @@ class MeshItem:
 
 @dataclass
 class LabelItem:
+    """Describe a spatial text annotation and its rendering options."""
     points: np.ndarray
     labels: list[str]
     options: dict[str, Any] = field(default_factory=dict)
@@ -44,6 +47,7 @@ class LabelItem:
 
 @dataclass
 class MessageItem:
+    """Describe a viewport text message independently of the rendering backend."""
     text: str
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -58,6 +62,15 @@ class PreviewScene:
     show_bounding_box: bool = False
 
     def add_mesh(self, mesh: pv.DataSet, **options: Any) -> MeshItem:
+        """Add mesh.
+
+        Args:
+            mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+            **options: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            MeshItem: Add mesh.
+        """
         item = MeshItem(mesh, options)
         self.items.append(item)
         return item
@@ -70,23 +83,56 @@ class PreviewScene:
         faces: MeshFaces | None = None,
         **options: Any,
     ) -> None:
+        """Add base.
+
+        Args:
+            instance_name (str): Registered Instance name in the assembly.
+            mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+            faces (MeshFaces | None): Face selection or mesh connectivity required by the selected
+                surface operation.
+            **options: Additional keyword arguments accepted by the shared interface.
+        """
         item = self.add_mesh(mesh, **options)
         item.faces = faces
         self.base_meshes.append((instance_name, mesh, item))
 
     def add_point_labels(self, points, labels, **options: Any) -> LabelItem:
+        """Add point labels.
+
+        Args:
+            points: Point coordinates in the representation expected by this operation.
+            labels: Display labels aligned with the component values.
+            **options: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            LabelItem: Add point labels.
+        """
         item = LabelItem(np.asarray(points), list(labels), options)
         self.items.append(item)
         return item
 
     def add_text(self, text: str, **options: Any) -> MessageItem:
+        """Add text.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+            **options: Additional keyword arguments accepted by the shared interface.
+
+        Returns:
+            MessageItem: Add text.
+        """
         item = MessageItem(text, options)
         self.items.append(item)
         return item
 
     @property
     def bounds(self) -> tuple[float, float, float, float, float, float] | None:
-        """Bounds of the complete geometry, excluding annotations and overlays."""
+        """Bounds of the complete geometry, excluding annotations and overlays.
+
+        Returns:
+            tuple[float, float, float, float, float, float] | None: Bounds of the complete geometry,
+                excluding annotations and overlays.
+        """
         bounds = [mesh.bounds for _, mesh, _ in self.base_meshes if mesh.n_points]
         if not bounds:
             return None
@@ -103,6 +149,11 @@ class PreviewScene:
 
     @property
     def diagonal(self) -> float:
+        """Return diagonal.
+
+        Returns:
+            float: Diagonal.
+        """
         bounds = self.bounds
         if bounds is None:
             return theme_manager.palette.viewer.scene_fallback_diagonal
@@ -113,7 +164,11 @@ class PreviewScene:
 
     @property
     def glyph_scale(self) -> float:
-        """Size symbols by typical Part width, capped by the scene diagonal."""
+        """Size symbols by typical Part width, capped by the scene diagonal.
+
+        Returns:
+            float: Size symbols by typical Part width, capped by the scene diagonal.
+        """
         widths = []
         for _, mesh, _ in self.base_meshes:
             if not mesh.n_points:
@@ -135,6 +190,7 @@ class PreviewScene:
 
 @dataclass
 class ArrowLoad:
+    """Describe an applied load rendered as a directed arrow."""
     start: np.ndarray
     vector: np.ndarray
     color: str
@@ -143,6 +199,7 @@ class ArrowLoad:
 
 @dataclass
 class MomentLoad:
+    """Describe an applied moment rendered as an oriented arc and arrow."""
     center: np.ndarray
     vector: np.ndarray
     label: str
@@ -150,6 +207,7 @@ class MomentLoad:
 
 @dataclass
 class SpringLoad:
+    """Describe the endpoints and label of a spring visualization glyph."""
     start: np.ndarray
     end: np.ndarray
     label: str
@@ -157,6 +215,7 @@ class SpringLoad:
 
 @dataclass
 class MarkerLoad:
+    """Describe a reference-point or boundary-condition marker in the preview scene."""
     location: np.ndarray
     label: str
     color: str
@@ -165,6 +224,7 @@ class MarkerLoad:
 
 @dataclass
 class CouplingLoad:
+    """Describe the reference point, target region, and annotation of a coupling glyph."""
     reference_point: np.ndarray
     node_set_center: np.ndarray
     label: str
@@ -174,6 +234,7 @@ class CouplingLoad:
 
 @dataclass
 class LoadScene:
+    """Collect load, boundary-condition, reference-point, and coupling glyph descriptions."""
     scale: float
     annotation_scale: float = 0.0
     items: list[

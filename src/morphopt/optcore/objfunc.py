@@ -1,26 +1,36 @@
-from copy import deepcopy
-import math
 import json
+import math
+from copy import deepcopy
 from pathlib import Path
-import torchfea
-import torch
-import morphopt
-from . import Params
-from .protocal import ProtocalInitializable, ProtocalSavable
 
 import pyvista as pv
+import torch
+import torchfea
+
+import morphopt
+
 from ..constants import CONSTANT
-class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
-    """
-    This class is responsible for computing the objective function value and the design sensitivity variables.
+from . import Params
+from .protocal import ProtocalHistory, ProtocalInitializable, ProtocalSavable
+
+
+class ObjectiveFunction(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
+    """Define the physical objective, named metrics, and adjoint sensitivity callbacks.
+
+    Override objective_function() to return a differentiable scalar tensor and get_metrics() to
+    return named scalar observations. fe_results is keyed by registered string load-case names.
+    Call set_step() before reading work-condition-dependent assembly data for a case.
     """
 
     def __init__(self):
+        """Initialize ObjectiveFunction and its configuration state."""
+        self.value: torch.Tensor | None = None
+        """Detached objective at the evaluated design, before its update."""
         self.fe: torchfea.FEAController = None
         """
         The FEA solver instance.
         """
-        
+
         self.fe_results: dict[str, torchfea.solver.StaticResult] = {}
         """
         The FEA results for each step.
@@ -31,60 +41,134 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         A list of load parameter names for which the jacobian is needed for sensitivity analysis.
         """
 
-    def get_metrics(self) -> dict[str, float | torch.Tensor] | list[float | torch.Tensor]:
-        """Return named scalars, or a list assigned names '0', '1', ... on recording."""
-        return {}
-    
-    def objective_function(self):
-        """
-        Compute the objective function value.
-        
+    def get_metrics(
+        self,
+    ) -> dict[str, float | torch.Tensor] | list[float | torch.Tensor]:
+        """Return named scalars, or a list assigned names '0', '1', ... on recording.
+
         Returns:
-            torch.Tensor: The value of the objective function.
+            dict[str, float | torch.Tensor] | list[float | torch.Tensor]: Named scalar metrics, or a
+                sequence assigned string names "0", "1", ... when recorded. Metrics are observations
+                and do not alter the optimization objective.
         """
-        raise NotImplementedError("The objective_function method should be implemented in subclass.")
+        return {}
+
+    def evaluate(self) -> torch.Tensor:
+        """Evaluate once and retain the value used by the outer iteration.
+
+        Returns:
+            torch.Tensor: Live scalar objective retaining its autograd graph. A detached copy is
+                stored in value for history reporting.
+        """
+        value = self.objective_function()
+        self.value = value.detach().clone()
+        return value
+
+    def history_data(self) -> dict[str, object]:
+        """Supply the evaluated objective and named scalar metrics.
+
+        Returns:
+            dict[str, object]: Component-owned scalar or nested observations for the current
+                iteration.
+        """
+        metrics = self.get_metrics()
+        if isinstance(metrics, (list, tuple)):
+            metrics = {str(index): value for index, value in enumerate(metrics)}
+        return {
+            "objective": self.value.item() if self.value is not None else None,
+            "metrics": {
+                name: value.item() if isinstance(value, torch.Tensor) else value
+                for name, value in metrics.items()
+            },
+        }
+
+    def objective_function(self):
+        """Evaluate the differentiable physical objective for the current named FE results.
+
+        Override this hook in the task script. The outer controller calls evaluate() once for the
+        recorded objective; the adjoint solver may reevaluate this hook with differentiated FE
+        states.
+
+        Returns:
+            torch.Tensor: Scalar physical objective minimized by the outer optimization.
+
+        Raises:
+            NotImplementedError: The task has not supplied an objective implementation.
+        """
+        raise NotImplementedError(
+            "The objective_function method should be implemented in subclass."
+        )
 
     def set_step(self, step: str) -> None:
-        """
-        Set the current step for the objective function. This can be used to update any step-specific parameters or states.
+        """Set the current step for the objective function. This can be used to update any
+        step-specific parameters or states.
 
         Args:
             step (str): The registered load-case name.
         """
         self.fe.assembly.set_work_conditions(self.fe_results[step].work_conditions)
 
-    def compute_multistep_objective(self, fe_results: list[torchfea.solver.StaticResult], assembly: torchfea.Assembly) -> torch.Tensor:
-        """
-        Compute the total objective from a multistep FE result list.
+    def compute_multistep_objective(
+        self,
+        fe_results: list[torchfea.solver.StaticResult],
+        assembly: torchfea.Assembly,
+    ) -> torch.Tensor:
+        """Compute the total objective from a multistep FE result list.
+
+        Args:
+            fe_results (list[torchfea.solver.StaticResult]): Results in the same order as the
+                current fe_results dictionary keys.
+            assembly (torchfea.Assembly): Assembly supplied by the multistep adjoint callback; the
+                objective reads its bound self.fe assembly.
+
+        Returns:
+            torch.Tensor: Physical objective evaluated after replacing the case-result values.
         """
         self.fe_results = dict(zip(self.fe_results, fe_results, strict=True))
         return self.objective_function()
-    
+
     def sensitivity_analysis(self, params: Params) -> dict[str, torch.Tensor]:
-        """
-        Perform sensitivity analysis to compute the design sensitivity variables.
+        """Perform sensitivity analysis to compute the design sensitivity variables.
 
         Args:
-            params: The optimization parameters.
+            params (Params): The optimization parameters.
 
         Returns:
-            dict[str, torch.Tensor]: A dictionary of design sensitivity variables for each parameter class.
+            dict[str, torch.Tensor]: Unscaled physical objective derivatives, keyed by parameter
+                collection and flattened in each collection's variable order.
         """
 
-        design_sensitivity_vars_dict = params.obtain_design_sensitivity_vars(assembly=self.fe.assembly)
+        design_sensitivity_vars_dict = params.obtain_design_sensitivity_vars(
+            assembly=self.fe.assembly
+        )
 
-        design_sensitivity_vars = torch.cat(list(design_sensitivity_vars_dict.values()), dim=0)
+        design_sensitivity_vars = torch.cat(
+            list(design_sensitivity_vars_dict.values()), dim=0
+        )
         design_sensitivity_vars_interval = [0]
         for key in design_sensitivity_vars_dict.keys():
-            design_sensitivity_vars_interval.append(design_sensitivity_vars_interval[-1] + design_sensitivity_vars_dict[key].shape[0])
+            design_sensitivity_vars_interval.append(
+                design_sensitivity_vars_interval[-1]
+                + design_sensitivity_vars_dict[key].shape[0]
+            )
 
         design_gradients = torch.zeros_like(design_sensitivity_vars)
 
-        def apply_func(assembly: torchfea.Assembly, design_sensitivity_vars: torch.Tensor):
+        def apply_func(
+            assembly: torchfea.Assembly, design_sensitivity_vars: torch.Tensor
+        ):
             params.modify_assembly(
-                {key: design_sensitivity_vars[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}, 
-                assembly)
-            
+                {
+                    key: design_sensitivity_vars[
+                        design_sensitivity_vars_interval[
+                            i
+                        ] : design_sensitivity_vars_interval[i + 1]
+                    ]
+                    for i, key in enumerate(design_sensitivity_vars_dict.keys())
+                },
+                assembly,
+            )
+
         solver: torchfea.solver.StaticImplicitSolver = self.fe.solver
 
         design_gradients = solver.get_jacobian_sensitivity_multistep(
@@ -94,34 +178,46 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             apply_func=apply_func,
             compute_objective_funcs=self.compute_multistep_objective,
         )
-        
-        design_gradients_dict = {key: design_gradients[design_sensitivity_vars_interval[i]:design_sensitivity_vars_interval[i+1]] for i, key in enumerate(design_sensitivity_vars_dict.keys())}
-        
-        
+
+        design_gradients_dict = {
+            key: design_gradients[
+                design_sensitivity_vars_interval[i] : design_sensitivity_vars_interval[
+                    i + 1
+                ]
+            ]
+            for i, key in enumerate(design_sensitivity_vars_dict.keys())
+        }
+
         morphopt.controller._detach_recursive(morphopt.controller)
         return design_gradients_dict
 
     @property
     def num_tasks(self) -> int:
-        """
-        Get the number of tasks.
+        """Get the number of tasks.
+
+        Returns:
+            int: The number of tasks.
         """
         return len(self.fe_results)
-    
-    def pathlog_required(self):
-        return ['deformation', 'femodel&results']
 
-        
-    def __getitem__(self, key):
+    def pathlog_required(self):
+        """Return log subdirectories required by this component.
+
+        Returns:
+            list[str]: Relative directories required to persist deformed meshes and finite-element
+                results.
         """
-        Get the attribute with the given key.
-        
-        Parameters:
+        return ["deformation", "femodel&results"]
+
+    def __getitem__(self, key):
+        """Get the attribute with the given key.
+
+        Args:
             key: The key of the attribute to get.
-            
+
         Returns:
             The attribute value.
-            
+
         Raises:
             KeyError: If the key is not found.
         """
@@ -131,18 +227,26 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             raise KeyError(f"'{key}' not found in FE_result") from None
 
     def get_mesh_case(self, case: str):
-        """Return the meshes carrying the result of one load case."""
+        """Return the meshes carrying the result of one load case.
+
+        Args:
+            case (str): Registered load-case name selecting the saved or current finite-element
+                result.
+
+        Returns:
+            list[pv.DataSet]: One deformed visualization mesh per assembly instance, in assembly
+                registration order.
+        """
         # Create pyvista mesh
         mesh = list(self.fe.assembly.get_meshes(GC=self.fe_results[case].GC).values())
 
         return mesh
-    
-    def plot(self, case: str) -> None:
-        """
-        Plot the FEA results for a specific case.
 
-        Parameters:
-            case (int): The index of the case to plot.
+    def plot(self, case: str) -> None:
+        """Plot the FEA results for a specific case.
+
+        Args:
+            case (str): Registered string load-case name selecting the deformed meshes to display.
         """
 
         color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
@@ -156,24 +260,29 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         meshes = self.get_mesh_case(case)
 
         for meshidx, mesh in enumerate(meshes):
-            plotter.add_mesh(mesh, color=color_list[meshidx % len(color_list)], opacity=1.0)
-        
+            plotter.add_mesh(
+                mesh, color=color_list[meshidx % len(color_list)], opacity=1.0
+            )
+
         # Approximate view
-        plotter.set_background('white')
+        plotter.set_background("white")
         plotter.enable_parallel_projection()
         azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
         elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
-        plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-            math.sin(math.radians(elevation))))
+        plotter.view_vector(
+            (
+                math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                math.sin(math.radians(elevation)),
+            )
+        )
 
         plotter.show()
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """
-        Save the figures of the FEA results.
+        """Save the figures of the FEA results.
 
-        Parameters:
+        Args:
             foldpath (str): The path to save the figures.
             iteration (int): The current iteration number.
         """
@@ -181,7 +290,6 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
         color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
 
         for case_name in self.fe_results:
-
             plotter = pv.Plotter(
                 off_screen=True,
                 window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE),
@@ -192,19 +300,27 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
             meshes = self.get_mesh_case(case_name)
 
             for meshidx, mesh in enumerate(meshes):
-                plotter.add_mesh(mesh, color=color_list[meshidx % len(color_list)], opacity=1.0)
-            
+                plotter.add_mesh(
+                    mesh, color=color_list[meshidx % len(color_list)], opacity=1.0
+                )
+
             # Approximate view
-            plotter.set_background('white')
+            plotter.set_background("white")
             plotter.enable_parallel_projection()
             azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
             elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
-            plotter.view_vector((math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                math.sin(math.radians(elevation))))
+            plotter.view_vector(
+                (
+                    math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
+                    math.sin(math.radians(elevation)),
+                )
+            )
 
             # Save the figure as a PNG file
-            plotter.screenshot(f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.png")
+            plotter.screenshot(
+                f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.png"
+            )
 
             # # Save the deformed mesh as an STL file
             save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.stl"
@@ -213,8 +329,6 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
                 meshall = meshall.merge(meshes[meshidx])
             meshall.save(save_filepath, binary=True)
             plotter.close()
-
-        
 
         # The FEA model and its result must be a matched pair.  A model is
         # rebuilt from the current design at every iteration, so retaining
@@ -226,7 +340,11 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable):
 
         mapping = Path(f"{foldpath}/{self.pathlog_required()[1]}/load_cases.json")
         temporary = mapping.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(list(self.fe_results), ensure_ascii=False), encoding="utf-8")
+        temporary.write_text(
+            json.dumps(list(self.fe_results), ensure_ascii=False), encoding="utf-8"
+        )
         temporary.replace(mapping)
         for case_name in self.fe_results:
-            self.fe_results[case_name].save(f"{foldpath}/{self.pathlog_required()[1]}/result_{case_name}_iter_{iteration}.npz")
+            self.fe_results[case_name].save(
+                f"{foldpath}/{self.pathlog_required()[1]}/result_{case_name}_iter_{iteration}.npz"
+            )

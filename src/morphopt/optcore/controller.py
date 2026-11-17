@@ -26,26 +26,42 @@ logger = logging.getLogger(__name__)
 
 
 class Controller:
+    """Coordinate model construction, finite-element solution, adjoint sensitivity, and design
+    updates.
+
+    Subclass the nested Params, Solver, Updater, and ObjectiveFunction declarations to define a
+    task. The controller owns the outer iteration, result directory, persistence, and history
+    collection; numerical responsibilities remain in the composed components.
+    """
     class Params:
+        """Declare the model-parameter implementation used by the task controller."""
         pass
 
     class Solver:
+        """Declare the finite-element solver implementation used by the task controller."""
         pass
 
     class Updater:
+        """Declare the updater collection used by the task controller."""
         pass
 
     class ObjectiveFunction:
+        """Declare the physical objective and named metrics used by the task controller."""
         pass
 
     def __init__(
         self, path_result_folder: str, opt_label: str = "DefaultLabel"
     ) -> None:
-        """
-        Initialize the Controller class.
+        """Initialize the Controller class.
 
-        This class is responsible for managing the optimization process.
-        It initializes the workflow, generates the model, performs finite element analysis (FEA), and updates the surfaces.
+        This class is responsible for managing the optimization process. It initializes the
+        workflow, generates the model, performs finite element analysis (FEA), and updates the
+        surfaces.
+
+        Args:
+            path_result_folder (str): Parent directory in which timestamped result directories are
+                created.
+            opt_label (str): Run label used as the prefix of the timestamped result directory.
         """
 
         self.params: Params
@@ -111,8 +127,11 @@ class Controller:
         """
 
     def initialize_path(self, main_filepath: str = None) -> None:
-        """
-        Initialize the workflow by importing necessary modules and setting up the environment.
+        """Initialize the workflow by importing necessary modules and setting up the environment.
+
+        Args:
+            main_filepath (str): Task script archived with the run; None resolves the current main
+                module.
         """
 
         def vendor_package(package_name, target_dir="."):
@@ -229,11 +248,28 @@ class Controller:
 
     def start_optimization(self, main_filepath: str = None) -> None:
 
+        """Initialize a new task and run the outer optimization loop.
+
+        Create the result directory and log layout, initialize the composed model and numerical
+        components, then record completed iterations until the task terminates.
+
+        Args:
+            main_filepath (str): Task script archived with the run; None resolves the current main
+                module.
+        """
         self.initialize()
         self.initialize_path(main_filepath=main_filepath)
         self.opt_loop()
 
     def _load_history(self, path_result: str, target_iteration: int = None) -> None:
+        """Load history.
+
+        Args:
+            path_result (str): Optimization result directory containing scripts and log
+                subdirectories.
+            target_iteration (int): Completed iteration to restore; None selects the latest saved
+                iteration.
+        """
         self.path_result = path_result
         self.initialize()
         self.history.load(
@@ -257,13 +293,20 @@ class Controller:
         self, path_result: str, target_iteration: int = None
     ) -> None:
 
+        """Restore an archived task at a completed checkpoint and continue optimization.
+
+        Args:
+            path_result (str): Optimization result directory containing scripts and log
+                subdirectories.
+            target_iteration (int): Completed iteration to restore; None selects the latest saved
+                iteration.
+        """
         self._load_history(path_result=path_result, target_iteration=target_iteration)
         self.opt_loop()
 
     def opt_loop(self) -> None:
-        """
-        This function runs the optimization loop for a specified number of iterations.
-        It calls the opt_step function in each iteration.
+        """This function runs the optimization loop for a specified number of iterations. It calls the
+        opt_step function in each iteration.
         """
         import torchfea
 
@@ -280,10 +323,10 @@ class Controller:
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            loss, t0, t1, t2, t3, t4 = self.step()
+            _, t0, t1, t2, t3, t4 = self.step()
 
             # Record the history of the optimization process
-            self.record_history(loss, t0, t1, t2, t3, t4)
+            self.record_history(t0, t1, t2, t3, t4)
 
             # Print the information
             self.print_info(t0, t1, t2, t3, t4)
@@ -314,16 +357,12 @@ class Controller:
                 return
 
     def step(self):
-        """
-        Perform a single optimization step.
-        Returns:
-            loss (torch.Tensor): The high-fidelity objective at the evaluated design.
-            t0 (float): The start time of the optimization step.
-            t1 (float): The time after model generation.
-            t2 (float): The time after finite element analysis (FEA).
-            t3 (float): The time after sensitivity analysis.
-            t4 (float): The time after updating the surfaces.
+        """Execute one complete outer iteration: build, solve, differentiate, and update.
 
+        Returns:
+            tuple[torch.Tensor, float, float, float, float, float]: Physical objective and
+                timestamps t0 through t4 delimiting model construction, FEA, sensitivity analysis,
+                and design update.
         """
         t0 = time.time()
 
@@ -364,7 +403,7 @@ class Controller:
 
         # Update the surfaces based on the FEA results
         logger.info(f"Updating surfaces for iteration {self.history.iteration}...")
-        loss = self.objfun.objective_function()
+        loss = self.objfun.evaluate()
         self.updater.update(gradients=gradients, objective_value=loss.detach().item())
         self.updater.update_variables()
 
@@ -373,49 +412,40 @@ class Controller:
         return loss, t0, t1, t2, t3, t4
 
     def record_history(
-        self, loss: torch.Tensor, t0: float, t1: float, t2: float, t3: float, t4: float
+        self, t0: float, t1: float, t2: float, t3: float, t4: float
     ) -> None:
+        """Merge component-owned fields with the controller's iteration timing.
+
+        Args:
+            t0 (float): Timestamp before model construction for this outer iteration.
+            t1 (float): Timestamp after model construction.
+            t2 (float): Timestamp after finite-element solution.
+            t3 (float): Timestamp after sensitivity analysis.
+            t4 (float): Timestamp after the design update.
         """
-        Record the history of the optimization process.
-        """
-        metrics = self.objfun.get_metrics()
-        if isinstance(metrics, (list, tuple)):
-            metrics = {str(index): value for index, value in enumerate(metrics)}
-        metrics = {
-            name: value.item() if isinstance(value, torch.Tensor) else value
-            for name, value in metrics.items()
-        }
-        # A model may hold any number of Parts and Instances (shape/codesign
-        # geometry interfaces, SIMP assemblies imported from torchfea-ui), so
-        # statistics are read from the actual Assembly instead of assuming a
-        # name.
-        instances = self.objfun.fe.assembly._instances.values()
-        num_elements = sum(
-            element._elems.shape[0]
-            for instance in instances
-            for element in instance.elems.values()
-        )
-        num_nodes = sum(
-            instance.nodes.shape[0]
-            for instance in self.objfun.fe.assembly._instances.values()
-        )
         self.history.append(
             iteration=self.history.iteration + 1,
-            objective=loss.item(),
-            metrics=metrics,
+            **self.objfun.history_data(),
             time={
                 "init": t1 - t0,
                 "fea": t2 - t1,
                 "sens": t3 - t2,
                 "update": t4 - t3,
             },
-            num_elements=num_elements,
-            num_nodes=num_nodes,
+            **self.params.history_data(),
+            **self.solver.history_data(),
+            **self.updater.history_data(),
         )
 
     def print_info(self, t0, t1, t2, t3, t4) -> None:
-        """
-        Print the current information of the optimization process.
+        """Print the current information of the optimization process.
+
+        Args:
+            t0: Timestamp before model construction for this outer iteration.
+            t1: Timestamp after model construction.
+            t2: Timestamp after finite-element solution.
+            t3: Timestamp after sensitivity analysis.
+            t4: Timestamp after the design update.
         """
         logger.info(f"Iteration: {self.history.iteration}")
         logger.info(f"Loss: {self.history.records[-1]['objective']:.6f}")
@@ -459,12 +489,12 @@ class Controller:
         logger.info(f"Garbage collector: collected {data} objects.")
 
     def change_device(self, device: torch.device, obj: object = None) -> None:
-        """
-        Recursively change the device of the finite element model and all nested objects.
+        """Recursively change the device of the finite element model and all nested objects.
 
         Args:
             device (torch.device): The target device.
-            obj (object, optional): The object to change the device for. If None, change the device for the Controller instance itself.
+            obj (object): The object to change the device for. If None, change the device for the
+                Controller instance itself.
 
         Returns:
             None
@@ -478,9 +508,15 @@ class Controller:
     def _instance_attributes(obj: object) -> dict[str, object] | None:
         """Instance attributes of ``obj``, or ``None`` when it carries none.
 
-        The walkers below recurse into containers explicitly and into any other
-        object only through its ``__dict__``; ``vars`` is the read-only form of
-        that lookup.
+        The walkers below recurse into containers explicitly and into any other object only through
+        its ``__dict__``; ``vars`` is the read-only form of that lookup.
+
+        Args:
+            obj (object): Object whose attributes or tensor state are traversed.
+
+        Returns:
+            dict[str, object] | None: Instance attributes of ``obj``, or ``None`` when it carries
+                none.
         """
         try:
             return vars(obj)
@@ -489,10 +525,13 @@ class Controller:
 
     @classmethod
     def _detach_recursive(cls, obj: object, visited: set = None):
-        """
-        Recursively detach tensors to clean up the computation graph.
-        For mutable containers (list, dict, objects), replaces tensors with detached versions.
-        This avoids inplace detach_() errors on views.
+        """Recursively detach tensors to clean up the computation graph. For mutable containers (list,
+        dict, objects), replaces tensors with detached versions. This avoids inplace detach_()
+        errors on views.
+
+        Args:
+            obj (object): Object whose attributes or tensor state are traversed.
+            visited (set): Object identities already traversed, used to avoid recursive cycles.
         """
         if visited is None:
             visited = set()
@@ -531,8 +570,13 @@ class Controller:
                     cls._detach_recursive(v, visited)
 
     def _change_device_recursive(self, obj, device, visited=None):
-        """
-        Recursively move tensors to the target device.
+        """Recursively move tensors to the target device.
+
+        Args:
+            obj: Object whose attributes or tensor state are traversed.
+            device: PyTorch device used for tensor operations; None retains the owning controller's
+                device when supported.
+            visited: Object identities already traversed, used to avoid recursive cycles.
         """
         if visited is None:
             visited = set()

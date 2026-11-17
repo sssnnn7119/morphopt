@@ -200,98 +200,59 @@ def test_restart_restores_outer_progress_and_calibration(tmp_path: Path):
     strategy.save(str(tmp_path), 2)
     restored = AdaptiveShapeWeights()
     restored.load(str(tmp_path), 2)
-    assert restored.previous_objective == strategy.previous_objective
+    assert restored._started == strategy._started
     assert restored.state == strategy.state
     assert restored(DistanceUpdater(), gradient) == strategy(updater, gradient)
     assert restored.tolerance == strategy.tolerance
 
 
-@pytest.mark.parametrize("objectives,expected", [
-    ([10.0, 8.0, 6.0, 4.0], [0.05] * 4),
-    ([10.0, 12.0, 15.0, 19.0], [0.05] * 4),
-    ([10.0, 9.95, 9.90, 9.85], [0.05, 0.049, 0.048, 0.047]),
-    ([10.0, 9.95, 9.0, 9.1, 9.09], [0.05, 0.049, 0.049, 0.048, 0.047]),
-    ([0.0, 0.0, 0.0], [0.05, 0.049, 0.048]),
-    ([-10.0, -10.05, -10.10], [0.05, 0.049, 0.048]),
-    ([-10.0, -9.99, -9.98], [0.05, 0.049, 0.048]),
-    ([0.01, -0.01, -0.02], [0.05] * 3),
-])
-def test_distance_tightening_follows_true_objective_progress(objectives, expected):
+@pytest.mark.parametrize("objective", [None, float("nan"), float("inf"), -1e9, 1e9])
+def test_threshold_updates_depend_on_geometry_not_physical_objective(objective):
     updater = DistanceUpdater()
+    updater.r[1][0, 0] = 1.1
     strategy = AdaptiveShapeWeights()
     gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    tolerances, weights = [], []
-    for objective in objectives:
-        updater.objective_value = objective
-        weights.append(strategy(updater, gradient)["distance"])
-        tolerances.append(strategy.tolerance)
-    assert tolerances == pytest.approx(expected)
-    assert weights == pytest.approx([weights[0]] * len(weights))
-
-
-@pytest.mark.parametrize("scale", [1e-9, 1.0, 1e9])
-def test_objective_progress_test_is_independent_of_multiplicative_units(scale):
-    updater = DistanceUpdater()
-    strategy = AdaptiveShapeWeights()
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    for objective in (10.0, 9.95, 8.0, 8.2):
-        updater.objective_value = scale * objective
-        strategy(updater, gradient)
-    assert strategy.tolerance == pytest.approx(0.049)
-
-
-def test_substantial_improvement_does_not_advance_an_iteration_schedule():
-    updater = DistanceUpdater()
-    strategy = AdaptiveShapeWeights()
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    for objective in (0.9**i for i in range(5)):
-        updater.objective_value = objective
-        strategy(updater, gradient)
-    assert strategy.tolerance == 0.05
-
-
-def test_tightening_stops_exactly_at_final_tolerance():
-    updater = DistanceUpdater()
-    strategy = AdaptiveShapeWeights(initial_tolerance=0.05, final_tolerance=0.0475)
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    for _ in range(10):
-        strategy(updater, gradient)
-    assert strategy.tolerance == 0.0475
-
-
-def test_restart_preserves_objective_reference_and_next_tightening(tmp_path: Path):
-    updater = DistanceUpdater()
-    strategy = AdaptiveShapeWeights()
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    for objective in (10.0, 9.95, 9.0):
-        updater.objective_value = objective
-        strategy(updater, gradient)
-    strategy.save(str(tmp_path), 3)
-    restored = AdaptiveShapeWeights()
-    restored.load(str(tmp_path), 3)
-    resumed = DistanceUpdater()
-    assert restored.previous_objective == strategy.previous_objective
-    assert restored.tolerance == strategy.tolerance
-    for objective in (9.1, 9.09, 7.0, 6.99):
-        resumed.objective_value = updater.objective_value = objective
-        assert restored(resumed, gradient) == strategy(updater, gradient)
-        assert restored.tolerance == strategy.tolerance
-
-
-@pytest.mark.parametrize("objective", [None, float("nan"), float("inf")])
-def test_missing_or_nonfinite_true_objective_is_rejected(objective):
-    updater = DistanceUpdater()
     updater.objective_value = objective
-    with pytest.raises(ValueError, match="high-fidelity objective_value"):
-        AdaptiveShapeWeights()(updater, torch.tensor([1.0, 0, 0]))
+    strategy(updater, gradient)
+    assert strategy.tolerance == 0.05
+    strategy(updater, gradient)
+    assert strategy.tolerance == pytest.approx(0.0498)
+
+
+def test_large_violation_pauses_tightening_and_strengthens_the_coefficient():
+    updater = DistanceUpdater()
+    strategy = AdaptiveShapeWeights()
+    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
+    initial = strategy(updater, gradient)["distance"]
+    assert strategy.state["distance"]["violation"] == pytest.approx(1.0)
+    strengthened = strategy(updater, gradient)["distance"]
+    assert strengthened == pytest.approx(10 * initial)
+    assert strategy.tolerance == 0.05
+    updater.r[1][0, 0] = 1.1
+    assert strategy(updater, gradient)["distance"] == pytest.approx(0.9 * strengthened)
+    assert strategy.tolerance == pytest.approx(0.0498)
+
+
+def test_tightening_waits_for_geometry_and_stops_at_the_final_tolerance():
+    updater = DistanceUpdater()
+    updater.r[1][0, 0] = 0.96
+    strategy = AdaptiveShapeWeights()
+    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
+    for _ in range(300):
+        strategy(updater, gradient)
+    assert 0.029 < strategy.tolerance < 0.031
+    assert strategy.state["distance"]["violation"] <= 0.21
+    updater.r[1][0, 0] = 1.1
+    for _ in range(300):
+        strategy(updater, gradient)
+    assert strategy.tolerance == 0
 
 
 @pytest.mark.parametrize("parameters", [
-    {"objective_tolerance": -0.01}, {"objective_tolerance": 1.0},
-    {"objective_tolerance": float("nan")},
+    {"violation_tolerance": 0}, {"violation_tolerance": float("nan")},
     {"tightening_increment": 0}, {"tightening_increment": -0.01},
     {"tightening_increment": float("inf")},
-    {"penalty_growth_limit": 1.0}, {"penalty_growth_limit": float("nan")},
+    {"weight_change_limit": 1.0}, {"weight_change_limit": float("nan")},
     {"initial_tolerance": 1.0}, {"initial_tolerance": float("inf")},
     {"final_tolerance": -0.1}, {"final_tolerance": 0.3},
     {"final_tolerance": float("nan")},
@@ -301,26 +262,31 @@ def test_invalid_schedule_parameters_are_rejected(parameters):
         AdaptiveShapeWeights(**parameters)
 
 
-def test_near_zero_oscillations_use_a_stable_objective_scale():
-    updater = DistanceUpdater()
-    strategy = AdaptiveShapeWeights()
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    tolerances = []
-    for objective in (4.0, 1.0, 0.004, 0.005, 0.001, 0.003):
-        updater.objective_value = objective
-        strategy(updater, gradient)
-        tolerances.append(strategy.tolerance)
-    assert tolerances == pytest.approx([0.05, 0.05, 0.05, 0.049, 0.048, 0.047])
+@pytest.mark.parametrize("power", [3, 5, 7])
+def test_monitored_violation_is_local_and_independent_of_penalty_power(power):
+    barrier = PolynomialBarrier()
+    with barrier.measure_violation():
+        barrier(torch.tensor([0.8, 0.9, 1.1], dtype=torch.float64), 1.0, 0.8, power)
+        barrier(torch.tensor([1.3], dtype=torch.float64), 1.0, 0.8, power)
+    assert barrier.maximum_violation == pytest.approx(1.5)
+    assert not barrier._monitoring
+    value = lambda x: barrier(x, 1.0, 0.8, power)[1].sum()
+    point = torch.tensor([1.1], dtype=torch.float64)
+    assert torch.isfinite(torch.func.grad(value)(point)).all()
+    assert barrier.maximum_violation == pytest.approx(1.5)
 
 
-def test_threshold_tightening_does_not_masquerade_as_geometry_deterioration():
-    updater = DistanceUpdater()
+def test_violation_monitor_cleans_up_after_an_invalid_geometry_value():
+    barrier = PolynomialBarrier()
+    with pytest.raises(ValueError, match="violation must be finite"):
+        with barrier.measure_violation():
+            barrier(torch.tensor([float("nan")]), 1.0, 0.8, 3)
+    assert not barrier._monitoring
+
+
+@pytest.mark.parametrize("required", [0.001, 1.0, 1000.0])
+def test_distance_violation_has_the_same_meaning_in_all_length_units(required):
+    updater = DistanceUpdater(required)
     strategy = AdaptiveShapeWeights()
-    gradient = torch.tensor([1.0, 0, 0], dtype=torch.float64)
-    initial = strategy(updater, gradient)["distance"]
-    first = updater.closure(torch.zeros_like(gradient), True)[1][0].item()
-    for _ in range(50):
-        assert strategy(updater, gradient)["distance"] == initial
-    assert strategy.tolerance == 0.0
-    assert updater.closure(torch.zeros_like(gradient), True)[1][0] > 2 * first
-    assert strategy.state["distance"]["reference_penalty"] == first
+    strategy(updater, torch.tensor([1.0, 0, 0], dtype=torch.float64))
+    assert strategy.state["distance"]["violation"] == pytest.approx(1.0)

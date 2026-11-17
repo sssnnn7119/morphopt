@@ -350,7 +350,16 @@ surface.add_constraint(surface.mirror("xz"))
 surface.add_constraint(surface.mirror("xy", offset=40.0))
 ```
 
-上述两个调用展示不同镜面配置，实际按模型选择登记。BSP 支持 xz 平面和指定偏移的 xy 平面；CPGEO 支持 xy、xz、yz 镜面和旋转对称，例如 `surface.rotate(axis="z", order=4)`。
+上述两个调用展示不同镜面配置，实际按模型选择登记。BSP 支持 xz 平面和指定偏移的 xy 平面。BSP 的 `surface.rotate(order=3)` 登记绕全局 Z 轴的三重周期旋转对称：每个轴向控制点行的前 1/3 为独立扇区，其余两段分别由 −120°、−240° 旋转生成，Z 坐标保持对应。圆周控制点数须为 `order` 的整数倍；圆柱构造参数 `num_U_ratio=order` 可保证这一条件。
+
+```python
+surface.add_constraint(surface.rotate(order=3))
+surface.add_constraint(surface.mirror("xz"))
+```
+
+此组合先施加三重旋转对称，再施加 xz 镜面对称。CPGEO 支持 xy、xz、yz 镜面和指定轴向、中心的旋转对称，例如 `surface.rotate(axis="z", order=4)`。
+
+UI 中的 BSP 旋转约束会自动向生成脚本传入相应的 `num_U_ratio`，U、V 计数因子在表单中隐藏。直接编写脚本时仍可显式设置这两个构造参数。
 
 跨曲面关联通过 `source.add_constraint(source.relate(target, pose=(tx, ty, tz, rx, ry, rz)))` 登记，将源曲面经位姿变换后赋予从动曲面，两侧应采用同类曲面。该表达式中的六个分量替换为实际位姿数值。约束按登记顺序执行，多个约束的叠加应满足几何相容条件。
 
@@ -1306,6 +1315,6 @@ export_history_gif(
 | 更新器注册与绑定 | [updaters.py](../src/morphopt/optcore/updaters.py) |
 | 几何更新 | [update_boundary_part.py](../src/morphopt/shapeopt/update_boundary_part.py) |
 | 材料更新 | [update_simpmaterial.py](../src/morphopt/simp/update_simpmaterial.py) |
-| UI 有限元数据模板 | [snippets.py](../src/morphopt/ui/schemes/snippets.py) |
+| UI 有限元数据模板 | [snippets.py](../src/morphopt/ui/codegen/snippets.py) |
 
 文档章节编号与目录由 `python scripts/number_docs.py` 生成；编辑时可运行 `python scripts/number_docs.py --watch` 自动刷新。

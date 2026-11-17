@@ -34,8 +34,22 @@ class FieldSpec:
     item_type: str = "float"
 
     def new_default(self) -> Any:
+        """Return new default.
+
+        Returns:
+            Any: New default.
+        """
         return _mutable_value(self.default)
 
 
 def field_defaults(fields: Iterable[FieldSpec]) -> dict[str, Any]:
+    """Return field defaults.
+
+    Args:
+        fields (Iterable[FieldSpec]): Requested field keys; None selects the available defaults
+            for the record location.
+
+    Returns:
+        dict[str, Any]: Field defaults.
+    """
     return {field.key: field.new_default() for field in fields}

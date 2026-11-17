@@ -577,7 +577,7 @@
           "maximum": null,
           "ints": false,
           "read_only": false,
-          "hidden": false,
+          "hidden": true,
           "editable": true,
           "components": [],
           "item_type": "float",
@@ -596,7 +596,7 @@
           "maximum": null,
           "ints": false,
           "read_only": false,
-          "hidden": false,
+          "hidden": true,
           "editable": true,
           "components": [],
           "item_type": "float",
@@ -4689,6 +4689,39 @@
           "item_type": "float",
           "label": "平面对称位置",
           "help": "仅 xy 对称面使用；xz 对称面的偏移必须为 0。"
+        }
+      ],
+      "value_fields": []
+    },
+    {
+      "key": "BspRotation",
+      "class": "BspRotationConstraintNode",
+      "label": "BSP Z 轴周期旋转对称",
+      "backend": "BspRotationalSymmetryConstraint",
+      "hidden": false,
+      "custom_only": false,
+      "factory": "BSP",
+      "group": "",
+      "num_values": null,
+      "fields": [
+        {
+          "key": "order",
+          "label_key": "ui.schema.fields.order.label.text",
+          "type": "int",
+          "default": 2,
+          "doc_key": "ui.schema.fields.order.help.bsp_rotation",
+          "choices": [],
+          "size": 6,
+          "minimum": 2,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float",
+          "label": "对称阶数",
+          "help": "绕全局 Z 轴重复排列的周期数。第一段圆周控制点沿负角度依次旋转生成其余各段；UI 生成脚本时自动按周期数调整圆周控制点数量，保证整除。"
         }
       ],
       "value_fields": []

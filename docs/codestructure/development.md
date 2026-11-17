@@ -24,7 +24,7 @@
 | 新模型字段 | `ui/model/node_types/` 与 `FieldSpec` | 字段服务、持久化、生成器和后端参数 |
 | 新跨对象规则 | `ProblemDefinition` | 应用命令，树与卡片共用 |
 | 新编辑工作流 | `ui/application/` | `DefinitionActions` 或专用页面 |
-| 新方案 | `SchemeTemplate` 子类及 Python 注册表 | Quickstart 与方案工厂 |
+| 新快速开始模型 | `application/quickstart.py` | 组合已有节点类型，生成普通问题定义 |
 | 新后端 Part | `BasePart` 子类 | 参数集合、UI 节点、预览与集合 provider |
 | 新设计对象 | 可更新协议及具体子类 | 梯度布局、子优化器、保存和展示 |
 | 新预览类型 | Part/Surface/Load visitor | 节点类注册及必要的渲染图元 |

@@ -13,6 +13,23 @@ from ..palette import (
 
 _viewer = replace(
     DEFAULT_VIEWER_STYLE,
+    geometry=replace(
+        DEFAULT_VIEWER_STYLE.geometry,
+        cad_edge_color="#f5f6f8",
+        cad_label_shape_color="#101722",
+        picked_face_color="#ffb347",
+    ),
+    loads=replace(
+        DEFAULT_VIEWER_STYLE.loads,
+        pressure_surface_color="#38c7ce",
+        pressure_arrow_color="#a8f5da",
+        force_color="#e74c3c",
+        body_force_color="#ff8c42",
+        penalty_color="#ec4899",
+        boundary_color="#398bd0",
+        boundary_outline_color="#8bc8ff",
+        boundary_marker_color="#4aa3df",
+    ),
     render=replace(
         DEFAULT_VIEWER_STYLE.render,
         background="#0e131c",
@@ -24,6 +41,13 @@ _viewer = replace(
         coupling_label_color="#edc27e",
         annotation_text_color="#dce4ee",
         annotation_background_color="#202833",
+        marker_color_reference_axis="#fff0c2",
+        marker_color_reference_point="#dfad62",
+        marker_color_moment="#f1c40f",
+        marker_color_spring="#c084fc",
+        marker_color_boundary="#4aa3df",
+        marker_color_penalty="#ec4899",
+        marker_color_annotation_error="#e74c3c",
     ),
 )
 

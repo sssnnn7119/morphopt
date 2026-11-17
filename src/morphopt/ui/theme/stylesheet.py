@@ -11,7 +11,15 @@ _TOKEN_PATTERN = re.compile(r"@([a-z_]+)@")
 
 
 def theme_stylesheet(palette: ThemePalette) -> str:
-    """Assemble QSS fragments and replace them with active theme tokens."""
+    """Assemble QSS fragments and replace them with active theme tokens.
+
+    Args:
+        palette (ThemePalette): Active theme palette containing shared colors and layout
+            settings.
+
+    Returns:
+        str: Assemble QSS fragments and replace them with active theme tokens.
+    """
     package = files("morphopt.ui.theme.styles")
     template = "\n\n".join(
         package.joinpath(filename).read_text(encoding="utf-8")

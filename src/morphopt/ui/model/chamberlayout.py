@@ -8,6 +8,7 @@ from ..i18n import localized_message
 
 @dataclass
 class ChamberLayer:
+    """Describe one axial cavity layer in an actuator geometry layout."""
     length: float = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.LENGTH
     chambers: int = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.CHAMBERS
     arrangement: str = CONSTANT.UI.QUICKSTART.DEFAULT_LAYER.ARRANGEMENT
@@ -22,6 +23,7 @@ class ChamberLayer:
 
 @dataclass(frozen=True)
 class CavitySpec:
+    """Describe the radius, axial extent, and placement of one actuator cavity."""
     layer: int
     x: float
     y: float
@@ -40,21 +42,31 @@ class LayeredChambers:
     """
 
     def __init__(self, layers, body_radius, wall):
+        """Initialize LayeredChambers and its configuration state.
+
+        Args:
+            layers: Axial chamber-layer declarations in registration order.
+            body_radius: Outer actuator radius in model length units.
+            wall: Nominal cavity-wall thickness in model length units.
+        """
         self.layers = list(layers)
         self.body_radius, self.wall = body_radius, wall
         self.validate()
 
     @property
     def length(self):
+        """Handle length for LayeredChambers."""
         return sum(layer.length for layer in self.layers)
 
     @property
     def channels(self):
+        """Handle channels for LayeredChambers."""
         return sorted(
             {channel for layer in self.layers for channel in layer.pressure_channels}
         )
 
     def validate(self):
+        """Validate the LayeredChambers state."""
         if not CONSTANT.UI.QUICKSTART.LIMITS.LAYER_MIN_COUNT <= len(self.layers) <= CONSTANT.UI.QUICKSTART.LIMITS.CHAMBER_MAX_COUNT:
             raise ValueError(localized_message("ui.errors.chamberlayout.define_1_8_chamber_layers"))
         if (
@@ -129,6 +141,7 @@ class LayeredChambers:
                     )
 
     def cavity_specs(self):
+        """Handle cavity specs for LayeredChambers."""
         cavities, bottom = [], 0.
         for index, layer in enumerate(self.layers):
             phase = math.radians(layer.phase_degrees)

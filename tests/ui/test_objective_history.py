@@ -5,11 +5,14 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QSpinBox
 
 from morphopt.optcore.history import History
 from morphopt.ui.application import ProblemLibrary, ProblemSession
 from morphopt.ui.i18n import tr
+from morphopt.ui.model.configuration import objective_term_config
 from morphopt.ui.presentation.labels import node_title
 from morphopt.ui.presentation.navigation import ObjectiveItemTreeNode
 from morphopt.ui.widgets.objective_editor import ObjectiveEditor
@@ -20,6 +23,45 @@ def generated_objective(problem):
     namespace = {"__name__": "objective_history_test"}
     exec(ProblemSession(problem).source(), namespace)
     return namespace["ThisController"].ObjectiveFunction()
+
+
+@pytest.mark.parametrize("kind,key,text", [
+    ("displacement", "target", "-12.75"),
+    ("displacement", "weight", "12.75"),
+    ("workspace", "normalization", "12.75"),
+    ("workspace", "gauss_order", "4"),
+])
+def test_numeric_objective_edits_commit_once_after_complete_input(kind, key, text):
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    term = objective_term_config(kind)
+    problem.objective.objective_terms = [term]
+    editor = ObjectiveEditor()
+    editor.set_problem(problem)
+    editor.show()
+    app.processEvents()
+    fields = editor._term_fields[0]
+    if kind == "workspace":
+        numeric_type = QSpinBox if key == "gauss_order" else QDoubleSpinBox
+        control = fields["workspace"].findChild(numeric_type)
+    else:
+        control = fields[key]
+    changes = []
+    editor.changed.connect(changes.append)
+    original = term[key]
+    try:
+        edit = control.lineEdit()
+        edit.setFocus()
+        edit.selectAll()
+        QTest.keyClicks(edit, text)
+        assert term[key] == original
+        assert changes == []
+        QTest.keyClick(edit, Qt.Key.Key_Tab)
+        app.processEvents()
+        assert term[key] == float(text)
+        assert changes == [problem.objective]
+    finally:
+        editor.close()
 
 
 def test_user_metrics_precede_weighted_objectives_and_preserve_gradients(tmp_path):
@@ -185,6 +227,46 @@ def test_custom_history_fields_appear_without_registering_columns():
     page.curve_selector.setCurrentIndex(labels.index("diagnostics.residual"))
     values = page.figure.axes[0].lines[0].get_ydata()
     assert values[0] == 0.1 and np.isnan(values[1])
+    page.close()
+
+
+def test_saved_optimizer_parameters_appear_as_named_columns_and_curves(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    data = History()
+    data.append(objective=4.)
+    for weight, violation in ((0.5, 0.0), (0.2, 0.1)):
+        data.append(objective=3., optimizers={
+            "body": {
+                "iterations": 12,
+                "constraint_weights": {"Distance_0": weight},
+                "constraint_weight_state": {
+                    "tolerance": 0.04,
+                    "penalties": {"Distance_0": {"violation": violation}},
+                },
+            },
+            "density": {"constraint_weights": {"Distance_0": 2.0}},
+        })
+    data.save(str(tmp_path))
+    restored = History()
+    restored.load(str(tmp_path))
+    page = MetricsPage()
+    page.update_from_history(restored, 3)
+    headers = [page.table.horizontalHeaderItem(index).text() for index in range(page.table.columnCount())]
+    weight_field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr("ui.history.weight"))
+    body_weight = tr("ui.history.optimizer_field", updater="body", field=weight_field)
+    density_weight = tr("ui.history.optimizer_field", updater="density", field=weight_field)
+    assert body_weight in headers and density_weight in headers
+    column = headers.index(body_weight)
+    assert [page.table.item(row, column).text() for row in range(3)] == ["", "0.5", "0.2"]
+    for key in ("inner_iterations", "tolerance"):
+        assert tr("ui.history.optimizer_field", updater="body", field=tr(f"ui.history.{key}")) in headers
+    field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr("ui.history.violation"))
+    violation_column = headers.index(tr("ui.history.optimizer_field", updater="body", field=field))
+    assert [page.table.item(row, violation_column).text() for row in range(3)] == ["", "0", "0.1"]
+    assert len(headers) == 7
+    labels = [page.curve_selector.itemText(index) for index in range(page.curve_selector.count())]
+    page.curve_selector.setCurrentIndex(labels.index(body_weight))
+    np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [np.nan, 0.5, 0.2])
     page.close()
 
 

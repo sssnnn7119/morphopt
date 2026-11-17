@@ -29,6 +29,14 @@ class SIMPScaledMaterial(torchfea.materials.Materials_Base):
         base_material: torchfea.materials.Materials_Base,
         scale: torch.Tensor,
     ) -> None:
+        """Initialize SIMPScaledMaterial and its configuration state.
+
+        Args:
+            base_material (torchfea.materials.Materials_Base): Constitutive material interpolated by
+                the SIMP density field.
+            scale (torch.Tensor): Reference scale used to express the requested quantity or
+                geometry.
+        """
         super().__init__()
         self.base_material = base_material
         self.scale = scale
@@ -37,6 +45,14 @@ class SIMPScaledMaterial(torchfea.materials.Materials_Base):
         self.type: int = int(base_material.type)
 
     def strain_energy_density_C3(self, F: torch.Tensor) -> torch.Tensor:
+        """Return strain energy density  c3.
+
+        Args:
+            F (torch.Tensor): Deformation-gradient tensor at the element integration points.
+
+        Returns:
+            torch.Tensor: Strain energy density  c3.
+        """
         energy = self.base_material.strain_energy_density_C3(F=F)
         return energy * self.scale
 
@@ -48,6 +64,20 @@ class SIMPScaledMaterial(torchfea.materials.Materials_Base):
         invF: torch.Tensor | None = None,
         I1: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return material  constitutive  c3.
+
+        Args:
+            F (torch.Tensor): Deformation-gradient tensor at the element integration points.
+            J (torch.Tensor | None): Determinant of the deformation gradient.
+            Jneg (torch.Tensor | None): Negative-determinant contribution used by the element
+                stabilization.
+            invF (torch.Tensor | None): Inverse deformation-gradient tensor.
+            I1 (torch.Tensor | None): First invariant of the deformation measure used by the
+                constitutive energy.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Material  constitutive  c3.
+        """
         stress, tangent = self.base_material.material_Constitutive_C3(
             F=F, J=J, Jneg=Jneg, invF=invF, I1=I1
         )
@@ -105,20 +135,31 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         materialpenalty: int = CONSTANT.KERNEL.SIMP.DEFAULT_MATERIAL_PENALTY,
         elementname: str = "",
     ) -> None:
-        """
-        Initialize the SIMPMaterials class.
+        """Initialize the SIMPMaterials class.
 
         Args:
-            mumax (float): The maximum shear modulus for SIMP interpolation. The actual shear modulus will be interpolated between `simp_ratio_min*mumax` and `mumax`.
-            kappamax (float): The maximum bulk modulus for SIMP interpolation. The actual bulk modulus will be interpolated between `simp_ratio_min*kappamax` and `kappamax`.
-            simp_ratio_min (float): The minimum ratio for SIMP interpolation. The actual material properties will be interpolated between `simp_ratio_min` and 1.
-            bounding_box (list[float]): The bounding box of the design domain, specified as `[xmin, xmax, ymin, ymax, zmin, zmax]`.
-            simp_field_resolution (float): The resolution of the SIMP field, specified as the size of each voxel in the field.
+            mumax (float): The maximum shear modulus for SIMP interpolation. The actual shear
+                modulus will be interpolated between `simp_ratio_min*mumax` and `mumax`.
+            kappamax (float): The maximum bulk modulus for SIMP interpolation. The actual bulk
+                modulus will be interpolated between `simp_ratio_min*kappamax` and `kappamax`.
+            simp_ratio_min (float): The minimum ratio for SIMP interpolation. The actual material
+                properties will be interpolated between `simp_ratio_min` and 1.
+            bounding_box (list[float]): The bounding box of the design domain, specified as `[xmin,
+                xmax, ymin, ymax, zmin, zmax]`.
+            simp_field_resolution (float): The resolution of the SIMP field, specified as the size
+                of each voxel in the field.
             degree (int): The degree of the B-spline basis functions.
+            material_parameters (MaterialModels.MaterialParameters): Constitutive-model parameter
+                object used to instantiate the TorchFEA material.
+            part_name (str): Registered Part name referenced by instances, loads, or material
+                assignments.
             density (float): The density of the material.
-            initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the control points of the BSP field.
+            initial_ratio (float): The initial ratio for SIMP interpolation, used to initialize the
+                control points of the BSP field.
             voidpenalfactor (float): The penalization factor for the SIMP material.
             materialpenalty (int): The penalization power for the SIMP interpolation.
+            elementname (str): Element-family or element-set name; an empty selection applies to all
+                families when supported.
         """
         super().__init__(
             part_name=part_name,
@@ -201,7 +242,12 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
 
     # ------------------------------------------------------------------ field
     def _build_simp_field(self) -> bspmap.BSP:
-        """Build the BSP design field from the stored parameters."""
+        """Build the BSP design field from the stored parameters.
+
+        Returns:
+            bspmap.BSP: Three-dimensional B-spline field initialized from the stored design
+                configuration.
+        """
         basis_x = bspmap.BasisClamped(num_cps=self._bsp_size[0], degree=self._degree)
         basis_y = bspmap.BasisClamped(num_cps=self._bsp_size[1], degree=self._degree)
         basis_z = bspmap.BasisClamped(num_cps=self._bsp_size[2], degree=self._degree)
@@ -216,18 +262,28 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
 
     @property
     def simp_field(self) -> bspmap.BSP:
-        """The BSP field of this SIMP interface."""
+        """The BSP field of this SIMP interface.
+
+        Returns:
+            bspmap.BSP: The BSP field of this SIMP interface.
+        """
         if self._field_bsp is None:
             self._build_simp_field()
         return self._field_bsp
 
     def pathlog_required(self) -> list[str]:
+        """Return log subdirectories required by this component.
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         return ["materials"]
 
     @property
     def if_use_simppenalty(self) -> bool:
-        """
-        Whether to use the SIMP penalty in the finite element analysis. If True, the stiffness of intermediate density materials will be penalized, which can help to achieve a more discrete material distribution in the optimization process.
+        """Whether to use the SIMP penalty in the finite element analysis. If True, the stiffness of
+        intermediate density materials will be penalized, which can help to achieve a more discrete
+        material distribution in the optimization process.
 
         Returns:
             bool: True if SIMP penalty is used, False otherwise.
@@ -235,6 +291,12 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         return self.voidpenalfactor > 0
 
     def initialize(self, *args: object, **kwargs: object) -> None:
+        """Initialize the SIMP_BSPFieldMaterials state.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
 
         if self._field_bsp is None:
@@ -250,28 +312,64 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         )
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
+        """Reinitialize the SIMP_BSPFieldMaterials state.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().reinitialize(iteration, *args, **kwargs)
         self.simp_field.control_points = self._cps.cpu().numpy().reshape([-1, 1])
 
     def get_control_points_list(self) -> list[torch.Tensor]:
+        """Get control points list.
+
+        Returns:
+            list[torch.Tensor]: Control points list.
+        """
         return [self._cps.detach().clone()]
 
     @property
     def num_variables(self) -> int:
-        """Number of scalar SIMP control-point variables."""
+        """Number of scalar SIMP control-point variables.
+
+        Returns:
+            int: Number of scalar coordinates in this interface's active design vector.
+        """
         return int(np.prod(self._bsp_size))
 
     def get_parameters(self) -> list[torch.Tensor]:
+        """Return the ordered parameter tensors owned by this interface.
+
+        Returns:
+            list[torch.Tensor]: Parameter tensors in the interface's design-variable block order.
+        """
         return [self._cps.detach().clone().flatten()]
 
     def get_design_values(self) -> torch.Tensor:
-        """Return live SIMP control points while preserving autograd."""
+        """Return live SIMP control points while preserving autograd.
+
+        Returns:
+            torch.Tensor: Live SIMP control points while preserving autograd.
+        """
         return self._cps.flatten()
 
     def set_parameters(self, xlist: list[torch.Tensor]) -> None:
+        """Restore the ordered parameter tensors owned by this interface.
+
+        Args:
+            xlist (list[torch.Tensor]): Parameter tensors in the material interface's registered
+                order.
+        """
         self._cps = xlist[0].reshape_as(self._cps).to(self._cps.device)
 
     def get_variables(self) -> torch.Tensor:
+        """Create the initial flattened perturbation vector for the subproblem.
+
+        Returns:
+            torch.Tensor: Initial flattened perturbation vector used to construct the subproblem.
+        """
         return (
             torch.randn_like(self._cps.flatten())
             * CONSTANT.KERNEL.SIMP.INITIAL_VARIABLE_NOISE
@@ -282,6 +380,14 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         x_change: torch.Tensor,
         max_step_length: torch.Tensor | list[torch.Tensor] | None = None,
     ) -> None:
+        """Update variables.
+
+        Args:
+            x_change (torch.Tensor): Design-variable increment in this interface's flattened
+                parameter order.
+            max_step_length (torch.Tensor | list[torch.Tensor] | None): Updater-owned movement
+                limits in the target's parameter-block order.
+        """
         if max_step_length is None:
             max_step_length = torch.ones_like(self._cps.flatten())
         if isinstance(max_step_length, list):
@@ -308,6 +414,15 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         self, nodes: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
 
+        """Get indices weight for nodes.
+
+        Args:
+            nodes (torch.Tensor): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Indices weight for nodes.
+        """
         nodes_normalized = torch.zeros_like(nodes)
         nodes_normalized[:, 0] = (nodes[:, 0] - self._bounding_box[0]) / (
             self._bounding_box[1] - self._bounding_box[0]
@@ -355,14 +470,18 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         return indices, weights
 
     def _map_bsp_designfield(self, nodes: torch.Tensor) -> torch.Tensor:
-        """
-        Get the ratio of maximum to minimum modulus for the given nodes.
+        """Evaluate the raw B-spline design field at Cartesian sample coordinates.
 
         Args:
-            nodes (torch.Tensor): The coordinates of the nodes for which to compute the ratio.
+            nodes (torch.Tensor): Coordinates with shape (num_nodes, 3), inside the configured
+                design bounding box.
 
         Returns:
-            torch.Tensor: The ratio of maximum to minimum modulus for the given nodes.
+            torch.Tensor: Raw design-field values with shape (num_nodes, 1), before sigmoid and
+                material interpolation.
+
+        Raises:
+            ValueError: A sample lies outside the design bounding box.
         """
 
         if (
@@ -388,14 +507,18 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     def _map_bsp_designfield_with_spartial_derivative(
         self, nodes: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Get the ratio of maximum to minimum modulus for the given nodes.
+        """Evaluate the raw design field while retaining first spatial derivatives.
+
+        Basis values are evaluated outside autograd. A zero-value correction restores the
+        corresponding spatial gradient without changing the forward field values.
 
         Args:
-            nodes (torch.Tensor): The coordinates of the nodes for which to compute the ratio.
+            nodes (torch.Tensor): Cartesian query coordinates with shape (num_nodes, 3), normalized
+                internally to the design bounding box.
 
         Returns:
-            torch.Tensor: The ratio of maximum to minimum modulus for the given nodes.
+            torch.Tensor: Raw field values with shape (num_nodes, 1), differentiable with respect to
+                design controls and query coordinates.
         """
 
         nodes_normalized = torch.zeros_like(nodes)
@@ -460,13 +583,14 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         return result
 
     def get_material_ratio(self, designfield: torch.Tensor) -> torch.Tensor:
-        """
-        Get the material density rho for the given ratio.
+        """Convert raw design-field values to interpolated material stiffness ratios.
 
         Args:
             designfield (torch.Tensor): The design field values.
+
         Returns:
-            torch.Tensor: The material density rho for the given ratio.
+            torch.Tensor: Ratios after sigmoid, RAMP interpolation, and the configured minimum
+                stiffness floor.
         """
 
         rho = 1 / (1 + torch.exp(-designfield))
@@ -509,7 +633,17 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         elements: torchfea.elements.Element_3D,
         penalfactor: torch.Tensor | float,
     ) -> torchfea.elements.Element_3D:
-        """Wrap one element family with the optional SIMP penalty adapter."""
+        """Wrap one element family with the optional SIMP penalty adapter.
+
+        Args:
+            elements (torchfea.elements.Element_3D): Element blocks or their connectivity used by
+                this operation.
+            penalfactor (torch.Tensor | float): SIMP density-interpolation exponent.
+
+        Returns:
+            torchfea.elements.Element_3D: Wrap one element family with the optional SIMP penalty
+                adapter.
+        """
         if not self.if_use_simppenalty:
             return elements
 
@@ -541,7 +675,14 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         elements: torchfea.elements.Element_3D,
         nodes: torch.Tensor,
     ) -> None:
-        """Assign the current SIMP field to one element family."""
+        """Assign the current SIMP field to one element family.
+
+        Args:
+            elements (torchfea.elements.Element_3D): Element blocks or their connectivity used by
+                this operation.
+            nodes (torch.Tensor): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+        """
         elements._pre_load_gaussian(nodes=nodes)
         gaussian_points = elements.get_gaussian_points(nodes=nodes)
         shape_gaussian = gaussian_points.shape
@@ -582,8 +723,11 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     def obtain_design_sensitivity_vars(
         self, assembly: torchfea.Assembly
     ) -> torch.Tensor:
-        """
-        Get the design sensitivity variables for the optimization process.
+        """Get the design sensitivity variables for the optimization process.
+
+        Args:
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
 
         Returns:
             torch.Tensor: The design sensitivity variables.
@@ -593,9 +737,14 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     def modify_assembly(
         self, design_sensitivity_vars: torch.Tensor, assembly: torchfea.Assembly
     ) -> None:
-        """
-        Modify the assembly for sensitivity analysis.
-        geometry parameters will contains the nodes of the fea model, and the assembly will be modified according to the geometry parameters.
+        """Modify the assembly for sensitivity analysis. geometry parameters will contains the nodes of
+        the fea model, and the assembly will be modified according to the geometry parameters.
+
+        Args:
+            design_sensitivity_vars (torch.Tensor): Differentiable design-variable tensor used to
+                modify the assembly.
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
         """
 
         self._cps = design_sensitivity_vars.reshape_as(self._cps)
@@ -632,6 +781,12 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
                 elems._initialize_simppenalty()
 
     def save(self, foldpath: str, iteration: int) -> None:
+        """Save the SIMP_BSPFieldMaterials state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         dirpath = self.save_directory(foldpath, self.name)
         path_now = os.path.join(dirpath, f"simp_material_iter_{iteration}.npz")
         np.savez_compressed(
@@ -668,6 +823,12 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         plt.close()
 
     def load(self, foldpath: str, iteration: int) -> None:
+        """Load the SIMP_BSPFieldMaterials state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         dirpath = self.save_directory(foldpath, self.name)
         path_now = os.path.join(dirpath, f"simp_material_iter_{iteration}.npz")
         data = np.load(path_now)
@@ -706,6 +867,11 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         self._field_bsp = bsp
 
     def get_meshes(self) -> list[pv.DataSet]:
+        """Get the visualization meshes contributed by this component.
+
+        Returns:
+            list[pv.DataSet]: Visualization meshes in component registration order.
+        """
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounding_box
         nx, ny, nz = self._bsp_size
 
@@ -751,6 +917,18 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         plotter: pv.Plotter | None = None,
         meshes: pv.DataSet | None = None,
     ) -> pv.Plotter:
+        """Add the thresholded SIMP material-density view to a PyVista plotter.
+
+        Args:
+            plotter (pv.Plotter | None): PyVista plotter receiving the scene; None creates a new
+                plotter.
+            meshes (pv.DataSet | None): Optional precomputed visualization meshes; None obtains
+                meshes from the model.
+
+        Returns:
+            pv.Plotter: Supplied or newly created plotter containing material cells above the
+                density threshold.
+        """
         import pyvista as pv
 
         if plotter is None:

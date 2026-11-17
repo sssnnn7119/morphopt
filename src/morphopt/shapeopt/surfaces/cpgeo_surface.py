@@ -24,11 +24,11 @@ if TYPE_CHECKING:
 
 
 class CPGEOSurface(ControlPointSurface):
-    """
-    Class to handle a CPGEO surface.
+    """Represent a closed CPGEO surface with a triangular control mesh.
 
-    CPGEO uses triangular meshes with control points for morphology optimization,
-    providing a flexible alternative to B-spline surfaces for complex geometries.
+    The PyTorch control-point tensor carries design-variable gradients. The CPGEO backend
+    supplies basis coefficients, reconstruction, and STL export. Call synchronize() before
+    operations that read backend geometry after changing live control points.
     """
 
     is_discrete = True
@@ -41,6 +41,12 @@ class CPGEOSurface(ControlPointSurface):
         surface: cpgeo.CPGEO,
         init_size: float,
     ):
+        """Initialize CPGEOSurface and its configuration state.
+
+        Args:
+            surface (cpgeo.CPGEO): Surface interface to register, evaluate, or constrain.
+            init_size (float): Target CPGEO reconstruction spacing in model length units.
+        """
         super().__init__()
         self.is_updatable = True
 
@@ -66,10 +72,19 @@ class CPGEOSurface(ControlPointSurface):
         """The output control point faces for visualization or debugging."""
 
     def synchronize(self):
+        """Copy live geometric parameters to the external geometry representation."""
         self.model._control_points = self._cps.detach().cpu().numpy()
 
     def map(self, uv: torch.Tensor) -> torch.Tensor:
-        """Map from UV space to 3D space using the CPGEO model."""
+        """Map from UV space to 3D space using the CPGEO model.
+
+        Args:
+            uv (torch.Tensor): Surface parameter coordinates with shape (num_queries, 2).
+
+        Returns:
+            torch.Tensor: Evaluated Cartesian positions with shape (num_queries, 3), retaining
+                control-point gradients.
+        """
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
         indices_cps, indices_pts, w = self.model.get_weights2(uv_np)
         w = torch.from_numpy(w).to(torch.get_default_device()).flatten()
@@ -88,7 +103,14 @@ class CPGEOSurface(ControlPointSurface):
         return self._map(w, indices, num_pts=uv.shape[0])
 
     def get_normals(self, uv: torch.Tensor) -> torch.Tensor:
-        """Compute normals at given UV coordinates using the CPGEO model."""
+        """Compute normals at given UV coordinates using the CPGEO model.
+
+        Args:
+            uv (torch.Tensor): Surface parameter coordinates with shape (num_queries, 2).
+
+        Returns:
+            torch.Tensor: Oriented unit normals with shape (num_queries, 3).
+        """
         uv_np = uv.detach().cpu().numpy().reshape(-1, 2)
         indices_cps, indices_pts, _, wdu = self.model.get_weights2(uv_np, derivative=1)
 
@@ -121,7 +143,12 @@ class CPGEOSurface(ControlPointSurface):
         self._is_first_initialize = True
 
     def _reconstruction_check(self):
-        """Check the reconstruction accuracy of the CPGEO model."""
+        """Compare the largest and smallest control-point influence areas.
+
+        Returns:
+            bool: True when the influence-area ratio exceeds the configured reconstruction
+                threshold.
+        """
 
         # calculate the gaussian determinant of the first fundamental form
         gaussian_points = self.model._knots[self.model._cp_faces].mean(axis=1)
@@ -171,7 +198,16 @@ class CPGEOSurface(ControlPointSurface):
         )
 
     def reinitialize(self, iteration: int, *args: object, **kwargs: object) -> None:
-        """Reinitialize the CPGEO model if the volume change is significant."""
+        """Reconstruct the CPGEO control mesh when its sampling-area distribution becomes unbalanced.
+
+        The first call also performs reconstruction. Rebuilding can change the number of control
+        points, so basis and geometry caches are refreshed before the next subproblem.
+
+        Args:
+            iteration (int): Iteration index associated with the saved or current model state.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
 
         if_reconstruct = self._reconstruction_check()
 
@@ -201,6 +237,18 @@ class CPGEOSurface(ControlPointSurface):
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
     ):
 
+        """Precompute sparse CPGEO basis stencils for surface integration and differentiation.
+
+        Args:
+            pre_points (torch.Tensor): Optional curvilinear parameter samples with shape
+                (num_points, 2). Supply together with triangular faces; otherwise use refined
+                reference-sphere samples.
+            faces (torch.Tensor): Optional triangular connectivity indexing pre_points.
+
+        Returns:
+            ControlPointSurface.PreLoadData: Parameters, triangle connectivity, and sparse basis
+                coefficients through second derivatives.
+        """
         if pre_points is not None and faces is not None:
             # If external sample points are provided, use them directly.
             preload_uv = pre_points
@@ -268,8 +316,12 @@ class CPGEOSurface(ControlPointSurface):
     def get_points_weight(self):
         """Compute vertex-based integration weights for CPGEO preload points.
 
-        Uses vertex barycentric area weighting: each triangle contributes one-third
-        of its area to each incident vertex.
+        Uses vertex barycentric area weighting: each triangle contributes one-third of its area to
+        each incident vertex.
+
+        Returns:
+            torch.Tensor: Reference surface-area quadrature weights aligned with the preloaded
+                sample points.
         """
         r = self.get_r().detach()
         return self.preload_data.compute_point_weights(r)
@@ -279,10 +331,13 @@ class CPGEOSurface(ControlPointSurface):
         """Output CPGEO mesh as STL file.
 
         Args:
-            vertices (np.ndarray): Vertex coordinates, shape (N, 3)
-            faces (np.ndarray): Face connectivity, shape (F, 3)
-            path_output (str): Output directory path
-            name_output (str): Output file name (without extension)
+            vertices: Vertex coordinates, shape (N, 3)
+            faces: Face connectivity, shape (F, 3)
+            path_output: Output directory path
+            name_output: Output file name (without extension)
+
+        Returns:
+            str: Written STL file path, including the output directory and .stl suffix.
         """
         import pyvista as pv
 
@@ -306,9 +361,10 @@ class CPGEOSurface(ControlPointSurface):
         """Output CPGEO mesh data to STL file.
 
         Args:
-            path_output (str): Output directory path
+            path_output (str | Path): Output directory path
             name_output (str): Output file name
             seed_size (float): Optional seed size (unused for CPGEO)
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
 
         Returns:
             str: Output filename with extension
@@ -336,15 +392,35 @@ class CPGEOSurface(ControlPointSurface):
         part: CADMeshingMixin,
         context: OCCBuilder,
     ) -> list[int]:
+        """Load geometry.
+
+        Args:
+            part (CADMeshingMixin): Part whose geometry, mesh, or named sets are processed.
+            context (OCCBuilder): Active Gmsh/OCC builder owned by the caller's serialized geometry
+                session.
+
+        Returns:
+            list[int]: Discrete face tags of the CPGEO boundary in the active assembly session.
+        """
         return part.load_mesh_boundary(self._geometry_path)
 
     def save(self, filename):
-        """Save CPGEO model to file."""
+        """Save CPGEO model to file.
+
+        Args:
+            filename: State-file path or filename prefix accepted by this component's save/load
+                pair.
+        """
         self.model.control_points = self._cps.detach().cpu().numpy()
         self.model.save(filename)
 
     def load(self, filename):
-        """Load CPGEO model from file."""
+        """Load CPGEO model from file.
+
+        Args:
+            filename: State-file path or filename prefix accepted by this component's save/load
+                pair.
+        """
         self.model = cpgeo.CPGEO.load(filename + ".npz")
         self._cps = torch.from_numpy(self.model.control_points).to(
             torch.get_default_device()
@@ -352,10 +428,14 @@ class CPGEOSurface(ControlPointSurface):
         self.initialize()
 
     def get_mesh(self):
-        """Get PyVista mesh from CPGEO model.
+        """Get the PyVista mesh from the synchronized CPGEO model.
 
         Returns:
-            pv.PolyData: PyVista mesh with current control point positions
+            pv.PolyData: Triangular surface mesh with computed normals.
+
+        Notes:
+            The backend model supplies the coordinates. Call synchronize() first if the live PyTorch
+            control points have changed since the last synchronization.
         """
         import pyvista as pv
 
@@ -381,17 +461,18 @@ class CPGEOSurface(ControlPointSurface):
         init_location=[0.0, 0.0, 0.0],
         perturbation_L=-1.0,
     ):
-        """
-        Initialize the CPGEO surface for cylinder shape optimization.
+        """Initialize the CPGEO surface for cylinder shape optimization.
 
-        Parameters:
+        Args:
             r0 (float): The radius of the cylinder.
             length (float): The length of the cylinder.
             seed_size (float): Initial control-mesh and surface sampling spacing.
-            num_U_ratio (int, optional): Circumferential segment-count alignment factor, combined with 12 by LCM.
-            num_V_ratio (int, optional): Axial segment-count rounding factor; the final count is even.
-            init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
-            perturbation_L (float, optional): The perturbation length for initial shape. Default is -1. If < 0, no perturbation is applied.
+            num_U_ratio (int): Circumferential segment-count alignment factor, combined with 12 by
+                LCM.
+            num_V_ratio (int): Axial segment-count rounding factor; the final count is even.
+            init_location: The initial location of the surface. Default is [0., 0., 0.].
+            perturbation_L: The perturbation length for initial shape. Default is -1. If < 0, no
+                perturbation is applied.
 
         Returns:
             CPGEOSurface: The initialized CPGEO surface object.
@@ -467,16 +548,15 @@ class CPGEOSurface(ControlPointSurface):
         seed_size: float,
         init_location=[0.0, 0.0, 0.0],
     ):
-        """
-        Initialize the CPGEO surface for sphere shape optimization.
+        """Initialize the CPGEO surface for sphere shape optimization.
 
-        Parameters:
+        Args:
             r0 (float): The radius of the sphere.
             seed_size (float): The size of the mesh seed.
-            init_location (list[float], optional): The initial location of the surface. Default is [0., 0., 0.].
+            init_location: The initial location of the surface. Default is [0., 0., 0.].
+
         Returns:
             CPGEOSurface: The initialized CPGEO surface object.
-
         """
         import cpgeo.capi
 
@@ -518,16 +598,21 @@ class CPGEOSurface(ControlPointSurface):
         surf_nodes: np.ndarray,
         batch_size: int | None = None,
     ):
-        """
-        Find closest (u, v) on CPGEO surface for each 3D point in `nodes` using a memory-efficient approach.
+        """Project finite-element surface nodes onto the synchronized CPGEO geometry.
+
+        Matched parameters and global node indices are retained for subsequent differentiable
+        geometry updates.
 
         Args:
-            nodes (np.ndarray): Array of shape (N, 3) containing 3D
-                coordinates to match on the surface.
+            surf_node_idx (np.ndarray): Global FE node indices corresponding to surf_nodes.
+            surf_nodes (np.ndarray): Cartesian coordinates of assigned surface nodes, shape
+                (num_nodes, 3).
+            batch_size (int | None): Maximum number of points processed together during coordinate
+                matching.
 
         Returns:
-            np.ndarray: Array of shape (N, 2) containing the corresponding
-                (u, v) parameters on the CPGEO surface for each input node.
+            np.ndarray: Projected Cartesian positions with shape (num_nodes, 3), in input-node
+                order. The matched (u, v) parameters are stored separately in surf_node_uv.
         """
 
         nodes = surf_nodes

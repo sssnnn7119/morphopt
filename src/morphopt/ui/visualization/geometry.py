@@ -48,7 +48,16 @@ _CAD_FACE_ID = "morphopt_cad_face_id"
 
 
 def _preview_key(node: PartNode | SurfaceNode, problem: ProblemDefinition) -> str:
-    """Identify one resolved preview input without depending on object identity."""
+    """Identify one resolved preview input without depending on object identity.
+
+    Args:
+        node (PartNode | SurfaceNode): Definition node being inspected or edited.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+
+    Returns:
+        str: Identify one resolved preview input without depending on object identity.
+    """
     return json.dumps(
         {
             "node": node.to_dict(),
@@ -68,6 +77,17 @@ def apply_instance_pose(
     instance: InstanceNode,
     values: DefinitionValues | None = None,
 ) -> pv.DataSet:
+    """Apply instance pose.
+
+    Args:
+        mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+        instance (InstanceNode): Assembly instance whose placement and geometry are used.
+        values (DefinitionValues | None): Values aligned with the parameters or records
+            processed by this interface.
+
+    Returns:
+        pv.DataSet: Apply instance pose.
+    """
     transformed = mesh.copy()
     rotation = np.asarray(
         values.resolve(instance.rotation) if values else instance.rotation, dtype=float
@@ -99,6 +119,14 @@ class PartPreviewAdapter(Generic[PartT]):
         part: PartT,
         instance: InstanceNode | None,
     ) -> None:
+        """Preview the PartPreviewAdapter state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (PartT): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         raise NotImplementedError
 
     def surface(
@@ -107,22 +135,60 @@ class PartPreviewAdapter(Generic[PartT]):
         part: PartT,
         name: str,
     ) -> pv.DataSet | None:
+        """Return surface.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (PartT): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet | None: Surface.
+        """
         return None
 
     def model_part(self, context: PreviewGeometry, part: PartT) -> torchfea.Part | None:
+        """Return model part.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (PartT): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part | None: Model part.
+        """
         return None
 
 
 class PartPreviewVisitor:
+    """Dispatch Part preview generation to the adapter registered for each definition type."""
     def __init__(self) -> None:
+        """Initialize PartPreviewVisitor and its configuration state."""
         self._adapters: dict[type[PartNode], PartPreviewAdapter[Any]] = {}
 
     def register(
         self, node_type: type[PartT], adapter: PartPreviewAdapter[PartT]
     ) -> None:
+        """Register the PartPreviewVisitor state.
+
+        Args:
+            node_type (type[PartT]): Registered definition-node class to instantiate or validate.
+            adapter (PartPreviewAdapter[PartT]): Preview adapter implementing one registered
+                geometry type.
+        """
         self._adapters[node_type] = adapter
 
     def adapter(self, part: PartT) -> PartPreviewAdapter[PartT]:
+        """Return adapter.
+
+        Args:
+            part (PartT): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            PartPreviewAdapter[PartT]: Adapter.
+        """
         for node_type in type(part).__mro__:
             if node_type in self._adapters:
                 return cast(PartPreviewAdapter[PartT], self._adapters[node_type])
@@ -139,16 +205,33 @@ class PartPreviewVisitor:
         part: PartNode,
         instance: InstanceNode | None,
     ) -> None:
+        """Visit the PartPreviewVisitor state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         self.adapter(part).preview(context, part, instance)
 
 
 class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
+    """Build boundary-surface preview geometry without running volume finite-element meshing."""
     def preview(
         self,
         context: PreviewGeometry,
         part: BoundaryPartNode,
         instance: InstanceNode | None,
     ) -> None:
+        """Preview the BoundaryPreviewAdapter state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (BoundaryPartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         surfaces = part.surfaces
         for index, surface in enumerate(surfaces):
             mesh = context.surface_mesh(surface)
@@ -210,6 +293,17 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
         part: BoundaryPartNode,
         name: str,
     ) -> pv.DataSet | None:
+        """Return surface.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (BoundaryPartNode): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet | None: Surface.
+        """
         face_name = _cad_face_name(name)
         if face_name is not None:
             face_id = int(face_name[5:])
@@ -245,9 +339,19 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
 
 
 class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
+    """Build preview geometry and named selections for a box Part definition."""
     @staticmethod
     def mesh(length: float, height: float, depth: float) -> pv.PolyData:
-        """Build the six-face preview shell without generating an FE mesh."""
+        """Build the six-face preview shell without generating an FE mesh.
+
+        Args:
+            length (float): Axial or geometric length in model length units.
+            height (float): Geometric height in model length units.
+            depth (float): Current recursion or tree depth.
+
+        Returns:
+            pv.PolyData: Build the six-face preview shell without generating an FE mesh.
+        """
         return pv.Box(bounds=[0.0, length, 0.0, height, 0.0, depth])
 
     def preview(
@@ -256,6 +360,14 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
         part: BoxPartNode,
         instance: InstanceNode | None,
     ) -> None:
+        """Preview the BoxPreviewAdapter state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (BoxPartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         box = context.box_part(part)
         mesh = self.mesh(box.length, box.height, box.depth)
         centers = mesh.cell_centers().points
@@ -283,6 +395,16 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
         )
 
     def model_part(self, context: PreviewGeometry, part: BoxPartNode) -> torchfea.Part:
+        """Return model part.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (BoxPartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Model part.
+        """
         return context.cached_part(part, lambda: context.box_part(part).get_part())
 
     def surface(
@@ -291,6 +413,17 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
         part: BoxPartNode,
         name: str,
     ) -> pv.DataSet | None:
+        """Return surface.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (BoxPartNode): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet | None: Surface.
+        """
         node_faces = {
             f"nodes_{axis}{side}": f"surface_{axis}{side}"
             for axis in "xyz"
@@ -304,7 +437,18 @@ class BoxPreviewAdapter(PartPreviewAdapter[BoxPartNode]):
 
 
 class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
+    """Build preview geometry from an imported INP finite-element asset."""
     def model_part(self, context: PreviewGeometry, part: INPPartNode) -> torchfea.Part:
+        """Return model part.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (INPPartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Model part.
+        """
         return context.cached_part(
             part,
             lambda: INPPart(
@@ -321,6 +465,17 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
         part: INPPartNode,
         name: str,
     ) -> pv.DataSet | None:
+        """Return surface.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (INPPartNode): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet | None: Surface.
+        """
         return self.model_part(context, part).get_mesh(surf_name=name or None)
 
     def preview(
@@ -329,6 +484,14 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
         part: INPPartNode,
         instance: InstanceNode | None,
     ) -> None:
+        """Preview the INPPreviewAdapter state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (INPPartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         mesh = self.surface(context, part, part.exterior_surface or "")
         if mesh is not None:
             faces = _inp_mesh_faces(
@@ -352,12 +515,21 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
 
 
 class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
+    """Build face-aware CAD preview geometry through the shared kernel tessellation API."""
     def preview(
         self,
         context: PreviewGeometry,
         part: CADPartNode,
         instance: InstanceNode | None,
     ) -> None:
+        """Preview the CADPreviewAdapter state.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+            instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+        """
         scene = context.scene
         instance_name = instance.name if instance is not None else part.name or "part"
         face_mesh, edge_mesh = context.cad_meshes(part)
@@ -410,6 +582,17 @@ class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
         part: CADPartNode,
         name: str,
     ) -> pv.DataSet | None:
+        """Return surface.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet | None: Surface.
+        """
         face_name = _cad_face_name(name)
         if face_name is None:
             return None
@@ -420,12 +603,27 @@ class KernelPreviewAdapter(INPPreviewAdapter):
     """Custom Parts use their kernel mesh for geometry and named sets."""
 
     def model_part(self, context: PreviewGeometry, part: PartNode) -> torchfea.Part:
+        """Return model part.
+
+        Args:
+            context (PreviewGeometry): Operation context supplying the shared model and refresh or
+                geometry state.
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            torchfea.Part: Model part.
+        """
         from ..application.part_mesh import build_part_mesh
 
         return context.cached_part(part, lambda: build_part_mesh(part, context.problem))
 
 
 def default_part_visitor() -> PartPreviewVisitor:
+    """Return default part visitor.
+
+    Returns:
+        PartPreviewVisitor: Default part visitor.
+    """
     visitor = PartPreviewVisitor()
     visitor.register(PartNode, KernelPreviewAdapter())
     visitor.register(BoundaryPartNode, BoundaryPreviewAdapter())
@@ -439,7 +637,9 @@ SurfaceT = TypeVar("SurfaceT", bound=SurfaceNode)
 
 
 class SurfacePreviewVisitor:
+    """Dispatch boundary-surface preview generation by the registered surface type."""
     def __init__(self) -> None:
+        """Initialize SurfacePreviewVisitor and its configuration state."""
         self._builders: dict[
             type[SurfaceNode], Callable[[Any, DefinitionValues], pv.DataSet | None]
         ] = {}
@@ -454,11 +654,28 @@ class SurfacePreviewVisitor:
         node_type: type[SurfaceT],
         builder: Callable[[SurfaceT, DefinitionValues], pv.DataSet | None],
     ) -> None:
+        """Register the SurfacePreviewVisitor state.
+
+        Args:
+            node_type (type[SurfaceT]): Registered definition-node class to instantiate or validate.
+            builder (Callable[[SurfaceT, DefinitionValues], pv.DataSet | None]): Geometry builder or
+                actor-construction callback used by the operation.
+        """
         self._builders[node_type] = builder
 
     def visit(
         self, surface: SurfaceNode, values: DefinitionValues
     ) -> pv.DataSet | None:
+        """Visit the SurfacePreviewVisitor state.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+            values (DefinitionValues): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            pv.DataSet | None: Visit the SurfacePreviewVisitor state.
+        """
         builder = next(
             (
                 self._builders[cls]
@@ -474,6 +691,17 @@ class SurfacePreviewVisitor:
         surface: BspCylinderSurfaceNode | CPGEOCylinderSurfaceNode,
         values: DefinitionValues,
     ) -> pv.PolyData:
+        """Return cylinder.
+
+        Args:
+            surface (BspCylinderSurfaceNode | CPGEOCylinderSurfaceNode): Surface interface to
+                register, evaluate, or constrain.
+            values (DefinitionValues): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            pv.PolyData: Cylinder.
+        """
         location = np.asarray(
             values.resolve(surface.init_location or [0.0, 0.0, 0.0]), dtype=float
         )
@@ -491,6 +719,16 @@ class SurfacePreviewVisitor:
     def sphere(
         surface: CPGEOSphereSurfaceNode, values: DefinitionValues
     ) -> pv.PolyData:
+        """Return sphere.
+
+        Args:
+            surface (CPGEOSphereSurfaceNode): Surface interface to register, evaluate, or constrain.
+            values (DefinitionValues): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            pv.PolyData: Sphere.
+        """
         return pv.Sphere(
             center=values.resolve(surface.init_location or [0.0, 0.0, 0.0]),
             radius=float(values.resolve(surface.r0)),
@@ -500,6 +738,16 @@ class SurfacePreviewVisitor:
 
     @staticmethod
     def mesh(surface: MeshSurfaceNode, values: DefinitionValues) -> pv.DataSet | None:
+        """Return mesh.
+
+        Args:
+            surface (MeshSurfaceNode): Surface interface to register, evaluate, or constrain.
+            values (DefinitionValues): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            pv.DataSet | None: Mesh.
+        """
         return (
             pv.read(surface.path_stl)
             if surface.path_stl and os.path.exists(surface.path_stl)
@@ -508,7 +756,17 @@ class SurfacePreviewVisitor:
 
     @staticmethod
     def brep(surface: BREPSurfaceNode, values: DefinitionValues) -> pv.PolyData | None:
-        """Preview the embedded STEP asset with its original geometric face IDs."""
+        """Preview the embedded STEP asset with its original geometric face IDs.
+
+        Args:
+            surface (BREPSurfaceNode): Surface interface to register, evaluate, or constrain.
+            values (DefinitionValues): Values aligned with the parameters or records processed by
+                this interface.
+
+        Returns:
+            pv.PolyData | None: Preview the embedded STEP asset with its original geometric face
+                IDs.
+        """
         import base64
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -527,11 +785,20 @@ class SurfacePreviewVisitor:
 
 
 class PreviewGeometry:
+    """Build and cache render-independent geometry scenes from a problem definition."""
     def __init__(
         self,
         parts: PartPreviewVisitor | None = None,
         surfaces: SurfacePreviewVisitor | None = None,
     ) -> None:
+        """Initialize PreviewGeometry and its configuration state.
+
+        Args:
+            parts (PartPreviewVisitor | None): Part definitions included in the requested preview or
+                selection.
+            surfaces (SurfacePreviewVisitor | None): Surface interfaces in boundary registration
+                order: exterior first, followed by cavities.
+        """
         self.parts = parts or default_part_visitor()
         self.surfaces = surfaces or SurfacePreviewVisitor()
         self.problem: ProblemDefinition
@@ -557,6 +824,17 @@ class PreviewGeometry:
         mode: str,
         selected: PartNode | None = None,
     ) -> PreviewScene:
+        """Build the PreviewGeometry state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            mode (str): Operation mode selecting the applicable computation or visualization path.
+            selected (PartNode | None): Selection retained or applied while the view is rebuilt.
+
+        Returns:
+            PreviewScene: Build the PreviewGeometry state.
+        """
         if problem is not self._cache_problem:
             self._part_cache.clear()
             self._part_cache_keys.clear()
@@ -619,12 +897,27 @@ class PreviewGeometry:
         return self.scene
 
     def instance_color(self, instance_name: str) -> str:
-        """Return a stable assembly color for a named Instance."""
+        """Return a stable assembly color for a named Instance.
+
+        Args:
+            instance_name (str): Registered Instance name in the assembly.
+
+        Returns:
+            str: A stable assembly color for a named Instance.
+        """
         return self._instance_colors.get(
             instance_name, theme_manager.palette.viewer.geometry.instance_colors[0]
         )
 
     def surface_mesh(self, surface: SurfaceNode) -> pv.DataSet | None:
+        """Return surface mesh.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+
+        Returns:
+            pv.DataSet | None: Surface mesh.
+        """
         key = _preview_key(surface, self.problem)
         if key not in self._surface_cache:
             self._surface_cache[key] = self.surfaces.visit(surface, self.values)
@@ -635,6 +928,16 @@ class PreviewGeometry:
         part: PartNode,
         factory: Callable[[], torchfea.Part],
     ) -> torchfea.Part:
+        """Return cached part.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            factory (Callable[[], torchfea.Part]): Callable constructing the registered model or UI
+                component.
+
+        Returns:
+            torchfea.Part: Cached part.
+        """
         key = _preview_key(part, self.problem)
         part_id = id(part)
         if self._part_cache_keys.get(part_id) != key:
@@ -645,6 +948,14 @@ class PreviewGeometry:
         return self._part_cache[part_id]
 
     def box_part(self, part: BoxPartNode) -> BoxPart:
+        """Return box part.
+
+        Args:
+            part (BoxPartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            BoxPart: Box part.
+        """
         key = _preview_key(part, self.problem)
         part_id = id(part)
         if self._box_cache_keys.get(part_id) != key:
@@ -662,6 +973,14 @@ class PreviewGeometry:
         return self._box_cache[part_id]
 
     def cad_records(self, part: CADPartNode) -> list[dict[str, Any]]:
+        """Return cad records.
+
+        Args:
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            list[dict[str, Any]]: Cad records.
+        """
         key = cad_preview_signature(part, self.problem)
         if key not in self._cad_cache:
             self._cad_cache[key] = cad_brep_records_from_node(part, self.problem)
@@ -670,10 +989,16 @@ class PreviewGeometry:
     def cad_meshes(self, part: CADPartNode) -> tuple[pv.PolyData, pv.PolyData]:
         """Build one face mesh and one edge mesh for a CAD Part preview.
 
-        The combined face mesh keeps the originating OCC face index in cell
-        data, so individual ``face_N`` selections can be extracted on demand
-        without multiplying viewport actors.  Points are duplicated across
-        topological faces to retain their independent face normals.
+        The combined face mesh keeps the originating OCC face index in cell data, so individual
+        ``face_N`` selections can be extracted on demand without multiplying viewport actors.
+        Points are duplicated across topological faces to retain their independent face normals.
+
+        Args:
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            tuple[pv.PolyData, pv.PolyData]: Build one face mesh and one edge mesh for a CAD Part
+                preview.
         """
         key = cad_preview_signature(part, self.problem)
         if key in self._cad_mesh_cache:
@@ -737,7 +1062,15 @@ class PreviewGeometry:
         return faces, edges
 
     def cad_face_mesh(self, part: CADPartNode, face_name: str) -> pv.PolyData | None:
-        """Return one local CAD face only when a load or set query requests it."""
+        """Return one local CAD face only when a load or set query requests it.
+
+        Args:
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+            face_name (str): Logical face_N name associated with the preview selection.
+
+        Returns:
+            pv.PolyData | None: One local CAD face only when a load or set query requests it.
+        """
         key = (cad_preview_signature(part, self.problem), face_name)
         if key in self._local_cad_faces:
             return self._local_cad_faces[key]
@@ -760,6 +1093,16 @@ class PreviewGeometry:
     def mesh_for_surface(
         self, component: FEAComponentNode, surface_name: str
     ) -> pv.DataSet | None:
+        """Return mesh for surface.
+
+        Args:
+            component (FEAComponentNode): Model, result, or interface component processed by the
+                operation.
+            surface_name (str): Named surface set on the selected instance.
+
+        Returns:
+            pv.DataSet | None: Mesh for surface.
+        """
         instance = component.instance
         name = instance.name if instance is not None else component.instance_name or ""
         face = _cad_face_name(surface_name)
@@ -794,6 +1137,15 @@ class PreviewGeometry:
             return None
 
     def node_set_center(self, instance_name: str, set_name: str) -> np.ndarray | None:
+        """Return node set center.
+
+        Args:
+            instance_name (str): Registered Instance name in the assembly.
+            set_name (str): Name of the requested node, element, or surface selection.
+
+        Returns:
+            np.ndarray | None: Node set center.
+        """
         part = self.problem.part_for_instance(instance_name)
         if part is None:
             return None
@@ -828,7 +1180,16 @@ class PreviewGeometry:
             return None
 
     def mesh_for_set(self, part: PartNode, kind: str, name: str) -> pv.DataSet:
-        """Extract an actual mesh set in Part coordinates, meshing only on demand."""
+        """Extract an actual mesh set in Part coordinates, meshing only on demand.
+
+        Args:
+            part (PartNode): Part whose geometry, mesh, or named sets are processed.
+            kind (str): Registered category or provider identifier used to dispatch the operation.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            pv.DataSet: Extract an actual mesh set in Part coordinates, meshing only on demand.
+        """
         from ..application.part_mesh import build_part_mesh
 
         model = self.parts.adapter(part).model_part(self, part)
@@ -883,6 +1244,14 @@ class PreviewGeometry:
         )
 
     def instance_center(self, instance_name: str) -> np.ndarray | None:
+        """Return instance center.
+
+        Args:
+            instance_name (str): Registered Instance name in the assembly.
+
+        Returns:
+            np.ndarray | None: Instance center.
+        """
         meshes = [
             mesh
             for name, mesh, _item in self.scene.base_meshes
@@ -900,6 +1269,14 @@ class PreviewGeometry:
         )
 
     def object_center(self, object_name: str) -> np.ndarray | None:
+        """Return object center.
+
+        Args:
+            object_name (str): Stable actor or widget name used for lookup.
+
+        Returns:
+            np.ndarray | None: Object center.
+        """
         center = self.instance_center(object_name)
         if center is not None:
             return center
@@ -919,7 +1296,14 @@ class PreviewGeometry:
 
 
 def _cad_face_name(surface_name: str) -> str | None:
-    """Map a CAD face or face node-set name to its face surface name."""
+    """Map a CAD face or face node-set name to its face surface name.
+
+    Args:
+        surface_name (str): Named surface set on the selected instance.
+
+    Returns:
+        str | None: Map a CAD face or face node-set name to its face surface name.
+    """
     import re
 
     match = re.match(r"(face_\d+)(?:_|$)", surface_name)
@@ -932,7 +1316,17 @@ def _inp_mesh_faces(
     part: INPPartNode,
     instance: InstanceNode | None,
 ) -> MeshFaces:
-    """Map display triangles to original INP surface sets, including overlaps."""
+    """Map display triangles to original INP surface sets, including overlaps.
+
+    Args:
+        model (torchfea.Part): Model object supplying the data or geometry for this operation.
+        mesh (pv.PolyData): Mesh used for geometric evaluation or visualization.
+        part (INPPartNode): Part whose geometry, mesh, or named sets are processed.
+        instance (InstanceNode | None): Assembly instance whose placement and geometry are used.
+
+    Returns:
+        MeshFaces: Map display triangles to original INP surface sets, including overlaps.
+    """
     memberships: dict[tuple[int, ...], list[str]] = {}
     for name in model.surfaces.keys():
         if not model.surfaces.get_elements(name):
@@ -974,7 +1368,14 @@ def _instance_color(index: int) -> str:
 
 
 def _surface_index_from_name(surface_name: str) -> int:
-    """surface_1_All / surface_1_offset -> 1"""
+    """surface_1_All / surface_1_offset -> 1
+
+    Args:
+        surface_name (str): Named surface set on the selected instance.
+
+    Returns:
+        int: Surface_1_All / surface_1_offset -> 1.
+    """
     import re
 
     m = re.match(r"surface_(\d+)_", surface_name)
@@ -982,7 +1383,15 @@ def _surface_index_from_name(surface_name: str) -> int:
 
 
 def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
-    """Extract the actual cap cells used by a boundary-part end node set."""
+    """Extract the actual cap cells used by a boundary-part end node set.
+
+    Args:
+        mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+        end (str): End index or upper bound of the selected range.
+
+    Returns:
+        pv.DataSet: Extract the actual cap cells used by a boundary-part end node set.
+    """
     if not mesh.n_cells or not mesh.n_points:
         return mesh
     cap_cells = _boundary_end_cells(mesh, end)
@@ -992,7 +1401,15 @@ def _boundary_end_surface(mesh: pv.DataSet, end: str) -> pv.DataSet:
 
 
 def _boundary_end_cells(mesh: pv.DataSet, end: str) -> np.ndarray:
-    """Identify cap cells in local coordinates for set queries and picking."""
+    """Identify cap cells in local coordinates for set queries and picking.
+
+    Args:
+        mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+        end (str): End index or upper bound of the selected range.
+
+    Returns:
+        np.ndarray: Identify cap cells in local coordinates for set queries and picking.
+    """
     if not mesh.n_cells or not mesh.n_points:
         return np.zeros(mesh.n_cells, dtype=bool)
     centers = mesh.cell_centers().points
@@ -1009,7 +1426,16 @@ def _boundary_end_cells(mesh: pv.DataSet, end: str) -> np.ndarray:
 def _preview_node_set_points(
     part: PartNode, set_name: str, points: np.ndarray
 ) -> np.ndarray:
-    """Approximate a named boundary node set from its preview surface."""
+    """Approximate a named boundary node set from its preview surface.
+
+    Args:
+        part (PartNode): Part whose geometry, mesh, or named sets are processed.
+        set_name (str): Name of the requested node, element, or surface selection.
+        points (np.ndarray): Point coordinates in the representation expected by this operation.
+
+    Returns:
+        np.ndarray: Approximate a named boundary node set from its preview surface.
+    """
     if part.type not in {"BoundaryPart", "OffsetBoundaryPart"}:
         return points
     suffix = set_name.rsplit("_", 1)[-1]
@@ -1033,6 +1459,11 @@ class InitialDesignGeometry:
     depth = np.array([1.0, 1.0, 1.0]) / np.sqrt(3)
 
     def __init__(self, options):
+        """Initialize InitialDesignGeometry and its configuration state.
+
+        Args:
+            options: Options passed to the selected model, renderer, or export operation.
+        """
         if options.method == "shapeopt":
             meshes = _layered_chamber_preview_meshes(options.geometry_layout())
         else:
@@ -1121,9 +1552,26 @@ class InitialDesignGeometry:
 
     @classmethod
     def coordinates(cls, points: np.ndarray) -> np.ndarray:
+        """Return coordinates.
+
+        Args:
+            points (np.ndarray): Point coordinates in the representation expected by this operation.
+
+        Returns:
+            np.ndarray: Coordinates.
+        """
         return np.column_stack((points @ cls.horizontal, points @ cls.vertical))
 
     def transform(self, width: int, height: int) -> tuple[float, np.ndarray]:
+        """Return transform.
+
+        Args:
+            width (int): Requested width in display pixels.
+            height (int): Geometric height in model length units.
+
+        Returns:
+            tuple[float, np.ndarray]: Transform.
+        """
         span = np.maximum(
             self.upper - self.lower,
             theme_manager.palette.quickstart_preview.minimum_projected_span,
@@ -1140,7 +1588,15 @@ class InitialDesignGeometry:
 
 
 def _layered_chamber_preview_meshes(layout) -> dict[str, pv.PolyData]:
-    """Build Quickstart-only preview meshes using the active theme's quality."""
+    """Build Quickstart-only preview meshes using the active theme's quality.
+
+    Args:
+        layout: Parameter-block sizes used to invalidate history after a variable-layout change.
+
+    Returns:
+        dict[str, pv.PolyData]: Build Quickstart-only preview meshes using the active theme's
+            quality.
+    """
     style = theme_manager.palette.quickstart_preview
     meshes = {
         "body": pv.Cylinder(

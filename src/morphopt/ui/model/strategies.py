@@ -8,6 +8,7 @@ from .fields import FieldSpec, field_defaults
 
 @dataclass(frozen=True)
 class StrategySpec:
+    """Describe a selectable updater strategy and the fields shown by its editor."""
     name: str
     label_key: str
     fields: tuple[FieldSpec, ...] = ()
@@ -39,9 +40,9 @@ STRATEGY_CATALOG: dict[str, tuple[StrategySpec, ...]] = {
                 for key, default in (
                     ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
                     ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
-                    ("objective_tolerance", _ADAPTIVE.OBJECTIVE_TOLERANCE),
                     ("tightening_increment", _ADAPTIVE.TIGHTENING_INCREMENT),
-                    ("penalty_growth_limit", _ADAPTIVE.PENALTY_GROWTH_LIMIT),
+                    ("violation_tolerance", _ADAPTIVE.VIOLATION_TOLERANCE),
+                    ("weight_change_limit", _ADAPTIVE.WEIGHT_CHANGE_LIMIT),
                 )
             ),
             groups=("geometry",),
@@ -51,10 +52,32 @@ STRATEGY_CATALOG: dict[str, tuple[StrategySpec, ...]] = {
 
 
 def strategy_specs(key: str, group: str) -> dict[str, StrategySpec]:
+    """Return strategy specs.
+
+    Args:
+        key (str): Lookup key identifying the requested field or registered item.
+        group (str): Named group containing the related interfaces or task configuration.
+
+    Returns:
+        dict[str, StrategySpec]: Strategy specs.
+    """
     return {spec.name: spec for spec in STRATEGY_CATALOG[key] if group in spec.groups}
 
 
-def strategy_config(key: str, name: str | None = None) -> dict:
-    """Create an independent parameter dictionary for the selected strategy."""
+def strategy_config(
+    key: str, name: str | None = None, *, group: str | None = None,
+) -> dict:
+    """Create an independent parameter dictionary for the selected strategy.
+
+    Args:
+        key (str): Lookup key identifying the requested field or registered item.
+        name (str | None): Name identifying the item in its owning collection.
+        group (str | None): Named group containing the related interfaces or task configuration.
+
+    Returns:
+        dict: Create an independent parameter dictionary for the selected strategy.
+    """
+    if name is None and key == "constraint_weight_strategy" and group == "geometry":
+        name = "AdaptiveShapeWeights"
     spec = next(spec for spec in STRATEGY_CATALOG[key] if name is None or spec.name == name)
     return {"type": spec.name, "params": field_defaults(spec.fields)}

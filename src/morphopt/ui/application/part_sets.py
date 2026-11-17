@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypeVar
 
+from ...constants import CONSTANT
 from ..model.node_types.parts import (
     BoundaryPartNode,
     BoxPartNode,
@@ -23,6 +24,7 @@ from .cad import cad_part_from_node
 
 @dataclass(frozen=True)
 class PartSets:
+    """Describe available Part node, element, and surface selections for definition editors."""
     nodes: tuple[str, ...] = ()
     surfaces: tuple[str, ...] = ()
     elements: tuple[str, ...] = ()
@@ -32,8 +34,18 @@ class PartSets:
 def _read_inp_sets(path: str, modified_ns: int, size: int) -> dict[str, PartSets]:
     """Read selection names without constructing elements or importing materials.
 
-    The file stamp keeps cached names current when an INP is replaced in place.
-    Only declarations inside a Part belong to its catalog; assembly sets do not.
+    The file stamp keeps cached names current when an INP is replaced in place. Only
+    declarations inside a Part belong to its catalog; assembly sets do not.
+
+    Args:
+        path (str): Filesystem path read, restored, or written by this operation.
+        modified_ns (int): File modification timestamp in nanoseconds used by cache
+            invalidation.
+        size (int): Requested dimensions or size of the constructed object.
+
+    Returns:
+        dict[str, PartSets]: Read selection names without constructing elements or importing
+            materials.
     """
     declarations: dict[str, dict[str, list[str]]] = {}
     current = None
@@ -89,6 +101,12 @@ class PartSetCatalog:
     """One field-binding snapshot; each Part is queried at most once."""
 
     def __init__(self, problem: ProblemDefinition):
+        """Initialize PartSetCatalog and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
         self._providers: dict[type[PartNode], SetProvider] = {
             BoundaryPartNode: self.boundary,
@@ -99,10 +117,17 @@ class PartSetCatalog:
         self._cache: dict[PartNode, PartSets] = {}
 
     def bind(self, problem: ProblemDefinition) -> None:
+        """Bind the PartSetCatalog state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
         self.invalidate()
 
     def invalidate(self) -> None:
+        """Return invalidate."""
         self._cache.clear()
 
     def register(
@@ -110,10 +135,25 @@ class PartSetCatalog:
         node_type: type[PartT],
         provider: Callable[[PartT, ProblemDefinition], PartSets],
     ) -> None:
+        """Register the PartSetCatalog state.
+
+        Args:
+            node_type (type[PartT]): Registered definition-node class to instantiate or validate.
+            provider (Callable[[PartT, ProblemDefinition], PartSets]): Registered physical-field
+                provider being evaluated.
+        """
         self._providers[node_type] = provider
         self.invalidate()
 
     def for_instance(self, name: str) -> PartSets:
+        """Return for instance.
+
+        Args:
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            PartSets: For instance.
+        """
         if not name:
             return PartSets()
         part = self.problem.part_for_instance(name)
@@ -122,6 +162,14 @@ class PartSetCatalog:
         return self.for_part(part)
 
     def for_part(self, part: PartNode | None) -> PartSets:
+        """Return for part.
+
+        Args:
+            part (PartNode | None): Part whose geometry, mesh, or named sets are processed.
+
+        Returns:
+            PartSets: For part.
+        """
         if part is None:
             return PartSets()
         if part not in self._cache:
@@ -149,7 +197,36 @@ class PartSetCatalog:
         return self._cache[part]
 
     @staticmethod
+    def element_type(part: PartNode | None, name: str) -> str:
+        """Describe built-in element types without changing stable block names.
+
+        Args:
+            part (PartNode | None): Part whose geometry, mesh, or named sets are processed.
+            name (str): Name identifying the item in its owning collection.
+
+        Returns:
+            str: Describe built-in element types without changing stable block names.
+        """
+        if (
+            isinstance(part, (BoundaryPartNode, CADPartNode, BoxPartNode))
+            and not part.custom_class
+            and part.mesh_order == 2
+        ):
+            return CONSTANT.KERNEL.MESH.QUADRATIC_ELEMENT_TYPES.get(name, name)
+        return name
+
+    @staticmethod
     def boundary(part: BoundaryPartNode, problem: ProblemDefinition) -> PartSets:
+        """Return boundary.
+
+        Args:
+            part (BoundaryPartNode): Part whose geometry, mesh, or named sets are processed.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+
+        Returns:
+            PartSets: Boundary.
+        """
         surface_count = len(part.surfaces)
         names = [f"surface_{index}_All" for index in range(surface_count)]
         if isinstance(part, OffsetBoundaryPartNode):
@@ -210,6 +287,16 @@ class PartSetCatalog:
 
     @staticmethod
     def box(part: BoxPartNode, problem: ProblemDefinition) -> PartSets:
+        """Return box.
+
+        Args:
+            part (BoxPartNode): Part whose geometry, mesh, or named sets are processed.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+
+        Returns:
+            PartSets: Box.
+        """
         return PartSets(
             nodes=("all",)
             + tuple(f"nodes_{axis}{side}" for axis in "xyz" for side in ("min", "max")),
@@ -222,6 +309,16 @@ class PartSetCatalog:
 
     @staticmethod
     def cad(part: CADPartNode, problem: ProblemDefinition) -> PartSets:
+        """Return cad.
+
+        Args:
+            part (CADPartNode): Part whose geometry, mesh, or named sets are processed.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+
+        Returns:
+            PartSets: Cad.
+        """
         names = cad_part_from_node(part, problem).get_face_names()
         return PartSets(
             nodes=("all", "surface_all") + tuple(f"{name}_nodes" for name in names),
@@ -232,6 +329,14 @@ class PartSetCatalog:
 
     @staticmethod
     def inp_parts(mesh_file: str) -> dict[str, PartSets]:
+        """Return inp parts.
+
+        Args:
+            mesh_file (str): Input mesh-asset filename.
+
+        Returns:
+            dict[str, PartSets]: Inp parts.
+        """
         if not mesh_file:
             return {}
         try:
@@ -244,6 +349,16 @@ class PartSetCatalog:
 
     @staticmethod
     def inp(part: INPPartNode, problem: ProblemDefinition | None = None) -> PartSets:
+        """Return inp.
+
+        Args:
+            part (INPPartNode): Part whose geometry, mesh, or named sets are processed.
+            problem (ProblemDefinition | None): Editable problem definition shared by the UI
+                application services.
+
+        Returns:
+            PartSets: Inp.
+        """
         parts = PartSetCatalog.inp_parts(part.mesh_file)
         name = part.inp_part_name
         if not name and len(parts) == 1:

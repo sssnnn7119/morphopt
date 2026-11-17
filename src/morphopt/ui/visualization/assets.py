@@ -17,7 +17,15 @@ from .scene import MessageItem, PreviewScene
 
 
 def geometry_asset_scene(asset: DefinitionAsset) -> PreviewScene:
-    """Display the imported file in local coordinates, before later CAD operations."""
+    """Display the imported file in local coordinates, before later CAD operations.
+
+    Args:
+        asset (DefinitionAsset): Embedded or file-backed definition asset to inspect or display.
+
+    Returns:
+        PreviewScene: Display the imported file in local coordinates, before later CAD
+            operations.
+    """
     problem = ProblemDefinition()
     if asset.format == "step":
         operation = CADOperationNode.create("StepImport", operation_id="asset_import")

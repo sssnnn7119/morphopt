@@ -16,8 +16,7 @@ from morphopt.ui.application import (
     route_editor,
 )
 from morphopt.ui import launcher
-from morphopt.ui.model.problem import InstanceNode
-from morphopt.ui.schemes.base import get_template
+from morphopt.ui.model.problem import InstanceNode, MaterialNode
 from morphopt.ui.application.fields import fields_for_node
 from morphopt.ui.application.runs import RunSourceKind
 from morphopt.ui.application.results import ResultLogReader
@@ -74,11 +73,11 @@ def test_domain_packages_expose_only_concrete_components() -> None:
     import morphopt.shapeopt as shapeopt
     import morphopt.simp as simp
 
-    assert shapeopt.__all__ == [
+    assert set(shapeopt.__all__) == {
         "BoundaryPart", "UpdaterBoundaryPart", "BaseSurfaceConstraints",
         "SurfaceRelationConstraint", "BspSurfaceRelationConstraint",
-        "CPGEOSurfaceRelationConstraint",
-    ]
+        "CPGEOSurfaceRelationConstraint", "strategies",
+    }
     assert simp.__all__ == ["SIMP_BSPFieldMaterials", "UpdaterSIMPMaterial"]
     assert not hasattr(shapeopt, "Params")
     assert not hasattr(shapeopt, "ObjectiveFunction")
@@ -86,30 +85,28 @@ def test_domain_packages_expose_only_concrete_components() -> None:
     assert not hasattr(simp, "SIMPSolver")
 
 
-def test_every_template_generates_compilable_source() -> None:
-    for template in ProblemLibrary.templates():
-        problem = ProblemLibrary.create(template.scheme)
-        source = ProblemSession(problem).source()
-        compile(source, f"<{template.scheme}>", "exec")
+@pytest.mark.parametrize("method", ["shapeopt", "simp"])
+def test_quickstart_models_generate_compilable_source_without_a_scheme(method) -> None:
+    problem = ProblemLibrary.create(method)
+    assert not hasattr(problem, "scheme")
+    assert "scheme" not in problem.to_dict()
+    source = ProblemSession(problem).source()
+    compile(source, f"<{method}>", "exec")
 
 
-def test_templates_are_starters_and_generated_models_use_core_classes() -> None:
-    for template in ProblemLibrary.templates():
-        assert set(template.available_material_types()) == {
-            "HomogeneousMaterial",
-            "SIMP_BSPFieldMaterials",
-        }
-        source = ProblemSession(ProblemLibrary.create(template.scheme)).source()
-        assert "class ObjectiveFunction(morphopt.ObjectiveFunction):" in source
-        assert "class Params(morphopt.Params):" in source
-        assert "class Solver(morphopt.Solver):" in source
-        assert "class Updater(morphopt.Updaters):" in source
+@pytest.mark.parametrize("method", ["shapeopt", "simp"])
+def test_quickstart_models_use_shared_core_classes(method) -> None:
+    source = ProblemSession(ProblemLibrary.create(method)).source()
+    assert "class ObjectiveFunction(morphopt.ObjectiveFunction):" in source
+    assert "class Params(morphopt.Params):" in source
+    assert "class Solver(morphopt.Solver):" in source
+    assert "class Updater(morphopt.Updaters):" in source
 
 
 def test_shape_starter_can_combine_a_simp_material_and_updater() -> None:
     problem = ProblemLibrary.create("shapeopt")
     part = problem.parts()[0]
-    density = get_template(problem.scheme).make_material("SIMP_BSPFieldMaterials")
+    density = MaterialNode.create("SIMP_BSPFieldMaterials")
     density.name = "density"
     problem.add_material(density)
     assert density.part is None

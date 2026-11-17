@@ -27,6 +27,18 @@ class BoundaryPartNode(PartNode):
         children: Sequence[InstanceNode | SurfaceNode] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize BoundaryPartNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[InstanceNode | SurfaceNode] | None): Child definition nodes in
+                registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self.surfaces: list[SurfaceNode] = []
         super().__init__(
             kind=kind, name=name, params=params, children=children, **values
@@ -34,9 +46,23 @@ class BoundaryPartNode(PartNode):
 
     @property
     def children(self) -> tuple[InstanceNode | SurfaceNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[InstanceNode | SurfaceNode, ...]: Children.
+        """
         return (*self.instances, *self.surfaces)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, SurfaceNode):
             return super().add_child(node, index)
         if index is None:
@@ -46,6 +72,11 @@ class BoundaryPartNode(PartNode):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if isinstance(node, SurfaceNode):
             self.surfaces.remove(node)
         else:
@@ -54,10 +85,24 @@ class BoundaryPartNode(PartNode):
     def add_surface(
         self, surface: SurfaceNode, index: int | None = None
     ) -> SurfaceNode:
+        """Add surface.
+
+        Args:
+            surface (SurfaceNode): Surface interface to register, evaluate, or constrain.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            SurfaceNode: Add surface.
+        """
         self.add_child(surface, index)
         return surface
 
     def surface_count(self) -> int:
+        """Return surface count.
+
+        Returns:
+            int: Surface count.
+        """
         return len(self.surfaces)
 
     type_name: ClassVar[str] = "BoundaryPart"
@@ -238,6 +283,18 @@ class CADPartNode(PartNode):
         children: Sequence[InstanceNode | CADOperationNode] | None = None,
         **values: Any,
     ) -> None:
+        """Initialize CADPartNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[InstanceNode | CADOperationNode] | None): Child definition nodes in
+                registration order.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         self.operations: list[CADOperationNode] = []
         super().__init__(
             kind=kind, name=name, params=params, children=children, **values
@@ -245,9 +302,23 @@ class CADPartNode(PartNode):
 
     @property
     def children(self) -> tuple[InstanceNode | CADOperationNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[InstanceNode | CADOperationNode, ...]: Children.
+        """
         return (*self.instances, *self.operations)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, CADOperationNode):
             return super().add_child(node, index)
         if index is None:
@@ -257,6 +328,11 @@ class CADPartNode(PartNode):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if isinstance(node, CADOperationNode):
             self.operations.remove(node)
         else:
@@ -265,6 +341,16 @@ class CADPartNode(PartNode):
     def add_cad_operation(
         self, operation: CADOperationNode, index: int | None = None
     ) -> CADOperationNode:
+        """Add cad operation.
+
+        Args:
+            operation (CADOperationNode): CAD history operation or application action being
+                processed.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            CADOperationNode: Add cad operation.
+        """
         if any(item.operation_id == operation.operation_id for item in self.operations):
             raise ValueError(
                 localized_message(
@@ -278,6 +364,14 @@ class CADPartNode(PartNode):
     def live_cad_operations(
         self, operations: list[CADOperationNode] | None = None
     ) -> list[CADOperationNode]:
+        """Return live cad operations.
+
+        Args:
+            operations (list[CADOperationNode] | None): CAD feature declarations in replay order.
+
+        Returns:
+            list[CADOperationNode]: Live cad operations.
+        """
         history = self.operations if operations is None else operations
         consumed = {
             input_id

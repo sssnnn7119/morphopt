@@ -1,12 +1,88 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
+from PySide6.QtWidgets import QApplication, QDialog, QDockWidget, QTreeWidget, QWidget
 
 from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.application.results import ResultSelection
 from morphopt.ui.application.runs import RunMode, RunSource, RunSourceKind
 from morphopt.ui.i18n import tr
+
+
+@pytest.fixture(autouse=True)
+def dispose_deferred_widgets():
+    yield
+    app = QApplication.instance()
+    if app is not None:
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
+
+
+def test_problem_list_updates_and_locates_invalid_definitions(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    problem = ProblemLibrary.create("shapeopt")
+    surface = problem.parts()[0].surfaces[0]
+    original = surface.r0
+    surface.r0 = -1.0
+    window.set_problem(problem)
+    try:
+        button = window.problems
+        assert not window.findChildren(QDockWidget)
+        assert button.isEnabled()
+        assert button.text() == tr("ui.problems.count", count=len(window._workbench.tree.diagnostics))
+        assert button.findChild(QDialog) is None
+        button.click()
+        dialog = button.findChild(QDialog, "modelProblemsDialog")
+        tree = dialog.findChild(QTreeWidget)
+        entry = next(
+            tree.topLevelItem(index) for index in range(tree.topLevelItemCount())
+            if tree.topLevelItem(index).data(0, Qt.ItemDataRole.UserRole) is surface
+        )
+        assert entry.text(1)
+        tree.itemClicked.emit(entry, 0)
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert not dialog.isVisible()
+        assert window._workbench._last_selected is surface
+        assert not window._definition_valid
+        surface.r0 = original
+        window._workbench.reload()
+        assert not window._workbench.tree.has_errors
+        assert button.text() == tr("ui.problems.count", count=0)
+        assert not button.isEnabled()
+        assert window._definition_valid
+    finally:
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_problem_list_matches_the_invalid_tree_nodes_and_their_tooltips(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    problem = ProblemLibrary.create("shapeopt")
+    problem.parts()[0].surfaces[0].r0 = -1
+    window.set_problem(problem)
+    try:
+        button = window.problems
+        tree = window._workbench.tree
+        assert not button.findChildren(QDialog)
+        button.click()
+        dialog = button.findChild(QDialog, "modelProblemsDialog")
+        listing = dialog.findChild(QTreeWidget)
+        assert listing.topLevelItemCount() == len(tree.diagnostics)
+        for index, (node, location, message) in enumerate(tree.diagnostics):
+            entry = listing.topLevelItem(index)
+            assert entry.text(0) == location
+            assert entry.text(1) == message
+            assert message in tree._node_item[node].toolTip(0)
+        dialog.reject()
+        window.set_problem(ProblemLibrary.create("shapeopt"))
+        assert not button.isEnabled()
+        assert button.text() == tr("ui.problems.count", count=0)
+    finally:
+        window.deleteLater()
+        app.processEvents()
 
 
 def shell(monkeypatch):

@@ -44,7 +44,7 @@ def bind(penalty, surfaces, count=2):
 
 @pytest.mark.parametrize("index,power", [(0, 3), (1, 3)])
 def test_curvature_penalty_matches_an_analytic_patch(surfaces, index, power):
-    penalty = Fairness()
+    penalty = Fairness(max_curvature=1.0)
     r, rdu, rdu2, weight = bind(penalty, [surfaces[index]])
     actual = penalty([r], [rdu], [rdu2])
     # Principal curvatures are sqrt(0.9) and zero. The barrier argument is 0.5.
@@ -94,7 +94,7 @@ def test_bsp_metric_variation_uses_the_fixed_point_one_limit(surfaces):
 
 @pytest.mark.parametrize("index", [0, 1])
 def test_visitor_retains_first_and_second_derivatives(surfaces, index):
-    penalty = Fairness()
+    penalty = Fairness(max_curvature=1.0)
     selected = [surfaces[index]]
     r, rdu, rdu2, _ = bind(penalty, selected)
     before = [surface.control_points.clone() for surface in surfaces]
@@ -108,7 +108,7 @@ def test_visitor_retains_first_and_second_derivatives(surfaces, index):
 
 
 def test_one_fairness_sums_all_updatable_surfaces(surfaces):
-    penalty = Fairness()
+    penalty = Fairness(max_curvature=1.0)
     r, rdu, rdu2, weight = bind(penalty, surfaces)
     torch.testing.assert_close(penalty([r, r], [rdu, rdu], [rdu2, rdu2]), weight.sum() * (0.5**3 + 0.5**3))
     surfaces[0].is_updatable = False
@@ -126,7 +126,7 @@ def test_new_surface_handler_uses_the_existing_penalty_barrier():
 
     surface = NewSurface()
     surface.is_updatable = True
-    penalty = Fairness()
+    penalty = Fairness(max_curvature=1.0)
     # Register a valid evaluator with the visitor; no new method is added to geometry.
     @Fairness.visit.register(NewSurface)
     def visit_new(self, surface, rdu, rdu2):
@@ -164,7 +164,7 @@ def test_all_surfaces_share_one_curvature_limit_and_one_weight(surfaces):
         def __init__(self):
             super().__init__()
             self.obj_funcs = {"physical": object()}
-            self.penalty = Fairness()
+            self.penalty = Fairness(max_curvature=1.0)
             self.add_constraints(self.penalty)
             self.data = bind(self.penalty, surfaces)
         def closure(self, x, return_list=False):
@@ -188,6 +188,7 @@ def test_public_fairness_constructor_only_exposes_curvature():
     from morphopt.constants import CONSTANT
     assert set(inspect.signature(Fairness).parameters) == {"max_curvature"}
     settings = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS
+    assert Fairness().max_curvature == settings.CURVATURE_LIMIT == 3.0
     assert settings.METRIC_VARIATION_LIMIT == settings.NONORTHOGONALITY_LIMIT == 0.1
     for name in ("surface_index", "max_metric_variation", "max_nonorthogonality"):
         with pytest.raises(TypeError):

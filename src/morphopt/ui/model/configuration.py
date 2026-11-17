@@ -4,12 +4,27 @@ from .registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG, UPDATER_OBJ
 from .strategies import strategy_config
 
 def symmetry_constraint_defaults(item_type: str) -> dict:
-    """Return defaults for one geometry-symmetry constraint."""
+    """Return defaults for one geometry-symmetry constraint.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+
+    Returns:
+        dict: Defaults for one geometry-symmetry constraint.
+    """
     return SURFACE_SYMMETRY_CONSTRAINTS[item_type].default_parameters()
 
 
 def symmetry_constraint(item_type: str, **overrides) -> dict:
-    """Build one geometry-symmetry constraint from its node defaults."""
+    """Build one geometry-symmetry constraint from its node defaults.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        **overrides: Additional keyword arguments accepted by the shared interface.
+
+    Returns:
+        dict: Build one geometry-symmetry constraint from its node defaults.
+    """
     params = symmetry_constraint_defaults(item_type)
     params.update(overrides)
     item = {"type": item_type, "params": params}
@@ -20,6 +35,16 @@ def symmetry_constraint(item_type: str, **overrides) -> dict:
 
 
 def updater_item_defaults(item_type: str, category: str) -> dict:
+    """Return updater item defaults.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+
+    Returns:
+        dict: Updater item defaults.
+    """
     return UPDATER_CATALOG[category][item_type].default_parameters()
 
 
@@ -27,14 +52,22 @@ def updater_item_defaults(item_type: str, category: str) -> dict:
 # updater term / section factories
 #
 # These build the plain config dicts that live on the ``UpdaterNode`` from
-# the catalogued defaults, so scheme templates declare only the *deviations*
+# the catalogued defaults, so Quickstart declares only the *deviations*
 # (``Distance(min_distance=...)`` instead of a full hand-written dict).  The
 # code generator keeps reading the very same ``{"type", "params"}`` layout.
 # --------------------------------------------------------------------------
 
 
 def updater_objective(item_type: str, **overrides) -> dict:
-    """One objective term: node defaults + ``overrides`` for item ``type``."""
+    """One objective term: node defaults + ``overrides`` for item ``type``.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        **overrides: Additional keyword arguments accepted by the shared interface.
+
+    Returns:
+        dict: One objective term: node defaults + ``overrides`` for item ``type``.
+    """
     spec = UPDATER_OBJECTIVES[item_type]
     params = spec.default_parameters()
     params.update(overrides)
@@ -42,7 +75,15 @@ def updater_objective(item_type: str, **overrides) -> dict:
 
 
 def updater_constraint(item_type: str, **overrides) -> dict:
-    """One constraint term: node defaults + ``overrides`` for item ``type``."""
+    """One constraint term: node defaults + ``overrides`` for item ``type``.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        **overrides: Additional keyword arguments accepted by the shared interface.
+
+    Returns:
+        dict: One constraint term: node defaults + ``overrides`` for item ``type``.
+    """
     spec = UPDATER_CONSTRAINTS[item_type]
     params = spec.default_parameters()
     params.update(overrides)
@@ -59,17 +100,31 @@ def geometry_updater_config(
 ) -> dict:
     """Config of one geometry sub-optimizer.
 
-    ``part_name`` is the boundary part component it updates; an empty name
-    means "the only boundary part of the model".
-    New configs include ShapeDerivative and Fairness, Distance, Cylinder
-    penalties. Explicitly empty collections remain empty.
+    ``part_name`` is the boundary part component it updates; an empty name means "the only
+    boundary part of the model". New configs include ShapeDerivative and Fairness, Distance,
+    Cylinder penalties. Explicitly empty collections remain empty.
+
+    Args:
+        part_name (str): Registered Part name referenced by instances, loads, or material
+            assignments.
+        max_step_iter (int): Maximum number of inner iterations performed for one outer update.
+        max_step_length (float): Updater-owned movement limits in the target's parameter-block
+            order.
+        objective_functions (tuple | None): Registered differentiable subproblem objective
+            declarations.
+        constraints (tuple | None): Registered penalty or hard-projection declarations.
+        symmetry_constraints (tuple): Hard surface-projection configurations in application
+            order.
+
+    Returns:
+        dict: Config of one geometry sub-optimizer.
     """
     return {
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
         "step_length_strategy": strategy_config("step_length_strategy"),
-        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy", group="geometry"),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],
@@ -92,10 +147,22 @@ def materials_updater_config(
 ) -> dict:
     """Config of one material sub-optimizer.
 
-    ``material_name`` is the material definition it updates; an empty name
-    means "the only design-carrying material in the model".
-    New configs include sensitivity, variable bounds and volume fraction.
-    Explicitly empty collections remain empty.
+    ``material_name`` is the material definition it updates; an empty name means "the only
+    design-carrying material in the model". New configs include sensitivity, variable bounds and
+    volume fraction. Explicitly empty collections remain empty.
+
+    Args:
+        material_name (str): Registered material-interface name selected as the updater target.
+        max_step_iter (int): Maximum number of inner iterations performed for one outer update.
+        max_step_length (float): Updater-owned movement limits in the target's parameter-block
+            order.
+        if_update (bool | list[bool]): Enable the selected interface's design update when True.
+        objective_functions (tuple | None): Registered differentiable subproblem objective
+            declarations.
+        constraints (tuple | None): Registered penalty or hard-projection declarations.
+
+    Returns:
+        dict: Config of one material sub-optimizer.
     """
     return {
         "material_name": str(material_name or ""),
@@ -118,7 +185,14 @@ def materials_updater_config(
 
 
 def objective_term_config(term_type: str) -> dict:
-    """Defaults shared by the objective editor and file import."""
+    """Defaults shared by the objective editor and file import.
+
+    Args:
+        term_type (str): Registered physical-objective expression type.
+
+    Returns:
+        dict: Defaults shared by the objective editor and file import.
+    """
     objective = CONSTANT.UI.OBJECTIVE
     term = {"type": term_type, "weight": objective.DEFAULT_WEIGHT}
     if term_type == objective.TYPE_DISPLACEMENT:
@@ -140,7 +214,14 @@ def objective_term_config(term_type: str) -> dict:
 
 
 def metric_term_config(metric_type: str) -> dict:
-    """Defaults shared by the metric editor and file import."""
+    """Defaults shared by the metric editor and file import.
+
+    Args:
+        metric_type (str): Registered metric expression type.
+
+    Returns:
+        dict: Defaults shared by the metric editor and file import.
+    """
     if metric_type == CONSTANT.UI.METRIC.TYPE_DISPLACEMENT:
         return {"type": metric_type, "reference_point_name": "", "step_name": None, "component": ""}
     if metric_type == CONSTANT.UI.METRIC.TYPE_CUSTOM:

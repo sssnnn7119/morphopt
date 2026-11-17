@@ -1,7 +1,7 @@
-"""Composable, scheme-independent FEA code snippets for the objective editor.
+"""Composable FEA code snippets for the objective editor.
 
 This module intentionally knows neither Qt widgets nor a specific optimization
-scheme.  It describes source text plus the values a UI must collect before
+problem type. It describes source text plus the values a UI must collect before
 insertion.  The Objective editor resolves each parameter against the current
 ``ProblemDefinition`` and inserts the rendered source at the user's caret.
 """
@@ -32,7 +32,15 @@ class CodeSnippet:
     source: str
 
     def render(self, values: Mapping[str, object] | None = None) -> str:
-        """Fill named source placeholders with UI-selected parameter values."""
+        """Fill named source placeholders with UI-selected parameter values.
+
+        Args:
+            values (Mapping[str, object] | None): Values aligned with the parameters or records
+                processed by this interface.
+
+        Returns:
+            str: Fill named source placeholders with UI-selected parameter values.
+        """
         defaults = {parameter.key: parameter.default for parameter in self.parameters}
         return self.source.format(**(defaults | dict(values or {})))
 
@@ -60,7 +68,11 @@ _MOMENT_LOAD = SnippetParameter(
 
 
 def shared_fea_snippets() -> tuple[CodeSnippet, ...]:
-    """Return the standard snippets available for every optimization scheme."""
+    """Return the standard finite-element data extraction snippets.
+
+    Returns:
+        tuple[CodeSnippet, ...]: The standard finite-element data extraction snippets.
+    """
     instance_state = _instance_state_source()
     reference_point_state = _reference_point_state_source()
     return (
@@ -200,7 +212,11 @@ def _reference_point_state_source() -> str:
 
 
 def _jacobian_6d_source() -> str:
-    """Build the shared force/moment Jacobian extraction fragment."""
+    """Build the shared force/moment Jacobian extraction fragment.
+
+    Returns:
+        str: Build the shared force/moment Jacobian extraction fragment.
+    """
     return (
         "# Before using this snippet, add a concentrated force and moment at the selected RP.\n"
         "# The selected RP determines the Jacobian output rows in GC space.\n"

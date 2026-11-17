@@ -4,6 +4,7 @@ import pytest
 
 from morphopt.ui.application import ProblemLibrary, ProblemSession
 from morphopt.ui.model.problem import Node, ProblemDefinition
+from morphopt.ui.model.strategies import strategy_config
 
 
 def test_unknown_node_kind_is_rejected():
@@ -119,10 +120,10 @@ def test_file_import_projects_nested_updater_terms_and_strategy_parameters(tmp_p
     problem, issues = load_definition_file(tmp_path, data)
     restored = problem.updater.geometry[0]
     assert "code" not in restored
-    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 1.0}}]
+    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 3.0}}]
     policy = restored["constraint_weight_strategy"]
     assert policy["params"]["initial_tolerance"] == 0.1
-    assert policy["params"]["objective_tolerance"] == 0.01
+    assert policy["params"]["violation_tolerance"] == 0.1
     assert "old_schedule" not in policy["params"]
     assert restored["max_step_length"] > 0
     assert issues
@@ -133,9 +134,9 @@ def test_file_import_uses_default_policy_for_an_unknown_strategy(tmp_path):
     updater = next(node for node in data["root"]["children"] if node["kind"] == "updater")
     updater["params"]["geometry"][0]["constraint_weight_strategy"] = {"type": "FutureStrategy"}
     problem, issues = load_definition_file(tmp_path, data)
-    assert problem.updater.geometry[0]["constraint_weight_strategy"] == {
-        "type": "ConstantConstraintWeights", "params": {"value": 1.0},
-    }
+    assert problem.updater.geometry[0]["constraint_weight_strategy"] == strategy_config(
+        "constraint_weight_strategy", group="geometry",
+    )
     assert any("FutureStrategy" in str(issue) for issue in issues)
 
 

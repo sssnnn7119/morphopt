@@ -19,7 +19,12 @@ from ..theme import theme_manager
 
 
 def set_card_selected(card: QGroupBox, selected: bool) -> None:
-    """Update only this card's selection border, without restyling its children."""
+    """Update only this card's selection border, without restyling its children.
+
+    Args:
+        card (QGroupBox): Interface-card widget whose state or geometry is being updated.
+        selected (bool): Selection retained or applied while the view is rebuilt.
+    """
     if card.property("collectionSelected") != selected:
         card.setProperty("collectionSelected", selected)
         card.style().unpolish(card)
@@ -39,6 +44,16 @@ class ActionButton(QToolButton):
         tooltip: str = "",
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize ActionButton and its configuration state.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+            callback (Callable[[], object] | None): Callback invoked with the operation's documented
+                result or change event.
+            danger (bool): Style the action as destructive when True.
+            tooltip (str): Explanatory text displayed when the pointer rests on the control.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setText(text)
         self.setToolTip(tooltip or text)
@@ -58,6 +73,14 @@ class AddButton(ActionButton):
         menu: QMenu | None = None,
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize AddButton and its configuration state.
+
+        Args:
+            callback (Callable[[], object] | None): Callback invoked with the operation's documented
+                result or change event.
+            menu (QMenu | None): Qt menu populated with the applicable actions.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(tr("ui.common.add"), callback, parent=parent)
         if menu is not None:
             self.setMenu(menu)
@@ -76,6 +99,15 @@ class CollectionHeader(QWidget):
         menu: QMenu | None = None,
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize CollectionHeader and its configuration state.
+
+        Args:
+            title (str): User-facing title of the view, section, or action.
+            add (Callable[[], object] | None): Callback or flag enabling construction of a
+                collection item.
+            menu (QMenu | None): Qt menu populated with the applicable actions.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         row = QHBoxLayout(self)
         row.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -107,6 +139,18 @@ class ItemActions(QWidget):
         remove_tooltip: str = "",
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize ItemActions and its configuration state.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+            count (int): Number of repeated objects or records requested.
+            remove (Callable[[], object]): Callback deleting the selected collection item.
+            move (Callable[[int], object] | None): Callback changing the item's position in its
+                owning collection.
+            allow_remove (bool): Expose the remove action for the selected entry when True.
+            remove_tooltip (str): Tooltip explaining the remove action and any dependent deletion.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         row = QHBoxLayout(self)
         row.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -140,6 +184,13 @@ class ItemActions(QWidget):
     def set_position(
         self, index: int, count: int, *, allow_remove: bool = True
     ) -> None:
+        """Set position.
+
+        Args:
+            index (int): Zero-based position within the relevant collection.
+            count (int): Number of repeated objects or records requested.
+            allow_remove (bool): Expose the remove action for the selected entry when True.
+        """
         if self.up_button is not None:
             self.up_button.setEnabled(0 < index < count)
         if self.down_button is not None:

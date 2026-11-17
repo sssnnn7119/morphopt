@@ -20,6 +20,16 @@ class MethodOverrideNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize MethodOverrideNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         self.body: str = str((params or {}).get("body", ""))
 
@@ -34,9 +44,23 @@ class CustomClassNode(Node):
 
     @property
     def children(self) -> tuple[MethodOverrideNode | CustomFunctionNode, ...]:
+        """Return children.
+
+        Returns:
+            tuple[MethodOverrideNode | CustomFunctionNode, ...]: Children.
+        """
         return tuple(self.members)
 
     def add_child(self, node: Node, index: int | None = None) -> Node:
+        """Add child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+            index (int | None): Zero-based position within the relevant collection.
+
+        Returns:
+            Node: Add child.
+        """
         if not isinstance(node, MethodOverrideNode | CustomFunctionNode):
             return super().add_child(node, index)
         if index is None:
@@ -46,6 +70,11 @@ class CustomClassNode(Node):
         return node
 
     def remove_child(self, node: Node) -> None:
+        """Remove child.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         if not isinstance(node, MethodOverrideNode | CustomFunctionNode):
             return super().remove_child(node)
         self.members.remove(node)
@@ -57,6 +86,16 @@ class CustomClassNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize CustomClassNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         self.members: list[MethodOverrideNode | CustomFunctionNode] = []
         super().__init__(kind=kind, name=name, children=children)
         self.base_class: str = str((params or {}).get("base_class", ""))
@@ -76,6 +115,16 @@ class CustomFunctionNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize CustomFunctionNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         self.parameters: str = str((params or {}).get("parameters", "self"))
         self.body: str = str((params or {}).get("body", "pass"))
@@ -94,6 +143,16 @@ class HelperVariableNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize HelperVariableNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         self.value: str = str((params or {}).get("value", "None"))
 
@@ -111,6 +170,16 @@ class HelperFunctionNode(Node):
         params: dict[str, Any] | None = None,
         children: Sequence[Node] | None = None,
     ) -> None:
+        """Initialize HelperFunctionNode and its configuration state.
+
+        Args:
+            kind (str | None): Registered category or provider identifier used to dispatch the
+                operation.
+            name (str): Name identifying the item in its owning collection.
+            params (dict[str, Any] | None): Editable parameter fields of this definition node or
+                interface configuration.
+            children (Sequence[Node] | None): Child definition nodes in registration order.
+        """
         super().__init__(kind=kind, name=name, children=children)
         self.parameters: str = str((params or {}).get("parameters", ""))
         self.body: str = str((params or {}).get("body", "pass"))

@@ -29,7 +29,11 @@ class BaseFEAComponent(BaseModelComponent):
 
     @property
     def name(self) -> str:
-        """Name assigned when this component is registered."""
+        """Name assigned when this component is registered.
+
+        Returns:
+            str: Name assigned when this component is registered.
+        """
         if not self._name:
             raise ValueError(
                 f"{type(self).__name__} has no name yet; register it with "
@@ -48,16 +52,19 @@ class BaseFEAComponent(BaseModelComponent):
         raise NotImplementedError("This method should be implemented in subclasses.")
     
     def modify_fea(self, fe: FEAController, name: str) -> None:
-        """
-        create the object in FEA assembly
+        """create the object in FEA assembly
 
         Args:
             fe (FEAController): The FEA controller instance.
+            name (str): Name identifying the item in its owning collection.
         """
         raise NotImplementedError("This method should be implemented in subclasses.")
     
     def apply_fea_value(self, fe: FEAController, name: str) -> None:
-        """
-        Apply the values to the FEA object.
+        """Apply the values to the FEA object.
+
+        Args:
+            fe (FEAController): TorchFEA controller whose assembly is modified or solved.
+            name (str): Name identifying the item in its owning collection.
         """
         pass

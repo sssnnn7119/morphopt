@@ -33,8 +33,7 @@ from ..model.problem import ObjectiveNode, ProblemDefinition
 from ..presentation.labels import component_title_text, node_title
 from ..presentation.navigation import ObjectiveItemTreeNode
 from ..refresh import RefreshContext
-from ..schemes.base import get_template
-from ..schemes.snippets import CodeSnippet
+from ..codegen.snippets import CodeSnippet, shared_fea_snippets
 from ..theme import theme_manager
 from .case_deletion import confirm_case_cleanup
 from .codeeditor import CodeEditor
@@ -49,6 +48,11 @@ class JacobianLoadSelector(QToolButton):
     selectionChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize JacobianLoadSelector and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._load_names: list[str] = []
         self._checks: dict[str, QCheckBox] = {}
@@ -68,6 +72,16 @@ class JacobianLoadSelector(QToolButton):
         titles: dict[str, str] | None = None,
         required_names: set[str] | None = None,
     ) -> None:
+        """Set loads.
+
+        Args:
+            load_names (list[str]): Registered load-component names whose parameter derivatives are
+                required.
+            selected_names (list[str]): Names selected in the current control.
+            titles (dict[str, str] | None): Localized headings aligned with the displayed fields.
+            required_names (set[str] | None): Load-case or definition names that must remain
+                present.
+        """
         self._load_names = list(dict.fromkeys(name for name in load_names if name))
         required = required_names or set()
         selected = set(selected_names) | required
@@ -86,6 +100,11 @@ class JacobianLoadSelector(QToolButton):
         self._update_summary()
 
     def selected_names(self) -> list[str]:
+        """Return selected names.
+
+        Returns:
+            list[str]: Selected names.
+        """
         return [name for name in self._load_names if self._checks[name].isChecked()]
 
     def _selection_changed(self) -> None:
@@ -122,6 +141,11 @@ class ObjectiveEditor(QWidget):
     activated = Signal(object)
 
     def __init__(self, parent=None):
+        """Initialize ObjectiveEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -251,6 +275,16 @@ class ObjectiveEditor(QWidget):
         *,
         scroll_to_focus: bool = True,
     ) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            focus (ObjectiveItemTreeNode | None): Node or field to focus after synchronizing the
+                editor.
+            scroll_to_focus (bool): Scroll the editor to the selected item after rebuilding it when
+                True.
+        """
         self._problem = problem
         self._obj = problem.objective
         self._focus_node = focus
@@ -276,7 +310,7 @@ class ObjectiveEditor(QWidget):
 
         self._loading = True
         try:
-            self._snippets = get_template(problem.scheme).objective_code_snippets()
+            self._snippets = shared_fea_snippets()
             if self._obj is not None:
                 amplitude_components = problem.amplitude_components()
                 workspace_loads = {
@@ -304,6 +338,12 @@ class ObjectiveEditor(QWidget):
         self._focus_selection(scroll=scroll_to_focus)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         selected = (
             context.selected
             if isinstance(context.selected, ObjectiveItemTreeNode)
@@ -333,6 +373,15 @@ class ObjectiveEditor(QWidget):
             )
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            watched (QObject): Qt object receiving the filtered event.
+            event (QEvent): Qt event delivered to this widget or event filter.
+
+        Returns:
+            bool: Handle relevant input events before the receiving Qt object processes them.
+        """
         if event.type() == QEvent.Type.FocusIn and isinstance(watched, QWidget):
             target = self._term_focus_targets.get(watched)
             if target is None:
@@ -817,6 +866,7 @@ class ObjectiveEditor(QWidget):
         field.setRange(minimum, maximum)
         field.setDecimals(CONSTANT.UI.OBJECTIVE.FIELD_DECIMALS)
         field.setValue(float(value))
+        field.setKeyboardTracking(False)
         return field
 
     @staticmethod

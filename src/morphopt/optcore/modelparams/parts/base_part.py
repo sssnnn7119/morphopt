@@ -17,7 +17,14 @@ __all__ = ["BasePart"]
 
 
 def _as_pose(value: Sequence[float]) -> list[float]:
-    """Validate a TorchFEA pose ``[tx, ty, tz, rx, ry, rz]``."""
+    """Validate a TorchFEA pose ``[tx, ty, tz, rx, ry, rz]``.
+
+    Args:
+        value (Sequence[float]): Value assigned to or evaluated for the selected field.
+
+    Returns:
+        list[float]: Validate a TorchFEA pose ``[tx, ty, tz, rx, ry, rz]``.
+    """
     pose = [float(item) for item in value]
     if len(pose) != 6:
         raise ValueError(
@@ -42,7 +49,11 @@ class BasePart(BaseModelComponent):
     """
 
     def pathlog_required(self) -> list[str]:
-        """Return the log directory used by this geometry component."""
+        """Return the log directory used by this geometry component.
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         return ["geometry"]
 
     def __init__(
@@ -50,6 +61,13 @@ class BasePart(BaseModelComponent):
         part_name: str | None = None,
         exterior_surface: str | None = None,
     ) -> None:
+        """Initialize BasePart and its configuration state.
+
+        Args:
+            part_name (str | None): Registered Part name referenced by instances, loads, or material
+                assignments.
+            exterior_surface (str | None): Name assigned to the Part's exterior surface selection.
+        """
         super().__init__()
         self._name: str = ""
         """Registration name inside the owning GeometryParams collection."""
@@ -67,12 +85,20 @@ class BasePart(BaseModelComponent):
 
     @property
     def name(self) -> str:
-        """Registration name inside the GeometryParams collection."""
+        """Registration name inside the GeometryParams collection.
+
+        Returns:
+            str: Registration name inside the GeometryParams collection.
+        """
         return self._name
 
     @property
     def part_name(self) -> str:
-        """Name of the Part inside the TorchFEA Assembly."""
+        """Name of the Part inside the TorchFEA Assembly.
+
+        Returns:
+            str: Name of the Part inside the TorchFEA Assembly.
+        """
         name = self._part_name or self._name
         if not name:
             raise ValueError(
@@ -83,15 +109,25 @@ class BasePart(BaseModelComponent):
 
     @part_name.setter
     def part_name(self, value: str | None) -> None:
+        """Set the Part name referenced by the assembly instances.
+
+        Args:
+            value (str | None): New Part name referenced by the assembly instances.
+        """
         self._part_name = str(value).strip() if value else ""
 
     @property
     def instance_names(self) -> list[str]:
-        """Names declared by :meth:`define_instance`."""
+        """Names declared by :meth:`define_instance`.
+
+        Returns:
+            list[str]: Names declared by :meth:`define_instance`.
+        """
         self._ensure_instance_definitions()
         return [name for _part_name, name, _pose in self._instance_definitions]
 
     def _ensure_instance_definitions(self) -> None:
+        """Invoke the instance declaration hook when no instance definitions have been registered."""
         if not self._instance_definitions:
             self.define_instance()
 
@@ -105,7 +141,15 @@ class BasePart(BaseModelComponent):
         instance_name: str,
         translations_rotations: list[float],
     ) -> None:
-        """Declare one Instance using ``[tx, ty, tz, rx, ry, rz]``."""
+        """Declare one Instance using ``[tx, ty, tz, rx, ry, rz]``.
+
+        Args:
+            part_name (str): Registered Part name referenced by instances, loads, or material
+                assignments.
+            instance_name (str): Registered Instance name in the assembly.
+            translations_rotations (list[float]): Instance pose [tx, ty, tz, rx, ry, rz], with
+                rotations represented by an exponential-coordinate vector in radians.
+        """
         part_name = str(part_name).strip()
         instance_name = str(instance_name).strip()
         if not part_name:
@@ -122,6 +166,11 @@ class BasePart(BaseModelComponent):
         )
 
     def __repr__(self) -> str:
+        """Describe the registered Part and its instance declarations.
+
+        Returns:
+            str: Interface class, definition name, assembly Part name, and instance names.
+        """
         try:
             part_name = self.part_name
         except ValueError:
@@ -132,20 +181,45 @@ class BasePart(BaseModelComponent):
         )
 
     def initialize(self, *args: object, **kwargs: object) -> None:
-        """Declare Instances when absent, preserving existing declarations."""
+        """Declare Instances when absent, preserving existing declarations.
+
+        Args:
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
+        """
         super().initialize(*args, **kwargs)
         self._ensure_instance_definitions()
 
     def build_part(
         self, path_result: str | None = None, pools: Pool | None = None
     ) -> torchfea.Part:
-        """Create (or import) the Part owned by this interface."""
+        """Create (or import) the Part owned by this interface.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: TorchFEA Part with geometry-derived selections and the requested element
+                order.
+        """
         raise NotImplementedError
 
     def get_part(
         self, path_result: str | None = None, pools: Pool | None = None
     ) -> torchfea.Part:
-        """Build the current geometry; FixedPart supplies mesh reuse separately."""
+        """Build the current geometry; FixedPart supplies mesh reuse separately.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: Cached or newly generated TorchFEA Part for the current geometry
+                configuration.
+        """
         return self.build_part(path_result=path_result, pools=pools)
 
     def add_to_assembly(
@@ -154,7 +228,18 @@ class BasePart(BaseModelComponent):
         path_result: str | None = None,
         pools: Pool | None = None,
     ) -> torchfea.Part:
-        """Add this Part and its declared Instances to ``assembly``."""
+        """Add this Part and its declared Instances to ``assembly``.
+
+        Args:
+            assembly (torchfea.Assembly): TorchFEA assembly containing the registered Parts,
+                Instances, loads, and reference points.
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Part: Add this Part and its declared Instances to ``assembly``.
+        """
         part = self.get_part(path_result=path_result, pools=pools)
         part_name = self.part_name
 
@@ -183,13 +268,31 @@ class BasePart(BaseModelComponent):
     def generate(
         self, path_result: str | None = None, pools: Pool | None = None
     ) -> torchfea.Assembly:
-        """Build a standalone Assembly containing only this interface."""
+        """Build a standalone Assembly containing only this interface.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+
+        Returns:
+            torchfea.Assembly: Standalone assembly containing this Part interface and its registered
+                Instances.
+        """
         assembly = torchfea.Assembly()
         self.add_to_assembly(assembly, path_result=path_result, pools=pools)
         return assembly
 
     def workdir(self, path_result: str | None) -> str:
-        """Per-interface working directory inside a result/cache folder."""
+        """Per-interface working directory inside a result/cache folder.
+
+        Args:
+            path_result (str | None): Optimization result directory containing scripts and log
+                subdirectories.
+
+        Returns:
+            str: Per-interface working directory inside a result/cache folder.
+        """
         if path_result is None:
             import tempfile
 

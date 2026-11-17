@@ -90,10 +90,19 @@ def completion_items(
 ) -> list[CompletionItem]:
     """Return completions appropriate for one hand-written code slot.
 
-    ``slot_key`` intentionally accepts editor contexts (for example
-    ``"_objective_function"`` for custom objective code) and generated method
-    names. Candidate labels remain deterministic; model-derived entries are
-    appended in tree order.
+    ``slot_key`` intentionally accepts editor contexts (for example ``"_objective_function"``
+    for custom objective code) and generated method names. Candidate labels remain
+    deterministic; model-derived entries are appended in tree order.
+
+    Args:
+        slot_key (str): Class-binding slot identifying the framework declaration.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        member_expression (str | None): Python member expression identifying the completion
+            target.
+
+    Returns:
+        list[CompletionItem]: Completions appropriate for one hand-written code slot.
     """
     key = slot_key.lstrip("_")
     items = list(_PYTHON_ITEMS)
@@ -110,14 +119,30 @@ def completion_items(
 
 
 def _is_tensor_expression(expression: str | None) -> bool:
-    """Whether a member expression is a known ``FEAResult.GC`` tensor."""
+    """Whether a member expression is a known ``FEAResult.GC`` tensor.
+
+    Args:
+        expression (str | None): Python parameter expression evaluated in the definition's
+            auxiliary namespace.
+
+    Returns:
+        bool: True if a member expression is a known ``FEAResult.GC`` tensor.
+    """
     if not expression:
         return False
     return bool(re.search(r"\.GC(?:\[[^\]]+\])?$", expression))
 
 
 def _tensor_items(expression: str) -> list[CompletionItem]:
-    """Return Tensor members as full paths for the current GC expression."""
+    """Return Tensor members as full paths for the current GC expression.
+
+    Args:
+        expression (str): Python parameter expression evaluated in the definition's auxiliary
+            namespace.
+
+    Returns:
+        list[CompletionItem]: Tensor members as full paths for the current GC expression.
+    """
     return [
         CompletionItem(member, f"{expression}.{member}") for member in _TENSOR_MEMBERS
     ]
@@ -143,7 +168,15 @@ def _objective_reference_items(
 
 
 def _objective_result_items(problem: ProblemDefinition | None) -> list[CompletionItem]:
-    """Build result candidates from the current number of load steps."""
+    """Build result candidates from the current number of load steps.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        list[CompletionItem]: Build result candidates from the current number of load steps.
+    """
     items: list[CompletionItem] = []
     for step_name in _result_names(problem):
         result = f"self.fe_results[{step_name!r}]"
@@ -160,7 +193,15 @@ def _objective_result_items(problem: ProblemDefinition | None) -> list[Completio
 
 
 def _result_names(problem: ProblemDefinition | None) -> list[str]:
-    """Registered result names available to objective code."""
+    """Registered result names available to objective code.
+
+    Args:
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+
+    Returns:
+        list[str]: Registered result names available to objective code.
+    """
     return (
         list(problem.steps.step_values) if problem is not None and problem.steps else []
     )
@@ -183,7 +224,15 @@ def _surface_items(problem: ProblemDefinition | None) -> list[CompletionItem]:
 
 
 def _unique_items(items: list[CompletionItem]) -> list[CompletionItem]:
-    """Preserve the first candidate for each displayed label."""
+    """Preserve the first candidate for each displayed label.
+
+    Args:
+        items (list[CompletionItem]): Collection items supplied in their display or evaluation
+            order.
+
+    Returns:
+        list[CompletionItem]: Preserve the first candidate for each displayed label.
+    """
     seen: set[str] = set()
     unique: list[CompletionItem] = []
     for item in items:

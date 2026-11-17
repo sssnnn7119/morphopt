@@ -34,7 +34,6 @@ from morphopt.ui.model.problem import (
     CADOperationNode, HelperVariableNode, FEAComponentNode,
     PartNode, SurfaceNode,
 )
-from morphopt.ui.schemes.base import get_template
 
 
 def literal_call(expression):
@@ -297,6 +296,128 @@ def test_symmetry_fields_reach_surface_owned_constraint(kind, spec):
     assert kwargs == field_defaults(spec.fields)
 
 
+@pytest.mark.parametrize("order", [3, 5, "PERIODS"])
+def test_bsp_rotation_round_trip_and_generated_surface_constraint(tmp_path, order):
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    part.surfaces.clear()
+    part.add_surface(SurfaceNode.create(
+        "bsp_cylinder", r0=2.0, length=4.0, seed_size=1.0,
+    ))
+    if isinstance(order, str):
+        problem.helper_variables.append(HelperVariableNode(name=order, params={"value": "5"}))
+    item = symmetry_constraint("BspRotation", order=order)
+    item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert "BspRotation" in R.available_surface_symmetry_types(["bsp_cylinder"])
+    assert "BspRotation" not in R.available_surface_symmetry_types(["cpgeo_cylinder"])
+    visible_fields = {field.key for field in fields_for_node(part.surfaces[0], problem)[0]}
+    assert not visible_fields & {"num_U_ratio", "num_V_ratio"}
+
+    path = ProblemLibrary.save(problem, tmp_path / "rotation.morph")
+    loaded = ProblemLibrary.load(path)
+    assert loaded.updater.geometry[0]["symmetry_constraints"] == [item]
+    source = ProblemSession(loaded).source()
+    assert f"surface_0.add_constraint(surface_0.rotate(order={order}))" in source
+    assert f"num_U_ratio={order}" in source
+    namespace = {"__name__": "test_bsp_rotation"}
+    exec(source, namespace)
+    geometry = namespace["ThisController"].Params.GeometryParams()
+    geometry.initialize()
+    boundary = next(iter(geometry.interfaces.values()))
+    surface = boundary.surface_interface(0)
+    expected_order = 5 if isinstance(order, str) else order
+    assert surface.constraints[0].order == expected_order
+    assert surface.model.size[1] % expected_order == 0
+    assert isinstance(surface.constraints[0], surface.rotate)
+
+
+def test_bsp_rotation_alignment_tracks_order_edits_and_removal():
+    problem = ProblemLibrary.create("shapeopt")
+    surface = problem.parts()[0].surfaces[0]
+    item = symmetry_constraint("BspRotation", order=5)
+    item["surface_index"] = 0
+    constraints = problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 5
+    item["params"]["order"] = 7
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 7
+    constraints.clear()
+    assert literal_call(render_surface_call(surface, problem))[1]["num_U_ratio"] == 1
+    assert surface.num_U_ratio == 1
+
+
+def test_bsp_rotation_alignment_combines_orders_and_helper_constants():
+    import math
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = part.surfaces[0]
+    surface.r0, surface.length = 2.0, 4.0
+    problem.helper_variables.append(HelperVariableNode(name="PERIODS", params={"value": "5"}))
+    items = [symmetry_constraint("BspRotation", order=order) for order in ("PERIODS", 3)]
+    for item in items:
+        item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = items
+    expression = render_surface_call(surface, problem)
+    assert "num_U_ratio=math.lcm(PERIODS, 3)" in expression
+    kernel_surface = eval(expression, {"self": morphopt.BoundaryPart, "math": math, "PERIODS": 5})
+    assert kernel_surface.model.size[1] % 15 == 0
+
+
+@pytest.mark.parametrize("kind,method,params", [
+    ("BspZMirror", "mirror_z", {}),
+    ("BspZAntisymmetry", "antisymmetry_z", {}),
+    ("BspZPeriodic", "periodic_z", {"periods": 3}),
+    ("BspZPeriodic", "periodic_z", {"periods": "PERIODS"}),
+])
+def test_bsp_axial_constraints_round_trip_and_generate_valid_geometry(tmp_path, kind, method, params):
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    part.surfaces.clear()
+    part.add_surface(SurfaceNode.create("bsp_cylinder", r0=2.0, length=30.0, seed_size=1.0))
+    problem.helper_variables.append(HelperVariableNode(name="PERIODS", params={"value": "3"}))
+    item = symmetry_constraint(kind, **params)
+    item["surface_index"] = 0
+    problem.updater.geometry[0]["symmetry_constraints"] = [item]
+    assert kind in R.available_surface_symmetry_types(["bsp_cylinder"])
+    assert kind not in R.available_surface_symmetry_types(["cpgeo_cylinder"])
+    path = ProblemLibrary.save(problem, tmp_path / "axial.morph")
+    loaded = ProblemLibrary.load(path)
+    assert loaded.updater.geometry[0]["symmetry_constraints"] == [item]
+    source = ProblemSession(loaded).source()
+    kwargs = ", ".join(f"{key}={value}" for key, value in params.items())
+    assert f"surface_0.add_constraint(surface_0.{method}({kwargs}))" in source
+    if kind == "BspZPeriodic":
+        assert f"num_V_ratio={params['periods']}" in source
+    namespace = {"__name__": "test_bsp_axial"}
+    exec(source, namespace)
+    geometry = namespace["ThisController"].Params.GeometryParams()
+    geometry.initialize()
+    surface = next(iter(geometry.interfaces.values())).surface_interface(0)
+    assert type(surface.constraints[0]).__name__ == R.SURFACE_SYMMETRY_CONSTRAINTS[kind].backend_class
+    if kind == "BspZPeriodic":
+        assert surface.constraints[0].periods == 3
+        assert surface.constraints[0].period_length > 0
+
+
+def test_bsp_axial_alignment_is_independent_of_circumferential_rotation():
+    problem = ProblemLibrary.create("shapeopt")
+    surface = problem.parts()[0].surfaces[0]
+    rotation = symmetry_constraint("BspRotation", order=3)
+    periodic = symmetry_constraint("BspZPeriodic", periods=5)
+    for item in (rotation, periodic):
+        item["surface_index"] = 0
+    items = problem.updater.geometry[0]["symmetry_constraints"] = [rotation, periodic]
+    parameters = literal_call(render_surface_call(surface, problem))[1]
+    assert (parameters["num_U_ratio"], parameters["num_V_ratio"]) == (3, 5)
+    periodic["params"]["periods"] = 7
+    assert literal_call(render_surface_call(surface, problem))[1]["num_V_ratio"] == 7
+    items.remove(periodic)
+    parameters = literal_call(render_surface_call(surface, problem))[1]
+    assert (parameters["num_U_ratio"], parameters["num_V_ratio"]) == (3, 1)
+    assert surface.num_V_ratio == 1
+
+
 @pytest.mark.parametrize("material_type", R.MATERIAL_TYPES)
 @pytest.mark.parametrize("model", MATERIAL_MODEL_CHOICES)
 def test_every_visible_material_field_reaches_its_constructor(material_type, model):
@@ -315,7 +436,7 @@ def test_every_visible_material_field_reaches_its_constructor(material_type, mod
             assert {"mumax", "kappamax"} <= visible_keys
             assert not {"mu", "kappa"} & visible_keys
     lines = []
-    _emit_material_init(lines.append, problem, get_template(problem.scheme))
+    _emit_material_init(lines.append, problem)
     tree = ast.parse(dedent("\n".join(lines)))
     ctor = next(call for call in ast.walk(tree) if isinstance(call, ast.Call)
                 and ast.unparse(call.func) == f"morphopt.{material_type}")
@@ -442,6 +563,121 @@ def test_invalid_fairness_definition_is_marked_in_the_model_tree(parameters):
     validation = DefinitionValidation(problem)
     validation.updaters()
     assert id(item) in validation.errors
+
+
+@pytest.mark.parametrize("surface_type,factor", [("bsp_cylinder", 1), ("cpgeo_cylinder", 1), ("cpgeo_sphere", 2)])
+@pytest.mark.parametrize("limit_ratio,invalid", [(0.9, True), (1.0, False), (1.1, False)])
+def test_fairness_checks_initial_analytic_curvature(surface_type, factor, limit_ratio, invalid):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create(surface_type, r0=2.0)
+    if surface_type != "cpgeo_sphere":
+        surface.perturbation_L = -1.0
+    part.surfaces = [surface]
+    config = problem.updater.geometry[0]
+    config["symmetry_constraints"] = []
+    item = {"type": "Fairness", "params": {"max_curvature": factor / 4 * limit_ratio}}
+    config["constraints"] = [item]
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert (id(item) in validation.errors) is invalid
+    assert (id(surface) in validation.errors) is invalid
+
+
+@pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder", "cpgeo_sphere"])
+@pytest.mark.parametrize("use_constant", [False, True])
+def test_zero_surface_radius_is_invalid_without_fairness(surface_type, use_constant):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    problem.updater.geometry[0]["constraints"] = []
+    problem.helper_variables.append(HelperVariableNode(name="radius", params={"value": "0.0"}))
+    surface = SurfaceNode.create(surface_type, r0="radius" if use_constant else 0.0)
+    validation = DefinitionValidation(problem)
+    validation.node(surface)
+    assert id(surface) in validation.errors
+    assert len(validation.errors[id(surface)]) == 1
+
+
+@pytest.mark.parametrize("setting", ["fixed", "unknown_wavelength", "custom", "expression"])
+def test_initial_curvature_does_not_guess_unknown_or_unconstrained_geometry(setting):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("bsp_cylinder", r0=2.0, perturbation_L=-1.0)
+    if setting == "fixed":
+        surface.is_updatable = False
+    elif setting == "unknown_wavelength":
+        surface.perturbation_L = "compute_wavelength()"
+    elif setting == "custom":
+        surface.custom_class = "CustomSurface"
+    else:
+        surface.r0 = "compute_radius()"
+    part.surfaces = [surface]
+    item = {"type": "Fairness", "params": {"max_curvature": 0.1}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, 0.1)
+    assert not validation.errors
+
+
+@pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder"])
+@pytest.mark.parametrize("wavelength", [10.0, 0.5])
+@pytest.mark.parametrize("limit_ratio,invalid", [(0.9, True), (1.1, False)])
+def test_initial_curvature_checks_the_perturbed_cylinder_crest(surface_type, wavelength, limit_ratio, invalid):
+    from morphopt.constants import CONSTANT
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    radius = 2.0
+    surface = SurfaceNode.create(surface_type, r0=radius, perturbation_L=wavelength)
+    part.surfaces = [surface]
+    ratio = CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+    estimate = (radius * (1 + ratio))**-2 + (radius * ratio * (2 * np.pi / wavelength)**2)**2
+    item = {"type": "Fairness", "params": {"max_curvature": estimate * limit_ratio}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, estimate * limit_ratio)
+    assert (id(item) in validation.errors) is invalid
+    assert (id(surface) in validation.errors) is invalid
+
+
+def test_bsp_perturbation_does_not_hide_a_small_initial_radius():
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("bsp_cylinder", r0=0.5, perturbation_L=10.0)
+    part.surfaces = [surface]
+    assert surface.perturbation_L > 0
+    item = {"type": "Fairness", "params": {"max_curvature": 1.0}}
+    validation = DefinitionValidation(problem)
+    validation.initial_curvature(item, part, 1.0)
+    assert id(item) in validation.errors
+    assert id(surface) in validation.errors
+
+
+def test_initial_curvature_resolves_literal_radius_and_limit_constants():
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create("shapeopt")
+    part = problem.parts()[0]
+    surface = SurfaceNode.create("cpgeo_sphere", r0="radius")
+    part.surfaces = [surface]
+    problem.helper_variables.extend([
+        HelperVariableNode(name="radius", params={"value": "2.0"}),
+        HelperVariableNode(name="curvature_limit", params={"value": "0.4"}),
+    ])
+    config = problem.updater.geometry[0]
+    config["symmetry_constraints"] = []
+    item = {"type": "Fairness", "params": {"max_curvature": "curvature_limit"}}
+    config["constraints"] = [item]
+    validation = DefinitionValidation(problem)
+    validation.updaters()
+    assert id(item) in validation.errors
+    assert id(surface) in validation.errors
 
 
 @pytest.mark.parametrize("surface_type", ["bsp_cylinder", "cpgeo_cylinder"])

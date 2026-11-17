@@ -196,6 +196,22 @@ def test_missing_or_incompatible_class_selection_is_rejected(bindings, tmp_path)
         ProblemLibrary.export_python_bundle(problem, tmp_path / "run")
 
 
+def test_model_title_includes_the_selected_controller_class():
+    from PySide6.QtWidgets import QApplication
+    from morphopt.ui.presentation.labels import node_title
+    from morphopt.ui.widgets.controller_editor import ControllerSettingsEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    assert node_title(problem, problem.root).endswith(" [Controller]")
+    customize(problem, "ThisController", "MyController")
+    assert node_title(problem, problem.root).endswith(" [MyController]")
+    editor = ControllerSettingsEditor()
+    editor.edit_problem(problem)
+    assert editor.group.title() == node_title(problem, problem.root)
+    editor.close()
+
+
 def test_part_class_names_use_part_types_and_old_paths_are_rejected():
     problem = ProblemLibrary.create("shapeopt")
     catalog = class_catalog(problem)
@@ -209,8 +225,8 @@ def test_part_class_names_use_part_types_and_old_paths_are_rejected():
     )
     with pytest.raises(ValueError, match="(?i)base class missing"):
         ProblemSession(problem).source()
-    for template in ProblemLibrary.templates():
-        catalog = class_catalog(ProblemLibrary.create(template.scheme))
+    for method in ("shapeopt", "simp"):
+        catalog = class_catalog(ProblemLibrary.create(method))
         parts = [
             spec
             for spec in catalog.values()
@@ -259,10 +275,10 @@ def test_nested_subclasses_replace_classes_and_retain_generated_configuration():
 
 
 @pytest.mark.parametrize(
-    "scheme", [template.scheme for template in ProblemLibrary.templates()]
+    "method", ["shapeopt", "simp"]
 )
-def test_all_discovered_methods_have_executable_default_subclasses(scheme):
-    problem = ProblemLibrary.create(scheme)
+def test_all_discovered_methods_have_executable_default_subclasses(method):
+    problem = ProblemLibrary.create(method)
     for index, (path, spec) in enumerate(framework_class_catalog(problem).items()):
         custom = customize(problem, path, f"Custom{index}")
         for method in spec.methods.values():
@@ -360,9 +376,14 @@ def test_workbench_routes_overrides_and_keeps_text_during_refresh(monkeypatch):
     customize(problem, "morphopt.Params", "CustomParams", bind=False)
     window = workbench.Workbench(problem)
     assert window.tree.topLevelItemCount() == 2
-    helper_item = window.tree.topLevelItem(0)
-    root_item = window.tree.topLevelItem(1)
+    root_item = window.tree.topLevelItem(0)
+    helper_item = window.tree.topLevelItem(1)
     assert window.tree._item_node[root_item] is problem.root
+    from morphopt.ui.i18n import tr
+    assert root_item.text(0) == tr(
+        "ui.naming.object_title", name=tr("ui.widgets.model_tree.container.problem"),
+        class_name="Controller",
+    )
     assert window.tree._item_node[helper_item].kind == "helper_code"
     assert [
         window.tree._item_node[root_item.child(i)].kind
@@ -478,7 +499,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     problem = ProblemLibrary.create("shapeopt")
     window = workbench.Workbench(problem)
     assert window._center.count() == 3
-    helper_item = window.tree.topLevelItem(0)
+    helper_item = window.tree.topLevelItem(1)
     helper_node = window.tree._item_node[helper_item]
     assert route_editor(helper_node).kind is EditorKind.HELPER_CODE
     assert [window.tree._item_node[helper_item.child(i)].kind for i in range(3)] == [
@@ -517,7 +538,7 @@ def test_workbench_manages_helper_entries(monkeypatch, tmp_path):
     assert window._stack.currentWidget() is window.helper_functions_editor
 
     window._center.setCurrentWidget(window.code_view)
-    window.tree.setCurrentItem(window.tree.topLevelItem(1))
+    window.tree.setCurrentItem(window.tree.topLevelItem(0))
     assert window._center.currentIndex() == 0
     assert window._stack.currentWidget() is window.controller_editor
     window._center.setCurrentWidget(window.code_view)
@@ -738,7 +759,7 @@ def test_deep_class_bindings_are_rejected():
 def test_custom_parts_are_added_only_through_defined_classes():
     from PySide6.QtWidgets import QApplication, QMenu
 
-    from morphopt.ui.schemes.base import get_template
+    from morphopt.ui.model.registry import available_part_types
     from morphopt.ui.widgets.model_tree import ModelTree
 
     app = QApplication.instance() or QApplication([])
@@ -746,10 +767,7 @@ def test_custom_parts_are_added_only_through_defined_classes():
     customize(problem, "morphopt.BasePart", "CustomPart", bind=False)
     tree = ModelTree()
     tree.set_problem(problem)
-    assert (
-        "BasePart"
-        not in get_template(problem.scheme).available_geometry_types()
-    )
+    assert "BasePart" not in available_part_types()
     menu = QMenu()
     tree._build_node_menu(menu, problem.geometry)
     geometry_menu = menu.actions()[0].menu()

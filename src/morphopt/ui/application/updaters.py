@@ -10,6 +10,16 @@ from ..model.problem import SurfaceNode
 
 
 def symmetry_item(item_type: str, surfaces: list[SurfaceNode]) -> dict | None:
+    """Return symmetry item.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        surfaces (list[SurfaceNode]): Surface interfaces in boundary registration order:
+            exterior first, followed by cavities.
+
+    Returns:
+        dict | None: Symmetry item.
+    """
     item = symmetry_constraint(item_type)
     if item_type != "Custom":
         spec = R.SURFACE_SYMMETRY_CONSTRAINTS[item_type]
@@ -26,6 +36,17 @@ def symmetry_item(item_type: str, surfaces: list[SurfaceNode]) -> dict | None:
 
 
 def updater_item(item_type: str, category: str, custom_class: str = "") -> dict:
+    """Return updater item.
+
+    Args:
+        item_type (str): Registered interface type used to create a new collection item.
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+        custom_class (str): Name of the compatible custom class selected for this interface.
+
+    Returns:
+        dict: Updater item.
+    """
     item = {
         "type": item_type,
         "params": {}
@@ -45,6 +66,16 @@ def distance_matrix(
     size: int,
     default: float = CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE,
 ) -> list[list[float | str]]:
+    """Return distance matrix.
+
+    Args:
+        stored: Previously saved selection or configuration.
+        size (int): Requested dimensions or size of the constructed object.
+        default (float): Value used when no explicit value is supplied.
+
+    Returns:
+        list[list[float | str]]: Distance matrix.
+    """
     rows: list[list[float | str]] = []
     if isinstance(stored, (list, tuple)):
         for row in stored:
@@ -62,6 +93,13 @@ def distance_matrix(
 
 
 def specs_for(group: str, category: str):
+    """Handle specs for for .
+
+    Args:
+        group (str): Named group containing the related interfaces or task configuration.
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+    """
     return tuple(
         node
         for node in R.UPDATER_CATALOG[category].values()
@@ -70,6 +108,14 @@ def specs_for(group: str, category: str):
 
 
 def find_spec(itype: str, category: str):
+    """Handle find spec for .
+
+    Args:
+        itype (str): Registered interface-type name used to dispatch construction or field
+            choices.
+        category (str): Interface or asset category used to select compatible editors or
+            renderers.
+    """
     return R.UPDATER_CATALOG[category].get(itype)
 
 
@@ -80,6 +126,7 @@ from ..model.problem import Node, ProblemDefinition, UpdaterNode
 
 @dataclass(frozen=True)
 class UpdaterSection:
+    """Describe one updater-editor section and its associated configuration group."""
     group: str
     config: dict
     index: int
@@ -93,6 +140,19 @@ def updater_sections(
     group: str | None = None,
     index: int | None = None,
 ) -> list[UpdaterSection]:
+    """Return updater sections.
+
+    Args:
+        updater (UpdaterNode): Updater bound to the target whose policy or state is being
+            evaluated.
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        group (str | None): Named group containing the related interfaces or task configuration.
+        index (int | None): Zero-based position within the relevant collection.
+
+    Returns:
+        list[UpdaterSection]: Updater sections.
+    """
     sections = []
     for kind, configs, target_for in (
         ("geometry", updater.geometry, problem.config_part_node),
@@ -121,6 +181,16 @@ class UpdaterItems:
     def __init__(
         self, config: dict, group: str, category: str, problem: ProblemDefinition
     ):
+        """Initialize UpdaterItems and its configuration state.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            group (str): Named group containing the related interfaces or task configuration.
+            category (str): Interface or asset category used to select compatible editors or
+                renderers.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.config, self.group, self.category, self.problem = (
             config,
             group,
@@ -135,10 +205,16 @@ class UpdaterItems:
 
     @property
     def items(self) -> list[dict]:
+        """Return items.
+
+        Returns:
+            list[dict]: Items.
+        """
         return self.config.get(self.key, [])
 
     @property
     def surfaces(self):
+        """Handle surfaces for UpdaterItems."""
         target = (
             self.problem.config_part_node(self.config)
             if self.group == "geometry"
@@ -147,6 +223,11 @@ class UpdaterItems:
         return target.surfaces if isinstance(target, BoundaryPartNode) else []
 
     def specs(self) -> dict[str, type[Node]]:
+        """Return specs.
+
+        Returns:
+            dict[str, type[Node]]: Specs.
+        """
         if self.category == "geometry_symmetry":
             allowed = set(
                 R.available_surface_symmetry_types(
@@ -161,11 +242,25 @@ class UpdaterItems:
         return {spec.type_name: spec for spec in specs_for(self.group, self.category)}
 
     def spec(self, item: dict) -> type[Node] | None:
+        """Return spec.
+
+        Args:
+            item (dict): Collection or view item selected for the operation.
+
+        Returns:
+            type[Node] | None: Spec.
+        """
         if self.category == "geometry_symmetry":
             return R.SURFACE_SYMMETRY_CONSTRAINTS.get(item["type"])
         return find_spec(item["type"], self.category)
 
     def compatible_surfaces(self, spec: type[Node]):
+        """Handle compatible surfaces for UpdaterItems.
+
+        Args:
+            spec (type[Node]): Field or interface schema describing valid values and available
+                controls.
+        """
         return [
             (index, surface)
             for index, surface in enumerate(self.surfaces)
@@ -173,6 +268,7 @@ class UpdaterItems:
         ]
 
     def custom_choices(self):
+        """Handle custom choices for UpdaterItems."""
         from ..codegen.custom_classes import custom_options, updater_item_base
 
         candidates = {
@@ -199,7 +295,11 @@ class UpdaterItems:
         return choices
 
     def default_element_name(self) -> str:
-        """Use the material's block, or the sole block of its owning Part."""
+        """Use the material's block, or the sole block of its owning Part.
+
+        Returns:
+            str: Use the material's block, or the sole block of its owning Part.
+        """
         from .part_sets import PartSetCatalog
 
         material = self.problem.config_material_node(self.config)
@@ -211,6 +311,15 @@ class UpdaterItems:
         return elements[0] if len(elements) == 1 else ""
 
     def add(self, item_type: str, custom_class: str = "") -> bool:
+        """Add the UpdaterItems state.
+
+        Args:
+            item_type (str): Registered interface type used to create a new collection item.
+            custom_class (str): Name of the compatible custom class selected for this interface.
+
+        Returns:
+            bool: Add the UpdaterItems state.
+        """
         item = (
             symmetry_item(item_type, self.surfaces)
             if self.category == "geometry_symmetry"
@@ -228,12 +337,26 @@ class UpdaterItems:
         return True
 
     def remove(self, item: dict) -> None:
+        """Remove the UpdaterItems state.
+
+        Args:
+            item (dict): Collection or view item selected for the operation.
+        """
         index = next(
             index for index, candidate in enumerate(self.items) if candidate is item
         )
         self.items.pop(index)
 
     def move(self, item: dict, offset: int) -> bool:
+        """Move the UpdaterItems state.
+
+        Args:
+            item (dict): Collection or view item selected for the operation.
+            offset (int): Signed plane or surface offset in model length units.
+
+        Returns:
+            bool: Move the UpdaterItems state.
+        """
         source = next(
             index for index, candidate in enumerate(self.items) if candidate is item
         )
@@ -247,7 +370,18 @@ class UpdaterItems:
 def editor_signature(
     problem: ProblemDefinition, sections: list[UpdaterSection], category: str | None
 ) -> tuple:
-    """Structural changes which require rebuilding an updater page, excluding values."""
+    """Structural changes which require rebuilding an updater page, excluding values.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        sections (list[UpdaterSection]): Editor-section identifiers included in the refresh.
+        category (str | None): Interface or asset category used to select compatible editors or
+            renderers.
+
+    Returns:
+        tuple: Structural changes which require rebuilding an updater page, excluding values.
+    """
     records = []
     for section in sections:
         surfaces = (

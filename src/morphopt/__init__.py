@@ -15,22 +15,22 @@ import logging as __logging
 
 
 def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging.DEBUG):
-    """
-    Enable logging for the FEA package.
+    """Configure console and optional file handlers for the MorphOpt package logger.
 
-    Parameters
-    ----------
-    level : int
-        the logging level (e.g., logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
-    log_file : str, optional
-        the path to a log file where logs will be written. If None, logs will only be printed to the console.
-    file_log_level : int
-        the logging level for the log file. Default is logging.INFO.
+    Existing handlers on this logger are replaced so repeated setup does not duplicate messages.
 
-    Examples
-    --------
-    >>> import torchfea
-    >>> torchfea.enable_logging(level=logging.DEBUG, log_file='fem.log')
+    Args:
+        level: Console logging threshold; defaults to logging.INFO.
+        log_file: Optional UTF-8 log file path. Its parent directory must already exist.
+        file_log_level: File logging threshold; defaults to logging.DEBUG.
+
+    Returns:
+        logging.Logger: Configured package logger with the requested handlers.
+
+    Examples:
+        >>> import logging
+        >>> import morphopt
+        >>> logger = morphopt.enable_logging(level=logging.INFO)
     """
     logger = __logging.getLogger(__name__)
     logger.setLevel(min(level, file_log_level))
@@ -69,6 +69,7 @@ def enable_logging(level=__logging.INFO, log_file=None, file_log_level=__logging
 from . import codesign, shapeopt, simp
 from .codesign import OffsetBoundaryPart, UpdaterOffsetBoundaryPart
 from .opt_runner import debug_optimization, start_optimization
+from .optcore import strategies
 from .optcore.controller import Controller
 from .optcore.history import History
 from .optcore.modelparams import (
@@ -76,8 +77,8 @@ from .optcore.modelparams import (
     BasePart,
     BoxPart,
     CADPart,
-    FixedPart,
     FEAParams,
+    FixedPart,
     GeometryParams,
     INPPart,
     MaterialsParams,
@@ -86,13 +87,13 @@ from .optcore.modelparams import (
 from .optcore.modelparams.materials import HomogeneousMaterial
 from .optcore.objfunc import ObjectiveFunction
 from .optcore.protocal import (
+    ProtocalHistory,
     ProtocalInitializable,
     ProtocalSavable,
     ProtocalUpdatable,
     ProtocalVisualizable,
 )
 from .optcore.solver import Solver
-from .optcore import strategies
 from .optcore.updaters import Updaters
 from .shapeopt import (
     BaseSurfaceConstraints,
@@ -133,6 +134,7 @@ __all__ = [
     "ObjectiveFunction",
     "OffsetBoundaryPart",
     "Params",
+    "ProtocalHistory",
     "ProtocalInitializable",
     "ProtocalSavable",
     "ProtocalUpdatable",

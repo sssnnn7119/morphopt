@@ -60,22 +60,21 @@ class UpdaterSIMPMaterial(BaseUpdater):
         step_length_strategy: StepLengthStrategy | None = None,
         constraint_weight_strategy: ConstraintWeightStrategy | None = None,
     ) -> None:
-        """
-        Initialize the Updater class with the given parameters.
+        """Initialize the Updater class with the given parameters.
 
-        Only the name of the material interface is stored; :class:`Updaters`
-        resolves and hands over the interface while initializing, so a
-        misplaced name fails before the loop and this updater never holds the
-        whole model parameters.
+        Only the name of the material interface is stored; :class:`Updaters` resolves and hands over
+        the interface while initializing, so a misplaced name fails before the loop and this updater
+        never holds the whole model parameters.
 
-        Parameters:
-            interface_name (str): Name of the material interface this updater
-                updates (the ``name`` of its ``add_material_updater`` call does
-                the same).
+        Args:
+            interface_name (str): Name of the material interface this updater updates (the ``name``
+                of its ``add_material_updater`` call does the same).
             max_step_iter (int): The maximum number of iterations for the sub-optimization process.
             max_step_length (float): The maximum step length for each material variable.
-            step_length_strategy: Policy generating per-variable step limits.
-            constraint_weight_strategy: Policy selecting named penalty coefficients.
+            step_length_strategy (StepLengthStrategy | None): Policy generating per-variable step
+                limits.
+            constraint_weight_strategy (ConstraintWeightStrategy | None): Policy selecting named
+                penalty coefficients.
         """
 
         super().__init__(
@@ -109,26 +108,41 @@ class UpdaterSIMPMaterial(BaseUpdater):
         """
 
     def pathlog_required(self) -> list[str]:
+        """Return log subdirectories required by this component.
+
+        Returns:
+            list[str]: Relative log subdirectory names required before persistence.
+        """
         return ["materialupdater"]
 
     @property
     def material(self) -> SIMP_BSPFieldMaterials:
-        """The material interface this updater updates."""
+        """The material interface this updater updates.
+
+        Returns:
+            SIMP_BSPFieldMaterials: The material interface this updater updates.
+        """
         return cast(SIMP_BSPFieldMaterials, self.target)
 
     @property
     def num_variables(self) -> int:
-        """Number of design variables of the owned material interface."""
+        """Number of design variables of the owned material interface.
+
+        Returns:
+            int: Number of scalar coordinates in this interface's active design vector.
+        """
         return self.material.get_design_values().numel()
 
     def reinitialize(
         self, gradient: torch.Tensor, *args: object, **kwargs: object
     ) -> None:
-        """
-        Initialize the parameters of the optimization process.
+        """Initialize the parameters of the optimization process.
 
-        Parameters:
-            iter_now (int): The current iteration number.
+        Args:
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+            *args: Additional positional arguments accepted by the shared interface.
+            **kwargs: Additional keyword arguments accepted by the shared interface.
         """
 
         params0 = [
@@ -154,11 +168,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
     def initialize(self) -> None:
         """Register this updater's terms, then size the step lengths.
 
-        The interface is already bound (the updater manager resolves it and
-        calls :meth:`bind_target` before this runs), so a wrong name or an
-        interface without design variables fails before the loop.  Objective
-        functions and constraints were registered when this updater was added
-        to its :class:`Updaters` collection.
+        The interface is already bound (the updater manager resolves it and calls
+        :meth:`bind_target` before this runs), so a wrong name or an interface without design
+        variables fails before the loop.  Objective functions and constraints were registered when
+        this updater was added to its :class:`Updaters` collection.
         """
         self._max_step_length = self._prepare_step_lengths(
             [self.material.get_design_values().reshape(-1, 1)],
@@ -170,6 +183,13 @@ class UpdaterSIMPMaterial(BaseUpdater):
     def _initialize_objectives(
         self, gradient: torch.Tensor, cps0: torch.Tensor
     ) -> None:
+        """Initialize objectives.
+
+        Args:
+            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
+                design-variable order.
+            cps0 (torch.Tensor): Reference SIMP control variables at the start of the subproblem.
+        """
         for obj_func in self.obj_funcs.values():
             obj_func.initialize(
                 gradient=gradient,
@@ -181,12 +201,20 @@ class UpdaterSIMPMaterial(BaseUpdater):
     def _initialize_constraints(
         self, cps0: torch.Tensor, sensitivity: torch.Tensor
     ) -> None:
+        """Initialize constraints.
+
+        Args:
+            cps0 (torch.Tensor): Reference SIMP control variables at the start of the subproblem.
+            sensitivity (torch.Tensor): Physical sensitivity supplied by the updater; it is not
+                normalized here.
+        """
         for constraints in self.constraints_funcs.values():
             constraints.initialize(
                 cps0=cps0, sensitivity=sensitivity, material_params=self.material
             )
 
     def _initialize_optimizer(self) -> None:
+        """Initialize optimizer."""
         self.optimizer = UpdaterSIMPMaterial.Optimizer.LBFGS(
             closure=self.closure,
             num_limit=CONSTANT.KERNEL.OPTIMIZER.LBFGS_MATERIAL_MEMORY_PAIRS,
@@ -199,11 +227,12 @@ class UpdaterSIMPMaterial(BaseUpdater):
         x: torch.Tensor,
         return_list: bool = False,
     ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
-        """
-        The closure function for the optimization process.
+        """The closure function for the optimization process.
 
-        Parameters:
+        Args:
             x (torch.Tensor): The current point in the optimization process.
+            return_list (bool): Return separate objective and penalty contributions instead of their
+                scalar sum.
 
         Returns:
             float: The objective function value at the current point.
@@ -242,8 +271,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
             return sum(obj_value) + sum(self._weighted_constraints(constraints_value))
 
     def update(self) -> torch.Tensor:
-        """
-        Update the parameters of the optimization process.
+        """Update the parameters of the optimization process.
+
+        Returns:
+            torch.Tensor: Update the parameters of the optimization process.
         """
 
         # update the objective function
@@ -264,8 +295,10 @@ class UpdaterSIMPMaterial(BaseUpdater):
             variables.data += delta_var * alpha
 
             # check if the step length is too small
-            if abs(alpha) < self._low_step_length_tolerance:
+            if (alpha * delta_var).abs().max() < self._low_step_length_tolerance:
                 low_step_length_iter += 1
+            else:
+                low_step_length_iter = 0
 
             if low_step_length_iter > self._low_step_length_iteration_limit:
                 logger.info(
@@ -307,12 +340,22 @@ class UpdaterSIMPMaterial(BaseUpdater):
         return variables.detach().clone()
 
     def update_variables(self, dx: torch.Tensor) -> None:
-        """Commit the update using the subproblem's frozen step limits."""
+        """Commit the update using the subproblem's frozen step limits.
+
+        Args:
+            dx (torch.Tensor): Proposed design-variable increment in flattened parameter order.
+        """
         self.material.update_variables(
             x_change=dx, max_step_length=self._max_step_length
         )
 
     def save(self, foldpath: str, iteration: int) -> None:
+        """Save the UpdaterSIMPMaterial state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         step_length_numpy = self._max_step_length.detach().cpu().numpy()
         np.savez_compressed(
             self._state_path(foldpath, iteration),
@@ -320,6 +363,12 @@ class UpdaterSIMPMaterial(BaseUpdater):
         )
 
     def load(self, foldpath: str, iteration: int) -> None:
+        """Load the UpdaterSIMPMaterial state.
+
+        Args:
+            foldpath (str): Root log directory containing this component's namespaced state files.
+            iteration (int): Iteration index associated with the saved or current model state.
+        """
         data = np.load(self._state_path(foldpath, iteration))
         design = self.material.get_design_values()
         self._max_step_length = (

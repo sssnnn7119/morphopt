@@ -129,7 +129,7 @@ def test_planar_nonlinear_map() -> None:
     assert loss.item() == pytest.approx(-43.2)
 
 
-@pytest.mark.parametrize("axes,divisor", [([0, 1, 2], 3.0), ([0, 2, 4], 3.0), ([3, 4, 5], 24.0)])
+@pytest.mark.parametrize("axes,divisor", [([0, 1, 2], 3.0), ([0, 2, 4], 3.0)])
 @pytest.mark.parametrize("reflected", [False, True])
 def test_spatial_signed_volume_and_maximization_gradient(axes: list[int], divisor: float, reflected: bool) -> None:
     scale = torch.tensor(1.3, dtype=torch.float64, requires_grad=True)
@@ -150,6 +150,77 @@ def test_spatial_signed_volume_and_maximization_gradient(axes: list[int], diviso
     expected = -2.0 / 5.0 * 9.0 / divisor * scale**2 * torch.linalg.det(matrix).abs() * 24.0
     assert gradient.item() == pytest.approx(expected.item())
     assert gradient.item() < 0
+
+
+@pytest.mark.parametrize("order", [2, 3, 4])
+@pytest.mark.parametrize("reflected", [False, True])
+def test_rotation_volume_correction_and_gradient(order: int, reflected: bool) -> None:
+    scale = torch.tensor(1.3, dtype=torch.float64, requires_grad=True)
+    matrix = torch.tensor([[1.0, 0.2, 0.1], [0.0, 1.2, 0.3], [0.0, 0.0, 0.8]], dtype=torch.float64)
+    if reflected:
+        matrix[0] *= -1
+    offset = torch.tensor([0.2, -0.15, 0.1], dtype=torch.float64)
+    upper = torch.tensor([0.7, 0.8, 0.6], dtype=torch.float64)
+
+    def mapping(point: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return scale * (matrix @ point) + offset, scale * matrix
+
+    measure, signed, loss = evaluate_workspace([3, 4, 5], [(0.0, value.item()) for value in upper], mapping, order)
+
+    # Independently integrate div(rotation_flux)/24 = (1 - |r|²/12)/8
+    # throughout the affine image, using the box's exact first two moments.
+    mean_rotation = scale * (matrix @ (upper / 2)) + offset
+    mean_squared_rotation = mean_rotation.square().sum() + (
+        (scale * matrix).square() * upper.square() / 12
+    ).sum()
+    signed_volume = scale**3 * torch.linalg.det(matrix) * upper.prod()
+    expected = signed_volume * (1 - mean_squared_rotation / 12) / 8
+    assert signed.item() == pytest.approx((24 * expected).item())
+    assert measure.item() == pytest.approx(expected.abs().item())
+    assert loss.item() == pytest.approx(-2.0 * expected.abs().item() / 5.0)
+    gradient, = torch.autograd.grad(loss, scale)
+    expected_gradient, = torch.autograd.grad(-2.0 * expected.abs() / 5.0, scale)
+    assert gradient.item() == pytest.approx(expected_gradient.item())
+
+    def value_at(value: float) -> torch.Tensor:
+        return evaluate_workspace(
+            [3, 4, 5], [(0.0, bound.item()) for bound in upper],
+            lambda point: (value * (matrix @ point) + offset, value * matrix), order,
+        )[2]
+
+    delta = 1e-5
+    finite_difference = (value_at(scale.item() + delta) - value_at(scale.item() - delta)) / (2 * delta)
+    assert gradient.item() == pytest.approx(finite_difference.item(), rel=1e-8)
+
+
+def test_rotation_unit_box_matches_legacy_cubic_flux() -> None:
+    measure, signed, _loss = evaluate_workspace(
+        [3, 4, 5], [(0.0, 1.0)] * 3,
+        lambda point: (point, torch.eye(3, dtype=torch.float64)), order=2,
+    )
+    assert measure.item() == pytest.approx(11 / 96)
+    assert signed.item() == pytest.approx(11 / 4)
+
+
+def test_position_volume_with_nonlinear_map_and_physical_pressure_bounds() -> None:
+    scale = torch.tensor(1.3, dtype=torch.float64, requires_grad=True)
+    offset = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+    bounds = [(0.0, 0.06), (0.0, 0.08), (0.0, 0.1)]
+
+    def mapping(point: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x, y, z = point
+        return (
+            scale * torch.stack([x**2, y**3, z**2]) + offset,
+            scale * torch.diag(torch.stack([2 * x, 3 * y**2, 2 * z])),
+        )
+
+    measure, signed, loss = evaluate_workspace([0, 1, 2], bounds, mapping)
+    base_volume = 0.06**2 * 0.08**3 * 0.1**2
+    expected = scale**3 * base_volume
+    assert signed.item() == pytest.approx(3 * expected.item(), rel=1e-9, abs=1e-20)
+    assert measure.item() == pytest.approx(expected.item(), rel=1e-9, abs=1e-20)
+    gradient, = torch.autograd.grad(loss, scale)
+    assert gradient.item() == pytest.approx(-2 / 5 * 3 * scale.item()**2 * base_volume, rel=1e-9, abs=1e-20)
 
 
 def test_planar_edge_sign_order_with_nonlinear_shear() -> None:

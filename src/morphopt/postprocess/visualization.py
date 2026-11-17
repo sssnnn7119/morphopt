@@ -26,10 +26,17 @@ class DesignView:
 def design_view_options(component: Any | None) -> tuple[DesignView, ...]:
     """Return the views supported by one design component.
 
-    Boundary parts expose the complete assembly and one focused view per
-    surface.  B-spline and CPGEO surfaces additionally expose their control
-    net.  Other components, including SIMP materials, deliberately keep one
-    view because they have no alternate geometric representation.
+    Boundary parts expose the complete assembly and one focused view per surface.  B-spline and
+    CPGEO surfaces additionally expose their control net.  Other components, including SIMP
+    materials, deliberately keep one view because they have no alternate geometric
+    representation.
+
+    Args:
+        component (Any | None): Model, result, or interface component processed by the
+            operation.
+
+    Returns:
+        tuple[DesignView, ...]: The views supported by one design component.
     """
     surfaces = getattr(component, "surfaceinterfaces", None)
     if not surfaces:
@@ -45,7 +52,13 @@ def design_view_options(component: Any | None) -> tuple[DesignView, ...]:
 def configure_plotter(
     plotter: BasePlotter, background: str, *, light_intensity: float = 1.0
 ) -> None:
-    """Configure a render window using an explicit caller-selected background."""
+    """Configure a render window using an explicit caller-selected background.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        background (str): Optional background color; None uses the active visualization palette.
+        light_intensity (float): Multiplier applied to the renderer's light-kit intensities.
+    """
     plotter.render_window.SetMultiSamples(0)
     plotter.render_window.SetAlphaBitPlanes(1)
     plotter.set_background(background)
@@ -61,7 +74,17 @@ def apply_mesh_style(
     plotter: BasePlotter, *, ambient: float, diffuse: float, specular: float,
     specular_power: float, smooth_shading: bool = True,
 ) -> None:
-    """Update lit mesh actors, preserving scalar maps, colors, and overlays."""
+    """Update lit mesh actors, preserving scalar maps, colors, and overlays.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        ambient (float): Ambient surface-lighting coefficient.
+        diffuse (float): Diffuse surface-lighting coefficient.
+        specular (float): Specular surface-lighting coefficient.
+        specular_power (float): Exponent controlling specular highlight sharpness.
+        smooth_shading (bool): Use interpolated surface normals when True; otherwise use flat
+            shading.
+    """
     from pyvista import Actor
 
     for actor in plotter.actors.values():
@@ -87,8 +110,22 @@ def add_design_component(
 ) -> None:
     """Draw one design component with explicit visual properties.
 
-    ``view`` is intentionally optional so history exports and existing callers
-    retain the complete-component rendering by default.
+    ``view`` is intentionally optional so history exports and existing callers retain the
+    complete-component rendering by default.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        component (Any | None): Model, result, or interface component processed by the
+            operation.
+        geometry_color (str): Base color of geometry actors that do not display a scalar field.
+        ambient (float): Ambient surface-lighting coefficient.
+        diffuse (float): Diffuse surface-lighting coefficient.
+        specular (float): Specular surface-lighting coefficient.
+        specular_power (float): Exponent controlling specular highlight sharpness.
+        boundary_shell_opacity (float): Opacity of the exterior boundary when showing a complete
+            multi-surface component.
+        view (DesignView | None): Requested design-component view, including an optional surface
+            or control-point net.
     """
     from pyvista import Actor
 
@@ -139,7 +176,14 @@ def add_design_component(
 
 
 def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, index: int) -> None:
-    """Overlay one compact control-point net without creating per-edge actors."""
+    """Overlay one compact control-point net without creating per-edge actors.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        surface (Any): Surface interface to register, evaluate, or constrain.
+        component_id (int): Stable scene identifier of the design component.
+        index (int): Zero-based position within the relevant collection.
+    """
     import numpy as np
     import pyvista as pv
 
@@ -198,7 +242,13 @@ def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, inde
 def add_deformation_mesh(
     plotter: BasePlotter, mesh: pv.DataSet, color: str
 ) -> None:
-    """Draw one archived deformation mesh."""
+    """Draw one archived deformation mesh.
+
+    Args:
+        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
+        mesh (pv.DataSet): Mesh used for geometric evaluation or visualization.
+        color (str): Actor or annotation color accepted by PyVista.
+    """
     plotter.add_mesh(
         mesh,
         color=color,
@@ -210,7 +260,12 @@ def add_deformation_mesh(
 
 
 def set_camera(plotter: pv.Plotter, camera: dict[str, Any]) -> None:
-    """Apply a serialized camera position and projection to the render window."""
+    """Apply a serialized camera position and projection to the render window.
+
+    Args:
+        plotter (pv.Plotter): PyVista plotter receiving the scene; None creates a new plotter.
+        camera (dict[str, Any]): Camera state captured from the currently displayed viewport.
+    """
     position = camera.get("position")
     if position:
         plotter.camera_position = tuple(
@@ -235,7 +290,22 @@ def history_frames(
     window_size: tuple[int, int],
     style: dict[str, Any],
 ) -> Iterator[np.ndarray]:
-    """Yield RGB frames; closing the iterator releases its render window."""
+    """Yield RGB frames; closing the iterator releases its render window.
+
+    Args:
+        archive (OptimizationArchive): Optimization archive supplying saved design and result
+            states.
+        iterations (range): Completed iteration indices included in the requested export.
+        mode (str): Operation mode selecting the applicable computation or visualization path.
+        target (dict[str, str]): Target interface or selection receiving the operation.
+        camera (dict[str, Any]): Camera state captured from the currently displayed viewport.
+        window_size (tuple[int, int]): Output image dimensions (width, height) in pixels.
+        style (dict[str, Any]): Explicit colors, lighting, opacity, and material settings for
+            rendering.
+
+    Returns:
+        Iterator[np.ndarray]: Yield RGB frames; closing the iterator releases its render window.
+    """
     import pyvista as pv
 
     if mode not in {"design", "deformation"}:

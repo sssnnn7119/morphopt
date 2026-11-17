@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -16,7 +17,7 @@ from ..application.fields import SnippetInputs
 from ..i18n import tr
 from ..model.problem import ProblemDefinition
 from ..presentation.labels import reference_choice_title
-from ..schemes.snippets import CodeSnippet, SnippetParameter
+from ..codegen.snippets import CodeSnippet, SnippetParameter
 from .param_form import combo_value
 
 
@@ -26,6 +27,14 @@ class TemplateInsertDialog(QDialog):
     def __init__(
         self, snippet: CodeSnippet, problem: ProblemDefinition, parent=None
     ) -> None:
+        """Initialize TemplateInsertDialog and its configuration state.
+
+        Args:
+            snippet (CodeSnippet): Python source fragment inserted into the selected code field.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.widgets.template_insert_dialog.insert_code_snippet"))
         self.inputs = SnippetInputs(problem)
@@ -50,6 +59,10 @@ class TemplateInsertDialog(QDialog):
             self._fields[parameter.key] = combo
             form.addRow(tr(parameter.label_key), combo)
         layout.addLayout(form)
+        if {"instance_name", "element_name"} <= self._fields.keys():
+            self._fields["instance_name"].currentTextChanged.connect(
+                self._refresh_elements
+            )
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -92,7 +105,11 @@ class TemplateInsertDialog(QDialog):
         return False
 
     def parameter_values(self) -> dict[str, object]:
-        """Return the values currently selected (or typed) by the user."""
+        """Return the values currently selected (or typed) by the user.
+
+        Returns:
+            dict[str, object]: The values currently selected (or typed) by the user.
+        """
         return {key: combo_value(combo) for key, combo in self._fields.items()}
 
     def _parameter_combo(self, parameter: SnippetParameter) -> QComboBox:
@@ -114,6 +131,17 @@ class TemplateInsertDialog(QDialog):
         else:
             combo.addItem(str(default), default)
         return combo
+
+    def _refresh_elements(self) -> None:
+        """Keep an element selection only while it belongs to the selected Part."""
+        combo = self._fields["element_name"]
+        selected = combo_value(combo)
+        with QSignalBlocker(combo):
+            combo.clear()
+            combo.addItem("", "")
+            for label, value in self._options("elements"):
+                combo.addItem(label, value)
+            combo.setCurrentIndex(max(combo.findData(selected), 0))
 
     def _options(self, source: str) -> list[tuple[str, object]]:
         captions = {
@@ -150,4 +178,9 @@ class TemplateInsertDialog(QDialog):
                 or str(value)
             )
         )
-        return [(caption(value), value) for value in self.inputs.values(source)]
+        instance = self._fields.get("instance_name")
+        instance_name = str(combo_value(instance)) if instance is not None else ""
+        return [
+            (caption(value), value)
+            for value in self.inputs.values(source, instance_name=instance_name)
+        ]

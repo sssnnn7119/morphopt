@@ -57,6 +57,12 @@ class CustomClassOverview(QWidget):
     def __init__(
         self, actions: DefinitionActions, parent: QWidget | None = None
     ) -> None:
+        """Initialize CustomClassOverview and its configuration state.
+
+        Args:
+            actions (DefinitionActions): Definition action dispatcher used to commit model changes.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.actions = actions
         layout = QVBoxLayout(self)
@@ -79,6 +85,13 @@ class CustomClassOverview(QWidget):
         self._mode: str | None = None
 
     def set_problem(self, problem: ProblemDefinition, node=None) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            node: Definition node being inspected or edited.
+        """
         if node is not None:
             self._mode = {
                 "new_classes_group": "new",
@@ -122,6 +135,12 @@ class CustomClassOverview(QWidget):
         self.items.setCurrentRow(min(selected, self.items.count() - 1))
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         self.set_problem(context.problem)
 
     def _selection_changed(
@@ -139,10 +158,16 @@ class CustomClassOverview(QWidget):
 
 
 class CustomClassEditor(QWidget):
+    """Edit custom Python classes and compatible framework-method overrides."""
     changed = Signal(object)
     nodeSelected = Signal(object)
 
     def __init__(self, parent=None):
+        """Initialize CustomClassEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._custom = None
         self._problem = None
@@ -190,6 +215,12 @@ class CustomClassEditor(QWidget):
         layout.addWidget(self.error)
 
     def edit_node(self, node, problem):
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node: Definition node being inspected or edited.
+            problem: Editable problem definition shared by the UI application services.
+        """
         custom = (
             node
             if isinstance(node, CustomClassNode)
@@ -251,6 +282,12 @@ class CustomClassEditor(QWidget):
         self._render_methods()
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         focus = QApplication.focusWidget()
         if focus is not None and self.isAncestorOf(focus):
             return
@@ -375,6 +412,7 @@ class CustomClassEditor(QWidget):
         self._add_member()
 
     def add_override(self):
+        """Add override."""
         taken = {method.name for method in self._custom.members}
         methods = [
             method
@@ -491,6 +529,12 @@ class ModelClassSelector(QWidget):
     changed = Signal()
 
     def __init__(self, parent=None, title=""):
+        """Initialize ModelClassSelector and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+            title: User-facing title of the view, section, or action.
+        """
         super().__init__(parent)
         self._title = title
         self._problem = None
@@ -508,6 +552,7 @@ class ModelClassSelector(QWidget):
         self.hide()
 
     def apply_language(self):
+        """Update visible labels using the active application locale."""
         self.label.setText(
             (self._title + " " if self._title else "")
             + tr("ui.widgets.custom_classes.use_class")
@@ -519,6 +564,12 @@ class ModelClassSelector(QWidget):
         )
 
     def edit_node(self, node, problem):
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node: Definition node being inspected or edited.
+            problem: Editable problem definition shared by the UI application services.
+        """
         self._problem = problem
         self._node = node
         self._config = (
@@ -566,6 +617,12 @@ class ModelClassSelector(QWidget):
             self.combo.blockSignals(False)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         self.edit_node(context.selected, context.problem)
 
     def _save(self, *_):

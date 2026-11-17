@@ -4,7 +4,14 @@ import re
 
 
 def sanitize_name(name: str) -> str:
-    """Return a single filename component valid on Windows and Linux."""
+    """Return a single filename component valid on Windows and Linux.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+
+    Returns:
+        str: A single filename component valid on Windows and Linux.
+    """
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(" .")
     if not name:
         return "problem"

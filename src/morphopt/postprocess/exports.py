@@ -36,11 +36,30 @@ class TableWriter(Protocol):
 
     def write(
         self, table: ResultTable, path: Path, metadata: dict[str, Any]
-    ) -> None: ...
+    ) -> None:
+        """Write one physical-field table using the concrete output format.
+
+        Args:
+            table (ResultTable): Result table containing column definitions and a row iterator.
+            path (Path): Filesystem path read, restored, or written by this operation.
+            metadata (dict[str, Any]): Asset or result provenance stored with the exported data.
+        """
+        ...
 
 
 class CSVWriter:
+    """Write a result table as UTF-8 CSV, retaining the declared column order."""
     def write(self, table: ResultTable, path: Path, metadata: dict[str, Any]) -> None:
+        """Write table columns and rows as UTF-8 CSV.
+
+        The shared metadata argument is accepted by the writer interface; CSV stores the table
+        itself.
+
+        Args:
+            table (ResultTable): Result table containing column definitions and a row iterator.
+            path (Path): Filesystem path read, restored, or written by this operation.
+            metadata (dict[str, Any]): Asset or result provenance stored with the exported data.
+        """
         with path.open("w", encoding="utf-8-sig", newline="") as stream:
             writer = csv.writer(stream)
             writer.writerow(table.columns)
@@ -48,7 +67,15 @@ class CSVWriter:
 
 
 class NPZWriter:
+    """Write a result table and its provenance as a compressed NumPy archive."""
     def write(self, table: ResultTable, path: Path, metadata: dict[str, Any]) -> None:
+        """Write each table column and JSON provenance into a compressed NumPy archive.
+
+        Args:
+            table (ResultTable): Result table containing column definitions and a row iterator.
+            path (Path): Filesystem path read, restored, or written by this operation.
+            metadata (dict[str, Any]): Asset or result provenance stored with the exported data.
+        """
         rows = list(table.rows)
         columns = {}
         for index, name in enumerate(table.columns):
@@ -81,7 +108,25 @@ def export_saved_fields(
     metadata: dict[str, Any] | None = None,
     overwrite: bool = False,
 ) -> Path:
-    """Load a saved model and solution, then export selected physical fields."""
+    """Load a saved model and solution, then export selected physical fields.
+
+    Args:
+        model_path (str | Path): Path to the saved TorchFEA finite-element model.
+        result_path (str | Path): Path to the saved TorchFEA solution.
+        path (str | Path): Filesystem path read, restored, or written by this operation.
+        location (ResultLocation | str): Result record location: nodes, elements, reference
+            points, or integration points.
+        fields (tuple[str, ...] | list[str] | None): Requested field keys; None selects the
+            available defaults for the record location.
+        format (str | None): Output table format; None selects the writer from the filename
+            suffix.
+        metadata (dict[str, Any] | None): Asset or result provenance stored with the exported
+            data.
+        overwrite (bool): Allow replacing an existing output file when True.
+
+    Returns:
+        Path: Destination of the written physical-field table.
+    """
     import torchfea
 
     with cpu_torch_defaults():
@@ -111,7 +156,25 @@ def export_fields(
     metadata: dict[str, Any] | None = None,
     overwrite: bool = False,
 ) -> Path:
-    """Export one record location, merging all selected quantities into columns."""
+    """Export one record location, merging all selected quantities into columns.
+
+    Args:
+        controller (Any): Controller providing the current model and execution state.
+        result (Any): Finite-element solution or completed operation result.
+        path (str | Path): Filesystem path read, restored, or written by this operation.
+        location (ResultLocation | str): Result record location: nodes, elements, reference
+            points, or integration points.
+        fields (tuple[str, ...] | list[str] | None): Requested field keys; None selects the
+            available defaults for the record location.
+        format (str | None): Output table format; None selects the writer from the filename
+            suffix.
+        metadata (dict[str, Any] | None): Asset or result provenance stored with the exported
+            data.
+        overwrite (bool): Allow replacing an existing output file when True.
+
+    Returns:
+        Path: Destination of the complete CSV or NPZ table published after field extraction.
+    """
     destination = Path(path)
     location = ResultLocation(location)
     writer = TABLE_WRITERS[format or destination.suffix.lstrip(".").lower()]
@@ -166,6 +229,7 @@ def export_fields(
 
 @dataclass(frozen=True)
 class NativeResultSnapshot:
+    """Describe one native TorchFEA result selected for export with its shared model."""
     key: str
     result_path: str | None
     case: str | None = None
@@ -174,7 +238,14 @@ class NativeResultSnapshot:
 
 
 def normalize_export_name(name: str) -> str:
-    """Accept a portable filename prefix, never a path or Windows device name."""
+    """Accept a portable filename prefix, never a path or Windows device name.
+
+    Args:
+        name (str): Name identifying the item in its owning collection.
+
+    Returns:
+        str: Accept a portable filename prefix, never a path or Windows device name.
+    """
     name = name.strip()
     reserved = {
         "CON",
@@ -204,9 +275,22 @@ def export_native_results(
 ) -> Path:
     """Copy one iteration and every saved case/analysis into a new directory.
 
-    All results share the iteration model. Restore each result's work_conditions
-    before using it with that model. Files remain directly loadable by
-    torchfea.load_model() and StaticResult.load().
+    All results share the iteration model. Restore each result's work_conditions before using it
+    with that model. Files remain directly loadable by torchfea.load_model() and
+    StaticResult.load().
+
+    Args:
+        directory (str | Path): Directory in which output files or child directories are
+            created.
+        name (str): Name identifying the item in its owning collection.
+        iteration (int): Iteration index associated with the saved or current model state.
+        model_path (str | Path): Path to the saved TorchFEA finite-element model.
+        results (Iterable[NativeResultSnapshot]): Results retained in their registered load-case
+            or export order.
+        source (str): Source object, path, or metadata from which the operation reads its input.
+
+    Returns:
+        Path: Copy one iteration and every saved case/analysis into a new directory.
     """
     name = normalize_export_name(name)
     model_name = f"{name}_femodel.npz"
@@ -278,7 +362,16 @@ class BoundarySurfaceInfo:
 def boundary_surface_options(
     params: Params,
 ) -> tuple[BoundarySurfaceInfo, ...]:
-    """List BoundaryPart surfaces and the file formats each supports."""
+    """List BoundaryPart surfaces and the file formats each supports.
+
+    Args:
+        params (Params): Model parameters containing geometry, finite-element declarations, and
+            materials.
+
+    Returns:
+        tuple[BoundarySurfaceInfo, ...]: List BoundaryPart surfaces and the file formats each
+            supports.
+    """
     from ..shapeopt.boundary_part import BoundaryPart
 
     return tuple(
@@ -301,7 +394,19 @@ def export_boundary_surfaces(
     selections: list[dict[str, Any]],
     overwrite: bool = False,
 ) -> list[Path]:
-    """Restore and export surfaces using the archive's CPU tensor settings."""
+    """Restore and export surfaces using the archive's CPU tensor settings.
+
+    Args:
+        folder (str): Directory containing the optimization run or archive.
+        iteration (int): Iteration index associated with the saved or current model state.
+        destination (str): Output file or directory selected by the caller.
+        selections (list[dict[str, Any]]): Surface export requests identifying the Part, surface
+            index, and format.
+        overwrite (bool): Allow replacing an existing output file when True.
+
+    Returns:
+        list[Path]: Restore and export surfaces using the archive's CPU tensor settings.
+    """
     with cpu_torch_defaults():
         archive = OptimizationArchive(folder)
         if not 1 <= iteration <= archive.completed_iteration:
@@ -400,7 +505,26 @@ def export_history_gif(
     window_size: tuple[int, int],
     style: dict[str, Any],
 ) -> int:
-    """Write archived design or deformation frames using the supplied view."""
+    """Write archived design or deformation frames using the supplied view.
+
+    Args:
+        folder (str): Directory containing the optimization run or archive.
+        destination (str): Output file or directory selected by the caller.
+        mode (str): "design" animates saved geometry or material views; "deformation" animates a
+            named load-case result.
+        target (dict[str, str]): Selected component/view identifiers for design mode, or the
+            load-case identifier for deformation mode.
+        first_iteration (int): First completed iteration included in the animation.
+        last_iteration (int): Last completed iteration included in the animation.
+        fps (int): Animation playback rate in frames per second.
+        camera (dict[str, Any]): Camera state captured from the currently displayed viewport.
+        window_size (tuple[int, int]): Output image dimensions (width, height) in pixels.
+        style (dict[str, Any]): Explicit colors, lighting, opacity, and material settings for
+            rendering.
+
+    Returns:
+        int: Number of frames written to the GIF.
+    """
     import imageio.v2 as imageio
 
     archive = OptimizationArchive(folder)

@@ -23,11 +23,20 @@ from ..model.problem import ProblemDefinition
 
 
 class WorkspaceObjectiveEditor(QWidget):
+    """Select existing load parameters and configure boundary quadrature for a workspace objective."""
     changed = Signal()
 
     def __init__(
         self, term: dict, problem: ProblemDefinition, parent: QWidget | None = None
     ) -> None:
+        """Initialize WorkspaceObjectiveEditor and its configuration state.
+
+        Args:
+            term (dict): Physical objective or metric configuration being edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.term, self.problem = term, problem
         self._rows = []
@@ -56,12 +65,14 @@ class WorkspaceObjectiveEditor(QWidget):
             CONSTANT.UI.QUICKSTART.LIMITS.WORKSPACE_GAUSS_ORDER_MAX,
         )
         order.setValue(int(term.get("gauss_order", 2)))
+        order.setKeyboardTracking(False)
         order.valueChanged.connect(lambda value: self._set("gauss_order", value))
         form.addRow(tr("ui.workspace_objective.gauss_order"), order)
         normalization = QDoubleSpinBox()
         normalization.setDecimals(8)
         normalization.setRange(1e-8, 1e12)
         normalization.setValue(float(term.get("normalization", 1.0)))
+        normalization.setKeyboardTracking(False)
         normalization.valueChanged.connect(
             lambda value: self._set("normalization", value)
         )
@@ -101,6 +112,7 @@ class WorkspaceObjectiveEditor(QWidget):
         self.refresh_status()
 
     def refresh_status(self) -> None:
+        """Refresh status."""
         self.status.setText(workspace_case_status(self.term, self.problem))
 
     def _set(self, key: str, value: object) -> None:

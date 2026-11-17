@@ -32,6 +32,13 @@ class _HistoryExportDialog(QDialog):
     """Own request staging, busy state, completion, failure, and cancellation."""
 
     def __init__(self, prefix: str, title: str, parent: QWidget | None) -> None:
+        """Initialize _HistoryExportDialog and its configuration state.
+
+        Args:
+            prefix (str): Namespace or filename prefix applied to generated entries.
+            title (str): User-facing title of the view, section, or action.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr(title))
         self._prefix = prefix
@@ -132,6 +139,7 @@ class _HistoryExportDialog(QDialog):
             self.accept()
 
     def reject(self) -> None:
+        """Return reject."""
         if self._active:
             self._cancelled = True
             self._process.kill()
@@ -153,6 +161,16 @@ class SurfaceExportDialog(_HistoryExportDialog):
         view_title: str,
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize SurfaceExportDialog and its configuration state.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            iteration (int): Iteration index associated with the saved or current model state.
+            selections (list[dict[str, Any]]): Surface export requests identifying the Part, surface
+                index, and format.
+            view_title (str): Title describing the active geometry or deformation view.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(
             "ui.surface_export.current", "ui.surface_export.current.title", parent
         )
@@ -202,6 +220,7 @@ class SurfaceExportDialog(_HistoryExportDialog):
 
 
 class HistoryGifExportDialog(_HistoryExportDialog):
+    """Configure and launch an animation export using the active history view and camera."""
     def __init__(
         self,
         folder: str,
@@ -214,6 +233,21 @@ class HistoryGifExportDialog(_HistoryExportDialog):
         style: dict[str, Any],
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize HistoryGifExportDialog and its configuration state.
+
+        Args:
+            folder (str): Directory containing the optimization run or archive.
+            max_iteration (int): Latest available completed iteration that may be selected.
+            mode (str): Operation mode selecting the applicable computation or visualization path.
+            cases (tuple[str, ...]): Named load cases in their registered or selected order.
+            components (tuple[tuple[str, object], ...]): Registered model or load components
+                processed in collection order.
+            camera (dict[str, Any]): Camera state captured from the currently displayed viewport.
+            window_size (tuple[int, int]): Output image dimensions (width, height) in pixels.
+            style (dict[str, Any]): Explicit colors, lighting, opacity, and material settings for
+                rendering.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(
             "ui.history_gif",
             "ui.history_gif.design_title"

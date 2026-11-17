@@ -10,9 +10,9 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.application.part_mesh import build_part_mesh
-from morphopt.ui.model.node_types.parts import BoundaryPartNode, BoxPartNode, INPPartNode
+from morphopt.ui.model.node_types.parts import BoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, OffsetBoundaryPartNode
 from morphopt.ui.model.node_types.surfaces import BREPSurfaceNode
-from morphopt.ui.model.problem import CustomClassNode, MethodOverrideNode, PartNode
+from morphopt.ui.model.problem import CADOperationNode, CustomClassNode, FEAComponentNode, MaterialNode, MethodOverrideNode, PartNode
 from morphopt.ui.visualization.geometry import PreviewGeometry
 
 
@@ -20,14 +20,19 @@ from morphopt.ui.visualization.geometry import PreviewGeometry
 def window(monkeypatch):
     from morphopt.ui import workbench
     from morphopt.ui.widgets import viewer
+    from morphopt.ui.widgets.viewport import PlotViewport
 
     app = QApplication.instance() or QApplication([])
 
     class Host(QWidget):
+        scene_update = PlotViewport.scene_update
         viewChanged = Signal()
         def __init__(self, parent=None):
             super().__init__(parent)
             self.plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
+            self._camera_initialized = False
+            self._scene_has_geometry = False
+            self._geometry_keys = frozenset()
 
     monkeypatch.setattr(viewer, "PlotViewport", Host)
     problem = ProblemLibrary.create_blank()
@@ -180,3 +185,193 @@ def test_custom_part_lists_and_highlights_its_kernel_sets():
     assert len(scene.base_meshes) == 1
     selected = geometry.mesh_for_set(part, "nodes", "custom_tip")
     assert selected.n_points == 1
+
+
+@pytest.mark.parametrize("part_type,element_name,quadratic_type", [
+    (BoundaryPartNode, "C3D4", "C3D10"),
+    (OffsetBoundaryPartNode, "C3D4", "C3D10"),
+    (OffsetBoundaryPartNode, "C3D6", "C3D15"),
+    (CADPartNode, "C3D4", "C3D10"),
+    (BoxPartNode, "C3D8", "C3D20"),
+])
+@pytest.mark.parametrize("order", [1, 2])
+def test_material_and_bodyforce_share_stable_names_and_actual_types(part_type, element_name, quadratic_type, order):
+    from morphopt.ui.application.fields import fields_for_node
+    from morphopt.ui.application.part_sets import PartSetCatalog
+    from morphopt.ui.application.validation import DefinitionValidation
+    from morphopt.ui.widgets.editor import PropertyEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create_blank()
+    part = part_type(name="body", mesh_order=order)
+    if isinstance(part, CADPartNode):
+        part.add_child(CADOperationNode.create("Box", operation_id="box"))
+    problem.add_part(part)
+    material = MaterialNode.create("HomogeneousMaterial", name="solid")
+    problem.add_material(material)
+    problem.set_material_part(material, part)
+    material.elementname = element_name
+    bodyforce = FEAComponentNode.create("Bodyforce", name="gravity")
+    problem.add_component(bodyforce)
+    problem.set_component_reference(bodyforce, "instance_name", part.instances[0])
+    bodyforce.element_name = element_name
+
+    actual_type = quadratic_type if order == 2 else element_name
+    assert PartSetCatalog.element_type(part, element_name) == actual_type
+    expected_names = ("C3D4", "C3D6") if isinstance(part, OffsetBoundaryPartNode) else (element_name,)
+    assert PartSetCatalog(problem).for_part(part).elements == expected_names
+    for node, key in ((material, "elementname"), (bodyforce, "element_name")):
+        fields, _, choices = fields_for_node(node, problem)
+        spec = next(field for field in fields if field.key == key)
+        assert choices[key] == list(expected_names)
+        assert element_name in spec.choices
+        validation = DefinitionValidation(problem)
+        validation.field(node, spec, element_name)
+        assert not validation.errors
+        validation.field(node, spec, "missing_block")
+        assert id(node) in validation.errors
+        editor = PropertyEditor()
+        try:
+            editor.edit_node(node, completion_problem=problem)
+            selector = editor._controls[key]
+            expected = f"{element_name} [{actual_type}]" if order == 2 else element_name
+            assert selector.currentText() == expected
+            assert selector.currentData() == element_name
+            if order == 2:
+                part.mesh_order = 1
+                editor.edit_node(node, completion_problem=problem)
+                assert selector.currentText() == element_name
+                part.mesh_order = 2
+        finally:
+            editor.close()
+    assert "" in next(field for field in fields_for_node(material, problem)[0] if field.key == "elementname").choices
+
+
+def test_material_selector_refresh_removes_the_previous_parts_blocks():
+    from morphopt.ui.widgets.editor import PropertyEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create("shapeopt")
+    material = problem.material_nodes()[0]
+    material.elementname = "C3D4"
+    second = BoxPartNode(name="box")
+    problem.add_part(second)
+    editor = PropertyEditor()
+    try:
+        editor.edit_node(material, completion_problem=problem)
+        assert editor._controls["elementname"].findData("C3D4") >= 0
+        problem.set_material_part(material, second)
+        editor.refresh_choices()
+        selector = editor._controls["elementname"]
+        assert selector.findData("C3D4") == -1
+        assert selector.findData("C3D8") >= 0
+    finally:
+        editor.close()
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_offset_catalog_matches_the_exported_kernel_part(order):
+    from morphopt.ui.application.part_sets import PartSetCatalog
+    from morphopt.ui.model.problem import SurfaceNode
+
+    problem = ProblemLibrary.create_blank()
+    part = OffsetBoundaryPartNode(
+        name="offset", fea_seed_size=1.5, mesh_order=order,
+        shell_thickness=0.15, num_layers=2,
+    )
+    part.add_surface(SurfaceNode.create(
+        "bsp_cylinder", r0=3.0, length=8.0, seed_size=1.0, perturbation_L=-1.0,
+    ))
+    part.add_surface(SurfaceNode.create(
+        "cpgeo_sphere", r0=1.0, seed_size=0.3,
+        init_location=[0.0, 0.0, 4.0],
+    ))
+    problem.add_part(part)
+    model = build_part_mesh(part, problem)
+    assert tuple(model.elems) == PartSetCatalog(problem).for_part(part).elements == ("C3D4", "C3D6")
+    for name, element in model.elems.items():
+        assert element._elems.shape[0] > 0
+        assert type(element).__name__ == PartSetCatalog.element_type(part, name)
+
+
+def test_new_material_binds_the_only_part_and_offers_both_offset_blocks():
+    from morphopt.ui.application.editing import DefinitionCommands
+    from morphopt.ui.widgets.definition_actions import DefinitionActions
+    from morphopt.ui.widgets.definition_manager import DefinitionManagerEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create_blank()
+    part = OffsetBoundaryPartNode(name="offset")
+    problem.add_part(part)
+    material = DefinitionCommands(problem).add_material("HomogeneousMaterial")
+    assert material.part is part
+    actions = DefinitionActions()
+    actions.set_problem(problem)
+    manager = DefinitionManagerEditor("materials", actions)
+    try:
+        manager.edit_node(None, problem, material)
+        editor = manager._node_editors[material][0]
+        selector = editor._controls["elementname"]
+        assert selector.isEnabled()
+        assert [selector.itemData(index) for index in range(selector.count())] == ["", "C3D4", "C3D6"]
+        selector.setCurrentIndex(selector.findData("C3D6"))
+        assert material.elementname == "C3D6"
+    finally:
+        manager.close()
+
+
+def test_material_requires_a_part_before_offering_element_choices():
+    from morphopt.ui.application.editing import DefinitionCommands
+    from morphopt.ui.widgets.definition_actions import DefinitionActions
+    from morphopt.ui.widgets.definition_manager import DefinitionManagerEditor
+
+    app = QApplication.instance() or QApplication([])
+    problem = ProblemLibrary.create_blank()
+    first, second = OffsetBoundaryPartNode(name="offset"), BoxPartNode(name="box")
+    problem.add_part(first)
+    problem.add_part(second)
+    material = DefinitionCommands(problem).add_material("HomogeneousMaterial")
+    actions = DefinitionActions()
+    actions.set_problem(problem)
+    manager = DefinitionManagerEditor("materials", actions)
+    try:
+        manager.edit_node(None, problem, material)
+        editor = manager._node_editors[material][0]
+        selector = editor._controls["elementname"]
+        assert not selector.isEnabled()
+        assert selector.currentIndex() == -1
+        assert selector.placeholderText()
+        parts = editor._controls["part_name"]
+        parts.setCurrentIndex(parts.findData("offset"))
+        assert material.part is first
+        assert selector.isEnabled()
+        assert selector.findData("C3D6") >= 0
+        parts.setCurrentIndex(parts.findData("box"))
+        assert material.part is second
+        assert selector.findData("C3D6") == -1
+        assert selector.findData("C3D8") >= 0
+    finally:
+        manager.close()
+
+
+@pytest.mark.parametrize("name,valid", [("C3D4", True), ("C3D6", True), ("C3D8", False)])
+def test_offset_bodyforce_and_volume_fraction_validate_the_owning_parts_blocks(name, valid):
+    from morphopt.ui.application.validation import DefinitionValidation
+
+    problem = ProblemLibrary.create_blank()
+    part = OffsetBoundaryPartNode(name="offset")
+    problem.add_part(part)
+    material = MaterialNode.create("SIMP_BSPFieldMaterials", name="density")
+    problem.add_material(material)
+    problem.set_material_part(material, part)
+    bodyforce = FEAComponentNode.create("Bodyforce", name="gravity", element_name=name)
+    problem.add_component(bodyforce)
+    problem.set_component_reference(bodyforce, "instance_name", part.instances[0])
+    config = problem.add_material_updater(material)
+    volume = next(item for item in config["constraints"] if item["type"] == "VolFrac")
+    volume["params"]["elementname"] = name
+    validation = DefinitionValidation(problem)
+    validation.node(bodyforce)
+    validation.updaters()
+    assert (id(bodyforce) not in validation.errors) == valid
+    assert (id(volume) not in validation.errors) == valid

@@ -22,7 +22,13 @@ from ..theme.fonts import ROLES, font_manager
 
 
 class FontSettingsDialog(QDialog):
+    """Preview role-based typography and commit changes through Apply or confirmation."""
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize FontSettingsDialog and its configuration state.
+
+        Args:
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.setWindowTitle(tr("ui.appearance.fonts"))
         self.resize(820, 460)

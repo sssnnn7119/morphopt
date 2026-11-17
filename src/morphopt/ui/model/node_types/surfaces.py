@@ -59,6 +59,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
             Defaults.NUM_U_RATIO.DEFAULT,
             doc_key="ui.schema.fields.num_u_ratio.help.control_grid_u_ratio",
             minimum=Defaults.NUM_U_RATIO.MIN,
+            hidden=True,
         ),
         FieldSpec(
             "num_V_ratio",
@@ -67,6 +68,7 @@ class BspCylinderSurfaceNode(SurfaceNode):
             Defaults.NUM_V_RATIO.DEFAULT,
             doc_key="ui.schema.fields.num_v_ratio.help.control_grid_v_ratio",
             minimum=Defaults.NUM_V_RATIO.MIN,
+            hidden=True,
         ),
         FieldSpec(
             "degree",

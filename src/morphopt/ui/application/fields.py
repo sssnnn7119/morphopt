@@ -21,7 +21,18 @@ from .part_sets import PartSetCatalog
 
 
 def penalty_targets(problem: ProblemDefinition, component: FEAComponentNode) -> dict[str, str]:
-    """Named assembly objects, filtered by the penalty's selected object category."""
+    """Named assembly objects, filtered by the penalty's selected object category.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        component (FEAComponentNode): Model, result, or interface component processed by the
+            operation.
+
+    Returns:
+        dict[str, str]: Named assembly objects, filtered by the penalty's selected object
+            category.
+    """
     targets = {name: "instance" for name in problem.instance_names()}
     targets.update({
         node.name: "rp" for node in problem.fea_components()
@@ -34,7 +45,16 @@ def penalty_targets(problem: ProblemDefinition, component: FEAComponentNode) -> 
 
 
 def load_value_fields(load_class: str) -> tuple[FieldSpec, ...]:
-    """Use the same scalar names for definitions and independent FE analyses."""
+    """Use the same scalar names for definitions and independent FE analyses.
+
+    Args:
+        load_class (str): Kernel load-interface class used to determine parameter names and
+            defaults.
+
+    Returns:
+        tuple[FieldSpec, ...]: Use the same scalar names for definitions and independent FE
+            analyses.
+    """
     from ..model.registry import LOAD_TYPES
 
     return next(
@@ -49,6 +69,17 @@ def fields_for_node(
     *,
     sets: PartSetCatalog | None = None,
 ) -> tuple[list[FieldSpec], dict, dict]:
+    """Return fields for node.
+
+    Args:
+        node (Node): Definition node being inspected or edited.
+        problem (ProblemDefinition | None): Editable problem definition shared by the UI
+            application services.
+        sets (PartSetCatalog | None): Named mesh selections available on the selected Part.
+
+    Returns:
+        tuple[list[FieldSpec], dict, dict]: Fields for node.
+    """
     fields = [field for field in node.fields if not field.hidden]
     choices: dict[str, list[str]] = {}
     if isinstance(node, LoadCaseNode):
@@ -137,6 +168,22 @@ def fields_for_node(
             choices["part_name"] = problem.part_names()
             catalog = sets or PartSetCatalog(problem)
             choices["elementname"] = list(catalog.for_part(node.part).elements)
+        else:
+            # Element blocks belong to a Part; the empty default is not a
+            # complete static choice catalog.
+            fields = [
+                replace(field, choices=()) if field.key == "elementname" else field
+                for field in fields
+            ]
+    fields = [
+        replace(
+            field,
+            choices=tuple(dict.fromkeys([
+                *([""] if field.default == "" else []), *choices[field.key],
+            ])),
+        ) if field.key in choices else field
+        for field in fields
+    ]
     return fields, {}, choices
 
 
@@ -147,7 +194,21 @@ def dynamic_choices(
     *,
     sets: PartSetCatalog | None = None,
 ) -> dict[str, list[str]]:
-    """Resolve choices against the owning Part, including imported INP meshes."""
+    """Resolve choices against the owning Part, including imported INP meshes.
+
+    Args:
+        problem (ProblemDefinition): Editable problem definition shared by the UI application
+            services.
+        itype (str): Registered interface-type name used to dispatch construction or field
+            choices.
+        component (FEAComponentNode): Model, result, or interface component processed by the
+            operation.
+        sets (PartSetCatalog | None): Named mesh selections available on the selected Part.
+
+    Returns:
+        dict[str, list[str]]: Resolve choices against the owning Part, including imported INP
+            meshes.
+    """
     catalog = sets or PartSetCatalog(problem)
     references = {
         "set_nodes_name": (component.instance_name or "", "nodes"),
@@ -183,9 +244,24 @@ class SnippetInputs:
     )
 
     def __init__(self, problem: ProblemDefinition):
+        """Initialize SnippetInputs and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
 
-    def values(self, source: str) -> list:
+    def values(self, source: str, *, instance_name: str = "") -> list:
+        """Return values.
+
+        Args:
+            source (str): Source object, path, or metadata from which the operation reads its input.
+            instance_name (str): Registered Instance name in the assembly.
+
+        Returns:
+            list: Values.
+        """
         catalog = PartSetCatalog(self.problem)
         providers = {
             "load_steps": lambda: (
@@ -193,13 +269,7 @@ class SnippetInputs:
             ),
             "instances": self.problem.instance_names,
             "reference_points": self.problem.reference_point_names,
-            "elements": lambda: list(
-                dict.fromkeys(
-                    name
-                    for part in self.problem.parts()
-                    for name in catalog.for_part(part).elements
-                )
-            ),
+            "elements": lambda: list(catalog.for_instance(instance_name).elements),
             "force_loads": lambda: [
                 node.name
                 for node in self.problem.fea_components()
@@ -218,6 +288,15 @@ class SnippetInputs:
         return providers[source]()
 
     def jacobian_issue(self, values: dict) -> str | None:
+        """Return jacobian issue.
+
+        Args:
+            values (dict): Values aligned with the parameters or records processed by this
+                interface.
+
+        Returns:
+            str | None: Jacobian issue.
+        """
         components = {node.name: node for node in self.problem.fea_components()}
         reference = components.get(str(values.get("reference_point_name", "")).strip())
         force = components.get(str(values.get("force_load_name", "")).strip())

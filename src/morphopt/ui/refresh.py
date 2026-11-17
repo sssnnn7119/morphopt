@@ -25,6 +25,11 @@ class RefreshContext:
 
     @property
     def geometry_changed(self) -> bool:
+        """Return geometry changed.
+
+        Returns:
+            bool: Geometry changed.
+        """
         unrelated = {
             "fea_component",
             "loads",
@@ -43,6 +48,11 @@ class RefreshContext:
 
     @property
     def loads_changed(self) -> bool:
+        """Return loads changed.
+
+        Returns:
+            bool: Loads changed.
+        """
         return self.geometry_changed or any(
             node.kind in {"fea_component", "loads", "loads_group", "steps", "objective"}
             for node in self.changed_nodes
@@ -52,7 +62,14 @@ class RefreshContext:
 class Refreshable(Protocol):
     """A component refreshes its own presentation without editing the model."""
 
-    def refresh_ui(self, context: RefreshContext) -> None: ...
+    def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
+        ...
 
 
 class RefreshCoordinator(QObject):
@@ -70,6 +87,13 @@ class RefreshCoordinator(QObject):
         prepare: Callable[[tuple[Node | None, ...]], RefreshContext],
         parent: QObject | None = None,
     ) -> None:
+        """Initialize RefreshCoordinator and its configuration state.
+
+        Args:
+            prepare (Callable[[tuple[Node | None, ...]], RefreshContext]): Callback preparing the
+                state or asset files before execution.
+            parent (QObject | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self._prepare = prepare
         self._components: list[Refreshable] = []
@@ -80,13 +104,29 @@ class RefreshCoordinator(QObject):
         self._timer.timeout.connect(self.flush)
 
     def set_components(self, components: Sequence[Refreshable]) -> None:
+        """Set components.
+
+        Args:
+            components (Sequence[Refreshable]): Registered model or load components processed in
+                collection order.
+        """
         self._components = list(components)
 
     def request(self, node: Node | None = None) -> None:
+        """Return request.
+
+        Args:
+            node (Node | None): Definition node being inspected or edited.
+        """
         self._pending.append(node)
         self._timer.start()
 
     def refresh_now(self, node: Node | None = None) -> None:
+        """Refresh now.
+
+        Args:
+            node (Node | None): Definition node being inspected or edited.
+        """
         self._pending.append(node)
         self.flush()
 
@@ -96,6 +136,7 @@ class RefreshCoordinator(QObject):
         self._pending.clear()
 
     def flush(self) -> None:
+        """Return flush."""
         self._timer.stop()
         if not self._pending:
             return

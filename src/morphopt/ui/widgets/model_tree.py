@@ -49,6 +49,7 @@ from ..model.registry import (
     SURFACE_TYPES,
     UPDATER_CONSTRAINTS,
     UPDATER_OBJECTIVES,
+    available_part_types,
     available_surface_symmetry_types,
 )
 from ..presentation.labels import cad_operation_summary_text, node_type_title
@@ -76,6 +77,13 @@ class _DefinitionDelegate(QStyledItemDelegate):
     """Keep invalid rows visible even when the selection stylesheet is active."""
 
     def initStyleOption(self, option, index) -> None:
+        """Return init style option.
+
+        Args:
+            option: Qt style option describing the item's current drawing state and available
+                rectangle.
+            index: Zero-based position within the relevant collection.
+        """
         super().initStyleOption(option, index)
         option.font = font_manager.font("tree")
         if index.data(_BOLD_ROLE):
@@ -83,6 +91,14 @@ class _DefinitionDelegate(QStyledItemDelegate):
         option.fontMetrics = QFontMetrics(option.font)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        """Return paint.
+
+        Args:
+            painter (QPainter): Qt painter used to draw the current item.
+            option (QStyleOptionViewItem): Qt style option describing the item's current drawing
+                state and available rectangle.
+            index: Zero-based position within the relevant collection.
+        """
         if not index.data(_ERROR_ROLE):
             super().paint(painter, option, index)
             return
@@ -115,10 +131,20 @@ class _DefinitionDelegate(QStyledItemDelegate):
 
 
 class ModelTree(QTreeWidget):
+    """Project model-navigation entries and validation issues into a selectable Qt tree."""
     nodeSelected = Signal(object)  # Node
     classMethodAddRequested = Signal(object)
+    validationChanged = Signal(bool)
+    diagnosticsChanged = Signal(object)
 
     def __init__(self, parent=None, *, actions: DefinitionActions | None = None):
+        """Initialize ModelTree and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+            actions (DefinitionActions | None): Definition action dispatcher used to commit model
+                changes.
+        """
         super().__init__(parent)
         self.actions = actions or DefinitionActions(self)
         self.setColumnCount(1)
@@ -130,8 +156,19 @@ class ModelTree(QTreeWidget):
         self.customContextMenuRequested.connect(self._open_menu)
         self.currentItemChanged.connect(self._on_current)
         self._problem: ProblemDefinition | None = None
+        self._has_errors = False
+        self.diagnostics: tuple[tuple[Node, str, str], ...] = ()
         self._item_node: dict[QTreeWidgetItem, Node] = {}
         self._node_item: dict[Node, QTreeWidgetItem] = {}
+
+    @property
+    def has_errors(self) -> bool:
+        """Return has errors.
+
+        Returns:
+            bool: Has errors.
+        """
+        return self._has_errors
 
     def _font_changed(self, role: str) -> None:
         if role == "tree":
@@ -140,11 +177,23 @@ class ModelTree(QTreeWidget):
 
     # ------------------------------------------------------------------ api
     def set_problem(self, problem: ProblemDefinition) -> None:
+        """Bind the current definition and synchronize the available selections.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self._problem = problem
         self.actions.set_problem(problem)
         self.rebuild()
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         expanded = {
             node_key(node): item.isExpanded() for item, node in self._item_node.items()
         }
@@ -158,7 +207,11 @@ class ModelTree(QTreeWidget):
         self.verticalScrollBar().setValue(scroll)
 
     def select_node(self, node: Node) -> None:
-        """Follow editing focus without sending navigation back to the editor."""
+        """Follow editing focus without sending navigation back to the editor.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         item = self._node_item.get(node)
         if item is None:
             key = node_key(node)
@@ -180,7 +233,12 @@ class ModelTree(QTreeWidget):
             self.blockSignals(blocked)
 
     def capture_view(self) -> tuple[dict[tuple[int, ...], bool], int]:
-        """Use snapshot-relative bookmarks when the model objects will change."""
+        """Use snapshot-relative bookmarks when the model objects will change.
+
+        Returns:
+            tuple[dict[tuple[int, ...], bool], int]: Use snapshot-relative bookmarks when the model
+                objects will change.
+        """
         expanded = {}
         if self._problem is not None:
             for item, node in self._item_node.items():
@@ -190,6 +248,12 @@ class ModelTree(QTreeWidget):
         return expanded, self.verticalScrollBar().value()
 
     def restore_view(self, state: tuple[dict[tuple[int, ...], bool], int]) -> None:
+        """Restore view.
+
+        Args:
+            state (tuple[dict[tuple[int, ...], bool], int]): Captured camera, definition, or
+                subprocess state being restored.
+        """
         if self._problem is None:
             return
         expanded, scroll = state
@@ -202,6 +266,12 @@ class ModelTree(QTreeWidget):
         self.verticalScrollBar().setValue(scroll)
 
     def rebuild(self, select: Node | None = None, *, notify: bool = True) -> None:
+        """Return rebuild.
+
+        Args:
+            select (Node | None): Select the newly created or restored item when True.
+            notify (bool): Emit the relevant change notification after the update when True.
+        """
         selected_key = node_key(select)
         self.blockSignals(True)
         try:
@@ -212,7 +282,6 @@ class ModelTree(QTreeWidget):
                 return
             for entry in DefinitionNavigation(self._problem).build():
                 self.addTopLevelItem(self._render_entry(entry))
-            self._refresh_validation()
             self.expandAll()
             item = next(
                 (
@@ -226,6 +295,7 @@ class ModelTree(QTreeWidget):
                 self.setCurrentItem(item)
         finally:
             self.blockSignals(False)
+        self._refresh_validation()
         if notify and item is not None:
             self.nodeSelected.emit(self._item_node[item])
 
@@ -237,6 +307,7 @@ class ModelTree(QTreeWidget):
 
     # ------------------------------------------------------------ language
     def apply_language(self) -> None:
+        """Update visible labels using the active application locale."""
         if self._problem is None:
             return
         projection = DefinitionNavigation(self._problem)
@@ -246,6 +317,7 @@ class ModelTree(QTreeWidget):
         self._refresh_validation()
 
     def apply_theme(self) -> None:
+        """Apply the active theme to this view and its visualization resources."""
         palette = theme_manager.palette
         for item in self._item_node:
             invalid = bool(item.data(0, _ERROR_ROLE))
@@ -260,11 +332,24 @@ class ModelTree(QTreeWidget):
 
     def _refresh_validation(self) -> None:
         if self._problem is None:
+            self._has_errors = False
+            self.diagnostics = ()
+            self.diagnosticsChanged.emit(self.diagnostics)
+            self.validationChanged.emit(False)
             return
-        diagnostics = DefinitionValidation(self._problem).collect()
+        try:
+            diagnostics = DefinitionValidation(self._problem).collect()
+        except Exception:
+            self._has_errors = True
+            self.validationChanged.emit(True)
+            raise
+        self._has_errors = bool(diagnostics)
+        entries = []
+        represented = set()
 
-        def visit(item: QTreeWidgetItem) -> list[str]:
+        def visit(item: QTreeWidgetItem, path: str = "") -> list[str]:
             node = self._item_node[item]
+            location = f"{path} / {item.text(0)}" if path else item.text(0)
             owner: object | None = node
             if isinstance(node, LoadCaseNode):
                 owner = node.values
@@ -277,12 +362,14 @@ class ModelTree(QTreeWidget):
             elif node.kind in {"params_class", "loads_group"}:
                 owner = CONFIGURATION_CLASS_PATHS[node.kind]
             identity = owner if isinstance(owner, str) else id(owner)
+            represented.add(identity)
+            entries.extend((node, location, message) for message in diagnostics.get(identity, []))
             messages = [
                 f"{item.text(0)}: {message}"
                 for message in diagnostics.get(identity, [])
             ]
             for index in range(item.childCount()):
-                messages.extend(visit(item.child(index)))
+                messages.extend(visit(item.child(index), location))
             item.setData(0, _ERROR_ROLE, bool(messages))
             tooltip = item.data(0, _TOOLTIP_ROLE) or ""
             if messages:
@@ -294,7 +381,13 @@ class ModelTree(QTreeWidget):
 
         for index in range(self.topLevelItemCount()):
             visit(self.topLevelItem(index))
+        for identity, messages in diagnostics.items():
+            if identity not in represented:
+                entries.extend((self._problem.root, self._problem.label, message) for message in messages)
+        self.diagnostics = tuple(entries)
+        self.diagnosticsChanged.emit(self.diagnostics)
         self.apply_theme()
+        self.validationChanged.emit(self._has_errors)
 
     # ------------------------------------------------------------ rendering
     def _make_item(self, text: str, node: Node, bold: bool = False) -> QTreeWidgetItem:
@@ -351,7 +444,6 @@ class ModelTree(QTreeWidget):
 
     def _build_node_menu(self, menu: QMenu, node: Node) -> None:
         kind = node.kind
-        scheme = self._problem.scheme if self._problem else "shapeopt"
 
         if kind == "custom_classes":
             menu.addAction(
@@ -422,9 +514,7 @@ class ModelTree(QTreeWidget):
 
         if kind == "geometry":
             sub = menu.addMenu(tr("ui.widgets.model_tree.add_part"))
-            from ..schemes.base import get_template
-
-            for itype in get_template(scheme).available_geometry_types():
+            for itype in available_part_types():
                 spec = PART_TYPES[itype]
                 act = QAction(node_type_title(spec, itype), sub)
                 act.setData(itype)
@@ -436,7 +526,7 @@ class ModelTree(QTreeWidget):
                 kind: "morphopt.BoundaryPart"
                 if PART_TYPES[kind].has_surfaces
                 else f"morphopt.{kind}"
-                for kind in get_template(scheme).available_geometry_types()
+                for kind in available_part_types()
             }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(sub, candidates, self.actions.add_part)
@@ -551,9 +641,7 @@ class ModelTree(QTreeWidget):
 
         if kind == "materials":
             sub = menu.addMenu(tr("ui.widgets.model_tree.add_material"))
-            from ..schemes.base import get_template
-
-            available = get_template(scheme).available_material_types()
+            available = tuple(MATERIAL_TYPES)
             for mtype in available:
                 spec = MATERIAL_TYPES[mtype]
                 act = QAction(node_type_title(spec, mtype), sub)
@@ -747,6 +835,11 @@ class ModelTree(QTreeWidget):
             menu.addAction(act_del)
 
     def refresh_node_label(self, node: Node) -> None:
+        """Refresh node label.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         item = self._node_item.get(node)
         if item is not None and self._problem is not None:
             item.setText(

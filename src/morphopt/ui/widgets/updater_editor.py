@@ -70,23 +70,27 @@ def _category_label(category: str) -> str:
 
 
 class UpdaterEditor(QWidget):
+    """Edit updater targets, inner objectives, hard projections, penalties, and strategies."""
     changed = Signal(object)
     activated = Signal(object)
 
     def __init__(self, parent=None):
+        """Initialize UpdaterEditor and its configuration state.
+
+        Args:
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(*theme_manager.palette.layout.zero_margins)
 
-        # run-level compute device (used by the generated Updater)
+        # An unset updater device follows the Controller's device at runtime.
         devrow = QHBoxLayout()
         devrow.addWidget(QLabel(tr("ui.widgets.updater_editor.updater_device")))
         self._device = QComboBox()
         self._device.setEditable(True)
-        self._device.addItem("cpu")
-        for dev in detect_devices():
-            if dev != "cpu":
-                self._device.addItem(dev)
+        self._device.addItem(tr("ui.widgets.updater_editor.default_device"))
+        self._device.addItems(detect_devices())
         self._device.setToolTip(
             tr(
                 "ui.widgets.updater_editor.device_for_the_updater_only_cpu_cuda_0_independent_from_the_run_device_s"
@@ -133,6 +137,16 @@ class UpdaterEditor(QWidget):
         *,
         scroll_to_focus: bool = True,
     ) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            node (UpdaterNode): Definition node being inspected or edited.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            focus (UpdaterTreeNode | None): Node or field to focus after synchronizing the editor.
+            scroll_to_focus (bool): Scroll the editor to the selected item after rebuilding it when
+                True.
+        """
         self._node = node
         self._problem = problem
         self._focus = focus
@@ -146,12 +160,13 @@ class UpdaterEditor(QWidget):
         # show the current updater device without re-triggering a save
         self._loading = True
         try:
-            dev = problem.updater_device or (
-                problem.device if problem is not None else "cpu"
-            )
-            if self._device.findText(dev) < 0:
+            dev = problem.updater_device
+            if dev and self._device.findText(dev) < 0:
                 self._device.addItem(dev)
-            self._device.setCurrentText(dev if dev else "cpu")
+            if dev:
+                self._device.setCurrentText(dev)
+            else:
+                self._device.setCurrentIndex(0)
         finally:
             self._loading = False
         sections = updater_sections(
@@ -176,7 +191,7 @@ class UpdaterEditor(QWidget):
             self._layout.addWidget(
                 QLabel(
                     tr(
-                        "ui.widgets.updater_editor.this_scheme_has_no_editable_sub_optimizer"
+                        "ui.widgets.updater_editor.no_sub_optimizer"
                     )
                 )
             )
@@ -184,6 +199,12 @@ class UpdaterEditor(QWidget):
         self._focus_item(scroll=scroll_to_focus)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         if context.problem.updater is not None:
             self.edit_node(
                 context.problem.updater,
@@ -268,17 +289,19 @@ class UpdaterEditor(QWidget):
         )
 
     def _save_device(self, text: str) -> None:
-        """Persist the (Updater-only) device on the definition."""
+        """Persist the (Updater-only) device on the definition.
+
+        Args:
+            text (str): Text displayed, parsed, or inserted by this operation.
+        """
         if self._loading or self._problem is None:
             return
         text = (text or "").strip()
-        if text:
-            if text != self._problem.updater_device:
-                self._problem.updater_device = text
-        else:
-            self._problem.updater_device = None  # empty -> follow run device
-        if self._node is not None:
-            self.changed.emit(self._node)
+        device = None if not text or text == self._device.itemText(0) else text
+        if device != self._problem.updater_device:
+            self._problem.updater_device = device
+            if self._node is not None:
+                self.changed.emit(self._node)
 
     # ------------------------------------------------------------- builders
     def _section_box(
@@ -399,8 +422,14 @@ class UpdaterEditor(QWidget):
     def _part_target_control(self, cfg: dict) -> QWidget:
         """Combo box selecting the boundary Part this sub-optimizer updates.
 
-        Every boundary part has its own geometry optimizer; changing this entry
-        selects the Part registered for this optimizer.
+        Every boundary part has its own geometry optimizer; changing this entry selects the Part
+        registered for this optimizer.
+
+        Args:
+            cfg (dict): Configuration dictionary for the selected updater or geometry interface.
+
+        Returns:
+            QWidget: Combo box selecting the boundary Part this sub-optimizer updates.
         """
         combo = QComboBox()
         target = self._problem.config_part_node(cfg) if self._problem else None
@@ -420,6 +449,12 @@ class UpdaterEditor(QWidget):
         """Combo box selecting the material definition this optimizer updates.
 
         Only design-carrying materials (SIMP density fields) can be updated.
+
+        Args:
+            cfg (dict): Configuration dictionary for the selected updater or geometry interface.
+
+        Returns:
+            QWidget: Combo box selecting the material definition this optimizer updates.
         """
         combo = QComboBox()
         target = self._problem.config_material_node(cfg) if self._problem else None
@@ -440,8 +475,15 @@ class UpdaterEditor(QWidget):
     def _surface_count(self, cfg: dict, group: str) -> int:
         """Number of surfaces whose update flags this config controls.
 
-        A geometry sub-optimizer only owns the surfaces of its own Part, so the
-        checkbox list and the distance matrix are scoped to that Part.
+        A geometry sub-optimizer only owns the surfaces of its own Part, so the checkbox list and
+        the distance matrix are scoped to that Part.
+
+        Args:
+            cfg (dict): Configuration dictionary for the selected updater or geometry interface.
+            group (str): Named group containing the related interfaces or task configuration.
+
+        Returns:
+            int: Number of surfaces whose update flags this config controls.
         """
         if self._problem is None:
             return 0
@@ -453,7 +495,14 @@ class UpdaterEditor(QWidget):
         return len(node.surfaces)
 
     def _material_update_control(self, cfg: dict) -> QWidget:
-        """Edit the material updater's update switch."""
+        """Edit the material updater's update switch.
+
+        Args:
+            cfg (dict): Configuration dictionary for the selected updater or geometry interface.
+
+        Returns:
+            QWidget: Edit the material updater's update switch.
+        """
         cur = cfg.get("if_update")
         chk = QCheckBox()
         chk.setChecked(True if cur is None else bool(cur))
@@ -495,6 +544,16 @@ class UpdaterStrategyEditor(QWidget):
         self, config: dict, key: str, group: str, problem: ProblemDefinition,
         parent: QWidget | None = None,
     ) -> None:
+        """Initialize UpdaterStrategyEditor and its configuration state.
+
+        Args:
+            config (dict): Configuration dictionary for the selected model or updater interface.
+            key (str): Lookup key identifying the requested field or registered item.
+            group (str): Named group containing the related interfaces or task configuration.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.config, self.key, self.problem = config, key, problem
         self.specs = strategy_specs(key, group)
@@ -504,7 +563,7 @@ class UpdaterStrategyEditor(QWidget):
         self.selector.setToolTip(tr(f"ui.strategies.{key}.help"))
         for name, spec in self.specs.items():
             self.selector.addItem(tr(spec.label_key), name)
-        item = config.get(key, strategy_config(key))
+        item = config.get(key, strategy_config(key, group=group))
         self.selector.setCurrentIndex(self.selector.findData(item["type"]))
         self._layout.addWidget(self.selector)
         self.parameters: ParamForm | None = None
@@ -546,6 +605,16 @@ class _DistanceMatrixDropDown(QToolButton):
     _DEFAULT = CONSTANT.UI.UPDATER_EDITOR.DEFAULT_INTER_SURFACE_DISTANCE
 
     def __init__(self, params: dict, n: int, on_change, parent=None, helper_names=()):
+        """Initialize _DistanceMatrixDropDown and its configuration state.
+
+        Args:
+            params (dict): Editable parameter fields of this definition node or interface
+                configuration.
+            n (int): Number of requested samples or repeated entries.
+            on_change: Callback invoked after committing a value change.
+            parent: Parent Qt widget; None creates a top-level widget.
+            helper_names: Names exposed by auxiliary constants, functions, and classes.
+        """
         super().__init__(parent)
         self._params = params
         self._n = max(1, int(n))
@@ -622,7 +691,11 @@ class _DistanceMatrixDropDown(QToolButton):
 
     # ------------------------------------------------------------ helpers
     def _matrix(self) -> list[list[float | str]]:
-        """Current N x N matrix (stored value padded / squared to N x N)."""
+        """Current N x N matrix (stored value padded / squared to N x N).
+
+        Returns:
+            list[list[float | str]]: Current N x N matrix (stored value padded / squared to N x N).
+        """
         return distance_matrix(self._params.get("min_distance"), self._n, self._DEFAULT)
 
     def _load_matrix(self) -> None:
@@ -687,7 +760,17 @@ class _DistanceMatrixDropDown(QToolButton):
 def _distance_params_form(
     item: dict, n_surfaces: int, on_change, problem=None
 ) -> QWidget:
-    """Form for a Distance constraint: a labelled matrix dropdown."""
+    """Form for a Distance constraint: a labelled matrix dropdown.
+
+    Args:
+        item (dict): Collection or view item selected for the operation.
+        n_surfaces (int): Number of boundary surfaces represented by the geometry configuration.
+        on_change: Callback invoked after committing a value change.
+        problem: Editable problem definition shared by the UI application services.
+
+    Returns:
+        QWidget: Form for a Distance constraint: a labelled matrix dropdown.
+    """
     w = QWidget()
     form = QFormLayout(w)
     form.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -719,6 +802,18 @@ class UpdaterItemList(QWidget):
         n_surfaces=0,
         parent=None,
     ):
+        """Initialize UpdaterItemList and its configuration state.
+
+        Args:
+            config: Configuration dictionary for the selected model or updater interface.
+            group: Named group containing the related interfaces or task configuration.
+            category: Interface or asset category used to select compatible editors or renderers.
+            problem: Editable problem definition shared by the UI application services.
+            on_change: Callback invoked after committing a value change.
+            on_code_change: Callback invoked after committing a code-field edit.
+            n_surfaces: Number of boundary surfaces represented by the geometry configuration.
+            parent: Parent Qt widget; None creates a top-level widget.
+        """
         super().__init__(parent)
         self.model = UpdaterItems(config, group, category, problem)
         self.on_change, self.on_code_change = on_change, on_code_change
@@ -858,6 +953,15 @@ class UpdaterItemList(QWidget):
             self._notify(item)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle relevant input events before the receiving Qt object processes them.
+
+        Args:
+            watched (QObject): Qt object receiving the filtered event.
+            event (QEvent): Qt event delivered to this widget or event filter.
+
+        Returns:
+            bool: Handle relevant input events before the receiving Qt object processes them.
+        """
         if event.type() == QEvent.Type.FocusIn:
             self.activated.emit(self._items_by_widget[watched])
         return super().eventFilter(watched, event)

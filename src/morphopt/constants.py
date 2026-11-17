@@ -24,6 +24,14 @@ class _Constants:
             LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
+        class CAMERA:
+            FRAME_INTERVAL_MS = 16
+            MOVEMENT_SPEED_RATIO = 0.3
+            FAST_MULTIPLIER = 4.0
+            MOUSE_DEGREES_PER_PIXEL = 0.2
+            PITCH_LIMIT_DEGREES = 89.0
+            MAX_FRAME_SECONDS = 0.1
+
         class UPDATER_EDITOR:
             DEFAULT_MAX_STEP_ITERATIONS = 50
             DEFAULT_INTER_SURFACE_DISTANCE = 2.5
@@ -31,6 +39,7 @@ class _Constants:
         class WIDGETS:
             MAXIMUM_QUICKSTART_OBJECTIVES = 8
             MODEL_SCAN_DEBOUNCE_MS = 500
+            TASK_ACTION_BUTTON_WIDTH = 160
 
         class MODEL_SUMMARY:
             CACHE_ENTRIES = 16
@@ -395,7 +404,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.0
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class NUM_U_RATIO:
@@ -429,7 +438,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.0
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class NUM_U_RATIO:
@@ -453,7 +462,7 @@ class _Constants:
                         MIN = 0.0
 
                     class SEED_SIZE:
-                        DEFAULT = 1.5
+                        DEFAULT = 1.4
                         MIN = 0.0001
 
                     class INIT_LOCATION:
@@ -617,7 +626,7 @@ class _Constants:
             class PARTS:
                 class BOUNDARYPART:
                     class FEA_SEED_SIZE:
-                        DEFAULT = 2.5
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -655,7 +664,7 @@ class _Constants:
                         MIN = 0.001
 
                     class MESH_SIZE:
-                        DEFAULT = 2.0
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -667,7 +676,7 @@ class _Constants:
 
                 class CADPART:
                     class MESH_SIZE:
-                        DEFAULT = 2.0
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -679,7 +688,7 @@ class _Constants:
 
                 class OFFSETBOUNDARYPART:
                     class FEA_SEED_SIZE:
-                        DEFAULT = 2.5
+                        DEFAULT = 1.4
                         MIN = 0.001
 
                     class MESH_ORDER:
@@ -698,6 +707,16 @@ class _Constants:
                         MIN = 1
 
             class SURFACE_CONSTRAINTS:
+                class BSPZPERIODIC:
+                    class PERIODS:
+                        DEFAULT = 2
+                        MIN = 2
+
+                class BSPROTATION:
+                    class ORDER:
+                        DEFAULT = 2
+                        MIN = 2
+
                 class BSPMIRROR:
                     class PLANE:
                         DEFAULT = "xz"
@@ -846,7 +865,7 @@ class _Constants:
                 GEOMETRY_MAX_STEP_ITERATIONS = 50
                 NUM_PROCESS = 1
                 WALL = 2.0
-                MESH_SIZE = 2.0
+                MESH_SIZE = 1.4
                 MATERIAL_MU = 0.482
                 MATERIAL_KAPPA = 4.8
                 OBJECTIVE_TARGET = 20.0
@@ -910,7 +929,6 @@ class _Constants:
                 WORKSPACE_PRESSURE_MAXIMUM = 1000.0
                 WORKSPACE_PRESSURE_DECIMALS = 1
                 SHAPE_LENGTH_MAXIMUM = 1000000000000.0
-                TOPOLOGY_LENGTH_MAXIMUM = 1000.0
 
                 class NUMERIC_FIELD_DECIMALS:
                     DEFAULT = 1
@@ -1016,6 +1034,9 @@ class _Constants:
             OFFSET_SHELL_SURFACE_OPACITY = 1.0
 
         class MESH:
+            QUADRATIC_ELEMENT_TYPES = {
+                "C3D4": "C3D10", "C3D6": "C3D15", "C3D8": "C3D20",
+            }
             SURFACE_ELEMENT_LINE_CHUNK_SIZE = 16
             SURFACE_NODE_LINE_CHUNK_SIZE = 16
             MAXIMUM_SIZE_RATIO = 1.0
@@ -1041,7 +1062,7 @@ class _Constants:
 
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
-                CURVATURE_LIMIT = 1.0
+                CURVATURE_LIMIT = 3.0
                 METRIC_VARIATION_LIMIT = 0.1
                 NONORTHOGONALITY_LIMIT = 0.1
                 ACTIVATION_RATIO = 0.8
@@ -1076,6 +1097,7 @@ class _Constants:
 
         class UPDATER_OBJECTIVES:
             QUADRATIC_MEMORY_PAIRS = 10
+            SR1_DENOMINATOR_TOLERANCE = 1e-8
 
         class UPDATER_STRATEGIES:
             DEFAULT_CONSTRAINT_WEIGHT = 1.0
@@ -1084,11 +1106,12 @@ class _Constants:
             PROBE_FRACTION = 0.5
             SAFETY_FACTOR = 2.0
             BALANCE_RATIO = 0.25
-            OBJECTIVE_TOLERANCE = 0.01
-            TIGHTENING_INCREMENT = 0.001
-            PENALTY_GROWTH_LIMIT = 2.0
-            WEIGHT_INCREASE = 1.25
-            SIGNIFICANT_PENALTY_RATIO = 0.001
+            TIGHTENING_INCREMENT = 0.0002
+            VIOLATION_TOLERANCE = 0.1
+            VIOLATION_BAND_RATIO = 2.0
+            VIOLATION_WEIGHT_POWER = 2.0
+            WEIGHT_CHANGE_LIMIT = 10.0
+            WEIGHT_UPDATE_FRACTION = 0.1
             INITIAL_TOLERANCE = 0.05
             FINAL_TOLERANCE = 0.0
             DISTANCE_TRANSITION_RATIO = 0.05
@@ -1098,6 +1121,7 @@ class _Constants:
             LINE_SEARCH_BACKTRACK_RATIO = 0.2
             LINE_SEARCH_MIN_STEP_TOLERANCE = 1e-14
             LBFGS_MEMORY_PAIRS = 10
+            LBFGS_INITIAL_VARIABLE_STEP = 1.0
             LBFGS_CONVERGENCE_TOLERANCE = 1e-10
             BFGS_CURVATURE_TOLERANCE = 1e-8
             LBFGS_SHAPE_MEMORY_PAIRS = 20

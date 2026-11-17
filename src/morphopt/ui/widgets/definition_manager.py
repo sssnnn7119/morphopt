@@ -39,6 +39,7 @@ from ..model.registry import (
     MATERIAL_TYPES,
     PART_TYPES,
     SURFACE_TYPES,
+    available_part_types,
 )
 from ..presentation.labels import (
     cad_operation_summary_text,
@@ -80,6 +81,14 @@ class DefinitionManagerEditor(QWidget):
         *,
         sets: PartSetCatalog | None = None,
     ):
+        """Initialize DefinitionManagerEditor and its configuration state.
+
+        Args:
+            mode (str): Operation mode selecting the applicable computation or visualization path.
+            actions (DefinitionActions): Definition action dispatcher used to commit model changes.
+            parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
+            sets (PartSetCatalog | None): Named mesh selections available on the selected Part.
+        """
         super().__init__(parent)
         self.mode = mode
         self.actions = actions
@@ -129,6 +138,16 @@ class DefinitionManagerEditor(QWidget):
         *,
         scroll_to_focus: bool = True,
     ) -> None:
+        """Display the selected node and its editable interface fields.
+
+        Args:
+            manager (Node | None): Application service managing this collection or history.
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+            focus (Node | None): Node or field to focus after synchronizing the editor.
+            scroll_to_focus (bool): Scroll the editor to the selected item after rebuilding it when
+                True.
+        """
         self._problem = problem
         self._focus = focus if focus is not manager else None
         self._heading.setText(
@@ -176,6 +195,12 @@ class DefinitionManagerEditor(QWidget):
         self._focus_selection(scroll=scroll_to_focus)
 
     def refresh_ui(self, context: RefreshContext) -> None:
+        """Synchronize the view with the committed definition and refresh context.
+
+        Args:
+            context (RefreshContext): Committed definition, active selection, and domain-change
+                flags for this UI refresh.
+        """
         self.edit_node(None, context.problem, self._focus, scroll_to_focus=False)
 
     def _on_editor_activated(self, node: Node) -> None:
@@ -237,11 +262,8 @@ class DefinitionManagerEditor(QWidget):
         self._add_menu.clear()
         if self._problem is None:
             return
-        from ..schemes.base import get_template
-
-        template = get_template(self._problem.scheme)
         if self.mode == "geometry":
-            for part_type in template.available_geometry_types():
+            for part_type in available_part_types():
                 spec = PART_TYPES[part_type]
                 action = QAction(node_type_title(spec, part_type), self._add_menu)
                 self._add_menu.addAction(action)
@@ -253,7 +275,7 @@ class DefinitionManagerEditor(QWidget):
                     "morphopt.BoundaryPart" if spec.has_surfaces else f"morphopt.{kind}"
                 )
                 for kind, spec in PART_TYPES.items()
-                if kind in template.available_geometry_types()
+                if kind in available_part_types()
             }
             candidates["BasePart"] = "morphopt.BasePart"
             self.actions.custom_add_menu(

@@ -16,6 +16,7 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
+from ...constants import CONSTANT
 from ...utils.paths import sanitize_name
 from ...shapeopt import strategies as shape_strategies
 from ...shapeopt.objectivefuncs import Fairness
@@ -56,6 +57,12 @@ class DefinitionValidation:
     """
 
     def __init__(self, problem: ProblemDefinition) -> None:
+        """Initialize DefinitionValidation and its configuration state.
+
+        Args:
+            problem (ProblemDefinition): Editable problem definition shared by the UI application
+                services.
+        """
         self.problem = problem
         self.errors: dict[int | str, list[str]] = {}
         self.constant_nodes = {node.name: node for node in problem.helper_variables}
@@ -66,6 +73,13 @@ class DefinitionValidation:
         self.known_names: set[str] = set()
 
     def add(self, owner: object, key: str, **values: object) -> None:
+        """Add the DefinitionValidation state.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            key (str): Lookup key identifying the requested field or registered item.
+            **values: Additional keyword arguments accepted by the shared interface.
+        """
         message = tr(f"ui.validation.{key}", **values)
         identity = owner if isinstance(owner, str) else id(owner)
         messages = self.errors.setdefault(identity, [])
@@ -80,6 +94,15 @@ class DefinitionValidation:
         expression: bool = False,
         check_names: bool = False,
     ) -> None:
+        """Check source.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            source (str): Source object, path, or metadata from which the operation reads its input.
+            expression (bool): Python parameter expression evaluated in the definition's auxiliary
+                namespace.
+            check_names (bool): Check registration-name validity and uniqueness when True.
+        """
         try:
             compile(source, "<definition>", "eval" if expression else "exec")
             if check_names:
@@ -103,7 +126,16 @@ class DefinitionValidation:
             self.add(owner, "code", reason=str(exc))
 
     def literal(self, expression: str, active: frozenset[str] = frozenset()) -> Any:
-        """Resolve literal constants only; calls and arbitrary expressions stay unknown."""
+        """Resolve literal constants only; calls and arbitrary expressions stay unknown.
+
+        Args:
+            expression (str): Python parameter expression evaluated in the definition's auxiliary
+                namespace.
+            active (frozenset[str]): Currently active registry or configuration entries.
+
+        Returns:
+            Any: Resolve literal constants only; calls and arbitrary expressions stay unknown.
+        """
         if expression in self.constants:
             if expression in active:
                 raise ValueError(tr("ui.validation.constant_cycle", name=expression))
@@ -140,6 +172,14 @@ class DefinitionValidation:
         return resolve(ast.parse(expression, mode="eval").body)
 
     def field(self, owner: object, spec: FieldSpec, value: object) -> None:
+        """Return field.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            spec (FieldSpec): Field or interface schema describing valid values and available
+                controls.
+            value (object): Value assigned to or evaluated for the selected field.
+        """
         if spec.hidden or spec.read_only:
             return
         label = (
@@ -227,11 +267,27 @@ class DefinitionValidation:
 
     @staticmethod
     def function_source(parameters: str, body: str) -> str:
+        """Return function source.
+
+        Args:
+            parameters (str): Parameter values in the order required by the selected interface.
+            body (str): Source-code body or geometry body processed by the operation.
+
+        Returns:
+            str: Function source.
+        """
         return f"def _definition({parameters}):\n" + textwrap.indent(
             body.strip() or "pass", "    "
         )
 
     def names(self, nodes: list[Node], *, identifiers: bool = False) -> None:
+        """Return names.
+
+        Args:
+            nodes (list[Node]): Cartesian node coordinates with shape (num_nodes, 3), in model
+                length units.
+            identifiers (bool): Registered identifiers used to resolve the requested definitions.
+        """
         counts = Counter(
             node.name if identifiers else node.name.casefold() for node in nodes
         )
@@ -248,19 +304,36 @@ class DefinitionValidation:
                 self.add(node, "duplicate", name=node.name)
 
     def custom_class(self, owner: object, name: str) -> None:
+        """Return custom class.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            name (str): Name identifying the item in its owning collection.
+        """
         if name and name not in self.classes:
             self.add(owner, "reference", field="custom_class", name=name)
 
     def overridden(self, node: Node) -> bool:
+        """Return overridden.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+
+        Returns:
+            bool: Overridden.
+        """
         path = CONFIGURATION_CLASS_PATHS.get(node.kind, "")
         return bool(node.custom_class or self.problem.class_bindings.get(path))
 
     def node(self, node: Node) -> None:
+        """Return node.
+
+        Args:
+            node (Node): Definition node being inspected or edited.
+        """
         try:
-            if isinstance(node, FEAComponentNode) and node.type == "PenaltyDoF":
+            if isinstance(node, (FEAComponentNode, MaterialNode)):
                 fields = fields_for_node(node, self.problem)[0]
-            elif isinstance(node, MaterialNode):
-                fields = fields_for_node(node)[0]
             else:
                 fields = node.fields
         except KeyError:
@@ -268,6 +341,14 @@ class DefinitionValidation:
             fields = ()
         for spec in fields:
             self.field(node, spec, node.get_field(spec.key))
+            if node.kind == "surface" and spec.key == "r0":
+                radius = node.get_field(spec.key)
+                try:
+                    radius = self.literal(radius) if isinstance(radius, str) else radius
+                except (ValueError, SyntaxError, ArithmeticError):
+                    radius = _UNKNOWN
+                if isinstance(radius, Real) and not isinstance(radius, bool) and radius == 0:
+                    self.add(node, "positive", field=tr(spec.label_key))
             if spec.key == "bounding_box":
                 value = node.get_field(spec.key)
                 if (
@@ -373,6 +454,7 @@ class DefinitionValidation:
                         self.add(op, "reference", field=key, name=op.get_field(key))
 
     def objectives(self) -> None:
+        """Return objectives."""
         objective = self.problem.objective
         if objective is None:
             return
@@ -446,6 +528,7 @@ class DefinitionValidation:
                     self.add(term, "definition", reason=str(exc))
 
     def steps(self) -> None:
+        """Return steps."""
         steps = self.problem.steps
         if steps is None:
             return
@@ -497,7 +580,62 @@ class DefinitionValidation:
                         self.add(solver, "duplicate", name=name)
                     registered.add(name)
 
+    def initial_curvature(
+        self, owner: object, part: Node | None, limit: float,
+    ) -> None:
+        """Check analytic construction profiles without running user definitions.
+
+        The reported value estimates the initial geometry, not the maximum curvature of the fitted
+        spline. For a perturbed cylinder, the profile's crest at z=0 already supplies a lower bound
+        on its maximum curvature.
+
+        Args:
+            owner (object): Owning definition node or collection.
+            part (Node | None): Part whose geometry, mesh, or named sets are processed.
+            limit (float): Upper bound or constraint limit used by the selected operation.
+        """
+        if not isinstance(part, BoundaryPartNode) or self.overridden(part):
+            return
+        for index, surface in enumerate(part.surfaces):
+            if not surface.is_updatable or surface.custom_class:
+                continue
+            factor = {
+                "bsp_cylinder": 1.0, "cpgeo_cylinder": 1.0, "cpgeo_sphere": 2.0,
+            }.get(surface.type)
+            if factor is None:
+                continue
+            try:
+                radius = surface.r0
+                radius = self.literal(radius) if isinstance(radius, str) else radius
+                if (
+                    not isinstance(radius, Real) or isinstance(radius, bool)
+                    or not math.isfinite(radius) or radius <= 0
+                ):
+                    continue
+                curvature = factor / radius**2
+                if surface.type != "cpgeo_sphere":
+                    wavelength = surface.perturbation_L
+                    wavelength = self.literal(wavelength) if isinstance(wavelength, str) else wavelength
+                    if not isinstance(wavelength, Real) or not math.isfinite(wavelength):
+                        continue
+                    if wavelength > 0:
+                        amplitude_ratio = CONSTANT.KERNEL.SURFACE.CYLINDER_INITIAL_PERTURBATION_RATIO
+                        crest_radius = radius * (1 + amplitude_ratio)
+                        axial_curvature = radius * amplitude_ratio * (math.tau / wavelength)**2
+                        curvature = 1 / crest_radius**2 + axial_curvature**2
+            except (ValueError, SyntaxError, ArithmeticError):
+                continue  # Invalid numeric definitions are reported by their fields.
+            if curvature > limit and not math.isclose(curvature, limit):
+                values = {
+                    "surface": f"{part.name}/surface_{index}",
+                    "actual": f"{curvature:.6g}",
+                    "limit": f"{limit:.6g}",
+                }
+                self.add(owner, "initial_curvature", **values)
+                self.add(surface, "initial_curvature", **values)
+
     def updaters(self) -> None:
+        """Return updaters."""
         updater = self.problem.updater
         if updater is None:
             return
@@ -535,7 +673,7 @@ class DefinitionValidation:
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
                 for key in STRATEGY_CATALOG:
-                    item = cfg.get(key, strategy_config(key))
+                    item = cfg.get(key, strategy_config(key, group=group))
                     spec = strategy_specs(key, group).get(item.get("type"))
                     if spec is None:
                         self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
@@ -577,6 +715,11 @@ class DefinitionValidation:
                         item_fields = spec.fields if spec is not None else ()
                         if spec is not None:
                             for field in item_fields:
+                                if item.get("type") == "VolFrac" and field.key == "elementname":
+                                    name = item.get("params", {}).get(field.key, field.new_default())
+                                    part = target.part if isinstance(target, MaterialNode) else None
+                                    if name and name not in PartSetCatalog(self.problem).for_part(part).elements:
+                                        self.add(item, "reference", field=tr(field.label_key), name=name)
                                 self.field(
                                     item,
                                     field,
@@ -604,11 +747,18 @@ class DefinitionValidation:
                                     }
                                     if all(value is None or isinstance(value, Real) for value in values.values()):
                                         Fairness(**values)
+                                        if not item.get("custom_class"):
+                                            self.initial_curvature(item, target, values["max_curvature"])
                                 _render_updater_item(item, category, self.problem)
                         except (ValueError, TypeError, SyntaxError) as exc:
                             self.add(item, "definition", reason=str(exc))
 
     def collect(self) -> dict[int | str, list[str]]:
+        """Collect the DefinitionValidation state.
+
+        Returns:
+            dict[int | str, list[str]]: Collect the DefinitionValidation state.
+        """
         problem = self.problem
         self.check_source(problem, problem.helper_code)
         helpers = [
