@@ -2,7 +2,7 @@ import os
 import math
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 import numpy as np
 import torch
@@ -32,11 +32,13 @@ UpdaterTargetType: TypeAlias = type[UpdaterTarget] | tuple[type[UpdaterTarget], 
 
 
 class QuadraticHistory(ProtocalSavable):
-    """Limited-memory BFGS pairs shared by objectives and optimizers.
+    """Limited-memory SR1 or BFGS history, without dense Hessian storage.
 
     Each consumer owns an independent instance in its parameter coordinates.
-    Only positive curvature pairs are retained. Without a pair the physical
-    model is linear and the optimizer uses the identity preconditioner.
+    Physical objectives use SR1 to retain either sign of curvature, starting
+    from a zero Hessian. Inner L-BFGS uses positive-curvature BFGS pairs and
+    the matching inverse products. Without a pair the physical model is
+    linear and the optimizer uses the identity preconditioner.
     Products require O(memory_size * num_parameters) work and storage;
     no dense Hessian or inverse Hessian is constructed.
     """
@@ -44,6 +46,8 @@ class QuadraticHistory(ProtocalSavable):
     def __init__(
         self,
         memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
+        *,
+        update_method: Literal["bfgs", "sr1"] = "bfgs",
     ) -> None:
         if (
             isinstance(memory_size, bool)
@@ -51,7 +55,10 @@ class QuadraticHistory(ProtocalSavable):
             or memory_size < 1
         ):
             raise ValueError("memory_size must be a positive integer.")
+        if update_method not in ("bfgs", "sr1"):
+            raise ValueError("update_method must be 'bfgs' or 'sr1'.")
         self.memory_size = memory_size
+        self.update_method = update_method
         self.clear()
 
     def clear(self) -> None:
@@ -68,7 +75,7 @@ class QuadraticHistory(ProtocalSavable):
 
     @property
     def history_size(self) -> int:
-        """Number of retained positive-curvature observation pairs."""
+        """Number of retained observation pairs."""
         return len(self._steps)
 
     def observe(
@@ -80,9 +87,9 @@ class QuadraticHistory(ProtocalSavable):
         """Record one point and the gradient of the consumer's objective.
 
         A changed parameter count or block layout discards previous pairs.
-        Zero steps and gradient differences that fail the relative curvature
-        condition are skipped; the latest point and gradient still replace
-        the anchor. Physical objectives supply unscaled FEA gradients;
+        BFGS requires positive curvature; SR1 requires a sufficiently large
+        residual denominator, of either sign. Rejected pairs still replace
+        the observation anchor. Physical objectives supply unscaled FEA gradients;
         optimizers supply gradients of the complete inner objective.
         """
         point = point.detach().clone().flatten()
@@ -100,13 +107,15 @@ class QuadraticHistory(ProtocalSavable):
         if self.point is not None:
             step = point - self.point
             change = gradient - self.gradient
-            curvature = step @ change
-            threshold = (
-                CONSTANT.KERNEL.OPTIMIZER.BFGS_CURVATURE_TOLERANCE
-                * step.norm()
-                * change.norm()
-            )
-            if curvature > threshold:
+            if self.update_method == "sr1":
+                retain = self._sr1_factors(step, change) is not None
+            else:
+                retain = step @ change > (
+                    CONSTANT.KERNEL.OPTIMIZER.BFGS_CURVATURE_TOLERANCE
+                    * step.norm()
+                    * change.norm()
+                )
+            if retain:
                 self._steps.append(step)
                 self._changes.append(change)
                 self._steps = self._steps[-self.memory_size :]
@@ -114,13 +123,38 @@ class QuadraticHistory(ProtocalSavable):
         self.point, self.gradient, self._layout = point, gradient, layout
         self._build_hessian()
 
+    def _sr1_factors(
+        self, step: torch.Tensor, change: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
+        """Form the signed rank-one correction; skip unreliable denominators."""
+        residual = change - self.hessian_product(step)
+        denominator = residual @ step
+        threshold = (
+            CONSTANT.KERNEL.UPDATER_OBJECTIVES.SR1_DENOMINATOR_TOLERANCE
+            * residual.norm()
+            * step.norm()
+        )
+        if denominator.abs() > threshold:
+            return residual, denominator
+        return None
+
     def _build_hessian(self) -> None:
-        """Cache direct BFGS rank-update factors at the current anchor."""
+        """Replay retained pairs to rebuild the selected Hessian factors."""
         self._products = []
         self._step_products = []
         self._curvatures = []
         self._scale = None
         if not self._steps:
+            return
+        if self.update_method == "sr1":
+            # A zero base leaves unobserved directions linear. Recheck each
+            # denominator because evicting an old pair changes the replay.
+            for step, change in zip(self._steps, self._changes):
+                factors = self._sr1_factors(step, change)
+                if factors is not None:
+                    residual, denominator = factors
+                    self._products.append(residual)
+                    self._step_products.append(denominator)
             return
         step, change = self._steps[-1], self._changes[-1]
         self._scale = (change @ change) / (step @ change)
@@ -132,6 +166,11 @@ class QuadraticHistory(ProtocalSavable):
 
     def hessian_product(self, vector: torch.Tensor) -> torch.Tensor:
         """Apply B, rather than the inverse-Hessian used for search directions."""
+        if self.update_method == "sr1":
+            result = torch.zeros_like(vector)
+            for residual, denominator in zip(self._products, self._step_products):
+                result = result + residual * (residual @ vector) / denominator
+            return result
         if self._scale is None:
             return torch.zeros_like(vector)
         result = self._scale * vector
@@ -149,6 +188,8 @@ class QuadraticHistory(ProtocalSavable):
         search direction. The outer objective independently uses a zero
         quadratic term until physical curvature becomes available.
         """
+        if self.update_method != "bfgs":
+            raise ValueError("Inverse Hessian products are only used with BFGS history.")
         if not self._steps:
             return vector.clone()
         result = vector.clone()

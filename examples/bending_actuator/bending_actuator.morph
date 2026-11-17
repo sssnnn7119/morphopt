@@ -255,8 +255,10 @@
               },
               "objective_functions": [
                 {
-                  "type": "ShapeDerivative",
-                  "params": {}
+                  "type": "QuadraticShapeDerivative",
+                  "params": {
+                    "memory_size": 10
+                  }
                 }
               ],
               "constraints": [

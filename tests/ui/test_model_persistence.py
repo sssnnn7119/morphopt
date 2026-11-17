@@ -120,7 +120,7 @@ def test_file_import_projects_nested_updater_terms_and_strategy_parameters(tmp_p
     problem, issues = load_definition_file(tmp_path, data)
     restored = problem.updater.geometry[0]
     assert "code" not in restored
-    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 1.0}}]
+    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 3.0}}]
     policy = restored["constraint_weight_strategy"]
     assert policy["params"]["initial_tolerance"] == 0.1
     assert policy["params"]["violation_tolerance"] == 0.1

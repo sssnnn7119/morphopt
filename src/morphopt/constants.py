@@ -1054,7 +1054,7 @@ class _Constants:
 
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
-                CURVATURE_LIMIT = 1.0
+                CURVATURE_LIMIT = 3.0
                 METRIC_VARIATION_LIMIT = 0.1
                 NONORTHOGONALITY_LIMIT = 0.1
                 ACTIVATION_RATIO = 0.8
@@ -1089,6 +1089,7 @@ class _Constants:
 
         class UPDATER_OBJECTIVES:
             QUADRATIC_MEMORY_PAIRS = 10
+            SR1_DENOMINATOR_TOLERANCE = 1e-8
 
         class UPDATER_STRATEGIES:
             DEFAULT_CONSTRAINT_WEIGHT = 1.0

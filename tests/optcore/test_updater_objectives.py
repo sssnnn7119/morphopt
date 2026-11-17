@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import morphopt
 import pytest
 import torch
-from scipy.optimize import BFGS
+from scipy.optimize import BFGS, SR1
 
 from morphopt.optcore.controller import Controller
 from morphopt.optcore.modelparams import FEAParams, GeometryParams, MaterialsParams, Params
@@ -84,6 +84,86 @@ def test_first_observation_and_invalid_curvature_stay_linear():
     torch.testing.assert_close(torch.func.jacrev(model)(trial), torch.tensor([1.0, 3.0]))
 
 
+@pytest.mark.parametrize("memory_size", [1, 2, 4])
+def test_sr1_matches_dense_reference_after_history_eviction(memory_size):
+    model = QuadraticHistory(memory_size, update_method="sr1")
+    hessian = torch.tensor([[-4.0, 0.4, 0.0], [0.4, 2.0, 0.2], [0.0, 0.2, 3.0]])
+    points = [torch.tensor(value) for value in (
+        [0.0, 0.0, 0.0], [0.2, 0.1, -0.1], [0.1, -0.2, 0.1],
+        [-0.3, 0.1, 0.2], [0.0, 0.2, -0.2], [0.1, 0.3, -0.1],
+    )]
+    for point in points:
+        model.observe(point, hessian @ point)
+    assert model.history_size == memory_size
+    reference = SR1(init_scale=0.0)
+    reference.initialize(3, "hess")
+    for step, change in zip(model._steps, model._changes):
+        reference.update(step.numpy(), change.numpy())
+    actual = torch.stack([model.hessian_product(axis) for axis in torch.eye(3)], dim=1)
+    torch.testing.assert_close(actual, torch.tensor(reference.get_matrix()))
+    torch.testing.assert_close(actual, actual.T)
+    torch.testing.assert_close(actual @ model._steps[-1], model._changes[-1])
+
+
+@pytest.mark.parametrize("scale", [1e-14, 1.0, 1e14])
+def test_sr1_recovers_indefinite_curvature_and_preserves_native_gradient(scale):
+    model = QuadraticHistory(update_method="sr1")
+    hessian = scale * torch.tensor([[-2.0, 0.5], [0.5, 3.0]])
+    linear = scale * torch.tensor([2.0, -1.0])
+    for point in (torch.zeros(2), torch.tensor([1.0, 0.0]), torch.ones(2)):
+        model.observe(point, hessian @ point + linear)
+    assert model.history_size == 2
+    assert model._steps[0] @ model._changes[0] < 0
+    torch.testing.assert_close(torch.func.hessian(model)(point), hessian, rtol=1e-10, atol=0)
+    assert torch.linalg.eigvalsh(torch.func.hessian(model)(point)).min() < 0
+    torch.testing.assert_close(torch.func.grad(model)(point), hessian @ point + linear, rtol=1e-10, atol=0)
+    trial = point + torch.tensor([0.01, -0.02])
+    torch.testing.assert_close(torch.func.grad(model)(trial), hessian @ trial + linear, rtol=1e-10, atol=0)
+    assert float(model(point)) == 0.0
+    with pytest.raises(ValueError, match="only used with BFGS"):
+        model.inverse_hessian_product(point)
+
+
+def test_sr1_skips_zero_steps_and_small_denominators_but_updates_anchor():
+    model = QuadraticHistory(update_method="sr1")
+    model.observe(torch.zeros(2), torch.zeros(2))
+    model.observe(torch.zeros(2), torch.ones(2))
+    point = torch.tensor([1.0, 0.0])
+    gradient = torch.tensor([1.0 + 1e-10, 2.0])
+    model.observe(point, gradient)
+    assert model.history_size == 0
+    torch.testing.assert_close(model.point, point)
+    torch.testing.assert_close(model.gradient, gradient)
+    torch.testing.assert_close(model.hessian_product(point), torch.zeros(2))
+    # The next pair starts at the skipped observation and has negative curvature.
+    model.observe(torch.ones(2), gradient + torch.tensor([0.0, -2.0]))
+    assert model.history_size == 1
+    torch.testing.assert_close(model.hessian_product(torch.tensor([0.0, 1.0])), torch.tensor([0.0, -2.0]))
+    # An exactly represented secant needs no additional rank-one update.
+    model.observe(torch.tensor([1.0, 2.0]), gradient + torch.tensor([0.0, -4.0]))
+    assert model.history_size == 1
+
+
+def test_sr1_checkpoint_and_layout_reset_preserve_signed_history(tmp_path):
+    model = QuadraticHistory(2, update_method="sr1")
+    hessian = torch.diag(torch.tensor([-2.0, 3.0]))
+    layout = (2, 1)
+    for point in (torch.zeros(2), torch.tensor([1.0, 0.0]), torch.ones(2)):
+        model.observe(point, hessian @ point, layout)
+    model.save(str(tmp_path), 2)
+    resumed = QuadraticHistory(2, update_method="sr1")
+    resumed.load(str(tmp_path), 2)
+    trial = torch.tensor([0.8, 1.2])
+    torch.testing.assert_close(resumed(trial), model(trial))
+    torch.testing.assert_close(torch.func.hessian(resumed)(trial), hessian)
+    for history in (model, resumed):
+        history.observe(trial, hessian @ trial, layout)
+    torch.testing.assert_close(torch.func.hessian(resumed)(trial), torch.func.hessian(model)(trial))
+    resumed.observe(trial, hessian @ trial, (1, 2))
+    assert resumed.history_size == 0
+    torch.testing.assert_close(resumed.hessian_product(trial), torch.zeros(2))
+
+
 def test_layout_change_discards_history_and_bad_observations_fail():
     model = QuadraticHistory()
     model.observe(torch.zeros(2), torch.zeros(2), (2, 1))
@@ -135,19 +215,25 @@ def test_unobserved_model_checkpoint(tmp_path: Path):
     assert model.history_size == 0
 
 
-def test_material_quadratic_model_preserves_native_gradient_and_curvature():
+@pytest.mark.parametrize("curvature", [-3.0, 3.0])
+def test_material_quadratic_model_preserves_native_gradient_and_curvature(curvature):
     objective = QuadraticSensitivity()
     first = torch.tensor([0.2, 0.1])
     second = torch.tensor([0.5, 0.2])
     for point in (first, second):
-        objective.initialize(gradient=3 * point, cps0=point, step_length=torch.ones(2))
-    trial = second + torch.tensor([0.01, 0.02])
+        objective.initialize(gradient=curvature * point, cps0=point, step_length=torch.ones(2))
+    step = second - first
+    # With a zero SR1 base, one observation pair identifies the observed
+    # direction; the orthogonal direction has no invented curvature.
+    hessian = curvature * torch.outer(step, step) / (step @ step)
+    trial = second + 0.1 * step
     torch.testing.assert_close(
-        torch.func.jacrev(objective)(trial), 3 * trial
+        torch.func.jacrev(objective)(trial), curvature * trial
     )
     assert objective.history.history_size == 1
-    torch.testing.assert_close(objective.history.gradient, 3 * second)
-    torch.testing.assert_close(torch.func.hessian(objective)(trial), 3 * torch.eye(2))
+    torch.testing.assert_close(objective.history.gradient, curvature * second)
+    torch.testing.assert_close(torch.func.hessian(objective)(trial), hessian)
+    assert objective.history.update_method == "sr1"
 
 
 class ControlSurface(BaseSurface):
@@ -480,13 +566,14 @@ def test_step_strategy_gets_native_gradient_and_is_frozen_in_inner_solve():
     assert strategy.calls == 3
 
 
-def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface():
+@pytest.mark.parametrize("curvature", [-3.0, 3.0])
+def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface(curvature):
     updater = make_shape_updater()
     active, fixed = updater.surface_interfaces
-    # Two high-fidelity observations of J=1.5 * ||theta||^2.
-    updater.reinitialize(gradient=3 * torch.cat(updater.part.get_parameters()))
+    # Two high-fidelity observations of J=curvature/2 * ||theta||^2.
+    updater.reinitialize(gradient=curvature * torch.cat(updater.part.get_parameters()))
     active.points += 0.01
-    updater.reinitialize(gradient=3 * torch.cat(updater.part.get_parameters()))
+    updater.reinitialize(gradient=curvature * torch.cat(updater.part.get_parameters()))
     objective = next(iter(updater.obj_funcs.values()))
     assert objective.history.history_size == 1
     before = active.points.clone()
@@ -499,9 +586,15 @@ def test_shape_inner_solver_uses_curvature_and_keeps_fixed_surface():
     assert loss_after < loss_before
     assert objective.history.history_size == 1  # inner evaluations never add pairs
     assert updater.optimizer.history is not objective.history
-    assert updater.optimizer.history.history_size > 0
+    assert objective.history.update_method == "sr1"
+    assert updater.optimizer.history.update_method == "bfgs"
+    eigenvalues = torch.linalg.eigvalsh(torch.func.hessian(objective.history)(before.flatten()))
+    if curvature < 0:
+        assert eigenvalues.min() < 0
+    if curvature > 0:
+        assert updater.optimizer.history.history_size > 0
     updater.update_variables(direction)
-    assert active.points.square().sum() < before.square().sum()
+    assert curvature * active.points.square().sum() < curvature * before.square().sum()
     torch.testing.assert_close(fixed.points, fixed_before)
 
 

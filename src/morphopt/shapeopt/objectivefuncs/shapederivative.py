@@ -146,14 +146,14 @@ class ShapeDerivative(BaseObjective):
 
 
 class QuadraticShapeDerivative(ShapeDerivative):
-    """Historical quadratic shape objective with limited-memory BFGS curvature."""
+    """Historical quadratic shape objective with signed limited-memory SR1 curvature."""
 
     def __init__(
         self,
         memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
     ) -> None:
         super().__init__()
-        self.history = QuadraticHistory(memory_size)
+        self.history = QuadraticHistory(memory_size, update_method="sr1")
 
     def initialize(
         self,

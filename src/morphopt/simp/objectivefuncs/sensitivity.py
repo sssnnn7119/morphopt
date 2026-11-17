@@ -42,14 +42,14 @@ class Sensitivity(BaseObjective):
 
 
 class QuadraticSensitivity(Sensitivity):
-    """Historical quadratic material objective using unscaled FEA gradients."""
+    """Limited-memory SR1 material objective using unscaled FEA gradients."""
 
     def __init__(
         self,
         memory_size: int = CONSTANT.KERNEL.UPDATER_OBJECTIVES.QUADRATIC_MEMORY_PAIRS,
     ) -> None:
         super().__init__()
-        self.history = QuadraticHistory(memory_size)
+        self.history = QuadraticHistory(memory_size, update_method="sr1")
 
     def initialize(
         self,
