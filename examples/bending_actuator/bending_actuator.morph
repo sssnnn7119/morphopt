@@ -2,7 +2,7 @@
   "version": 4,
   "label": "BendingActuator",
   "result_folder": ".results/",
-  "device": "cpu",
+  "device": "cuda:0",
   "updater_device": null,
   "restart_per_iteration": 20,
   "root": {
@@ -225,7 +225,7 @@
         "params": {
           "num_process": 1,
           "process_devices": [
-            "cpu"
+            "cuda:0"
           ],
           "task_step_list": []
         },
@@ -255,10 +255,8 @@
               },
               "objective_functions": [
                 {
-                  "type": "QuadraticShapeDerivative",
-                  "params": {
-                    "memory_size": 10
-                  }
+                  "type": "ShapeDerivative",
+                  "params": {}
                 }
               ],
               "constraints": [

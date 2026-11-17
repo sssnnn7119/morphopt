@@ -260,6 +260,7 @@ class MainWindow(QMainWindow):
             return
         self.analysis_header.setVisible(index == 1)
         self.start_button.setVisible(index == 0)
+        self.problems.setVisible(index == 0)
         self._workspace_header.setStretchFactor(self.navigation, 1 if index == 0 else 0)
         if index == 0:
             self.stack.setCurrentIndex(0)
