@@ -263,7 +263,7 @@
                 {
                   "type": "Fairness",
                   "params": {
-                    "max_curvature": 1.0
+                    "max_curvature": 2.0
                   }
                 },
                 {

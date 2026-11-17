@@ -78,6 +78,31 @@ def test_adaptive_defaults_apply_the_same_mild_early_relaxation_in_ui_and_kernel
     assert config["params"]["final_tolerance"] == policy.final_tolerance == 0.0
 
 
+@pytest.mark.parametrize("base", [morphopt.UpdaterBoundaryPart, morphopt.UpdaterOffsetBoundaryPart])
+def test_geometry_kernel_defaults_to_independent_adaptive_weights(base):
+    first, second = base(), base()
+    assert isinstance(first.constraint_weight_strategy, base.strategies.AdaptiveShapeWeights)
+    assert first.constraint_weight_strategy is not second.constraint_weight_strategy
+    selected = base.strategies.ConstantConstraintWeights(2.5)
+    assert base(constraint_weight_strategy=selected).constraint_weight_strategy is selected
+
+
+@pytest.mark.parametrize("omit_strategy", [False, True])
+def test_geometry_default_matches_the_form_and_generated_script(app, omit_strategy):
+    problem = ProblemLibrary.create("shapeopt")
+    config = problem.updater.geometry[0]
+    if omit_strategy:
+        config.pop("constraint_weight_strategy")
+    selector = UpdaterStrategyEditor(config, "constraint_weight_strategy", "geometry", problem)
+    assert selector.selector.currentData() == "AdaptiveShapeWeights"
+    namespace = {"__name__": "default_strategy_test"}
+    exec(ProblemSession(problem).source(), namespace)
+    updater = namespace["ThisController"].Updater.UpdaterBoundaryPart()
+    assert isinstance(updater.constraint_weight_strategy, morphopt.UpdaterBoundaryPart.strategies.AdaptiveShapeWeights)
+    assert ("constraint_weight_strategy" in config) is not omit_strategy
+    selector.close()
+
+
 @pytest.mark.parametrize("group,base", [
     ("geometry", morphopt.UpdaterBoundaryPart),
     ("geometry", morphopt.UpdaterOffsetBoundaryPart),
@@ -105,6 +130,7 @@ def test_strategy_fields_match_backend_defaults(group, base):
 def test_shape_selection_parameters_round_trip_to_generated_updater(app, tmp_path, policy, parameter, setting):
     problem = ProblemLibrary.create("shapeopt")
     config = problem.updater.geometry[0]
+    config["constraint_weight_strategy"] = strategy_config("constraint_weight_strategy", "ConstantConstraintWeights")
     editor = UpdaterEditor()
     editor.edit_node(problem.updater, problem)
     changes = []
@@ -158,6 +184,7 @@ def test_strategy_parameter_references_a_custom_constant(app):
     problem = ProblemLibrary.create("shapeopt")
     problem.helper_variables.append(HelperVariableNode(name="penalty_weight", params={"value": "4.5"}))
     config = problem.updater.geometry[0]
+    config["constraint_weight_strategy"] = strategy_config("constraint_weight_strategy", "ConstantConstraintWeights")
     selector = UpdaterStrategyEditor(config, "constraint_weight_strategy", "geometry", problem)
     value = selector.parameters.controls["value"]
     value.setText("penalty_weight")
@@ -182,8 +209,8 @@ def test_default_configs_have_independent_strategy_parameters():
         "ConstantConstraintWeights", "SensitivityShapeWeights", "AdaptiveShapeWeights",
     ]
     first, second = geometry_updater_config(), geometry_updater_config()
-    first["constraint_weight_strategy"]["params"]["value"] = 9
-    assert second["constraint_weight_strategy"]["params"]["value"] == 1
+    first["constraint_weight_strategy"]["params"]["initial_tolerance"] = 0.3
+    assert second["constraint_weight_strategy"] == strategy_config("constraint_weight_strategy", "AdaptiveShapeWeights")
 
 
 def test_adaptive_cross_field_validation_marks_the_optimizer():

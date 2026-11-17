@@ -288,7 +288,7 @@ def test_material_proxy_preserves_native_sensitivity(objective_type, scale):
 
 
 def test_geometric_integral_is_independent_of_physical_gradient():
-    updater = make_shape_updater()
+    updater = make_shape_updater(constraint_weight_strategy=ConstantConstraintWeights())
     updater.add_constraints(MinRadius(radius=0.5))
     values = []
     for scale in (1.0, 100.0, 0.0):

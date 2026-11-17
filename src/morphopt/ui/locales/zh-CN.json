@@ -1358,7 +1358,7 @@
   "ui.strategies.fixed_step_length": "固定步长 [FixedStepLength]",
   "ui.strategies.constant_weights": "固定权重 [ConstantConstraintWeights]",
   "ui.strategies.sensitivity_shape_weights": "逐采样点灵敏度权重 [SensitivityShapeWeights]",
-  "ui.strategies.adaptive_shape_weights": "违反程度驱动的约束权重 [AdaptiveShapeWeights]",
+  "ui.strategies.adaptive_shape_weights": "自适应权重",
   "ui.strategies.tightening_increment.label": "单次放宽比例减量",
   "ui.strategies.tightening_increment.help": "仅在所有约束违反度较轻时，按此幅度减小距离阈值的相对放松量。权重与阈值在一次子优化内保持不变。",
   "ui.strategies.value.label": "罚项系数",

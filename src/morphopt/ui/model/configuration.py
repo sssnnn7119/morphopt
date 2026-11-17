@@ -69,7 +69,7 @@ def geometry_updater_config(
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
         "step_length_strategy": strategy_config("step_length_strategy"),
-        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
+        "constraint_weight_strategy": strategy_config("constraint_weight_strategy", group="geometry"),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],

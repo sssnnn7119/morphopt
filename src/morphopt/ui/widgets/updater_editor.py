@@ -501,7 +501,7 @@ class UpdaterStrategyEditor(QWidget):
         self.selector.setToolTip(tr(f"ui.strategies.{key}.help"))
         for name, spec in self.specs.items():
             self.selector.addItem(tr(spec.label_key), name)
-        item = config.get(key, strategy_config(key))
+        item = config.get(key, strategy_config(key, group=group))
         self.selector.setCurrentIndex(self.selector.findData(item["type"]))
         self._layout.addWidget(self.selector)
         self.parameters: ParamForm | None = None

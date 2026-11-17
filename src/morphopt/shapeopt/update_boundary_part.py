@@ -85,7 +85,10 @@ class UpdaterBoundaryPart(BaseUpdater):
         super().__init__(
             interface_name,
             step_length_strategy=step_length_strategy,
-            constraint_weight_strategy=constraint_weight_strategy,
+            constraint_weight_strategy=(
+                self.strategies.AdaptiveShapeWeights()
+                if constraint_weight_strategy is None else constraint_weight_strategy
+            ),
         )
 
         self.max_step_iter = max_step_iter

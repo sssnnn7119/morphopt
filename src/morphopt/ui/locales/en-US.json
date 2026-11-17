@@ -1358,7 +1358,7 @@
   "ui.strategies.fixed_step_length": "Fixed step length [FixedStepLength]",
   "ui.strategies.constant_weights": "Constant weights [ConstantConstraintWeights]",
   "ui.strategies.sensitivity_shape_weights": "Pointwise sensitivity weights [SensitivityShapeWeights]",
-  "ui.strategies.adaptive_shape_weights": "Violation-driven constraint weights [AdaptiveShapeWeights]",
+  "ui.strategies.adaptive_shape_weights": "Adaptive weights",
   "ui.strategies.tightening_increment.label": "Relaxation decrement",
   "ui.strategies.tightening_increment.help": "Decrease relative distance relaxation by this amount only while all violations are mild. Weights and thresholds stay fixed during each inner solve.",
   "ui.strategies.value.label": "Penalty coefficient",

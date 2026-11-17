@@ -54,7 +54,11 @@ def strategy_specs(key: str, group: str) -> dict[str, StrategySpec]:
     return {spec.name: spec for spec in STRATEGY_CATALOG[key] if group in spec.groups}
 
 
-def strategy_config(key: str, name: str | None = None) -> dict:
+def strategy_config(
+    key: str, name: str | None = None, *, group: str | None = None,
+) -> dict:
     """Create an independent parameter dictionary for the selected strategy."""
+    if name is None and key == "constraint_weight_strategy" and group == "geometry":
+        name = "AdaptiveShapeWeights"
     spec = next(spec for spec in STRATEGY_CATALOG[key] if name is None or spec.name == name)
     return {"type": spec.name, "params": field_defaults(spec.fields)}

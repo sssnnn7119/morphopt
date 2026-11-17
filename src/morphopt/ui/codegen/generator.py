@@ -1372,7 +1372,7 @@ def _emit_nested_updater(
     a(f"                    max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)},")
     a(f"                    max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)},")
     for key in STRATEGY_CATALOG:
-        item = cfg.get(key, strategy_config(key))
+        item = cfg.get(key, strategy_config(key, group=group))
         spec = strategy_specs(key, group)[item["type"]]
         params = item.get("params", {})
         if spec.fields:

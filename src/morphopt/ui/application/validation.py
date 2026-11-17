@@ -591,7 +591,7 @@ class DefinitionValidation:
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
                 for key in STRATEGY_CATALOG:
-                    item = cfg.get(key, strategy_config(key))
+                    item = cfg.get(key, strategy_config(key, group=group))
                     spec = strategy_specs(key, group).get(item.get("type"))
                     if spec is None:
                         self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
