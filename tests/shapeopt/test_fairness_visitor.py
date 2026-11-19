@@ -170,7 +170,7 @@ def test_missing_compensation_uses_original_bsp_on_restart(tmp_path, monkeypatch
     surface, = part.surfaceinterfaces
     if has_snapshot:
         compress_first_ring_spacing(surface)
-        geometry.save(str(tmp_path / "log" / "evaluated" / "1"), iteration=1)
+        geometry.save(str(tmp_path / "log"), iteration=0)
     original = Fairness()
     bind_part(original, part)
 

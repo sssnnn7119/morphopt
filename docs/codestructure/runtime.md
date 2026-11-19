@@ -125,8 +125,9 @@ Controller.opt_loop()
 | `log/history_record.csv` | `History.save()` 写入历史 |
 | `log/geometry/`、`log/materials/` | 参数接口保存设计状态 |
 | `log/geometryupdater/`、`log/materialupdater/` | 子优化器按目标接口保存状态 |
-| `log/deformation/` | 目标对象保存各工况变形图与表面文件 |
-| `log/femodel&results/` | 目标对象保存每轮匹配的 FE 模型和结果 |
+| `log/femodel&results/` | 目标对象保存每轮匹配的 FE 模型和工况结果，后处理据此重建变形网格 |
+
+首次有限元求解前，控制器在 `log/geometry/<部件名>/` 保存第 0 步的初始曲面。历史第 k 轮的设计曲面读取第 k−1 步几何检查点。若 CPGEO 在本轮求解前重建控制网格，设计曲面显示重建前的检查点，工况变形显示本轮实际求解的有限元网格。
 
 子目录由各对象的 `pathlog_required()` 聚合分配。`Controller.save()` 先保存参数、求解器、更新器及本轮有限元模型和结果，最后写入历史记录；历史中的完成轮次表示相应归档已保存。分析会话只消费已完成的归档；模型配对、独立求解和导出约定见[结果分析与导出](results.md)。
 

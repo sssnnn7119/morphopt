@@ -4,7 +4,6 @@ from pathlib import Path
 import sys
 import time
 
-import pyvista as pv
 import pytest
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -78,18 +77,14 @@ def test_surface_export_retries_after_worker_failure_and_cleans_requests(
     assert {path.name for path in destination.rglob("*.stp")} == {"surface_0.stp", "surface_1.stp"}
 
 
-def test_gif_export_uses_structured_frame_count(export_ui, design_archive, tmp_path, monkeypatch):
+def test_gif_export_uses_structured_frame_count(export_ui, deformation_archive, tmp_path, monkeypatch):
     app, messages, errors = export_ui
-    folder = design_archive.log_folder / "deformation"
-    folder.mkdir()
-    for iteration, radius in ((1, 1), (2, 2)):
-        pv.Sphere(radius=radius).triangulate().save(folder / f"task_case_iter_{iteration}.stl")
     output = tmp_path / "history.gif"
     monkeypatch.setattr(
         history_export, "choose_save_file", lambda *args: SaveFileSelection(output, "gif")
     )
     dialog = history_export.HistoryGifExportDialog(
-        str(design_archive.folder), 2, "deformation", ("case",), (),
+        str(deformation_archive.folder), 2, "deformation", ("case",), (),
         {"position": [[5, 5, 5], [0, 0, 0], [0, 0, 1]]}, (150, 150),
         {"background": "white", "text_color": "black", "deformation_color": "blue",
          "mesh_ambient": 0.2, "mesh_diffuse": 0.7, "mesh_specular": 0.2, "mesh_specular_power": 30},

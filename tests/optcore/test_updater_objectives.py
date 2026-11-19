@@ -966,7 +966,7 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         geometry["value"] = 100.0
 
     def save_geometry(*, foldpath, iteration):
-        assert Path(foldpath).parts[-2:] == ("evaluated", str(iteration))
+        assert Path(foldpath).name == "log"
         observations.append(("geometry", iteration, geometry["value"]))
 
     objective_provider = ObjectiveFunction()
@@ -988,7 +988,12 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
     loss, *_ = Controller.step(controller)
     assert loss.item() == 3.0
     assert objective_provider.history_data()["objective"] == 3.0
-    assert observations == [("geometry", 1, 3.0), ("objective", 3.0), ("update", 3.0), ("commit",)]
+    assert observations == [("geometry", 0, 3.0), ("objective", 3.0), ("update", 3.0), ("commit",)]
+
+    observations.clear()
+    controller.history.iteration = 1
+    Controller.step(controller)
+    assert observations == [("objective", 100.0), ("update", 100.0), ("commit",)]
 
 
 def test_pointwise_shape_policy_preserves_native_objective_and_resets_between_policies():

@@ -69,27 +69,58 @@ def test_partial_geometry_restore_invalidates_full_parameter_cache(tmp_path, mon
     assert params.loads == [1, 1, 1]
 
 
-def test_history_surface_uses_evaluated_geometry_when_scrubbing(design_archive):
+def test_history_surface_uses_preceding_checkpoint_when_scrubbing(design_archive):
     archive = design_archive
     part = archive.params.geometry.interfaces["body"]
 
     def controls(part):
         return part.surfaceinterfaces[1].control_points.detach().clone()
 
-    # Older runs: row 2 evaluated checkpoint 1, even after viewing another row.
     expected = controls(archive.load_geometry_part("body", 1))
     initial = controls(archive.load_design_component(part, 1))
     assert not initial.equal(expected)
     assert controls(archive.load_design_component(part, 2)).equal(expected)
     assert controls(archive.load_design_component(part, 1)).equal(initial)
 
-    # New runs: an explicit pre-update snapshot also captures any refinement.
-    part = archive.load_geometry_part("body", 2)
-    refined = controls(part)
-    part.save(str(archive.log_folder / "evaluated" / "2"), 2)
-    archive.load_geometry_part("body", 1)
-    assert controls(archive.load_design_component(part, 2)).equal(refined)
-    assert controls(archive.load_geometry_part("body", 1)).equal(expected)
+
+def test_first_history_row_restores_saved_initial_control_points(design_archive):
+    archive = design_archive
+    part = archive.params.geometry.interfaces["body"]
+    surface = part.surfaceinterfaces[1]
+    surface.update_variables(surface.control_points.new_full(surface.control_points.shape, 0.35))
+    initial = surface.control_points.clone()
+    part.save(str(archive.log_folder), iteration=0)
+
+    updated = archive.load_design_component(part, 2).surfaceinterfaces[1].control_points.clone()
+    assert not updated.equal(initial)
+    assert archive.load_design_component(part, 1).surfaceinterfaces[1].control_points.equal(initial)
+    assert archive.load_design_component(part, 2).surfaceinterfaces[1].control_points.equal(updated)
+
+
+def test_deformation_uses_the_selected_model_and_case(iteration_model, tmp_path):
+    import numpy as np
+    from morphopt.optcore.objfunc import ObjectiveFunction
+    from morphopt.postprocess import cpu_torch_defaults
+
+    _, controller, result = iteration_model
+    archive = OptimizationArchive(tmp_path / "new_run")
+    objective = ObjectiveFunction()
+    objective.fe = controller
+    objective.fe_results = {"loaded": result}
+    for folder in objective.pathlog_required():
+        (archive.log_folder / folder).mkdir(parents=True)
+    with cpu_torch_defaults():
+        objective.save(str(archive.log_folder), 3)
+        expected, = controller.assembly.get_meshes(GC=result.GC).values()
+    assert not (archive.log_folder / "deformation").exists()
+    assert archive.deformation_cases() == ("loaded",)
+    mesh = archive.deformation_mesh("loaded", 3)
+    np.testing.assert_allclose(
+        sorted(map(tuple, mesh.points)), sorted(map(tuple, expected.clean().points))
+    )
+    assert mesh.n_cells == expected.n_cells
+    assert archive.deformation_mesh("loaded", 2) is None
+    assert archive.deformation_mesh("missing", 3) is None
 
 
 def test_iteration_model_reads_named_cases_in_registered_order(tmp_path):
@@ -127,15 +158,9 @@ def test_boundary_export_restores_archived_step_and_stl_surfaces(design_archive,
     assert all(pv.read(path).n_cells > 0 for path in stl_files)
 
 
-def test_history_gif_exports_design_and_deformation_frames(design_archive, tmp_path):
-    deformation = design_archive.log_folder / "deformation"
-    deformation.mkdir()
-    for iteration, radius in ((1, 3.0), (2, 4.0)):
-        pv.Cylinder(center=(0, 0, 8), direction=(0, 0, 1), radius=radius, height=16).triangulate().save(
-            deformation / f"task_case_iter_{iteration}.stl"
-        )
+def test_history_gif_exports_design_and_deformation_frames(deformation_archive, tmp_path):
     common = {
-        "folder": str(design_archive.folder),
+        "folder": str(deformation_archive.folder),
         "first_iteration": 1,
         "last_iteration": 2,
         "fps": 5,
@@ -166,11 +191,8 @@ def test_history_gif_exports_design_and_deformation_frames(design_archive, tmp_p
 
 
 def test_failed_gif_write_closes_renderer_and_preserves_existing_file(
-    design_archive, tmp_path, monkeypatch
+    deformation_archive, tmp_path, monkeypatch
 ):
-    deformation = design_archive.log_folder / "deformation"
-    deformation.mkdir()
-    pv.Cube().triangulate().save(deformation / "task_case_iter_1.stl")
     output = tmp_path / "history.gif"
     output.write_bytes(b"existing animation")
     closed = []
@@ -192,7 +214,7 @@ def test_failed_gif_write_closes_renderer_and_preserves_existing_file(
     monkeypatch.setattr(imageio, "get_writer", writer)
     with pytest.raises(OSError, match="disk full"):
         export_history_gif(
-            folder=str(design_archive.folder), destination=str(output),
+            folder=str(deformation_archive.folder), destination=str(output),
             mode="deformation", target={"case": "case"},
             first_iteration=1, last_iteration=1, fps=5,
             camera={"position": [[3, 3, 3], [0, 0, 0], [0, 0, 1]]},

@@ -194,10 +194,7 @@ class Fairness(BaseConstraints, ProtocalSavable):
         geometry.initialize()
         geometry.reinitialize(iteration=0)
         part = geometry.interfaces[part_name]
-        # A saved first evaluation also preserves user-generated initial control points.
-        first = Path(controller.path_result) / "log" / "evaluated" / "1"
-        if first.is_dir():
-            part.load(str(first), iteration=1)
+        part.load(str(Path(controller.path_result) / "log"), iteration=0)
         for index, surface in enumerate(part.surfaceinterfaces):
             if isinstance(surface, BspSurface) and surface.is_updatable:
                 self._compensation[index] = self._bsp_compensation(

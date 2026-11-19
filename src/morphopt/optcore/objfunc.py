@@ -204,10 +204,9 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable, ProtocalHistory)
         """Return log subdirectories required by this component.
 
         Returns:
-            list[str]: Relative directories required to persist deformed meshes and finite-element
-                results.
+            list[str]: Relative directory containing the model and its named load-case results.
         """
-        return ["deformation", "femodel&results"]
+        return ["femodel&results"]
 
     def __getitem__(self, key):
         """Get the attribute with the given key.
@@ -280,71 +279,20 @@ class ObjectiveFunction(ProtocalInitializable, ProtocalSavable, ProtocalHistory)
         plotter.show()
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save the figures of the FEA results.
+        """Archive the solved model and each load case at the same iteration.
 
         Args:
-            foldpath (str): The path to save the figures.
-            iteration (int): The current iteration number.
+            foldpath (str): Root log directory of the optimization run.
+            iteration (int): Completed iteration shown in the history.
         """
+        directory = Path(foldpath) / self.pathlog_required()[0]
+        self.fe.save_model(str(directory / f"femodel_{iteration}"))
+        for case in self.fe_results:
+            self.fe_results[case].save(str(directory / f"result_{case}_iter_{iteration}.npz"))
 
-        color_list = deepcopy(CONSTANT.KERNEL.VISUALIZATION.INSTANCE_COLORS)
-
-        for case_name in self.fe_results:
-            plotter = pv.Plotter(
-                off_screen=True,
-                window_size=list(CONSTANT.KERNEL.VISUALIZATION.WINDOW_SIZE),
-            )
-
-            # Create faces list for pyvista
-            # Create pyvista mesh
-            meshes = self.get_mesh_case(case_name)
-
-            for meshidx, mesh in enumerate(meshes):
-                plotter.add_mesh(
-                    mesh, color=color_list[meshidx % len(color_list)], opacity=1.0
-                )
-
-            # Approximate view
-            plotter.set_background("white")
-            plotter.enable_parallel_projection()
-            azimuth = CONSTANT.KERNEL.VISUALIZATION.CAMERA_AZIMUTH_DEGREES
-            elevation = CONSTANT.KERNEL.VISUALIZATION.CAMERA_ELEVATION_DEGREES
-            plotter.view_vector(
-                (
-                    math.cos(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                    math.sin(math.radians(azimuth)) * math.cos(math.radians(elevation)),
-                    math.sin(math.radians(elevation)),
-                )
-            )
-
-            # Save the figure as a PNG file
-            plotter.screenshot(
-                f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.png"
-            )
-
-            # # Save the deformed mesh as an STL file
-            save_filepath = f"{foldpath}/{self.pathlog_required()[0]}/task_{case_name}_iter_{iteration}.stl"
-            meshall = meshes[0]
-            for meshidx in range(1, len(meshes)):
-                meshall = meshall.merge(meshes[meshidx])
-            meshall.save(save_filepath, binary=True)
-            plotter.close()
-
-        # The FEA model and its result must be a matched pair.  A model is
-        # rebuilt from the current design at every iteration, so retaining
-        # only iteration 0 makes later result files impossible to inspect
-        # against the model that produced them.
-        self.fe.save_model(
-            f"{foldpath}/{self.pathlog_required()[1]}/femodel_{iteration}"
-        )
-
-        mapping = Path(f"{foldpath}/{self.pathlog_required()[1]}/load_cases.json")
+        mapping = directory / "load_cases.json"
         temporary = mapping.with_suffix(".json.tmp")
         temporary.write_text(
             json.dumps(list(self.fe_results), ensure_ascii=False), encoding="utf-8"
         )
         temporary.replace(mapping)
-        for case_name in self.fe_results:
-            self.fe_results[case_name].save(
-                f"{foldpath}/{self.pathlog_required()[1]}/result_{case_name}_iter_{iteration}.npz"
-            )

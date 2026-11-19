@@ -102,3 +102,16 @@ def design_archive(tmp_path):
     history.append(objective=0.9)
     history.save(foldpath=str(archive.log_folder))
     return archive
+
+
+@pytest.fixture
+def deformation_archive(design_archive, iteration_model):
+    """Archive two FE solutions with visibly different deformations for GIF tests."""
+    model, _, result = iteration_model
+    design_archive.fea_folder.mkdir()
+    for step in (1, 2):
+        shutil.copyfile(model.model_path, design_archive.fea_model_path(step))
+        result.GC = result.GC * 20
+        result.save(str(design_archive.fea_result_path("case", step)))
+    (design_archive.fea_folder / "load_cases.json").write_text('["case"]', encoding="utf-8")
+    return design_archive
