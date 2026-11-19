@@ -44,6 +44,7 @@ from .theme import theme_manager
 from .widgets.labels import ElidedLabel
 from .widgets.observation_pages import (
     DeformationCasePage,
+    HistorySceneCache,
     LogsPage,
     MetricsPage,
     UpdatableStructurePage,
@@ -150,11 +151,12 @@ class ObserverPanel(QWidget):
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
         self._logs_page = LogsPage()
-        self._updatable_structure_page = UpdatableStructurePage()
+        scene_cache = HistorySceneCache()
+        self._updatable_structure_page = UpdatableStructurePage(cache=scene_cache)
         self._updatable_structure_page.viewChanged.connect(
             self._update_surface_export_action
         )
-        self._deformation_page = DeformationCasePage()
+        self._deformation_page = DeformationCasePage(cache=scene_cache)
         self._last_3d_page: str | None = None
         self.stack.addWidget(self._metrics_page)
         self.stack.addWidget(self._logs_page)
@@ -217,12 +219,16 @@ class ObserverPanel(QWidget):
             self._logs_page.refresh(self._results)
 
     def show_iteration(self, folder: str, iteration: int) -> None:
-        """Render one finished iteration (history + current option page).
+        """Render one finished iteration and invalidate snapshots after a rewind.
 
         Args:
             folder (str): Directory containing the optimization run or archive.
             iteration (int): Iteration index associated with the saved or current model state.
         """
+        if iteration < self.iteration:
+            self._updatable_structure_page.clear_view()
+            self._deformation_page.clear_view()
+            self._results.reset()
         try:
             history = self._results.load_iteration(folder, iteration)
         except Exception as exc:
@@ -788,6 +794,8 @@ class ObserverControls(QWidget):
         self.output_view.clear()
         self._run.stream_output(self.outputReceived.emit)
         if source.kind is RunSourceKind.CONTINUE:
+            if target is not None and target < self.panel.iteration:
+                self.panel.show_iteration(source.path, target)
             self.status.setText(
                 tr(
                     "ui.observe_panel.continuing_optimization_from_step_value",

@@ -7,8 +7,11 @@ application pages; :mod:`morphopt.ui.observe_panel` owns that coordination.
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 
+import pyvista as pv
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt, Signal
@@ -359,16 +362,96 @@ class MetricsPage(QWidget):
         self.canvas.draw()
 
 
+class HistorySceneCache:
+    """Share one mesh-data budget across the history viewports, keeping each camera independent."""
+
+    def __init__(self) -> None:
+        self._frames: OrderedDict[tuple, tuple[tuple, int]] = OrderedDict()
+        self._mesh_bytes = 0
+        self._selected: dict[PlotViewport, tuple] = {}
+
+    def clear(self, viewport: PlotViewport) -> None:
+        """Forget the selected scene and all snapshots belonging to this viewport."""
+        self._selected.pop(viewport, None)
+        for key in list(self._frames):
+            if key[0] is viewport:
+                _, size = self._frames.pop(key)
+                self._mesh_bytes -= size
+
+    def show(
+        self,
+        viewport: PlotViewport,
+        marker: tuple,
+        draw: Callable[[pv.Plotter], bool],
+        *,
+        copy_meshes: bool = False,
+    ) -> None:
+        """Draw on first visit and reattach the saved props on subsequent visits.
+
+        An unavailable result is retried on the next refresh. The viewport defers
+        construction until visible and coalesces rapid slider movements.
+        """
+        key = (viewport, marker)
+        if self._selected.get(viewport) == marker:
+            if key in self._frames:
+                self._frames.move_to_end(key)
+            return
+        self._selected[viewport] = marker
+
+        def build(plotter: pv.Plotter) -> None:
+            if key in self._frames:
+                actors, _ = self._frames[key]
+                for actor in actors:
+                    plotter.renderer.AddViewProp(actor)
+                self._frames.move_to_end(key)
+                plotter.show_axes()
+                return
+            try:
+                if not draw(plotter):
+                    self._selected.pop(viewport, None)
+                    return
+                actors = tuple(plotter.actors.values())
+                mappers = [
+                    actor.mapper
+                    for actor in actors
+                    if isinstance(actor, pv.Actor)
+                    and isinstance(actor.mapper, pv.DataSetMapper)
+                    and actor.mapper.dataset is not None
+                ]
+                for mapper in mappers:
+                    mapper.update()
+                size = sum(mapper.dataset.GetActualMemorySize() * 1024 for mapper in mappers)
+                budget = CONSTANT.UI.OBSERVER.PREVIEW_CACHE_BYTES
+                if not size or size > budget:
+                    return
+                while self._mesh_bytes + size > budget:
+                    _, (_, evicted_bytes) = self._frames.popitem(last=False)
+                    self._mesh_bytes -= evicted_bytes
+                if copy_meshes:
+                    # Params can reuse array storage when restoring the next iteration.
+                    for mapper in mappers:
+                        mapper.dataset = mapper.dataset.copy(deep=True)
+                        mapper.update()
+                self._frames[key] = actors, size
+                self._mesh_bytes += size
+            except Exception:
+                self._selected.pop(viewport, None)
+                raise
+
+        viewport.rebuild(build)
+
+
 class UpdatableStructurePage(QWidget):
     """Render one updateable component and one of its available views."""
 
     viewChanged = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, cache: HistorySceneCache | None = None):
         """Initialize UpdatableStructurePage and its configuration state.
 
         Args:
             parent: Parent Qt widget; None creates a top-level widget.
+            cache: Scene cache shared by the optimization history pages.
         """
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -388,7 +471,7 @@ class UpdatableStructurePage(QWidget):
         self._iteration = 0
         self._component = None
         self._views = ()
-        self._last_rendered: tuple[str, int, int | None, str | None] | None = None
+        self._scenes = cache if cache is not None else HistorySceneCache()
         self._theme_pending = False
 
     def build(self, results: ResultSession, iteration: int, component=None) -> None:
@@ -409,7 +492,6 @@ class UpdatableStructurePage(QWidget):
         self._render_selected()
 
     def _view_changed(self, _index: int) -> None:
-        self._last_rendered = None
         self._render_selected()
         self.viewChanged.emit()
 
@@ -476,14 +558,17 @@ class UpdatableStructurePage(QWidget):
             id(selected) if selected is not None else None,
             view.key if view is not None else None,
         )
-        if marker == self._last_rendered:
-            return
+        results = self._results
+        iteration = self._iteration
 
-        def build_scene(plotter) -> None:
+        def build_scene(plotter) -> bool:
+            component = (
+                results.load_design_component(selected, iteration) if selected is not None else None
+            )
             style = theme_manager.palette.viewer
             add_design_component(
                 plotter,
-                selected,
+                component,
                 geometry_color=(
                     style.geometry.instance_colors[0]
                     if style.geometry.instance_colors
@@ -497,26 +582,16 @@ class UpdatableStructurePage(QWidget):
                 view=view,
             )
 
-        try:
-            if selected is not None:
-                selected = self._results.load_design_component(selected, self._iteration)
-            self.viewport.rebuild(build_scene)
-            self._last_rendered = marker
-        except Exception as exc:  # pragma: no cover - best-effort rendering
-            print(
-                tr(
-                    "ui.messages.structure_preview_failed",
-                    iteration=self._iteration,
-                    error=exc,
-                )
-            )
+            return True
+
+        self._scenes.show(self.viewport, marker, build_scene, copy_meshes=True)
 
     def clear_view(self) -> None:
         """Empty the viewport and forget the previous render marker."""
         self._results = None
         self._component = None
         self._views = ()
-        self._last_rendered = None
+        self._scenes.clear(self.viewport)
         self.view_selector.blockSignals(True)
         try:
             self.view_selector.clear()
@@ -539,8 +614,8 @@ class UpdatableStructurePage(QWidget):
     def apply_theme(self) -> None:
         """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
+        self._scenes.clear(self.viewport)
         if self.isVisible():
-            self._last_rendered = None
             self._render_selected()
         else:
             self._theme_pending = True
@@ -554,25 +629,25 @@ class UpdatableStructurePage(QWidget):
         super().showEvent(event)
         if self._theme_pending:
             self._theme_pending = False
-            self._last_rendered = None
             self._render_selected()
 
 
 class DeformationCasePage(QWidget):
     """One persistent viewport shared by all load cases and result tasks."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, cache: HistorySceneCache | None = None):
         """Initialize DeformationCasePage and its configuration state.
 
         Args:
             parent: Parent Qt widget; None creates a top-level widget.
+            cache: Scene cache shared by the optimization history pages.
         """
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.viewport = PlotViewport(self)
         layout.addWidget(self.viewport)
-        self._last_rendered: tuple[str, int, str] | None = None
+        self._scenes = cache if cache is not None else HistorySceneCache()
 
     def build(self, results: ResultSession, iteration: int, case_name: str) -> None:
         """Build the DeformationCasePage state.
@@ -583,28 +658,25 @@ class DeformationCasePage(QWidget):
             case_name (str): Registered string load-case name.
         """
         marker = (results.folder, iteration, case_name)
-        if marker == self._last_rendered:
-            return
-        mesh = results.deformation_mesh(case_name, iteration)
 
-        def build_scene(plotter) -> None:
-            if mesh is not None:
-                add_deformation_mesh(
-                    plotter, mesh, theme_manager.palette.deformation_mesh_color
-                )
+        def build_scene(plotter) -> bool:
+            mesh = results.deformation_mesh(case_name, iteration)
+            if mesh is None:
+                return False
+            add_deformation_mesh(plotter, mesh, theme_manager.palette.deformation_mesh_color)
+            return True
 
-        self.viewport.rebuild(build_scene)
-        if mesh is not None:
-            self._last_rendered = marker
+        self._scenes.show(self.viewport, marker, build_scene)
 
     def clear_view(self) -> None:
         """Drop old task data without destroying the native rendering window."""
-        self._last_rendered = None
+        self._scenes.clear(self.viewport)
         self.viewport.rebuild(lambda _plotter: None)
 
     def apply_theme(self) -> None:
         """Apply the active theme to this view and its visualization resources."""
         self.viewport.apply_theme()
+        self._scenes.clear(self.viewport)
         actor = self.viewport.plotter.actors.get("deformation-mesh")
         if actor is not None:
             actor.prop.color = theme_manager.palette.deformation_mesh_color

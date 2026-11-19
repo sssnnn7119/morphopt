@@ -21,6 +21,7 @@ class _Constants:
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000
+            PREVIEW_CACHE_BYTES = 5 * 1024**3  # Shared mesh-data budget for history previews.
             LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 

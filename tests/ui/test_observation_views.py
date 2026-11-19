@@ -181,3 +181,92 @@ def test_control_net_is_rendered_as_overlay_actors():
         assert f"{prefix}" in names
     finally:
         plotter.close()
+
+
+def test_history_cache_revisits_frames_and_evicts_by_mesh_size(monkeypatch):
+    from morphopt.constants import CONSTANT
+    from morphopt.ui.widgets.observation_pages import HistorySceneCache
+
+    mesh = pv.Sphere()
+    points = mesh.points.copy()
+    class Viewport:
+        def __init__(self):
+            self.plotter = pv.Plotter(off_screen=True)
+
+        def rebuild(self, draw):
+            self.plotter.clear()
+            draw(self.plotter)
+
+    first, second = Viewport(), Viewport()
+    loads = []
+
+    def show(viewport, i):
+        def draw(scene):
+            loads.append(i)
+            mesh.points = points + i
+            mesh.point_data["value"] = mesh.points[:, 0].copy()
+            scene.add_mesh(mesh, name="shape", scalars="value")
+            return True
+
+        cache.show(viewport, (i,), draw, copy_meshes=True)
+        plotter = viewport.plotter
+        actor = plotter.actors["shape"]
+        assert np.allclose(actor.mapper.dataset.points, points + i)
+        assert np.allclose(actor.mapper.dataset["value"], points[:, 0] + i)
+        assert actor.mapper.scalar_visibility
+        assert any(a.IsA("vtkScalarBarActor") for a in plotter.actors.values())
+
+    try:
+        cache = HistorySceneCache()
+        show(first, 1)
+        monkeypatch.setattr(CONSTANT.UI.OBSERVER, "PREVIEW_CACHE_BYTES", 2 * cache._mesh_bytes)
+        show(second, 2)
+        show(first, 1)
+        show(first, 3)
+        show(first, 1)
+        show(second, 4)
+        show(second, 2)
+        assert loads == [1, 2, 3, 4, 2]
+        cache.clear(second)
+        show(second, 2)
+        assert loads[-2:] == [2, 2]
+    finally:
+        first.plotter.close()
+        second.plotter.close()
+
+
+def test_deformation_history_retries_missing_cases_and_reuses_available_meshes(monkeypatch):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QWidget
+    from morphopt.ui.widgets import observation_pages as pages
+
+    app = QApplication.instance() or QApplication([])
+    loaded = []
+
+    class Viewport(QWidget):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.plotter = pv.Plotter(off_screen=True)
+
+        def rebuild(self, draw):
+            self.plotter.clear()
+            draw(self.plotter)
+
+    def mesh(case, step):
+        loaded.append((case, step))
+        return pv.Cube(center=(step, 0, 0)) if len(loaded) > 1 else None
+
+    monkeypatch.setattr(pages, "PlotViewport", Viewport)
+    results = SimpleNamespace(folder="archive", deformation_mesh=mesh)
+    page = pages.DeformationCasePage()
+    try:
+        for step, case in [(1, "a"), (1, "a"), (1, "b"), (2, "a"), (1, "a")]:
+            page.build(results, step, case)
+        assert loaded == [("a", 1), ("a", 1), ("b", 1), ("a", 2)]
+        assert page.viewport.plotter.actors["deformation-mesh"].mapper.dataset.center[0] == 1
+        page.clear_view()
+        page.build(results, 1, "a")
+        assert len(loaded) == 5
+    finally:
+        page.viewport.plotter.close()
+        page.close()
