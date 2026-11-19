@@ -1060,7 +1060,7 @@ class _Constants:
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
                 CURVATURE_LIMIT = 1.5
-                METRIC_VARIATION_LIMIT = 0.3
+                METRIC_VARIATION_LIMIT = 1.0
                 NONORTHOGONALITY_LIMIT = 0.2
                 ACTIVATION_RATIO = 0.8
                 BSP_EXPONENT = 3
