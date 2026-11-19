@@ -22,6 +22,8 @@ class FEAParams(BaseParams):
         PenaltyDoF,
         Pressure,
         ReferencePoint,
+        SingleDoFJoint,
+        SphericalJoint,
         SpringBetweenRPs,
         SpringToGround,
     )

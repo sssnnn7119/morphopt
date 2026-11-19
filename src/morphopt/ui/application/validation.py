@@ -42,7 +42,7 @@ from ..model.problem import (
 )
 from ..model.registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG
 from ..model.strategies import strategy_config, strategy_specs
-from .fields import fields_for_node
+from .fields import fields_for_node, joint_parameter_issue
 from .part_sets import PartSetCatalog
 
 _UNKNOWN = object()
@@ -364,6 +364,8 @@ class DefinitionValidation:
         if node.kind == "part" and not node.instances and not node.custom_class:
             self.add(node, "required", field="instances")
         if isinstance(node, FEAComponentNode):
+            if node.type in {"SphericalJoint", "SingleDoFJoint"} and node.rp_name1 and node.rp_name1 == node.rp_name2:
+                self.add(node, "joint_endpoints")
             for spec in fields:
                 name = node.get_field(spec.key)
                 candidates = None
@@ -566,6 +568,14 @@ class DefinitionValidation:
                             field=f"{name}/{load_name}",
                             size=load.num_values,
                         )
+                    elif load.type in {"SphericalJoint", "SingleDoFJoint"} and isinstance(value, (list, tuple)):
+                        try:
+                            scalars = [self.literal(v) if isinstance(v, str) else v for v in value]
+                        except (ValueError, SyntaxError, ArithmeticError):
+                            continue  # Already reported by the field validator.
+                        issue = joint_parameter_issue(load.type, scalars)
+                        if issue:
+                            self.add(values, issue, name=load_name)
         solver = self.problem.solver
         if solver is not None:
             registered: set[str] = set()

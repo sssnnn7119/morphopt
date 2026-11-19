@@ -818,7 +818,7 @@ class LoadCaseSession:
         """
         index = next(i for i, field in enumerate(component.value_fields) if field.key == key)
         values = self.steps.step_values[name].get(component, [])
-        return values[index] if index < len(values) else 0.0
+        return values[index] if index < len(values) else component.value_fields[index].new_default()
 
     def set_parameter(
         self, name: str, component: FEAComponentNode, key: str, value: float | str,

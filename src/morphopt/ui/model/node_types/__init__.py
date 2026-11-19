@@ -36,6 +36,8 @@ from .loads import (
     PressureNode,
     ReferencePointNode,
     SpringBetweenRPsNode,
+    SphericalJointNode,
+    SingleDoFJointNode,
     SpringToGroundNode,
 )
 from .materials import HomogeneousMaterialNode, SIMPFieldMaterialNode
@@ -170,6 +172,8 @@ __all__ = (
     "SolverNode",
     "SphereOperationNode",
     "SpringBetweenRPsNode",
+    "SphericalJointNode",
+    "SingleDoFJointNode",
     "SpringToGroundNode",
     "StepImportOperationNode",
     "StepsNode",

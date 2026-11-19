@@ -19,6 +19,8 @@ from ..model.node_types.loads import (
     PenaltyDoFNode,
     PressureNode,
     ReferencePointNode,
+    SingleDoFJointNode,
+    SphericalJointNode,
     SpringBetweenRPsNode,
     SpringToGroundNode,
 )
@@ -52,6 +54,8 @@ class LoadPreviewVisitor:
             BodyForceNode: self.bodyforce,
             SpringToGroundNode: self.spring_to_ground,
             SpringBetweenRPsNode: self.spring_between,
+            SphericalJointNode: self.joint,
+            SingleDoFJointNode: self.joint,
             PenaltyDoFNode: self.penalty,
         }
         self._always_visible_handlers: dict[type[FEAComponentNode], LoadHandler] = {
@@ -102,18 +106,14 @@ class LoadPreviewVisitor:
         steps = problem.steps
         if steps is None or step_name not in steps.step_values:
             return scene
-        components = {
-            component.name: component for component in problem.fea_components()
-        }
-        for reference, raw_values in (steps.step_values[step_name] or {}).items():
-            component = (
-                reference
-                if isinstance(reference, FEAComponentNode)
-                else components.get(str(reference))
-            )
-            if component is None:
-                continue
-            self.visit(geometry, scene, component, raw_values or [])
+        amplitudes = steps.step_values[step_name] or {}
+        for component in problem.amplitude_components():
+            values = amplitudes.get(component, amplitudes.get(component.name))
+            if values is None:
+                values = component.default_values()
+                if not any(values):
+                    continue
+            self.visit(geometry, scene, component, values)
         return scene
 
     def visit(
@@ -475,6 +475,21 @@ class LoadPreviewVisitor:
                     ),
                 )
             )
+
+    @staticmethod
+    def joint(
+        geometry: PreviewGeometry,
+        scene: LoadScene,
+        component: SphericalJointNode | SingleDoFJointNode,
+        values: list[float],
+    ) -> None:
+        """Mark the connection point and identify both reference points."""
+        scene.items.append(MarkerLoad(
+            np.asarray(values[1:4]),
+            f"{tr(component.label_key)} · {component.name}\n"
+            f"{component.rp_name1} ↔ {component.rp_name2}\nk = {values[0]:g}",
+            theme_manager.palette.viewer.render.marker_color_penalty,
+        ))
 
     @staticmethod
     def penalty(

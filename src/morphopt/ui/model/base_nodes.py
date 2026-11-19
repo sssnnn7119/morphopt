@@ -757,6 +757,11 @@ class FEAComponentNode(TypedNode):
     load_class: ClassVar[str] = ""
     name_hint: ClassVar[str] = "load_"
 
+    @classmethod
+    def default_values(cls) -> list[float]:
+        """Return an independent parameter vector for a newly defined load case."""
+        return [field.new_default() for field in cls.value_fields]
+
     def __init__(
         self,
         kind: str | None = None,

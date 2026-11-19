@@ -1221,7 +1221,7 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
     for name, amplitudes in values.items():
         a(f"                self.add_step({name!r})")
         for component in problem.amplitude_components():
-            stored = amplitudes.get(component, [0.0] * component.num_values)
+            stored = amplitudes.get(component, component.default_values())
             a(
                 f"                self.set_step_params({name!r}, {component.name!r}, "
                 f"{_render_value(stored, problem)})"

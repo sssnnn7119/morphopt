@@ -1044,6 +1044,8 @@ class _Constants:
             DEFAULT_ELEMENT_ORDER = 1
 
         class FEA:
+            SPHERICAL_JOINT_VALUES = (1.0, 0.0, 0.0, 0.0)
+            SINGLE_DOF_JOINT_VALUES = (*SPHERICAL_JOINT_VALUES, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
             DEFAULT_TRANSLATION_DOFS = (0, 1, 2)
             CONTACT_PENALTY_THRESHOLD = 3.0
 

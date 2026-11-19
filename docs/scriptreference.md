@@ -26,7 +26,7 @@
     - [4.5 INP、Box 与自定义 Part](#section-inpbox-与自定义-part)
 - [5 FEAParams：载荷、边界、连接与工况](#section-feaparams-定义要点)
     - [5.1 接口定义与工况幅值](#section-接口定义与工况幅值)
-    - [5.2 十三类接口与参数顺序](#section-十三类接口与参数顺序)
+    - [5.2 载荷接口与参数顺序](#section-载荷接口与参数顺序)
     - [5.3 参考点、耦合与固定条件](#section-参考点耦合与固定条件)
     - [5.4 接触与弹簧](#section-接触与弹簧)
 - [6 MaterialsParams：本构与材料设计场](#section-materialsparams-定义要点)
@@ -534,9 +534,9 @@ class FEAParams(morphopt.FEAParams):
 
 `add_step(name)` 按注册顺序建立具名工况，随后通过 `set_step_params(step_name, load_name, values)` 赋值。工况名称须非空且唯一，载荷名称必须已注册，参数列表长度与接口 `num_values` 一致。工况表示由当前接口共同定义的载荷条件，不等同于任意时间积分历程。
 
-<a id="section-十三类接口与参数顺序"></a>
+<a id="section-载荷接口与参数顺序"></a>
 
-### 5.2 十三类接口与参数顺序
+### 5.2 载荷接口与参数顺序
 
 下表中的类型均由 `FEAParams` 类提供。构造参数确定拓扑或作用范围；最后一列为 `set_step_params()` 的数值列表。
 
@@ -548,6 +548,8 @@ class FEAParams(morphopt.FEAParams):
 | `BodyForce` | `element_name`、`instance_name` | `[fx, fy, fz]`，体力密度 |
 | `SpringToGround` | `rp_name` | `[k, L0, Px, Py, Pz]`，参考点与固定点之间的轴向弹簧 |
 | `SpringBetweenRPs` | `rp_name1`、`rp_name2` | `[k, L0]`，参考点间轴向弹簧 |
+| `SphericalJoint` | `rp_name1`、`rp_name2` | `[k, x, y, z]`，约束连接点的相对平移，允许相对转动 |
+| `SingleDoFJoint` | `rp_name1`、`rp_name2` | `[k, x, y, z, tx, ty, tz, rx, ry, rz]`，允许沿指定六维方向的相对运动 |
 | `PenaltyDoF` | `obj_name`、`s`、`obj_type` | `[k, target]`，所选自由度的罚约束 |
 | `BoundaryCondition` | `instance_name`、`set_nodes_name`、`index_dof` | 无工况数值，固定所选节点平移分量 |
 | `ReferencePointBoundaryCondition` | `rp_name`、`index_dof` | 当前接口无工况数值，固定所选 RP 分量 |
@@ -555,6 +557,19 @@ class FEAParams(morphopt.FEAParams):
 | `Couple` | `rp_name`、`instance_name`、`set_nodes_name` | 无工况数值，建立 RP 与节点集的运动耦合 |
 | `Contact` | `instance_name1/2`、`surface_name1/2`，以及罚参数 | 无工况数值，两个表面之间的接触 |
 | `SelfContact` | `instance_name`、`surface_name`，以及可选罚阈值 | 无工况数值，单一表面的自接触 |
+
+关节的两个参考点须分别注册。连接点 `[x, y, z]` 使用初始全局坐标，可以偏离两个参考点。罚刚度 `k` 必须为正。单自由度关节的后六项为自由方向，平移分量采用模型长度单位，转动分量采用弧度。该方向在初始全局坐标系中指定，随后随第一个参考点转动。
+
+例如，以下定义在全局点 `(0, 0, 10)` 建立绕 Z 轴的铰链。将最后六项改为 `[1, 0, 0, 0, 0, 0]` 即得到沿 X 轴的滑动副。
+
+```python
+# FEAParams.define_interface(), after registering RP_base and RP_tip
+self.add_interface(self.SingleDoFJoint("RP_base", "RP_tip"), name="hinge")
+
+# FEAParams.define_steps()
+self.add_step("bend")
+self.set_step_params("bend", "hinge", [1000, 0, 0, 10, 0, 0, 0, 0, 0, 1])
+```
 
 `BodyForce` 和 `SelfContact` 为脚本类名，UI 中对应的标签分别为 `Bodyforce` 和 `ContactSelf`。`ReferencePointBoundaryCondition` 当前不通过 `set_step_params()` 接收非零位移；不能将外部求解器中的任意位移边界定义直接套用到该接口。
 

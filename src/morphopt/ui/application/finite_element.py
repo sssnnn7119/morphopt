@@ -15,6 +15,7 @@ import torchfea
 
 from ...postprocess import IterationModel, cpu_torch_defaults, normalize_export_name
 from ..i18n import localized_message
+from .fields import joint_parameter_issue
 
 
 @dataclass(frozen=True)
@@ -189,6 +190,9 @@ class FiniteElementSession:
                         count=load._parameters.numel(),
                     )
                 )
+            issue = joint_parameter_issue(type(load).__name__, numbers)
+            if issue:
+                raise ValueError(localized_message(f"ui.validation.{issue}", name=name))
             parsed[name] = (
                 bool(enabled),
                 torch.as_tensor(

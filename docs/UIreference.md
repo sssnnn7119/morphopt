@@ -671,6 +671,8 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 | 按体积分布力 | Bodyforce | `[fx,fy,fz]` |
 | RP 与固定地面点之间的轴向弹簧 | SpringToGround | `[k,L0,Px,Py,Pz]` |
 | 两个 RP 之间的轴向弹簧 | SpringBetweenRPs | `[k,L0]` |
+| 连接点处限制相对平移、允许相对转动 | SphericalJoint | `[k,x,y,z]` |
+| 连接点处允许一个相对运动方向 | SingleDoFJoint | `[k,x,y,z,tx,ty,tz,rx,ry,rz]` |
 | 广义自由度的目标值罚约束 | PenaltyDoF | `[k,target]` |
 | 固定实体节点 / RP 自由度 | BoundaryCondition / BoundaryConditionRP | 无 |
 | 将一组节点连接到 RP | Couple | 无 |
@@ -682,6 +684,14 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 ![载荷接口添加菜单](images/ui/loads/add-interface-menu.png)
 
 *载荷接口添加菜单。*
+
+<a id="load_types-joints"></a>
+
+**球铰与单自由度关节**
+
+在“载荷与边界条件”中添加两个参考点，随后添加“球铰”或“单自由度关节”，在关节卡片中分别选择两个参考点。在“载荷工况”中设置正的罚刚度和连接点的初始全局坐标。每个新工况默认采用刚度 1 和坐标原点，实际刚度应按模型单位和连接刚度设置。
+
+球铰允许绕连接点自由转动。单自由度关节另有六个自由方向分量，初始方向随第一个参考点转动。默认仅 Z 转动分量为 1，表示绕 Z 轴的铰链。仅 X 平移分量为 1 时，表示沿 X 轴的滑动副。选择工况后，装配预览在连接点处标出关节名称和两个参考点。
 
 <a id="load_types-pressure"></a>
 
@@ -925,6 +935,8 @@ RP 仅定义参考位置及其运动自由度，不创建实体材料或自动�
 | Bodyforce | X/Y/Z 体力密度 | `[fx,fy,fz]` |
 | SpringToGround | 刚度、原长、固定端 X/Y/Z | `[k,L0,Px,Py,Pz]` |
 | SpringBetweenRPs | 刚度、原长 | `[k,L0]` |
+| SphericalJoint | 罚刚度、初始连接点坐标 | `[k,x,y,z]` |
+| SingleDoFJoint | 罚刚度、初始连接点坐标、自由方向 | `[k,x,y,z,tx,ty,tz,rx,ry,rz]` |
 | PenaltyDoF | 罚刚度、目标值 | `[k,target]` |
 
 ![弹簧刚度、原长和固定端坐标分别编辑](images/ui-reference/loads/spring-load-case.png)
@@ -2015,7 +2027,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | 部件 | 6 | [BoundaryPart](#part_types-boundarypart)、[INPPart](#part_types-inppart)、[BasePart](#part_types-basepart)（自定义）、[BoxPart](#part_types-boxpart)、[CADPart](#part_types-cadpart)、[OffsetBoundaryPart](#part_types-offsetboundarypart) |
 | 边界曲面 | 5 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[mesh_surface](#surface_types-mesh-surface)、[brep_surface](#surface_types-brep-surface) |
 | CAD 操作 | 14 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
-| 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
+| 载荷 / 边界 / 连接 / 接触 | 15 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[SphericalJoint / SingleDoFJoint](#load_types-joints)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
 | 更新目标 | 5 | [ShapeDerivative](#updater_objectives-shapederivative)、[QuadraticShapeDerivative](#updater_objectives-quadraticshapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[QuadraticSensitivity](#updater_objectives-quadraticsensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |
 | 曲面对称与关联 | 7 | [BspMirror](#surface_symmetry_constraints-bspmirror)、[BspRotation](#surface_symmetry_constraints-bsprotation)、[CPGEOMirror](#surface_symmetry_constraints-cpgeomirror)、[CPGEORotation](#surface_symmetry_constraints-cpgeorotation)、[BspRelation](#surface_symmetry_constraints-bsprelation)、[CPGEORelation](#surface_symmetry_constraints-cpgeorelation)、[Custom](#surface_symmetry_constraints-custom) |
