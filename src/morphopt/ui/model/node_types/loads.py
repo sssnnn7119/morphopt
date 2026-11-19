@@ -9,18 +9,13 @@ from ..base_nodes import FEAComponentNode
 from ..fields import FieldSpec
 
 
-def _value_fields(*names: str) -> tuple[FieldSpec, ...]:
-    """Declare load-case scalar parameters in the kernel's value order.
-
-    Args:
-        *names: Additional positional arguments accepted by the shared interface.
-
-    Returns:
-        tuple[FieldSpec, ...]: Declare load-case scalar parameters in the kernel's value order.
-    """
+def _value_fields(*names: str, defaults: tuple[float, ...] | None = None) -> tuple[FieldSpec, ...]:
+    """Declare named scalar case parameters in TorchFEA parameter order."""
+    if defaults is None:
+        defaults = (0.0,) * len(names)
     return tuple(
-        FieldSpec(name, f"ui.load_parameters.{name}", "float", 0.0)
-        for name in names
+        FieldSpec(name, f"ui.load_parameters.{name}", "float", default)
+        for name, default in zip(names, defaults, strict=True)
     )
 
 
@@ -162,16 +157,9 @@ class SpringToGroundNode(FEAComponentNode):
     )
 
 
-class SpringBetweenRPsNode(FEAComponentNode):
-    """UI definition of SpringBetweenRPs."""
+class _TwoReferencePointsNode(FEAComponentNode):
+    """Select the two registered reference points used by a connector."""
 
-    type_name: ClassVar[str] = "SpringBetweenRPs"
-    backend_class: ClassVar[str] = "SpringBetweenRPs"
-    label_key: ClassVar[str] = "ui.schema.catalog.component.springbetweenrps.label"
-    name_hint: ClassVar[str] = "spring_"
-    load_class = "Spring_RP_RP"
-    value_fields = _value_fields("stiffness", "rest_length")
-    num_values: ClassVar[int] = len(value_fields)
     Defaults = CONSTANT.UI.SCHEMA_FIELDS.FEA_COMPONENTS.SPRINGBETWEENRPS
     rp_name1: str
     rp_name2: str
@@ -193,6 +181,44 @@ class SpringBetweenRPsNode(FEAComponentNode):
             choices=Defaults.RP_NAME2.CHOICES,
         ),
     )
+
+
+class SpringBetweenRPsNode(_TwoReferencePointsNode):
+    """UI definition of SpringBetweenRPs."""
+
+    type_name: ClassVar[str] = "SpringBetweenRPs"
+    backend_class: ClassVar[str] = "SpringBetweenRPs"
+    label_key: ClassVar[str] = "ui.schema.catalog.component.springbetweenrps.label"
+    name_hint: ClassVar[str] = "spring_"
+    load_class = "Spring_RP_RP"
+    value_fields = _value_fields("stiffness", "rest_length")
+    num_values: ClassVar[int] = len(value_fields)
+
+
+class SphericalJointNode(_TwoReferencePointsNode):
+    """Spherical joint with an initial global connection point."""
+
+    type_name = backend_class = load_class = "SphericalJoint"
+    label_key = "ui.schema.catalog.component.sphericaljoint.label"
+    name_hint = "joint_"
+    value_fields = _value_fields(
+        "penalty_stiffness", "connection_x", "connection_y", "connection_z",
+        defaults=CONSTANT.KERNEL.FEA.SPHERICAL_JOINT_VALUES,
+    )
+    num_values = len(value_fields)
+
+
+class SingleDoFJointNode(_TwoReferencePointsNode):
+    """Joint with one free relative translation, rotation, or combined direction."""
+
+    type_name = backend_class = load_class = "SingleDoFJoint"
+    label_key = "ui.schema.catalog.component.singledofjoint.label"
+    name_hint = "joint_"
+    value_fields = SphericalJointNode.value_fields + _value_fields(
+        "free_tx", "free_ty", "free_tz", "free_rx", "free_ry", "free_rz",
+        defaults=CONSTANT.KERNEL.FEA.SINGLE_DOF_JOINT_VALUES[4:],
+    )
+    num_values = len(value_fields)
 
 
 class PenaltyDoFNode(FEAComponentNode):

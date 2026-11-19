@@ -498,7 +498,8 @@ class UpdatableStructurePage(QWidget):
             )
 
         try:
-            self._results.load_parameters(self._iteration)
+            if selected is not None:
+                selected = self._results.load_design_component(selected, self._iteration)
             self.viewport.rebuild(build_scene)
             self._last_rendered = marker
         except Exception as exc:  # pragma: no cover - best-effort rendering

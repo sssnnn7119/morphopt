@@ -251,3 +251,22 @@ def test_quickstart_channels_have_one_input_per_cavity(app):
     assert len(editor.table.cellWidget(0, 7).edits) == 4
     assert editor.layers()[0].pressure_channels == [1, 3, 2, 4]
     editor.close()
+
+
+def test_joint_case_defaults_and_script_roundtrip(tmp_path):
+    problem = ProblemLibrary.create("shapeopt")
+    tip = FEAComponentNode.create("ReferencePoint", name="tip", rp_location=[1, 0, 0])
+    hinge = FEAComponentNode.create("SingleDoFJoint", name="hinge", rp_name1="RP_tip", rp_name2="tip")
+    for node in (tip, hinge):
+        problem.loads.add_component(node)
+    ProblemSession(problem).synchronize()
+    case = LoadCaseNode(problem, next(iter(problem.steps.step_values)))
+    assert case.get_field("hinge.free_rz") == 1
+    case.set_field("hinge.connection_x", 3)
+    path = ProblemLibrary.save(problem, tmp_path / "hinge.morph")
+    restored = ProblemLibrary.load(path, issues=[])
+    source = ProblemSession(restored).source()
+    assert "self.SingleDoFJoint(rp_name1='RP_tip', rp_name2='tip')" in source
+    assert f"self.set_step_params({case.name!r}, 'hinge', [1.0, 3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])" in source
+    case.set_field("hinge.free_rz", 0)
+    assert tr("ui.validation.joint_direction", name="hinge") in DefinitionValidation(problem).collect()[id(case.values)]

@@ -69,6 +69,29 @@ def test_partial_geometry_restore_invalidates_full_parameter_cache(tmp_path, mon
     assert params.loads == [1, 1, 1]
 
 
+def test_history_surface_uses_evaluated_geometry_when_scrubbing(design_archive):
+    archive = design_archive
+    part = archive.params.geometry.interfaces["body"]
+
+    def controls(part):
+        return part.surfaceinterfaces[1].control_points.detach().clone()
+
+    # Older runs: row 2 evaluated checkpoint 1, even after viewing another row.
+    expected = controls(archive.load_geometry_part("body", 1))
+    initial = controls(archive.load_design_component(part, 1))
+    assert not initial.equal(expected)
+    assert controls(archive.load_design_component(part, 2)).equal(expected)
+    assert controls(archive.load_design_component(part, 1)).equal(initial)
+
+    # New runs: an explicit pre-update snapshot also captures any refinement.
+    part = archive.load_geometry_part("body", 2)
+    refined = controls(part)
+    part.save(str(archive.log_folder / "evaluated" / "2"), 2)
+    archive.load_geometry_part("body", 1)
+    assert controls(archive.load_design_component(part, 2)).equal(refined)
+    assert controls(archive.load_geometry_part("body", 1)).equal(expected)
+
+
 def test_iteration_model_reads_named_cases_in_registered_order(tmp_path):
     folder = tmp_path / "log" / "femodel&results"
     folder.mkdir(parents=True)

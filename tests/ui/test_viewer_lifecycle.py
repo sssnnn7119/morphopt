@@ -149,7 +149,7 @@ def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, m
         part = next(iter(geometry.interfaces.values()))
         return SimpleNamespace(folder=folder, params=object(),
                                fea_components=lambda: (("Part", part),),
-                               load_parameters=lambda iteration: None)
+                               load_design_component=lambda component, iteration: component)
 
     class Viewport(QWidget):
         def __init__(self, parent):

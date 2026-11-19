@@ -467,7 +467,7 @@ def test_shape_update_enforces_relations_and_inner_solver_is_differentiable(adap
     saved = part.get_parameters()
     updater = UpdaterBoundaryPart(
         max_step_iter=2, max_step_length=0.05,
-        constraint_weight_strategy=strategies.AdaptiveShapeWeights() if adaptive else None,
+        update_strategy=strategies.AdaptiveShapeUpdate() if adaptive else None,
     )
     updater.bind_target(part)
     updater.add_objective_function(updater.objectivefuncs.ShapeDerivative())

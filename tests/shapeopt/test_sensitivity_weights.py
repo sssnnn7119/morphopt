@@ -8,7 +8,7 @@ import torch
 from morphopt.shapeopt.objectivefuncs.basefuncs import BaseConstraints
 from morphopt.shapeopt.objectivefuncs.boundarys import MinRadius
 from morphopt.shapeopt.objectivefuncs.distancesurface import Distance
-from morphopt.shapeopt.strategies import SensitivityShapeWeights
+from morphopt.shapeopt.strategies import SensitivityShapeUpdate
 
 
 def point_problem(controls, points, penalties, areas=None):
@@ -41,7 +41,7 @@ def test_nearest_sensitivity_factors_preserve_raw_scales_and_area_weights(scale)
     updater = point_problem(controls, points, penalties, areas)
     gradient = (scale * controls.new_tensor([[3., 4., 0.], [0., 0., 0.], [-12., 0., 5.], [0., -8., 0.]])).flatten().requires_grad_()
     original = gradient.detach().clone()
-    coefficients = SensitivityShapeWeights()(updater, gradient)
+    coefficients = SensitivityShapeUpdate().constraint_weights(updater, gradient)
     assert coefficients == {"first": 1., "second": 1.}
     expected = [controls.new_tensor([5., 13., 5., 5.]) * scale,
                 controls.new_tensor([8., 8.]) * scale, controls.new_ones(1)]
@@ -59,7 +59,7 @@ def test_zero_sensitivities_keep_unit_point_weights():
     controls = torch.tensor([[0., 0., 0.], [2., 0., 0.]], dtype=torch.float64)
     penalty = BaseConstraints()
     updater = point_problem(controls, [controls], {"limit": penalty})
-    SensitivityShapeWeights()(updater, torch.zeros(6, dtype=controls.dtype))
+    SensitivityShapeUpdate().constraint_weights(updater, torch.zeros(6, dtype=controls.dtype))
     torch.testing.assert_close(penalty.sample_weights[0], torch.ones(2, dtype=controls.dtype))
 
 
@@ -69,7 +69,7 @@ def test_point_weights_enter_single_surface_integral_and_its_gradient():
     area = points.new_tensor([2., 3.])
     updater = point_problem(points, [points], {"radius": penalty}, [area])
     gradient = points.new_tensor([2., 0., 0., 5., 0., 0.])
-    SensitivityShapeWeights()(updater, gradient)
+    SensitivityShapeUpdate().constraint_weights(updater, gradient)
 
     def actual(shift):
         return penalty([points + torch.stack((shift, shift * 0, shift * 0))], [], []).sum()
@@ -93,7 +93,7 @@ def test_distance_keeps_the_original_product_of_two_point_weights():
     rdu = [controls.new_tensor([[[0., 0.], [1., 0.], [0., 1.]]]),
            controls.new_tensor([[[0., 0.], [1., 0.], [0., -1.]]])]
     unweighted = penalty(points, rdu)
-    SensitivityShapeWeights()(updater, controls.new_tensor([2., 0., 0., 3., 0., 0.]))
+    SensitivityShapeUpdate().constraint_weights(updater, controls.new_tensor([2., 0., 0., 3., 0., 0.]))
     torch.testing.assert_close(penalty(points, rdu), 6 * unweighted)
 
 
@@ -123,4 +123,4 @@ def test_invalid_sample_blocks_are_rejected(values):
 
 def test_pointwise_shape_strategy_rejects_other_optimization_domains():
     with pytest.raises(TypeError, match="geometry"):
-        SensitivityShapeWeights()(SimpleNamespace(update_kind="materials"), torch.ones(3))
+        SensitivityShapeUpdate().constraint_weights(SimpleNamespace(update_kind="materials"), torch.ones(3))

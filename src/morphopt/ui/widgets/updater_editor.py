@@ -45,7 +45,7 @@ from ..application.updaters import (
 )
 from ..i18n import tr
 from ..model.problem import ProblemDefinition, UpdaterNode
-from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
+from ..model.strategies import strategy_config, strategy_specs
 from ..presentation.labels import (
     node_title,
     node_type_title,
@@ -373,10 +373,9 @@ class UpdaterEditor(QWidget):
             step_length.editingFinished.connect(save_step_length)
             form.addRow(tr("ui.widgets.updater_editor.max_step_length"), step_length)
 
-            for key in STRATEGY_CATALOG:
-                strategy = UpdaterStrategyEditor(cfg, key, group, self._problem)
-                strategy.changed.connect(self._on_change)
-                form.addRow(tr(f"ui.strategies.{key}"), strategy)
+            strategy = UpdaterStrategyEditor(cfg, group, self._problem)
+            strategy.changed.connect(self._on_change)
+            form.addRow(tr("ui.strategies.update_strategy"), strategy)
 
             if group == "materials":
                 form.addRow(
@@ -541,29 +540,28 @@ class UpdaterStrategyEditor(QWidget):
     changed = Signal()
 
     def __init__(
-        self, config: dict, key: str, group: str, problem: ProblemDefinition,
+        self, config: dict, group: str, problem: ProblemDefinition,
         parent: QWidget | None = None,
     ) -> None:
         """Initialize UpdaterStrategyEditor and its configuration state.
 
         Args:
             config (dict): Configuration dictionary for the selected model or updater interface.
-            key (str): Lookup key identifying the requested field or registered item.
             group (str): Named group containing the related interfaces or task configuration.
             problem (ProblemDefinition): Editable problem definition shared by the UI application
                 services.
             parent (QWidget | None): Parent Qt widget; None creates a top-level widget.
         """
         super().__init__(parent)
-        self.config, self.key, self.problem = config, key, problem
-        self.specs = strategy_specs(key, group)
+        self.config, self.group, self.problem = config, group, problem
+        self.specs = strategy_specs(group)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         self.selector = QComboBox()
-        self.selector.setToolTip(tr(f"ui.strategies.{key}.help"))
+        self.selector.setToolTip(tr("ui.strategies.update_strategy.help"))
         for name, spec in self.specs.items():
             self.selector.addItem(tr(spec.label_key), name)
-        item = config.get(key, strategy_config(key, group=group))
+        item = config.get("update_strategy", strategy_config(group))
         self.selector.setCurrentIndex(self.selector.findData(item["type"]))
         self._layout.addWidget(self.selector)
         self.parameters: ParamForm | None = None
@@ -583,11 +581,11 @@ class UpdaterStrategyEditor(QWidget):
         self._layout.addWidget(self.parameters)
 
     def _commit(self, item: dict) -> None:
-        self.config[self.key] = item
+        self.config["update_strategy"] = item
         self.changed.emit()
 
     def _select(self, _index: int) -> None:
-        item = strategy_config(self.key, self.selector.currentData())
+        item = strategy_config(self.group, self.selector.currentData())
         self._show_parameters(item)
         self._commit(item)
 

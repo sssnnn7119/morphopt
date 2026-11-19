@@ -29,7 +29,7 @@ from ..model.registry import (
     UPDATER_CATALOG,
     surface_factory_for_type,
 )
-from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
+from ..model.strategies import strategy_config, strategy_specs
 from .assets import collect_python_assets
 from .workspace import workspace_integral_body
 
@@ -1221,7 +1221,7 @@ def _emit_steps(a: Callable[[str], object], problem: ProblemDefinition) -> None:
     for name, amplitudes in values.items():
         a(f"                self.add_step({name!r})")
         for component in problem.amplitude_components():
-            stored = amplitudes.get(component, [0.0] * component.num_values)
+            stored = amplitudes.get(component, component.default_values())
             a(
                 f"                self.set_step_params({name!r}, {component.name!r}, "
                 f"{_render_value(stored, problem)})"
@@ -1587,18 +1587,17 @@ def _emit_nested_updater(
     a("                super().__init__(")
     a(f"                    max_step_iter={_render_value(cfg.get('max_step_iter', 50), problem)},")
     a(f"                    max_step_length={_render_value(cfg.get('max_step_length', defaults.MAX_STEP_LENGTH), problem)},")
-    for key in STRATEGY_CATALOG:
-        item = cfg.get(key, strategy_config(key, group=group))
-        spec = strategy_specs(key, group)[item["type"]]
-        params = item.get("params", {})
-        if spec.fields:
-            a(f"                    {key}=self.strategies.{spec.name}(")
-            for field in spec.fields:
-                value = _render_value(params.get(field.key, field.new_default()), problem)
-                a(f"                        {field.key}={value},")
-            a("                    ),")
-        else:
-            a(f"                    {key}=self.strategies.{spec.name}(),")
+    item = cfg.get("update_strategy", strategy_config(group))
+    spec = strategy_specs(group)[item["type"]]
+    params = item.get("params", {})
+    if spec.fields:
+        a(f"                    update_strategy=self.strategies.{spec.name}(")
+        for field in spec.fields:
+            value = _render_value(params.get(field.key, field.new_default()), problem)
+            a(f"                        {field.key}={value},")
+        a("                    ),")
+    else:
+        a(f"                    update_strategy=self.strategies.{spec.name}(),")
     a("                )")
 
     if for_class_catalog:

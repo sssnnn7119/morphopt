@@ -379,6 +379,13 @@ class Controller:
         self.updater.reinitialize(iteration=self.history.iteration)
         self.objfun.reinitialize(iteration=self.history.iteration)
 
+        # The checkpoint saved after the update belongs to the next design.
+        # Capture the geometry after refinement, as used by this iteration's FEA.
+        self.params.geometry.save(
+            foldpath=os.path.join(self.path_result, "log", "evaluated", str(self.history.iteration + 1)),
+            iteration=self.history.iteration + 1,
+        )
+
         # Perform the optimization step
         logger.info(f"Creating FEA model for iteration {self.history.iteration}...")
         self.objfun.fe = self.params.create_feamodel(

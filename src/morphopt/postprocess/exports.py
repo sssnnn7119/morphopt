@@ -436,29 +436,16 @@ def export_boundary_surfaces(
         if not targets or len(set(relative_paths)) != len(relative_paths):
             raise ValueError("Select surfaces with distinct output filenames.")
 
-        for part_name in dict.fromkeys(item.part for item, _format, _path in targets):
-            part = params.geometry.interfaces[part_name]
-            part_archive = archive.log_folder / part.pathlog_required()[0] / part.name
-            for item, _format, _path in targets:
-                if item.part != part_name:
-                    continue
-                surface = part.surfaceinterfaces[item.index]
-                if not surface.num_variables:
-                    continue
-                stem = part_archive / f"Surface-{item.index}_iter-{iteration}"
-                if not stem.is_file() and not stem.with_suffix(".npz").is_file():
-                    raise FileNotFoundError(
-                        f"Missing archived parameters for {part_name}/surface_{item.index} "
-                        f"at iteration {iteration}."
-                    )
-            if any(surface.num_variables for surface in part.surfaceinterfaces):
-                archive.load_geometry_part(part_name, iteration)
+        parts = {
+            name: archive.load_design_component(params.geometry.interfaces[name], iteration)
+            for name in dict.fromkeys(item.part for item, _, _ in targets)
+        }
 
         output = Path(destination)
         with TemporaryDirectory(prefix="morphopt-surfaces-") as staging:
             stage = Path(staging)
             for item, file_format, relative in targets:
-                surface = params.geometry.interfaces[item.part].surfaceinterfaces[
+                surface = parts[item.part].surfaceinterfaces[
                     item.index
                 ]
                 surface.synchronize()

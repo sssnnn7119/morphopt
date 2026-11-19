@@ -1,4 +1,4 @@
-"""Fixed-power polynomial penalties with optional distance relaxation."""
+"""Fixed-power polynomial penalties with optional geometric relaxation."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -9,21 +9,19 @@ from ..constants import CONSTANT
 
 
 class PolynomialBarrier:
-    """Apply each constraint's exponent while allowing threshold relaxation."""
+    """Apply each constraint's exponent over a configurable transition width."""
 
     def __init__(self) -> None:
         """Initialize PolynomialBarrier and its configuration state."""
         self.tolerance: float | None = None
         self.maximum_violation = 0.0
+        self.excess_weight = 0.0
+        self.excess_start = 1.0
         self._monitoring = False
 
     @contextmanager
     def measure_violation(self) -> Iterator[None]:
-        """Measure limit excess in transition-width units without integration.
-
-        Returns:
-            Iterator[None]: Measure limit excess in transition-width units without integration.
-        """
+        """Record the peak violation in transition-width units during evaluation."""
         self.maximum_violation = 0.0
         self._monitoring = True
         try:
@@ -42,9 +40,11 @@ class PolynomialBarrier:
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return active indices and pointwise values before area integration.
 
-        A distance caller provides f = required - current + f_max and its required distance as
-        transition_scale. The schedule relaxes that requirement with a fixed relative activation
-        margin. The caller's exponent remains unchanged with or without a distance schedule.
+        Adaptive relaxation extends the width
+        by a fraction of the reference scale. A distance term uses its required
+        separation as that scale and shifts activation by the relaxation.
+        Upper-bound terms widen from their existing activation point.
+        Monitoring and integration use the same normalized coordinate.
 
         Args:
             f (torch.Tensor): Sampled constraint quantity evaluated by the barrier.
@@ -61,15 +61,22 @@ class PolynomialBarrier:
         threshold = torch.as_tensor(f_max, dtype=f.dtype, device=f.device)
         if transition_scale is not None and self.tolerance is not None:
             scale = torch.as_tensor(transition_scale, dtype=f.dtype, device=f.device)
-            width = CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS.DISTANCE_TRANSITION_RATIO * scale
-            z = 1 + (f - threshold - self.tolerance * scale) / width
+            margin = CONSTANT.KERNEL.ADAPTIVE_SHAPE_UPDATE.DISTANCE_TRANSITION_RATIO
+            z = ((f - threshold) / scale + (margin - self.tolerance)) / (margin + self.tolerance)
         else:
-            z = (f - threshold * ratio) / (threshold * (1 - ratio))
+            margin = 1 - ratio
+            z = (f - threshold * ratio) / (threshold * (margin + (self.tolerance or 0.0)))
         if self._monitoring and z.numel():
             if not torch.isfinite(z).all():
                 raise ValueError("Constraint violation must be finite.")
             self.maximum_violation = max(
-                self.maximum_violation, (z - 1).clamp_min(0).max().item(),
+                self.maximum_violation, z.max().item(),
             )
         index = torch.where(z > 0)[0]
-        return index, z[index].pow(p)
+        active = z[index]
+        penalty = active.pow(p)
+        if self.excess_weight:
+            # Each entry is one sample (or one distance pair). The added
+            # term uses the same exponent and is confined to unsafe samples.
+            penalty = penalty + self.excess_weight * (active - self.excess_start).clamp_min(0).pow(p)
+        return index, penalty

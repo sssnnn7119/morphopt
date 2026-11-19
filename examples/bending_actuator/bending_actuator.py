@@ -146,8 +146,8 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     max_step_iter=50,
                     max_step_length=0.5,
-                    step_length_strategy=self.strategies.FixedStepLength(),
-                    constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
+                    update_strategy=self.strategies.AdaptiveShapeUpdate(
+                        max_solves=3,
                         initial_tolerance=0.05,
                         final_tolerance=0.0,
                         tightening_increment=0.0002,

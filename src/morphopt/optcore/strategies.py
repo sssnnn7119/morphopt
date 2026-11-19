@@ -1,8 +1,9 @@
-"""Selectable policies for outer-iteration step limits and penalty weights."""
+"""Update strategies shared by geometry and material subproblems."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+import math
+from abc import abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -14,19 +15,17 @@ from .protocal import ProtocalHistory, ProtocalSavable
 if TYPE_CHECKING:
     from .updaters import BaseUpdater
 
-__all__ = [
-    "ConstantConstraintWeights",
-    "ConstraintWeightStrategy",
-    "FixedStepLength",
-    "StepLengthStrategy",
-]
+__all__ = ["UpdateStrategy", "FixedUpdate"]
 
 
-class StepLengthStrategy(ABC):
-    """Choose limits before building a subproblem; never change FEA gradients."""
+class UpdateStrategy(ProtocalSavable, ProtocalHistory):
+    """Choose step limits, initial penalty weights, and the candidate to commit.
 
-    @abstractmethod
-    def __call__(
+    Each updater owns one policy instance across outer iterations. Its save/load and
+    history hooks cover state shared by all three decisions.
+    """
+
+    def step_lengths(
         self,
         updater: BaseUpdater,
         parameters: Sequence[torch.Tensor],
@@ -49,51 +48,12 @@ class StepLengthStrategy(ABC):
                 design-variable order.
 
         Returns:
-            list[torch.Tensor]: One limit per row of each parameter block.
-        """
-
-
-class FixedStepLength(StepLengthStrategy):
-    """Use the configured maximum for every point and every outer iteration."""
-
-    def __call__(
-        self,
-        updater: BaseUpdater,
-        parameters: Sequence[torch.Tensor],
-        maximum: float,
-        gradient: torch.Tensor | None,
-    ) -> list[torch.Tensor]:
-        """Evaluate FixedStepLength for the supplied inputs.
-
-        Args:
-            updater (BaseUpdater): Updater bound to the target whose policy or state is being
-                evaluated.
-            parameters (Sequence[torch.Tensor]): Parameter values in the order required by the
-                selected interface.
-            maximum (float): Configured upper limit on each design-variable movement.
-            gradient (torch.Tensor | None): Unscaled physical objective gradient in the target's
-                design-variable order.
-
-        Returns:
-            list[torch.Tensor]: One vector per parameter block, with each row assigned maximum on
-                that block's dtype and device.
+            list[torch.Tensor]: A finite, nonnegative limit per row of each parameter block.
         """
         return [value.new_full((len(value),), maximum) for value in parameters]
 
-
-class ConstraintWeightStrategy(ProtocalSavable, ProtocalHistory):
-    """Choose named penalty coefficients before the inner optimization begins.
-
-    The policy may retain state through the save/load protocol and expose dynamic history
-    information. It must not rescale the physical FEA gradient or change coefficients while the
-    inner objective is being differentiated.
-    """
-
-    # Stateful strategies implement save/load; stateless ones inherit no-op hooks.
-    # The core invokes the interface without interpreting the design object.
-
     @abstractmethod
-    def __call__(
+    def constraint_weights(
         self, updater: BaseUpdater, gradient: torch.Tensor,
     ) -> dict[str, float]:
         """Return coefficients keyed by ``updater.constraints_funcs``.
@@ -109,11 +69,26 @@ class ConstraintWeightStrategy(ProtocalSavable, ProtocalHistory):
                 design-variable order.
 
         Returns:
-            dict[str, float]: Coefficients keyed by ``updater.constraints_funcs``.
+            dict[str, float]: One finite, nonnegative coefficient per registered constraint.
         """
 
+    def solve_update(
+        self, updater: BaseUpdater, origin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Select an update from solves of the current outer subproblem.
 
-class ConstantConstraintWeights(ConstraintWeightStrategy):
+        Args:
+            updater (BaseUpdater): Owner of the objective and current constraint weights.
+            origin (torch.Tensor): Starting design coordinates of the outer update.
+
+        Returns:
+            torch.Tensor: Candidate to commit. The default accepts the first solution.
+                A policy can adjust weights between calls and select a different candidate.
+        """
+        return updater.solve_subproblem(origin)
+
+
+class FixedUpdate(UpdateStrategy):
     """Assign the same explicit coefficient to every registered penalty."""
 
     def __init__(
@@ -124,12 +99,14 @@ class ConstantConstraintWeights(ConstraintWeightStrategy):
         Args:
             value (float): Nonnegative penalty multiplier applied unchanged at each outer update.
         """
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("Fixed penalty weight must be finite and nonnegative.")
         self.value = value
 
-    def __call__(
+    def constraint_weights(
         self, updater: BaseUpdater, gradient: torch.Tensor,
     ) -> dict[str, float]:
-        """Evaluate ConstantConstraintWeights for the supplied inputs.
+        """Evaluate FixedUpdate for the supplied inputs.
 
         Args:
             updater (BaseUpdater): Updater bound to the target whose policy or state is being

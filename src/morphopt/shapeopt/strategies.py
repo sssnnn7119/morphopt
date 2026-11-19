@@ -1,11 +1,13 @@
-"""Shape-specific policies chosen outside the inner optimization loop."""
+"""Update policies for geometric subproblems."""
 
 from __future__ import annotations
 
 import json
 import logging
 import math
-from contextlib import ExitStack
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -13,41 +15,61 @@ import torch
 
 from ..constants import CONSTANT
 from ..optcore.strategies import (
-    ConstantConstraintWeights,
-    ConstraintWeightStrategy,
-    FixedStepLength,
-    StepLengthStrategy,
+    FixedUpdate,
+    UpdateStrategy,
 )
 
 if TYPE_CHECKING:
     from ..optcore.updaters import BaseUpdater
+    from .barriers import PolynomialBarrier
     from .boundary_part import BoundaryPart
 
 __all__ = [
-    "AdaptiveShapeWeights",
-    "ConstantConstraintWeights",
-    "ConstraintWeightStrategy",
-    "FixedStepLength",
-    "SensitivityShapeWeights",
-    "StepLengthStrategy",
+    "AdaptiveShapeUpdate",
+    "FixedUpdate",
+    "SensitivityShapeUpdate",
+    "UpdateStrategy",
 ]
 
 logger = logging.getLogger(__name__)
-_SETTINGS = CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS
+_SETTINGS = CONSTANT.KERNEL.ADAPTIVE_SHAPE_UPDATE
 
 
-class AdaptiveShapeWeights(ConstraintWeightStrategy):
-    """Calibrate each term once, then adjust only from geometric violation.
+@dataclass(frozen=True)
+class _ShapeTrial:
+    """Unweighted physical proxy and sampled penalties at a shape perturbation."""
 
-    Violation is the maximum sampled limit excess in transition-width units.
-    Each target coefficient is measured from the initial calibration, so a
-    persistent violation cannot compound the coefficient indefinitely. A dead
-    band avoids reacting to small excess; surplus weight decays gradually.
-    Distance requirements tighten only while all monitored terms remain mild.
+    objective: float
+    penalties: dict[str, float]
+    violations: dict[str, float]
 
-    Above the dead band, the target is w0 * (v / v_target)**2.
-    Below the band, the target is zero, allowing an excessive calibration to
-    decay. Each call closes 10% of the gap, subject to the increase cap.
+    def merit(self, weights: dict[str, float]) -> float:
+        """Use the inner solver's physical proxy and area-integrated penalties."""
+        return self.objective + sum(
+            weights[name] * value for name, value in self.penalties.items()
+        )
+
+
+@contextmanager
+def _local_surcharges(
+    barriers: dict[str, PolynomialBarrier], weights: dict[str, float]
+) -> Iterator[None]:
+    """Apply local surcharges for one evaluation, then return to the base penalties."""
+    try:
+        for name, weight in weights.items():
+            barriers[name].excess_weight = weight
+        yield
+    finally:
+        for name in weights:
+            barriers[name].excess_weight = 0.0
+
+
+class AdaptiveShapeUpdate(UpdateStrategy):
+    """Scale each geometric term with the physical gradient and penalize excess locally.
+
+    Solve consecutive stages from the preceding endpoint. Peak violations
+    determine which local penalties to strengthen for the next solve.
+    The last subproblem endpoint is the design committed to the outer loop.
     """
 
     def __init__(
@@ -57,258 +79,255 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
         tightening_increment: float = _SETTINGS.TIGHTENING_INCREMENT,
         violation_tolerance: float = _SETTINGS.VIOLATION_TOLERANCE,
         weight_change_limit: float = _SETTINGS.WEIGHT_CHANGE_LIMIT,
+        max_solves: int = _SETTINGS.MAX_SOLVES,
     ) -> None:
-        """Initialize AdaptiveShapeWeights and its configuration state.
+        """Initialize AdaptiveShapeUpdate and its configuration state.
 
         Args:
             initial_tolerance (float): Initial relative geometric relaxation before continuation
                 begins.
             final_tolerance (float): Smallest permitted relative relaxation after continuation.
             tightening_increment (float): Relaxation decrement applied while monitored violations
-                remain mild.
+                are within the continuation band.
             violation_tolerance (float): Reference violation magnitude expressed in barrier
                 transition-width units.
-            weight_change_limit (float): Upper bound on a single coefficient increase relative to
-                its previous value.
+            weight_change_limit (float): Cap on the safety factor applied to the
+                predicted gain when pricing the next local surcharge.
+            max_solves (int): Maximum solves per outer update, including any penalty retries.
         """
-        parameters = (
-            initial_tolerance,
-            final_tolerance,
-            tightening_increment,
-            violation_tolerance,
-            weight_change_limit,
-        )
-        if not all(math.isfinite(value) for value in parameters):
-            raise ValueError("Adaptive weight parameters must be finite.")
-        if not 0 <= final_tolerance <= initial_tolerance < 1:
-            raise ValueError("Require 0 <= final_tolerance <= initial_tolerance < 1.")
-        if tightening_increment <= 0 or violation_tolerance <= 0:
+        if not 0 <= final_tolerance <= initial_tolerance < 1 / 3:
             raise ValueError(
-                "Tightening increment and violation tolerance must be positive."
+                "Require 0 <= final_tolerance <= initial_tolerance < 1/3 for positive wall clearance."
             )
-        if weight_change_limit <= 1:
-            raise ValueError("weight_change_limit must exceed one.")
+        if (
+            not 0 < tightening_increment < math.inf
+            or not 0 < violation_tolerance < math.inf
+        ):
+            raise ValueError(
+                "Tightening increment and violation tolerance must be finite and positive."
+            )
+        if not 1 < weight_change_limit < math.inf:
+            raise ValueError("weight_change_limit must be finite and exceed one.")
         self.initial_tolerance = initial_tolerance
         self.final_tolerance = final_tolerance
         self.tightening_increment = tightening_increment
         self.violation_tolerance = violation_tolerance
         self.weight_change_limit = weight_change_limit
+        if type(max_solves) is not int or max_solves < 1:
+            raise ValueError("max_solves must be a positive integer.")
+        self.max_solves = max_solves
         self.tolerance = initial_tolerance
         self._started = False
+        self._gradient_norm = 0.0
         self.state: dict[str, dict[str, float]] = {}
-        self._violations: dict[str, float] = {}
+        self._origin_trial: _ShapeTrial | None = None
 
-    def __call__(
+    @property
+    def _excess_threshold(self) -> float:
+        """Peak that triggers additional local resistance, in transition-width units."""
+        return 1.0 + self.tolerance / (
+            _SETTINGS.DISTANCE_TRANSITION_RATIO + self.tolerance
+        )
+
+    def constraint_weights(
         self, updater: BaseUpdater, gradient: torch.Tensor
     ) -> dict[str, float]:
-        """Freeze violation-driven coefficients for the next inner solve.
+        """Calibrate newly active terms and scale their weights with the native gradient norm.
 
         Args:
-            updater (BaseUpdater): Updater bound to the target whose policy or state is being
-                evaluated.
-            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
-                design-variable order.
+            updater: Geometry updater with initialized objective and penalty terms.
+            gradient: Native physical gradient in design-variable order.
 
         Returns:
-            dict[str, float]: Scalar coefficient for each registered geometric penalty, frozen
-                during the inner solve.
+            Base penalty weights for this outer update, keyed by registered constraint name.
         """
         if updater.update_kind != "geometry":
-            raise TypeError("AdaptiveShapeWeights requires a geometry updater.")
-        names = list(updater.constraints_funcs)
-        self._violations = {}
-        self.state = {
-            name: value for name, value in self.state.items() if name in names
-        }
-        if not names:
+            raise TypeError("AdaptiveShapeUpdate requires a geometry updater.")
+        terms = updater.constraints_funcs
+        self.state = {name: self.state[name] for name in terms if name in self.state}
+        if not terms:
+            self._origin_trial = None
             return {}
+
         origin = torch.zeros_like(gradient)
-        for constraint in updater.constraints_funcs.values():
-            constraint.barrier_function.tolerance = self.tolerance
-        penalties, violations = self._measure(updater, origin)
-        upper = self.violation_tolerance * _SETTINGS.VIOLATION_BAND_RATIO
-        previous_tolerance = self.tolerance
-        if self._started and max(violations.values()) <= upper:
+        for term in terms.values():
+            term.barrier_function.tolerance = self.tolerance
+            term.barrier_function.excess_weight = 0.0
+        trial = self._measure(updater, origin)
+        upper = max(
+            self._excess_threshold,
+            1.0 + self.violation_tolerance * _SETTINGS.VIOLATION_BAND_RATIO,
+        )
+        can_tighten = self._started and self.tolerance > self.final_tolerance
+        if can_tighten and max(trial.violations.values()) <= upper:
             self.tolerance = max(
                 self.final_tolerance, self.tolerance - self.tightening_increment
             )
+            for term in terms.values():
+                term.barrier_function.tolerance = self.tolerance
+            trial = self._measure(updater, origin)
         self._started = True
-        if self.tolerance != previous_tolerance:
-            for constraint in updater.constraints_funcs.values():
-                constraint.barrier_function.tolerance = self.tolerance
-            penalties, violations = self._measure(updater, origin)
-        # Measurements exist before calibration succeeds. Keep pending terms
-        # visible in history without marking their weights as calibrated.
-        self._violations = violations
-        logger.info(
-            "Shape distance continuation: tolerance=%.6g max_violation=%.6g action=%s",
-            self.tolerance,
-            max(violations.values()),
-            "tightened" if self.tolerance < previous_tolerance else "held",
+        self._origin_trial = trial
+
+        norm = gradient.detach().norm().item()
+        if not math.isfinite(norm):
+            raise ValueError("Physical gradient norm must be finite.")
+        if norm > 0:
+            # A stationary objective retains its last scale so penalties can still repair the shape.
+            self._gradient_norm = norm
+            pending = {
+                name: i for i, name in enumerate(terms) if name not in self.state
+            }
+            if pending:
+                for name, weight in self._calibrate(
+                    updater, origin, pending, gradient
+                ).items():
+                    self.state[name] = {
+                        "initial_weight": weight,
+                        "reference_gradient_norm": norm,
+                    }
+
+        weights = dict.fromkeys(
+            terms, CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT
         )
-
-        pending = {
-            name: index + 1
-            for index, name in enumerate(names)
-            if name not in self.state
-        }
-        learned = {}
-        if pending:
-            if not updater.obj_funcs:
-                raise ValueError(
-                    "Initial weight calibration requires a physical objective."
-                )
-            physical = torch.func.grad(lambda x: self._values(updater, x)[0])(origin)
-            if not torch.isfinite(physical).all():
-                raise ValueError("Physical gradient must be finite.")
-            learned = self._calibrate(updater, gradient, pending, physical)
-
-        weights = {}
-        lower = self.violation_tolerance / _SETTINGS.VIOLATION_BAND_RATIO
-        for name in names:
-            previous = self.state.get(name)
-            violation = violations[name]
-            weight = (
-                previous["weight"]
-                if previous
-                else learned.get(
-                    name,
-                    CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT,
-                )
+        for name, record in self.state.items():
+            record["violation"] = trial.violations[name]
+            weights[name] = record["initial_weight"] * (
+                self._gradient_norm / record["reference_gradient_norm"]
             )
-            target = weight
-            mode = (
-                "held" if previous else ("calibrated" if name in learned else "pending")
-            )
-            if previous:
-                # Use an absolute target, not another multiplier of the last
-                # weight. Repeated peaks of the same size must not ratchet it up.
-                target = (
-                    previous["initial_weight"]
-                    * (violation / self.violation_tolerance)
-                    ** _SETTINGS.VIOLATION_WEIGHT_POWER
-                )
-                if violation < lower:
-                    # The calibration is a scale, not a lower weight bound.
-                    target = 0.0
-                if violation > upper or violation < lower:
-                    weight = min(
-                        weight + _SETTINGS.WEIGHT_UPDATE_FRACTION * (target - weight),
-                        weight * self.weight_change_limit,
-                    )
-                    if weight != previous["weight"]:
-                        mode = (
-                            "strengthened" if weight > previous["weight"] else "relaxed"
-                        )
-            if previous or name in learned:
-                self.state[name] = {
-                    "weight": weight,
-                    "initial_weight": previous["initial_weight"]
-                    if previous
-                    else weight,
-                    "violation": violation,
-                }
-            weights[name] = weight
-            logger.info(
-                "Adaptive shape weight %s: tolerance=%.6g violation=%.6g "
-                "weight=%.6g target_weight=%.6g penalty=%.6g weighted_penalty=%.6g mode=%s",
-                name,
-                self.tolerance,
-                violation,
-                weight,
-                target,
-                penalties[name],
-                weight * penalties[name],
-                mode,
-            )
+        logger.info(
+            "Shape update: tolerance=%.6g base_weights=%s peak_z=%s base_penalties=%s",
+            self.tolerance,
+            weights,
+            trial.violations,
+            trial.penalties,
+        )
         return weights
+
+    def solve_update(
+        self,
+        updater: BaseUpdater,
+        origin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Commit the final inner solution, including any remaining soft violations.
+
+        Each solve has its own full step budget. With constraints, run the first
+        two solves if allowed, then continue only while a local limit is exceeded.
+
+        Args:
+            updater: Geometry updater supplying the subproblem solver and base weights.
+            origin: Starting perturbation in the updater's design coordinates.
+
+        Returns:
+            The perturbation at the end of the last solve.
+        """
+        baseline = self._origin_trial
+        if updater.max_step_iter <= 0:
+            return origin
+        if baseline is None:
+            return updater.solve_subproblem(origin)
+
+        limits = {
+            name: max(self._excess_threshold, value)
+            for name, value in baseline.violations.items()
+        }
+        barriers = {
+            name: term.barrier_function
+            for name, term in updater.constraints_funcs.items()
+        }
+        # Only these terms receive an extra local penalty during the next solve.
+        surcharges: dict[str, float] = {}
+        candidate = origin
+        for stage in range(1, self.max_solves + 1):
+            with _local_surcharges(barriers, surcharges):
+                candidate = updater.solve_subproblem(candidate)
+
+            trial = self._measure(updater, candidate)
+            logger.info(
+                "Shape solve %d/%d: physical_change=%.6g peak_z=%s",
+                stage,
+                self.max_solves,
+                trial.objective - baseline.objective,
+                trial.violations,
+            )
+            overloaded = [
+                name for name, peak in trial.violations.items() if peak > limits[name]
+            ]
+            if stage == self.max_solves or (stage >= 2 and not overloaded):
+                break
+            if overloaded:
+                weights = updater.constraint_weights
+                gain = max(0.0, baseline.merit(weights) - trial.merit(weights))
+                # A unit surcharge gives the integrated cost of the overloaded samples alone.
+                for name in overloaded:
+                    barriers[name].excess_start = max(
+                        0.0, limits[name] - self.violation_tolerance
+                    )
+                with (
+                    _local_surcharges(barriers, dict.fromkeys(overloaded, 1.0)),
+                    torch.no_grad(),
+                ):
+                    _, penalties = updater.closure(candidate, return_list=True)
+                unit_penalties = dict(zip(barriers, penalties, strict=True))
+                factor = min(self.weight_change_limit, _SETTINGS.RETRY_WEIGHT_INCREASE)
+                for name in overloaded:
+                    cost = weights[name] * (
+                        unit_penalties[name].item() - trial.penalties[name]
+                    )
+                    weight = max(1.0, factor * surcharges.get(name, 0.0))
+                    surcharges[name] = (
+                        max(weight, factor * gain / cost) if cost > 0 else weight
+                    )
+                logger.info("Shape retry: local excess coefficients=%s", surcharges)
+        return candidate
 
     def _measure(
         self,
         updater: BaseUpdater,
-        origin: torch.Tensor,
-    ) -> tuple[dict[str, float], dict[str, float]]:
-        """Reuse each penalty's barrier calls; no geometry formulas are duplicated.
-
-        Args:
-            updater (BaseUpdater): Updater bound to the target whose policy or state is being
-                evaluated.
-            origin (torch.Tensor): Zero design perturbation representing the current outer iterate.
-
-        Returns:
-            tuple[dict[str, float], dict[str, float]]: Raw penalty values and maximum sampled
-                violations, each keyed by registered penalty name.
-        """
+        variables: torch.Tensor,
+    ) -> _ShapeTrial:
+        """Measure the physical proxy, integrated penalties and peak local violations together."""
+        terms = updater.constraints_funcs
         with ExitStack() as stack, torch.no_grad():
-            for constraint in updater.constraints_funcs.values():
-                stack.enter_context(constraint.barrier_function.measure_violation())
-            values = self._values(updater, origin)[1:].tolist()
-        penalties = dict(zip(updater.constraints_funcs, values, strict=True))
-        violations = {
-            name: constraint.barrier_function.maximum_violation
-            for name, constraint in updater.constraints_funcs.items()
-        }
-        return penalties, violations
-
-    @staticmethod
-    def _values(updater: BaseUpdater, variables: torch.Tensor) -> torch.Tensor:
-        """Evaluate the physical proxy followed by raw geometric penalties.
-
-        Args:
-            updater (BaseUpdater): Updater bound to the target whose policy or state is being
-                evaluated.
-            variables (torch.Tensor): Flattened dimensionless design perturbation passed to the
-                updater closure.
-
-        Returns:
-            torch.Tensor: One-dimensional vector containing the summed physical proxy followed by
-                raw penalties in registration order.
-        """
-        objectives, penalties = updater.closure(variables, return_list=True)
-        values = torch.stack(
-            [sum(objectives).reshape(())] + [p.reshape(()) for p in penalties]
-        )
-        if not torch.isfinite(values).all() or (values[1:] < 0).any():
+            for term in terms.values():
+                stack.enter_context(term.barrier_function.measure_violation())
+            objectives, penalties = updater.closure(variables, return_list=True)
+            scalars = [value.reshape(()) for value in (sum(objectives), *penalties)]
+            objective, *values = torch.stack(scalars).tolist()
+        if not math.isfinite(objective) or any(not 0 <= v < math.inf for v in values):
             raise ValueError("Shape terms must be finite and penalties nonnegative.")
-        return values
+        peaks = {
+            name: term.barrier_function.maximum_violation
+            for name, term in terms.items()
+        }
+        return _ShapeTrial(objective, dict(zip(terms, values, strict=True)), peaks)
 
     def _calibrate(
         self,
         updater: BaseUpdater,
-        gradient: torch.Tensor,
+        origin: torch.Tensor,
         selected: dict[str, int],
-        physical: torch.Tensor,
+        gradient: torch.Tensor,
     ) -> dict[str, float]:
-        """Set each selected term's initial physical-to-penalty gradient balance.
+        """Balance each pending penalty against the physical gradient using two opposite probes."""
 
-        Args:
-            updater (BaseUpdater): Updater bound to the target whose policy or state is being
-                evaluated.
-            gradient (torch.Tensor): Unscaled physical objective gradient in the target's
-                design-variable order.
-            selected (dict[str, int]): Penalty names mapped to their component indices in _values():
-                the physical objective occupies index zero.
-            physical (torch.Tensor): Gradient of the physical proxy at zero perturbation, in the
-                inner subproblem's coordinates.
+        def objective(x: torch.Tensor) -> torch.Tensor:
+            objectives, _ = updater.closure(x, return_list=True)
+            return sum(objectives).reshape(())
 
-        Returns:
-            dict[str, float]: Initial scalar coefficients for selected penalties with nonzero probe
-                gradients; inactive terms remain absent.
-        """
-        if not selected:
-            return {}
+        def pending_penalties(x: torch.Tensor) -> torch.Tensor:
+            _, penalties = updater.closure(x, return_list=True)
+            return torch.stack([penalties[i].reshape(()) for i in selected.values()])
+
+        physical = torch.func.grad(objective)(origin)
+        if not torch.isfinite(physical).all():
+            raise ValueError("Physical gradient must be finite.")
         physical_norm = physical.norm().item()
         if physical_norm == 0:
             return {}
 
-        vectors = gradient.detach().reshape(-1, 3)
-        norms = vectors.norm(dim=1, keepdim=True)
-        # Zero-sensitivity points stay fixed. Invert the updater's atan mapping
-        # to probe the configured fraction of its maximum displacement.
-        probe = torch.where(norms > 0, -vectors / norms, 0.0).flatten()
-        probe *= math.tan(math.pi * _SETTINGS.PROBE_FRACTION / 2)
-        indices = list(selected.values())
-        derivatives = torch.func.jacrev(lambda x: self._values(updater, x)[indices])
+        probe = self._descent_probe(gradient)
+        derivatives = torch.func.jacrev(pending_penalties)
         weights = {}
         for sign in (1, -1):
             jacobian = derivatives(sign * probe)
@@ -326,62 +345,50 @@ class AdaptiveShapeWeights(ConstraintWeightStrategy):
                 weights[name] = max(weights.get(name, 0.0), weight)
         return weights
 
-    def history_data(self) -> dict[str, object]:
-        """Report the current tolerance and sampled constraint violations.
+    @staticmethod
+    def _descent_probe(gradient: torch.Tensor) -> torch.Tensor:
+        """Probe a fraction of the per-point step along the native descent direction."""
+        vectors = gradient.detach().reshape(-1, 3)
+        norms = vectors.norm(dim=1, keepdim=True)
+        # Invert the updater's atan map at the desired fraction of the step limit.
+        direction = torch.where(norms > 0, -vectors / norms, 0.0).flatten()
+        return direction * math.tan(math.pi * _SETTINGS.PROBE_FRACTION / 2)
 
-        Returns:
-            dict[str, object]: Component-owned scalar or nested observations for the current
-                iteration.
-        """
+    def history_data(self) -> dict[str, object]:
+        """Report peak violations even for terms still awaiting calibration."""
+        peaks = self._origin_trial.violations if self._origin_trial is not None else {}
         return {
             "tolerance": self.tolerance,
-            "penalties": {
-                name: {
-                    "violation": violation,
-                }
-                for name, violation in self._violations.items()
-            },
+            "penalties": {name: {"peak_z": peak} for name, peak in peaks.items()},
         }
 
     def save(self, foldpath: str, iteration: int) -> None:
-        """Save the AdaptiveShapeWeights state.
-
-        Args:
-            foldpath (str): Root log directory containing this component's namespaced state files.
-            iteration (int): Iteration index associated with the saved or current model state.
-        """
-        directory = Path(foldpath)
-        directory.mkdir(parents=True, exist_ok=True)
-        (directory / f"adaptive_weights_{iteration}.json").write_text(
-            json.dumps(
-                {
-                    "tolerance": self.tolerance,
-                    "started": self._started,
-                    "penalties": self.state,
-                },
-                allow_nan=False,
-            ),
-            encoding="utf-8",
-        )
+        """Checkpoint the relaxation schedule and calibrated coefficients for restart."""
+        path = Path(foldpath) / f"adaptive_weights_{iteration}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "tolerance": self.tolerance,
+            "started": self._started,
+            "gradient_norm": self._gradient_norm,
+            "penalties": self.state,
+        }
+        path.write_text(json.dumps(data, allow_nan=False), encoding="utf-8")
 
     def load(self, foldpath: str, iteration: int) -> None:
-        """Load the AdaptiveShapeWeights state.
-
-        Args:
-            foldpath (str): Root log directory containing this component's namespaced state files.
-            iteration (int): Iteration index associated with the saved or current model state.
-        """
-        data = json.loads(
-            (Path(foldpath) / f"adaptive_weights_{iteration}.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        """Restore the schedule; terms without a reference gradient are calibrated again."""
+        path = Path(foldpath) / f"adaptive_weights_{iteration}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
         self.tolerance = data["tolerance"]
         self._started = data["started"]
-        self.state = data["penalties"]
+        self._gradient_norm = data.get("gradient_norm", 0.0)
+        self.state = {
+            name: record
+            for name, record in data["penalties"].items()
+            if "reference_gradient_norm" in record
+        }
 
 
-class SensitivityShapeWeights(ConstraintWeightStrategy):
+class SensitivityShapeUpdate(UpdateStrategy):
     """Restore pointwise penalty weights from nearest control-point sensitivities.
 
     Each outer update interpolates the native gradient magnitude to surface
@@ -390,12 +397,12 @@ class SensitivityShapeWeights(ConstraintWeightStrategy):
     zero surface uses ones. The physical gradient and area weights stay intact.
     """
 
-    def __call__(
+    def constraint_weights(
         self,
         updater: BaseUpdater,
         gradient: torch.Tensor,
     ) -> dict[str, float]:
-        """Evaluate SensitivityShapeWeights for the supplied inputs.
+        """Evaluate SensitivityShapeUpdate for the supplied inputs.
 
         Args:
             updater (BaseUpdater): Updater bound to the target whose policy or state is being
@@ -410,7 +417,7 @@ class SensitivityShapeWeights(ConstraintWeightStrategy):
         from scipy.interpolate import NearestNDInterpolator
 
         if updater.update_kind != "geometry":
-            raise TypeError("SensitivityShapeWeights requires a geometry updater.")
+            raise TypeError("SensitivityShapeUpdate requires a geometry updater.")
         names = list(updater.constraints_funcs)
         if not names:
             return {}

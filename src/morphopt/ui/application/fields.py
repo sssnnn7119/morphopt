@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
+from numbers import Real
 
 from ...constants import CONSTANT
 from ..model.fields import FieldSpec
@@ -42,6 +44,16 @@ def penalty_targets(problem: ProblemDefinition, component: FEAComponentNode) -> 
         name: kind for name, kind in targets.items()
         if component.obj_type == "auto" or kind == component.obj_type
     }
+
+
+def joint_parameter_issue(load_class: str, values: Sequence[object]) -> str | None:
+    """Check joint-specific restrictions on known scalar values in TorchFEA order."""
+    if load_class in {"SphericalJoint", "SingleDoFJoint"}:
+        if isinstance(values[0], Real) and values[0] <= 0:
+            return "joint_stiffness"
+        if load_class == "SingleDoFJoint" and all(value == 0 for value in values[4:]):
+            return "joint_direction"
+    return None
 
 
 def load_value_fields(load_class: str) -> tuple[FieldSpec, ...]:

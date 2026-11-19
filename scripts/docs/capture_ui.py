@@ -51,9 +51,7 @@ def write_catalog():
                     for field in fields(getattr(MaterialModels, name + 'Params'))]}
         for name, parameters in MATERIAL_MODEL_PARAMETERS.items()
     ]
-    catalog['STRATEGIES'] = {
-        key: [asdict(spec) for spec in values] for key, values in STRATEGY_CATALOG.items()
-    }
+    catalog['STRATEGIES'] = [asdict(spec) for spec in STRATEGY_CATALOG]
     (ROOT / 'docs/images/ui-reference/interface-catalog.json').write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
@@ -91,6 +89,7 @@ def main():
         from morphopt.ui.mainwindow import MainWindow
         from morphopt.ui.model.problem import FEAComponentNode, LoadCaseNode, SurfaceNode
         from morphopt.ui.presentation.navigation import UpdaterItemTreeNode, UpdaterTreeNode
+        from morphopt.ui.widgets.updater_editor import UpdaterStrategyEditor
         from morphopt.ui.widgets.font_settings import FontSettingsDialog
         from morphopt.ui.widgets.visualization_settings import VisualizationSettingsDialog
 
@@ -167,8 +166,10 @@ def main():
             save('ui/' + name + '.png', description)
         updater = problem.updater
         select(wb, UpdaterTreeNode(updater, 'geometry', 0))
-        save('ui/updaters/geometry-updater.png', 'Step limits and event-driven penalty strategy')
-        save('ui/updaters/geometry-strategies.png', 'AdaptiveShapeWeights with five current parameters')
+        save('ui/updaters/geometry-updater.png', 'Geometry updater, maximum step length and update strategy',
+             wb.updater_editor)
+        save('ui/updaters/geometry-strategies.png', 'AdaptiveShapeUpdate with five current parameters',
+             wb.updater_editor.findChild(UpdaterStrategyEditor))
         config = updater.geometry[0]
         for group, key, filename in [
             ('geometry_objectives', 'objective_functions', 'shape-derivative'),

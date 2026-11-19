@@ -671,6 +671,8 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 | 按体积分布力 | Bodyforce | `[fx,fy,fz]` |
 | RP 与固定地面点之间的轴向弹簧 | SpringToGround | `[k,L0,Px,Py,Pz]` |
 | 两个 RP 之间的轴向弹簧 | SpringBetweenRPs | `[k,L0]` |
+| 连接点处限制相对平移、允许相对转动 | SphericalJoint | `[k,x,y,z]` |
+| 连接点处允许一个相对运动方向 | SingleDoFJoint | `[k,x,y,z,tx,ty,tz,rx,ry,rz]` |
 | 广义自由度的目标值罚约束 | PenaltyDoF | `[k,target]` |
 | 固定实体节点 / RP 自由度 | BoundaryCondition / BoundaryConditionRP | 无 |
 | 将一组节点连接到 RP | Couple | 无 |
@@ -682,6 +684,14 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 ![载荷接口添加菜单](images/ui/loads/add-interface-menu.png)
 
 *载荷接口添加菜单。*
+
+<a id="load_types-joints"></a>
+
+**球铰与单自由度关节**
+
+在“载荷与边界条件”中添加两个参考点，随后添加“球铰”或“单自由度关节”，在关节卡片中分别选择两个参考点。在“载荷工况”中设置正的罚刚度和连接点的初始全局坐标。每个新工况默认采用刚度 1 和坐标原点，实际刚度应按模型单位和连接刚度设置。
+
+球铰允许绕连接点自由转动。单自由度关节另有六个自由方向分量，初始方向随第一个参考点转动。默认仅 Z 转动分量为 1，表示绕 Z 轴的铰链。仅 X 平移分量为 1 时，表示沿 X 轴的滑动副。选择工况后，装配预览在连接点处标出关节名称和两个参考点。
 
 <a id="load_types-pressure"></a>
 
@@ -925,6 +935,8 @@ RP 仅定义参考位置及其运动自由度，不创建实体材料或自动�
 | Bodyforce | X/Y/Z 体力密度 | `[fx,fy,fz]` |
 | SpringToGround | 刚度、原长、固定端 X/Y/Z | `[k,L0,Px,Py,Pz]` |
 | SpringBetweenRPs | 刚度、原长 | `[k,L0]` |
+| SphericalJoint | 罚刚度、初始连接点坐标 | `[k,x,y,z]` |
+| SingleDoFJoint | 罚刚度、初始连接点坐标、自由方向 | `[k,x,y,z,tx,ty,tz,rx,ry,rz]` |
 | PenaltyDoF | 罚刚度、目标值 | `[k,target]` |
 
 ![弹簧刚度、原长和固定端坐标分别编辑](images/ui-reference/loads/spring-load-case.png)
@@ -1275,36 +1287,35 @@ return -state[rp._RGC_index].reshape(-1)[4]
 |---|---|---|
 | 目标 | `part_name`：可更新的边界 Part | `material_name`：SIMP 设计材料 |
 | `custom_class` | 默认使用边界或偏置边界 updater，也可选择兼容的重写类 | 默认使用 SIMP updater，也可选择兼容的重写类 |
-| `max_step_iter` | 每一轮形状子问题的内部优化迭代上限 | 每一轮材料子问题的内部优化迭代上限 |
+| `max_step_iter` | 每次子求解的最大步数 | 每次子求解的最大步数 |
 | `max_step_length` | 最大更新步长，默认 `0.5` | 最大更新步长，默认 `1.0` |
-| `step_length_strategy` | 固定步长 `FixedStepLength` | 固定步长 `FixedStepLength` |
-| `constraint_weight_strategy` | 固定权重、逐采样点灵敏度权重或事件触发的自适应几何权重 | 固定权重 |
+| `update_strategy` | 默认自适应形状更新，也可选固定更新或逐点灵敏度更新 | 固定更新 |
 | 更新开关 | 在各曲面编辑页设置 `is_updatable`，BSP 和 CPGEO 默认启用；几何更新器不保存开关列表 | `if_update` 控制材料场是否更新 |
 | `objective_functions` | ShapeDerivative 或 QuadraticShapeDerivative，二者选一 | 通常需要 Sensitivity |
 | `constraints` | 距离、包络、平滑等几何项 | 体积分数和控制量上下界等 |
 | `symmetry_constraints` | 对指定曲面建立镜像、旋转、关联或自定义关系 | 不在材料更新器中使用 |
 
-“最大更新步长”对应 `max_step_length`，可填写正数或自定义常量名。默认值分别来自 `CONSTANT.KERNEL.SHAPE_UPDATE.MAX_STEP_LENGTH` 和 `CONSTANT.KERNEL.SIMP_UPDATE.MAX_STEP_LENGTH`。该字段随优化器配置保存，生成脚本时显式传入构造函数。默认 `FixedStepLength` 保持该上限固定，实际改变量通过 `atan` 映射限制，不根据更新方向自适应调整。
+“最大更新步长”可填写正数或自定义常量名。内置策略将该值作为逐控制点或逐材料变量的上限，实际改变量通过 `atan` 映射限制。
 
-选中模型树中具体的几何或材料优化器后，编辑页提供“步长策略”和“罚项权重策略”。所选策略的参数直接显示在选择框下方，支持数值或自定义常量名。默认采用固定步长和固定权重；固定权重中的“罚项系数”统一施加于该优化器的所有罚项，默认值为 1。
+选中模型树中的几何或材料优化器后，可在“更新策略”下拉框选择策略，并在下方填写该策略的参数。
 
-几何优化器提供三种罚项策略。
+几何优化器提供三种更新策略。
 
 | 策略 | 输入与行为 |
 |---|---|
-| 固定权重 `ConstantConstraintWeights` | 一个显式系数，默认 1，统一施加于登记罚项 |
-| 灵敏度采样权重 `SensitivityShapeWeights` | 无配置参数；将原始控制点梯度模长插值到曲面采样点，形成逐点因子 |
-| 自适应几何权重 `AdaptiveShapeWeights` | 独立标定各罚项系数，按目标变化与几何恶化收紧距离要求 |
+| 固定更新 `FixedUpdate` | 所有登记罚项采用同一系数，默认值为 1，子问题求解一次 |
+| 逐点灵敏度更新 `SensitivityShapeUpdate` | 将控制点原始梯度模长插值到曲面采样点，子问题求解一次 |
+| 自适应形状更新 `AdaptiveShapeUpdate` | 标定各罚项的基础系数，按采样点或壁厚点对计算超限罚值 |
 
-![自适应权重的当前五项配置](images/ui/updaters/geometry-strategies.png)
+![自适应形状更新策略配置](images/ui/updaters/geometry-strategies.png)
 
-自适应策略默认初始距离放宽比例为 0.05、最终为 0，目标相对变化阈值为 0.01，每次收紧量为 0.001，罚值增长触发倍数为 2。目标变化以历史目标最大绝对值为尺度，允许小幅振荡触发收紧；显著的约束恶化同样触发收紧，并只增强恶化项的系数。已标定且未恶化的权重保持不变，待标定项继续进行双向几何试探。参数不按固定轮数线性变化。
+自适应策略的初始和最终几何放宽比例分别为 0.05 和 0，每次收紧量为 0.0002。局部超限参考值默认为 0.1，过渡带随放宽比例递减而收窄。“每轮最多子求解次数”包含首次和所有补充求解，默认 3 次。有约束且上限允许时，策略先连续求解两次。第二次起，只有局部仍超限且还有剩余次数时才继续。每次都从上一次的末点继续，超限区域的罚值在两次求解之间调整。最后一次子优化的解直接进入下一轮，允许保留局部违反。
 
 距离、曲率、半径和包络采用固定三次障碍，策略不调整幂次。单次子优化期间，系数、采样因子、步长和距离要求均固定。物理代理始终使用原始有限元灵敏度，不作最大值、范数或 SIMP 灵敏度缩放。
 
-每个优化器持有独立策略实例，设置随 `.morph` 保存，状态随优化结果恢复。算法、日志字段与扩展方式见[脚本策略参考](scriptreference.md#section-几何权重策略与障碍积分)。自适应策略要求非负罚项，不能直接用于可能取负的体积辅助目标。
+每个优化器持有独立策略实例，设置随 `.morph` 保存，状态随优化结果恢复。算法、日志字段与扩展方式见[脚本策略参考](scriptreference.md#section-几何更新策略与障碍积分)。自适应策略要求非负罚项，不能直接用于可能取负的体积辅助目标。
 
-`max_step_iter=50` 表示每轮更新子问题的内部迭代上限为 50。外层每轮执行 FE 求解和目标梯度计算，内层根据梯度与约束求解更新子问题。该参数不定义外层优化总轮数，内部更新迭代、外层轮次及 FE 求解迭代分别记录。
+“每次子求解最大步数”设为 50、“每轮最多子求解次数”设为 3 时，单轮设计更新至多执行 150 个子迭代步。提前收敛时按实际步数计入历史。旧任务中显式填写的 `max_step_iter` 直接作为单次步数上限，例如原先将 100 步分成两次 50 步的配置，现在对应每次 50 步。外层每轮执行 FE 求解和目标梯度计算，内层根据梯度与约束求解更新子问题。该参数不定义外层优化总轮数，内部更新迭代、外层轮次及 FE 求解迭代分别记录。
 
 新建几何更新配置默认包含 ShapeDerivative、Fairness、Distance 和 Cylinder，配置修改应以已有条目为基础。新建材料更新配置默认包含 Sensitivity、控制量上下界和体积分数约束，实际条目按优化任务设置。均匀材料不包含材料设计变量，因此不属于 SIMP 更新目标。
 
@@ -1522,7 +1533,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 `Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面施加一个统一曲率平方和上限，参数对应 κ₁²+κ₂²，单位为长度⁻²。超过阈值的 80% 后激活三次障碍。
 
-BSP 另计算参数方向非正交与度量变化，两项阈值固定为 0.1；CPGEO 只计算曲率。计算与参考补偿位于罚项的 visitor 中，各曲面只保存几何。一个 Fairness 条目汇总各支持曲面的罚值并使用一个整体系数；不再在曲面卡片中设置 maxC/maxR/maxFF。固定曲面跳过本项，未实现 visitor 的曲面类型贡献零，BREP NURBS 面目前不自动采用 BSP Fairness。
+BSP 另计算参数方向非正交与度量变化，阈值分别为 0.2 和 0.1；CPGEO 只计算曲率。计算与参考补偿位于罚项的 visitor 中，各曲面只保存几何。一个 Fairness 条目汇总各支持曲面的罚值并使用一个整体系数；不再在曲面卡片中设置 maxC/maxR/maxFF。固定曲面跳过本项，未实现 visitor 的曲面类型贡献零，BREP NURBS 面目前不自动采用 BSP Fairness。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -1891,6 +1902,8 @@ Updater → 按目标注册更新项、约束与曲面关系
 
 ![日志文件选择与跟随](images/ui/optimization/optimization-log.png)
 
+历史曲面显示所选迭代计算有限元指标时的几何。新结果保存本轮求解时的曲面；早期结果按上一轮更新后的断点恢复，首轮按归档任务定义恢复。
+
 “导出历史”采用当前组件、曲面视图和迭代选择。选择全部曲面时导出该 BoundaryPart 的全部边界；选择单曲面或控制网格视图时仅导出对应曲面几何。BSP/BREP 支持 STEP/STL，CPGEO/MeshSurface 支持 STL。曲面输出位于部件局部坐标，覆盖已有文件前确认。
 
 历史设计和历史变形 GIF 使用最近三维视口的相机、尺寸、配色和材质，窗口选择组件或工况、轮次范围和帧率。设计 GIF 绘制完整组件，不附带单曲面或控制网格筛选；变形 GIF 跳过缺少变形网格的轮次。![当前视图的曲面导出](images/ui/optimization/export-current-surfaces.png)
@@ -2014,7 +2027,7 @@ UI 快速开始的事后分析采用第 36 轮设计，将压力从 0.06 调整�
 | 部件 | 6 | [BoundaryPart](#part_types-boundarypart)、[INPPart](#part_types-inppart)、[BasePart](#part_types-basepart)（自定义）、[BoxPart](#part_types-boxpart)、[CADPart](#part_types-cadpart)、[OffsetBoundaryPart](#part_types-offsetboundarypart) |
 | 边界曲面 | 5 | [bsp_cylinder](#surface_types-bsp-cylinder)、[cpgeo_cylinder](#surface_types-cpgeo-cylinder)、[cpgeo_sphere](#surface_types-cpgeo-sphere)、[mesh_surface](#surface_types-mesh-surface)、[brep_surface](#surface_types-brep-surface) |
 | CAD 操作 | 14 | [Box](#cad_operation_types-box)、[Wedge](#cad_operation_types-wedge)、[Cylinder](#cad_operation_types-cylinder)、[Sphere](#cad_operation_types-sphere)、[Cone](#cad_operation_types-cone)、[Torus](#cad_operation_types-torus)、[StepImport](#cad_operation_types-stepimport)、[Fuse](#cad_operation_types-fuse)、[Cut](#cad_operation_types-cut)、[Intersect](#cad_operation_types-intersect)、[Translate](#cad_operation_types-translate)、[Rotate](#cad_operation_types-rotate)、[Dilate](#cad_operation_types-dilate)、[Mirror](#cad_operation_types-mirror) |
-| 载荷 / 边界 / 连接 / 接触 | 13 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
+| 载荷 / 边界 / 连接 / 接触 | 15 | [Pressure](#load_types-pressure)、[ConcentratedForce](#load_types-concentratedforce)、[ConcentratedMoment](#load_types-concentratedmoment)、[Bodyforce](#load_types-bodyforce)、[SpringToGround](#load_types-springtoground)、[SpringBetweenRPs](#load_types-springbetweenrps)、[SphericalJoint / SingleDoFJoint](#load_types-joints)、[PenaltyDoF](#load_types-penaltydof)、[BoundaryCondition](#load_types-boundarycondition)、[BoundaryConditionRP](#load_types-boundaryconditionrp)、[Couple](#load_types-couple)、[ReferencePoint](#load_types-referencepoint)、[Contact](#load_types-contact)、[ContactSelf](#load_types-contactself) |
 | 材料接口 | 2 | [HomogeneousMaterial](#material_types-homogeneousmaterial)、[SIMP_BSPFieldMaterials](#material_types-simp-bspfieldmaterials) |
 | 更新目标 | 5 | [ShapeDerivative](#updater_objectives-shapederivative)、[QuadraticShapeDerivative](#updater_objectives-quadraticshapederivative)、[Sensitivity](#updater_objectives-sensitivity)、[QuadraticSensitivity](#updater_objectives-quadraticsensitivity)、[DensityFieldMinimize](#updater_objectives-densityfieldminimize) |
 | 曲面对称与关联 | 7 | [BspMirror](#surface_symmetry_constraints-bspmirror)、[BspRotation](#surface_symmetry_constraints-bsprotation)、[CPGEOMirror](#surface_symmetry_constraints-cpgeomirror)、[CPGEORotation](#surface_symmetry_constraints-cpgeorotation)、[BspRelation](#surface_symmetry_constraints-bsprelation)、[CPGEORelation](#surface_symmetry_constraints-cpgeorelation)、[Custom](#surface_symmetry_constraints-custom) |

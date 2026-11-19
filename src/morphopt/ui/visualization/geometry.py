@@ -516,6 +516,21 @@ class INPPreviewAdapter(PartPreviewAdapter[INPPartNode]):
 
 class CADPreviewAdapter(PartPreviewAdapter[CADPartNode]):
     """Build face-aware CAD preview geometry through the shared kernel tessellation API."""
+    def model_part(
+        self, context: PreviewGeometry, part: CADPartNode
+    ) -> torchfea.Part | None:
+        """Resolve custom node sets through the Part's meshed definition.
+
+        Args:
+            context (PreviewGeometry): Preview context that caches the generated mesh.
+            part (CADPartNode): CAD Part whose custom class can define mesh sets.
+
+        Returns:
+            torchfea.Part | None: Meshed custom Part, or None for a standard CAD Part
+                whose selections are resolved from tessellated faces.
+        """
+        return context.kernel_part(part) if part.custom_class else None
+
     def preview(
         self,
         context: PreviewGeometry,
@@ -613,9 +628,7 @@ class KernelPreviewAdapter(INPPreviewAdapter):
         Returns:
             torchfea.Part: Model part.
         """
-        from ..application.part_mesh import build_part_mesh
-
-        return context.cached_part(part, lambda: build_part_mesh(part, context.problem))
+        return context.kernel_part(part)
 
 
 def default_part_visitor() -> PartPreviewVisitor:
@@ -947,6 +960,19 @@ class PreviewGeometry:
             self._part_cache_keys[part_id] = key
         return self._part_cache[part_id]
 
+    def kernel_part(self, part: PartNode) -> torchfea.Part:
+        """Mesh the Part from its generated definition and cache it for set lookups.
+
+        Args:
+            part (PartNode): Part definition, including any custom class and embedded assets.
+
+        Returns:
+            torchfea.Part: Part with the node and surface sets defined by the kernel.
+        """
+        from ..application.part_mesh import build_part_mesh
+
+        return self.cached_part(part, lambda: build_part_mesh(part, self.problem))
+
     def box_part(self, part: BoxPartNode) -> BoxPart:
         """Return box part.
 
@@ -1190,11 +1216,9 @@ class PreviewGeometry:
         Returns:
             pv.DataSet: Extract an actual mesh set in Part coordinates, meshing only on demand.
         """
-        from ..application.part_mesh import build_part_mesh
-
         model = self.parts.adapter(part).model_part(self, part)
         if model is None:
-            model = self.cached_part(part, lambda: build_part_mesh(part, self.problem))
+            model = self.kernel_part(part)
         if kind == "nodes":
             indices = np.asarray(model.set_nodes[name], dtype=int)
             return pv.PolyData(model.nodes.detach().cpu().numpy()[indices])

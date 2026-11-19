@@ -23,4 +23,4 @@ UI 中打开 `simp_gripper.morph` 后可查看相同的工况和优化设置。
 
 ## 更新与工况配置
 
-材料更新目标为 `Sensitivity()`，保留原始有限元材料灵敏度，不归一化。步长与罚项策略分别为 `FixedStepLength` 和 `ConstantConstraintWeights(value=1)`，最大更新步长 1，每次子优化最多 100 次；默认一个 CPU 求解进程。
+材料更新目标 `Sensitivity()` 使用原始有限元材料灵敏度。更新策略 `FixedUpdate(value=1)` 对各罚项采用单位系数，最大更新步长为 1，单次子优化最多迭代 100 次。求解器默认使用一个 CPU 进程。

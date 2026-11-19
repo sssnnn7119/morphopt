@@ -425,7 +425,7 @@ def synchronize_workspaces(problem: ProblemDefinition) -> None:
                 name = f"{base}_{suffix}"
                 suffix += 1
             values = {
-                load: [0.0] * load.num_values for load in problem.amplitude_components()
+                load: load.default_values() for load in problem.amplitude_components()
             }
             loads = {load.name: load for load in values}
             for entry, amplitude in zip(term["inputs"], point):

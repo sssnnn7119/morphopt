@@ -41,8 +41,8 @@ from ..model.problem import (
     ProblemDefinition,
 )
 from ..model.registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG
-from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
-from .fields import fields_for_node
+from ..model.strategies import strategy_config, strategy_specs
+from .fields import fields_for_node, joint_parameter_issue
 from .part_sets import PartSetCatalog
 
 _UNKNOWN = object()
@@ -364,6 +364,8 @@ class DefinitionValidation:
         if node.kind == "part" and not node.instances and not node.custom_class:
             self.add(node, "required", field="instances")
         if isinstance(node, FEAComponentNode):
+            if node.type in {"SphericalJoint", "SingleDoFJoint"} and node.rp_name1 and node.rp_name1 == node.rp_name2:
+                self.add(node, "joint_endpoints")
             for spec in fields:
                 name = node.get_field(spec.key)
                 candidates = None
@@ -566,6 +568,14 @@ class DefinitionValidation:
                             field=f"{name}/{load_name}",
                             size=load.num_values,
                         )
+                    elif load.type in {"SphericalJoint", "SingleDoFJoint"} and isinstance(value, (list, tuple)):
+                        try:
+                            scalars = [self.literal(v) if isinstance(v, str) else v for v in value]
+                        except (ValueError, SyntaxError, ArithmeticError):
+                            continue  # Already reported by the field validator.
+                        issue = joint_parameter_issue(load.type, scalars)
+                        if issue:
+                            self.add(values, issue, name=load_name)
         solver = self.problem.solver
         if solver is not None:
             registered: set[str] = set()
@@ -672,12 +682,11 @@ class DefinitionValidation:
                     FieldSpec("max_step_length", "max_step_length", "float", minimum=0),
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
-                for key in STRATEGY_CATALOG:
-                    item = cfg.get(key, strategy_config(key, group=group))
-                    spec = strategy_specs(key, group).get(item.get("type"))
-                    if spec is None:
-                        self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
-                        continue
+                item = cfg.get("update_strategy", strategy_config(group))
+                spec = strategy_specs(group).get(item.get("type"))
+                if spec is None:
+                    self.add(cfg, "choice", field=tr("ui.strategies.update_strategy"))
+                else:
                     for field in spec.fields:
                         self.field(
                             cfg, field,

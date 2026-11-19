@@ -1,11 +1,12 @@
+import logging
 import os
-import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, TypeAlias
 
 import numpy as np
 import torch
+from tabulate import tabulate
 
 import morphopt
 
@@ -15,11 +16,11 @@ from .modelparams.materials.base_material import BaseMaterial
 from .modelparams.parts.base_part import BasePart
 from .protocal import ProtocalHistory, ProtocalInitializable, ProtocalSavable
 from .strategies import (
-    ConstantConstraintWeights,
-    ConstraintWeightStrategy,
-    FixedStepLength,
-    StepLengthStrategy,
+    FixedUpdate,
+    UpdateStrategy,
 )
+
+logger = logging.getLogger(__name__)
 
 UpdaterCollection: TypeAlias = GeometryParams | MaterialsParams
 """Collections from which :class:`Updaters` resolves a target."""
@@ -385,6 +386,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
     update_kind: str = ""
     """Kind of collection this updater updates (``geometry`` / ``materials``)."""
 
+    _lbfgs_memory_pairs = CONSTANT.KERNEL.OPTIMIZER.LBFGS_MEMORY_PAIRS
+
     target_type: UpdaterTargetType | None = None
     """Interface type accepted by this updater, or ``None`` for any target."""
 
@@ -625,8 +628,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         self,
         interface_name: str | None = None,
         *,
-        step_length_strategy: StepLengthStrategy | None = None,
-        constraint_weight_strategy: ConstraintWeightStrategy | None = None,
+        update_strategy: UpdateStrategy | None = None,
     ) -> None:
         """Initialize the BaseUpdater.
 
@@ -636,10 +638,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         Args:
             interface_name (str | None): Registered target name; None allows the updater collection
                 to supply the name.
-            step_length_strategy (StepLengthStrategy | None): Policy that freezes movement limits
-                before solving the inner subproblem.
-            constraint_weight_strategy (ConstraintWeightStrategy | None): Policy that freezes named
-                penalty coefficients before the inner solve.
+            update_strategy (UpdateStrategy | None): Policy for step limits, penalty weights and
+                subproblem candidate selection.
         """
 
         self._interface_name: str = (
@@ -656,22 +656,18 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         self.constraints_funcs: dict[str, object] = {}
         """Constraints registered by this updater."""
 
-        self.step_length_strategy = (
-            FixedStepLength() if step_length_strategy is None else step_length_strategy
-        )
-        self.constraint_weight_strategy = (
-            ConstantConstraintWeights()
-            if constraint_weight_strategy is None else constraint_weight_strategy
+        self.update_strategy = (
+            FixedUpdate()
+            if update_strategy is None else update_strategy
         )
         self.constraint_weights: dict[str, float] = {}
         self.iteration_total: int = 0
+        self.solve_count: int = 0
         self.objective_value: float | None = None
         """Current high-fidelity objective, supplied before building a subproblem."""
 
-        self.optimizer: BaseUpdater.Optimizer.BaseOpt = None
-        """The optimization algorithm used to update the design variables.
-        This should be set to an instance of a subclass of Optimizer.BaseOpt.
-        """
+        self.optimizer: BaseUpdater.Optimizer.BaseOpt | None = None
+        """Inner optimizer of the current or most recent trial in this outer update."""
 
     def history_data(self) -> dict[str, object]:
         """Describe this iteration's coefficients without reevaluating the loss.
@@ -682,51 +678,25 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         """
         return {
             "iterations": self.iteration_total,
+            "solves": self.solve_count,
             "constraint_weights": self.constraint_weights,
-            "constraint_weight_state": self.constraint_weight_strategy.history_data(),
+            "update_strategy_state": self.update_strategy.history_data(),
         }
 
-    def _prepare_step_lengths(
-        self,
-        parameters: Sequence[torch.Tensor],
-        maximum: float,
-        gradient: torch.Tensor | None = None,
-    ) -> list[torch.Tensor]:
-        """Evaluate the selected policy and freeze its per-block limits.
+    def reinitialize(self, gradient: torch.Tensor) -> None:
+        """Set penalty weights and clear the previous outer update's trial state.
 
-        Args:
-            parameters (Sequence[torch.Tensor]): Parameter values in the order required by the
-                selected interface.
-            maximum (float): Configured upper limit on each design-variable movement.
-            gradient (torch.Tensor | None): Unscaled physical objective gradient in the target's
-                design-variable order.
-
-        Returns:
-            list[torch.Tensor]: Frozen per-row movement limits, in target parameter-block order.
-        """
-        steps = self.step_length_strategy(self, parameters, maximum, gradient)
-        if len(steps) != len(parameters):
-            raise ValueError("Step lengths must match the parameter blocks.")
-        for step, parameter in zip(steps, parameters):
-            if step.shape != (len(parameter),):
-                raise ValueError("Step lengths must contain one value per parameter row.")
-            if not torch.isfinite(step).all() or (step < 0).any():
-                raise ValueError("Step lengths must be finite and nonnegative.")
-        return [step.detach().clone() for step in steps]
-
-    def _prepare_constraint_weights(self, gradient: torch.Tensor) -> None:
-        """Evaluate the selected policy once, after initializing all terms.
+        Subclasses call this after preparing their step limits, objectives and constraints
+        so the strategy can evaluate the current subproblem.
 
         Args:
             gradient (torch.Tensor): Unscaled physical objective gradient in the target's
                 design-variable order.
         """
-        weights = self.constraint_weight_strategy(self, gradient)
-        if weights.keys() != self.constraints_funcs.keys():
-            raise ValueError("Constraint weights must match the registered constraint names.")
-        if any(not math.isfinite(weight) or weight < 0 for weight in weights.values()):
-            raise ValueError("Constraint weights must be finite and nonnegative.")
-        self.constraint_weights = {name: float(weight) for name, weight in weights.items()}
+        self.constraint_weights = self.update_strategy.constraint_weights(self, gradient)
+        self.iteration_total = 0
+        self.solve_count = 0
+        self.optimizer = None
 
     def _weighted_constraints(self, values: list[torch.Tensor]) -> list[torch.Tensor]:
         """Weighted penalty contributions shared by loss evaluation and logging.
@@ -743,6 +713,56 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             self.constraint_weights[name] * value
             for name, value in zip(self.constraints_funcs, values, strict=True)
         ]
+
+    def solve_subproblem(self, origin: torch.Tensor, *, iterations: int | None = None) -> torch.Tensor:
+        """Solve one trial with fresh L-BFGS history and a copy of the starting coordinates.
+
+        Args:
+            origin (torch.Tensor): Coordinates at the start of this solve.
+            iterations (int | None): Inner iterations available to this stage. Defaults to the full budget.
+
+        Returns:
+            torch.Tensor: Candidate computed with the current penalty weights.
+        """
+        self.optimizer = self.Optimizer.LBFGS(
+            closure=self.closure,
+            num_limit=self._lbfgs_memory_pairs,
+            tol_error=CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
+        )
+        variables = origin.detach().clone()
+        self.solve_count += 1
+        small_steps = 0
+        gradient = None
+        budget = self.max_step_iter if iterations is None else iterations
+        logger.info("Updating %s: subproblem solve %d, at most %d steps.",
+                    self.interface_name or self.update_kind, self.solve_count, budget)
+        for iteration in range(1, budget + 1):
+            self.iteration_total += 1
+            alpha, direction, gradient = self.optimizer.step(x_now=variables, gk_now=gradient)
+            displacement = direction * alpha
+            with torch.no_grad():
+                variables.add_(displacement)
+            if displacement.abs().max() < self._low_step_length_tolerance:
+                small_steps += 1
+            else:
+                small_steps = 0
+            if small_steps > self._low_step_length_iteration_limit:
+                logger.info("Stopping after %d consecutive small steps.", small_steps)
+                break
+
+            if iteration % self._status_log_interval == 0:
+                with torch.no_grad():
+                    objectives, raw_penalties = self.closure(variables, return_list=True)
+                    terms = [*objectives, *self._weighted_constraints(raw_penalties)]
+                headers = ["Iteration", "Total", *self.obj_funcs, *self.constraints_funcs]
+                values = [f"{value.item():.6e}" for value in (sum(terms), *terms)]
+                row = [f"{iteration}/{budget}", *values]
+                table = tabulate([row], headers=headers, tablefmt="grid")
+                if iteration > 1:
+                    print("\033[F\033[K" * 4, end="\r")
+                print(table, end="\r")
+                logger.debug("\n%s", table)
+        return variables.detach()
 
     def define_objective(self) -> None:
         """Register this updater's objective functions and constraints.
@@ -790,9 +810,10 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
         """
         self._add_named_function(self.constraints_funcs, obj_func, name)
 
-    def closure(self, x: torch.Tensor, return_list: bool = False) -> torch.Tensor:
-        """This method is called to update the design variables based on the optimization algorithm
-        used.
+    def closure(
+        self, x: torch.Tensor, return_list: bool = False,
+    ) -> torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]:
+        """Evaluate the current subproblem at the supplied design coordinates.
 
         Args:
             x (torch.Tensor): The current design variables.
@@ -800,7 +821,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 returns their sum.
 
         Returns:
-            torch.Tensor: The objective function value(s).
+            torch.Tensor | tuple[list[torch.Tensor], list[torch.Tensor]]: Weighted loss, or the
+                separate lists of raw objective and constraint terms.
         """
         raise NotImplementedError("This method should be overridden by subclasses.")
 
@@ -1270,14 +1292,20 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             directory = updater.save_directory(
                 foldpath, updater.interface_name or "all"
             )
-            updater.constraint_weight_strategy.save(
-                foldpath=os.path.join(directory, "constraint_weights"), iteration=iteration,
+            updater.update_strategy.save(
+                foldpath=os.path.join(directory, "update_strategy"), iteration=iteration,
             )
             for name, objective in updater.obj_funcs.items():
                 objective.save(
                     foldpath=os.path.join(directory, "objectives", name),
                     iteration=iteration,
                 )
+            for name, constraint in updater.constraints_funcs.items():
+                if isinstance(constraint, ProtocalSavable):
+                    constraint.save(
+                        foldpath=os.path.join(directory, "constraints", name),
+                        iteration=iteration,
+                    )
 
     def load(self, foldpath: str, iteration: int) -> None:
         """Restore the state of every sub-updater.
@@ -1291,14 +1319,20 @@ class Updaters(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             directory = updater.save_directory(
                 foldpath, updater.interface_name or "all"
             )
-            updater.constraint_weight_strategy.load(
-                foldpath=os.path.join(directory, "constraint_weights"), iteration=iteration,
+            updater.update_strategy.load(
+                foldpath=os.path.join(directory, "update_strategy"), iteration=iteration,
             )
             for name, objective in updater.obj_funcs.items():
                 objective.load(
                     foldpath=os.path.join(directory, "objectives", name),
                     iteration=iteration,
                 )
+            for name, constraint in updater.constraints_funcs.items():
+                if isinstance(constraint, ProtocalSavable):
+                    constraint.load(
+                        foldpath=os.path.join(directory, "constraints", name),
+                        iteration=iteration,
+                    )
 
     def pathlog_required(self) -> list[str]:
         """The log sub-paths every sub-updater needs (deduplicated).

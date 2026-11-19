@@ -67,7 +67,7 @@ python scripts/number_docs.py --watch
 | 内容 | 当前约定 | 详细说明 |
 |---|---|---|
 | 物理代理 | 一阶与历史二阶分别登记，使用原始灵敏度 | [代理与更新器](scriptreference.md#section-有限元目标的历史梯度二阶代理) |
-| 几何积分和策略 | 面积、逐点采样因子及整体系数分离；自适应调整按事件触发 | [权重策略](scriptreference.md#section-几何权重策略与障碍积分) |
+| 几何积分和策略 | 面积、逐点采样因子及整体系数分离；自适应调整按事件触发 | [更新策略](scriptreference.md#section-几何更新策略与障碍积分) |
 | Fairness | 统一曲率参数；几何与罚项 visitor 分离 | [几何罚项](UIreference.md#updater_constraints-fairness) |
 | 列表参数 | 有名称的分量框和逐项列表编辑 | [输入约定](UIreference.md#section-数值列表与表达式) |
 | 载荷工况 | 字符串名称、接口卡片与独立标量幅值 | [载荷工况](UIreference.md#steps) |

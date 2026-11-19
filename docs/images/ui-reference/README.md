@@ -25,7 +25,7 @@
 
 图片使用 `模块/内容名称.png`，例如 `loads/penalty-node-direction.png`、`objectives/workspace-objective.png` 和 `appearance/font-settings.png`。
 
-[interface-catalog.json](interface-catalog.json) 由当前 UI 注册表生成，包含部件、曲面、14 种 CAD 操作、13 类载荷与连接、材料、更新目标、约束和策略，以及 8 种本构参数定义。静态字段记录包含分量名称、项类型、默认值、选项及帮助；依对象类型变化的字段投影见正文，例如实例 PenaltyDoF 从 s 派生节点与方向。载荷另记录 `value_fields`，与工况和独立有限元编辑共用。
+[interface-catalog.json](interface-catalog.json) 由当前 UI 注册表生成，包含部件、曲面、14 种 CAD 操作、15 类载荷与连接、材料、更新目标、约束和策略，以及 8 种本构参数定义。静态字段记录包含分量名称、项类型、默认值、选项及帮助；依对象类型变化的字段投影见正文，例如实例 PenaltyDoF 从 s 派生节点与方向。载荷另记录 `value_fields`，与工况和独立有限元编辑共用。
 
 <a id="section-说明图"></a>
 

@@ -134,23 +134,27 @@
     },
     {
       "file": "ui/updaters/geometry-updater.png",
-      "description": "Step limits and event-driven penalty strategy",
+      "description": "Geometry updater, maximum step length and update strategy",
       "source": "examples/bending_actuator/bending_actuator.morph",
-      "dpr": 1.75,
+      "dpr": 1.5,
       "pixels": [
-        2870,
-        1820
-      ]
+        1152,
+        1286
+      ],
+      "definition_sha256": "61b37bea90a547982bf7f98be4c7b8d392ba9ce78733f32db20f4927f308b4cd",
+      "platform": "offscreen"
     },
     {
       "file": "ui/updaters/geometry-strategies.png",
-      "description": "AdaptiveShapeWeights with five current parameters",
+      "description": "AdaptiveShapeUpdate with five current parameters",
       "source": "examples/bending_actuator/bending_actuator.morph",
-      "dpr": 1.75,
+      "dpr": 1.5,
       "pixels": [
-        2870,
-        1820
-      ]
+        990,
+        288
+      ],
+      "definition_sha256": "61b37bea90a547982bf7f98be4c7b8d392ba9ce78733f32db20f4927f308b4cd",
+      "platform": "offscreen"
     },
     {
       "file": "ui/updaters/shape-derivative.png",

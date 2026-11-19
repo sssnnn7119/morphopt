@@ -14,6 +14,7 @@ from morphopt.optcore.objfunc import ObjectiveFunction
 from morphopt.optcore.protocal import ProtocalHistory
 from morphopt.optcore.solver import Solver
 from morphopt.optcore.updaters import Updaters
+from morphopt.shapeopt.strategies import _ShapeTrial
 from morphopt.shapeopt.update_boundary_part import UpdaterBoundaryPart
 from morphopt.simp.update_simpmaterial import UpdaterSIMPMaterial
 
@@ -55,12 +56,13 @@ def test_optimizer_snapshots_are_named_copied_and_saved_per_iteration(tmp_path):
     controller.updater = Updaters(updaters={"body": shape, "density": material})
     shape.constraint_weights = {"Fairness_0": 2e-5, "Distance_0": 0.5}
     shape.iteration_total = 12
-    strategy = shape.constraint_weight_strategy
+    shape.solve_count = 2
+    strategy = shape.update_strategy
     strategy.tolerance = 0.04
     strategy.state = {
         "Fairness_0": {"weight": 2e-5, "initial_weight": 1e-5, "violation": 0.3},
     }
-    strategy._violations = {"Fairness_0": 0.3, "Distance_0": 0.0}
+    strategy._origin_trial = _ShapeTrial(0.0, {}, {"Fairness_0": 0.3, "Distance_0": 0.0})
     material.constraint_weights = {"VolFrac_0": 3.0}
     controller.objfun.value = torch.tensor(4.0)
     controller.record_history(0., 1., 2., 3., 4.)
@@ -68,31 +70,32 @@ def test_optimizer_snapshots_are_named_copied_and_saved_per_iteration(tmp_path):
     assert list(first) == ["body", "density"]
     assert first["body"] == {
         "iterations": 12,
+        "solves": 2,
         "constraint_weights": {"Fairness_0": 2e-5, "Distance_0": 0.5},
-        "constraint_weight_state": {
+        "update_strategy_state": {
             "tolerance": 0.04,
             "penalties": {
-                "Fairness_0": {"violation": 0.3},
-                "Distance_0": {"violation": 0.0},
+                "Fairness_0": {"peak_z": 0.3},
+                "Distance_0": {"peak_z": 0.0},
             },
         },
     }
     assert first["density"]["constraint_weights"] == {"VolFrac_0": 3.0}
-    assert first["density"]["constraint_weight_state"] == {}
-    assert set(first["density"]) == {"iterations", "constraint_weights", "constraint_weight_state"}
+    assert first["density"]["update_strategy_state"] == {}
+    assert set(first["density"]) == {"iterations", "solves", "constraint_weights", "update_strategy_state"}
     shape.constraint_weights["Fairness_0"] = 1e-5
     strategy.state["Fairness_0"]["violation"] = 0.1
-    strategy._violations["Fairness_0"] = 0.1
+    strategy._origin_trial.violations["Fairness_0"] = 0.1
     strategy.tolerance = 0.03
     controller.objfun.value = torch.tensor(3.0)
     controller.record_history(0., 1., 2., 3., 4.)
     assert first["body"]["constraint_weights"]["Fairness_0"] == 2e-5
-    assert first["body"]["constraint_weight_state"]["penalties"]["Fairness_0"]["violation"] == 0.3
+    assert first["body"]["update_strategy_state"]["penalties"]["Fairness_0"]["peak_z"] == 0.3
     controller.history.save(str(tmp_path))
     restored = History()
     restored.load(str(tmp_path))
     assert restored.records == controller.history.records
-    assert restored.records[1]["optimizers"]["body"]["constraint_weight_state"]["tolerance"] == 0.03
+    assert restored.records[1]["optimizers"]["body"]["update_strategy_state"]["tolerance"] == 0.03
 
 
 def test_component_history_extensions_need_no_controller_or_schema_changes(tmp_path):
@@ -117,7 +120,7 @@ def test_component_history_extensions_need_no_controller_or_schema_changes(tmp_p
     controller.solver = Solve(params=controller.params)
     assert ProtocalHistory().history_data() == {}
     for provider in (controller.objfun, controller.params, controller.solver, controller.updater,
-                     UpdaterBoundaryPart(), UpdaterBoundaryPart().constraint_weight_strategy):
+                     UpdaterBoundaryPart(), UpdaterBoundaryPart().update_strategy):
         assert isinstance(provider, ProtocalHistory)
     controller.record_history(0., 1., 2., 3., 4.)
     record = controller.history.records[0]

@@ -45,17 +45,18 @@ def _title(path: tuple[str, ...]) -> str:
     if path[0] == "optimizers" and len(path) > 2:
         fields = {
             ("iterations",): "inner_iterations",
-            ("constraint_weight_state", "tolerance"): "tolerance",
+            ("solves",): "inner_solves",
+            ("update_strategy_state", "tolerance"): "tolerance",
         }
         field = path[2:]
         if field in fields:
             title = tr(f"ui.history.{fields[field]}")
         elif field[0] == "constraint_weights" and len(field) == 2:
             title = tr("ui.history.penalty_field", penalty=field[1], field=tr("ui.history.weight"))
-        elif field[:2] == ("constraint_weight_state", "penalties") and len(field) == 4:
+        elif field[:2] == ("update_strategy_state", "penalties") and len(field) == 4:
             label = (
                 tr(f"ui.history.{field[3]}")
-                if field[3] == "violation" else field[3]
+                if field[3] in {"violation", "peak_z"} else field[3]
             )
             title = tr("ui.history.penalty_field", penalty=field[2], field=label)
         else:

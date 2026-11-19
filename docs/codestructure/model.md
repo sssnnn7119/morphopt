@@ -249,7 +249,7 @@ UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映�
 
 压力、集中力/力矩、体力、弹簧与自由度罚项具有数值列表；固定条件、RP、耦合与接触不通过相同列表接收幅值。当前 `ReferencePointBoundaryCondition.num_values` 为零，不能据外部求解器的功能推断其支持任意非零位移工况。
 
-`FEAParams.reinitialize()` 对接口与工况键进行规范排序。集合类型共享注册机制，不表示每类对象的执行顺序与数值含义完全一致。完整构造参数和十三类接口见[脚本 FEA 参考](../scriptreference.md#section-feaparams-定义要点)。
+`FEAParams.reinitialize()` 对接口与工况键进行规范排序。集合类型共享注册机制，不表示每类对象的执行顺序与数值含义完全一致。完整构造参数和载荷接口见[脚本 FEA 参考](../scriptreference.md#section-feaparams-定义要点)。
 
 <a id="section-材料分配与参数类型"></a>
 

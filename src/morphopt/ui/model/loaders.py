@@ -24,7 +24,7 @@ from .registry import (
     CONFIGURATION_CLASS_PATHS, NODE_FAMILIES, NODE_TYPES, SURFACE_SYMMETRY_CONSTRAINTS,
     UPDATER_CONSTRAINTS, UPDATER_OBJECTIVES, resolve_node_type,
 )
-from .strategies import STRATEGY_CATALOG, strategy_specs
+from .strategies import strategy_specs
 
 MORPH_SUFFIX = ".morph"
 
@@ -267,19 +267,18 @@ class _DefinitionReader:
                 restored["params"] = self.mapping(restored["params"], item_defaults["params"], f"{item_path}.params")
                 items.append(restored)
             config[field] = items
-        for key in STRATEGY_CATALOG:
-            specs = strategy_specs(key, group)
-            raw = config[key]
-            name = raw.get("type") if isinstance(raw, dict) else None
-            if not isinstance(name, str) or name not in specs:
-                self.note("skipped", f"{path}.{key}", reason=str(name))
-                config[key] = deepcopy(defaults[key])
-                continue
-            spec = specs[name]
-            policy_defaults = {"type": name, "params": field_defaults(spec.fields)}
-            policy = self.mapping(raw, policy_defaults, f"{path}.{key}")
-            policy["params"] = self.mapping(policy["params"], policy_defaults["params"], f"{path}.{key}.params")
-            config[key] = policy
+        raw = config["update_strategy"]
+        name = raw.get("type") if isinstance(raw, dict) else None
+        spec = strategy_specs(group).get(name) if isinstance(name, str) else None
+        strategy_path = f"{path}.update_strategy"
+        if spec is None:
+            self.note("skipped", strategy_path, reason=str(name))
+            config["update_strategy"] = deepcopy(defaults["update_strategy"])
+        else:
+            policy_defaults = {"type": spec.name, "params": field_defaults(spec.fields)}
+            policy = self.mapping(raw, policy_defaults, strategy_path)
+            policy["params"] = self.mapping(policy["params"], policy_defaults["params"], f"{strategy_path}.params")
+            config["update_strategy"] = policy
         return config
 
     def read(self, data: dict) -> ProblemDefinition:
