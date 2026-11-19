@@ -234,14 +234,15 @@ def test_saved_optimizer_parameters_appear_as_named_columns_and_curves(tmp_path)
     app = QApplication.instance() or QApplication([])
     data = History()
     data.append(objective=4.)
-    for weight, violation in ((0.5, 0.0), (0.2, 0.1)):
+    for weight, peak_z in ((0.5, 0.0), (0.2, 1.1)):
         data.append(objective=3., optimizers={
             "body": {
                 "iterations": 12,
+                "solves": 2,
                 "constraint_weights": {"Distance_0": weight},
-                "constraint_weight_state": {
+                "update_strategy_state": {
                     "tolerance": 0.04,
-                    "penalties": {"Distance_0": {"violation": violation}},
+                    "penalties": {"Distance_0": {"peak_z": peak_z}},
                 },
             },
             "density": {"constraint_weights": {"Distance_0": 2.0}},
@@ -258,12 +259,12 @@ def test_saved_optimizer_parameters_appear_as_named_columns_and_curves(tmp_path)
     assert body_weight in headers and density_weight in headers
     column = headers.index(body_weight)
     assert [page.table.item(row, column).text() for row in range(3)] == ["", "0.5", "0.2"]
-    for key in ("inner_iterations", "tolerance"):
+    for key in ("inner_iterations", "inner_solves", "tolerance"):
         assert tr("ui.history.optimizer_field", updater="body", field=tr(f"ui.history.{key}")) in headers
-    field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr("ui.history.violation"))
+    field = tr("ui.history.penalty_field", penalty="Distance_0", field=tr("ui.history.peak_z"))
     violation_column = headers.index(tr("ui.history.optimizer_field", updater="body", field=field))
-    assert [page.table.item(row, violation_column).text() for row in range(3)] == ["", "0", "0.1"]
-    assert len(headers) == 7
+    assert [page.table.item(row, violation_column).text() for row in range(3)] == ["", "0", "1.1"]
+    assert len(headers) == 8
     labels = [page.curve_selector.itemText(index) for index in range(page.curve_selector.count())]
     page.curve_selector.setCurrentIndex(labels.index(body_weight))
     np.testing.assert_equal(page.figure.axes[0].lines[0].get_ydata(), [np.nan, 0.5, 0.2])

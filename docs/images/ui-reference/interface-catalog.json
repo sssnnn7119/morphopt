@@ -5771,148 +5771,135 @@
       ]
     }
   ],
-  "STRATEGIES": {
-    "step_length_strategy": [
-      {
-        "name": "FixedStepLength",
-        "label_key": "ui.strategies.fixed_step_length",
-        "fields": [],
-        "groups": [
-          "geometry",
-          "materials"
-        ]
-      }
-    ],
-    "constraint_weight_strategy": [
-      {
-        "name": "ConstantConstraintWeights",
-        "label_key": "ui.strategies.constant_weights",
-        "fields": [
-          {
-            "key": "value",
-            "label_key": "ui.strategies.value.label",
-            "type": "float",
-            "default": 1.0,
-            "doc_key": "ui.strategies.value.help",
-            "choices": [],
-            "size": 6,
-            "minimum": 0,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          }
-        ],
-        "groups": [
-          "geometry",
-          "materials"
-        ]
-      },
-      {
-        "name": "SensitivityShapeWeights",
-        "label_key": "ui.strategies.sensitivity_shape_weights",
-        "fields": [],
-        "groups": [
-          "geometry"
-        ]
-      },
-      {
-        "name": "AdaptiveShapeWeights",
-        "label_key": "ui.strategies.adaptive_shape_weights",
-        "fields": [
-          {
-            "key": "initial_tolerance",
-            "label_key": "ui.strategies.initial_tolerance.label",
-            "type": "float",
-            "default": 0.05,
-            "doc_key": "ui.strategies.initial_tolerance.help",
-            "choices": [],
-            "size": 6,
-            "minimum": null,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          },
-          {
-            "key": "final_tolerance",
-            "label_key": "ui.strategies.final_tolerance.label",
-            "type": "float",
-            "default": 0.0,
-            "doc_key": "ui.strategies.final_tolerance.help",
-            "choices": [],
-            "size": 6,
-            "minimum": null,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          },
-          {
-            "key": "objective_tolerance",
-            "label_key": "ui.strategies.objective_tolerance.label",
-            "type": "float",
-            "default": 0.01,
-            "doc_key": "ui.strategies.objective_tolerance.help",
-            "choices": [],
-            "size": 6,
-            "minimum": null,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          },
-          {
-            "key": "tightening_increment",
-            "label_key": "ui.strategies.tightening_increment.label",
-            "type": "float",
-            "default": 0.001,
-            "doc_key": "ui.strategies.tightening_increment.help",
-            "choices": [],
-            "size": 6,
-            "minimum": null,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          },
-          {
-            "key": "penalty_growth_limit",
-            "label_key": "ui.strategies.penalty_growth_limit.label",
-            "type": "float",
-            "default": 2.0,
-            "doc_key": "ui.strategies.penalty_growth_limit.help",
-            "choices": [],
-            "size": 6,
-            "minimum": null,
-            "maximum": null,
-            "ints": false,
-            "read_only": false,
-            "hidden": false,
-            "editable": true,
-            "components": [],
-            "item_type": "float"
-          }
-        ],
-        "groups": [
-          "geometry"
-        ]
-      }
-    ]
-  }
+  "STRATEGIES": [
+    {
+      "name": "FixedUpdate",
+      "label_key": "ui.strategies.fixed_update",
+      "fields": [
+        {
+          "key": "value",
+          "label_key": "ui.strategies.value.label",
+          "type": "float",
+          "default": 1.0,
+          "doc_key": "ui.strategies.value.help",
+          "choices": [],
+          "size": 6,
+          "minimum": 0,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        }
+      ],
+      "groups": [
+        "geometry",
+        "materials"
+      ]
+    },
+    {
+      "name": "SensitivityShapeUpdate",
+      "label_key": "ui.strategies.sensitivity_shape_update",
+      "fields": [],
+      "groups": [
+        "geometry"
+      ]
+    },
+    {
+      "name": "AdaptiveShapeUpdate",
+      "label_key": "ui.strategies.adaptive_shape_update",
+      "fields": [
+        {
+          "key": "initial_tolerance",
+          "label_key": "ui.strategies.initial_tolerance.label",
+          "type": "float",
+          "default": 0.05,
+          "doc_key": "ui.strategies.initial_tolerance.help",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        },
+        {
+          "key": "final_tolerance",
+          "label_key": "ui.strategies.final_tolerance.label",
+          "type": "float",
+          "default": 0.0,
+          "doc_key": "ui.strategies.final_tolerance.help",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        },
+        {
+          "key": "tightening_increment",
+          "label_key": "ui.strategies.tightening_increment.label",
+          "type": "float",
+          "default": 0.0002,
+          "doc_key": "ui.strategies.tightening_increment.help",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        },
+        {
+          "key": "violation_tolerance",
+          "label_key": "ui.strategies.violation_tolerance.label",
+          "type": "float",
+          "default": 0.1,
+          "doc_key": "ui.strategies.violation_tolerance.help",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        },
+        {
+          "key": "weight_change_limit",
+          "label_key": "ui.strategies.weight_change_limit.label",
+          "type": "float",
+          "default": 10.0,
+          "doc_key": "ui.strategies.weight_change_limit.help",
+          "choices": [],
+          "size": 6,
+          "minimum": null,
+          "maximum": null,
+          "ints": false,
+          "read_only": false,
+          "hidden": false,
+          "editable": true,
+          "components": [],
+          "item_type": "float"
+        }
+      ],
+      "groups": [
+        "geometry"
+      ]
+    }
+  ]
 }

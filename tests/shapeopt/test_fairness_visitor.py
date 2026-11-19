@@ -1,13 +1,20 @@
 """Fairness owns thresholds, reference state and extensible surface dispatch."""
 
+from types import SimpleNamespace
+
+import morphopt
 import pytest
 import torch
 
+from morphopt.constants import CONSTANT
 from morphopt.shapeopt.barriers import PolynomialBarrier
 from morphopt.shapeopt.objectivefuncs.surfacefairness import Fairness
 from morphopt.shapeopt.surfaces.base_surface import BaseSurface
 from morphopt.shapeopt.surfaces.bsp_surface import BspSurface
 from morphopt.shapeopt.surfaces.cpgeo_surface import CPGEOSurface
+
+
+FAIRNESS = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS
 
 
 @pytest.fixture(autouse=True)
@@ -59,10 +66,10 @@ def test_curvature_penalty_matches_an_analytic_patch(surfaces, index, power):
         ))
 
 
-def test_bsp_nonorthogonality_uses_the_fixed_point_one_limit(surfaces):
+def test_bsp_nonorthogonality_uses_the_fixed_point_two_limit(surfaces):
     penalty = Fairness()
     r, rdu, rdu2, weight = bind(penalty, surfaces)
-    rdu[:, :, 1] = torch.tensor([0.09**0.5, 0.91**0.5, 0.])
+    rdu[:, :, 1] = torch.tensor([0.18**0.5, 0.82**0.5, 0.])
     rdu2 = torch.zeros_like(rdu2)
     value = penalty([r, r], [rdu, rdu], [rdu2, rdu2])
     torch.testing.assert_close(value, weight.sum() * 0.5**3)
@@ -75,21 +82,110 @@ def test_reference_compensation_is_private_to_each_penalty(surfaces):
     expected = first([r, r], [rdu, rdu], [rdu2, rdu2])
     # Rebinding another visitor must not resize or overwrite this visitor's state.
     torch.testing.assert_close(first([r, r], [rdu, rdu], [rdu2, rdu2]), expected)
-    bind(first, surfaces, count=4)
-    assert len(first._evaluators[0][1].keywords["compensation"][0]) == 4
-    assert len(second._evaluators[0][1].keywords["compensation"][0]) == 3
+    with pytest.raises(ValueError, match="sampling grid"):
+        bind(first, surfaces, count=4)
+    assert first._compensation[0].shape == (4, 2)
+    assert second._compensation[0].shape == (4, 3)
     assert weight.shape == (2,)
 
 
-def test_bsp_metric_variation_uses_the_fixed_point_one_limit(surfaces):
+def test_bsp_metric_variation_halfway_through_activation_band(surfaces):
     r, rdu, rdu2, weight = patch_geometry()
     reference_second = torch.zeros_like(rdu2)
     length = (2 * surfaces[0].model.size[0] * surfaces[0].init_size) ** 2
     current_second = torch.zeros_like(rdu2)
-    current_second[:, 0, 0, 0] = 0.5 * (0.09 * length)**0.5
+    midpoint = (1 + FAIRNESS.ACTIVATION_RATIO) / 2 * FAIRNESS.METRIC_VARIATION_LIMIT
+    current_second[:, 0, 0, 0] = 0.5 * (midpoint * length)**0.5
     penalty = Fairness()
     penalty.initialize([r] * 2, [rdu] * 2, [reference_second] * 2, [weight] * 2, surfaces=surfaces)
     torch.testing.assert_close(penalty([r] * 2, [rdu] * 2, [current_second] * 2), weight.sum() * 0.5**3)
+
+
+def test_bsp_initial_variation_compensation_is_pointwise_and_frozen(surfaces, tmp_path):
+    surface = surfaces[0]
+    r, du, _, weights = patch_geometry(count=4)
+    lu, lv = ((2 * n * surface.init_size)**2 for n in surface.model.size)
+    lengths = du.new_tensor([lu, lv, lu, lv])[:, None]
+    # Each derivative has a different set of over-limit samples.
+    limit = FAIRNESS.METRIC_VARIATION_LIMIT
+    initial = torch.tensor([[0., 0.9, 1.25, 3.2]]) * limit
+    initial = torch.cat([initial.roll(i, 1) for i in range(4)])
+    derivatives = torch.zeros(4, 3, 2, 2)
+    for row, (axis, d) in enumerate(((0, 0), (0, 1), (1, 0), (1, 1))):
+        derivatives[:, axis, axis, d] = (initial[row] * lengths[row]).sqrt() / 2
+        derivatives[:, axis, d, axis] = derivatives[:, axis, axis, d]
+
+    def bind_at(term, second):
+        term.initialize([r], [du], [second], [weights], surfaces=[surface])
+
+    penalty = Fairness()
+    bind_at(penalty, derivatives)
+    measured = penalty._bsp_measures(du, derivatives)[2]
+    expected = torch.where(initial > limit, FAIRNESS.ACTIVATION_RATIO * limit, initial)
+    torch.testing.assert_close(measured * penalty._compensation[0], expected)
+    penalty.save(str(tmp_path), 1)
+    path, = tmp_path.glob("*.npz")
+    timestamp = path.stat().st_mtime_ns
+
+    # Doubling second derivatives quadruples the monitored variation, including
+    # at points that were below the threshold on the initial cylinder.
+    changed = derivatives * 2
+    resumed = Fairness()
+    resumed.load(str(tmp_path), 1)
+    for term in (penalty, resumed):
+        bind_at(term, changed)
+        actual = term._bsp_measures(du, changed)[2] * term._compensation[0]
+        torch.testing.assert_close(actual, 4 * expected)
+        term.save(str(tmp_path), 2)
+    assert path.stat().st_mtime_ns == timestamp
+
+
+@pytest.mark.parametrize("has_snapshot", [False, True])
+def test_missing_compensation_uses_original_bsp_on_restart(tmp_path, monkeypatch, has_snapshot):
+    class Cylinder(morphopt.BoundaryPart):
+        def define_surfaces(self):
+            self.add_surface_interface(self.BSP.initialize_cylinder(
+                r0=2, length=12, seed_size=1.5, perturbation_L=4,
+            ))
+
+    class Geometry(morphopt.GeometryParams):
+        def define_interface(self):
+            self.add_interface(Cylinder(), name="actuator")
+
+    def bind_part(term, part):
+        term.initialize(*part.get_geometry_values(), part.get_points_weight(),
+                        surfaces=part.surfaceinterfaces, part_interface=part)
+
+    def compress_first_ring_spacing(surface):
+        points = surface.control_points.reshape(*surface.model.size, 3).clone()
+        points[1, :, 2] = points[0, :, 2] + 0.25 * (points[1, :, 2] - points[0, :, 2])
+        surface.control_points = points.reshape(-1, 3)
+
+    controller = SimpleNamespace(Params=lambda: SimpleNamespace(geometry=Geometry()), path_result=tmp_path)
+    monkeypatch.setattr(morphopt, "controller", controller)
+    geometry = Geometry()
+    geometry.initialize()
+    geometry.reinitialize(iteration=0)
+    part = geometry.interfaces["actuator"]
+    surface, = part.surfaceinterfaces
+    if has_snapshot:
+        compress_first_ring_spacing(surface)
+        geometry.save(str(tmp_path / "log" / "evaluated" / "1"), iteration=1)
+    original = Fairness()
+    bind_part(original, part)
+
+    compress_first_ring_spacing(surface)
+    deformed = surface.control_points.clone()
+    resumed = Fairness()
+    resumed.load(str(tmp_path), iteration=8)
+    bind_part(resumed, part)
+    assert torch.equal(resumed._compensation[0], original._compensation[0])
+    assert torch.equal(surface.control_points, deformed)
+    assert not torch.equal(resumed._compensation[0], Fairness._bsp_compensation(
+        surface, surface.get_rdu(), surface.get_rdu2(),
+    ))
+    resumed.save(str(tmp_path), iteration=9)
+    assert (tmp_path / "initial_compensation.npz").is_file()
 
 
 @pytest.mark.parametrize("index", [0, 1])
@@ -158,7 +254,7 @@ def test_invalid_fairness_configuration_is_rejected(parameters):
 
 def test_all_surfaces_share_one_curvature_limit_and_one_weight(surfaces):
     from morphopt.optcore.updaters import BaseUpdater
-    from morphopt.shapeopt.strategies import AdaptiveShapeWeights
+    from morphopt.shapeopt.strategies import AdaptiveShapeUpdate
     class PatchUpdater(BaseUpdater):
         update_kind = "geometry"
         def __init__(self):
@@ -176,7 +272,7 @@ def test_all_surfaces_share_one_curvature_limit_and_one_weight(surfaces):
     x = torch.zeros(6)
     jacobian = torch.func.grad(lambda x: updater.closure(x, True)[1][0])(x)
     assert jacobian[0] > 0 and jacobian[3] > 0
-    weights = AdaptiveShapeWeights()(updater, torch.tensor([-1., 0, 0, -2., 0, 0]))
+    weights = AdaptiveShapeUpdate().constraint_weights(updater, torch.tensor([-1., 0, 0, -2., 0, 0]))
     assert list(weights) == list(updater.constraints_funcs) and len(weights) == 1
     updater.penalty.max_curvature = 2.0
     assert updater.closure(x, True)[1][0] == 0
@@ -185,11 +281,5 @@ def test_all_surfaces_share_one_curvature_limit_and_one_weight(surfaces):
 
 def test_public_fairness_constructor_only_exposes_curvature():
     import inspect
-    from morphopt.constants import CONSTANT
     assert set(inspect.signature(Fairness).parameters) == {"max_curvature"}
-    settings = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS
-    assert Fairness().max_curvature == settings.CURVATURE_LIMIT == 3.0
-    assert settings.METRIC_VARIATION_LIMIT == settings.NONORTHOGONALITY_LIMIT == 0.1
-    for name in ("surface_index", "max_metric_variation", "max_nonorthogonality"):
-        with pytest.raises(TypeError):
-            Fairness(**{name: 0.2})
+    assert Fairness().max_curvature == FAIRNESS.CURVATURE_LIMIT

@@ -280,15 +280,15 @@
     },
     {
       "file": "updaters/geometry-updater.png",
-      "description": "Step limits and event-driven penalty strategy",
+      "description": "Geometry updater, maximum step length and update strategy",
       "pixels": [
-        2870,
-        1820
+        1152,
+        1286
       ],
       "part_naming": "single Part name; independent Instance names",
       "source": "examples/bending_actuator/bending_actuator.morph",
       "recaptured_for_current_branch": true,
-      "dpr": 1.75
+      "dpr": 1.5
     },
     {
       "file": "solver/run-settings.png",

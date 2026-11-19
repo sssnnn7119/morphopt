@@ -107,7 +107,7 @@ def geometry_updater_config(
     Args:
         part_name (str): Registered Part name referenced by instances, loads, or material
             assignments.
-        max_step_iter (int): Maximum number of inner iterations performed for one outer update.
+        max_step_iter (int): Maximum optimizer steps per subproblem solve.
         max_step_length (float): Updater-owned movement limits in the target's parameter-block
             order.
         objective_functions (tuple | None): Registered differentiable subproblem objective
@@ -123,8 +123,7 @@ def geometry_updater_config(
         "part_name": str(part_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
-        "step_length_strategy": strategy_config("step_length_strategy"),
-        "constraint_weight_strategy": strategy_config("constraint_weight_strategy", group="geometry"),
+        "update_strategy": strategy_config("geometry"),
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("ShapeDerivative"),
         ],
@@ -153,7 +152,7 @@ def materials_updater_config(
 
     Args:
         material_name (str): Registered material-interface name selected as the updater target.
-        max_step_iter (int): Maximum number of inner iterations performed for one outer update.
+        max_step_iter (int): Maximum optimizer steps per subproblem solve.
         max_step_length (float): Updater-owned movement limits in the target's parameter-block
             order.
         if_update (bool | list[bool]): Enable the selected interface's design update when True.
@@ -168,8 +167,7 @@ def materials_updater_config(
         "material_name": str(material_name or ""),
         "max_step_iter": int(max_step_iter),
         "max_step_length": float(max_step_length),
-        "step_length_strategy": strategy_config("step_length_strategy"),
-        "constraint_weight_strategy": strategy_config("constraint_weight_strategy"),
+        "update_strategy": strategy_config("materials"),
         "if_update": if_update,
         "objective_functions": list(objective_functions) if objective_functions is not None else [
             updater_objective("Sensitivity"),

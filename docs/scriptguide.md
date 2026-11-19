@@ -212,13 +212,12 @@ class ThisController(morphopt.Controller):
                 super().__init__(
                     max_step_iter=50,
                     max_step_length=0.5,
-                    step_length_strategy=self.strategies.FixedStepLength(),
-                    constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
+                    update_strategy=self.strategies.AdaptiveShapeUpdate(
                         initial_tolerance=0.05,
                         final_tolerance=0.0,
-                        objective_tolerance=0.01,
-                        tightening_increment=0.001,
-                        penalty_growth_limit=2.0,
+                        violation_tolerance=0.1,
+                        tightening_increment=0.0002,
+                        weight_change_limit=10.0,
                     ),
                 )
 
@@ -300,7 +299,7 @@ if __name__ == "__main__":
 
 运行 `python resume_optimization.py` 后，程序从该目录的任务快照和最近保存状态继续计算。`path_result` 指向单个运行目录；其父目录仅用于容纳多个运行。任务结构发生变化时应创建新运行，原始脚本的后续修改不会自动替换已有运行中的脚本快照。
 
-`restart_per_iteration=20` 指定分段运行时的进程重启间隔，重启后继续同一任务。`max_step_iter=50` 限定每轮设计更新内部的子优化次数。两者均不是外层优化总轮数上限。
+`restart_per_iteration=20` 指定分段运行时的进程重启间隔，重启后继续同一任务。`max_step_iter=50` 限定每次子求解的步数。自适应策略的 `max_solves` 限定每轮设计更新的子求解次数，默认最多 3 次。两者均不是外层优化总轮数上限。
 
 <a id="section-修改算例"></a>
 

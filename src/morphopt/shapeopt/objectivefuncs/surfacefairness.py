@@ -5,23 +5,30 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from functools import partial, singledispatchmethod
+from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 
 from ...constants import CONSTANT
+from ...optcore.protocal import ProtocalSavable
 from ..surfaces.base_surface import BaseSurface
 from ..surfaces.bsp_surface import BspSurface
 from ..surfaces.cpgeo_surface import CPGEOSurface
 from .basefuncs import BaseConstraints
 
+if TYPE_CHECKING:
+    from ..boundary_part import BoundaryPart
+
 _SETTINGS = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS
 PenaltyEvaluator = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 
 
-class Fairness(BaseConstraints):
+class Fairness(BaseConstraints, ProtocalSavable):
     """Apply one curvature limit to all updatable boundary surfaces.
 
-    BSP metric variation and nonorthogonality limits remain fixed at 0.1.
+    The Fairness settings define the BSP metric variation and squared tangent cosine limits.
     The external visitor keeps type-specific calculations and per-surface
     reference compensation inside this single geometric penalty.
     """
@@ -42,6 +49,8 @@ class Fairness(BaseConstraints):
         if not math.isfinite(max_curvature) or max_curvature <= 0:
             raise ValueError("max_curvature must be finite and positive.")
         self.max_curvature = max_curvature
+        self._compensation: dict[int, torch.Tensor] = {}
+        self._missing_reference = False
         self._evaluators: list[tuple[int, PenaltyEvaluator]] = []
 
     def initialize(
@@ -52,9 +61,10 @@ class Fairness(BaseConstraints):
         weights: list[torch.Tensor],
         *args: object,
         surfaces: Sequence[BaseSurface],
+        part_interface: BoundaryPart | None = None,
         **kwargs: object,
     ) -> None:
-        """Initialize the Fairness state.
+        """Bind this subproblem's evaluators and cache each BSP reference on first use.
 
         Args:
             r0 (list[torch.Tensor]): Reference Cartesian surface samples, with one (num_points, 3)
@@ -67,11 +77,19 @@ class Fairness(BaseConstraints):
                 corresponding points.
             surfaces (Sequence[BaseSurface]): Surface interfaces in boundary registration order:
                 exterior first, followed by cavities.
+            part_interface (BoundaryPart | None): Owning part, used to recover a missing
+                reference from the task definition on restart.
             *args: Additional positional arguments accepted by the shared interface.
             **kwargs: Additional keyword arguments accepted by the shared interface.
         """
         super().initialize(r0, rdu0, rdu20, weights, *args, surfaces=surfaces, **kwargs)
         with torch.no_grad():
+            if self._missing_reference:
+                if any(isinstance(s, BspSurface) and s.is_updatable for s in surfaces):
+                    if part_interface is None:
+                        raise ValueError("Recovering BSP fairness compensation requires its owning part.")
+                    self._restore_initial_bsp(part_interface.name)
+                self._missing_reference = False
             self._evaluators = [
                 (index, self.visit(surface, rdu0[index], rdu20[index]))
                 for index, surface in enumerate(self.surfaces) if surface.is_updatable
@@ -144,22 +162,68 @@ class Fairness(BaseConstraints):
             PenaltyEvaluator: Callable accepting sample weights, first derivatives, and second
                 derivatives for this BSP surface.
         """
-        measures = self._bsp_measures(rdu, rdu2)[2]
-        lengths = measures.new_tensor([
-            (2 * surface.model.size[0] * surface.init_size) ** 2,
-            (2 * surface.model.size[1] * surface.init_size) ** 2,
-        ])[[0, 1, 0, 1], None]
-        relative = measures / lengths
-        bound = _SETTINGS.METRIC_VARIATION_LIMIT * _SETTINGS.REFERENCE_METRIC_RATIO
-        active = relative > bound
-        compensation = torch.where(
-            active, bound / relative.clamp_min(torch.finfo(relative.dtype).tiny), 1.0,
-        ) / lengths
-        # Retain the established extra reference-length factor on cross/v terms.
-        compensation[1:] = torch.where(
-            active[1:], compensation[1:] / lengths[1:], compensation[1:],
-        )
-        return partial(self._bsp_penalty, compensation=compensation.detach())
+        index = self.surfaces.index(surface)
+        if index not in self._compensation:
+            self._compensation[index] = self._bsp_compensation(surface, rdu, rdu2)
+        factors = self._compensation[index].to(rdu)
+        if factors.shape[1] != rdu.shape[0]:
+            raise ValueError("BSP fairness requires the same sampling grid as the initial surface.")
+        return partial(self._bsp_penalty, compensation=factors)
+
+    @classmethod
+    def _bsp_compensation(
+        cls, surface: BspSurface, rdu: torch.Tensor, rdu2: torch.Tensor,
+    ) -> torch.Tensor:
+        """Freeze one multiplier for each initial metric derivative and parameter sample."""
+        variation = cls._bsp_measures(rdu, rdu2)[2]
+        lu, lv = ((2 * n * surface.init_size) ** 2 for n in surface.model.size)
+        lengths = variation.new_tensor([lu, lv, lu, lv])[:, None]
+        initial = variation / lengths
+        limit = _SETTINGS.METRIC_VARIATION_LIMIT
+        factor = torch.ones_like(initial)
+        high = initial > limit
+        factor[high] = (limit * _SETTINGS.ACTIVATION_RATIO) / initial[high]
+        return (factor / lengths).detach()
+
+    def _restore_initial_bsp(self, part_name: str) -> None:
+        """Replay the task's initial geometry on a separate part before computing its factors."""
+        import morphopt
+
+        controller = morphopt.controller
+        geometry = controller.Params().geometry
+        geometry.initialize()
+        geometry.reinitialize(iteration=0)
+        part = geometry.interfaces[part_name]
+        # A saved first evaluation also preserves user-generated initial control points.
+        first = Path(controller.path_result) / "log" / "evaluated" / "1"
+        if first.is_dir():
+            part.load(str(first), iteration=1)
+        for index, surface in enumerate(part.surfaceinterfaces):
+            if isinstance(surface, BspSurface) and surface.is_updatable:
+                self._compensation[index] = self._bsp_compensation(
+                    surface, surface.get_rdu(), surface.get_rdu2(),
+                )
+
+    def save(self, foldpath: str, iteration: int) -> None:
+        """Write the initial BSP compensation once, shared by all restart iterations."""
+        path = Path(foldpath) / "initial_compensation.npz"
+        if not self._compensation or path.is_file():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp.npz")
+        np.savez_compressed(temporary, **{
+            str(index): factors.cpu().numpy() for index, factors in self._compensation.items()
+        })
+        temporary.replace(path)
+
+    def load(self, foldpath: str, iteration: int) -> None:
+        """Restore saved factors, requesting the original BSP on first use if absent."""
+        path = Path(foldpath) / "initial_compensation.npz"
+        self._compensation.clear()
+        self._missing_reference = not path.is_file()
+        if not self._missing_reference:
+            with np.load(path, allow_pickle=False) as data:
+                self._compensation = {int(i): torch.from_numpy(data[i]) for i in data.files}
 
     @visit.register
     def _visit_cpgeo(

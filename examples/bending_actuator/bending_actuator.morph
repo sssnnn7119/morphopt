@@ -239,17 +239,14 @@
             {
               "max_step_iter": 50,
               "max_step_length": 0.5,
-              "step_length_strategy": {
-                "type": "FixedStepLength",
-                "params": {}
-              },
-              "constraint_weight_strategy": {
-                "type": "AdaptiveShapeWeights",
+              "update_strategy": {
+                "type": "AdaptiveShapeUpdate",
                 "params": {
                   "initial_tolerance": 0.05,
                   "final_tolerance": 0.0,
                   "tightening_increment": 0.0002,
                   "violation_tolerance": 0.1,
+                  "max_solves": 3,
                   "weight_change_limit": 10.0
                 }
               },

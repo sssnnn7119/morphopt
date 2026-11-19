@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import linecache
+import sys
 from textwrap import indent
+from types import ModuleType
+from uuid import uuid4
 
 from ..model.problem import ProblemDefinition
 
@@ -23,10 +27,10 @@ class DefinitionValues:
 
     @property
     def namespace(self) -> dict[str, object]:
-        """Return namespace.
+        """Evaluate the model's helper definitions once for this preview.
 
         Returns:
-            dict[str, object]: Namespace.
+            dict[str, object]: Shared globals for helper functions and parameter expressions.
         """
         if self._namespace is None:
             import numpy as np
@@ -53,7 +57,23 @@ class DefinitionValues:
                 )
             source = "\n\n".join(block for block in blocks if block.strip())
             if source:
-                exec(compile(source, "<definition preview helpers>", "exec"), namespace)
+                name = f"_morphopt_preview_{uuid4().hex}"
+                module = ModuleType(name)
+                filename = f"<{name}>"
+                module.__file__ = filename
+                module.__dict__.update(namespace)
+                code = compile(source, filename, "exec")
+                # TorchFEA reads the source of Serializable subclasses as they are defined.
+                linecache.cache[filename] = (
+                    len(source), None, source.splitlines(keepends=True), filename
+                )
+                sys.modules[name] = module
+                try:
+                    exec(code, module.__dict__)
+                finally:
+                    sys.modules.pop(name, None)
+                    linecache.cache.pop(filename, None)
+                namespace = module.__dict__
             self._namespace = namespace
         return self._namespace
 

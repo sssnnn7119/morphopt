@@ -36,7 +36,8 @@ class OptimizationArchive:
         self._controller_class: type[Any] | None = None
         self._params: Any | None = None
         self._parameters_iteration: int | None = None
-        self._geometry_iterations: dict[str, int] = {}
+        self._geometry_iterations: dict[str, tuple[Path, int]] = {}
+        self._initial_geometry = None
 
     @property
     def log_folder(self) -> Path:
@@ -117,12 +118,13 @@ class OptimizationArchive:
             self._parameters_iteration = iteration
         return params
 
-    def load_geometry_part(self, name: str, iteration: int) -> Any:
+    def load_geometry_part(self, name: str, iteration: int, *, folder: Path | None = None) -> Any:
         """Restore one geometry part without loading unrelated model state.
 
         Args:
             name (str): Name identifying the item in its owning collection.
             iteration (int): Iteration index associated with the saved or current model state.
+            folder (Path | None): Geometry snapshot root. Defaults to the restart log.
 
         Returns:
             BasePart: Registered geometry interface restored at the requested iteration.
@@ -131,15 +133,49 @@ class OptimizationArchive:
         if params is None:
             raise ValueError("The archived geometry definition is unavailable.")
         part = params.geometry.interfaces[name]
-        if self._parameters_iteration == iteration:
+        folder = self.log_folder if folder is None else folder
+        if folder == self.log_folder and self._parameters_iteration == iteration:
             return part
-        if self._geometry_iterations.get(name) != iteration:
+        key = (folder, iteration)
+        if self._geometry_iterations.get(name) != key:
             self._parameters_iteration = None
             self._geometry_iterations.pop(name, None)
             with cpu_torch_defaults():
-                part.load(foldpath=str(self.log_folder), iteration=iteration)
-            self._geometry_iterations[name] = iteration
+                part.load(foldpath=str(folder), iteration=iteration)
+            self._geometry_iterations[name] = key
         return part
+
+    def load_design_component(self, component: Any, iteration: int) -> Any:
+        """Return the component to draw for a completed finite-element solve.
+
+        Surface checkpoints are written after the update. New runs also store the
+        evaluated geometry after refinement. Older runs supply the preceding
+        checkpoint, or the archived initial geometry for the first solve.
+        """
+        if getattr(component, "surfaceinterfaces", None) is None:
+            self.load_parameters(iteration)
+            return component
+
+        folder = self.log_folder / "evaluated" / str(iteration)
+        step = iteration
+        if not folder.is_dir():
+            if iteration == 1:
+                if self._initial_geometry is None:
+                    with cpu_torch_defaults():
+                        geometry = self.controller_class.Params().geometry
+                        geometry.initialize()
+                        geometry.reinitialize(iteration=0)
+                    self._initial_geometry = geometry
+                return self._initial_geometry.interfaces[component.name]
+            folder, step = self.log_folder, iteration - 1
+
+        directory = folder / component.pathlog_required()[0] / component.name
+        for index, surface in enumerate(component.surfaceinterfaces):
+            if surface.num_variables:
+                stem = directory / f"Surface-{index}_iter-{step}"
+                if not stem.is_file() and not stem.with_suffix(".npz").is_file():
+                    raise FileNotFoundError(f"Missing evaluated surface for iteration {iteration}: {stem}")
+        return self.load_geometry_part(component.name, step, folder=folder)
 
     def load_history(self, iteration: int | None = None) -> Any:
         """Load optimization history, optionally at a specific iteration.

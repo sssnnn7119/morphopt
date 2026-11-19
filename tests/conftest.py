@@ -92,8 +92,9 @@ def design_archive(tmp_path):
     part = params.geometry.interfaces["body"]
     archive.log_folder.mkdir()
     with cpu_torch_defaults():
-        part.save(foldpath=str(archive.log_folder), iteration=1)
         inner = part.surface_interfaces()[1]
+        inner.update_variables(torch.full_like(inner.control_points, 0.2))
+        part.save(foldpath=str(archive.log_folder), iteration=1)
         inner.update_variables(torch.full_like(inner.control_points, 0.2))
         part.save(foldpath=str(archive.log_folder), iteration=2)
     history = History()

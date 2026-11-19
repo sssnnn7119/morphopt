@@ -215,12 +215,8 @@
             {
               "max_step_iter": 3,
               "max_step_length": 0.02,
-              "step_length_strategy": {
-                "type": "FixedStepLength",
-                "params": {}
-              },
-              "constraint_weight_strategy": {
-                "type": "ConstantConstraintWeights",
+              "update_strategy": {
+                "type": "FixedUpdate",
                 "params": {
                   "value": 1.0
                 }

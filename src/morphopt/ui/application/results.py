@@ -102,16 +102,9 @@ class ResultSession:
         self.history = history
         return history
 
-    def load_parameters(self, iteration: int) -> Any | None:
-        """Load parameters.
-
-        Args:
-            iteration (int): Iteration index associated with the saved or current model state.
-
-        Returns:
-            Any | None: Load parameters.
-        """
-        return self._archive.load_parameters(iteration) if self._archive else None
+    def load_design_component(self, component: Any, iteration: int) -> Any:
+        """Restore the selected component for the displayed iteration."""
+        return self._archive.load_design_component(component, iteration)
 
     def fea_components(self) -> tuple[tuple[str, Any], ...]:
         """Return fea components.

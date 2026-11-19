@@ -253,7 +253,7 @@ class Actuator(morphopt.BoundaryPart):
 | `init_location` | 曲面初始位置 |
 | `perturbation_L` | 初始扰动长度参数，负值表示不施加该扰动 |
 
-曲面只保存几何；曲率阈值通过更新器中的 `Fairness(max_curvature=...)` 定义，BSP 的参数度量与非正交阈值固定为 0.1。曲面方向由部件按外边界/内腔顺序自动设置，不输入 `flip`。几何变化还受更新步长、距离和包络条件共同控制。
+曲面只保存几何；曲率阈值通过更新器中的 `Fairness(max_curvature=...)` 定义，BSP 的度量变化与非正交阈值分别为 0.1 和 0.2。曲面方向由部件按外边界/内腔顺序自动设置，不输入 `flip`。几何变化还受更新步长、距离和包络条件共同控制。
 
 <a id="section-曲面工厂"></a>
 
@@ -861,13 +861,13 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 该配置对应两个曲面。基类 `BaseSurface.is_updatable` 默认值为 `False`；`BspSurface` 和 `CPGEOSurface` 默认值为 `True`，可在 `define_surfaces()` 中设置 `surface.is_updatable = False` 固定指定曲面。BREP 默认关闭，选定 NURBS 面后可启用面内控制点优化；网格曲面不提供设计变量。几何更新器直接读取曲面状态。`max_step_iter` 限定单次更新子问题内部迭代，`max_step_length` 配置最大更新步长；两者均不限制整个任务的外层轮数。
 
-逐控制点步长由 `UpdaterBoundaryPart` 通过步长策略统一生成。默认 `FixedStepLength` 在每轮外层迭代中将各控制点的步长上限设为 `max_step_length`，不根据相邻更新方向增大或衰减，也不乘以隐含的初始比例。`BoundaryPart.update_variables(x_change, max_step_length)` 接收更新器提供的逐曲面 Tensor 列表，通过 `atan` 映射应用步长限制；部件自身不推算或修正步长，不接受缺省步长或逐曲面的 `None` 值。
+更新策略根据 `max_step_length` 生成逐曲面的控制点步长上限。内置策略对所有控制点采用相同上限。`BoundaryPart.update_variables(x_change, max_step_length)` 使用这些上限，通过 `atan` 映射限制实际位移。
 
 | 项目 | 注册位置 | 主要配置与适用范围 |
 |---|---|---|
 | `ShapeDerivative()` | `add_objective_function()` | 原有一阶形状代理 |
 | `QuadraticShapeDerivative(memory_size=10)` | `add_objective_function()` | 基于外层梯度历史的独立二阶形状代理 |
-| `Fairness(max_curvature=1.0)` | `add_constraints()` | 对可更新 BSP/CPGEO 曲面采用统一曲率平方和阈值；BSP 的附加参数化阈值固定为 0.1 |
+| `Fairness(max_curvature=1.0)` | `add_constraints()` | 对可更新 BSP/CPGEO 曲面采用统一曲率平方和阈值；BSP 的度量变化与非正交阈值分别为 0.1 和 0.2 |
 | `Distance(min_distance=...)` | `add_constraints()` | 曲面间最小距离，矩阵按曲面索引配置 |
 | `boundarys.Cylinder(radius, height, bottom)` | `add_constraints()` | 圆柱包络 |
 | `boundarys.MinRadius(radius)` | `add_constraints()` | 最小径向范围 |
@@ -875,17 +875,16 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 主目标在 `ObjectiveFunction` 中定义，`ShapeDerivative` 为更新子问题中的梯度项。只填写主目标而缺少相应更新器或灵敏度项，不能构成完整的形状更新配置。
 
-几何罚项使用曲面参考面积权重进行离散积分，积分权重在每轮外层迭代开始时更新，并在该轮子优化中固定。参考面积权重不乘以有限元灵敏度，也不按采样点数平均；`SensitivityShapeWeights` 可独立提供逐采样点的优化权重。曲面点对距离罚项保留两侧面积权重的乘积，对应点对的双重曲面积分。内置几何障碍使用固定三次幂，充分满足条件时取零，接近阈值时激活。
+几何罚项使用曲面参考面积权重进行离散积分，积分权重在每轮外层迭代开始时更新，并在该轮子优化中固定。参考面积权重不乘以有限元灵敏度，也不按采样点数平均；`SensitivityShapeUpdate` 可独立提供逐采样点的优化权重。曲面点对距离罚项保留两侧面积权重的乘积，对应点对的双重曲面积分。内置几何障碍使用固定三次幂，充分满足条件时取零，接近阈值时激活。
 
-子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。更新器的 `constraint_weights` 保存各罚项的系数，默认均为 1。`morphopt/optcore/strategies.py` 定义通用步长与权重接口及默认实现，`morphopt/shapeopt/strategies.py` 定义形状优化专用策略，通过更新器构造参数选择。几何与 SIMP 材料更新器共用通用策略接口，分别持有各自的策略实例。
+子问题总目标为 $L=\sum_j m_j+\sum_c\lambda_c P_c$。更新器的 `constraint_weights` 保存本次求解使用的各罚项系数。每个几何或 SIMP 更新器持有独立的 `update_strategy` 实例。几何更新器默认使用 `AdaptiveShapeUpdate`，材料更新器默认使用 `FixedUpdate`。
 
 ```python
 class Shape(morphopt.UpdaterBoundaryPart):
     def __init__(self) -> None:
         super().__init__(
             max_step_length=0.2,
-            step_length_strategy=self.strategies.FixedStepLength(),
-            constraint_weight_strategy=self.strategies.ConstantConstraintWeights(
+            update_strategy=self.strategies.FixedUpdate(
                 value=1.0,
             ),
         )
@@ -893,15 +892,19 @@ class Shape(morphopt.UpdaterBoundaryPart):
 
 策略命名空间与 `self.objectivefuncs` 一样作为更新器类属性提供。`BaseUpdater.strategies` 提供通用策略，`UpdaterBoundaryPart.strategies` 在相同入口提供通用策略与形状专用策略，`UpdaterOffsetBoundaryPart` 继承该入口。因此，更新器子类可在调用 `super().__init__()` 时直接使用 `self.strategies.xxx()`。类属性仅引用策略类的命名空间，每次构造策略均产生独立实例，不共享运行状态。
 
-新增步长策略继承 `StepLengthStrategy` 并实现 `__call__(updater, parameters, maximum, gradient)`。`parameters` 为逐块物理参数，几何块形状为 `(控制点数, 3)`，材料块为 `(变量数, 1)`；返回逐块的一维步长 Tensor 列表。初始化时 `gradient` 为 `None`，每轮外层迭代开始时接收当前原始有限元梯度。策略重新生成与当前参数数量对应的步长，不在部件中取均值补齐。默认策略的输出与梯度无关。
+自定义策略继承 `UpdateStrategy`，通过三个方法参与一次设计更新。
 
-新增权重策略继承 `ConstraintWeightStrategy` 并实现 `__call__(updater, gradient)`，返回键为 `updater.constraints_funcs` 中注册名称的系数字典。策略通过 `updater.part` 或 `updater.material`、`updater.obj_funcs` 和 `updater.constraints_funcs` 读取当前状态。该策略在目标项、约束项和步长初始化完成后每轮调用一次，系数必须有限且非负。原有 `compute_constraint_weights()` 方法已由策略对象替代。
+| 方法 | 调用时机与返回值 |
+|---|---|
+| `step_lengths(updater, parameters, maximum, gradient)` | 初始化时梯度为 `None`，外层更新时传入原始有限元梯度。每个参数块返回一个一维张量，每行对应一个步长上限。基类使用配置的最大步长。 |
+| `constraint_weights(updater, gradient)` | 在局部目标和罚项完成初始化后，返回以登记罚项名为键的非负有限系数字典。 |
+| `solve_update(updater, origin)` | 返回本轮要提交的候选解。策略通过 `updater.solve_subproblem(start, iterations=n)` 指定阶段起点与迭代预算。各阶段共用本轮有限元灵敏度。默认策略从原点执行一次完整求解。 |
 
-步长、距离要求与权重在子优化期间固定，闭包和线搜索不修改策略状态。`updater.closure(x, return_list=True)` 返回按注册顺序排列的原始目标值与原始罚项值；普通 `updater.closure(x)` 返回加权后的总目标。子优化日志中的约束列显示加权贡献，`Total` 包含全部目标与罚项。UI 在各优化器主设置中提供步长与罚项权重策略选择，并直接编辑参数。用户扩展策略仍通过更新器自定义类的构造方法传入。参考面积权重实现的是每轮参考曲面上的积分近似；若需当前变形曲面上的面积积分，还需在评价时引入随设计变化的面积微元。
+例如，仅需按变量调整步长时，可继承 `FixedUpdate` 并重写 `step_lengths`，沿用固定系数和单次求解。闭包 `updater.closure(x, return_list=True)` 返回原始目标和罚项值，默认调用返回加权总目标。一次内层线搜索使用同一组系数。
 
-<a id="section-几何权重策略与障碍积分"></a>
+<a id="section-几何更新策略与障碍积分"></a>
 
-#### 9.2.1 几何权重策略与障碍积分
+#### 9.2.1 几何更新策略与障碍积分
 
 几何罚项由参考面积权重与可选采样权重共同组成：
 
@@ -914,47 +917,48 @@ $A^0$ 为参考曲面的积分面积；$\omega$ 为策略提供的逐采样点�
 
 | 策略 | 返回的整体系数 | 采样权重与状态 |
 |---|---|---|
-| `ConstantConstraintWeights(value=1.0)` | 所有罚项使用同一显式系数 | 采样因子为 1，无历史状态 |
-| `SensitivityShapeWeights()` | 系数均为 1 | 每轮将控制点原始梯度的模长最近邻插值到各曲面采样点；无跨轮历史 |
-| `AdaptiveShapeWeights(...)` | 每项独立标定、保持或增强 | 采样因子为 1，保存距离放宽量、目标尺度和各项标定记录 |
+| `FixedUpdate(value=1.0)` | 所有罚项使用同一显式系数 | 采样因子为 1，无历史状态 |
+| `SensitivityShapeUpdate()` | 系数均为 1 | 每轮将控制点原始梯度的模长最近邻插值到各曲面采样点；无跨轮历史 |
+| `AdaptiveShapeUpdate(...)` | 按罚项标定基础系数 | 曲面逐点计算超限惩罚，壁厚按点对计算 |
 
-`SensitivityShapeWeights` 适用于形状更新器。最近邻插值使用坐标轴尺度重整；同一曲面上零值采样点采用该曲面最小正值，整张曲面均为零时使用 1。策略通过几何罚项的 `set_sample_weights()` 传入采样因子，不修改面积数据或物理梯度。该策略不启用自适应距离放宽。
+`SensitivityShapeUpdate` 适用于形状更新器。最近邻插值使用坐标轴尺度重整；同一曲面上零值采样点采用该曲面最小正值，整张曲面均为零时使用 1。策略通过几何罚项的 `set_sample_weights()` 传入采样因子，不修改面积数据或物理梯度。该策略不启用自适应几何放宽。
 
 ```python
 class Shape(morphopt.UpdaterBoundaryPart):
     def __init__(self) -> None:
         super().__init__(
             max_step_length=0.5,
-            step_length_strategy=self.strategies.FixedStepLength(),
-            constraint_weight_strategy=self.strategies.AdaptiveShapeWeights(
+            update_strategy=self.strategies.AdaptiveShapeUpdate(
+                max_solves=3,
                 initial_tolerance=0.05,
                 final_tolerance=0.0,
-                objective_tolerance=0.01,
-                tightening_increment=0.001,
-                penalty_growth_limit=2.0,
+                violation_tolerance=0.1,
+                tightening_increment=0.0002,
+                weight_change_limit=10.0,
             ),
         )
 ```
 
-`AdaptiveShapeWeights` 按目标变化与几何罚项恶化触发调整，不使用固定外层轮次计划。
+`AdaptiveShapeUpdate` 的默认参数如下。
 
 | 参数 | 默认值 | 含义 |
 |---|---|---|
-| `initial_tolerance` | `0.05` | 初始距离放宽比例，要求距离为原值的 95% |
-| `final_tolerance` | `0.0` | 最终距离放宽比例，0 表示原始要求 |
-| `objective_tolerance` | `0.01` | 相邻高保真目标的相对变化绝对值不超过该值时，触发一次收紧 |
-| `tightening_increment` | `0.001` | 每次触发时减少的放宽比例，不低于最终值 |
-| `penalty_growth_limit` | `2.0` | 监测罚值超过参考罚值的该倍数，且加权贡献显著时，触发恶化处理 |
+| `max_solves` | `3` | 每个外层更新允许的子求解总次数，取正整数 |
+| `initial_tolerance` | `0.05` | 初始几何放宽比例，取值小于 1/3 |
+| `final_tolerance` | `0.0` | 最终几何放宽比例，0 对应原始距离要求 |
+| `tightening_increment` | `0.0002` | 每次收紧时扣减的放宽比例 |
+| `violation_tolerance` | `0.1` | 以障碍函数过渡宽度计量的参考违反程度 |
+| `weight_change_limit` | `10.0` | 重算时预测收益安全系数的上限 |
 
-比例满足 `0 <= final_tolerance <= initial_tolerance < 1`；目标变化阈值在 `[0,1)`，收紧量为正，增长倍数大于 1。当前放宽比例为 $\varepsilon$ 时，要求距离为 $d_{\rm req}=(1-\varepsilon)d_{\min}$。例如 $d_{\min}=2.5$ 时，初始要求为 2.375；触发一次后要求为 2.3775。该数值不依赖当前为第几轮优化。
+每个具名罚项独立标定基础系数，再乘以当前原始梯度范数与标定时梯度范数之比。梯度为零时沿用最近的正范数，以保留几何修复能力。
 
-每轮依次执行以下操作。
+各采样点按 $z=[(f-f_{\mathrm{start}})/w]_+$ 衡量违反程度。$w$ 为惩罚宽度，$z=0$ 表示罚项尚未激活，$z=1$ 表示局部罚值 $z^p$ 达到 1。幂次 $p$ 决定罚值的增长速度。曲面罚值按面积积分，壁厚罚值按候选点对积分。
 
-1. 在固定的初始放宽比例下计算监测罚值，使监测结果不受当前收紧量变化干扰。
-2. 以历史目标绝对值的最大值 $J_{\rm scale}$ 为尺度，计算 $|J_k-J_{k-1}|/J_{\rm scale}$。较小的目标变化，包括小幅振荡，可触发距离收紧。
-3. 对已有标定项，若监测罚值超过参考值的 `penalty_growth_limit` 倍，且加权监测值超过 `0.001 * J_scale`，则该项系数乘以 1.25，并触发一次距离收紧。参考罚值在改善时取较小值，增强后重置，避免相同违反量反复累乘。
-4. 仅对尚未完成标定的罚项进行双向几何试探。已标定且未恶化的系数保持不变。
-5. 固定当前距离要求和全部系数，求解本轮子优化；闭包和线搜索不修改策略状态。
+子问题的损失由物理代理和加权积分罚值组成。几何放宽比例为 $\varepsilon$ 时，局部加罚阈值为 $L=1+\varepsilon/(0.05+\varepsilon)$。每项取 $L$ 与本轮起点峰值的较大值作为该项阈值 $L_c$。
+
+每次子求解最多执行 `max_step_iter` 步。每个外层更新至多执行 `max_solves` 次子求解，包含按超限情况发起的补充求解。每个阶段从上一阶段末点继续，并重新建立 L-BFGS 历史。若某项峰值超过 $L_c$，下一阶段在相应采样区域增加局部罚值 $c[z-a]_+^p$，其中 $a=\max(0,L_c-\texttt{violation_tolerance})$。系数按基础损失的预测下降量和超限区域的加权积分标定。有约束且次数允许时，策略先求解两次。此后只在仍有超限且未达到次数上限时继续求解。
+
+更新器直接提交最后一次子优化的解。残余违反随设计进入下一轮有限元求解。控制点的实际位移由子问题损失、步长上限和几何本身的固定或对称条件共同决定。
 
 标定采用子问题原点处的物理梯度 $g_0=\nabla_xm(0)$。沿原始控制点梯度的下降方向及反方向，试探允许位移上限的 50%；零梯度控制点不移动。令 $p_{c,b}=\nabla_xP_c(x_b)$，两侧有效试探的权重为
 
@@ -966,31 +970,31 @@ $$
 
 仅归一化几何试探方向；物理梯度保留原始数值。罚项试探梯度为零时跳过该侧；两侧均无响应的项保持待标定状态，暂用系数 1，之后继续尝试。试探不调用有限元或伴随求解。
 
-`Distance` 的障碍为
+`Distance` 的基础障碍为
 
 $$
-\phi(d)=\left[1+\frac{(1-\varepsilon)d_{\min}-d}{0.05d_{\min}}\right]_+^3.
+\phi(d)=\left[\frac{(1.05-\varepsilon)d_{\min}-d}{(0.05+\varepsilon)d_{\min}}\right]_+^3.
 $$
 
-有效要求之外保留过渡区，距离充分大时罚值为零。零距离要求的项沿用基础障碍尺度。Fairness、圆柱及半径罚项也使用固定三次幂；策略只调整距离放宽量和整体系数，不动态改变幂次。试探比例、平衡比例、增强倍数等常数集中在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS`。
+取正的名义壁厚时，过渡带宽度为 $(0.05+\varepsilon)d_{\min}$。起点合格时，候选的采样壁厚下限为 $(1-3\varepsilon)d_{\min}$。零距离要求的项沿用基础障碍尺度。Fairness、圆柱及半径罚项的基础障碍也使用固定三次幂；过渡带从原激活点拓宽，增量为放宽比例乘以该项的限值尺度。试探比例、平衡比例、增强倍数等常数集中在 `CONSTANT.KERNEL.ADAPTIVE_SHAPE_UPDATE`。
 
 | 日志字段 | 定义 |
 |---|---|
-| `tolerance` | 当前距离放宽比例 |
-| `weight` | 该项整体系数 $\lambda_c$ |
-| `penalty` | 当前距离要求下的原始积分罚值 $P_c$ |
-| `weighted_penalty` | `weight * penalty`，子问题中的实际贡献 |
-| `monitor_penalty` | 固定初始放宽比例下的监测罚值 |
-| `reference_penalty` | 本轮比较所用的参考监测值；首次为当前值 |
-| `mode` | `pending` 待标定、`calibrated` 新标定、`held` 保持、`strengthened` 恶化后增强 |
+| `tolerance` | 当前几何放宽比例 |
+| `base_weight` | 该项经灵敏度尺度调整的基础系数 |
+| `base_penalty` | 原点处仅计基础障碍的积分罚值 |
+| `peak_z` | 当前记录所对应几何的各项最大归一化坐标 $z$ |
+| `merit_change`、`peak_z` | 最终选择的候选相对于原点的加权总损失变化及各项峰值 |
+| `physical_change`、`peak_z` | 试算候选的物理代理变化量及各项最大采样违反程度 |
+| `local excess coefficient` | 重算时使用的同幂次局部附加项系数 |
 
-策略继承 `ConstraintWeightStrategy → ProtocalSavable`，状态保存在 `geometryupdater/<接口>/constraint_weights/adaptive_weights_<迭代号>.json`，包括上一目标、目标尺度、当前放宽量及每项系数和参考罚值。策略要求有限的高保真目标及非负罚项；可能取负的体积辅助目标不适用此策略。有限采样与罚函数不构成连续几何的严格可行性保证。
+更新策略实现保存与恢复接口。几何自适应策略在更新器归档的 `update_strategy/adaptive_weights_<迭代号>.json` 中保存几何放宽量、梯度尺度和各罚项状态。该策略适用于非负几何罚项。候选解检查覆盖离散采样点，连续曲面的可行性仍受采样分辨率影响。
 
 <a id="section-fairness-与曲面几何的分离"></a>
 
 #### 9.2.2 Fairness 与曲面几何的分离
 
-`Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面采用同一曲率平方和阈值，参数对应 $\kappa_1^2+\kappa_2^2$，单位为长度的负二次方。BSP 另计算参数非正交和度量变化，两项阈值均为 0.1；CPGEO 仅计算曲率项。初始几何的参考补偿由该罚项按曲面分别缓存。曲面只提供几何和导数，不保存 `maxC/maxR/maxFF`。
+`Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面采用同一曲率平方和阈值，参数对应 $\kappa_1^2+\kappa_2^2$，单位为长度的负二次方。BSP 另计算参数非正交和度量变化，阈值分别为 0.2 和 0.1；CPGEO 仅计算曲率项。BSP 的四项度量变化分别按参数方向的参考长度平方归一化。仅当某个采样点的某一分量初值 $v_0>0.1$ 时，该分量乘以固定系数 $0.08/v_0$，使其初值落在罚项起点 0.08。其余分量保留原值。该罚项按曲面保存初始补偿系数，后续迭代及断点续算复用同一组系数。断点缺少补偿文件时，程序按任务定义重建初始 BSP；若存在首次有限元求解的几何快照，则采用快照中的控制点。重算的系数随下一次断点保存。曲面只提供几何和导数，不保存 `maxC/maxR/maxFF`。
 
 计算通过 `Fairness.visit()` 的类型分派实现；未注册的曲面类型贡献零，当前 BREP NURBS 面不自动获得 BSP 的 Fairness。固定曲面不参与 Fairness，仍可参与距离约束。一个 `Fairness` 登记项汇总其支持的曲面，使用该项的一个整体系数。
 
@@ -1162,7 +1166,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 | 参数或状态 | 定义 |
 |---|---|
 | `restart_per_iteration` | 进程分段重启间隔 |
-| 子优化器 `max_step_iter` | 每轮更新内部的子问题迭代上限 |
+| 子优化器 `max_step_iter` | 每次子求解的步数上限 |
 | `history.iteration` | 当前运行的历史状态 |
 | `target_iteration` | 继续计算选定的保存状态 |
 

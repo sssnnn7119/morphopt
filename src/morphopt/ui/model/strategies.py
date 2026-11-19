@@ -15,69 +15,46 @@ class StrategySpec:
     groups: tuple[str, ...] = ("geometry", "materials")
 
 
-_ADAPTIVE = CONSTANT.KERNEL.ADAPTIVE_SHAPE_WEIGHTS
+_ADAPTIVE = CONSTANT.KERNEL.ADAPTIVE_SHAPE_UPDATE
 _WEIGHT = CONSTANT.KERNEL.UPDATER_STRATEGIES.DEFAULT_CONSTRAINT_WEIGHT
 
-STRATEGY_CATALOG: dict[str, tuple[StrategySpec, ...]] = {
-    "step_length_strategy": (
-        StrategySpec("FixedStepLength", "ui.strategies.fixed_step_length"),
+STRATEGY_CATALOG = (
+    StrategySpec(
+        "FixedUpdate", "ui.strategies.fixed_update",
+        (FieldSpec("value", "ui.strategies.value.label", "float", _WEIGHT,
+                   minimum=0, doc_key="ui.strategies.value.help"),),
     ),
-    "constraint_weight_strategy": (
-        StrategySpec(
-            "ConstantConstraintWeights", "ui.strategies.constant_weights",
-            (FieldSpec("value", "ui.strategies.value.label", "float", _WEIGHT,
-                       minimum=0, doc_key="ui.strategies.value.help"),),
-        ),
-        StrategySpec(
-            "SensitivityShapeWeights", "ui.strategies.sensitivity_shape_weights",
-            groups=("geometry",),
-        ),
-        StrategySpec(
-            "AdaptiveShapeWeights", "ui.strategies.adaptive_shape_weights",
-            tuple(
-                FieldSpec(key, f"ui.strategies.{key}.label", "float", default,
-                          doc_key=f"ui.strategies.{key}.help")
-                for key, default in (
-                    ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
-                    ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
-                    ("tightening_increment", _ADAPTIVE.TIGHTENING_INCREMENT),
-                    ("violation_tolerance", _ADAPTIVE.VIOLATION_TOLERANCE),
-                    ("weight_change_limit", _ADAPTIVE.WEIGHT_CHANGE_LIMIT),
-                )
-            ),
-            groups=("geometry",),
-        ),
+    StrategySpec(
+        "SensitivityShapeUpdate", "ui.strategies.sensitivity_shape_update",
+        groups=("geometry",),
     ),
-}
+    StrategySpec(
+        "AdaptiveShapeUpdate", "ui.strategies.adaptive_shape_update",
+        (FieldSpec("max_solves", "ui.strategies.max_solves.label", "int", _ADAPTIVE.MAX_SOLVES,
+                   minimum=1, doc_key="ui.strategies.max_solves.help"),) + tuple(
+            FieldSpec(key, f"ui.strategies.{key}.label", "float", default,
+                      doc_key=f"ui.strategies.{key}.help")
+            for key, default in (
+                ("initial_tolerance", _ADAPTIVE.INITIAL_TOLERANCE),
+                ("final_tolerance", _ADAPTIVE.FINAL_TOLERANCE),
+                ("tightening_increment", _ADAPTIVE.TIGHTENING_INCREMENT),
+                ("violation_tolerance", _ADAPTIVE.VIOLATION_TOLERANCE),
+                ("weight_change_limit", _ADAPTIVE.WEIGHT_CHANGE_LIMIT),
+            )
+        ),
+        groups=("geometry",),
+    ),
+)
 
 
-def strategy_specs(key: str, group: str) -> dict[str, StrategySpec]:
-    """Return strategy specs.
-
-    Args:
-        key (str): Lookup key identifying the requested field or registered item.
-        group (str): Named group containing the related interfaces or task configuration.
-
-    Returns:
-        dict[str, StrategySpec]: Strategy specs.
-    """
-    return {spec.name: spec for spec in STRATEGY_CATALOG[key] if group in spec.groups}
+def strategy_specs(group: str) -> dict[str, StrategySpec]:
+    """Return the update strategies applicable to a geometry or material updater."""
+    return {spec.name: spec for spec in STRATEGY_CATALOG if group in spec.groups}
 
 
-def strategy_config(
-    key: str, name: str | None = None, *, group: str | None = None,
-) -> dict:
-    """Create an independent parameter dictionary for the selected strategy.
-
-    Args:
-        key (str): Lookup key identifying the requested field or registered item.
-        name (str | None): Name identifying the item in its owning collection.
-        group (str | None): Named group containing the related interfaces or task configuration.
-
-    Returns:
-        dict: Create an independent parameter dictionary for the selected strategy.
-    """
-    if name is None and key == "constraint_weight_strategy" and group == "geometry":
-        name = "AdaptiveShapeWeights"
-    spec = next(spec for spec in STRATEGY_CATALOG[key] if name is None or spec.name == name)
-    return {"type": spec.name, "params": field_defaults(spec.fields)}
+def strategy_config(group: str, name: str | None = None) -> dict:
+    """Build a fresh configuration for a strategy supported by this updater group."""
+    if name is None:
+        name = "AdaptiveShapeUpdate" if group == "geometry" else "FixedUpdate"
+    spec = strategy_specs(group)[name]
+    return {"type": name, "params": field_defaults(spec.fields)}

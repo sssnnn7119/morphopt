@@ -422,9 +422,6 @@ class _Constants:
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
-
-
-
                     class PERTURBATION_L:
                         DEFAULT = -1.0
 
@@ -452,7 +449,6 @@ class _Constants:
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
 
-
                     class PERTURBATION_L:
                         DEFAULT = -1.0
 
@@ -467,7 +463,6 @@ class _Constants:
 
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
-
 
                 class MESH_SURFACE:
                     class PATH_STL:
@@ -1035,7 +1030,9 @@ class _Constants:
 
         class MESH:
             QUADRATIC_ELEMENT_TYPES = {
-                "C3D4": "C3D10", "C3D6": "C3D15", "C3D8": "C3D20",
+                "C3D4": "C3D10",
+                "C3D6": "C3D15",
+                "C3D8": "C3D20",
             }
             SURFACE_ELEMENT_LINE_CHUNK_SIZE = 16
             SURFACE_NODE_LINE_CHUNK_SIZE = 16
@@ -1062,13 +1059,12 @@ class _Constants:
 
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
-                CURVATURE_LIMIT = 3.0
-                METRIC_VARIATION_LIMIT = 0.1
-                NONORTHOGONALITY_LIMIT = 0.1
+                CURVATURE_LIMIT = 1.5
+                METRIC_VARIATION_LIMIT = 0.3
+                NONORTHOGONALITY_LIMIT = 0.2
                 ACTIVATION_RATIO = 0.8
                 BSP_EXPONENT = 3
                 CPGEO_EXPONENT = 3
-                REFERENCE_METRIC_RATIO = 0.2
 
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0
@@ -1102,19 +1098,19 @@ class _Constants:
         class UPDATER_STRATEGIES:
             DEFAULT_CONSTRAINT_WEIGHT = 1.0
 
-        class ADAPTIVE_SHAPE_WEIGHTS:
+        class ADAPTIVE_SHAPE_UPDATE:
+            MAX_SOLVES = 3
             PROBE_FRACTION = 0.5
             SAFETY_FACTOR = 2.0
             BALANCE_RATIO = 0.25
             TIGHTENING_INCREMENT = 0.0002
             VIOLATION_TOLERANCE = 0.1
             VIOLATION_BAND_RATIO = 2.0
-            VIOLATION_WEIGHT_POWER = 2.0
             WEIGHT_CHANGE_LIMIT = 10.0
-            WEIGHT_UPDATE_FRACTION = 0.1
             INITIAL_TOLERANCE = 0.05
             FINAL_TOLERANCE = 0.0
             DISTANCE_TRANSITION_RATIO = 0.05
+            RETRY_WEIGHT_INCREASE = 4.0
 
         class OPTIMIZER:
             LINE_SEARCH_C1 = 0.0001
@@ -1128,7 +1124,7 @@ class _Constants:
             LBFGS_MATERIAL_MEMORY_PAIRS = 20
 
         class SHAPE_UPDATE:
-            MAX_STEP_ITERATIONS = 100
+            MAX_STEP_ITERATIONS = 50
             MAX_STEP_LENGTH = 0.5
             LOW_STEP_LENGTH_TOLERANCE = 1e-10
             LOW_STEP_LENGTH_ITERATION_LIMIT = 10

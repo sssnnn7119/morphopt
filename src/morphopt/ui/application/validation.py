@@ -41,7 +41,7 @@ from ..model.problem import (
     ProblemDefinition,
 )
 from ..model.registry import SURFACE_SYMMETRY_CONSTRAINTS, UPDATER_CATALOG
-from ..model.strategies import STRATEGY_CATALOG, strategy_config, strategy_specs
+from ..model.strategies import strategy_config, strategy_specs
 from .fields import fields_for_node
 from .part_sets import PartSetCatalog
 
@@ -672,12 +672,11 @@ class DefinitionValidation:
                     FieldSpec("max_step_length", "max_step_length", "float", minimum=0),
                     cfg.get("max_step_length", 0.5 if group == "geometry" else 1.0),
                 )
-                for key in STRATEGY_CATALOG:
-                    item = cfg.get(key, strategy_config(key, group=group))
-                    spec = strategy_specs(key, group).get(item.get("type"))
-                    if spec is None:
-                        self.add(cfg, "choice", field=tr(f"ui.strategies.{key}"))
-                        continue
+                item = cfg.get("update_strategy", strategy_config(group))
+                spec = strategy_specs(group).get(item.get("type"))
+                if spec is None:
+                    self.add(cfg, "choice", field=tr("ui.strategies.update_strategy"))
+                else:
                     for field in spec.fields:
                         self.field(
                             cfg, field,

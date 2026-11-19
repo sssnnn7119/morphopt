@@ -2,6 +2,7 @@
 
 import pytest
 
+from morphopt.constants import CONSTANT
 from morphopt.ui.application import ProblemLibrary, ProblemSession
 from morphopt.ui.model.problem import Node, ProblemDefinition
 from morphopt.ui.model.strategies import strategy_config
@@ -112,16 +113,17 @@ def test_file_import_projects_nested_updater_terms_and_strategy_parameters(tmp_p
         {"type": "Fairness", "params": {"retired_parameter": 100}},
         {"type": "FuturePenalty", "params": {"x": 10}},
     ]
-    config["constraint_weight_strategy"] = {
-        "type": "AdaptiveShapeWeights", "params": {"initial_tolerance": 0.1, "old_schedule": 50},
+    config["update_strategy"] = {
+        "type": "AdaptiveShapeUpdate", "params": {"initial_tolerance": 0.1, "old_schedule": 50},
         "unsupported_option": True,
     }
     del config["max_step_length"]
     problem, issues = load_definition_file(tmp_path, data)
     restored = problem.updater.geometry[0]
     assert "code" not in restored
-    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": 3.0}}]
-    policy = restored["constraint_weight_strategy"]
+    curvature_limit = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.FAIRNESS.CURVATURE_LIMIT
+    assert restored["constraints"] == [{"type": "Fairness", "params": {"max_curvature": curvature_limit}}]
+    policy = restored["update_strategy"]
     assert policy["params"]["initial_tolerance"] == 0.1
     assert policy["params"]["violation_tolerance"] == 0.1
     assert "old_schedule" not in policy["params"]
@@ -132,10 +134,10 @@ def test_file_import_projects_nested_updater_terms_and_strategy_parameters(tmp_p
 def test_file_import_uses_default_policy_for_an_unknown_strategy(tmp_path):
     data = ProblemLibrary.create("shapeopt").to_dict()
     updater = next(node for node in data["root"]["children"] if node["kind"] == "updater")
-    updater["params"]["geometry"][0]["constraint_weight_strategy"] = {"type": "FutureStrategy"}
+    updater["params"]["geometry"][0]["update_strategy"] = {"type": "FutureStrategy"}
     problem, issues = load_definition_file(tmp_path, data)
-    assert problem.updater.geometry[0]["constraint_weight_strategy"] == strategy_config(
-        "constraint_weight_strategy", group="geometry",
+    assert problem.updater.geometry[0]["update_strategy"] == strategy_config(
+        "geometry",
     )
     assert any("FutureStrategy" in str(issue) for issue in issues)
 

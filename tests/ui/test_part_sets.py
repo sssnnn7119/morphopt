@@ -12,8 +12,10 @@ from morphopt.ui.application import ProblemLibrary
 from morphopt.ui.application.part_mesh import build_part_mesh
 from morphopt.ui.model.node_types.parts import BoundaryPartNode, BoxPartNode, CADPartNode, INPPartNode, OffsetBoundaryPartNode
 from morphopt.ui.model.node_types.surfaces import BREPSurfaceNode
-from morphopt.ui.model.problem import CADOperationNode, CustomClassNode, FEAComponentNode, MaterialNode, MethodOverrideNode, PartNode
+from morphopt.ui.model.problem import CADOperationNode, CustomClassNode, FEAComponentNode, HelperVariableNode, MaterialNode, MethodOverrideNode, PartNode
 from morphopt.ui.visualization.geometry import PreviewGeometry
+from morphopt.ui.visualization.loads import LoadPreviewVisitor
+from morphopt.ui.visualization.scene import MarkerLoad, MessageItem
 
 
 @pytest.fixture
@@ -185,6 +187,47 @@ def test_custom_part_lists_and_highlights_its_kernel_sets():
     assert len(scene.base_meshes) == 1
     selected = geometry.mesh_for_set(part, "nodes", "custom_tip")
     assert selected.n_points == 1
+
+
+def test_cad_preview_with_serializable_helper_class_and_custom_boundary_set():
+    problem = ProblemLibrary.create_blank()
+    problem.helper_code = (
+        "import numpy as np\n"
+        "from torchfea.model.boundarys import Boundary_Condition\n"
+        "class PreviewTestBoundary(Boundary_Condition):\n"
+        "    pass\n"
+    )
+    problem.helper_variables.append(HelperVariableNode(
+        name="length", params={"value": "4.0"},
+    ))
+    custom = CustomClassNode(name="PortCADPart", params={"base_class": "morphopt.CADPart"})
+    custom.add_child(MethodOverrideNode(name="define_mesh_sets", params={"body": (
+        "super().define_mesh_sets(part)\n"
+        "x = part.nodes[:, 0].detach().cpu().numpy()\n"
+        "part.add_node_set('port', np.flatnonzero(np.isclose(x, length)))"
+    )}))
+    problem.custom_classes.append(custom)
+    part = CADPartNode(name="finger", mesh_size=1)
+    part.custom_class = custom.name
+    part.add_child(CADOperationNode.create("Box", "body", dx="length", dy=2, dz=2))
+    instance = part.instances[0]
+    instance.translation = [10, 20, 30]
+    problem.add_part(part)
+    problem.add_component(FEAComponentNode.create(
+        "BoundaryCondition", "fixed_port", instance_name=instance.name,
+        set_nodes_name="port", index_dof=[0, 1, 2],
+    ))
+
+    geometry = PreviewGeometry()
+    scene = geometry.build(problem, "assembly")
+    assert not any(isinstance(item, MessageItem) for item in scene.items)
+    assert scene.bounds == pytest.approx((10, 14, 20, 22, 30, 32))
+    loads = LoadPreviewVisitor().build(geometry, None)
+    assert not any(isinstance(item, MessageItem) for item in loads.items)
+    (marker,) = [item for item in loads.items if isinstance(item, MarkerLoad)]
+    port = geometry.mesh_for_set(part, "nodes", "port")
+    assert port.n_points > 0
+    np.testing.assert_allclose(marker.location, port.points.mean(axis=0) + instance.translation)
 
 
 @pytest.mark.parametrize("part_type,element_name,quadratic_type", [

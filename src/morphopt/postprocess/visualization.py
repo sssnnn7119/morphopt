@@ -326,7 +326,6 @@ def history_frames(
                 light_intensity=style.get("light_intensity", 1.0),
             )
             if mode == "design":
-                archive.load_parameters(iteration)
                 component = next(
                     (
                         component
@@ -340,7 +339,7 @@ def history_frames(
                     raise ValueError("The selected design component is unavailable.")
                 add_design_component(
                     plotter,
-                    component,
+                    archive.load_design_component(component, iteration),
                     geometry_color=style["geometry_color"],
                     ambient=style["mesh_ambient"],
                     diffuse=style["mesh_diffuse"],
