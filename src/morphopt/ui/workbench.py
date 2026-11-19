@@ -621,6 +621,7 @@ class Workbench(QWidget):
             changed_nodes=tuple(node for node in changes if node is not None),
             full=None in changes,
             restoring=self._restoring,
+            part_sets=self.part_sets,
         )
 
     def _on_refresh_failed(self, component: Refreshable, error: Exception) -> None:

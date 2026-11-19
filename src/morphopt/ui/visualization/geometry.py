@@ -19,6 +19,7 @@ from ...optcore.modelparams.parts import (
 )
 from ..application.cad import cad_brep_records_from_node, cad_preview_signature
 from ..application.expressions import DefinitionValues
+from ..application.part_sets import PartSetCatalog
 from ..i18n import localized_message
 from ..model.node_types.materials import SIMPFieldMaterialNode
 from ..model.node_types.parts import (
@@ -812,6 +813,7 @@ class PreviewGeometry:
             surfaces (SurfacePreviewVisitor | None): Surface interfaces in boundary registration
                 order: exterior first, followed by cavities.
         """
+        self.part_sets: PartSetCatalog | None = None
         self.parts = parts or default_part_visitor()
         self.surfaces = surfaces or SurfacePreviewVisitor()
         self.problem: ProblemDefinition
@@ -969,9 +971,13 @@ class PreviewGeometry:
         Returns:
             torchfea.Part: Part with the node and surface sets defined by the kernel.
         """
-        from ..application.part_mesh import build_part_mesh
+        def build() -> torchfea.Part:
+            sets = self.part_sets
+            if sets is None or sets.problem is not self.problem:
+                sets = PartSetCatalog(self.problem)
+            return sets.mesh_for_part(part)
 
-        return self.cached_part(part, lambda: build_part_mesh(part, self.problem))
+        return self.cached_part(part, build)
 
     def box_part(self, part: BoxPartNode) -> BoxPart:
         """Return box part.

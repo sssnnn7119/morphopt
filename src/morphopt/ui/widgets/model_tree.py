@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
+from ..application.part_sets import PartSetCatalog
 from ..application.validation import DefinitionValidation
 from ..codegen.custom_classes import CONFIGURATION_CLASS_PATHS
 from ..i18n import tr
@@ -146,6 +147,7 @@ class ModelTree(QTreeWidget):
                 changes.
         """
         super().__init__(parent)
+        self._sets: PartSetCatalog | None = None
         self.actions = actions or DefinitionActions(self)
         self.setColumnCount(1)
         self.setHeaderHidden(True)
@@ -183,6 +185,7 @@ class ModelTree(QTreeWidget):
             problem (ProblemDefinition): Editable problem definition shared by the UI application
                 services.
         """
+        self._sets = None
         self._problem = problem
         self.actions.set_problem(problem)
         self.rebuild()
@@ -198,6 +201,7 @@ class ModelTree(QTreeWidget):
             node_key(node): item.isExpanded() for item, node in self._item_node.items()
         }
         scroll = self.verticalScrollBar().value()
+        self._sets = context.part_sets
         self._problem = context.problem
         self.rebuild(select=context.selected, notify=False)
         for item, node in self._item_node.items():
@@ -338,7 +342,7 @@ class ModelTree(QTreeWidget):
             self.validationChanged.emit(False)
             return
         try:
-            diagnostics = DefinitionValidation(self._problem).collect()
+            diagnostics = DefinitionValidation(self._problem, self._sets).collect()
         except Exception:
             self._has_errors = True
             self.validationChanged.emit(True)

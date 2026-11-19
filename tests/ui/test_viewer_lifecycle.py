@@ -70,7 +70,9 @@ def test_viewer_defers_vtk_scene_render_until_the_widget_is_shown(monkeypatch):
     app.processEvents()
 
     assert not widget._render_pending
-    assert rendered == ["build", "scene", "loads", "loads"]
+    assert rendered == ["build", "scene", "loads"]
+    widget.host.viewChanged.emit()
+    assert rendered[-2:] == ["loads", "loads"]
     widget.close()
 
 

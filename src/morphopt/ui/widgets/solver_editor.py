@@ -73,7 +73,6 @@ class SolverEditor(QWidget):
         )
         self._process_table.setColumnWidth(1, 160)
         lay.addWidget(self._process_table)
-        self._devices = detect_devices()
 
         grp_title = QLabel(
             tr("ui.widgets.solver_editor.load_steps_process_task_groups")
@@ -208,7 +207,7 @@ class SolverEditor(QWidget):
             self._process_table.setItem(index, 0, process)
             selector = QComboBox(self._process_table)
             selector.addItem(tr("ui.widgets.solver_editor.cpu_device"), "cpu")
-            for available in self._devices:
+            for available in detect_devices():
                 if available != "cpu":
                     selector.addItem(available, available)
             if selector.findData(device) < 0:

@@ -335,6 +335,7 @@ class PreviewViewer(QWidget):
             context (RefreshContext): Committed definition, active selection, and domain-change
                 flags for this UI refresh.
         """
+        self.geometry.part_sets = context.part_sets
         if context.restoring:
             self._problem = context.problem
             self._rebuild_all(reset_camera=False)
@@ -515,14 +516,15 @@ class PreviewViewer(QWidget):
             node for part in parts if part is not None for node in part.iter_nodes()
             if assembly_view or node.kind != "instance"
         )
-        with self.host.scene_update(
+        # Place screen-sized callouts once, using the final fitted camera.
+        with QSignalBlocker(self.host), self.host.scene_update(
             reset_camera=reset_camera, has_geometry=scene.bounds is not None,
             geometry_keys=geometry_keys,
         ):
             self.renderer.draw_scene(scene)
             self._update_section_coordinate()
             self.host.plotter.show_axes()
-            self.renderer.draw_loads(loads)
+        self.renderer.draw_loads(loads)
         if selection is not None:
             self._draw_part_set(*selection)
 

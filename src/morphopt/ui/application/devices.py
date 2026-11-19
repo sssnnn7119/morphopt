@@ -1,11 +1,14 @@
 """Discover usable solver devices without creating UI controls."""
 
+from functools import cache
 
-def detect_devices() -> list[str]:
-    """Return a list of usable devices: CPU plus any torch cuda devices.
+
+@cache
+def detect_devices() -> tuple[str, ...]:
+    """Discover devices on first use: CPU plus any torch cuda devices.
 
     Returns:
-        list[str]: A list of usable devices: CPU plus any torch cuda devices.
+        tuple[str, ...]: Usable devices: CPU plus any torch cuda devices.
     """
     devs = ["cpu"]
     try:
@@ -16,4 +19,4 @@ def detect_devices() -> list[str]:
                 devs.append(f"cuda:{i}")
     except Exception:
         pass
-    return devs
+    return tuple(devs)

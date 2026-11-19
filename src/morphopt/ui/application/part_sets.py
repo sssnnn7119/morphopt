@@ -7,7 +7,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from torchfea import Part
 
 from ...constants import CONSTANT
 from ..model.node_types.parts import (
@@ -115,6 +118,7 @@ class PartSetCatalog:
             INPPartNode: self.inp,
         }
         self._cache: dict[PartNode, PartSets] = {}
+        self._meshes: dict[PartNode, Part] = {}
 
     def bind(self, problem: ProblemDefinition) -> None:
         """Bind the PartSetCatalog state.
@@ -129,6 +133,15 @@ class PartSetCatalog:
     def invalidate(self) -> None:
         """Return invalidate."""
         self._cache.clear()
+        self._meshes.clear()
+
+    def mesh_for_part(self, part: PartNode) -> Part:
+        """Build one kernel mesh per snapshot for both named selections and preview."""
+        from .part_mesh import build_part_mesh
+
+        if part not in self._meshes:
+            self._meshes[part] = build_part_mesh(part, self.problem)
+        return self._meshes[part]
 
     def register(
         self,
@@ -182,9 +195,7 @@ class PartSetCatalog:
                 None,
             )
             if part.custom_class:
-                from .part_mesh import build_part_mesh
-
-                model = build_part_mesh(part, self.problem)
+                model = self.mesh_for_part(part)
                 self._cache[part] = PartSets(
                     tuple(model.set_nodes),
                     tuple(model.surfaces.keys()),

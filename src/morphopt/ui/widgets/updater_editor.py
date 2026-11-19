@@ -90,7 +90,6 @@ class UpdaterEditor(QWidget):
         self._device = QComboBox()
         self._device.setEditable(True)
         self._device.addItem(tr("ui.widgets.updater_editor.default_device"))
-        self._device.addItems(detect_devices())
         self._device.setToolTip(
             tr(
                 "ui.widgets.updater_editor.device_for_the_updater_only_cpu_cuda_0_independent_from_the_run_device_s"
@@ -160,6 +159,8 @@ class UpdaterEditor(QWidget):
         # show the current updater device without re-triggering a save
         self._loading = True
         try:
+            if self._device.count() == 1:
+                self._device.addItems(detect_devices())
             dev = problem.updater_device
             if dev and self._device.findText(dev) < 0:
                 self._device.addItem(dev)

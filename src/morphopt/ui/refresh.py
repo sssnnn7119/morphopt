@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..constants import CONSTANT
 from .model.problem import Node, ProblemDefinition
+
+
+if TYPE_CHECKING:
+    from .application.part_sets import PartSetCatalog
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,7 @@ class RefreshContext:
     changed_nodes: tuple[Node, ...] = ()
     full: bool = True
     restoring: bool = False
+    part_sets: PartSetCatalog | None = None
 
     @property
     def geometry_changed(self) -> bool:

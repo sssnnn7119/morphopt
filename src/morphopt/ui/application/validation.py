@@ -56,14 +56,16 @@ class DefinitionValidation:
     Virtual class-selection rows use their registered configuration paths.
     """
 
-    def __init__(self, problem: ProblemDefinition) -> None:
+    def __init__(self, problem: ProblemDefinition, sets: PartSetCatalog | None = None) -> None:
         """Initialize DefinitionValidation and its configuration state.
 
         Args:
             problem (ProblemDefinition): Editable problem definition shared by the UI application
                 services.
+            sets: Named selections shared by editors and validation for this definition.
         """
         self.problem = problem
+        self.sets = sets if sets is not None else PartSetCatalog(problem)
         self.errors: dict[int | str, list[str]] = {}
         self.constant_nodes = {node.name: node for node in problem.helper_variables}
         self.constants = {
@@ -333,7 +335,7 @@ class DefinitionValidation:
         """
         try:
             if isinstance(node, (FEAComponentNode, MaterialNode)):
-                fields = fields_for_node(node, self.problem)[0]
+                fields = fields_for_node(node, self.problem, sets=self.sets)[0]
             else:
                 fields = node.fields
         except KeyError:
@@ -727,7 +729,7 @@ class DefinitionValidation:
                                 if item.get("type") == "VolFrac" and field.key == "elementname":
                                     name = item.get("params", {}).get(field.key, field.new_default())
                                     part = target.part if isinstance(target, MaterialNode) else None
-                                    if name and name not in PartSetCatalog(self.problem).for_part(part).elements:
+                                    if name and name not in self.sets.for_part(part).elements:
                                         self.add(item, "reference", field=tr(field.label_key), name=name)
                                 self.field(
                                     item,

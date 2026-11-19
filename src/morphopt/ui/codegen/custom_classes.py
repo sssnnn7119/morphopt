@@ -11,7 +11,8 @@ import ast
 import inspect
 import keyword
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import cache, cached_property
 
 import morphopt
 
@@ -55,7 +56,11 @@ class ClassSpec:
     definition: ast.ClassDef
     backend: type
     inherited: bool = False
-    methods: dict[str, MethodSpec] = field(default_factory=dict)
+
+    @cached_property
+    def methods(self) -> dict[str, MethodSpec]:
+        """Keep generated overrides local to this class specification."""
+        return _backend_methods(self.backend, self.base_expression).copy()
 
 
 def _resolve(expression: str) -> type:
@@ -91,6 +96,7 @@ def _method_spec(name, arguments, decorator="", asynchronous=False, documentatio
     return MethodSpec(name, signature, body, decorator, asynchronous, documentation)
 
 
+@cache
 def _backend_methods(backend: type, expression: str) -> dict[str, MethodSpec]:
     methods = {}
     for name in dir(backend):
@@ -150,7 +156,6 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
             expression = ast.unparse(node.bases[0])
             backend = _resolve(expression)
             spec = ClassSpec(path, expression, node, backend)
-            spec.methods = _backend_methods(backend, expression)
             for method in node.body:
                 if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     spec.methods[method.name] = _method_spec(
@@ -168,7 +173,6 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
                     continue
                 nested_expression = f"{expression}.{name}"
                 nested_spec = ClassSpec(nested_path, nested_expression, node, nested, True)
-                nested_spec.methods = _backend_methods(nested, nested_expression)
                 catalog[nested_path] = nested_spec
 
     visit(ast.parse(source).body)
@@ -178,7 +182,6 @@ def class_catalog(problem: ProblemDefinition, source: str | None = None) -> dict
         path = f"{parent.path}.{name}"
         expression = f"morphopt.{name}"
         spec = ClassSpec(path, expression, parent.definition, _resolve(expression), True)
-        spec.methods = _backend_methods(spec.backend, expression)
         catalog[path] = spec
     return catalog
 
@@ -211,7 +214,6 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
             expression = "morphopt." + expression.rsplit(".", 1)[-1]
         if expression not in parents:
             spec = ClassSpec(expression, expression, target.definition, target.backend)
-            spec.methods = _backend_methods(spec.backend, expression)
             parents[expression] = spec
     definition = next(iter(parents.values())).definition
     # Surface factories remain reusable when the owning Part is changed to
@@ -221,21 +223,18 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
         if expression not in parents:
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
-            spec.methods = _backend_methods(backend, expression)
             parents[expression] = spec
     for class_name in (*PART_TYPES, "UpdaterBoundaryPart", "UpdaterOffsetBoundaryPart", "UpdaterSIMPMaterial"):
         expression = f"morphopt.{class_name}"
         if expression not in parents:
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
-            spec.methods = _backend_methods(backend, expression)
             parents[expression] = spec
     for group in ("geometry", "materials"):
         for category in ("objectives", "constraints"):
             expression = updater_item_base("Custom", category, group)
             backend = _resolve(expression)
             spec = ClassSpec(expression, expression, definition, backend)
-            spec.methods = _backend_methods(backend, expression)
             parents[expression] = spec
     for category, items in UPDATER_CATALOG.items():
         for item_type, item in items.items():
@@ -243,7 +242,6 @@ def framework_class_catalog(problem: ProblemDefinition, targets=None) -> dict[st
             if expression and expression not in parents:
                 backend = _resolve(expression)
                 spec = ClassSpec(expression, expression, definition, backend)
-                spec.methods = _backend_methods(backend, expression)
                 parents[expression] = spec
     return parents
 
@@ -279,6 +277,8 @@ def custom_options(problem, candidates):
         problem: Editable problem definition shared by the UI application services.
         candidates: Compatible candidate interface or class names to inspect.
     """
+    if not problem.custom_classes:
+        return []
     parents = framework_class_catalog(problem)
     choices = []
     for item_type, expression in candidates.items():
@@ -360,6 +360,8 @@ def compatible_custom_classes(problem, target, parents=None):
         target: Target interface or selection receiving the operation.
         parents: Parent-class catalog used to resolve framework inheritance.
     """
+    if not problem.custom_classes:
+        return []
     parents = parents if parents is not None else framework_class_catalog(problem)
     return [custom for custom in problem.custom_classes
             if custom.class_type == "override"

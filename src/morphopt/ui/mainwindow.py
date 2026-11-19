@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSettings
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
@@ -22,13 +23,12 @@ from PySide6.QtWidgets import (
 )
 
 from ..constants import CONSTANT
-from .application import ProblemLibrary
+from .application import OptimizationRunSession, ProblemLibrary
 from .application.results import ResultSelection
 from .application_icon import application_icon
 from .i18n import SUPPORTED_LOCALES, localization, tr
 from .model.loaders import MORPH_SUFFIX
 from .model.problem import ProblemDefinition
-from .observe_panel import ObserverControls
 from .theme import theme_manager
 from .widgets.file_dialogs import (
     choose_directory,
@@ -36,11 +36,13 @@ from .widgets.file_dialogs import (
     confirm_overwrite,
     create_file_dialog,
 )
-from .widgets.font_settings import FontSettingsDialog
 from .widgets.labels import ResultPathLabel
-from .widgets.quickstart import QuickstartDialog
 from .widgets.problems import ProblemsButton
 from .workbench import Workbench
+
+
+if TYPE_CHECKING:
+    from .observe_panel import ObserverControls
 
 
 class MainWindow(QMainWindow):
@@ -237,6 +239,8 @@ class MainWindow(QMainWindow):
         self._update_analysis_actions()
 
     def _show_font_settings(self) -> None:
+        from .widgets.font_settings import FontSettingsDialog
+
         FontSettingsDialog(self).exec()
 
     def _show_visualization_settings(self) -> None:
@@ -388,6 +392,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- creation
     def quickstart(self) -> None:
         """Generate a fresh model from the user's design intent."""
+        from .widgets.quickstart import QuickstartDialog
+
         dialog = QuickstartDialog(self.current_problem(), self)
         if dialog.exec():
             if not self._confirm_discard():
@@ -687,7 +693,7 @@ class MainWindow(QMainWindow):
         )
         if not folder:
             return
-        if not ObserverControls.is_result_folder(folder):
+        if not OptimizationRunSession.is_result_folder(folder):
             QMessageBox.warning(
                 self,
                 tr("ui.observe_panel.invalid_result"),
@@ -711,6 +717,8 @@ class MainWindow(QMainWindow):
         """Create the live task view once; navigation never stops its timer."""
         if self._observer is not None:
             return
+        from .observe_panel import ObserverControls
+
         self._observer = ObserverControls()
         self._observer.resultFolderChanged.connect(self._set_result_folder)
         self._observer.resultsUpdated.connect(self._refresh_analysis_model)
