@@ -5,6 +5,8 @@ import ast
 import importlib
 import os
 import shutil
+import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -79,6 +81,8 @@ def test_controller_copies_script_assets_into_restart_directory(tmp_path, monkey
     source_dir.mkdir()
     script = source_dir / "job.py"
     script.write_text("# generated job\n", encoding="utf-8")
+    definition = script.with_suffix(".morph")
+    ProblemLibrary.save(ProblemLibrary.create_blank("submitted"), definition)
     source_assets = source_dir / "morphopt_assets"
     source_assets.mkdir()
     (source_assets / "mesh_abcd.inp").write_bytes(b"mesh")
@@ -95,8 +99,54 @@ def test_controller_copies_script_assets_into_restart_directory(tmp_path, monkey
     controller.initialize_path(str(script))
 
     copied_script_dir = Path(controller.path_result) / "scripts"
+    assert (copied_script_dir / "MAIN_SCRIPT_FOR_RESTART.morph").read_bytes() == definition.read_bytes()
+    assert {p.name for p in copied_script_dir.parent.glob("Open MorphOpt.*")} == {
+        "Open MorphOpt.cmd", "Open MorphOpt.desktop",
+    }
     assert (copied_script_dir / "MAIN_SCRIPT_FOR_RESTART.py").read_text(encoding="utf-8") == "# generated job\n"
     assert (copied_script_dir / "morphopt_assets" / "mesh_abcd.inp").read_bytes() == b"mesh"
+
+
+@pytest.mark.skipif(not shutil.which("gio") or os.name == "nt", reason="requires Linux GIO")
+@pytest.mark.parametrize("on_path", [False, True])
+def test_desktop_launcher_finds_ui_after_archive_is_moved(tmp_path, on_path):
+    from morphopt.utils.paths import write_result_launcher
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    write_result_launcher(archive)
+    moved = archive.rename(tmp_path / "结果 & archive")
+    registry = tmp_path / ".conda" / "environments.txt"
+    registry.parent.mkdir()
+    prefix = tmp_path / "Conda env"
+    registry.write_text(f"{tmp_path / 'removed'}\n{prefix}\n")
+    for directory in (prefix / "bin", tmp_path / "preferred"):
+        directory.mkdir(parents=True)
+        ui = directory / "morphopt-ui"
+        ui.write_text('#!/bin/sh\nprintf "%s\\n" "$0" "$@" > "$REPORT"\n')
+        ui.chmod(0o755)
+    report = tmp_path / "report"
+    env = os.environ | {"HOME": str(tmp_path), "REPORT": str(report), "PATH": os.defpath}
+    if on_path:
+        env["PATH"] = str(tmp_path / "preferred") + os.pathsep + env["PATH"]
+    desktop = moved / "Open MorphOpt.desktop"
+    subprocess.run(["gio", "launch", desktop], env=env, check=True, timeout=10)
+    deadline = time.monotonic() + 5
+    while not report.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    expected_bin = tmp_path / "preferred" if on_path else prefix / "bin"
+    assert report.read_text().splitlines() == [str(expected_bin / "morphopt-ui"), "--result", str(desktop)]
+
+
+def test_windows_launcher_checks_path_and_registered_conda_environments(tmp_path):
+    from morphopt.utils import paths
+
+    paths.write_result_launcher(tmp_path)
+    assert (tmp_path / "Open MorphOpt.cmd").read_bytes().startswith(b"@echo off\r\n")
+    command = (tmp_path / "Open MorphOpt.cmd").read_text()
+    assert r"%USERPROFILE%\.conda\environments.txt" in command
+    assert r'start "" "%%~$PATH:I" --result "%~dp0."' in command
+    assert r'start "" "%%E\Scripts\morphopt-ui.exe" --result "%~dp0."' in command
 
 
 def test_python_export_bundle_uses_folder_name_for_script_and_assets(tmp_path):
@@ -142,6 +192,10 @@ def test_reexported_bundle_preserves_distinct_same_name_assets_and_can_be_moved(
     shutil.move(folder, relocated)
     first.unlink()
     second.unlink()
+    restored = ProblemLibrary.load(relocated / script.with_suffix(".morph").name)
+    assert [Path(part.mesh_file).read_bytes() for part in restored.parts()] == [
+        b"updated first mesh", b"second mesh",
+    ]
     contents = set()
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.keyword) and node.arg == "mesh_file":
@@ -166,6 +220,7 @@ def test_ui_launch_uses_independent_script_bundles_and_rejects_invalid_code(tmp_
     problem.add_part(INPPartNode(name="mesh", mesh_file=str(source)))
     source.write_bytes(b"first mesh")
     first, _ = launcher.run_job(problem, str(tmp_path / "results"))
+    assert ProblemLibrary.load(Path(first).with_suffix(".morph")).label == problem.label
     source.write_bytes(b"second mesh")
     second, _ = launcher.run_job(problem, str(tmp_path / "results"))
     assert Path(first).parent != Path(second).parent

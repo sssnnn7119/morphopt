@@ -1298,7 +1298,7 @@ export_history_gif(
     },
     window_size=(800, 600),
     style={
-        "background": "#101820", "text_color": "white",
+        "background": "#101820",
         "geometry_color": "lightblue", "deformation_color": "lightblue",
         "mesh_ambient": 0.3, "mesh_diffuse": 0.7,
         "mesh_specular": 0.1, "mesh_specular_power": 10.0,
@@ -1307,7 +1307,7 @@ export_history_gif(
 )
 ```
 
-`camera.position` sequentially provides the camera position, focal point, and upward direction; the above coordinates and parallel projection scale should be adjusted according to the model size. The animation frame displays the iteration number, and the function returns the actual number of frames written.
+`camera.position` sequentially provides the camera position, focal point, and upward direction; the above coordinates and parallel projection scale should be adjusted according to the model size. The orientation axes are visible only in the UI preview. Exported frames omit the axes and iteration label. The function returns the number of rendered frames.
 
 The newly added field quantities have been registered through the calculation interface via `ResultField`. The new table format has been implemented for `TableWriter.write()` and registered in `TABLE_WRITERS`. The interface translation belongs to the UI display layer. When the extended fields and formats are not configured for translation, the field description and extension name will be used instead.
 

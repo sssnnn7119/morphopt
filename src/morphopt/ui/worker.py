@@ -86,11 +86,6 @@ def execute(request_path: str | Path) -> dict[str, Any]:
         from ..postprocess import export_history_inp
 
         response = {"path": str(export_history_inp(**request))}
-    elif action == "preview_history":
-        from ..postprocess.exports import export_history_frame
-
-        export_history_frame(**request)
-        response = {"path": request["destination"]}
     elif action == "export_gif":
         from ..postprocess import export_history_gif
 

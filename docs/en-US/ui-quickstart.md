@@ -299,7 +299,7 @@ Select `load_case_1` to see the pressure-induced deformation at that iteration. 
 
 Select **Export optimization history** below the list in the history view. Choose the output type in the export window.
 
-- **GIF animation**. Select the design configuration or load case deformation, then choose the object, iteration range, frame rate, and resolution. When adjusting the camera angle and background color, a static image of the completed iteration step will be automatically displayed on the right side. Click **Select Location and Export** to save the animation for the selected range.
+- **GIF animation**. Select the design configuration or load case deformation, then choose the object, iteration range, frame rate, and resolution. Rotate, pan, or zoom in the 3D preview of the last selected iteration. The animation uses the current camera and background color for every frame. Choose **Custom** under **Resolution** to enter the width and height independently in pixels. **Fit to window** frames the model from the current direction. In parallel projection, **View height** sets the vertical span in model units. Click **Select Location and Export** to save the animation for the selected range.
 - **Design components**. Select the iteration steps and components. In this example, we choose **All Surfaces**. Export the outer wall and inner cavity at once. The two BSP surfaces are saved as `surface_0.stp` and `surface_1.stp` respectively.
 - **Abaqus INP**. Select the saved iteration and load cases, set up geometric nonlinearity, and export the static analysis input file for this case. Choose **Part meshes only** to import the components of this wheel into Abaqus/CAE.
 
@@ -308,6 +308,8 @@ Select **Export optimization history** below the list in the history view. Choos
 ![Objects, rounds, and frame rates of the historical GIF.](images/ui-quickstart/optimization/export-history-gif.png)
 
 **Stop optimization** terminates the current task. If you modify the parameters and start again, a new task will be created. To continue with the original task, use **Document → Continue Optimization…** and select its result directory as well as the complete checkpoint. Tasks that fail before the first round of complete saves will exit and report an exception. If there is already a complete checkpoint, the existing recovery process will be retained. Python optimization exceptions will be recorded in the optimization log.
+
+Each new result directory includes launchers for both platforms. To reopen it on another computer with MorphOpt installed, copy the entire directory and double-click `Open MorphOpt.desktop` on Linux or `Open MorphOpt.cmd` on Windows in the result directory. From an open UI, choose **File → Open optimization result folder…**. The launcher first looks for `morphopt-ui` on the desktop session’s `PATH`. If the command is unavailable there, it uses the first registered local Conda environment containing MorphOpt UI. For a virtual environment, you can also activate it in a terminal and run `morphopt-ui --result "/path/to/result"`. The window opens at the latest saved iteration. Switch to **Optimization definition** to inspect the submitted model and save edits as a new `.morph` file. For a script-only task, this page displays the archived Python source in read-only mode.
 
 <a id="finite-element"></a>
 

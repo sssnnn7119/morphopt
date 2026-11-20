@@ -59,6 +59,7 @@ DARK = ThemePalette(
     border="#333b48",
     text="#e7ebf0",
     muted_text="#9ba6b5",
+    neutral="#9ba6b5",
     heading_text="#dce5f0",
     accent="#1769aa",
     accent_hover="#2080cc",

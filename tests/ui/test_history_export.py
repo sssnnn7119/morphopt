@@ -44,7 +44,7 @@ def export_dialog(archive, target=None):
     session.load_iteration(str(archive.folder), 2)
     return history_export.HistoryExportDialog(
         session, 2, {}, (150, 150),
-        {"background": "white", "text_color": "black", "deformation_color": "blue",
+        {"background": "white", "deformation_color": "blue",
          "geometry_color": "blue", "boundary_shell_opacity": 0.4,
          "mesh_ambient": 0.2, "mesh_diffuse": 0.7, "mesh_specular": 0.2, "mesh_specular_power": 30},
         initial_target=target,
@@ -174,6 +174,37 @@ def test_surface_export_retries_after_worker_failure_and_cleans_requests(
     assert {path.name for path in destination.rglob("*.stp")} == {"surface_0.stp", "surface_1.stp"}
 
 
+@pytest.mark.parametrize("pitch", [30, 90, -90])
+def test_gif_pose_editor(export_ui, deformation_archive, pitch):
+    app, _, _ = export_ui
+    dialog = export_dialog(deformation_archive, {"case": "case"})
+    dialog.show()
+    app.processEvents()
+    gif = dialog.gif
+    try:
+        camera = gif.viewport.plotter.camera
+        distance = camera.distance
+        for field, value in zip(gif.position, (12, -5, 7)):
+            assert field.isVisible() and not field.prefix() and not field.suffix()
+            field.setValue(value)
+        for field, value in zip(gif.angles, (90, pitch, 90)):
+            assert field.isVisible() and not field.prefix() and not field.suffix()
+            field.setValue(value)
+        app.processEvents()
+        np.testing.assert_allclose(camera.position, (12, -5, 7))
+        np.testing.assert_allclose(camera.direction, (0, np.cos(np.radians(pitch)), np.sin(np.radians(pitch))), atol=1e-12)
+        np.testing.assert_allclose(camera.up, (1, 0, 0), atol=1e-12)
+        np.testing.assert_allclose([field.value() for field in gif.angles], (90, pitch, 90))
+        assert camera.distance == pytest.approx(distance)
+        for parallel in (True, False):
+            gif.projection.setCurrentIndex(gif.projection.findData(parallel))
+            options = gif.options()["camera"]
+            assert options["parallel_projection"] is parallel
+            np.testing.assert_allclose(options["position"][0], (12, -5, 7))
+    finally:
+        dialog.reject()
+
+
 def test_gif_preview_matches_export(export_ui, deformation_archive, tmp_path, monkeypatch):
     app, messages, errors = export_ui
     output = tmp_path / "history.gif"
@@ -183,22 +214,70 @@ def test_gif_preview_matches_export(export_ui, deformation_archive, tmp_path, mo
     dialog = export_dialog(deformation_archive, {"case": "case"})
     dialog.show()
 
-    def preview():
-        deadline = time.monotonic() + 45
-        while dialog.gif.image.pixmap().isNull() and time.monotonic() < deadline:
-            app.processEvents()
-            time.sleep(0.01)
-        assert not dialog.gif.image.pixmap().isNull(), dialog.gif.image.toolTip()
-        with Image.open(dialog.gif.directory / "frame.png") as frame:
-            return np.array(frame.convert("RGB"))
+    app.processEvents()
+    gif = dialog.gif
+    plotter = gif.viewport.plotter
+    assert gif.error.isHidden(), gif.error.text()
+    assert plotter.renderer.axes_widget is not None
+    if plotter.iren is not None:
+        assert plotter.renderer.axes_enabled
+    assert not any(actor.IsA("vtkCornerAnnotation") or actor.IsA("vtkTextActor")
+                   for actor in plotter.renderer.GetActors2D())
+    gif.resolution_preset.setCurrentIndex(gif.resolution_preset.count() - 1)
+    assert gif.pixel_width.isVisible() and gif.pixel_height.isVisible()
+    gif.pixel_width.setValue(120)
+    gif.pixel_height.setValue(180)
+    assert gif.options()["window_size"] == (120, 180)
+    app.processEvents()
+    assert abs(gif.viewport.width() - gif.viewport.height() * 2 / 3) <= 1
 
-    first_preview = preview()
-    dialog.gif.last.setValue(1)
-    assert not np.array_equal(preview(), first_preview)
-    dialog.gif.last.setValue(2)
+    assert not gif.view_height.isVisible()
+    gif.projection.setCurrentIndex(gif.projection.findData(True))
+    app.processEvents()
+    assert gif.view_height.isVisible()
+    gif.view_height.setValue(30)
+    assert gif.options()["camera"]["parallel_scale"] == 15
+    direction = plotter.camera.direction
+    gif.fit_button.click()
+    app.processEvents()
+    assert 0 < gif.view_height.value() < 30
+    assert gif.view_height.value() == pytest.approx(2 * plotter.camera.parallel_scale)
+    np.testing.assert_allclose(plotter.camera.direction, direction)
+    last_points = plotter.actors["deformation-mesh"].mapper.dataset.points.copy()
+    initial_pose = gif.options()["camera"]["position"]
+    initial_angles = [field.value() for field in gif.angles]
+    if plotter.iren is None:  # Offscreen VTK has no mouse interactor.
+        plotter.camera.azimuth = 43
+    else:
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        center = plotter.rect().center()
+        end = center + QPoint(49, 22)
+        QTest.mousePress(plotter, Qt.MouseButton.LeftButton, pos=center)
+        QTest.mouseMove(plotter, end, delay=20)
+        app.processEvents()
+        assert [field.value() for field in gif.angles] != initial_angles
+        np.testing.assert_allclose([field.value() for field in gif.position], plotter.camera.position, atol=1e-6)
+        QTest.mouseRelease(plotter, Qt.MouseButton.LeftButton, pos=end)
+    assert gif.options()["camera"]["position"] != initial_pose
+    plotter.camera.zoom(1.2)
+    camera = gif.options()["camera"]
+    gif.last.setValue(1)
+    app.processEvents()
+    assert not np.array_equal(plotter.actors["deformation-mesh"].mapper.dataset.points, last_points)
+    for key, value in gif.options()["camera"].items():
+        np.testing.assert_allclose(value, camera[key])
+    gif.last.setValue(2)
     monkeypatch.setattr(history_export.QColorDialog, "getColor", lambda *args: QColor("#e6c888"))
-    dialog.gif.background.click()
-    last_preview = preview()
+    gif.background.click()
+    app.processEvents()
+    for key, value in gif.options()["camera"].items():
+        np.testing.assert_allclose(value, camera[key])
+    from morphopt.postprocess.visualization import history_frames
+    frames = history_frames(gif.archive, range(2, 3), mode="deformation", target={"case": "case"},
+                            camera=camera, window_size=(120, 180), style=gif.style)
+    last_preview, = frames
     np.testing.assert_array_equal(last_preview[-1, 0], [230, 200, 136])
     dialog.export.click()
     directory = dialog._directory
@@ -206,6 +285,7 @@ def test_gif_preview_matches_export(export_ui, deformation_archive, tmp_path, mo
     assert not errors, errors
     assert messages == [tr("ui.history_export.completed", path=str(output))]
     with Image.open(output) as animation:
+        assert animation.size == (120, 180)
         assert animation.n_frames == 2
         for index in range(animation.n_frames):
             animation.seek(index)

@@ -752,7 +752,7 @@ class FiniteElementPage(QWidget):
                                     scalars=field,
                                     cmap=render_style.result_colormap,
                                     clim=scalar_range,
-                                    nan_color=theme_manager.palette.muted_text,
+                                    nan_color=theme_manager.palette.neutral,
                                     show_scalar_bar=not scalar_bar_added,
                                     scalar_bar_args={
                                         "title": field,

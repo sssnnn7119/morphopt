@@ -139,18 +139,26 @@ def add_design_component(
         surface_count = sum(key.startswith("surface_") for key in component.files)
         index = view.surface_index if view else None
         for key in component.files:
-            if key.startswith("net_") or (index is not None and key != f"surface_{index}"):
+            if key.startswith("net_") or (
+                index is not None and key != f"surface_{index}"
+            ):
                 continue
             mesh = component.mesh(key)
             if "density_max" in mesh.field_data and "density" in mesh.point_data:
                 from ..simp.simpmaterial import plot_density
+
                 plot_density(plotter, mesh, float(mesh.field_data["density_max"][0]))
             elif mesh.n_points:
-                plotter.add_mesh(mesh, name=key.replace("surface_", "surface-"),
-                                 color=geometry_color if surface_count else None,
-                                 smooth_shading=bool(surface_count))
+                plotter.add_mesh(
+                    mesh,
+                    name=key.replace("surface_", "surface-"),
+                    color=geometry_color if surface_count else None,
+                    smooth_shading=bool(surface_count),
+                )
         if view and view.control_net:
-            _draw_control_net(plotter, component.mesh(f"net_{index}"), id(component), index)
+            _draw_control_net(
+                plotter, component.mesh(f"net_{index}"), id(component), index
+            )
         for name, actor in plotter.actors.items():
             if name in existing or not isinstance(actor, Actor):
                 continue
@@ -170,7 +178,6 @@ def add_design_component(
                 and str(name).endswith("surface-0")
             ):
                 actor.prop.opacity = boundary_shell_opacity
-    plotter.show_axes()
 
 
 def _draw_control_net(plotter, net, component_id: int, index: int) -> None:
@@ -206,7 +213,65 @@ def add_deformation_mesh(plotter: BasePlotter, mesh: pv.DataSet, color: str) -> 
         show_edges=True,
         name="deformation-mesh",
     )
-    plotter.show_axes()
+
+
+def camera_state(plotter: pv.Plotter) -> dict[str, Any]:
+    """Capture the pose and zoom used to frame all iterations of an export."""
+    camera = plotter.camera
+    return {
+        "position": [list(point) for point in plotter.camera_position],
+        "parallel_projection": bool(camera.parallel_projection),
+        "parallel_scale": camera.parallel_scale,
+        "view_angle": camera.view_angle,
+    }
+
+
+def draw_history_scene(
+    plotter: pv.Plotter,
+    archive: OptimizationArchive,
+    iteration: int,
+    mode: str,
+    target: dict[str, str],
+    style: dict[str, Any],
+) -> bool:
+    """Draw the selected archive meshes. Return False for a missing deformation."""
+    plotter.clear()
+    configure_plotter(
+        plotter,
+        background=style["background"],
+        light_intensity=style.get("light_intensity", 1.0),
+    )
+    if mode == "design":
+        component = archive.design_view_component(
+            target["category"], target["name"], iteration
+        )
+        views = {v.key: v for v in design_view_options(component)}
+        view = views[target["view"]] if "view" in target else None
+        add_design_component(
+            plotter,
+            component,
+            view=view,
+            geometry_color=style["geometry_color"],
+            ambient=style["mesh_ambient"],
+            diffuse=style["mesh_diffuse"],
+            specular=style["mesh_specular"],
+            specular_power=style["mesh_specular_power"],
+            boundary_shell_opacity=style["boundary_shell_opacity"],
+        )
+    else:
+        mesh = archive.deformation_mesh(target["case"], iteration)
+        if mesh is None:
+            return False
+        add_deformation_mesh(plotter, mesh, style["deformation_color"])
+    apply_mesh_style(
+        plotter,
+        ambient=style["mesh_ambient"],
+        diffuse=style["mesh_diffuse"],
+        specular=style["mesh_specular"],
+        specular_power=style["mesh_specular_power"],
+        smooth_shading=style.get("smooth_shading", True),
+    )
+    return True
 
 
 def set_camera(plotter: pv.Plotter, camera: dict[str, Any]) -> None:
@@ -265,42 +330,12 @@ def history_frames(
 
     size = tuple(max(1, int(value)) for value in window_size)
     plotter = pv.Plotter(off_screen=True, window_size=size)
+    plotter.hide_axes()
 
     def render_frame(iteration: int) -> np.ndarray | None:
         nonlocal camera
-        plotter.clear()
-        configure_plotter(
-            plotter,
-            background=style["background"],
-            light_intensity=style.get("light_intensity", 1.0),
-        )
-        if mode == "design":
-            component = archive.design_view_component(target["category"], target["name"], iteration)
-            views = {v.key: v for v in design_view_options(component)}
-            view = views[target["view"]] if "view" in target else None
-            add_design_component(
-                plotter, component,
-                view=view,
-                geometry_color=style["geometry_color"],
-                ambient=style["mesh_ambient"],
-                diffuse=style["mesh_diffuse"],
-                specular=style["mesh_specular"],
-                specular_power=style["mesh_specular_power"],
-                boundary_shell_opacity=style["boundary_shell_opacity"],
-            )
-        else:
-            mesh = archive.deformation_mesh(target["case"], iteration)
-            if mesh is None:
-                return None
-            add_deformation_mesh(plotter, mesh, style["deformation_color"])
-        apply_mesh_style(
-            plotter,
-            ambient=style["mesh_ambient"],
-            diffuse=style["mesh_diffuse"],
-            specular=style["mesh_specular"],
-            specular_power=style["mesh_specular_power"],
-            smooth_shading=style.get("smooth_shading", True),
-        )
+        if not draw_history_scene(plotter, archive, iteration, mode, target, style):
+            return None
         if "direction" in camera:
             plotter.view_vector(camera["direction"], viewup=camera["up"], render=False)
             camera = {
@@ -309,12 +344,6 @@ def history_frames(
                 "parallel_projection": camera.get("parallel_projection", False),
             }
         set_camera(plotter, camera)
-        plotter.add_text(
-            f"Iteration {iteration}",
-            position="upper_left",
-            font_size=12,
-            color=style["text_color"],
-        )
         plotter.render()
         return plotter.screenshot(return_img=True)
 

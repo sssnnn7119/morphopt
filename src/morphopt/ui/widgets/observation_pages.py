@@ -37,8 +37,8 @@ from ...postprocess.visualization import (
 )
 from ..application.results import ResultLogReader, ResultSession
 from ..i18n import tr
-from ..presentation.labels import design_view_title
 from ..presentation.history import history_table
+from ..presentation.labels import design_view_title
 from ..theme import theme_manager
 from ..theme.fonts import chart_font, font_manager
 from .viewport import PlotViewport
@@ -97,7 +97,9 @@ class LogsPage(QWidget):
                 for path in files:
                     self.file_selector.addItem(path.name, str(path))
                     self.file_selector.setItemData(
-                        self.file_selector.count() - 1, str(path), Qt.ItemDataRole.ToolTipRole
+                        self.file_selector.count() - 1,
+                        str(path),
+                        Qt.ItemDataRole.ToolTipRole,
                     )
                 self.file_selector.setCurrentIndex(
                     max(0, self.file_selector.findData(selected)) if files else -1
@@ -122,13 +124,12 @@ class LogsPage(QWidget):
         except OSError as exc:
             self._reader.clear()
             self.text.clear()
-            self.text.setPlaceholderText(tr("ui.observe_panel.log_read_failed", error=exc))
+            self.text.setPlaceholderText(
+                tr("ui.observe_panel.log_read_failed", error=exc)
+            )
             return
         bar = self.text.verticalScrollBar()
-        follow = (
-            self._can_follow()
-            and (file_changed or bar.value() == bar.maximum())
-        )
+        follow = self._can_follow() and (file_changed or bar.value() == bar.maximum())
         # A cursor follows its block when old lines are trimmed from the head.
         # Restoring a scrollbar value alone would change the text being read.
         anchor = QTextCursor(self.text.firstVisibleBlock())
@@ -409,6 +410,7 @@ class HistorySceneCache:
                 if not draw(plotter):
                     self._selected.pop(viewport, None)
                     return
+                plotter.show_axes()
                 actors = tuple(plotter.actors.values())
                 mappers = [
                     actor.mapper
@@ -419,7 +421,9 @@ class HistorySceneCache:
                 ]
                 for mapper in mappers:
                     mapper.update()
-                size = sum(mapper.dataset.GetActualMemorySize() * 1024 for mapper in mappers)
+                size = sum(
+                    mapper.dataset.GetActualMemorySize() * 1024 for mapper in mappers
+                )
                 budget = CONSTANT.UI.OBSERVER.PREVIEW_CACHE_BYTES
                 if not size or size > budget:
                     return
@@ -521,10 +525,7 @@ class UpdatableStructurePage(QWidget):
         return next((view for view in self._views if view.key == key), None)
 
     def _render_selected(self) -> None:
-        if (
-            self._results is None
-            or self._results.folder is None
-        ):
+        if self._results is None or self._results.folder is None:
             return
         selected = self._component
         view = self._selected_view()
@@ -539,7 +540,9 @@ class UpdatableStructurePage(QWidget):
 
         def build_scene(plotter) -> bool:
             component = (
-                results.load_design_component(selected, iteration) if selected is not None else None
+                results.load_design_component(selected, iteration)
+                if selected is not None
+                else None
             )
             style = theme_manager.palette.viewer
             add_design_component(
@@ -639,7 +642,9 @@ class DeformationCasePage(QWidget):
             mesh = results.deformation_mesh(case_name, iteration)
             if mesh is None:
                 return False
-            add_deformation_mesh(plotter, mesh, theme_manager.palette.deformation_mesh_color)
+            add_deformation_mesh(
+                plotter, mesh, theme_manager.palette.deformation_mesh_color
+            )
             return True
 
         self._scenes.show(self.viewport, marker, build_scene)

@@ -28,6 +28,7 @@ class _Constants:
             POLL_INTERVAL_MS = 1000
 
         class CAMERA:
+            FIT_VIEW_FRACTION = 0.96
             FRAME_INTERVAL_MS = 16
             MOVEMENT_SPEED_RATIO = 0.3
             FAST_MULTIPLIER = 4.0

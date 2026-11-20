@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tokenize
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTabBar,
@@ -40,7 +42,6 @@ from .widgets.labels import ResultPathLabel
 from .widgets.problems import ProblemsButton
 from .workbench import Workbench
 
-
 if TYPE_CHECKING:
     from .observe_panel import ObserverControls
 
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
     """Compose task definition, optimization observation, finite-element results, and application
     settings.
     """
+
     def __init__(self):
         """Initialize MainWindow and its configuration state."""
         super().__init__()
@@ -57,6 +59,7 @@ class MainWindow(QMainWindow):
         self._observer: ObserverControls | None = None
         self._finite_element = None
         self._document_path: Path | None = None
+        self._archive_name: str | None = None
         self._analysis_ready = False
         self._result_selection: ResultSelection | None = None
         self._has_analysis_model = False
@@ -67,6 +70,12 @@ class MainWindow(QMainWindow):
         self.destroyed.connect(lambda *_args: self._unsubscribe_theme())
 
         self.stack = QStackedWidget()
+        self._definitions = QStackedWidget()
+        self.stack.addWidget(self._definitions)
+        self._archived_source = QPlainTextEdit()
+        self._archived_source.setReadOnly(True)
+        self._archived_source.setProperty("textRole", "code")
+        self._definitions.addWidget(self._archived_source)
         shell = QWidget()
         layout = QVBoxLayout(shell)
         layout.setContentsMargins(*theme_manager.palette.layout.zero_margins)
@@ -81,7 +90,9 @@ class MainWindow(QMainWindow):
         workspace_header.setContentsMargins(*theme_manager.palette.layout.zero_margins)
         workspace_header.addWidget(self.navigation, 1)
         self.problems = ProblemsButton(
-            lambda: self._workbench.tree.diagnostics if self._workbench is not None else (),
+            lambda: (
+                self._workbench.tree.diagnostics if self._workbench is not None else ()
+            ),
             self,
         )
         self.problems.nodeRequested.connect(self._locate_problem)
@@ -140,7 +151,12 @@ class MainWindow(QMainWindow):
         Returns:
             ProblemDefinition | None: Current problem.
         """
-        return self._workbench.problem if self._workbench is not None else None
+        if (
+            self._workbench is not None
+            and self._definitions.currentWidget() is self._workbench
+        ):
+            return self._workbench.problem
+        return None
 
     # ------------------------------------------------------------ language
     def _build_menus(self) -> None:
@@ -272,8 +288,9 @@ class MainWindow(QMainWindow):
             self.navigation.setCurrentIndex(0)
             return
         self.analysis_header.setVisible(index == 1)
-        self.start_button.setVisible(index == 0)
-        self.problems.setVisible(index == 0)
+        editing = index == 0 and self._definitions.currentWidget() is self._workbench
+        self.start_button.setVisible(editing)
+        self.problems.setVisible(editing)
         self._workspace_header.setStretchFactor(self.navigation, 1 if index == 0 else 0)
         if index == 0:
             self.stack.setCurrentIndex(0)
@@ -357,7 +374,7 @@ class MainWindow(QMainWindow):
         name = (
             self._document_path.name
             if self._document_path
-            else tr("ui.workspace.untitled")
+            else self._archive_name or tr("ui.workspace.untitled")
         )
         if self.stack.currentIndex() > 0 and self._observer is not None:
             name = self._observer.task_label or name
@@ -410,17 +427,20 @@ class MainWindow(QMainWindow):
         path = self._choose_file_path(
             tr("ui.mainwindow.open_morph"), MORPH_SUFFIX, save=False
         )
-        if not path:
-            return
-        if not self._confirm_discard():
-            return
+        if path:
+            self._load_definition(Path(path))
+
+    def _load_definition(self, path: Path, *, archived: bool = False) -> bool:
+        """Open a definition, keeping an archive snapshot separate from its editable copy."""
         issues = []
         try:
             problem = ProblemLibrary.load(path, issues=issues)
         except Exception as exc:
             QMessageBox.warning(self, tr("ui.mainwindow.open_failed"), str(exc))
-            return
-        self.set_problem(problem, path=path)
+            return False
+        if not self._confirm_discard():
+            return False
+        self.set_problem(problem, path=None if archived else str(path))
         if issues:
             message = QMessageBox(self)
             message.setIcon(QMessageBox.Icon.Warning)
@@ -436,6 +456,7 @@ class MainWindow(QMainWindow):
             ),
             CONSTANT.UI.APPLICATION.STATUS_MESSAGE_DURATION_MS.LONG,
         )
+        return True
 
     def save_morph(self) -> bool:
         """Save morph.
@@ -602,16 +623,15 @@ class MainWindow(QMainWindow):
             path (str | None): Filesystem path read, restored, or written by this operation.
         """
         self._document_path = Path(path).resolve() if path else None
+        self._archive_name = None
         if self._workbench is None:
             self._build_workbench(problem)
-            self.stack.addWidget(self._workbench)
+            self._definitions.addWidget(self._workbench)
         else:
             self._workbench.set_problem(problem)
-        self.stack.setCurrentWidget(self._workbench)
-        self.navigation.setCurrentIndex(0)
-        self.analysis_header.hide()
-        self._set_titles()
-        self._update_analysis_actions()
+        self._definitions.setCurrentWidget(self._workbench)
+        self._archived_source.clear()
+        self.show_definition()
 
     def _build_workbench(self, problem: ProblemDefinition) -> None:
         wb = Workbench(problem)
@@ -683,7 +703,7 @@ class MainWindow(QMainWindow):
             self._show_analysis()
 
     def open_optimization_result(self) -> None:
-        """Return open optimization result."""
+        """Choose the optimization archive to view."""
         if not self._can_replace_task():
             return
         folder = choose_directory(
@@ -691,20 +711,48 @@ class MainWindow(QMainWindow):
             tr("ui.workspace.open_result"),
             os.getcwd(),
         )
-        if not folder:
+        if folder:
+            self.open_result_folder(Path(folder))
+
+    def open_result_folder(self, folder: Path) -> None:
+        """Open the archived task definition and show the latest result without starting a run."""
+        if not self._can_replace_task():
             return
+        folder = folder.resolve()
         if not OptimizationRunSession.is_result_folder(folder):
             QMessageBox.warning(
                 self,
                 tr("ui.observe_panel.invalid_result"),
-                tr(
-                    "ui.errors.runs.missing_archive"
-                ),
+                tr("ui.errors.runs.missing_archive"),
             )
             return
+        scripts = folder / "scripts"
+        definition = scripts / "MAIN_SCRIPT_FOR_RESTART.morph"
+        if not definition.is_file():
+            # Older UI runs could save the definition before the scripts directory existed.
+            definition = folder / definition.name
+        if definition.is_file():
+            if not self._load_definition(definition, archived=True):
+                return
+        else:
+            script = scripts / "MAIN_SCRIPT_FOR_RESTART.py"
+            source = tr("ui.workspace.no_archived_definition")
+            if script.is_file():
+                try:
+                    with tokenize.open(script) as stream:
+                        source = stream.read()
+                except (OSError, UnicodeError, SyntaxError) as exc:
+                    QMessageBox.warning(self, tr("ui.mainwindow.open_failed"), str(exc))
+                    return
+            if not self._confirm_discard():
+                return
+            self.set_problem(ProblemLibrary.create_blank())
+            self._archived_source.setPlainText(source)
+            self._definitions.setCurrentWidget(self._archived_source)
+        self._archive_name = folder.name
         self._ensure_observer()
         self._begin_analysis_task()
-        self._observer.open_result(folder)
+        self._observer.open_result(str(folder))
         self._show_analysis()
 
     def _begin_analysis_task(self) -> None:
@@ -813,7 +861,10 @@ class MainWindow(QMainWindow):
         )
         for key in ("open_result", "open_python"):
             self._menu_actions[key].setEnabled(not busy)
-        can_start = not busy and self._definition_valid
+        editing = self._definitions.currentWidget() is self._workbench
+        for key in ("save", "save_as", "export_python"):
+            self._menu_actions[key].setEnabled(editing)
+        can_start = editing and not busy and self._definition_valid
         self._start_optimization_action.setEnabled(can_start)
         self.start_button.setEnabled(can_start)
         self.start_button.setText(

@@ -133,6 +133,51 @@ def test_axis_views_survive_iteration_updates_and_hidden_settings_changes(
         widget.close()
 
 
+@pytest.mark.parametrize("parallel", [True, False])
+@pytest.mark.parametrize("window_size", [(640, 320), (320, 640)])
+def test_fit_button_frames_actual_geometry_in_current_projection(
+    app, offscreen_viewports, parallel, window_size,
+):
+    from morphopt.constants import CONSTANT
+
+    widget = viewport.PlotViewport()
+    try:
+        plotter = widget.plotter
+        plotter.window_size = window_size
+        # Viewed end-on, the world bounding box of this long cylinder is much
+        # larger than its actual outline. Its actor also has a world translation.
+        mesh = pv.Cylinder(direction=(1, 1, 1), height=40, radius=2)
+        actor = plotter.add_mesh(mesh)
+        actor.position = (12, 22, -7)
+        plotter.add_mesh(pv.Cube(center=(300, 300, 300))).visibility = False
+        plotter.add_text("Iteration 3")
+        camera = plotter.camera
+        camera.parallel_projection = parallel
+        plotter.camera_position = [(200, 200, 200), (0, 0, 0), (0, 0, 1)]
+        camera.parallel_scale = 1000
+        direction, up = camera.direction, camera.up
+        widget.fit_button.click()
+        np.testing.assert_allclose(camera.direction, direction)
+        np.testing.assert_allclose(camera.up, up)
+        assert camera.distance < 100
+        if parallel:
+            assert camera.parallel_scale < 10
+
+        projection = camera.GetCompositeProjectionTransformMatrix(
+            plotter.renderer.GetTiledAspectRatio(), -1, 1,
+        )
+        world = mesh.points + actor.position
+        clip = np.c_[world, np.ones(mesh.n_points)] @ pv.array_from_vtkmatrix(projection).T
+        ndc = clip[:, :3] / clip[:, 3:]
+        assert np.abs(ndc[:, 2]).max() <= 1
+        frame = CONSTANT.UI.CAMERA.FIT_VIEW_FRACTION
+        extent = np.ptp(ndc[:, :2], axis=0) / 2
+        assert extent.max() == pytest.approx(frame)
+        assert np.abs(ndc[:, :2]).max() <= frame + 1e-6
+    finally:
+        widget.close()
+
+
 def test_settings_dialog_previews_then_applies_without_closing(
     app, isolated_settings, offscreen_viewports
 ):

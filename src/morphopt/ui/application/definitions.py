@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 
 from ...utils.paths import sanitize_name
-from ..codegen.assets import PYTHON_ASSET_DIRECTORY, collect_python_assets
+from ..codegen.assets import (
+    PYTHON_ASSET_DIRECTORY,
+    collect_python_assets,
+    external_asset_fields,
+)
 from ..codegen.generator import generate_source
 from ..i18n import LocalizedMessage, localized_message
 from ..model.loaders import load_morph, save_morph
@@ -331,7 +335,9 @@ class ProblemLibrary:
 
     @staticmethod
     def load(
-        path: str | Path, *, issues: list[LocalizedMessage] | None = None,
+        path: str | Path,
+        *,
+        issues: list[LocalizedMessage] | None = None,
     ) -> ProblemDefinition:
         """Load the ProblemLibrary state.
 
@@ -344,6 +350,10 @@ class ProblemLibrary:
             ProblemDefinition: Load the ProblemLibrary state.
         """
         problem = load_morph(str(path), issues=issues)
+        for node, field in external_asset_fields(problem):
+            value = node.get_field(field)
+            if value and Path(value).parts[:1] == (PYTHON_ASSET_DIRECTORY,):
+                node.set_field(field, str(Path(path).resolve().parent / value))
         _synchronize_problem(problem)
         return problem
 
@@ -363,17 +373,25 @@ class ProblemLibrary:
         return save_morph(problem, str(path))
 
     @staticmethod
-    def export_python(problem: ProblemDefinition, path: str | Path) -> str:
+    def export_python(
+        problem: ProblemDefinition,
+        path: str | Path,
+        *,
+        include_definition: bool = False,
+    ) -> str:
         """Export python.
 
         Args:
             problem (ProblemDefinition): Editable problem definition shared by the UI application
                 services.
             path (str | Path): Filesystem path read, restored, or written by this operation.
+            include_definition (bool): Save a portable definition alongside the script.
 
         Returns:
             str: Export python.
         """
+        if include_definition:
+            problem = ProblemDefinition.from_dict(problem.to_dict())
         _synchronize_problem(problem)
         paths, files = collect_python_assets(problem)
         source = generate_source(problem, asset_paths=paths)
@@ -383,6 +401,10 @@ class ProblemLibrary:
         for asset in files.values():
             (asset_directory / asset.name).write_bytes(asset.content)
         output.write_text(source, encoding="utf-8")
+        if include_definition:
+            for node, field in external_asset_fields(problem):
+                node.set_field(field, paths[id(node)])
+            save_morph(problem, output.with_suffix(".morph"))
         return str(output)
 
     @staticmethod
@@ -399,23 +421,4 @@ class ProblemLibrary:
         """
         directory = Path(folder)
         output = directory / f"{directory.name}.py"
-        return ProblemLibrary.export_python(problem, output)
-
-    @staticmethod
-    def save_result_copy(problem: ProblemDefinition, folder: str | Path) -> str:
-        """Save the editable definition beside a run's frozen Python script.
-
-        Args:
-            problem (ProblemDefinition): Editable problem definition shared by the UI application
-                services.
-            folder (str | Path): Directory containing the optimization run or archive.
-
-        Returns:
-            str: Save the editable definition beside a run's frozen Python script.
-        """
-        result = Path(folder)
-        scripts = result / "scripts"
-        destination = scripts if scripts.is_dir() else result
-        return ProblemLibrary.save(
-            problem, destination / "MAIN_SCRIPT_FOR_RESTART.morph"
-        )
+        return ProblemLibrary.export_python(problem, output, include_definition=True)

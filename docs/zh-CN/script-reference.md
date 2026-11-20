@@ -1298,7 +1298,7 @@ export_history_gif(
     },
     window_size=(800, 600),
     style={
-        "background": "#101820", "text_color": "white",
+        "background": "#101820",
         "geometry_color": "lightblue", "deformation_color": "lightblue",
         "mesh_ambient": 0.3, "mesh_diffuse": 0.7,
         "mesh_specular": 0.1, "mesh_specular_power": 10.0,
@@ -1307,7 +1307,7 @@ export_history_gif(
 )
 ```
 
-`camera.position` 依次给出相机位置、焦点和向上方向；上述坐标与平行投影尺度应根据模型尺寸调整。动画帧显示迭代编号，函数返回实际写入的帧数。
+`camera.position` 依次给出相机位置、焦点和向上方向；上述坐标与平行投影尺度应根据模型尺寸调整。方向坐标轴仅在界面预览中显示。导出帧省略坐标轴和迭代编号。函数返回实际渲染的帧数。
 
 新增场量通过 `ResultField` 注册计算接口，新增表格格式实现 `TableWriter.write()` 并注册到 `TABLE_WRITERS`。界面翻译属于 UI 展示层，扩展字段和格式未配置翻译时分别使用字段描述和扩展名。
 

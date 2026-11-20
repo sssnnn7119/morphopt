@@ -384,6 +384,7 @@ class ThemePalette:
     border: str
     text: str
     muted_text: str
+    neutral: str
     heading_text: str
     accent: str
     accent_hover: str

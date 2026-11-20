@@ -232,7 +232,7 @@ IterationModel(folder, iteration, case)
 
 优化历史 GIF 的数值读取、逐帧场景生成和 GIF 文件写入属于 `postprocess`。`export_history_gif()` 接收运行目录、导出范围、目标对象或工况、相机和显示样式；`OptimizationArchive` 从每步快照读取所选设计或工况网格，`visualization.history_frames()` 使用调用方提供的颜色和相机生成帧，`exports.export_history_gif()` 写入动画文件。
 
-GIF 页选择设计组件及其视图或变形工况，并设置迭代范围、帧率、分辨率、相机和背景颜色。预览进程通过 `export_history_frame()` 渲染结束迭代步的静态图。导出进程通过 `export_history_gif()` 渲染所选范围，两者共用场景和取景逻辑。可更新组件页按所选组件列出组件级导出方案，后处理服务恢复对应轮次的归档设计并写出文件。
+GIF 页选择设计组件及其视图或变形工况，并设置迭代范围、帧率、分辨率、相机和背景颜色。GIF 页的交互式视口与导出进程共用归档场景绘制函数。视口显示结束迭代步，导出时将当前相机传给 `export_history_gif()`，用于所选范围的全部帧。可更新组件页按所选组件列出组件级导出方案，后处理服务恢复对应轮次的归档设计并写出文件。
 
 <a id="section-优化日志读取"></a>
 

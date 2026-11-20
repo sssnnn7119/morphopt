@@ -145,11 +145,12 @@ def test_staging_another_definition_does_not_stop_or_mutate_active_run(
     session = OptimizationRunSession()
     session.set_definition(original)
     session.start_definition(session.definition)
+    submitted = session.definition
     original.label = "edited outside observer"
     session.set_definition(ProblemLibrary.create_blank("next run"))
     assert session.process is process
     assert session.definition.label == "next run"
-    assert session._running_definition.label == "original"
+    assert submitted.label == "original"
 
 
 def test_fea_widget_solves_and_exports_after_being_hidden(

@@ -15,13 +15,14 @@ import os
 import shutil
 import time
 from multiprocessing import get_context
+from pathlib import Path
 
 import torch
 
 import morphopt
 
 from ..constants import CONSTANT
-from ..utils.paths import sanitize_name
+from ..utils.paths import sanitize_name, write_result_launcher
 from .history import History
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,9 @@ class Controller:
             main_filepath = __main__.__file__
         scripts_directory = self.path_result + "/scripts/"
         shutil.copy(main_filepath, scripts_directory + "MAIN_SCRIPT_FOR_RESTART.py")
+        definition = Path(main_filepath).with_suffix(".morph")
+        if definition.is_file():
+            shutil.copyfile(definition, Path(scripts_directory) / "MAIN_SCRIPT_FOR_RESTART.morph")
         asset_directory = os.path.join(
             os.path.dirname(os.path.abspath(main_filepath)), "morphopt_assets"
         )
@@ -223,6 +227,7 @@ class Controller:
         vendor_package("torchfea", target_dir=self.path_result + "/scripts/")
         vendor_package("cpgeo", target_dir=self.path_result + "/scripts/")
         vendor_package("morphopt", target_dir=self.path_result + "/scripts/")
+        write_result_launcher(Path(self.path_result))
 
     def initialize(self) -> None:
         """

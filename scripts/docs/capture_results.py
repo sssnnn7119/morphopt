@@ -103,12 +103,8 @@ def capture_result(window, folder, save, settle):
     dialog = panel.history_export_dialog()
     dialog.show()
     try:
-        def preview_ready():
-            if dialog.gif.image.toolTip():
-                raise RuntimeError(dialog.gif.image.toolTip())
-            return not dialog.gif.image.pixmap().isNull()
-
-        wait_for(preview_ready, settle, "history GIF preview")
+        settle()
+        dialog.gif.options()  # Flush the interactive scene and surface any archive error.
         shot("export-history-gif", "GIF settings and final frame", dialog)
         dialog.tabs.setCurrentIndex(1)
         shot("export-current-surfaces", "Export all boundary surfaces", dialog)

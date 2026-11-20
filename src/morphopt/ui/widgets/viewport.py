@@ -27,7 +27,11 @@ from ...constants import CONSTANT
 from ..i18n import localization, tr
 from ..theme import theme_manager
 from ..theme.visualization import VisualizationSettings, visualization_manager
-from ..visualization.rendering import apply_visualization, configure_plotter
+from ..visualization.rendering import (
+    apply_visualization,
+    configure_plotter,
+    fit_camera_to_geometry,
+)
 
 VIEWS = {
     "isometric": ((1, 1, 1), (0, 0, 1)),
@@ -160,8 +164,8 @@ class PlotViewport(QWidget):
         self._camera_changed()
 
     def fit_view(self) -> None:
-        """Return fit view."""
-        self.plotter.reset_camera(render=False)
+        """Fit the current viewing direction to the model and viewport aspect ratio."""
+        fit_camera_to_geometry(self.plotter)
         self._camera_changed()
 
     def open_flight(self) -> None:

@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ..constants import CONSTANT
 from ..postprocess import last_completed_iteration
+from ..postprocess.visualization import camera_state
 from .application import (
     OptimizationRunSession,
     ResultSession,
@@ -286,7 +287,6 @@ class ObserverPanel(QWidget):
         settings = viewport.settings
         style = {
             "background": palette.viewer.render.background,
-            "text_color": palette.text,
             "geometry_color": (
                 geometry.instance_colors[0]
                 if geometry.instance_colors
@@ -304,15 +304,8 @@ class ObserverPanel(QWidget):
         if not self._last_3d_page:
             return {}, (640, 480), style
         plotter = viewport.plotter
-        camera = plotter.camera
-        camera_state = {
-            "position": [list(point) for point in plotter.camera_position],
-            "parallel_projection": bool(camera.GetParallelProjection()),
-            "parallel_scale": camera.GetParallelScale(),
-            "view_angle": camera.GetViewAngle(),
-        }
         size = tuple(plotter.window_size)
-        return camera_state, size if min(size) >= 2 else (640, 480), style
+        return camera_state(plotter), size if min(size) >= 2 else (640, 480), style
 
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
@@ -794,7 +787,9 @@ class ObserverControls(QWidget):
             self.btn_start.setText(tr("ui.observe_panel.continue"))
         else:
             self.btn_start.setText(tr("ui.observe_panel.start"))
-        can_start = src is not None and (src.kind is not RunSourceKind.CONTINUE or self._run.can_resume(src.path))
+        can_start = src is not None and (
+            src.kind is not RunSourceKind.CONTINUE or self._run.can_resume(src.path)
+        )
         self.btn_start.setEnabled(not running and can_start)
         self.btn_start.setVisible(not running)
         self.btn_start.setToolTip(
