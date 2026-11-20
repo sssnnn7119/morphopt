@@ -30,9 +30,32 @@ def cylinder(factory, radius=2.0):
 
 def test_cpgeo_stl_rejects_open_control_mesh(tmp_path):
     surface = cylinder(CPGEOSurface)
+    surface.model._cp_faces = surface.model._cp_faces[:-1]
     with pytest.raises(ValueError, match="closed control mesh"):
         surface.write_surface(tmp_path / "open", "stl")
     assert not (tmp_path / "open.stl").exists()
+
+
+@pytest.mark.parametrize("cavity", [False, True])
+def test_cpgeo_cylinder_side_normals_follow_boundary_role(cavity):
+    center = torch.tensor([2.0, -3.0, 5.0])
+    surface = CPGEOSurface.initialize_cylinder(3, 8, 0.9, init_location=center.tolist())
+    part = BoundaryPart()
+    if cavity:
+        part.add_surface_interface(BaseSurface())
+    part.add_surface_interface(surface)
+    surface.initialize()
+    surface.pre_load()
+    points = surface.get_r() - center
+    side = (points[:, 2] - 4).abs() < 2
+    radial = torch.nn.functional.normalize(points[side, :2])
+    assert side.any()
+
+    normal = surface.get_normals(surface.preload_data.uv[side])
+    expected = -radial if cavity else radial
+    assert ((normal[:, :2] * expected).sum(dim=1) > 0.95).all()
+    du, dv = surface.get_rdu()[side].unbind(dim=2)
+    torch.testing.assert_close(torch.nn.functional.normalize(torch.cross(dv, du, dim=1)), normal)
 
 
 def test_bsp_rejects_stl_export(tmp_path):
@@ -212,8 +235,10 @@ def test_cpgeo_mirror_reinitializes_coordinates_and_topology(plane, axis, offset
 
 
 def test_cpgeo_rotation_can_run_inside_torch_func():
-    surface = cylinder(CPGEOSurface)
+    surface = CPGEOSurface.initialize_cylinder(2.0, 4.0, seed_size=0.5)
     rotation = surface.rotate(axis="z", order=3)
+    surface.initialize()
+    rotation.reinitialize(surface)
     points = surface.control_points.clone()
 
     def loss(values):

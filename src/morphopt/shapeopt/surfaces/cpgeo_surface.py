@@ -467,7 +467,8 @@ class CPGEOSurface(ControlPointSurface):
         for i in range(num_segments_axial + 1):
             z = length * i / num_segments_axial
             for j in range(num_segments_circ):
-                theta = 2 * np.pi * j / num_segments_circ
+                # Clockwise rings give the CPGEO chart outward normals for flip=False.
+                theta = -2 * np.pi * j / num_segments_circ
 
                 # Base radius
                 r_val = r0
@@ -486,8 +487,6 @@ class CPGEOSurface(ControlPointSurface):
 
                 vertices.append([x, y, z_final])
 
-        vertices = np.array(vertices)
-
         # Generate faces (triangulate the cylinder surface)
         faces = []
         for i in range(num_segments_axial):
@@ -503,11 +502,20 @@ class CPGEOSurface(ControlPointSurface):
                 faces.append([v00, v01, v10])
                 faces.append([v01, v11, v10])
 
-        faces = np.array(faces)
+        # The spherical parameterization needs a closed, consistently wound
+        # control mesh. Share the end rings with the cap triangles.
+        for ring, z in ((0, 0.0), (num_segments_axial, length)):
+            center = len(vertices)
+            vertices.append([init_location[0], init_location[1], init_location[2] + z])
+            start = ring * num_segments_circ
+            for j in range(num_segments_circ):
+                a = start + j
+                b = start + (j + 1) % num_segments_circ
+                faces.append([center, b, a] if ring == 0 else [center, a, b])
 
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
-            control_points=vertices, cp_faces=faces, knot_influence_num=20
+            control_points=np.array(vertices), cp_faces=np.array(faces), knot_influence_num=20
         )
 
         # Create interface
