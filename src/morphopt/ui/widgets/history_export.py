@@ -326,16 +326,6 @@ class HistoryExportDialog(QDialog):
         self.component_step = spin(1, results.iteration, iteration)
         form.addRow(label("iteration"), self.component_step)
         self.component = QComboBox()
-        for category, component in results.design_components():
-            if component.export_modes:
-                self.component.addItem(component_selection_title(category, component),
-                                       (category, component.name, component.export_modes))
-        if initial_target:
-            for index in range(self.component.count()):
-                category, name, _ = self.component.itemData(index)
-                if (category, name) == (initial_target.get("category"), initial_target.get("name")):
-                    self.component.setCurrentIndex(index)
-                    break
         form.addRow(label("component"), self.component)
         self.component_mode = QComboBox()
         form.addRow(label("output"), self.component_mode)
@@ -353,8 +343,8 @@ class HistoryExportDialog(QDialog):
         self.component_mode.currentIndexChanged.connect(self._voxel_options)
         self._voxel_options()
         layout_components.addLayout(form)
-        if not self.component.count():
-            layout_components.addWidget(QLabel(label("no_components")))
+        self.empty_components = QLabel(label("no_components"))
+        layout_components.addWidget(self.empty_components)
         layout_components.addStretch()
         self.tabs.addTab(component_page, label("components"))
 
@@ -395,13 +385,33 @@ class HistoryExportDialog(QDialog):
         self.export.clicked.connect(self._export)
         buttons.addWidget(self.export)
         layout.addLayout(buttons)
-        self.tabs.currentChanged.connect(self._availability)
+        self._component_session = results
+        self._initial_target = initial_target
+        self.tabs.currentChanged.connect(self._select_tab)
         self.gif.target.currentIndexChanged.connect(self._availability)
         self.inp_step.currentIndexChanged.connect(self._cases)
         self.inp_kind.currentIndexChanged.connect(self._cases)
         self.component.currentIndexChanged.connect(self._component_modes)
         self._component_modes()
         self._cases()
+
+    def _select_tab(self, index):
+        # Native exports require task code; opening the GIF preview only needs VTK files.
+        if index == 1 and self._component_session is not None:
+            results, self._component_session = self._component_session, None
+            initial_target = self._initial_target
+            for category, component in results.design_components():
+                if component.export_modes:
+                    self.component.addItem(component_selection_title(category, component),
+                                           (category, component.name, component.export_modes))
+            if initial_target:
+                for index in range(self.component.count()):
+                    category, name, _ = self.component.itemData(index)
+                    if (category, name) == (initial_target.get("category"), initial_target.get("name")):
+                        self.component.setCurrentIndex(index)
+                        break
+            self.empty_components.setVisible(not self.component.count())
+        self._availability()
 
     def _cases(self):
         self.inp_case.clear()

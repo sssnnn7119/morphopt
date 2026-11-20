@@ -89,7 +89,7 @@ class OptimizationRunSession:
             if not self.is_result_folder(source.path):
                 raise ValueError(
                     localized_message(
-                        "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"
+                        "ui.errors.runs.missing_archive"
                     )
                 )
             self.adopt(source.path)
@@ -320,6 +320,14 @@ class OptimizationRunSession:
         Returns:
             bool: Is result folder.
         """
+        root = Path(folder)
+        return OptimizationRunSession.can_resume(folder) or (
+            (root / "log" / "history_record.csv").is_file() and (root / "log" / "views").is_dir()
+        )
+
+    @staticmethod
+    def can_resume(folder: str) -> bool:
+        """Continuation requires the archived task script."""
         return (Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py").is_file()
 
     def discover_folder(self) -> str | None:
@@ -369,7 +377,7 @@ class OptimizationRunSession:
         )
         if (
             self.folder
-            and self.is_result_folder(self.folder)
+            and self.can_resume(self.folder)
             and self.last_iteration > 0
         ):
             # Selecting via adopt() would reset progress for the displayed result.

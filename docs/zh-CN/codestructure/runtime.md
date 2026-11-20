@@ -127,11 +127,12 @@ Controller.opt_loop()
 | `log/history_record.csv` | `History.save()` 写入历史 |
 | `log/geometry/`、`log/materials/` | 参数接口保存设计状态 |
 | `log/geometryupdater/`、`log/materialupdater/` | 子优化器按目标接口保存状态 |
-| `log/femodel&results/` | 目标对象保存每轮匹配的 FE 模型和工况结果，后处理据此重建变形网格 |
+| `log/views/iteration_000001.vtm` | 第 1 轮的可视化快照。相邻同名目录保存各块的网格数据 |
+| `log/femodel&results/` | 各轮有限元模型与工况解，供场量分析、重新求解和数据导出使用 |
 
-首次有限元求解前，控制器在 `log/geometry/<部件名>/` 保存第 0 步的初始曲面。历史第 k 轮的设计曲面读取第 k−1 步几何检查点。若 CPGEO 在本轮求解前重建控制网格，设计曲面显示重建前的检查点，工况变形显示本轮实际求解的有限元网格。
+每轮有限元模型建立后，控制器采集本轮设计的可视化网格。写入迭代历史前，控制器将这些网格及各工况的已求解变形写入同一份快照。
 
-子目录由各对象的 `pathlog_required()` 聚合分配。`Controller.save()` 先保存参数、求解器、更新器及本轮有限元模型和结果，最后写入历史记录；历史中的完成轮次表示相应归档已保存。分析会话只消费已完成的归档；模型配对、独立求解和导出约定见[结果分析与导出](results.md)。
+子目录由各对象的 `pathlog_required()` 聚合分配。`Controller.step()` 返回本轮求解所用的几何快照。优化循环将快照传给 `Controller.save(design_snapshot)`，待快照、参数、求解器、更新器及有限元模型和结果全部保存后，再写入本轮历史记录。分析会话只消费已完成的归档；模型配对、独立求解和导出约定见[结果分析与导出](results.md)。
 
 <a id="section-设备资源与错误边界"></a>
 

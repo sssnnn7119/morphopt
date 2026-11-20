@@ -32,6 +32,7 @@
 postprocess/
 ├── __init__.py       公共类型与导出入口
 ├── archive.py        运行归档、设计状态及模型路径
+├── snapshots.py      每步设计与工况变形的 VTK 快照
 ├── fields.py         有限元场量、记录表及节点云图
 ├── exports/
 │   ├── __init__.py       导出接口
@@ -92,7 +93,7 @@ flowchart TB
 
 ## 2 优化结果读取
 
-`ResultSession` 绑定一个运行目录，维护页面共享的迭代与历史选择，并组合 `OptimizationArchive` 读取参数和几何。后处理初始化几何、载荷接口和材料，不执行 `FEAParams.define_steps()`；工况求解任务由优化运行阶段定义。`load_iteration()` 和 `load_parameters()` 为所选迭代准备状态，`deformation_cases()` 与 `deformation_mesh()` 提供工况和变形数据。
+观察页通过 `OptimizationArchive` 读取所选迭代的 VTK 快照。设计视图和变形视图按需加载对应网格。原生组件导出使用任务脚本和已保存的设计参数。
 
 归档目录布局、控制器载入、参数状态恢复、历史、变形网格和可视对象读取集中在 `OptimizationArchive`。UI 的 `ResultSession` 组合该对象，仅维护页面共享的选择状态；GIF 与曲面导出也使用同一归档对象读取设计状态。
 
@@ -100,7 +101,7 @@ flowchart TB
 |---|---|
 | 控制器结构 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` |
 | 迭代损失与指标 | `log/history_record.csv` |
-| 可更新几何与材料 | 参数接口保存状态 |
+| 可更新组件与工况变形 | `log/views/iteration_<NNNNNN>.vtm` |
 | 确切有限元模型 | `log/femodel&results/femodel_<iteration>.npz` |
 | 工况解 | `result_<case>_iter_<iteration>.npz` |
 
@@ -229,7 +230,7 @@ IterationModel(folder, iteration, case)
 
 ## 10 历史动画导出
 
-优化历史 GIF 的数值读取、逐帧场景生成和 GIF 文件写入属于 `postprocess`。`export_history_gif()` 接收运行目录、导出范围、目标对象或工况、相机和显示样式；`OptimizationArchive` 恢复每一轮的设计状态或读取变形网格，`visualization.history_frames()` 使用调用方提供的颜色和相机生成帧，`exports.export_history_gif()` 写入动画文件。
+优化历史 GIF 的数值读取、逐帧场景生成和 GIF 文件写入属于 `postprocess`。`export_history_gif()` 接收运行目录、导出范围、目标对象或工况、相机和显示样式；`OptimizationArchive` 从每步快照读取所选设计或工况网格，`visualization.history_frames()` 使用调用方提供的颜色和相机生成帧，`exports.export_history_gif()` 写入动画文件。
 
 GIF 页选择设计组件及其视图或变形工况，并设置迭代范围、帧率、分辨率、相机和背景颜色。预览进程通过 `export_history_frame()` 渲染结束迭代步的静态图。导出进程通过 `export_history_gif()` 渲染所选范围，两者共用场景和取景逻辑。可更新组件页按所选组件列出组件级导出方案，后处理服务恢复对应轮次的归档设计并写出文件。
 

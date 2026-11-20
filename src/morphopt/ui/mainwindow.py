@@ -698,7 +698,7 @@ class MainWindow(QMainWindow):
                 self,
                 tr("ui.observe_panel.invalid_result"),
                 tr(
-                    "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"
+                    "ui.errors.runs.missing_archive"
                 ),
             )
             return

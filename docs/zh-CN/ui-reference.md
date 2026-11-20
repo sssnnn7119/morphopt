@@ -1886,6 +1886,10 @@ Updater → 按目标注册更新项、约束与曲面关系
 
 *保存设计的几何可视化。*
 
+每个已完成迭代对应 `log/views/iteration_*.vtm`。同一步内，每个参与计算的实例保存一份未变形外表面，各工况的节点位移作为该网格的向量场 `U_<工况名>` 保存。网格与位移场采用 LZMA 无损压缩。MorphOpt 按所选工况读取位移，自动显示变形后的几何。
+
+在 ParaView 中打开 `.vtm`，用 **Extract Block** 选取 **Displacement** 下参与该工况的实例，应用 **Warp By Vector**，选择对应的位移场，并将 **Scale Factor** 设为 `1`。复制快照时应一并复制相邻的同名目录，其中包含网格与工况索引。
+
 ![选定设计在指定工况下的变形预览](images/ui-quickstart/optimization/load-case-deformation.png)
 
 *选定设计在指定工况下的变形预览。*

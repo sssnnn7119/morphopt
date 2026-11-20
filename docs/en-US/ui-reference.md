@@ -1886,6 +1886,10 @@ To modify the settings, first update the preview in the window. **Apply** saves 
 
 *Save the geometric visualization of the designed structure.*
 
+Each completed iteration has a `log/views/iteration_*.vtm` snapshot. Each participating instance stores its undeformed exterior once per iteration. The point vector array `U_<case name>` holds its nodal displacements for that load case. The meshes and displacement fields use lossless LZMA compression. MorphOpt reads the selected field and displays the deformed geometry automatically.
+
+In ParaView, open the `.vtm` file and use **Extract Block** to select the participating instances under **Displacement**. Apply **Warp By Vector**, choose the displacement array for the case, and set **Scale Factor** to `1`. When transferring a snapshot, include the adjacent directory with the same stem. It contains the datasets and the load-case index.
+
 ![Selected designs are previewed under the specified operating conditions.](images/ui-quickstart/optimization/load-case-deformation.png)
 
 *Preview the deformation of the selected design under the specified operating conditions.*

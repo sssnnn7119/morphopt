@@ -558,7 +558,7 @@ def component_selection_title(category: str, component: Any) -> str:
     }[category]
     return tr(
         "ui.observation.component_title", category=tr(category_key),
-        title=typed_title(name, type(component).__name__),
+        title=typed_title(name, getattr(component, "class_name", type(component).__name__)),
     )
 
 

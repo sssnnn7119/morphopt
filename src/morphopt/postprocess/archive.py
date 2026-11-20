@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._runtime import cpu_torch_defaults
+from .snapshots import SavedComponent, Snapshot, design_components, snapshot_path
 
 if TYPE_CHECKING:
     from torchfea import FEAController
@@ -41,7 +42,8 @@ class OptimizationArchive:
         self._params: Any | None = None
         self._parameters_iteration: int | None = None
         self._component_iterations: dict[int, int] = {}
-        self._initial_geometry = None
+        self._snapshot_iteration = None
+        self._snapshot = None
 
     @property
     def log_folder(self) -> Path:
@@ -154,7 +156,7 @@ class OptimizationArchive:
         return component
 
     def load_design_component(self, component: Any, iteration: int) -> Any:
-        """Return the component to draw for a completed finite-element solve.
+        """Restore the native design for component export at a completed solve.
 
         Row k displays geometry checkpoint k - 1, starting with the initial surface.
         """
@@ -163,15 +165,6 @@ class OptimizationArchive:
 
         step = iteration - 1
         directory = self.log_folder / component.pathlog_required()[0] / component.name
-        if step == 0 and not any(directory.glob("Surface-*_iter-0*")):
-            if self._initial_geometry is None:
-                with cpu_torch_defaults():
-                    geometry = self.controller_class.Params().geometry
-                    geometry.initialize()
-                    geometry.reinitialize(iteration=0)
-                self._initial_geometry = geometry
-            return self._initial_geometry.interfaces[component.name]
-
         for index, surface in enumerate(component.surfaceinterfaces):
             if surface.num_variables:
                 stem = directory / f"Surface-{index}_iter-{step}"
@@ -262,16 +255,14 @@ class OptimizationArchive:
             )
         )
 
-    def deformation_cases(self) -> tuple[str, ...]:
+    def deformation_cases(self, iteration: int | None = None) -> tuple[str, ...]:
         """Return archived load-case names in their recorded order.
 
         Returns:
             tuple[str, ...]: Archived load-case names in their recorded order.
         """
-        path = self.fea_folder / "load_cases.json"
-        if not path.is_file():
-            return ()
-        return tuple(json.loads(path.read_text(encoding="utf-8")))
+        scene = self.snapshot(self.completed_iteration if iteration is None else iteration)
+        return scene.cases if scene else ()
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
         """Reconstruct the assembly surface for a completed load case.
@@ -283,48 +274,35 @@ class OptimizationArchive:
         Returns:
             pv.PolyData | None: Deformed exterior of all instances, or None if unavailable.
         """
-        import pyvista as pv
+        scene = self.snapshot(iteration)
+        return scene.deformation_mesh(case) if scene else None
 
-        model = self.fea_model_path(iteration)
-        solution = self.fea_result_path(case, iteration)
-        if not model.is_file() or not solution.is_file():
-            legacy = (
-                self.log_folder / "deformation" / f"task_{case}_iter_{iteration}.stl"
-            )
-            return pv.read(legacy) if legacy.is_file() else None
-        with cpu_torch_defaults():
-            controller, result = load_solved_model(model, solution)
-            meshes = list(controller.assembly.get_meshes(GC=result.GC).values())
-            if not meshes:
+    def snapshot(self, iteration: int) -> Snapshot | None:
+        """Read the VTM index once per selected iteration."""
+        if self._snapshot_iteration != iteration:
+            path = snapshot_path(self.log_folder, iteration)
+            if not path.is_file():
                 return None
-            surface = meshes[0] if len(meshes) == 1 else pv.merge(meshes)
-            return surface.clean()
+            self._snapshot = Snapshot(path)
+            self._snapshot_iteration = iteration
+        return self._snapshot
 
     def design_components(self) -> tuple[tuple[str, Any], ...]:
-        """Enumerate updatable interfaces, including components without a 3D view."""
-        params = self._params
-        if params is None:
-            return ()
-        collections = (
-            ("Part", params.geometry),
-            ("FEA", params.feamodel),
-            ("Material", params.materials),
-        )
-        return tuple(
-            (category, component)
-            for category, collection in collections
-            for component in collection.design_interfaces()
-        )
+        """Restore native interfaces for component-specific exports."""
+        params = self.initialize_params()
+        return tuple(design_components(params)) if params is not None else ()
 
-    def visualizable_components(self) -> tuple[tuple[str, Any], ...]:
-        """Return the subset of design components that supply a 3D view."""
-        from ..optcore.protocal import ProtocalVisualizable
+    def visualizable_components(self, iteration: int | None = None) -> tuple[tuple[str, SavedComponent], ...]:
+        """List design views recorded in the selected snapshot."""
+        scene = self.snapshot(self.completed_iteration if iteration is None else iteration)
+        return tuple((item.category, item) for item in scene.components.values()) if scene else ()
 
-        return tuple(
-            (category, component)
-            for category, component in self.design_components()
-            if isinstance(component, ProtocalVisualizable)
-        )
+    def design_view_component(self, category: str, name: str, iteration: int) -> SavedComponent:
+        """Select a component's saved meshes for one completed iteration."""
+        scene = self.snapshot(iteration)
+        if scene is None:
+            raise FileNotFoundError(snapshot_path(self.log_folder, iteration))
+        return scene.components[category, name]
 
 
 @dataclass(frozen=True)
@@ -376,9 +354,12 @@ class IterationModel:
             tuple[str, ...]: Available solution case names in archive registration order.
         """
         archive = OptimizationArchive(self.folder)
+        index = archive.fea_folder / "load_cases.json"
+        if not index.is_file():
+            return ()
         return tuple(
             case
-            for case in archive.deformation_cases()
+            for case in json.loads(index.read_text(encoding="utf-8"))
             if archive.fea_result_path(case, self.iteration).is_file()
         )
 

@@ -1010,6 +1010,8 @@ class _Constants:
 
         class VISUALIZATION:
             WINDOW_SIZE = (1200, 1200)
+            SNAPSHOT_LZMA_LEVEL = 1
+            SNAPSHOT_BLOCK_BYTES = 256 * 1024
             CAMERA_AZIMUTH_DEGREES = 210
             CAMERA_ELEVATION_DEGREES = 20
             INSTANCE_COLORS = ("#2878b5", "#edb120", "#af52cd", "#f15854", "#779548")
@@ -1072,7 +1074,7 @@ class _Constants:
 
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
-                CURVATURE_LIMIT = 1.5
+                CURVATURE_LIMIT = 1.0
                 METRIC_VARIATION_LIMIT = 1.0
                 NONORTHOGONALITY_LIMIT = 0.2
                 ACTIVATION_RATIO = 0.8

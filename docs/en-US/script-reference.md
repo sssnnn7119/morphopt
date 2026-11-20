@@ -1202,8 +1202,9 @@ Both `restart_per_iteration` and `max_step_iter` do not represent the upper limi
 | `log/history_record.csv` | Per-round loss, metrics, time consumption, and model statistics |
 | `log/geometry/`、`log/materials/` | Geometry and Material Design Status |
 | `log/geometryupdater/`、`log/materialupdater/` | Updater Status Organized by Target Interface |
+| `log/views/iteration_000001.vtm` | Visualization snapshot for iteration 1. The adjacent directory with the same stem contains the mesh datasets. |
 | `log/femodel&results/femodel_<iteration>.npz` | The model used in this solution |
-| `log/femodel&results/result_<case>_iter_<iteration>.npz` | Finite element solutions for the corresponding working conditions and rounds; reconstructing the deformation mesh together with the model of the same round |
+| `log/femodel&results/result_<case>_iter_<iteration>.npz` | Native finite-element solution for this load case and iteration. |
 | `log/morphopt.log`、`log/torchfea.log` | Optimization and Finite Element Log |
 | `cache/` | Working files such as the intermediate grid. |
 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` | Task script snapshot |

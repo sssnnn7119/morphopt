@@ -966,7 +966,7 @@ def test_material_update_checks_displacement_instead_of_the_line_search_multipli
     )
 
 
-def test_controller_passes_evaluated_objective_before_geometry_update():
+def test_controller_passes_evaluated_objective_before_geometry_update(monkeypatch):
     geometry = {"value": 3.0}
     gradient = torch.tensor([120.0, -900.0, 35.0])
     gradients = {"geometry": gradient}
@@ -1004,7 +1004,11 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         ),
         objfun=objective_provider,
     )
-    loss, *_ = Controller.step(controller)
+    monkeypatch.setattr("morphopt.postprocess.snapshots.capture_design",
+                        lambda params: geometry.copy())
+    loss, *_, design_snapshot = Controller.step(controller)
+    assert design_snapshot == {"value": 3.0}
+    assert geometry["value"] == 100.0
     assert loss.item() == 3.0
     assert objective_provider.history_data()["objective"] == 3.0
     assert observations == [("geometry", 0, 3.0), ("objective", 3.0), ("update", 3.0), ("commit",)]

@@ -127,11 +127,12 @@ The current `Controller.opt_loop()` still contains the return branch of `history
 | `log/history_record.csv` | `History.save()` has been written in the history. |
 | `log/geometry/`、`log/materials/` | The parameter interface stores the design state. |
 | `log/geometryupdater/`、`log/materialupdater/` | The sub-optimizer saves its state based on the target interface. |
-| `log/femodel&results/` | The target object stores the FE model and operating conditions obtained from each round of matching processes. Post-processing uses this information to reconstruct the deformed mesh. |
+| `log/views/iteration_000001.vtm` | Visualization snapshot for iteration 1. The adjacent directory with the same stem contains the mesh datasets. |
+| `log/femodel&results/` | Native models and solutions for field analysis, recomputation and data export. |
 
-Before the first finite element solution, the controller saves the initial surface at step 0 in `log/geometry/<part_name>/`. The design surface for the k-th round of history reads the geometric checkpoints from the k-1 step. If the CPGEO reconstructs the control mesh before this round of solving, the design surface will display the checkpoints from before the reconstruction, and the load case deformation will show the finite element mesh obtained from this round of solving.
+After constructing the finite-element model, the controller captures the evaluated design meshes. It writes these meshes and the solved deformation for each case to the same snapshot before publishing the history row.
 
-The sub-directories are allocated by the `pathlog_required()` of each object. `Controller.save()` should first save the parameters, solver, updater, and the current finite element model and results. Finally, write them into the historical records. The completed rounds in the historical records indicate that the corresponding archives have been saved. The analysis session only consumes the completed archives. For details on model pairing, independent solving, and export procedures, please refer to [Result analysis and export](results.md).
+The sub-directories are allocated by the `pathlog_required()` of each object. `Controller.step()` returns the design snapshot used for the current solve. The optimization loop passes it to `Controller.save(design_snapshot)`, which writes the history record after saving the snapshot, parameters, solver, updater, finite-element model, and results. The analysis session only consumes the completed archives. For details on model pairing, independent solving, and export procedures, please refer to [Result analysis and export](results.md).
 
 <a id="section-设备资源与错误边界"></a>
 

@@ -956,7 +956,7 @@
   "ui.errors.quickstart.load_pressures_must_be_finite_and_nonnegative": "Load pressures must be finite and nonnegative.",
   "ui.errors.runs.select_a_task_source_first": "Select a task source first.",
   "ui.errors.runs.an_optimization_process_is_already_active": "An optimization process is already active",
-  "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected": "Missing scripts/MAIN_SCRIPT_FOR_RESTART.py in the selected result folder.",
+  "ui.errors.runs.missing_archive": "Select a result folder containing the restart script or the history record and VTK snapshots.",
   "ui.errors.runs.no_definition_is_bound_to_this_run": "No definition is bound to this run.",
   "ui.errors.custom_classes.unsupported_base_class_value": "Unsupported base class: {value_0}",
   "ui.errors.custom_classes.invalid_python_class_name": "Invalid Python class name",

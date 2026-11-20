@@ -32,6 +32,7 @@ Post-processing consists of four parts: archive reading, field calculation, file
 postprocess/
 ├── __init__.py       Public types and export entries
 ├── archive.py        Run archiving, design status, and model paths.
+├── snapshots.py      VTK snapshots of evaluated designs and deformed surfaces
 ├── fields.py         Elemental field quantities, record tables, and node cloud diagrams
 ├── exports/
 │   ├── __init__.py       Export interface
@@ -92,7 +93,7 @@ The working process assigns tasks such as solving equations, CAD conversion, fie
 
 ## 2 Optimized result retrieval
 
-`ResultSession` binds a running directory, maintains the iterations and historical selections shared by the pages, and combines `OptimizationArchive` to read parameters and geometry. Post-processing initializes the geometry, load interface, and materials, without executing `FEAParams.define_steps()`; the load case solving task is defined during the optimization running phase. `load_iteration()` and `load_parameters()` prepare the state for the selected iterations, while `deformation_cases()` and `deformation_mesh()` provide load case and deformation data.
+The observer reads the selected iteration through `OptimizationArchive`. Design and deformation views load individual datasets from the VTK snapshot on demand. Native component export reads the task script and the saved design parameters.
 
 The layout of the archive directory, controller loading, parameter state restoration, history, deformed meshes, and visual object reading are all centralized in `OptimizationArchive`. The `ResultSession` component of the UI manages these objects, maintaining only the selected state shared across pages. The export of GIFs and surfaces also uses the same archive object to read the design state.
 
@@ -100,7 +101,7 @@ The layout of the archive directory, controller loading, parameter state restora
 |---|---|
 | Controller architecture | `scripts/MAIN_SCRIPT_FOR_RESTART.py` |
 | Iterative loss and metrics | `log/history_record.csv` |
-| Upgradable geometry and materials | Parameter interface storage status |
+| Design components and deformed surfaces | `log/views/iteration_<NNNNNN>.vtm` |
 | Exact finite element model | `log/femodel&results/femodel_<iteration>.npz` |
 | Operating condition solutions | `result_<case>_iter_<iteration>.npz` |
 
@@ -229,7 +230,7 @@ The native model was read from `torchfea.load_model()`, and the solution was rea
 
 ## 10 Export historical animations.
 
-The numerical reading of the optimization history GIF, the generation of scene frames by frame, and the writing of GIF files belong to `postprocess`. `export_history_gif()` is responsible for receiving the running directory, export range, target object or load case, camera, and display style. `OptimizationArchive` is used to restore the design state of each round or read the deformed mesh. `visualization.history_frames()` generates frames using the colors and camera provided by the caller. `exports.export_history_gif()` writes the animation file.
+The numerical reading of the optimization history GIF, the generation of scene frames by frame, and the writing of GIF files belong to `postprocess`. `export_history_gif()` is responsible for receiving the running directory, export range, target object or load case, camera, and display style. `OptimizationArchive` reads the selected component or deformed surface from each snapshot. `visualization.history_frames()` generates frames using the colors and camera provided by the caller. `exports.export_history_gif()` writes the animation file.
 
 Select the design components and their views or deformation load cases, and set the iteration range, frame rate, resolution, camera, and background color. The preview process renders static images for the completed iterations using `export_history_frame()`. The export process renders the selected range using `export_history_gif()`. Both processes share the same scene and viewing logic. The updated component page lists component-level export options for each selected component. The post-processing service restores the archived designs for the corresponding rounds and generates the corresponding files.
 

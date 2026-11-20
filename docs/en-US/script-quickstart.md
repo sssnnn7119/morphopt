@@ -264,7 +264,8 @@ Results are saved under `.results/BendingActuator_T<timestamp>/` in the task dir
 | `log/torchfea.log` | Finite Element Solution Log |
 | `log/geometry/`、`log/materials/` | States of Design for Each Wheel |
 | `log/geometryupdater/` | Geometry updater status |
-| `log/femodel&results/` | Results of finite element models and load cases for each wheel. Historical deformation views and GIFs are read from here by wheel and load case. |
+| `log/views/iteration_000001.vtm` | Visualization snapshot for iteration 1. The adjacent directory with the same stem contains the mesh datasets. |
+| `log/femodel&results/` | Native models and solutions for field analysis, recomputation and data export. |
 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` | Continue with the task script snapshot used for the calculation. |
 
 Follow the iteration, loss and stage times in the terminal. User metric `0` records the measured rotation `ry`. Automatic metric `objective_0` records the weighted squared error `(ry - 2) ** 2`, which is also the total loss in this single-objective example. A loss near zero means the rotation is near 2 rad.

@@ -1202,8 +1202,9 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 | `log/history_record.csv` | 每轮损失、指标、耗时与模型统计 |
 | `log/geometry/`、`log/materials/` | 几何与材料设计状态 |
 | `log/geometryupdater/`、`log/materialupdater/` | 按目标接口组织的更新器状态 |
+| `log/views/iteration_000001.vtm` | 第 1 轮的可视化快照。相邻同名目录保存各块的网格数据 |
 | `log/femodel&results/femodel_<轮次>.npz` | 该轮求解使用的模型 |
-| `log/femodel&results/result_<工况>_iter_<轮次>.npz` | 对应工况与轮次的有限元解；与同轮模型共同重建变形网格 |
+| `log/femodel&results/result_<工况>_iter_<轮次>.npz` | 该轮对应工况的原始有限元解 |
 | `log/morphopt.log`、`log/torchfea.log` | 优化与有限元日志 |
 | `cache/` | 中间网格等工作文件 |
 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` | 任务脚本快照 |

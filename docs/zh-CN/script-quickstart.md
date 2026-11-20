@@ -264,7 +264,8 @@ if __name__ == "__main__":
 | `log/torchfea.log` | 有限元求解日志 |
 | `log/geometry/`、`log/materials/` | 各轮设计状态 |
 | `log/geometryupdater/` | 几何更新器状态 |
-| `log/femodel&results/` | 各轮有限元模型及工况结果。历史变形视图和 GIF 按轮次与工况从此处读取 |
+| `log/views/iteration_000001.vtm` | 第 1 轮的可视化快照。相邻同名目录保存各块的网格数据 |
+| `log/femodel&results/` | 各轮有限元模型与工况解，供场量分析、重新求解和数据导出使用 |
 | `scripts/MAIN_SCRIPT_FOR_RESTART.py` | 继续计算使用的任务脚本快照 |
 
 终端的 `Iteration`、`Loss` 与分阶段耗时反映当前优化进展。本例最小化 `(ry - 2) ** 2`。用户指标 `0` 记录原始 `ry`，自动指标 `objective_0` 记录这一项的加权误差，当前仅有一个目标，因此它与总损失相等。目标接近零表示转角接近 2 rad，不表示转角本身接近零。

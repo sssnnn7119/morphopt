@@ -956,7 +956,7 @@
   "ui.errors.quickstart.load_pressures_must_be_finite_and_nonnegative": "工况压力必须为非负有限数",
   "ui.errors.runs.select_a_task_source_first": "请先选择任务来源。",
   "ui.errors.runs.an_optimization_process_is_already_active": "已有优化任务正在运行。",
-  "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected": "所选结果目录缺少 scripts/MAIN_SCRIPT_FOR_RESTART.py。",
+  "ui.errors.runs.missing_archive": "请选择包含重启脚本或历史记录与 VTK 快照的结果目录。",
   "ui.errors.runs.no_definition_is_bound_to_this_run": "当前任务尚未关联问题定义。",
   "ui.errors.custom_classes.unsupported_base_class_value": "不支持的基类：{value_0}",
   "ui.errors.custom_classes.invalid_python_class_name": "自定义类名必须是有效的 Python 标识符",

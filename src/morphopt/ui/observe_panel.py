@@ -388,7 +388,7 @@ class ObserverPanel(QWidget):
             self._on_option(row)
 
     def _refresh_updatable_structure(self, component=None) -> None:
-        if self.isVisible() and self.path_result and self._results.params is not None:
+        if self.isVisible() and self.path_result:
             self._last_3d_page = "design"
             self._updatable_structure_page.build(
                 self._results, self.slider.value(), component
@@ -418,7 +418,7 @@ class ObserverPanel(QWidget):
         if not data:
             return None
         if data[0] == "component":
-            return ("component", id(data[2]))
+            return ("component", data[1], data[2].name)
         if data[0] == "case":
             return ("case", data[1])
         return (data[0],)
@@ -751,7 +751,7 @@ class ObserverControls(QWidget):
             if (
                 progress.iteration > 0
                 and self._run.folder
-                and self._run.is_result_folder(self._run.folder)
+                and self._run.can_resume(self._run.folder)
             ):
                 self._run.source = RunSource(
                     RunSourceKind.CONTINUE,
@@ -794,12 +794,13 @@ class ObserverControls(QWidget):
             self.btn_start.setText(tr("ui.observe_panel.continue"))
         else:
             self.btn_start.setText(tr("ui.observe_panel.start"))
-        self.btn_start.setEnabled(not running and src is not None)
+        can_start = src is not None and (src.kind is not RunSourceKind.CONTINUE or self._run.can_resume(src.path))
+        self.btn_start.setEnabled(not running and can_start)
         self.btn_start.setVisible(not running)
         self.btn_start.setToolTip(
             tr(
                 "ui.observe_panel.continue_unavailable_hint"
-                if src is None
+                if not can_start
                 else "ui.observe_panel.start_hint"
             )
         )

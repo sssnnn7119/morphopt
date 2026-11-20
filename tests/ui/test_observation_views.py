@@ -118,37 +118,20 @@ def test_log_trimming_preserves_the_visible_text_and_horizontal_position(log_vie
     assert horizontal.value() == horizontal_position
 
 
-class BspSurface:
-    def __init__(self):
-        self.control_points = np.array(
-            [[x, y, 0.0] for y in range(2) for x in range(3)], dtype=float
-        )
-        self.model = type("BspModel", (), {"size": (2, 3)})()
+@pytest.fixture
+def saved_boundary(tmp_path):
+    from morphopt.postprocess.snapshots import SavedComponent
 
-    def get_mesh(self):
-        return pv.Plane(i_resolution=4, j_resolution=2)
-
-
-class BoundaryPart:
-    def __init__(self):
-        self.surfaceinterfaces = [BspSurface(), BspSurface()]
-        self.name = "boundary"
-
-    @property
-    def num_surface_interfaces(self):
-        return len(self.surfaceinterfaces)
-
-    def plot(self, plotter):
-        for index, surface in enumerate(self.surfaceinterfaces):
-            plotter.add_mesh(
-                surface.get_mesh(),
-                name=f"boundary:{id(self)}:surface-{index}",
-                color="#3f9fd6",
-            )
+    files = {}
+    for index in range(2):
+        for name, mesh in ((f"surface_{index}", pv.Plane()), (f"net_{index}", pv.Line())):
+            files[name] = tmp_path / f"{name}.vtp"
+            mesh.save(files[name])
+    return SavedComponent("Part", "boundary", "BoundaryPart", files)
 
 
-def test_boundary_view_options_include_each_surface_and_control_net():
-    keys = [view.key for view in design_view_options(BoundaryPart())]
+def test_boundary_view_options_include_each_surface_and_control_net(saved_boundary):
+    keys = [view.key for view in design_view_options(saved_boundary)]
     assert keys == [
         "all",
         "surface:0",
@@ -158,8 +141,8 @@ def test_boundary_view_options_include_each_surface_and_control_net():
     ]
 
 
-def test_control_net_is_rendered_as_overlay_actors():
-    component = BoundaryPart()
+def test_control_net_is_rendered_as_overlay_actors(saved_boundary):
+    component = saved_boundary
     view = next(view for view in design_view_options(component) if view.control_net)
     plotter = pv.Plotter(off_screen=True, window_size=(300, 300))
     try:
@@ -178,7 +161,7 @@ def test_control_net_is_rendered_as_overlay_actors():
         prefix = f"boundary:{id(component)}:surface-0"
         assert f"{prefix}:control-net" in names
         assert f"{prefix}:control-points" in names
-        assert f"{prefix}" in names
+        assert "surface-0" in names
     finally:
         plotter.close()
 
@@ -187,8 +170,7 @@ def test_history_cache_revisits_frames_and_evicts_by_mesh_size(monkeypatch):
     from morphopt.constants import CONSTANT
     from morphopt.ui.widgets.observation_pages import HistorySceneCache
 
-    mesh = pv.Sphere()
-    points = mesh.points.copy()
+    points = pv.Sphere().points.copy()
     class Viewport:
         def __init__(self):
             self.plotter = pv.Plotter(off_screen=True)
@@ -203,12 +185,13 @@ def test_history_cache_revisits_frames_and_evicts_by_mesh_size(monkeypatch):
     def show(viewport, i):
         def draw(scene):
             loads.append(i)
+            mesh = pv.Sphere()
             mesh.points = points + i
             mesh.point_data["value"] = mesh.points[:, 0].copy()
             scene.add_mesh(mesh, name="shape", scalars="value")
             return True
 
-        cache.show(viewport, (i,), draw, copy_meshes=True)
+        cache.show(viewport, (i,), draw)
         plotter = viewport.plotter
         actor = plotter.actors["shape"]
         assert np.allclose(actor.mapper.dataset.points, points + i)

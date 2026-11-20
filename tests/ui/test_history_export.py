@@ -216,7 +216,7 @@ def test_gif_preview_matches_export(export_ui, deformation_archive, tmp_path, mo
 
 
 def test_cancelling_gif_removes_partial_file_and_preserves_existing_output(
-    export_ui, design_archive, tmp_path, monkeypatch
+    export_ui, deformation_archive, tmp_path, monkeypatch
 ):
     app, messages, errors = export_ui
     output = tmp_path / "history.gif"
@@ -229,7 +229,7 @@ def test_cancelling_gif_removes_partial_file_and_preserves_existing_output(
         history_export, "start_worker",
         lambda process, request: process.start(sys.executable, ["-c", "import time; time.sleep(30)"]),
     )
-    dialog = export_dialog(design_archive)
+    dialog = export_dialog(deformation_archive)
     dialog.export.click()
     directory = dialog._directory
     assert dialog._process.waitForStarted(1000)

@@ -970,6 +970,7 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
             ratio_grid.flatten(order="F") * self._mumax
         )  # Scale by mumax for better visualization of the material distribution
 
+        grid.field_data["density_max"] = [self._mumax]
         return [grid]
 
     def plot(
@@ -999,25 +1000,29 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         if meshes is None:
             meshes = self.get_meshes()[0]
 
-        # Threshold to convert ImageData → UnstructuredGrid with all cells
-        # preserved, so per-element opacity works (add_mesh on raw ImageData
-        # only renders the outer surface).
-        thresh = meshes.threshold(
-            value=(
-                CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_THRESHOLD_RATIO * self._mumax
-            ),
-            scalars="density",
-        )
-
-        if thresh.n_cells > 0:
-            plotter.add_mesh(
-                thresh,
-                scalars="density",
-                cmap="viridis",
-                show_edges=False,
-                lighting=True,
-                clim=[0, self._mumax],
-                smooth_shading=True,
-            )
-
+        plot_density(plotter, meshes, self._mumax)
         return plotter
+
+
+def plot_density(plotter: pv.Plotter, grid: pv.DataSet, maximum: float) -> None:
+    """Render the same material threshold and color scale for live and archived grids."""
+    # Threshold to convert ImageData → UnstructuredGrid with all cells
+    # preserved, so per-element opacity works (add_mesh on raw ImageData
+    # only renders the outer surface).
+    thresh = grid.threshold(
+        value=(
+            CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_THRESHOLD_RATIO * maximum
+        ),
+        scalars="density",
+    )
+
+    if thresh.n_cells > 0:
+        plotter.add_mesh(
+            thresh,
+            scalars="density",
+            cmap="viridis",
+            show_edges=False,
+            lighting=True,
+            clim=[0, maximum],
+            smooth_shading=True,
+        )

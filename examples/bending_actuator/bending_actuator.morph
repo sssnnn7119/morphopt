@@ -242,11 +242,11 @@
               "update_strategy": {
                 "type": "AdaptiveShapeUpdate",
                 "params": {
+                  "max_solves": 3,
                   "initial_tolerance": 0.05,
                   "final_tolerance": 0.0,
                   "tightening_increment": 0.0002,
                   "violation_tolerance": 0.1,
-                  "max_solves": 3,
                   "weight_change_limit": 10.0
                 }
               },
@@ -262,7 +262,7 @@
                 {
                   "type": "Fairness",
                   "params": {
-                    "max_curvature": 2.0
+                    "max_curvature": 1.0
                   }
                 },
                 {

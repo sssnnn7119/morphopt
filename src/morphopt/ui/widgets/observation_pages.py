@@ -384,8 +384,6 @@ class HistorySceneCache:
         viewport: PlotViewport,
         marker: tuple,
         draw: Callable[[pv.Plotter], bool],
-        *,
-        copy_meshes: bool = False,
     ) -> None:
         """Draw on first visit and reattach the saved props on subsequent visits.
 
@@ -428,11 +426,6 @@ class HistorySceneCache:
                 while self._mesh_bytes + size > budget:
                     _, (_, evicted_bytes) = self._frames.popitem(last=False)
                     self._mesh_bytes -= evicted_bytes
-                if copy_meshes:
-                    # Params can reuse array storage when restoring the next iteration.
-                    for mapper in mappers:
-                        mapper.dataset = mapper.dataset.copy(deep=True)
-                        mapper.update()
                 self._frames[key] = actors, size
                 self._mesh_bytes += size
             except Exception:
@@ -530,7 +523,6 @@ class UpdatableStructurePage(QWidget):
     def _render_selected(self) -> None:
         if (
             self._results is None
-            or self._results.params is None
             or self._results.folder is None
         ):
             return
@@ -539,7 +531,7 @@ class UpdatableStructurePage(QWidget):
         marker = (
             self._results.folder,
             self._iteration,
-            id(selected) if selected is not None else None,
+            (selected.category, selected.name) if selected is not None else None,
             view.key if view is not None else None,
         )
         results = self._results
@@ -568,7 +560,7 @@ class UpdatableStructurePage(QWidget):
 
             return True
 
-        self._scenes.show(self.viewport, marker, build_scene, copy_meshes=True)
+        self._scenes.show(self.viewport, marker, build_scene)
 
     def clear_view(self) -> None:
         """Empty the viewport and forget the previous render marker."""
