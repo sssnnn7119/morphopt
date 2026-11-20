@@ -17,7 +17,7 @@ from morphopt.ui.widgets.definition_actions import DefinitionActions
 from morphopt.ui.widgets.definition_manager import DefinitionManagerEditor
 
 
-REFERENCE = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
+REFERENCE = Path(__file__).resolve().parents[2] / "scripts/docs/assets/reference-box.inp"
 
 
 @pytest.fixture

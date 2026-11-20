@@ -2,23 +2,30 @@
 
 import ast
 import re
-import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'scripts'))
 from number_docs import slug
 
+ROOT = Path(__file__).resolve().parents[2]
 FENCE = re.compile(r'^```([^\n]*)\n(.*?)^```\s*$', re.M | re.S)
 LINK = re.compile(r'!?\[[^\]\n]*\]\((<[^>]+>|[^\s)]+)(?:\s+"[^"]*")?\)')
 ANCHOR = re.compile(r'<a\s+(?:id|name)=["\']([^"\']+)["\']')
 
 
 def main():
-    documents = [ROOT / 'README.md', *sorted((ROOT / 'docs').rglob('*.md')),
+    docs = ROOT / 'docs'
+    documents = [ROOT / 'README.md', *sorted(docs.rglob('*.md')),
                  *sorted((ROOT / 'examples').rglob('*.md'))]
     errors, links, snippets = [], 0, 0
+    locales = ('zh-CN', 'en-US')
+    if {path.name for path in docs.iterdir()} != set(locales):
+        errors.append('docs/ must contain only zh-CN/ and en-US/')
+    files = {locale: {path.relative_to(docs / locale) for path in
+                      (docs / locale).rglob('*') if path.is_file()} for locale in locales}
+    for relative in sorted(files['zh-CN'] ^ files['en-US']):
+        missing = next(locale for locale in locales if relative not in files[locale])
+        errors.append(f'docs/{missing}/{relative}: missing language counterpart')
     anchors = {}
     for document in documents:
         text = document.read_text(encoding='utf-8')

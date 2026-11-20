@@ -136,7 +136,7 @@ def test_cad_preview_records_are_reused_across_rebuilds(monkeypatch):
 
 
 def test_inp_face_names_come_from_original_surface_sets():
-    source = Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"
+    source = Path(__file__).resolve().parents[2] / "scripts/docs/assets/reference-box.inp"
     part = INPPartNode(name="imported", mesh_file=str(source))
     scene = scene_for(part)
     assert len(scene.base_meshes) == 1

@@ -1,0 +1,1524 @@
+{
+  "capture": "Actual QWidget.grab(); no image resampling or text replacement",
+  "platform": "xcb",
+  "locale": "zh-CN",
+  "images": [
+    {
+      "file": "ui-quickstart/geometry/boundary-part.png",
+      "description": "BoundaryPart, mesh settings and instance",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/bsp-outer-surface.png",
+      "description": "Outer BSP geometry and update flag",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/bsp-inner-cavity.png",
+      "description": "Inner BSP geometry and position components",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/instance-pose.png",
+      "description": "Instance translation and rotation components",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/pressure.png",
+      "description": "Pressure and assembly",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/reference-point.png",
+      "description": "Reference-point X/Y/Z position",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/coupling.png",
+      "description": "Reference-point coupling",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/fixed-boundary.png",
+      "description": "Fixed displacement directions",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/pressure-load-case.png",
+      "description": "Named load-case interface and pressure amplitude",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/materials/homogeneous-material.png",
+      "description": "Material assignment and constitutive parameters",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/objectives/displacement-objective-and-metric.png",
+      "description": "Squared error to ry=2 and recorded metrics",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/solver/task-configuration.png",
+      "description": "Worker devices and ordered load-case groups",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/solver/run-settings.png",
+      "description": "Task name, result directory and device",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/geometry-updater.png",
+      "description": "Geometry updater, maximum step length and update strategy",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        768,
+        857
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/geometry-strategies.png",
+      "description": "AdaptiveShapeUpdate parameters",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        624,
+        225
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/shape-derivative.png",
+      "description": "QuadraticShapeDerivative",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/mirror-symmetry.png",
+      "description": "BspMirror",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/fairness.png",
+      "description": "Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/minimum-distance.png",
+      "description": "Distance",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/updaters/cylinder-envelope.png",
+      "description": "Cylinder",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/linear-shape-derivative.png",
+      "description": "Original unscaled first-order shape objective",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/penalty-degree-of-freedom.png",
+      "description": "Reference-point constraint with six named DoFs",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/penalty-node-direction.png",
+      "description": "Instance constraint: node 5, Z displacement",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/spring-load-case.png",
+      "description": "Named pressure, penalty stiffness/target and spring stiffness/rest length/anchor coordinates",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/workspace-objective.png",
+      "description": "Workspace inputs, upper bounds and boundary quadrature",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/workspace-load-cases.png",
+      "description": "Generated Gauss-point load cases appear in the model tree",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/solver/process-groups.png",
+      "description": "Ordered process groups; one case per group by default",
+      "source": "examples/workspace_objective/workspace_objective.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/cpgeo-cylinder.png",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/cpgeo-sphere.png",
+      "description": "CPGEO geometry; optimization thresholds belong to Fairness",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/ogden-model.png",
+      "description": "Ogden alpha edited as individual list items",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/simp-material.png",
+      "description": "SIMP bounding-box components and constitutive parameters",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/sensitivity.png",
+      "description": "Sensitivity",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/control-bounds.png",
+      "description": "MinValue",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/volume-fraction.png",
+      "description": "Volume-fraction constraint and actual element block",
+      "source": "Built-in simp template (form demonstration)",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/brep-design-face.png",
+      "description": "Explicit face selection and control-point spacing",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/custom-code/generated-source.png",
+      "description": "Generated script references external STEP and metadata assets",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/brep-assets.png",
+      "description": "BREP geometry and metadata in the asset browser",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/appearance/font-settings.png",
+      "description": "Embedded font selection, preview, Apply/Confirm/Cancel",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.0,
+      "pixels": [
+        820,
+        460
+      ]
+    },
+    {
+      "file": "ui-reference/appearance/visualization-settings.png",
+      "description": "Global projection, illumination, material and shared view controls",
+      "source": "examples/step_face/step_face.morph",
+      "dpr": 1.0,
+      "pixels": [
+        880,
+        500
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/model-problems.png",
+      "description": "模型问题（3）",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        860,
+        340
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/quickstart.png",
+      "description": "Actuator quick start",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        1250,
+        850
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/quickstart-simp.png",
+      "description": "Topology quick start",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        1250,
+        850
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/history-capacity.png",
+      "description": "操作历史已达到上限",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        298,
+        184
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/file-menu.png",
+      "description": "file-menu",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        227,
+        297
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/settings-menu.png",
+      "description": "settings-menu",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        88,
+        116
+      ]
+    },
+    {
+      "file": "ui-quickstart/workspace/analysis-menu.png",
+      "description": "analysis-menu",
+      "source": "Empty definition",
+      "dpr": 1.0,
+      "pixels": [
+        148,
+        58
+      ]
+    },
+    {
+      "file": "ui-reference/appearance/light-theme.png",
+      "description": "Light theme with solver and assembly",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/add-part-menu.png",
+      "description": "add-part-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        282,
+        174
+      ]
+    },
+    {
+      "file": "ui-quickstart/loads/add-interface-menu.png",
+      "description": "add-interface-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        331,
+        464
+      ]
+    },
+    {
+      "file": "ui-quickstart/materials/add-material-menu.png",
+      "description": "add-material-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        355,
+        87
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/add-surface-menu.png",
+      "description": "add-surface-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        257,
+        174
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/first-person.png",
+      "description": "第一人称漫游",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1100,
+        760
+      ]
+    },
+    {
+      "file": "ui-quickstart/geometry/section-view.png",
+      "description": "Assembly section",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/concentrated-force.png",
+      "description": "ConcentratedForce",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/concentrated-moment.png",
+      "description": "ConcentratedMoment",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/body-force.png",
+      "description": "Bodyforce",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/spring-to-ground.png",
+      "description": "SpringToGround",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/spring-between-reference-points.png",
+      "description": "SpringBetweenRPs",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/spherical-joint.png",
+      "description": "SphericalJoint",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/single-dof-joint.png",
+      "description": "SingleDoFJoint",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/reference-point-boundary.png",
+      "description": "BoundaryConditionRP",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/self-contact.png",
+      "description": "ContactSelf",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/loads/contact.png",
+      "description": "Contact",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/custom-loss.png",
+      "description": "Objective Function",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/jacobian-loads.png",
+      "description": "jacobian-loads",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        284,
+        176
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/fea-template-menu.png",
+      "description": "fea-template-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        630,
+        218
+      ]
+    },
+    {
+      "file": "ui-reference/objectives/jacobian-template-parameters.png",
+      "description": "插入代码片段",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        385,
+        268
+      ]
+    },
+    {
+      "file": "ui-reference/materials/constitutive-model-menu.png",
+      "description": "constitutive-model-menu",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        655,
+        138
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/linearelastic.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/neohookean.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/neohookeanlnj.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/mooneyrivlin.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/yeoh.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/gent.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/arrudaboyce.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/materials/models/ogden.png",
+      "description": "material_1",
+      "source": "examples/bending_actuator/bending_actuator.morph",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/custom-code/helper-code.png",
+      "description": "自由代码块",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/custom-code/helper-function.png",
+      "description": "squared_error",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/custom-code/framework-class.png",
+      "description": "GripperObjective",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/custom-code/method-override.png",
+      "description": "objective_function",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/custom-code/framework-overrides.png",
+      "description": "Objective Function",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/custom-code/objective-class-selection.png",
+      "description": "objective-class-selection",
+      "source": "examples/simp_gripper/simp_gripper.morph with a helper function",
+      "dpr": 1.0,
+      "pixels": [
+        726,
+        37
+      ]
+    },
+    {
+      "file": "ui-reference/cad/box.png",
+      "description": "Box",
+      "source": "CAD feature demonstration: Box",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/wedge.png",
+      "description": "Wedge",
+      "source": "CAD feature demonstration: Wedge",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/cylinder.png",
+      "description": "Cylinder",
+      "source": "CAD feature demonstration: Cylinder",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/sphere.png",
+      "description": "Sphere",
+      "source": "CAD feature demonstration: Sphere",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/cone.png",
+      "description": "Cone",
+      "source": "CAD feature demonstration: Cone",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/torus.png",
+      "description": "Torus",
+      "source": "CAD feature demonstration: Torus",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/stepimport.png",
+      "description": "StepImport",
+      "source": "CAD feature demonstration: StepImport",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/fuse.png",
+      "description": "Fuse",
+      "source": "CAD feature demonstration: Fuse",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/cad-part.png",
+      "description": "body",
+      "source": "CAD feature demonstration: Cut",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/boolean-cut.png",
+      "description": "Cut",
+      "source": "CAD feature demonstration: Cut",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/intersect.png",
+      "description": "Intersect",
+      "source": "CAD feature demonstration: Intersect",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/translate.png",
+      "description": "Translate",
+      "source": "CAD feature demonstration: Translate",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/rotate.png",
+      "description": "Rotate",
+      "source": "CAD feature demonstration: Rotate",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/dilate.png",
+      "description": "Dilate",
+      "source": "CAD feature demonstration: Dilate",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/mirror.png",
+      "description": "Mirror",
+      "source": "CAD feature demonstration: Mirror",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/cad/export-step-dialog.png",
+      "description": "导出 STEP…",
+      "source": "CAD feature demonstration: Mirror",
+      "dpr": 1.0,
+      "pixels": [
+        629,
+        430
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/fixed-stl.png",
+      "description": "fixed_shell",
+      "source": "scripts/docs/assets",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/inp-part.png",
+      "description": "mesh",
+      "source": "scripts/docs/assets",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/assets/geometry-assets.png",
+      "description": "STEP, STL and INP asset browser",
+      "source": "scripts/docs/assets",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/class-selection.png",
+      "description": "class-selection",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        726,
+        37
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/min-radius.png",
+      "description": "MinRadius",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/volume-maximization.png",
+      "description": "VolumeMaximization",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/bsprotation.png",
+      "description": "BspRotation",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/bspzmirror.png",
+      "description": "BspZMirror",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/bspzantisymmetry.png",
+      "description": "BspZAntisymmetry",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/bspzperiodic.png",
+      "description": "BspZPeriodic",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/cpgeomirror.png",
+      "description": "CPGEOMirror",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/rotational-symmetry.png",
+      "description": "CPGEORotation",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/surface-relation.png",
+      "description": "BspRelation",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/cpgeorelation.png",
+      "description": "CPGEORelation",
+      "source": "BoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/offset-boundary-part.png",
+      "description": "part1",
+      "source": "OffsetBoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/offset-class-selection.png",
+      "description": "offset-class-selection",
+      "source": "OffsetBoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        726,
+        37
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/inwardcurvatureradius.png",
+      "description": "InwardCurvatureRadius",
+      "source": "OffsetBoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/geometry/offsetsurfaceminthickness.png",
+      "description": "OffsetSurfaceMinThickness",
+      "source": "OffsetBoundaryPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/geometry/box-part.png",
+      "description": "body",
+      "source": "BoxPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/materials/class-selection.png",
+      "description": "class-selection",
+      "source": "BoxPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        726,
+        37
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/quadraticsensitivity.png",
+      "description": "QuadraticSensitivity",
+      "source": "BoxPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/densityfieldminimize.png",
+      "description": "DensityFieldMinimize",
+      "source": "BoxPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-reference/updaters/material/maximum-value.png",
+      "description": "MaxValue",
+      "source": "BoxPart updater demonstration",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/live-progress.png",
+      "description": "Live SIMP optimization with its first checkpoint",
+      "source": "CPU SIMP quick start, mesh size 4",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/simp-density.png",
+      "description": "Optimized material density field",
+      "source": "CPU SIMP quick start, mesh size 4",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/export-simp-field.png",
+      "description": "SIMP density field export",
+      "source": "CPU SIMP quick start, mesh size 4",
+      "dpr": 1.0,
+      "pixels": [
+        950,
+        525
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/export-simp-obj.png",
+      "description": "OBJ voxel size and retention threshold",
+      "source": "CPU SIMP quick start, mesh size 4",
+      "dpr": 1.0,
+      "pixels": [
+        950,
+        525
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/history-and-metrics.png",
+      "description": "Objective, metrics and iteration history",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/optimization-log.png",
+      "description": "Optimization log",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/initial-design.png",
+      "description": "First archived design",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/saved-design.png",
+      "description": "Last archived design",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/surface-control-net.png",
+      "description": "Surface and control net",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/export-history-gif.png",
+      "description": "GIF settings and final frame",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        950,
+        525
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/export-current-surfaces.png",
+      "description": "Export all boundary surfaces",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        950,
+        525
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/export-abaqus-inp.png",
+      "description": "Abaqus input deck",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        950,
+        525
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/load-case-deformation.png",
+      "description": "Deformed mesh of the archived load case",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/optimization/continue-dialog.png",
+      "description": "Choose a saved iteration to resume",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        380,
+        141
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/displacement.png",
+      "description": "Displacement magnitude on the deformed model",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/design-iteration-menu.png",
+      "description": "design-iteration-menu",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        100,
+        36
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/field-menu.png",
+      "description": "field-menu",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        177,
+        218
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/undeformed-configuration.png",
+      "description": "Displacement on the undeformed model",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/mises-stress.png",
+      "description": "Mises stress",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/export-location-menu.png",
+      "description": "export-location-menu",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        635,
+        56
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/gauss-point-export.png",
+      "description": "Export elements",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/reference-point-export.png",
+      "description": "Export reference_points",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/modified-pressure.png",
+      "description": "Pressure changed to 0.04 in the working model",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/solver-running.png",
+      "description": "Recomputing the modified load case",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/recomputed-displacement.png",
+      "description": "Displacement after recomputing pressure 0.04",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        1640,
+        1040
+      ]
+    },
+    {
+      "file": "ui-quickstart/finite-element/analysis-result-menu.png",
+      "description": "analysis-result-menu",
+      "source": "BendingActuator_T20261120_095103",
+      "dpr": 1.0,
+      "pixels": [
+        130,
+        38
+      ]
+    }
+  ],
+  "definition_sha256": {
+    "examples/bending_actuator/bending_actuator.morph": "d019315b40444375c86fbfbfe50e5a4996f0f4ac7a6ecf31c4908b3fa17257f5",
+    "examples/workspace_objective/workspace_objective.morph": "7afb4790856623ceaeac9c48359feae97e1d92e0ec053bfb766502fefd561d3e",
+    "examples/step_face/step_face.morph": "fda739499ce04eae6cff110d4ccaeca3cac48e45de6150bed2bc4cd709cbc166"
+  },
+  "completed_run": {
+    "source": "BendingActuator_T20261120_095103",
+    "completed_iterations": 2,
+    "script_sha256": "a434eac95fc6e96fe14384db0070217cedd0259c941932cfff440f3cd854ab01"
+  },
+  "font_policy": {
+    "body": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "tree": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "heading": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "code": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    },
+    "chart": {
+      "western": "Noto Sans",
+      "point_size": 9.0,
+      "han_glyph_families": [
+        "Noto Sans CJK SC"
+      ]
+    }
+  }
+}

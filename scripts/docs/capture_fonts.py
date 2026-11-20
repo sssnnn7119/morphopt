@@ -2,8 +2,10 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from fontTools.ttLib import TTFont
+from PySide6.QtCore import QSettings
 from PySide6.QtGui import QFontDatabase, QFontInfo, QTextLayout
 
 from morphopt.ui.theme.fonts import ROLES, _font_face, font_manager
@@ -14,11 +16,14 @@ SAMPLE = "几何材料压力载荷边界优化过程转换参数定义实例资�
 class CaptureFonts:
     """Apply preferences through the application's shared font manager."""
 
-    def __init__(self):
+    def __init__(self, settings_directory: Path):
         families = QFontDatabase.families(QFontDatabase.WritingSystem.SimplifiedChinese)
         chinese = "Noto Sans CJK SC" if "Noto Sans CJK SC" in families else ""
-        for role in ROLES:
-            font_manager.set_preferences(role, font_manager.default_font(role), chinese)
+        # Explicit INI storage also isolates Windows, where Qt normally uses the registry.
+        settings = QSettings(str(settings_directory / "capture-fonts.ini"), QSettings.Format.IniFormat)
+        with patch("morphopt.ui.theme.fonts.QSettings", return_value=settings):
+            for role in ROLES:
+                font_manager.set_preferences(role, font_manager.default_font(role), chinese)
         face = _font_face(chinese) if chinese else None
         if face:
             self._directory = TemporaryDirectory(prefix='morphopt-doc-font-')
@@ -28,7 +33,7 @@ class CaptureFonts:
             from morphopt.ui.widgets import preview_renderer
 
             # VTK reads only the first TTC face; provide the selected SC face.
-            preview_renderer._cjk_font_file = lambda: str(target)
+            preview_renderer.cjk_font_file = lambda: str(target)
 
     def audit(self):
         report = {}

@@ -17,4 +17,4 @@
 python examples/bending_actuator/bending_actuator.py
 ```
 
-在 UI 中打开对应的 `.morph` 文件可查看或修改定义。几何资产分别保存在需要它们的算例目录中的 `assets/`。UI 文档使用的共享导入文件位于 [`docs/assets/ui_reference/`](../docs/assets/ui_reference/)；仓库不再维护 `docs/examples/` 的副本。
+在 UI 中打开对应的 `.morph` 文件可查看或修改定义。几何资产分别保存在需要它们的算例目录中的 `assets/`。UI 截图和导入测试共用一组 [STEP、STL 和 INP 样本](../docs/zh-CN/images/import-samples.md)。

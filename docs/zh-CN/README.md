@@ -1,0 +1,93 @@
+# MorphOpt 文档导览
+
+[English](../en-US/README.md)
+
+首次运行算例可阅读相应的快速开始。查阅某个类、表单字段或接口定义时，可直接进入模块参考。脚本与图形界面使用同一弯曲驱动器算例。
+
+| 操作方式 | 快速开始 | 模块与接口参考 |
+|---|---|---|
+| Python 脚本 | [脚本快速开始](script-quickstart.md)：安装、完整任务、启动、结果与继续计算 | [脚本模块与接口参考](script-reference.md)：各模块的类定义、注册方式、参数和扩展约定 |
+| 图形界面 | [UI 快速开始](ui-quickstart.md)：运行已有定义、从空白建模、优化及有限元查看 | [UI 模块与接口参考](ui-reference.md)：模型树、表单字段、接口类型、可视化和自定义类 |
+
+两条路线采用同一圆柱内腔加压算例。脚本任务为 [bending_actuator.py](../../examples/bending_actuator/bending_actuator.py)，UI 定义为 [bending_actuator.morph](../../examples/bending_actuator/bending_actuator.morph)。二者保存在仓库唯一的 `examples/` 目录中；部件、实例、参考点、压力、材料和目标的名称保持对应，新的计算不保证与已有截图具有相同迭代轨迹。
+
+可运行脚本、UI 定义、CAD/网格输入文件及其算例说明统一收录于 [`examples/`](../../examples/README.md)，文档页通过相对链接引用这些文件。
+
+<a id="section-阅读顺序"></a>
+
+## 1 阅读顺序
+
+脚本使用者先完成脚本快速开始，再按修改内容查阅脚本模块参考。UI 使用者先运行已有定义，再按建模顺序建立同一算例，其他类型与字段查阅 UI 模块参考。
+
+| 定义内容 | 脚本位置 | UI 位置 |
+|---|---|---|
+| 任务和运行目录 | `ThisController.__init__()` | 控制器任务设置 |
+| 几何、部件和实例 | `Params.GeometryParams` | 模型参数 → 几何 |
+| 载荷、边界和工况 | `Params.FEAParams` | 载荷与边界条件、载荷工况 |
+| 材料及分配 | `Params.MaterialsParams` | 材料 |
+| 优化目标和指标 | `ObjectiveFunction` | 目标函数 |
+| 求解设备和任务组 | `Solver` | 求解器 |
+| 几何和材料更新 | `Updater` 及其子优化器 | 对应对象的优化器 |
+| 扩展实现 | Python 子类与实例化 | 辅助代码 → 自定义类与类选择框 |
+
+<a id="section-理论架构与示例"></a>
+
+## 2 理论、架构与示例
+
+- [形状优化理论](theory/morphdesign.md)：几何表示、力学模型、目标与伴随灵敏度。
+- [协同优化理论](theory/codesign.md)：偏置层、SIMP 设计场与形状材料协同更新。
+- [代码结构](codestructure/README.md)：数值内核、UI 分层、结果分析及扩展边界的统一导览。
+- [STEP 外边界与 BSP 内腔算例](../../examples/hybrid_cylinder/hybrid_cylinder.md)：配套 Python 脚本、`.morph` 定义和资产文件。
+- [配图说明](images/README.md)：截图与图示的分类、来源及命名规则。
+
+<a id="section-章节编号与文档维护"></a>
+
+## 3 章节编号与文档维护
+
+文档标题使用 `#`，正文从 `##` 开始。`##`、`###`、`####` 和 `#####` 分别生成 `1`、`1.1`、`1.1.1` 和 `1.1.1.1`，更深层级继续递推。标题层级应连续，目录标题和文档标题不参与正文编号。
+
+在仓库根目录运行下列命令，刷新 `docs/` 下各篇文档的编号和自动目录：
+
+```bash
+python scripts/docs/number_docs.py
+```
+
+编辑期间可启用监视模式，文档保存后自动更新编号和目录，按 Ctrl+C 结束监视：
+
+```bash
+python scripts/docs/number_docs.py --watch
+```
+
+新增标题只需填写对应数量的 `#` 和标题文字，已有数字前缀由脚本重新计算。已有显式锚点继续保留；章节链接采用标题文字与锚点，避免手动引用易变的章节编号。代码结构文档的页面标识与页内章节编号分别维护。
+
+自动目录由 HTML 注释 `docs:toc depth=1` 与 `/docs:toc` 标记界定；`depth` 指定目录包含的编号层数，取值为 `1`–`5`。脚本模块参考列出两级目录，快速开始及 UI 模块参考列出一级目录。代码围栏、显示公式和注释中的示例内容不参与章节编号。
+
+<a id="section-当前能力与阅读入口"></a>
+
+## 4 当前能力与阅读入口
+
+| 内容 | 当前约定 | 详细说明 |
+|---|---|---|
+| 物理代理 | 一阶与历史二阶分别登记，使用原始灵敏度 | [代理与更新器](script-reference.md#section-有限元目标的历史梯度二阶代理) |
+| 几何积分和策略 | 面积、逐点采样因子及整体系数分离；自适应调整按事件触发 | [更新策略](script-reference.md#section-几何更新策略与障碍积分) |
+| Fairness | 统一曲率参数；几何与罚项 visitor 分离 | [几何罚项](ui-reference.md#updater_constraints-fairness) |
+| 列表参数 | 有名称的分量框和逐项列表编辑 | [输入约定](ui-reference.md#section-数值列表与表达式) |
+| 载荷工况 | 字符串名称、接口卡片与独立标量幅值 | [载荷工况](ui-reference.md#steps) |
+| 工作空间 | 预定义载荷、边界高斯点工况和显式积分表达式 | [目标与工况](ui-reference.md#objectives) |
+| 自由度约束 | 参考点六分量；实例节点序号与 X/Y/Z 方向 | [PenaltyDoF](ui-reference.md#load_types-penaltydof) |
+| 计算资源 | 一个 CPU 进程为默认；逐进程设备与有序工况组 | [求解器](ui-reference.md#section-solver工况任务的组织) |
+| 指标和历史 | 命名指标、自动目标贡献、曲线选择与动态记录字段 | [指标与记录](script-reference.md#section-按名称提取参考点响应) |
+| 日志和错误 | 已保存日志浏览、保持阅读位置、Python 异常入日志 | [运行时](codestructure/runtime.md#section-首轮失败与日志归档) |
+| 结果视图与导出 | 单曲面及控制网格、当前曲面导出、历史设计/变形 GIF | [结果参考](ui-reference.md#results) |
+| 外观 | 分角色中西文字体、预览/应用/确认和全局三维材质 | [字体设置](ui-reference.md#section-字体设置与应用范围) |
+| 定义文件 | 文件边界保留支持项、补默认值、忽略额外项并汇总警告 | [导入规则](codestructure/ui-model.md#section-morph-边界与兼容处理) |
+| 几何资产 | `.morph` 内嵌，运行脚本目录中还原 STEP/STL/INP 与元数据 | [脚本与资产](ui-reference.md#section-生成代码与持久化接口) |
+
+中文与英文使用相同的目录结构。`images/ui-quickstart/` 收录从建模到查看结果的操作截图，`images/ui-reference/` 收录各模块的接口截图。两篇指南可以引用同一张图。截图的来源、像素尺寸和字体记录见[采集清单](images/current-capture-manifest.json)。
+
+编号更新后可检查本地链接、图片、锚点和 Python 代码块语法：
+
+```bash
+python scripts/docs/number_docs.py
+python scripts/docs/check_docs.py
+```
