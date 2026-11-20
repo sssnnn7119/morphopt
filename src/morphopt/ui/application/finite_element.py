@@ -14,6 +14,7 @@ import torch
 import torchfea
 
 from ...postprocess import IterationModel, cpu_torch_defaults, normalize_export_name
+from ...postprocess.archive import load_solved_model
 from ..i18n import localized_message
 from .fields import joint_parameter_issue
 
@@ -112,11 +113,11 @@ class FiniteElementSession:
                 )
             )
         with cpu_torch_defaults():
-            controller = torchfea.load_model(str(entry.model_path))
-            result = None
-            if entry.result_path is not None:
-                result = torchfea.solver.StaticResult.load(str(entry.result_path))
-                controller.assembly.set_work_conditions(result.work_conditions)
+            if entry.result_path is None:
+                controller = torchfea.load_model(str(entry.model_path))
+                result = None
+            else:
+                controller, result = load_solved_model(entry.model_path, entry.result_path)
                 if result.model_hash != controller.get_model_hash():
                     raise ValueError(localized_message("ui.fea.model_result_mismatch"))
                 if not result.converged:

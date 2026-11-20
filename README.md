@@ -11,7 +11,7 @@ MorphOpt is a differentiable structural optimization framework that combines the
 - First-order and history-based quadratic FEA surrogates with L-BFGS subproblem solves and explicit step limits
 - Surface-integrated geometric penalties with fixed, sensitivity-based, or adaptive weights; native FEA sensitivities remain unscaled
 - Named load cases, ordered solve groups, and per-worker CPU/GPU assignment (one CPU worker by default)
-- UI definition, asset preview, saved-log browsing, per-surface/control-net views, and current-view geometry export and history GIF export
+- UI definition, asset preview, saved-log browsing, per-surface/control-net views, and component-specific history export (STEP/STL for boundary surfaces), previewable GIF animations, and Abaqus INP files
 - Component customization through framework class inheritance
 
 ## Quick Start

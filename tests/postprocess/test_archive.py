@@ -15,10 +15,26 @@ from PIL import Image
 from morphopt.postprocess import (
     IterationModel,
     OptimizationArchive,
-    export_boundary_surfaces,
+    export_design_components,
     export_history_gif,
+    export_history_inp,
 )
 from morphopt.shapeopt.surfaces.brep_surface import BREPSurface
+
+
+def test_history_inp_maps_lnj_to_standard_neo_hookean(iteration_model, tmp_path):
+    import torchfea
+
+    model, controller, _ = iteration_model
+    block = controller.assembly.get_part("body").elems["C3D8"]
+    name, original = next(iter(block.materials.items()))
+    output = tmp_path / "model.inp"
+    export_history_inp(model.folder, model.iteration, model.case, str(output))
+    standard = output.read_bytes()
+    block.set_materials(torchfea.materials.NeoHookeanLnJ(original.mu, original.kappa), name=name)
+    controller.save_model(str(model.model_path), if_save_source_code=False)
+    export_history_inp(model.folder, model.iteration, model.case, str(output))
+    assert output.read_bytes() == standard
 
 
 def test_partial_geometry_restore_invalidates_full_parameter_cache(tmp_path, monkeypatch):
@@ -142,20 +158,51 @@ def test_iteration_model_reads_named_cases_in_registered_order(tmp_path):
 
 
 
-def test_boundary_export_restores_archived_step_and_stl_surfaces(design_archive, tmp_path):
-    paths = export_boundary_surfaces(
+def test_simp_checkpoint_exports_sampled_density_field(tmp_path):
+    import numpy as np
+    import shutil
+    import torch
+    from morphopt.postprocess import cpu_torch_defaults
+
+    sample = Path(__file__).resolve().parents[2] / "examples/simp_gripper/simp_gripper.py"
+    archive = OptimizationArchive(tmp_path / "run")
+    scripts = archive.folder / "scripts"
+    scripts.mkdir(parents=True)
+    shutil.copyfile(sample, scripts / "MAIN_SCRIPT_FOR_RESTART.py")
+    with cpu_torch_defaults():
+        material = archive.initialize_params().materials.interface("body")
+        expected = torch.full_like(material.get_parameters()[0], 1.5)
+        material.set_parameters([expected])
+        material.save(str(archive.log_folder), 1)
+        material.set_parameters([torch.zeros_like(expected)])
+        material.load(str(archive.log_folder), 1)
+        torch.testing.assert_close(material.get_parameters()[0], expected)
+        material.export(tmp_path)
+        grid = pv.read(tmp_path / "density.vti")
+        expected_grid, = material.get_meshes()
+        np.testing.assert_array_equal(grid.point_data["density"], expected_grid.point_data["density"])
+        assert grid.dimensions == expected_grid.dimensions
+
+
+def test_boundary_export_restores_all_archived_surfaces(design_archive, tmp_path):
+    paths = export_design_components(
         str(design_archive.folder), 2, str(tmp_path / "surfaces"),
-        [{"part": "body", "index": index, "format": "stp"} for index in (0, 1)],
+        [{"category": "Part", "name": "body", "mode": "all_surfaces"}],
     )
-    step_files = [path for path in paths if path.suffix == ".stp"]
-    assert {path.name for path in step_files} == {"surface_0.stp", "surface_1.stp"}
-    assert all(BREPSurface(path).get_mesh().n_cells > 0 for path in step_files)
-    stl_files = export_boundary_surfaces(
-        str(design_archive.folder), 2, str(tmp_path / "surfaces"),
-        [{"part": "body", "index": index, "format": "stl"} for index in (0, 1)],
-    )
-    assert {path.name for path in stl_files} == {"surface_0.stl", "surface_1.stl"}
-    assert all(pv.read(path).n_cells > 0 for path in stl_files)
+    assert {path.name for path in paths} == {"surface_0.stp", "surface_0.brep.json", "surface_1.stp"}
+    assert all(BREPSurface(path).get_mesh().n_cells > 0 for path in paths if path.suffix == ".stp")
+
+
+def test_boundary_export_rejects_unknown_mode_and_unsupported_surface(tmp_path):
+    from morphopt import BoundaryPart
+
+    part = BoundaryPart()
+    part.add_surface_interface(part.BaseSurface())
+    with pytest.raises(ValueError, match="does not support export mode"):
+        part.export(tmp_path, mode="invalid")
+    with pytest.raises(ValueError, match="surface_0 .* has no export format"):
+        part.export(tmp_path)
+    assert not list(tmp_path.iterdir())
 
 
 def test_history_gif_exports_design_and_deformation_frames(deformation_archive, tmp_path):

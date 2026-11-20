@@ -43,7 +43,7 @@
 | `ProtocalInitializable` | `initialize()`、`reinitialize()` | 初次准备与每轮状态更新 |
 | `ProtocalSavable` | `save()`、`load()`、`pathlog_required()`、`save_directory()` | 状态持久化与命名目录 |
 | `ProtocalVisualizable` | `get_meshes()`、`plot()` | 网格输出与绘图钩子 |
-| `ProtocalUpdatable` | `num_variables`、参数访问、`update_variables()`、灵敏度变量提取与写回 | 可设计对象的变量契约 |
+| `ProtocalUpdatable` | `num_variables`、参数访问、`update_variables()`、灵敏度变量提取与写回、组件导出 | 可设计对象的变量与导出契约 |
 
 `ProtocalInitializable` 的两个方法均为默认空钩子。`reinitialize(*args, **kwargs)` 不强制指定迭代号；模型组件通常接收 `iteration`，局部更新器接收 `gradient`，参数类型与实际行为由具体实现声明。中间基类仅在增加共享行为时重写钩子。
 
@@ -205,13 +205,13 @@ flowchart TB
 
 | 方法 | 参数 | 返回值与处理内容 |
 |---|---|---|
-| `prepare_geometry(path_output, name_output, flip, pools)` | `path_output: str \| Path` 为目录；`name_output: str` 为无扩展名文件名；`flip: bool` 为方向请求；`pools: Pool \| None` 为导出进程池 | `None`；参数曲面导出 STEP 或 STL；BREPSurface 直接使用现有资产 |
+| `prepare_geometry(path_output, name_output, pools)` | 输出目录、文件名主干和可选进程池 | 准备剖分输入文件。固定 BREP 可直接使用已有 STEP 资产。 |
 | `load_geometry(part, context)` | `part: CADMeshingMixin`；`context: OCCBuilder` | `list[int]`；通过部件载入方法返回当前曲面的 Gmsh 面编号；BSP、CPGEO、固定 STL 和固定 STEP 分别重写该方法 |
-| `output_data(path_output, name_output, seed_size, flip, pools)` | 前述导出参数及 `seed_size: float` | `str`；返回已导出文件的名称，包含扩展名；具体曲面实现决定采样尺寸和方向参数的处理 |
+| `write_surface(stem, fmt, pools=None)` | 无扩展名的目标路径、曲面支持的格式（`"stp"` 或 `"stl"`）和可选进程池 | `Path`，指向带扩展名的输出文件。曲面按当前几何状态写出。BSP 仅支持 STEP。组件导出与网格生成均使用曲面的原生格式 `export_format`。 |
 | `BREPSurface.get_mesh()` | 无参数 | `pyvista.PolyData`；从 STEP 生成显示三角网格，单元数据 `face_index` 保留面索引 |
 | `BREPSurface.face_names` | 只读属性 | `tuple[str, ...]`；返回资产中保存的原始 CAD 面名称；普通 STEP 无映射时为空 |
 
-`BREPSurface(path_step: str | Path)` 读取一个闭合壳体对应的 STEP 实体，并读取同名 `.brep.json`（若存在）。曲面对象不保存源 CAD 操作或构造阶段的预览记录。`output_data()` 复制 STEP 和面映射，不使用 `seed_size`、`flip` 或 `pools`；内腔关系由 BoundaryPart 的壳体组装顺序确定。映射按面积、质心和惯性矩阵匹配，采用 `rtol=1e-7`、`atol=1e-8` 的逐分量容差；无法唯一匹配时报告错误。
+`BREPSurface(path_step: str | Path)` 读取一个闭合壳体对应的 STEP 实体，并读取同名 `.brep.json`（若存在）。曲面对象不保存源 CAD 操作或构造阶段的预览记录。导出 STEP 时，`write_surface()` 将当前实体和拓扑映射分别写入同名的 STEP 与 `.brep.json` 文件。内腔关系由 BoundaryPart 的壳体组装顺序确定。映射按面积、质心和惯性矩阵匹配，采用 `rtol=1e-7`、`atol=1e-8` 的逐分量容差；无法唯一匹配时报告错误。
 
 UI 的 `brep_surface` 节点在 `.morph` 内保存 Base64 STEP 数据和面映射。运行脚本只引用 `morphopt_assets` 中还原的 STEP 和 JSON 文件；资产页分别显示几何与映射文本。
 

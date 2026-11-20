@@ -179,7 +179,7 @@ Qt 视口通过事件过滤器获取控件局部坐标，再按实际渲染窗�
 
 ## 9 主题、本地化与平台资源
 
-`widgets/history_export.py` 集中曲面与 GIF 导出窗口，公共基类管理工作进程和对话框状态，具体类提供各自的表单与完成文本。`widgets/labels.py` 集中可截断标签及支持复制路径的结果标签。对象标题、表单选项名称和可视对象名称统一由 `presentation/labels.py` 生成；数值解析继续由 `application/values.py` 处理，表单控件的取值由 `widgets/param_form.py` 处理。
+`widgets/history_export.py` 提供统一的优化历史导出窗口。GIF、可更新组件和 Abaqus INP 分页展示各自的参数，共用工作进程与文件选择器。`widgets/labels.py` 集中可截断标签及支持复制路径的结果标签。对象标题、表单选项名称和可视对象名称统一由 `presentation/labels.py` 生成；数值解析继续由 `application/values.py` 处理，表单控件的取值由 `widgets/param_form.py` 处理。
 
 语言和主题通过主窗口菜单选择；启动时由 `app.py` 恢复保存的配置。
 

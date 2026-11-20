@@ -29,6 +29,7 @@ import random
 from collections import defaultdict
 from collections.abc import Sequence
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gmsh
@@ -67,6 +68,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
         (default ``surface_0_All``).
     """
 
+    export_modes = ("all_surfaces",)
     is_variable = True
     from .surfaces import (
         BaseSurface,
@@ -444,20 +446,22 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.bind_mesh(part)
         return part
 
-    def export_data(self, dirpath: str, pools: Pool | None = None) -> None:
-        """Export every surface to ``__surface-<index>.stp|stl``.
+    def export(self, directory: Path, *, mode: str = "all_surfaces") -> None:
+        """Write every boundary in registration order, preferring STEP over STL.
 
         Args:
-            dirpath (str): Directory receiving the exported geometry files.
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+            directory: Destination for surface_0, surface_1, and subsequent files.
+            mode: Component export mode. The default writes the complete boundary.
         """
-        os.makedirs(dirpath, exist_ok=True)
+        if mode != "all_surfaces":
+            return super().export(directory, mode=mode)
+        directory.mkdir(parents=True, exist_ok=True)
         for index, surface in enumerate(self.surfaceinterfaces):
-            surface.output_data(
-                path_output=dirpath,
-                name_output="__surface-%d" % index,
-                pools=pools,
-            )
+            if surface.export_format is None:
+                raise ValueError(
+                    f"surface_{index} ({type(surface).__name__}) has no export format."
+                )
+            surface.write_surface(directory / f"surface_{index}", surface.export_format)
 
     # -------------------------------------------------------- design variables
     def get_parameters(self) -> list[torch.Tensor]:

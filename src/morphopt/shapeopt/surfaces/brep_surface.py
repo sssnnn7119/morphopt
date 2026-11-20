@@ -1,9 +1,10 @@
 """Closed CAD boundaries with named topology, sets and selected NURBS faces."""
+
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
@@ -15,7 +16,7 @@ import torch
 from torchfea import cad
 
 from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
-from .base_surface import BaseSurface
+from .base_surface import BaseSurface, SurfaceExportFormat
 from .nurbs_face import NURBSFace, read_nurbs_faces, write_nurbs_faces
 
 if TYPE_CHECKING:
@@ -35,8 +36,11 @@ class BREPSurface(BaseSurface):
     Topology inspection does not generate a display or finite-element mesh.
     """
 
+    export_format = SurfaceExportFormat.STEP
+
     def __init__(
-        self, path_step: str | Path,
+        self,
+        path_step: str | Path,
         control_point_spacing: float | None = None,
     ) -> None:
         """Bind one closed STEP shell and its optional topology metadata.
@@ -53,25 +57,37 @@ class BREPSurface(BaseSurface):
         """
         super().__init__()
         if control_point_spacing is not None:
-            if isinstance(control_point_spacing, bool) or not np.isscalar(control_point_spacing):
-                raise ValueError("control_point_spacing must be a finite positive length.")
+            if isinstance(control_point_spacing, bool) or not np.isscalar(
+                control_point_spacing
+            ):
+                raise ValueError(
+                    "control_point_spacing must be a finite positive length."
+                )
             control_point_spacing = float(control_point_spacing)
             if not np.isfinite(control_point_spacing) or control_point_spacing <= 0:
-                raise ValueError("control_point_spacing must be a finite positive length.")
+                raise ValueError(
+                    "control_point_spacing must be a finite positive length."
+                )
         self.control_point_spacing = control_point_spacing
         self.path_step = Path(path_step).resolve()
         self._geometry_path = self.path_step
         metadata_path = self.path_step.with_suffix(".brep.json")
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        metadata = (
+            json.loads(metadata_path.read_text(encoding="utf-8"))
+            if metadata_path.exists()
+            else {}
+        )
         self._face_map: dict[str, list[float]] = metadata.get("face_map", {})
         self._has_named_faces = bool(self._face_map)
         self._edge_map: dict[str, list[float]] = metadata.get("edge_map", {})
         self._vertex_map: dict[str, list[float]] = metadata.get("vertex_map", {})
         self.surface_sets: dict[str, tuple[str, ...]] = {
-            name: tuple(members) for name, members in metadata.get("surface_sets", {}).items()
+            name: tuple(members)
+            for name, members in metadata.get("surface_sets", {}).items()
         }
         self.node_sets: dict[str, tuple[str, ...]] = {
-            name: tuple(members) for name, members in metadata.get("node_sets", {}).items()
+            name: tuple(members)
+            for name, members in metadata.get("node_sets", {}).items()
         }
         self._nurbs_faces: set[str] = set()
         self._design_faces: tuple[str, ...] = ()
@@ -155,7 +171,9 @@ class BREPSurface(BaseSurface):
                     continue
                 model = self._nurbs_models[name]
                 if self.control_point_spacing is not None:
-                    self._nurbs_models[name] = model.refine_by_spacing(self.control_point_spacing)
+                    self._nurbs_models[name] = model.refine_by_spacing(
+                        self.control_point_spacing
+                    )
                 self._models_refined.add(name)
         return self._nurbs_models
 
@@ -171,7 +189,9 @@ class BREPSurface(BaseSurface):
         names = self._design_faces
         missing = set(names) - models.keys()
         if missing:
-            raise ValueError(f"Design faces are not NURBS: {', '.join(sorted(missing))}")
+            raise ValueError(
+                f"Design faces are not NURBS: {', '.join(sorted(missing))}"
+            )
         return names
 
     @property
@@ -199,9 +219,15 @@ class BREPSurface(BaseSurface):
             selection invalidates the bound preview.
         """
         names = (faces,) if isinstance(faces, str) else tuple(dict.fromkeys(faces))
-        missing = {name for name in names if name not in self.faces or not self.faces[name].is_nurbs}
+        missing = {
+            name
+            for name in names
+            if name not in self.faces or not self.faces[name].is_nurbs
+        }
         if missing:
-            raise ValueError(f"Design faces are not NURBS: {', '.join(sorted(missing))}")
+            raise ValueError(
+                f"Design faces are not NURBS: {', '.join(sorted(missing))}"
+            )
         self._design_faces = names
         self._bound_preview = None
 
@@ -216,7 +242,9 @@ class BREPSurface(BaseSurface):
             return 0
         models = self.design_faces
         if not models:
-            raise ValueError("BREP shape updating requires select_design_faces() with at least one NURBS face.")
+            raise ValueError(
+                "BREP shape updating requires select_design_faces() with at least one NURBS face."
+            )
         return sum(model.num_variables for model in models.values())
 
     @property
@@ -227,7 +255,11 @@ class BREPSurface(BaseSurface):
             torch.Tensor: Concatenate per-face poles in stable logical-name order.
         """
         models = self.design_faces
-        return torch.cat([model.control_points for model in models.values()]) if models else torch.empty((0, 3))
+        return (
+            torch.cat([model.control_points for model in models.values()])
+            if models
+            else torch.empty((0, 3))
+        )
 
     def get_surface_parameters(self) -> torch.Tensor:
         """Return the active faces' flattened Cartesian pole coordinates.
@@ -246,7 +278,9 @@ class BREPSurface(BaseSurface):
         """
         values = x.reshape(-1)
         if values.numel() != self.num_variables:
-            raise ValueError("BREP design-variable count does not match selected face poles.")
+            raise ValueError(
+                "BREP design-variable count does not match selected face poles."
+            )
         start = 0
         for model in self.design_faces.values():
             stop = start + model.num_variables
@@ -261,7 +295,9 @@ class BREPSurface(BaseSurface):
                 parameter order.
         """
         if self.is_updatable:
-            self.set_surface_parameters(self.get_surface_parameters() + x_change.reshape(-1))
+            self.set_surface_parameters(
+                self.get_surface_parameters() + x_change.reshape(-1)
+            )
 
     def save(self, filename: str) -> None:
         """Archive the selected faces' poles for this optimization iteration.
@@ -270,10 +306,13 @@ class BREPSurface(BaseSurface):
             filename (str): State-file path or filename prefix accepted by this component's
                 save/load pair.
         """
-        np.savez(filename, **{
-            name: model.control_points.detach().cpu().numpy()
-            for name, model in self.design_faces.items()
-        })
+        np.savez(
+            filename,
+            **{
+                name: model.control_points.detach().cpu().numpy()
+                for name, model in self.design_faces.items()
+            },
+        )
 
     def load(self, filename: str) -> None:
         """Restore archived poles using the current trim constraints.
@@ -286,10 +325,13 @@ class BREPSurface(BaseSurface):
             if set(archive.files) != set(self.design_faces):
                 raise ValueError("Archived BREP faces do not match the current Part.")
             for name, model in self.design_faces.items():
-                model.set_surface_parameters(torch.as_tensor(
-                    archive[name], dtype=model.control_points.dtype,
-                    device=model.control_points.device,
-                ))
+                model.set_surface_parameters(
+                    torch.as_tensor(
+                        archive[name],
+                        dtype=model.control_points.dtype,
+                        device=model.control_points.device,
+                    )
+                )
 
     def _write_nurbs_source(self, path: Path) -> dict[str, np.ndarray]:
         """Export current OCC shape and interior probes for logical face matching.
@@ -308,15 +350,26 @@ class BREPSurface(BaseSurface):
                 if not face.is_nurbs:
                     continue
                 tag = self.topology.face_tags[name]
-                u, v = np.meshgrid(*(np.linspace(*bounds, 13)[1:-1]
-                                     for bounds in face.parameter_bounds))
+                u, v = np.meshgrid(
+                    *(
+                        np.linspace(*bounds, 13)[1:-1]
+                        for bounds in face.parameter_bounds
+                    )
+                )
                 uv = np.column_stack((u.ravel(), v.ravel()))
-                inside = [bool(gmsh.model.isInside(2, tag, point, parametric=True)) for point in uv]
+                inside = [
+                    bool(gmsh.model.isInside(2, tag, point, parametric=True))
+                    for point in uv
+                ]
                 valid = uv[inside]
                 if not len(valid):
                     raise ValueError(f"Cannot sample trimmed NURBS face {name}.")
-                selected = valid[np.linspace(0, len(valid) - 1, min(7, len(valid)), dtype=int)]
-                probes[name] = np.asarray(gmsh.model.getValue(2, tag, selected.ravel())).reshape(-1, 3)
+                selected = valid[
+                    np.linspace(0, len(valid) - 1, min(7, len(valid)), dtype=int)
+                ]
+                probes[name] = np.asarray(
+                    gmsh.model.getValue(2, tag, selected.ravel())
+                ).reshape(-1, 3)
             gmsh.write(str(path))
         return probes
 
@@ -331,11 +384,18 @@ class BREPSurface(BaseSurface):
         # These maps identify the source asset, whose analytic representation
         # can differ from the converted topology retained above.
         if not self._face_map:
-            self._face_map = {name: list(face.signature) for name, face in topology.faces.items()}
+            self._face_map = {
+                name: list(face.signature) for name, face in topology.faces.items()
+            }
         if not self._edge_map:
-            self._edge_map = {name: list(edge.signature) for name, edge in topology.edges.items()}
+            self._edge_map = {
+                name: list(edge.signature) for name, edge in topology.edges.items()
+            }
         if not self._vertex_map:
-            self._vertex_map = {name: list(vertex.coordinates) for name, vertex in topology.vertices.items()}
+            self._vertex_map = {
+                name: list(vertex.coordinates)
+                for name, vertex in topology.vertices.items()
+            }
 
     def _read_topology(self, tags: Sequence[int]) -> BREPTopology:
         """Read topology.
@@ -346,7 +406,9 @@ class BREPSurface(BaseSurface):
         Returns:
             BREPTopology: Face, edge, and vertex graph reconstructed from the active Gmsh face tags.
         """
-        return cad.read_brep_topology(tags, self._face_map, self._edge_map, self._vertex_map)
+        return cad.read_brep_topology(
+            tags, self._face_map, self._edge_map, self._vertex_map
+        )
 
     def _build_geometry(self, context: OCCBuilder) -> list[tuple[int, int]]:
         """Import, convert selected detached faces and rebuild their closed shell.
@@ -363,37 +425,59 @@ class BREPSurface(BaseSurface):
         context.occ.synchronize()
         volumes = [(dim, tag) for dim, tag in entities if dim == 3]
         if len(volumes) != 1:
-            raise ValueError("BREPSurface requires one closed shell stored as a STEP solid.")
+            raise ValueError(
+                "BREPSurface requires one closed shell stored as a STEP solid."
+            )
         shells, _ = context.occ.getSurfaceLoops(volumes[0][1])
         if len(shells) != 1:
             raise ValueError("Register each closed shell as a separate BREPSurface.")
-        tags = sorted(tag for _, tag in gmsh.model.getBoundary(volumes, oriented=False, recursive=False))
+        tags = sorted(
+            tag
+            for _, tag in gmsh.model.getBoundary(
+                volumes, oriented=False, recursive=False
+            )
+        )
         topology = self._read_topology(tags)
         self._capture_topology(topology)
         if self._nurbs_faces:
             missing = self._nurbs_faces - topology.faces.keys()
             if missing:
                 raise ValueError(f"Unknown NURBS faces: {', '.join(sorted(missing))}")
-            selected = [topology.face_tags[name] for name in topology.faces
-                        if name in self._nurbs_faces and not topology.faces[name].is_nurbs]
+            selected = [
+                topology.face_tags[name]
+                for name in topology.faces
+                if name in self._nurbs_faces and not topology.faces[name].is_nurbs
+            ]
             if not selected:
                 return volumes
             context.occ.remove(volumes, recursive=False)
             context.occ.synchronize()
-            replacements = dict(zip(selected, cad.convert_faces_to_nurbs(selected), strict=True))
+            replacements = dict(
+                zip(selected, cad.convert_faces_to_nurbs(selected), strict=True)
+            )
             converted = [replacements.get(tag, tag) for tag in tags]
             loop = context.occ.addSurfaceLoop(converted, sewing=True)
             volume = context.occ.addVolume([loop])
             context.occ.synchronize()
             cad.remove_unused_brep_entities(volume)
             volumes = [(3, volume)]
-            tags = sorted(tag for _, tag in gmsh.model.getBoundary(volumes, oriented=False, recursive=False))
+            tags = sorted(
+                tag
+                for _, tag in gmsh.model.getBoundary(
+                    volumes, oriented=False, recursive=False
+                )
+            )
             # Conversion preserves geometry; names are recovered after sewing
             # without depending on the new session's entity ordering.
             topology = cad.read_brep_topology(
                 tags,
-                edge_map={name: edge.signature for name, edge in topology.edges.items()},
-                vertex_map={name: vertex.coordinates for name, vertex in topology.vertices.items()},
+                edge_map={
+                    name: edge.signature for name, edge in topology.edges.items()
+                },
+                vertex_map={
+                    name: vertex.coordinates
+                    for name, vertex in topology.vertices.items()
+                },
                 face_loops={name: face.loops for name, face in topology.faces.items()},
             )
             for name in self._nurbs_faces:
@@ -464,7 +548,9 @@ class BREPSurface(BaseSurface):
         Returns:
             BREPSurface: Register nodes on named faces, edges or vertices.
         """
-        members = (entities,) if isinstance(entities, str) else tuple(dict.fromkeys(entities))
+        members = (
+            (entities,) if isinstance(entities, str) else tuple(dict.fromkeys(entities))
+        )
         available = self.faces.keys() | self.edges.keys() | self.vertices.keys()
         if not name.strip() or name == "All" or name in available:
             raise ValueError(f"Invalid or reserved BREP node set name: {name!r}")
@@ -483,9 +569,14 @@ class BREPSurface(BaseSurface):
         self.topology
         return {
             "face_map": self._face_map,
-            "edge_map": self._edge_map, "vertex_map": self._vertex_map,
-            "surface_sets": {name: list(members) for name, members in self.surface_sets.items()},
-            "node_sets": {name: list(members) for name, members in self.node_sets.items()},
+            "edge_map": self._edge_map,
+            "vertex_map": self._vertex_map,
+            "surface_sets": {
+                name: list(members) for name, members in self.surface_sets.items()
+            },
+            "node_sets": {
+                name: list(members) for name, members in self.node_sets.items()
+            },
         }
 
     def evaluate_face(self, name: str, uv: np.ndarray) -> np.ndarray:
@@ -503,7 +594,9 @@ class BREPSurface(BaseSurface):
         with cad.occ_session("morphopt_brep_face_values") as context:
             self._build_geometry(context)
             tag = self.topology.face_tags[name]
-            return np.asarray(gmsh.model.getValue(2, tag, parameters.ravel())).reshape(-1, 3)
+            return np.asarray(gmsh.model.getValue(2, tag, parameters.ravel())).reshape(
+                -1, 3
+            )
 
     def evaluate_edge(self, name: str, parameters: np.ndarray) -> np.ndarray:
         """Evaluate a named edge's three-dimensional curve.
@@ -536,13 +629,20 @@ class BREPSurface(BaseSurface):
         with cad.occ_session("morphopt_brep_face_domain") as context:
             self._build_geometry(context)
             tag = self.topology.face_tags[name]
-            return np.asarray([
-                bool(gmsh.model.isInside(2, tag, point, parametric=True))
-                for point in parameters
-            ], dtype=bool)
+            return np.asarray(
+                [
+                    bool(gmsh.model.isInside(2, tag, point, parametric=True))
+                    for point in parameters
+                ],
+                dtype=bool,
+            )
 
     def edge_parameters_on_face(
-        self, face: str, edge: str, parameters: np.ndarray, which: int = 0,
+        self,
+        face: str,
+        edge: str,
+        parameters: np.ndarray,
+        which: int = 0,
     ) -> np.ndarray:
         """Return the edge's UV coordinates; ``which`` selects a seam branch.
 
@@ -561,10 +661,15 @@ class BREPSurface(BaseSurface):
             self._build_geometry(context)
             if face not in self.edges[edge].faces:
                 raise ValueError(f"Edge {edge} does not bound face {face}.")
-            return np.asarray(gmsh.model.reparametrizeOnSurface(
-                1, self.topology.edge_tags[edge], values,
-                self.topology.face_tags[face], which=which,
-            )).reshape(-1, 2)
+            return np.asarray(
+                gmsh.model.reparametrizeOnSurface(
+                    1,
+                    self.topology.edge_tags[edge],
+                    values,
+                    self.topology.face_tags[face],
+                    which=which,
+                )
+            ).reshape(-1, 2)
 
     def export_step(self, path: str | Path) -> Path:
         """Export the current solid and its topology metadata without meshing.
@@ -597,16 +702,35 @@ class BREPSurface(BaseSurface):
                 raise ValueError("Updated STEP must contain one closed solid.")
             tags = [tag for _, tag in gmsh.model.getBoundary(volumes, oriented=False)]
             topology = cad.read_brep_topology(
-                tags, edge_map=self._edge_map, vertex_map=self._vertex_map,
+                tags,
+                edge_map=self._edge_map,
+                vertex_map=self._vertex_map,
                 face_loops=original_loops,
             )
         face_map = {name: list(face.signature) for name, face in topology.faces.items()}
         metadata = {**self.metadata(), "face_map": face_map}
-        destination.with_suffix(".brep.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        destination.with_suffix(".brep.json").write_text(
+            json.dumps(metadata, indent=2), encoding="utf-8"
+        )
         return destination
 
+    def write_surface(
+        self,
+        stem: str | Path,
+        fmt: str,
+        pools: Pool | None = None,
+    ) -> Path:
+        """Write the current solid and topology as STEP, or its trimmed face triangles as STL."""
+        if fmt == SurfaceExportFormat.STL:
+            path = Path(f"{stem}.{fmt}")
+            self.get_mesh().save(path, binary=True)
+            return path
+        return self.export_step(self._surface_path(stem, fmt))
+
     def prepare_geometry(
-        self, path_output: str | Path, name_output: str,
+        self,
+        path_output: str | Path,
+        name_output: str,
         pools: Pool | None = None,
     ) -> None:
         """Materialize converted geometry before entering the Part mesh session.
@@ -616,28 +740,14 @@ class BREPSurface(BaseSurface):
             name_output (str): Output geometry filename stem, without the generated format suffix.
             pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
         """
-        self._geometry_path = (
-            self.export_step(Path(path_output) / f"{name_output}.stp")
-            if self._nurbs_faces or self._nurbs_models or (self.is_updatable and self.nurbs_faces)
-            else self.path_step
-        )
-
-    def output_data(
-        self, path_output: str | Path, name_output: str, seed_size: float = -1,
-        pools: Pool | None = None,
-    ) -> str:
-        """Export the current boundary as a STEP asset for geometry assembly.
-
-        Args:
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-            seed_size (float): Geometry sampling or meshing spacing in model length units.
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
-
-        Returns:
-            str: Output STEP basename relative to path_output.
-        """
-        return self.export_step(Path(path_output) / f"{name_output}.stp").name
+        if (
+            self._nurbs_faces
+            or self._nurbs_models
+            or (self.is_updatable and self.nurbs_faces)
+        ):
+            super().prepare_geometry(path_output, name_output, pools)
+        else:
+            self._geometry_path = self.path_step
 
     def load_geometry(self, part: CADMeshingMixin, context: OCCBuilder) -> list[int]:
         """Bind topology names to this Part's active OCC and finite-element model.
@@ -652,17 +762,28 @@ class BREPSurface(BaseSurface):
         """
         tags = part.load_step_boundary(self._geometry_path, context)
         prepared_map = self._geometry_path.with_suffix(".brep.json")
-        face_map = (json.loads(prepared_map.read_text(encoding="utf-8"))["face_map"]
-                    if self._geometry_path != self.path_step else self._face_map)
-        topology = cad.read_brep_topology(tags, face_map, self._edge_map, self._vertex_map)
+        face_map = (
+            json.loads(prepared_map.read_text(encoding="utf-8"))["face_map"]
+            if self._geometry_path != self.path_step
+            else self._face_map
+        )
+        topology = cad.read_brep_topology(
+            tags, face_map, self._edge_map, self._vertex_map
+        )
         if self._has_named_faces or not part._face_names:
             conflicts = topology.faces.keys() & set(part._face_names.values())
             if conflicts:
-                raise ValueError(f"Duplicate STEP face names: {', '.join(sorted(conflicts))}")
-            part._face_names.update({tag: name for name, tag in topology.face_tags.items()})
+                raise ValueError(
+                    f"Duplicate STEP face names: {', '.join(sorted(conflicts))}"
+                )
+            part._face_names.update(
+                {tag: name for name, tag in topology.face_tags.items()}
+            )
         else:
             part._complete_face_names(tags)
-        self._bound_face_names = {name: part._face_names[tag] for name, tag in topology.face_tags.items()}
+        self._bound_face_names = {
+            name: part._face_names[tag] for name, tag in topology.face_tags.items()
+        }
         self._loaded_topology = topology
         self._capture_topology(topology)
         return tags
@@ -676,7 +797,9 @@ class BREPSurface(BaseSurface):
         """
         topology = self._loaded_topology
         if topology is None:
-            raise RuntimeError("BREP topology must be loaded before defining mesh sets.")
+            raise RuntimeError(
+                "BREP topology must be loaded before defining mesh sets."
+            )
         self._mesh_set_prefix = prefix
 
         def add_nodes(name: str, values: Sequence[np.ndarray]) -> None:
@@ -691,17 +814,35 @@ class BREPSurface(BaseSurface):
             for member in members:
                 for ids, side in part.surfaces[self._bound_face_names[member]]:
                     sides[side].append(ids)
-            part.add_surface_set(name, [(np.unique(np.concatenate(ids)), side) for side, ids in sides.items()])
-            add_nodes(name + "_nodes", [part._gmsh_surface_nodes[topology.face_tags[member]] for member in members])
+            part.add_surface_set(
+                name,
+                [(np.unique(np.concatenate(ids)), side) for side, ids in sides.items()],
+            )
+            add_nodes(
+                name + "_nodes",
+                [
+                    part._gmsh_surface_nodes[topology.face_tags[member]]
+                    for member in members
+                ],
+            )
 
         for name in topology.faces:
             surface_set(f"{prefix}_{name}", (name,))
         for name, members in self.surface_sets.items():
             surface_set(f"{prefix}_{name}", members)
         nodes = {
-            **{name: part._gmsh_surface_nodes[tag] for name, tag in topology.face_tags.items()},
-            **{name: part._gmsh_curve_nodes[tag] for name, tag in topology.edge_tags.items()},
-            **{name: part._gmsh_vertex_nodes.get(tag, np.empty(0, dtype=int)) for name, tag in topology.vertex_tags.items()},
+            **{
+                name: part._gmsh_surface_nodes[tag]
+                for name, tag in topology.face_tags.items()
+            },
+            **{
+                name: part._gmsh_curve_nodes[tag]
+                for name, tag in topology.edge_tags.items()
+            },
+            **{
+                name: part._gmsh_vertex_nodes.get(tag, np.empty(0, dtype=int))
+                for name, tag in topology.vertex_tags.items()
+            },
         }
         for name in (*topology.edges, *topology.vertices):
             add_nodes(f"{prefix}_{name}", [nodes[name]])
@@ -740,16 +881,25 @@ class BREPSurface(BaseSurface):
                 raise ValueError("BREP mesh binding requires one closed solid.")
             tags = [tag for _, tag in gmsh.model.getBoundary(volumes, oriented=False)]
             prepared_map = self._geometry_path.with_suffix(".brep.json")
-            face_map = (json.loads(prepared_map.read_text(encoding="utf-8"))["face_map"]
-                        if prepared_map.exists() else self._face_map)
-            active = cad.read_brep_topology(tags, face_map, self._edge_map, self._vertex_map)
+            face_map = (
+                json.loads(prepared_map.read_text(encoding="utf-8"))["face_map"]
+                if prepared_map.exists()
+                else self._face_map
+            )
+            active = cad.read_brep_topology(
+                tags, face_map, self._edge_map, self._vertex_map
+            )
             for name, model in models.items():
-                indices = np.asarray(part.set_nodes[f"{prefix}_{name}_nodes"], dtype=np.int64)
+                indices = np.asarray(
+                    part.set_nodes[f"{prefix}_{name}_nodes"], dtype=np.int64
+                )
                 nodes = coordinates[indices]
                 tag = active.face_tags[name]
                 projected, _ = gmsh.model.getClosestPoint(2, tag, nodes.ravel())
                 projected = np.asarray(projected).reshape(-1, 3)
-                uv = np.asarray(gmsh.model.getParametrization(2, tag, projected.ravel())).reshape(-1, 2)
+                uv = np.asarray(
+                    gmsh.model.getParametrization(2, tag, projected.ravel())
+                ).reshape(-1, 2)
                 # Quadratic edge nodes begin as chord midpoints. Project them
                 # onto their CAD edge before assigning the face parameter.
                 for edge_name, edge in active.edges.items():
@@ -759,16 +909,31 @@ class BREPSurface(BaseSurface):
                     if not on_edge.any():
                         continue
                     edge_tag = active.edge_tags[edge_name]
-                    points, _ = gmsh.model.getClosestPoint(1, edge_tag, nodes[on_edge].ravel())
+                    points, _ = gmsh.model.getClosestPoint(
+                        1, edge_tag, nodes[on_edge].ravel()
+                    )
                     parameters = gmsh.model.getParametrization(1, edge_tag, points)
                     projected[on_edge] = np.asarray(points).reshape(-1, 3)
-                    uv[on_edge] = np.asarray(gmsh.model.reparametrizeOnSurface(
-                        1, edge_tag, parameters, tag,
-                    )).reshape(-1, 2)
+                    uv[on_edge] = np.asarray(
+                        gmsh.model.reparametrizeOnSurface(
+                            1,
+                            edge_tag,
+                            parameters,
+                            tag,
+                        )
+                    ).reshape(-1, 2)
                 matched = model.match_coordinates(indices, projected, initial_uv=uv)
-                if np.max(np.linalg.norm(matched - projected, axis=1), initial=0) > 1e-7:
-                    raise ValueError(f"NURBS basis does not reproduce CAD nodes of {name}.")
-                if not all(gmsh.model.isInside(2, tag, point, parametric=True) for point in model.surf_node_uv):
+                if (
+                    np.max(np.linalg.norm(matched - projected, axis=1), initial=0)
+                    > 1e-7
+                ):
+                    raise ValueError(
+                        f"NURBS basis does not reproduce CAD nodes of {name}."
+                    )
+                if not all(
+                    gmsh.model.isInside(2, tag, point, parametric=True)
+                    for point in model.surf_node_uv
+                ):
                     raise ValueError(f"Matched UV leaves the trimmed domain of {name}.")
                 model.projection_errors = np.linalg.norm(matched - nodes, axis=1)
                 if name in design_names:
@@ -778,11 +943,19 @@ class BREPSurface(BaseSurface):
                             continue
                         edge_tag = active.edge_tags[edge_name]
                         parameters = np.linspace(*edge.parameter_bounds, 65)
-                        edge_uv = np.asarray(gmsh.model.reparametrizeOnSurface(
-                            1, edge_tag, parameters, tag,
-                        )).reshape(-1, 2)
-                        edge_uv = np.clip(edge_uv, model.parameter_bounds[:, 0],
-                                          model.parameter_bounds[:, 1])
+                        edge_uv = np.asarray(
+                            gmsh.model.reparametrizeOnSurface(
+                                1,
+                                edge_tag,
+                                parameters,
+                                tag,
+                            )
+                        ).reshape(-1, 2)
+                        edge_uv = np.clip(
+                            edge_uv,
+                            model.parameter_bounds[:, 0],
+                            model.parameter_bounds[:, 1],
+                        )
                         weights, poles = model.get_weights(edge_uv)
                         fixed[poles[np.abs(weights) > 1e-10]] = True
                     # A periodic CAD support may describe the same seam with
@@ -790,38 +963,55 @@ class BREPSurface(BaseSurface):
                     (u0, u1), (v0, v1) = model.parameter_bounds
                     samples_u = np.linspace(u0, u1, 65)
                     samples_v = np.linspace(v0, v1, 65)
-                    border_uv = np.concatenate((
-                        np.column_stack((np.full(65, u0), samples_v)),
-                        np.column_stack((np.full(65, u1), samples_v)),
-                        np.column_stack((samples_u, np.full(65, v0))),
-                        np.column_stack((samples_u, np.full(65, v1))),
-                    ))
+                    border_uv = np.concatenate(
+                        (
+                            np.column_stack((np.full(65, u0), samples_v)),
+                            np.column_stack((np.full(65, u1), samples_v)),
+                            np.column_stack((samples_u, np.full(65, v0))),
+                            np.column_stack((samples_u, np.full(65, v1))),
+                        )
+                    )
                     weights, poles = model.get_weights(border_uv)
                     fixed[poles[np.abs(weights) > 1e-10]] = True
                     model.set_design_mask(~fixed)
                 for index, point in zip(indices, matched, strict=True):
-                    if int(index) in updates and not np.allclose(updates[int(index)], point, rtol=0, atol=1e-7):
-                        raise ValueError(f"Shared node {index} has inconsistent NURBS face positions.")
+                    if int(index) in updates and not np.allclose(
+                        updates[int(index)], point, rtol=0, atol=1e-7
+                    ):
+                        raise ValueError(
+                            f"Shared node {index} has inconsistent NURBS face positions."
+                        )
                     updates[int(index)] = point
         if self.is_updatable and not any(
             models[name].design_mask is not None and models[name].design_mask.any()
             for name in design_names
         ):
-            raise ValueError("Selected BREP faces have no movable interior poles after fixing trim edges.")
+            raise ValueError(
+                "Selected BREP faces have no movable interior poles after fixing trim edges."
+            )
         if updates:
             indices = np.fromiter(updates, dtype=np.int64)
-            part.nodes[indices] = torch.as_tensor(np.array(list(updates.values())),
-                                                dtype=part.nodes.dtype, device=part.nodes.device)
+            part.nodes[indices] = torch.as_tensor(
+                np.array(list(updates.values())),
+                dtype=part.nodes.dtype,
+                device=part.nodes.device,
+            )
         self._point_weights = {}
         element = part.elems["C3D4"]
         for name, model in models.items():
-            position = {int(index): offset for offset, index in enumerate(model.surf_node_idx)}
-            weights = torch.zeros(len(position), dtype=part.nodes.dtype, device=part.nodes.device)
+            position = {
+                int(index): offset for offset, index in enumerate(model.surf_node_idx)
+            }
+            weights = torch.zeros(
+                len(position), dtype=part.nodes.dtype, device=part.nodes.device
+            )
             for element_ids, side in part.surfaces[f"{prefix}_{name}"]:
                 faces = element._elems[element_ids][:, element.surfaceid_map[int(side)]]
                 for face_nodes in faces:
                     xyz = part.nodes[face_nodes[:3]]
-                    area = torch.linalg.cross(xyz[1] - xyz[0], xyz[2] - xyz[0]).norm() / 2
+                    area = (
+                        torch.linalg.cross(xyz[1] - xyz[0], xyz[2] - xyz[0]).norm() / 2
+                    )
                     for index in face_nodes:
                         weights[position[int(index)]] += area.detach() / len(face_nodes)
             self._point_weights[name] = weights
@@ -830,10 +1020,12 @@ class BREPSurface(BaseSurface):
         # previews. A fresh CAD tessellation can miss a localized pole update.
         triangles, face_indices = [], []
         for name in self.face_names:
-            cells = np.concatenate([
-                surface.trimesh.detach().cpu().numpy()
-                for surface in part.extract_surfaces(f"{prefix}_{name}")
-            ])
+            cells = np.concatenate(
+                [
+                    surface.trimesh.detach().cpu().numpy()
+                    for surface in part.extract_surfaces(f"{prefix}_{name}")
+                ]
+            )
             triangles.append(cells)
             face_indices.append(np.full(len(cells), int(name[5:]), dtype=np.int64))
         triangles = np.concatenate(triangles)
@@ -880,11 +1072,17 @@ class BREPSurface(BaseSurface):
             for index, point in zip(model.surf_node_idx, mapped, strict=True):
                 key = int(index)
                 if key in positions:
-                    if not torch.allclose(positions[key].detach(), point.detach(), atol=1e-7, rtol=0):
-                        raise ValueError(f"Shared BREP node {key} separates across NURBS faces.")
+                    if not torch.allclose(
+                        positions[key].detach(), point.detach(), atol=1e-7, rtol=0
+                    ):
+                        raise ValueError(
+                            f"Shared BREP node {key} separates across NURBS faces."
+                        )
                 else:
                     positions[key] = point
-        return np.fromiter(positions, dtype=np.int64), torch.stack(list(positions.values()))
+        return np.fromiter(positions, dtype=np.int64), torch.stack(
+            list(positions.values())
+        )
 
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Evaluate mapped points and first/second derivatives on active faces.
@@ -906,8 +1104,15 @@ class BREPSurface(BaseSurface):
             duv = model.map_bound_nodes((1, 1))
             dvv = model.map_bound_nodes((0, 2))
             tangents.append(torch.stack((du if self.flip else -du, dv), dim=2))
-            curvatures.append(torch.stack((torch.stack((duu, duv if self.flip else -duv), dim=2),
-                                           torch.stack((duv if self.flip else -duv, dvv), dim=2)), dim=2))
+            curvatures.append(
+                torch.stack(
+                    (
+                        torch.stack((duu, duv if self.flip else -duv), dim=2),
+                        torch.stack((duv if self.flip else -duv, dvv), dim=2),
+                    ),
+                    dim=2,
+                )
+            )
         return torch.cat(values), torch.cat(tangents), torch.cat(curvatures)
 
     def get_points_weight(self) -> torch.Tensor:
@@ -919,7 +1124,9 @@ class BREPSurface(BaseSurface):
         if not self.is_updatable:
             return super().get_points_weight()
         if not set(self.design_faces) <= set(self._point_weights):
-            raise RuntimeError("Build the BREP mesh before requesting nodal area weights.")
+            raise RuntimeError(
+                "Build the BREP mesh before requesting nodal area weights."
+            )
         return torch.cat([self._point_weights[name] for name in self.design_faces])
 
     def show(self, plotter: pv.Plotter | None = None) -> pv.Plotter:
@@ -937,11 +1144,17 @@ class BREPSurface(BaseSurface):
         if plotter is None:
             plotter = pv.Plotter(title="BREPSurface faces")
         mesh = self.get_mesh()
-        actor = plotter.add_mesh(mesh, color="lightsteelblue", show_edges=False,
-                                 name="brep_geometry", pickable=True)
+        actor = plotter.add_mesh(
+            mesh,
+            color="lightsteelblue",
+            show_edges=False,
+            name="brep_geometry",
+            pickable=True,
+        )
         prompt = "Click a face to inspect its name; click the background to clear."
-        label = plotter.add_text(prompt, position="lower_left", font_size=12,
-                                 name="brep_face_name")
+        label = plotter.add_text(
+            prompt, position="lower_left", font_size=12, name="brep_face_name"
+        )
 
         def select_face(_point: Sequence[float], picker: vtkCellPicker) -> None:
             plotter.remove_actor("brep_face_selection", render=False)
@@ -950,17 +1163,30 @@ class BREPSurface(BaseSurface):
                 label.SetText(0, prompt)
             else:
                 face = int(mesh.cell_data["face_index"][cell])
-                selected = mesh.extract_cells(np.flatnonzero(mesh.cell_data["face_index"] == face))
-                plotter.add_mesh(selected, color="gold", lighting=False,
-                                 name="brep_face_selection", pickable=False,
-                                 reset_camera=False, render=False)
+                selected = mesh.extract_cells(
+                    np.flatnonzero(mesh.cell_data["face_index"] == face)
+                )
+                plotter.add_mesh(
+                    selected,
+                    color="gold",
+                    lighting=False,
+                    name="brep_face_selection",
+                    pickable=False,
+                    reset_camera=False,
+                    render=False,
+                )
                 label.SetText(0, f"face_{face}")
             plotter.render()
 
         plotter.enable_surface_point_picking(
-            callback=select_face, picker="cell", use_picker=True,
-            left_clicking=True, pickable_window=True, show_point=False,
-            show_message=False, tolerance=0.001,
+            callback=select_face,
+            picker="cell",
+            use_picker=True,
+            left_clicking=True,
+            pickable_window=True,
+            show_point=False,
+            show_message=False,
+            tolerance=0.001,
         )
         plotter.add_axes()
         plotter.reset_camera()
@@ -997,22 +1223,37 @@ class BREPSurface(BaseSurface):
                 if self._nurbs_models:
                     volumes = context.occ.importShapes(str(current))
                     context.occ.synchronize()
-                    tags = [tag for _, tag in gmsh.model.getBoundary(volumes, oriented=False)]
-                    mapping = json.loads(current.with_suffix(".brep.json").read_text(encoding="utf-8"))["face_map"]
-                    topology = cad.read_brep_topology(tags, mapping, self._edge_map, self._vertex_map)
+                    tags = [
+                        tag
+                        for _, tag in gmsh.model.getBoundary(volumes, oriented=False)
+                    ]
+                    mapping = json.loads(
+                        current.with_suffix(".brep.json").read_text(encoding="utf-8")
+                    )["face_map"]
+                    topology = cad.read_brep_topology(
+                        tags, mapping, self._edge_map, self._vertex_map
+                    )
                 else:
                     volumes = self._build_geometry(context)
                     topology = self.topology
                 names.update({tag: name for name, tag in topology.face_tags.items()})
                 return volumes
 
-            records = cad.preview_brep([CADMeshingMixin._Operation("brep_preview", preview)])
+            records = cad.preview_brep(
+                [CADMeshingMixin._Operation("brep_preview", preview)]
+            )
         triangles = np.concatenate([record["triangles"] for record in records])
         nodes, local = np.unique(triangles, return_inverse=True)
         cells = np.column_stack((np.full(len(triangles), 3), local.reshape(-1, 3)))
         mesh = pv.PolyData(np.asarray(records[0]["points"])[nodes], cells)
-        mesh.cell_data["face_index"] = np.concatenate([
-            np.full(len(record["triangles"]), int(names[record["surface_tag"]][5:]), dtype=np.int64)
-            for record in records
-        ])
+        mesh.cell_data["face_index"] = np.concatenate(
+            [
+                np.full(
+                    len(record["triangles"]),
+                    int(names[record["surface_tag"]][5:]),
+                    dtype=np.int64,
+                )
+                for record in records
+            ]
+        )
         return mesh

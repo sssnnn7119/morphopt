@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 import pyvista as pv
 
-from .base_surface import BaseSurface
+from .base_surface import BaseSurface, SurfaceExportFormat
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -18,8 +18,15 @@ if TYPE_CHECKING:
     from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
 
 
+def _save_triangle_stl(vertices: np.ndarray, faces: np.ndarray, path: Path) -> None:
+    """Write triangular connectivity in binary STL format, locally or in a pool worker."""
+    pv.PolyData.from_regular_faces(vertices, faces).save(path, binary=True)
+
+
 class MeshSurface(BaseSurface):
     """A boundary represented by a fixed triangular surface mesh."""
+
+    export_format = SurfaceExportFormat.STL
 
     is_discrete = True
 
@@ -51,57 +58,19 @@ class MeshSurface(BaseSurface):
         faces = mesh.faces.reshape(-1, 4)[:, 1:4]
         return cls(vertices, faces)
 
-    @staticmethod
-    def output_stl_file(
-        vertices: np.ndarray,
-        faces: np.ndarray,
-        path_output: str | Path,
-        name_output: str,
-    ) -> str:
-        """Write the triangular surface mesh to an STL file.
-
-        Args:
-            vertices (np.ndarray): Cartesian vertex coordinates with shape (num_vertices, 3).
-            faces (np.ndarray): Face selection or mesh connectivity required by the selected surface
-                operation.
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-
-        Returns:
-            str: Written STL path, including its format suffix.
-        """
-        faces_with_count = np.hstack([np.full((faces.shape[0], 1), 3), faces])
-        mesh = pv.PolyData(vertices, faces_with_count)
-
-        output_file = Path(path_output) / f"{name_output}.stl"
-        mesh.save(output_file)
-        return str(output_file)
-
-    def output_data(
+    def write_surface(
         self,
-        path_output: str | Path,
-        name_output: str,
-        seed_size: float = -1,
+        stem: str | Path,
+        fmt: str,
         pools: Pool | None = None,
-    ) -> str:
-        """Export the mesh as STL and return its filename.
-
-        Args:
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-            seed_size (float): Geometry sampling or meshing spacing in model length units.
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
-
-        Returns:
-            str: Geometry filename relative to path_output, including its format suffix.
-        """
-        arguments = (self._vertices, self._faces, path_output, name_output)
+    ) -> Path:
+        """Write the fixed triangles as STL."""
+        path = self._surface_path(stem, fmt)
         if pools is None:
-            self.output_stl_file(*arguments)
+            _save_triangle_stl(self._vertices, self._faces, path)
         else:
-            pools.apply_async(self.output_stl_file, args=arguments).get()
-
-        return name_output + ".stl"
+            pools.apply(_save_triangle_stl, (self._vertices, self._faces, path))
+        return path
 
     def load_geometry(
         self,
@@ -126,8 +95,4 @@ class MeshSurface(BaseSurface):
         Returns:
             pv.PolyData: The triangular boundary as a PyVista surface mesh.
         """
-        faces = np.asarray(self._faces, dtype=np.int64)
-        faces_with_count = np.column_stack(
-            [np.full(faces.shape[0], 3, dtype=np.int64), faces]
-        )
-        return pv.PolyData(np.asarray(self._vertices), faces_with_count)
+        return pv.PolyData.from_regular_faces(self._vertices, self._faces)

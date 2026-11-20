@@ -21,7 +21,9 @@ class _Constants:
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000
-            PREVIEW_CACHE_BYTES = 5 * 1024**3  # Shared mesh-data budget for history previews.
+            PREVIEW_CACHE_BYTES = (
+                5 * 1024**3
+            )  # Shared mesh-data budget for history previews.
             LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
@@ -1046,7 +1048,15 @@ class _Constants:
 
         class FEA:
             SPHERICAL_JOINT_VALUES = (1.0, 0.0, 0.0, 0.0)
-            SINGLE_DOF_JOINT_VALUES = (*SPHERICAL_JOINT_VALUES, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+            SINGLE_DOF_JOINT_VALUES = (
+                *SPHERICAL_JOINT_VALUES,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            )
             DEFAULT_TRANSLATION_DOFS = (0, 1, 2)
             CONTACT_PENALTY_THRESHOLD = 3.0
 
@@ -1170,6 +1180,9 @@ class _Constants:
             PROJECTION_PARAMETER_MAX = 1.0
 
         class SIMP:
+            EXPORT_VOXEL_SIZE = 1.0
+            EXPORT_DENSITY_THRESHOLD = 0.5
+            EXPORT_SAMPLE_BATCH_SIZE = 8192
             DEFAULT_INITIAL_RATIO = 0.5
             DEFAULT_VOID_PENALTY_FACTOR = 0.01
             DEFAULT_MATERIAL_PENALTY = 8

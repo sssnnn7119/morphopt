@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import math
+from enum import StrEnum
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -23,6 +24,13 @@ if TYPE_CHECKING:
     from ...optcore.modelparams.parts.cad_part import CADMeshingMixin
 
 
+class SurfaceExportFormat(StrEnum):
+    """File formats for exporting BoundaryPart surfaces."""
+
+    STEP = "stp"
+    STL = "stl"
+
+
 class BaseSurface(BaseModelComponent):
     """Define geometry, named sets, quadrature, and export hooks for one closed boundary.
 
@@ -32,6 +40,8 @@ class BaseSurface(BaseModelComponent):
     quadrature.
     """
 
+    # Native format used by meshing and whole-component export.
+    export_format: ClassVar[SurfaceExportFormat | None] = None
     is_discrete: ClassVar[bool] = False
 
     def __init__(self) -> None:
@@ -119,27 +129,29 @@ class BaseSurface(BaseModelComponent):
         intentionally a no-op.
         """
 
-    def output_data(
+    def _surface_path(self, stem: str | Path, fmt: str) -> Path:
+        """Append the selected extension to the file stem after checking surface support."""
+        if fmt != self.export_format:
+            raise ValueError(f"{type(self).__name__} does not support {fmt!r}.")
+        return Path(f"{stem}.{fmt}")
+
+    def write_surface(
         self,
-        path_output: str | Path,
-        name_output: str,
-        seed_size: float = -1,
+        stem: str | Path,
+        fmt: str,
         pools: Pool | None = None,
-    ) -> str:
-        """Output the surface data to a file.
+    ) -> Path:
+        """Write the current boundary in a supported format.
 
         Args:
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-            seed_size (float): Geometry sampling or meshing spacing in model length units.
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
+            stem: Output path without the format extension.
+            fmt: File format, such as "stp" or "stl".
+            pools: Optional process pool for geometry generation or writing.
 
         Returns:
-            str: Geometry filename relative to path_output, including its format suffix.
+            Path to the written surface file.
         """
-        raise NotImplementedError(
-            "The output_data method is not implemented in the BaseSurface class. Please implement it in the derived class."
-        )
+        raise NotImplementedError(f"{type(self).__name__} has no surface writer.")
 
     def prepare_geometry(
         self,
@@ -154,8 +166,13 @@ class BaseSurface(BaseModelComponent):
             name_output (str): Output geometry filename stem, without the generated format suffix.
             pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
         """
-        filename = self.output_data(path_output, name_output, pools=pools)
-        self._geometry_path = Path(path_output) / filename
+        if self.export_format is None:
+            raise NotImplementedError(f"{type(self).__name__} has no meshing format.")
+        self._geometry_path = self.write_surface(
+            Path(path_output) / name_output,
+            self.export_format,
+            pools=pools,
+        )
 
     def load_geometry(
         self,
@@ -228,7 +245,9 @@ class BaseSurface(BaseModelComponent):
                 coordinates.
         """
         parameters = self.get_surface_parameters()
-        uv = torch.as_tensor(self.surf_node_uv, dtype=parameters.dtype, device=parameters.device)
+        uv = torch.as_tensor(
+            self.surf_node_uv, dtype=parameters.dtype, device=parameters.device
+        )
         return self.surf_node_idx, self.map(uv)
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
@@ -1119,7 +1138,6 @@ class ControlPointSurface(BaseSurface):
     def _map(
         self, weights: torch.Tensor, indices: torch.Tensor, num_pts: int = None
     ) -> torch.Tensor:
-
         """Accumulate sparse basis contributions from the live control-point tensor.
 
         Args:

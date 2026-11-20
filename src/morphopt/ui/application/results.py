@@ -106,6 +106,10 @@ class ResultSession:
         """Restore the selected component for the displayed iteration."""
         return self._archive.load_design_component(component, iteration)
 
+    def design_components(self) -> tuple[tuple[str, Any], ...]:
+        """Return all components available for history export."""
+        return self._archive.design_components() if self._archive else ()
+
     def fea_components(self) -> tuple[tuple[str, Any], ...]:
         """Return fea components.
 

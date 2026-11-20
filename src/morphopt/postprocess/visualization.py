@@ -71,8 +71,13 @@ def configure_plotter(
 
 
 def apply_mesh_style(
-    plotter: BasePlotter, *, ambient: float, diffuse: float, specular: float,
-    specular_power: float, smooth_shading: bool = True,
+    plotter: BasePlotter,
+    *,
+    ambient: float,
+    diffuse: float,
+    specular: float,
+    specular_power: float,
+    smooth_shading: bool = True,
 ) -> None:
     """Update lit mesh actors, preserving scalar maps, colors, and overlays.
 
@@ -169,13 +174,17 @@ def add_design_component(
             actor.prop.specular = specular
             actor.prop.specular_power = specular_power
             if (
-                view is None or view.surface_index is None
-            ) and surface_count > 1 and str(name).endswith("surface-0"):
+                (view is None or view.surface_index is None)
+                and surface_count > 1
+                and str(name).endswith("surface-0")
+            ):
                 actor.prop.opacity = boundary_shell_opacity
     plotter.show_axes()
 
 
-def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, index: int) -> None:
+def _add_control_net(
+    plotter: BasePlotter, surface: Any, component_id: int, index: int
+) -> None:
     """Overlay one compact control-point net without creating per-edge actors.
 
     Args:
@@ -217,7 +226,9 @@ def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, inde
                 edges_list.append((row * columns + columns - 1, row * columns))
         for row in range(rows - 1):
             for column in range(columns):
-                edges_list.append((row * columns + column, (row + 1) * columns + column))
+                edges_list.append(
+                    (row * columns + column, (row + 1) * columns + column)
+                )
         edges = np.asarray(edges_list, dtype=int)
 
     if len(edges):
@@ -239,9 +250,7 @@ def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, inde
     )
 
 
-def add_deformation_mesh(
-    plotter: BasePlotter, mesh: pv.DataSet, color: str
-) -> None:
+def add_deformation_mesh(plotter: BasePlotter, mesh: pv.DataSet, color: str) -> None:
     """Draw one archived deformation mesh.
 
     Args:
@@ -313,58 +322,87 @@ def history_frames(
     if mode == "design":
         if archive.initialize_params() is None:
             raise ValueError("The archived optimization model is unavailable.")
+        component = next(
+            (
+                item
+                for category, item in archive.visualizable_components()
+                if category == target.get("category")
+                and item.name == target.get("name")
+            ),
+            None,
+        )
+        if component is None:
+            raise ValueError("The selected design component is unavailable.")
+        views = {view.key: view for view in design_view_options(component)}
+        view = views[target["view"]] if "view" in target else None
     elif not target.get("case"):
         raise ValueError("Select a load case before exporting deformation history.")
 
     size = tuple(max(1, int(value)) for value in window_size)
     plotter = pv.Plotter(off_screen=True, window_size=size)
+
+    def render_frame(iteration: int) -> np.ndarray | None:
+        nonlocal camera
+        plotter.clear()
+        configure_plotter(
+            plotter,
+            background=style["background"],
+            light_intensity=style.get("light_intensity", 1.0),
+        )
+        if mode == "design":
+            add_design_component(
+                plotter,
+                archive.load_design_component(component, iteration),
+                view=view,
+                geometry_color=style["geometry_color"],
+                ambient=style["mesh_ambient"],
+                diffuse=style["mesh_diffuse"],
+                specular=style["mesh_specular"],
+                specular_power=style["mesh_specular_power"],
+                boundary_shell_opacity=style["boundary_shell_opacity"],
+            )
+        else:
+            mesh = archive.deformation_mesh(target["case"], iteration)
+            if mesh is None:
+                return None
+            add_deformation_mesh(plotter, mesh, style["deformation_color"])
+        apply_mesh_style(
+            plotter,
+            ambient=style["mesh_ambient"],
+            diffuse=style["mesh_diffuse"],
+            specular=style["mesh_specular"],
+            specular_power=style["mesh_specular_power"],
+            smooth_shading=style.get("smooth_shading", True),
+        )
+        if "direction" in camera:
+            plotter.view_vector(camera["direction"], viewup=camera["up"], render=False)
+            camera = {
+                "position": plotter.camera_position,
+                "parallel_scale": plotter.camera.parallel_scale,
+                "parallel_projection": camera.get("parallel_projection", False),
+            }
+        set_camera(plotter, camera)
+        plotter.add_text(
+            f"Iteration {iteration}",
+            position="upper_left",
+            font_size=12,
+            color=style["text_color"],
+        )
+        plotter.render()
+        return plotter.screenshot(return_img=True)
+
     try:
+        if iterations and "direction" in camera:
+            # Frame the preset on the preview iteration and keep that camera for the animation.
+            last_frame = render_frame(iterations[-1])
+            iterations = iterations[:-1]
+        else:
+            last_frame = None
         for iteration in iterations:
-            plotter.clear()
-            configure_plotter(
-                plotter, background=style["background"],
-                light_intensity=style.get("light_intensity", 1.0),
-            )
-            if mode == "design":
-                component = next(
-                    (
-                        component
-                        for category, component in archive.visualizable_components()
-                        if category == target.get("category")
-                        and component.name == target.get("name")
-                    ),
-                    None,
-                )
-                if component is None:
-                    raise ValueError("The selected design component is unavailable.")
-                add_design_component(
-                    plotter,
-                    archive.load_design_component(component, iteration),
-                    geometry_color=style["geometry_color"],
-                    ambient=style["mesh_ambient"],
-                    diffuse=style["mesh_diffuse"],
-                    specular=style["mesh_specular"],
-                    specular_power=style["mesh_specular_power"],
-                    boundary_shell_opacity=style["boundary_shell_opacity"],
-                )
-            else:
-                mesh = archive.deformation_mesh(target["case"], iteration)
-                if mesh is None:
-                    continue
-                add_deformation_mesh(plotter, mesh, style["deformation_color"])
-            apply_mesh_style(
-                plotter, ambient=style["mesh_ambient"], diffuse=style["mesh_diffuse"],
-                specular=style["mesh_specular"], specular_power=style["mesh_specular_power"],
-                smooth_shading=style.get("smooth_shading", True),
-            )
-            set_camera(plotter, camera)
-            plotter.add_text(
-                f"Iteration {iteration}",
-                position="upper_left",
-                font_size=12,
-                color=style["text_color"],
-            )
-            plotter.render()
-            yield plotter.screenshot(return_img=True)
+            frame = render_frame(iteration)
+            if frame is not None:
+                yield frame
+        if last_frame is not None:
+            yield last_frame
     finally:
         plotter.close()

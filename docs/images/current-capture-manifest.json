@@ -438,22 +438,22 @@
     },
     {
       "file": "ui/optimization/export-current-surfaces.png",
-      "description": "Geometry export uses the current component, surface and iteration",
-      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
-      "dpr": 1.75,
+      "description": "Design component export: all surfaces in native formats",
+      "source": "Archived twist actuator run, iteration 4",
+      "dpr": 1.0,
       "pixels": [
-        910,
-        333
+        950,
+        525
       ]
     },
     {
       "file": "ui/optimization/export-history-gif.png",
-      "description": "History GIF target, iteration range and frame rate",
-      "source": "Completed run of examples/bending_actuator/bending_actuator.py; CPU",
-      "dpr": 1.75,
+      "description": "Deformation history GIF with final iteration preview and background color selector",
+      "source": "Archived twist actuator run, iterations 2–4",
+      "dpr": 1.0,
       "pixels": [
-        910,
-        490
+        950,
+        525
       ]
     },
     {

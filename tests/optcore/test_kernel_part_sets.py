@@ -158,9 +158,10 @@ def test_cad_conversion_derives_shell_orientation_and_exports_step(tmp_path):
     part.initialize()
     boundary = part.to_boundary_part(tmp_path / "assets")
     assert [surface.flip for surface in boundary.surface_interfaces()] == [False, True]
-    boundary.export_data(str(tmp_path / "export"))
+    boundary.export(tmp_path)
     for index in range(2):
-        assert (tmp_path / "export" / f"__surface-{index}.stp").is_file()
+        assert (tmp_path / f"surface_{index}.stp").is_file()
+        assert (tmp_path / f"surface_{index}.brep.json").is_file()
 
 
 def test_cad_mesh_uses_history_mesh_size(monkeypatch):

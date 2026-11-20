@@ -1217,7 +1217,7 @@ UI 的“重写类”生成同类继承声明，再通过类选择框确定各�
 ```python
 from morphopt.postprocess import (
     IterationModel, OptimizationArchive,
-    export_boundary_surfaces, export_saved_fields,
+    export_design_components, export_saved_fields,
 )
 
 run = "path/to/optimization_run"
@@ -1231,14 +1231,14 @@ export_saved_fields(
     location="nodes", fields=["displacement"], format="npz",
 )
 
-# 按部件和曲面编号导出保存的设计边界。
-export_boundary_surfaces(
+# 导出指定部件在该步的全部设计边界。
+export_design_components(
     run, iteration, "exported_surfaces",
-    [{"part": "part1", "index": 0, "format": "stp"}],
+    [{"category": "Part", "name": "part1", "mode": "all_surfaces"}],
 )
 ```
 
-`export_saved_fields()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。曲面格式按曲面类型选择，BSP 和 BREP 支持 `stp`、`stl`，离散曲面支持 `stl`。
+`export_saved_fields()` 恢复解中保存的工况，并检查收敛状态和模型匹配。`location` 可取 `nodes`、`elements` 或 `reference_points`；`fields` 使用 `RESULT_FIELDS` 中的字段标识，格式为 `csv` 或 `npz`。组件导出按曲面类型写入文件。BSP 和 BREP 写为 `stp`，离散曲面写为 `stl`。
 
 | 接口 | 输入与结果 |
 |---|---|
@@ -1246,9 +1246,22 @@ export_boundary_surfaces(
 | `IterationModel(folder, iteration, case)` | 定位指定轮次的模型文件和指定工况的解文件 |
 | `export_fields(controller, result, path, ...)` | 从已载入且工况匹配的模型与解导出物理量 |
 | `FiniteElementResults(controller, result)` | 查询可用字段、提取组合记录表、计算各实例的节点云图数值 |
-| `export_boundary_surfaces(folder, iteration, destination, selections, overwrite=False)` | 将选定 BoundaryPart 曲面输出到部件子目录 |
+| `export_design_components(folder, iteration, destination, selections, overwrite=False)` | 按选定迭代导出可更新组件。每项选择包含 `category`、`name`、`mode`，例如 `{"category": "Part", "name": "body", "mode": "all_surfaces"}` |
 | `export_native_results(...)` | 按 `NativeResultSnapshot` 清单复制模型与结果归档 |
+| `export_history_inp(folder, iteration, case, destination, nlgeom=True)` | 按迭代和工况导出 Abaqus 静力分析输入文件。`case=None` 时仅导出部件局部坐标下的网格、集合和表面 |
 | `export_history_gif(...)` | 按设计组件或变形工况、迭代范围及显式相机与样式设置导出动画 |
+
+`part.export(Path("boundaries"))` 将 BoundaryPart 的全部曲面按注册顺序写入目录。第 0 张为外边界，其余为内腔。支持 STEP 的曲面写为 `surface_N.stp`，其余可导出曲面写为 `surface_N.stl`。SIMP 材料使用相同的目录接口，`material.export(Path("field"))` 写出 `density.vti`。其中的点数据 `density` 与设计视图一致，数值为插值后的材料刚度比乘以 `mumax`。
+
+SIMP 的体素导出使用刚度插值前的材料相对密度。设设计场包围盒在某轴的长度为 $L$，该轴划分为 $\lceil L / h\rceil$ 个等宽体素，其中 $h$ 为目标体素边长 `voxel_size`。仅保留中心相对密度严格大于 `threshold` 的体素。`voxels.obj` 收录保留区域与空域相邻的四边形面，包括内腔壁。
+
+```python
+material.export(Path("shape"), mode="voxel_obj", voxel_size=0.5, threshold=0.7)
+```
+
+自定义组件通过类属性 `export_modes` 声明方案名称，在 `export()` 中接收该组件所需的关键字参数。通过归档导出时，每项选择的 `options` 字典传递这些参数，例如 `{"category": "Material", "name": "body", "mode": "voxel_obj", "options": {"voxel_size": 0.5, "threshold": 0.7}}`。
+
+BSP 仅导出 STEP。当前控制点构造的侧面和两个端盖组成一个闭合实体。BREP 可导出 STEP 或当前各面的三角网格 STL。MeshSurface 和 CPGEO 仅支持 STL。CPGEO 的球面重剖分要求控制网格闭合，开放边或非流形边会触发导出错误。
 
 已载入模型与解的场量计算由同一个 `FiniteElementResults` 对象管理。下例中的 `controller` 和 `result` 应来自配对且已恢复工况的有限元模型与解。
 
@@ -1267,7 +1280,7 @@ nodal_mises = values.contour_values(mises)  # 按实例名称索引的节点数�
 
 记录表保留逐高斯点物理量；云图采用参考积分体积加权的单元平均与相邻单元节点平均。两者共用物理量计算，投影不改变导出的高斯点值。
 
-`export_history_gif()` 的 `mode` 为 `design` 或 `deformation`。前者的 `target` 使用 `{"category": "Part", "name": "part1"}` 等组件标识，后者使用 `{"case": "load_case_1"}`。调用方同时提供 `camera`、`window_size` 和 `style`；UI 从最近一次三维视口取得这些设置。变形网格缺失的轮次不生成帧，GIF 的帧间隔按格式允许的时间精度记录。
+`export_history_gif()` 的 `mode` 为 `design` 或 `deformation`。前者的 `target` 使用 `{"category": "Part", "name": "part1"}` 等组件标识，后者使用 `{"case": "load_case_1"}`。调用方同时提供 `camera`、`window_size` 和 `style`；UI 在导出窗口中指定相机与分辨率。设计构型可通过 `target["view"]` 指定 `design_view_options()` 返回的视图键。变形网格缺失的轮次不生成帧，GIF 的帧间隔按格式允许的时间精度记录。
 
 ```python
 from morphopt.postprocess import export_history_gif

@@ -28,6 +28,20 @@ def cylinder(factory, radius=2.0):
     )
 
 
+def test_cpgeo_stl_rejects_open_control_mesh(tmp_path):
+    surface = cylinder(CPGEOSurface)
+    with pytest.raises(ValueError, match="closed control mesh"):
+        surface.write_surface(tmp_path / "open", "stl")
+    assert not (tmp_path / "open.stl").exists()
+
+
+def test_bsp_rejects_stl_export(tmp_path):
+    surface = cylinder(BspSurface)
+    with pytest.raises(ValueError, match="BspSurface does not support 'stl'"):
+        surface.write_surface(tmp_path / "boundary", "stl")
+    assert not list(tmp_path.iterdir())
+
+
 @pytest.mark.parametrize("method", [None, "mirror_z", "antisymmetry_z", "periodic_z"])
 def test_bsp_step_export_contains_one_meshable_closed_solid(tmp_path, method):
     import gmsh
@@ -42,7 +56,8 @@ def test_bsp_step_export_contains_one_meshable_closed_solid(tmp_path, method):
         surface.update_variables(delta.reshape_as(surface.control_points))
         surface.apply_constraints()
     surface.initialize()
-    output = tmp_path / surface.output_data(tmp_path, "boundary")
+    output = surface.write_surface(tmp_path / "boundary")
+    assert output == tmp_path / "boundary.stp"
     assert output.is_file()
     assert not gmsh.isInitialized()
     gmsh.initialize()
@@ -73,7 +88,7 @@ def test_bsp_step_export_reports_lost_solid_and_finalizes(tmp_path, monkeypatch)
     surface = cylinder(BspSurface)
     surface.initialize()
     with pytest.raises(ValueError, match="does not form a closed solid"):
-        surface.output_data(tmp_path, "invalid")
+        surface.write_surface(tmp_path / "invalid", "stp")
     assert not (tmp_path / "invalid.stp").exists()
     assert not gmsh.isInitialized()
 
@@ -92,7 +107,7 @@ def test_bsp_step_export_propagates_write_failure_and_finalizes(tmp_path, monkey
     surface = cylinder(BspSurface)
     surface.initialize()
     with pytest.raises(OSError, match="STEP write failed"):
-        surface.output_data(tmp_path, "boundary")
+        surface.write_surface(tmp_path / "boundary", "stp")
     assert not gmsh.isInitialized()
 
 

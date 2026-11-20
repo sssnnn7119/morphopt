@@ -663,6 +663,25 @@ def make_simp_material() -> SIMP_BSPFieldMaterials:
     return material
 
 
+def test_simp_voxel_obj_keeps_cavity_faces_and_applies_strict_threshold(tmp_path):
+    import pyvista as pv
+
+    material = make_simp_material()
+    controls = torch.ones_like(material.get_parameters()[0]).reshape(3, 3, 3)
+    controls[1, 1, 1] = -1
+    material.set_parameters([controls])
+    material.export(tmp_path, mode="voxel_obj", voxel_size=0.7, threshold=0.5)
+    mesh = pv.read(tmp_path / "voxels.obj")
+    assert mesh.regular_faces.shape == (54 + 6, 4)
+    assert mesh.n_open_edges == 0
+    assert mesh.volume == pytest.approx(26 * (2 / 3) ** 3)
+
+    material.set_parameters([torch.zeros_like(controls)])
+    with pytest.raises(ValueError, match="No voxel"):
+        material.export(tmp_path / "empty", mode="voxel_obj", threshold=0.5)
+    assert not (tmp_path / "empty" / "voxels.obj").exists()
+
+
 @pytest.mark.parametrize("kind", ["geometry", "materials"])
 def test_custom_update_strategy_can_retry_from_the_same_origin(kind):
     class Retry(FixedUpdate):

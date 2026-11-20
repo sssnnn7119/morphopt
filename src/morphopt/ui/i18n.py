@@ -186,6 +186,15 @@ def tr(key: str, **values: object) -> str:
     return localization.tr(key, **values)
 
 
+def translated_or(key: str, fallback: str) -> str:
+    """Use the supplied label for extension keys without a translation."""
+    if key in localization.load_locale(
+        localization.locale
+    ) or key in localization.load_locale(localization.fallback_locale):
+        return tr(key)
+    return fallback
+
+
 def set_locale(locale: str) -> None:
     """Set the active locale and notify subscribed UI components.
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import pyvista as pv
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -37,6 +37,7 @@ from ...postprocess.visualization import (
 )
 from ..application.results import ResultLogReader, ResultSession
 from ..i18n import tr
+from ..presentation.labels import design_view_title
 from ..presentation.history import history_table
 from ..theme import theme_manager
 from ..theme.fonts import chart_font, font_manager
@@ -444,8 +445,6 @@ class HistorySceneCache:
 class UpdatableStructurePage(QWidget):
     """Render one updateable component and one of its available views."""
 
-    viewChanged = Signal()
-
     def __init__(self, parent=None, *, cache: HistorySceneCache | None = None):
         """Initialize UpdatableStructurePage and its configuration state.
 
@@ -493,7 +492,6 @@ class UpdatableStructurePage(QWidget):
 
     def _view_changed(self, _index: int) -> None:
         self._render_selected()
-        self.viewChanged.emit()
 
     @property
     def component(self):
@@ -505,20 +503,6 @@ class UpdatableStructurePage(QWidget):
         """Return the selected design view descriptor, if any."""
         return self._selected_view()
 
-    def _view_title(self, view) -> str:
-        if view.key == "all":
-            return tr("ui.widgets.observation_pages.all_surfaces")
-        if view.surface_index is None:
-            return tr("ui.widgets.observation_pages.design_structure")
-        if view.control_net:
-            return tr(
-                "ui.widgets.observation_pages.surface_control_net_value",
-                value_0=view.surface_index,
-            )
-        return tr(
-            "ui.widgets.observation_pages.surface_value", value_0=view.surface_index
-        )
-
     def _sync_view_selector(self) -> None:
         current = self.view_selector.currentData()
         self._views = design_view_options(self._component)
@@ -526,7 +510,7 @@ class UpdatableStructurePage(QWidget):
         try:
             self.view_selector.clear()
             for view in self._views:
-                self.view_selector.addItem(self._view_title(view), view.key)
+                self.view_selector.addItem(design_view_title(view), view.key)
             if not self._views:
                 self.view_selector.addItem(
                     tr("ui.widgets.observation_pages.no_updateable_components"), None

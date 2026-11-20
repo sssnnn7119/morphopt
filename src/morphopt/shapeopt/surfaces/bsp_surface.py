@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from ...constants import CONSTANT
-from .base_surface import ControlPointSurface
+from .base_surface import ControlPointSurface, SurfaceExportFormat
 from .bsp_constraints import (
     BspMirrorConstraint,
     BspRotationalSymmetryConstraint,
@@ -36,6 +36,8 @@ class BspSurface(ControlPointSurface):
     fixed during displacement updates. STEP export builds a closed solid suitable for the shared
     CAD meshing pipeline.
     """
+
+    export_format = SurfaceExportFormat.STEP
 
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
     rotate: type[BspRotationalSymmetryConstraint] = BspRotationalSymmetryConstraint
@@ -66,6 +68,7 @@ class BspSurface(ControlPointSurface):
         """Build and export a closed OCC solid from the periodic B-spline side surface and its end
         caps.
         """
+
         def __init__(self, P0, degree_u=3, degree_v=3):
             """Store the periodic side-surface poles and polynomial degrees for solid construction.
 
@@ -394,14 +397,6 @@ class BspSurface(ControlPointSurface):
                 print("Warning: Failed to create solid. Returning surface elements.")
                 return side_surface  # Fallback
 
-        def export_step(self, filename: str | Path) -> None:
-            """Write the solid; propagate export errors to the optimization worker.
-
-            Args:
-                filename (str | Path): Destination STEP file path, including the .step or .stp suffix.
-            """
-            gmsh.write(str(filename))
-
         def finalize(self):
             """Release the Gmsh session used to construct and export this solid."""
             gmsh.finalize()
@@ -515,7 +510,6 @@ class BspSurface(ControlPointSurface):
         return normals * (1 if self.flip else -1)
 
     def initialize(self):
-
         """Initialize the BspSurface state."""
         self.pre_load()
 
@@ -536,7 +530,6 @@ class BspSurface(ControlPointSurface):
     def get_preloaddata(
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
     ):
-
         """Precompute basis coefficients and derivative stencils on a surface sampling mesh.
 
         Args:
@@ -627,62 +620,34 @@ class BspSurface(ControlPointSurface):
         return preload_data
 
     @staticmethod
-    def output_stp_file(
+    def _write_step(
         control_points: np.ndarray,
-        degree_u: int,
-        degree_v: int,
-        path_output: str | Path,
-        name_output: str,
+        degree: int,
+        path: Path,
     ) -> None:
-        """Construct and write a closed BSP solid, releasing the Gmsh session on exit.
-
-        Args:
-            control_points (np.ndarray): Cartesian NURBS control-point array with shape (nu, nv, 3).
-            degree_u (int): B-spline polynomial degree in the circumferential parameter direction.
-            degree_v (int): B-spline polynomial degree in the axial parameter direction.
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-        """
-        generator = BspSurface.BSplineSolidGenerator(
-            P0=control_points, degree_u=degree_u, degree_v=degree_v
-        )
+        """Build the capped B-spline solid and write it as STEP."""
+        generator = BspSurface.BSplineSolidGenerator(control_points, degree, degree)
         try:
             generator.build()
-            generator.export_step(Path(path_output) / f"{name_output}.stp")
+            gmsh.write(str(path))
         finally:
             generator.finalize()
 
-    def output_data(
+    def write_surface(
         self,
-        path_output: str | Path,
-        name_output: str,
-        seed_size: float = -1,
+        stem: str | Path,
+        fmt: str = export_format,
         pools: Pool | None = None,
-    ) -> str:
-        """Return output data.
-
-        Args:
-            path_output (str | Path): Directory in which geometry files are written.
-            name_output (str): Output geometry filename stem, without the generated format suffix.
-            seed_size (float): Geometry sampling or meshing spacing in model length units.
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
-
-        Returns:
-            str: Geometry filename relative to path_output, including its format suffix.
-        """
-        arguments = (
-            self._cps.detach().cpu().numpy().reshape([*self.model.size, 3]),
-            self.model.degree,
-            self.model.degree,
-            path_output,
-            name_output,
-        )
+    ) -> Path:
+        """Write the current capped B-spline solid as STEP."""
+        path = self._surface_path(stem, fmt)
+        points = self._cps.detach().cpu().numpy().reshape(*self.model.size, 3)
+        arguments = (points, self.model.degree, path)
         if pools is None:
-            self.output_stp_file(*arguments)
+            self._write_step(*arguments)
         else:
-            pools.apply_async(self.output_stp_file, args=arguments).get()
-
-        return name_output + ".stp"
+            pools.apply(self._write_step, arguments)
+        return path
 
     def load_geometry(
         self,
@@ -726,7 +691,9 @@ class BspSurface(ControlPointSurface):
             x_change (torch.Tensor): Design-variable increment in this interface's flattened
                 parameter order.
         """
-        ControlPointSurface.update_variables(self, self.constrain_displacements(x_change))
+        ControlPointSurface.update_variables(
+            self, self.constrain_displacements(x_change)
+        )
 
     def get_points_weight(self):
         """Get vertex-based integration weights for the preload mesh.
@@ -760,10 +727,10 @@ class BspSurface(ControlPointSurface):
         )
 
     def get_mesh(self):
-        """Get a display mesh of the synchronized B-spline surface and its end caps.
+        """Get a display mesh of the synchronized B-spline side surface.
 
         Returns:
-            pv.PolyData: Closed display surface assembled from the sampled side surface and caps.
+            pv.PolyData: Sampled periodic side surface with open ends.
 
         Notes:
             This visualization mesh is independent of finite-element volume meshing. Synchronize the

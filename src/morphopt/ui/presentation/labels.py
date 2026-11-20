@@ -560,3 +560,18 @@ def component_selection_title(category: str, component: Any) -> str:
         "ui.observation.component_title", category=tr(category_key),
         title=typed_title(name, type(component).__name__),
     )
+
+
+def design_view_title(view) -> str:
+    if view.key == "all":
+        return tr("ui.widgets.observation_pages.all_surfaces")
+    if view.surface_index is None:
+        return tr("ui.widgets.observation_pages.design_structure")
+    if view.control_net:
+        return tr(
+            "ui.widgets.observation_pages.surface_control_net_value",
+            value_0=view.surface_index,
+        )
+    return tr(
+        "ui.widgets.observation_pages.surface_value", value_0=view.surface_index
+    )
