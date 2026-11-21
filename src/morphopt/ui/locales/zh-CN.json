@@ -1411,7 +1411,7 @@
   "ui.strategies.final_tolerance.label": "最终几何放宽比例",
   "ui.strategies.final_tolerance.help": "放宽比例为零时，安全上限回到 z = 1。已经超限的罚项以当前峰值作为本轮上限。",
   "ui.fairness.max_curvature.label": "曲率平方上限",
-  "ui.fairness.max_curvature.help": "Fairness 的 max_curvature 限制全部可更新曲面的主曲率平方和 κ₁²+κ₂²，单位为长度的负二次方。BSP 切向夹角余弦平方上限为 0.2，度量变化上限为 0.1。CPGEO 仅计算曲率项。",
+  "ui.fairness.max_curvature.help": "Fairness 的 max_curvature 限制全部可更新曲面的主曲率平方和 κ₁²+κ₂²，单位为长度的负二次方。BSP 切向夹角余弦平方上限为 0.2，度量变化上限为 1.0。CPGEO 还对超过 2 的局部主伸长比 K = σmax/σmin 施加惩罚。",
   "ui.import.warning_title": "已导入，存在格式差异",
   "ui.import.warning_summary": "已导入当前版本支持的内容。缺失项采用默认值，未知项已忽略。共有 {count} 项提示，详细信息可展开查看；请检查定义后再运行优化。",
   "ui.import.ignored_fields": "{path}：已忽略不支持的字段：{fields}。",

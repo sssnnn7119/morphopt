@@ -75,6 +75,27 @@ def test_bsp_nonorthogonality_uses_the_fixed_point_two_limit(surfaces):
     torch.testing.assert_close(value, weight.sum() * 0.5**3)
 
 
+def test_cpgeo_stretch_ratio_includes_shear_and_has_a_dead_zone(surfaces):
+    penalty = Fairness()
+    r, tangents, second, weight = bind(penalty, [surfaces[1]], count=5)
+    second.zero_()
+    tangents[:, 0, 0] = torch.tensor([1., 1.5, 2., 3., 1.])
+    tangents[-1, 0, 1] = 1.  # Unit shear has K = (3 + sqrt(5)) / 2.
+    tangents.requires_grad_()
+
+    def evaluate(du):
+        return penalty([r], [du], [second])
+
+    shear_ratio = (3 + 5**0.5) / 2
+    expected = weight[3] * 2**3 + weight[4] * ((shear_ratio - 2) / 0.5)**3
+    torch.testing.assert_close(evaluate(tangents), expected)
+    torch.testing.assert_close(evaluate(-4 * tangents), expected)
+    grad, = torch.autograd.grad(evaluate(tangents), tangents)
+    torch.testing.assert_close(grad[:3], torch.zeros_like(grad[:3]))
+    assert torch.autograd.gradcheck(evaluate, (tangents,))
+    assert torch.autograd.gradgradcheck(evaluate, (tangents,), eps=1e-8)
+
+
 def test_reference_compensation_is_private_to_each_penalty(surfaces):
     first, second = Fairness(), Fairness()
     r, rdu, rdu2, weight = bind(first, surfaces, count=2)

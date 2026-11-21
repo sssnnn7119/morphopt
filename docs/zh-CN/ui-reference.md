@@ -1535,7 +1535,7 @@ return -state[rp._RGC_index].reshape(-1)[4]
 
 `Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面施加一个统一曲率平方和上限，参数对应 κ₁²+κ₂²，单位为长度⁻²。超过阈值的 80% 后激活三次障碍。
 
-BSP 另计算参数方向非正交与度量变化，阈值分别为 0.2 和 0.1；CPGEO 只计算曲率。计算与参考补偿位于罚项的 visitor 中，各曲面只保存几何。一个 Fairness 条目汇总各支持曲面的罚值并使用一个整体系数；不再在曲面卡片中设置 maxC/maxR/maxFF。固定曲面跳过本项，未实现 visitor 的曲面类型贡献零，BREP NURBS 面目前不自动采用 BSP Fairness。
+BSP 另计算参数方向非正交与度量变化，阈值分别为 0.2 和 1.0；CPGEO 还按曲面面积积分局部主伸长比 $K=\sigma_{\max}/\sigma_{\min}$ 的超限惩罚 $[\max(K-2,0)/0.5]^3$。自适应松弛可加宽过渡区间。计算与参考补偿位于罚项的 visitor 中，各曲面只保存几何。一个 Fairness 条目汇总各支持曲面的罚值并使用一个整体系数；不再在曲面卡片中设置 maxC/maxR/maxFF。固定曲面跳过本项，未实现 visitor 的曲面类型贡献零，BREP NURBS 面目前不自动采用 BSP Fairness。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|

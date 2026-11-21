@@ -1411,7 +1411,7 @@
   "ui.strategies.final_tolerance.label": "Final geometry relaxation",
   "ui.strategies.final_tolerance.help": "At zero relaxation the peak guard reaches z = 1. A peak already above the guard may not increase.",
   "ui.fairness.max_curvature.label": "Squared curvature limit",
-  "ui.fairness.max_curvature.help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP limits are 0.2 for squared tangent cosine and 0.1 for metric variation. CPGEO uses curvature only.",
+  "ui.fairness.max_curvature.help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP limits are 0.2 for squared tangent cosine and 1.0 for metric variation. CPGEO also penalizes local stretch ratios K = σmax/σmin above 2.",
   "ui.import.warning_title": "Imported with format differences",
   "ui.import.warning_summary": "Supported content has been imported. Missing entries use defaults; unknown entries were ignored. There are {count} notices; expand the details and review the definition before running optimization.",
   "ui.import.ignored_fields": "{path}: ignored unsupported fields: {fields}.",

@@ -1081,6 +1081,7 @@ class _Constants:
                 ACTIVATION_RATIO = 0.8
                 BSP_EXPONENT = 3
                 CPGEO_EXPONENT = 3
+                CPGEO_STRETCH_RATIO_LIMIT = 2.5
 
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0

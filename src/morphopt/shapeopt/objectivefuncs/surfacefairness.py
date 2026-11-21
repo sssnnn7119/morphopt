@@ -28,7 +28,8 @@ PenaltyEvaluator = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Te
 class Fairness(BaseConstraints, ProtocalSavable):
     """Apply one curvature limit to all updatable boundary surfaces.
 
-    The Fairness settings define the BSP metric variation and squared tangent cosine limits.
+    The Fairness settings define BSP metric variation and nonorthogonality limits
+    and the CPGEO principal stretch ratio limit.
     The external visitor keeps type-specific calculations and per-surface
     reference compensation inside this single geometric penalty.
     """
@@ -121,8 +122,9 @@ class Fairness(BaseConstraints, ProtocalSavable):
         """
         if not self.surfaces:
             raise ValueError("Surface fairness must be initialized with the owning Part's surfaces.")
+        weights = self.integration_weights
         return sum(
-            (evaluate(self.integration_weights[index], rdu[index], rdu2[index])
+            (evaluate(weights[index], rdu[index], rdu2[index])
              for index, evaluate in self._evaluators),
             r[0].new_zeros(()),
         )
@@ -175,7 +177,8 @@ class Fairness(BaseConstraints, ProtocalSavable):
         cls, surface: BspSurface, rdu: torch.Tensor, rdu2: torch.Tensor,
     ) -> torch.Tensor:
         """Freeze one multiplier for each initial metric derivative and parameter sample."""
-        variation = cls._bsp_measures(rdu, rdu2)[2]
+        diagonal = torch.einsum("piu,piu->pu", rdu, rdu)
+        variation = cls._bsp_metric_variation(rdu, rdu2, diagonal)
         lu, lv = ((2 * n * surface.init_size) ** 2 for n in surface.model.size)
         lengths = variation.new_tensor([lu, lv, lu, lv])[:, None]
         initial = variation / lengths
@@ -226,7 +229,7 @@ class Fairness(BaseConstraints, ProtocalSavable):
     def _visit_cpgeo(
         self, surface: CPGEOSurface, rdu: torch.Tensor, rdu2: torch.Tensor,
     ) -> PenaltyEvaluator:
-        """Select the curvature-only evaluator for a CPGEO surface.
+        """Select the curvature and conformal distortion evaluator for a CPGEO surface.
 
         Args:
             surface (CPGEOSurface): Surface interface to register, evaluate, or constrain.
@@ -278,58 +281,42 @@ class Fairness(BaseConstraints, ProtocalSavable):
         return (weight[indices] * penalty).sum()
 
     @staticmethod
-    def _curvature_and_metric(
-        rdu: torch.Tensor, rdu2: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute the sum of squared principal curvatures and the surface metric.
+    def _squared_curvature(
+        metric: torch.Tensor, rdu2: torch.Tensor, unit_normal: torch.Tensor,
+        inv_det_metric: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return k1² + k2² from the first and second fundamental forms."""
+        second = torch.einsum("pimn,pi->pmn", rdu2, unit_normal)
+        # tr(g⁻¹ b) = k1 + k2. Contract the 2x2 adjugate directly.
+        twice_mean = (
+            metric[:, 1, 1] * second[:, 0, 0] + metric[:, 0, 0] * second[:, 1, 1]
+            - metric[:, 0, 1] * (second[:, 0, 1] + second[:, 1, 0])
+        ) * inv_det_metric
+        det_second = second[:, 0, 0] * second[:, 1, 1] - second[:, 0, 1] * second[:, 1, 0]
+        return twice_mean.square() - 2 * det_second * inv_det_metric
 
-        Args:
-            rdu (torch.Tensor): Current first surface derivatives; each block has shape (num_points,
-                3, 2).
-            rdu2 (torch.Tensor): Current second surface derivatives; each block has shape
-                (num_points, 3, 2, 2).
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor]: Pair (k1**2 + k2**2, metric) with shapes (N,) and (N,
-                2, 2); squared curvature has inverse-length-squared units.
-        """
-        normal = torch.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
-        normal = normal / normal.norm(dim=1, keepdim=True)
-        metric = torch.einsum("pim,pin->pmn", rdu, rdu)
-        second = torch.einsum("pimn,pi->pmn", rdu2, normal)
-        mean = 0.5 * (metric.inverse() * second).sum((1, 2))
-        gaussian = torch.linalg.det(second) / torch.linalg.det(metric)
-        return 4 * mean.square() - 2 * gaussian, metric
+    @staticmethod
+    def _bsp_metric_variation(
+        rdu: torch.Tensor, rdu2: torch.Tensor, diagonal: torch.Tensor,
+    ) -> torch.Tensor:
+        """Squared relative derivatives of E and G in (Eu, Ev, Gu, Gv) order."""
+        # ∂j g_ii = 2 r_i · r_ij. Only the two diagonal metric entries are monitored.
+        derivative = torch.einsum("piu,piuw->puw", rdu, rdu2)
+        relative = (2 * derivative) / diagonal[:, :, None]
+        return relative.square().flatten(1).T
 
     @classmethod
     def _bsp_measures(
         cls, rdu: torch.Tensor, rdu2: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Compute BSP curvature, tangent nonorthogonality, and relative metric derivatives.
-
-        Args:
-            rdu (torch.Tensor): Current first surface derivatives; each block has shape (num_points,
-                3, 2).
-            rdu2 (torch.Tensor): Current second surface derivatives; each block has shape
-                (num_points, 3, 2, 2).
-
-        Returns:
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Curvature (N,), squared tangent cosine
-                (N,), and four squared metric-variation arrays (4, N).
-        """
-        curvature, metric = cls._curvature_and_metric(rdu, rdu2)
-        e, g = metric[:, 0, 0], metric[:, 1, 1]
-        nonorthogonality = metric[:, 0, 1] * metric[:, 1, 0] / g / e
-        derivative = (
-            torch.einsum("piuw,piv->puvw", rdu2, rdu)
-            + torch.einsum("piu,pivw->puvw", rdu, rdu2)
-        )
-        variation = torch.stack([
-            derivative[:, 0, 0, 0].square() / e.square(),
-            derivative[:, 0, 0, 1].square() / e.square(),
-            derivative[:, 1, 1, 0].square() / g.square(),
-            derivative[:, 1, 1, 1].square() / g.square(),
-        ])
+        """Compute squared curvature, squared tangent cosine, and metric variation for BSP."""
+        metric = torch.einsum("pim,pin->pmn", rdu, rdu)
+        normal = torch.linalg.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
+        # |r_v × r_u|² = det(g), also for skew parameter directions.
+        inv_det = torch.einsum("pi,pi->p", normal, normal).reciprocal()
+        curvature = cls._squared_curvature(metric, rdu2, normal * inv_det.sqrt()[:, None], inv_det)
+        nonorthogonality = metric[:, 0, 1].square() / metric[:, 0, 0] / metric[:, 1, 1]
+        variation = cls._bsp_metric_variation(rdu, rdu2, metric.diagonal(dim1=1, dim2=2))
         return curvature, nonorthogonality, variation
 
     def _bsp_penalty(
@@ -364,7 +351,7 @@ class Fairness(BaseConstraints, ProtocalSavable):
     def _cpgeo_penalty(
         self, weight: torch.Tensor, rdu: torch.Tensor, rdu2: torch.Tensor,
     ) -> torch.Tensor:
-        """Integrate the squared-curvature barrier for a CPGEO boundary.
+        """Integrate curvature and principal stretch ratio K on a CPGEO boundary.
 
         Args:
             weight (torch.Tensor): Per-sample area integration weights, including any installed
@@ -375,7 +362,19 @@ class Fairness(BaseConstraints, ProtocalSavable):
                 (num_points, 3, 2, 2).
 
         Returns:
-            torch.Tensor: Scalar area-weighted squared-curvature penalty.
+            torch.Tensor: Sum of the two area-weighted penalties.
         """
-        curvature, _ = self._curvature_and_metric(rdu, rdu2)
-        return self._integrate(curvature, self.max_curvature, _SETTINGS.CPGEO_EXPONENT, weight)
+        metric = torch.einsum("pim,pin->pmn", rdu, rdu)
+        normal = torch.linalg.cross(rdu[:, :, 1], rdu[:, :, 0], dim=1)
+        inv_area = normal.norm(dim=1).reciprocal()
+        curvature = self._squared_curvature(metric, rdu2, normal * inv_area[:, None], inv_area.square())
+        power = _SETTINGS.CPGEO_EXPONENT
+        # t = (K + 1/K) / 2. Evaluate sqrt(gap) as gap / sqrt(gap)
+        # with a safe denominator so that K = 1 has finite autograd derivatives.
+        t = 0.5 * (metric[:, 0, 0] + metric[:, 1, 1]) * inv_area
+        gap = ((t - 1) * (t + 1)).clamp_min(0)
+        stretch_ratio = t + gap / gap.clamp_min(torch.finfo(t.dtype).eps).sqrt()
+        return (
+            self._integrate(curvature, self.max_curvature, power, weight)
+            + self._integrate(stretch_ratio, _SETTINGS.CPGEO_STRETCH_RATIO_LIMIT, power, weight)
+        )

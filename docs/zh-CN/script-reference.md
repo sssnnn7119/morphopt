@@ -884,7 +884,7 @@ class Shape(morphopt.UpdaterBoundaryPart):
 |---|---|---|
 | `ShapeDerivative()` | `add_objective_function()` | 原有一阶形状代理 |
 | `QuadraticShapeDerivative(memory_size=10)` | `add_objective_function()` | 基于外层梯度历史的独立二阶形状代理 |
-| `Fairness(max_curvature=1.0)` | `add_constraints()` | 对可更新 BSP/CPGEO 曲面采用统一曲率平方和阈值；BSP 的度量变化与非正交阈值分别为 0.1 和 0.2 |
+| `Fairness(max_curvature=1.0)` | `add_constraints()` | 对可更新 BSP/CPGEO 曲面采用统一曲率平方和阈值；BSP 的度量变化与非正交阈值分别为 1.0 和 0.2。CPGEO 对 K > 2 的部分施加三次惩罚 |
 | `Distance(min_distance=...)` | `add_constraints()` | 曲面间最小距离，矩阵按曲面索引配置 |
 | `boundarys.Cylinder(radius, height, bottom)` | `add_constraints()` | 圆柱包络 |
 | `boundarys.MinRadius(radius)` | `add_constraints()` | 最小径向范围 |
@@ -1011,7 +1011,7 @@ $$
 
 #### 9.2.2 Fairness 与曲面几何的分离
 
-`Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面采用同一曲率平方和阈值，参数对应 $\kappa_1^2+\kappa_2^2$，单位为长度的负二次方。BSP 另计算参数非正交和度量变化，阈值分别为 0.2 和 0.1；CPGEO 仅计算曲率项。BSP 的四项度量变化分别按参数方向的参考长度平方归一化。仅当某个采样点的某一分量初值 $v_0>0.1$ 时，该分量乘以固定系数 $0.08/v_0$，使其初值落在罚项起点 0.08。其余分量保留原值。该罚项按曲面保存初始补偿系数，后续迭代及断点续算复用同一组系数。断点缺少补偿文件时，程序按任务定义重建初始 BSP；若存在首次有限元求解的几何快照，则采用快照中的控制点。重算的系数随下一次断点保存。曲面只提供几何和导数，不保存 `maxC/maxR/maxFF`。
+`Fairness(max_curvature=1.0)` 对所属 Part 的全部可更新 BSP/CPGEO 曲面采用同一曲率平方和阈值，参数对应 $\kappa_1^2+\kappa_2^2$，单位为长度的负二次方。BSP 另计算参数非正交和度量变化，阈值分别为 0.2 和 1.0；CPGEO 还按曲面面积积分局部主伸长比 $K=\sigma_{\max}/\sigma_{\min}$ 的超限惩罚 $[\max(K-2,0)/0.5]^3$。自适应松弛可加宽过渡区间。BSP 的四项度量变化分别按参数方向的参考长度平方归一化。仅当某个采样点的某一分量初值 $v_0>1.0$ 时，该分量乘以固定系数 $0.8/v_0$，使其初值落在罚项起点 0.8。其余分量保留原值。该罚项按曲面保存初始补偿系数，后续迭代及断点续算复用同一组系数。断点缺少补偿文件时，程序按任务定义重建初始 BSP；若存在首次有限元求解的几何快照，则采用快照中的控制点。重算的系数随下一次断点保存。曲面只提供几何和导数，不保存 `maxC/maxR/maxFF`。
 
 计算通过 `Fairness.visit()` 的类型分派实现；未注册的曲面类型贡献零，当前 BREP NURBS 面不自动获得 BSP 的 Fairness。固定曲面不参与 Fairness，仍可参与距离约束。一个 `Fairness` 登记项汇总其支持的曲面，使用该项的一个整体系数。
 

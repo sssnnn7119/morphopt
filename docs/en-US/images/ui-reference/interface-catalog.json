@@ -5453,7 +5453,7 @@
           "components": [],
           "item_type": "float",
           "label": "Squared curvature limit",
-          "help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP limits are 0.2 for squared tangent cosine and 0.1 for metric variation. CPGEO uses curvature only."
+          "help": "Fairness max_curvature limits κ₁²+κ₂² for all updatable surfaces in inverse length squared. BSP limits are 0.2 for squared tangent cosine and 1.0 for metric variation. CPGEO also penalizes local stretch ratios K = σmax/σmin above 2."
         }
       ],
       "value_fields": []
