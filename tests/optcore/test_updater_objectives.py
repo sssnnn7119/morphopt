@@ -663,6 +663,25 @@ def make_simp_material() -> SIMP_BSPFieldMaterials:
     return material
 
 
+def test_simp_voxel_obj_keeps_cavity_faces_and_applies_strict_threshold(tmp_path):
+    import pyvista as pv
+
+    material = make_simp_material()
+    controls = torch.ones_like(material.get_parameters()[0]).reshape(3, 3, 3)
+    controls[1, 1, 1] = -1
+    material.set_parameters([controls])
+    material.export(tmp_path, mode="voxel_obj", voxel_size=0.7, threshold=0.5)
+    mesh = pv.read(tmp_path / "voxels.obj")
+    assert mesh.regular_faces.shape == (54 + 6, 4)
+    assert mesh.n_open_edges == 0
+    assert mesh.volume == pytest.approx(26 * (2 / 3) ** 3)
+
+    material.set_parameters([torch.zeros_like(controls)])
+    with pytest.raises(ValueError, match="No voxel"):
+        material.export(tmp_path / "empty", mode="voxel_obj", threshold=0.5)
+    assert not (tmp_path / "empty" / "voxels.obj").exists()
+
+
 @pytest.mark.parametrize("kind", ["geometry", "materials"])
 def test_custom_update_strategy_can_retry_from_the_same_origin(kind):
     class Retry(FixedUpdate):
@@ -947,7 +966,7 @@ def test_material_update_checks_displacement_instead_of_the_line_search_multipli
     )
 
 
-def test_controller_passes_evaluated_objective_before_geometry_update():
+def test_controller_passes_evaluated_objective_before_geometry_update(monkeypatch):
     geometry = {"value": 3.0}
     gradient = torch.tensor([120.0, -900.0, 35.0])
     gradients = {"geometry": gradient}
@@ -966,7 +985,7 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         geometry["value"] = 100.0
 
     def save_geometry(*, foldpath, iteration):
-        assert Path(foldpath).parts[-2:] == ("evaluated", str(iteration))
+        assert Path(foldpath).name == "log"
         observations.append(("geometry", iteration, geometry["value"]))
 
     objective_provider = ObjectiveFunction()
@@ -985,10 +1004,19 @@ def test_controller_passes_evaluated_objective_before_geometry_update():
         ),
         objfun=objective_provider,
     )
-    loss, *_ = Controller.step(controller)
+    monkeypatch.setattr("morphopt.postprocess.snapshots.capture_design",
+                        lambda params: geometry.copy())
+    loss, *_, design_snapshot = Controller.step(controller)
+    assert design_snapshot == {"value": 3.0}
+    assert geometry["value"] == 100.0
     assert loss.item() == 3.0
     assert objective_provider.history_data()["objective"] == 3.0
-    assert observations == [("geometry", 1, 3.0), ("objective", 3.0), ("update", 3.0), ("commit",)]
+    assert observations == [("geometry", 0, 3.0), ("objective", 3.0), ("update", 3.0), ("commit",)]
+
+    observations.clear()
+    controller.history.iteration = 1
+    Controller.step(controller)
+    assert observations == [("objective", 100.0), ("update", 100.0), ("commit",)]
 
 
 def test_pointwise_shape_policy_preserves_native_objective_and_resets_between_policies():

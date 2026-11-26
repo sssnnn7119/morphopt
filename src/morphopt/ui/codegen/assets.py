@@ -6,16 +6,26 @@ import ast
 import base64
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from ...utils.paths import sanitize_name
 
+from ...utils.paths import sanitize_name
 from ..model.node_types.cad import StepImportOperationNode
 from ..model.node_types.parts import BoundaryPartNode, CADPartNode, INPPartNode
-from ..model.node_types.surfaces import MeshSurfaceNode, BREPSurfaceNode
+from ..model.node_types.surfaces import BREPSurfaceNode, MeshSurfaceNode
 from ..model.problem import Node, ProblemDefinition
 
 PYTHON_ASSET_DIRECTORY = "morphopt_assets"
+
+
+def external_asset_fields(problem: ProblemDefinition) -> Iterator[tuple[Node, str]]:
+    """Yield geometry fields that reference external files in a task definition."""
+    for node in problem.root.iter_nodes():
+        if isinstance(node, INPPartNode):
+            yield node, "mesh_file"
+        elif isinstance(node, MeshSurfaceNode):
+            yield node, "path_stl"
 
 
 @dataclass
@@ -59,13 +69,19 @@ def collect_python_assets(
     constants = {constant.name: constant.value for constant in problem.helper_variables}
 
     def add_asset(
-        node: Node, filename: str, content: bytes, format: str,
-        reference: str, source: str | None = None,
+        node: Node,
+        filename: str,
+        content: bytes,
+        format: str,
+        reference: str,
+        source: str | None = None,
         metadata: bytes = b"",
     ) -> DefinitionAsset:
         name = sanitize_name(Path(filename).name)
         digest = hashlib.sha256(content + metadata).hexdigest()
-        existing = next((key for key in files if key.casefold() == name.casefold()), None)
+        existing = next(
+            (key for key in files if key.casefold() == name.casefold()), None
+        )
         if existing is not None and asset_keys[existing] == digest:
             name = existing
         elif existing is not None:
@@ -88,7 +104,9 @@ def collect_python_assets(
         if value in constants:
             value = ast.literal_eval(constants[value])
         source = Path(value).expanduser()
-        add_asset(node, source.name, source.read_bytes(), format, reference, str(source))
+        add_asset(
+            node, source.name, source.read_bytes(), format, reference, str(source)
+        )
 
     for part in problem.parts():
         if isinstance(part, INPPartNode):
@@ -102,12 +120,15 @@ def collect_python_assets(
                             operation,
                             operation.filename or f"{operation.operation_id}.step",
                             base64.b64decode(operation.data, validate=True),
-                            "step", f"{part.name}/{operation.operation_id}",
+                            "step",
+                            f"{part.name}/{operation.operation_id}",
                         )
         elif isinstance(part, BoundaryPartNode):
             for surface in part.surfaces:
                 if isinstance(surface, MeshSurfaceNode):
-                    add_file(surface, surface.path_stl, "stl", f"{part.name}/{surface.name}")
+                    add_file(
+                        surface, surface.path_stl, "stl", f"{part.name}/{surface.name}"
+                    )
                 elif isinstance(surface, BREPSurfaceNode) and surface.data:
                     reference = f"{part.name}/{surface.name}"
                     topology = json.loads(surface.brep_metadata)
@@ -115,15 +136,24 @@ def collect_python_assets(
                         ".brep.json": json.dumps(topology, indent=2).encode("utf-8"),
                     }
                     asset = add_asset(
-                        surface, surface.filename,
-                        base64.b64decode(surface.data, validate=True), "step", reference,
+                        surface,
+                        surface.filename,
+                        base64.b64decode(surface.data, validate=True),
+                        "step",
+                        reference,
                         metadata=b"".join(sidecars.values()),
                     )
                     for suffix, content in sidecars.items():
                         name = str(Path(asset.name).with_suffix(suffix))
                         if name not in files:
                             files[name] = DefinitionAsset(
-                                name, content, "json", "metadata", None, surface, [],
+                                name,
+                                content,
+                                "json",
+                                "metadata",
+                                None,
+                                surface,
+                                [],
                             )
                         files[name].references.append(reference)
     return paths, files

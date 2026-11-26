@@ -10,9 +10,14 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._runtime import cpu_torch_defaults
+from .snapshots import SavedComponent, Snapshot, design_components, snapshot_path
+
+if TYPE_CHECKING:
+    from torchfea import FEAController
+    from torchfea.solver import StaticResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,8 +41,9 @@ class OptimizationArchive:
         self._controller_class: type[Any] | None = None
         self._params: Any | None = None
         self._parameters_iteration: int | None = None
-        self._geometry_iterations: dict[str, tuple[Path, int]] = {}
-        self._initial_geometry = None
+        self._component_iterations: dict[int, int] = {}
+        self._snapshot_iteration = None
+        self._snapshot = None
 
     @property
     def log_folder(self) -> Path:
@@ -55,7 +61,9 @@ class OptimizationArchive:
         Returns:
             tuple[Path, ...]: Saved text logs, available before the first completed iteration.
         """
-        return tuple(sorted(path for path in self.log_folder.glob("*.log") if path.is_file()))
+        return tuple(
+            sorted(path for path in self.log_folder.glob("*.log") if path.is_file())
+        )
 
     @property
     def controller_class(self) -> type[Any] | None:
@@ -112,19 +120,18 @@ class OptimizationArchive:
             return None
         if self._parameters_iteration != iteration:
             self._parameters_iteration = None
-            self._geometry_iterations.clear()
+            self._component_iterations.clear()
             with cpu_torch_defaults():
                 params.load(foldpath=str(self.log_folder), iteration=iteration)
             self._parameters_iteration = iteration
         return params
 
-    def load_geometry_part(self, name: str, iteration: int, *, folder: Path | None = None) -> Any:
+    def load_geometry_part(self, name: str, iteration: int) -> Any:
         """Restore one geometry part without loading unrelated model state.
 
         Args:
             name (str): Name identifying the item in its owning collection.
             iteration (int): Iteration index associated with the saved or current model state.
-            folder (Path | None): Geometry snapshot root. Defaults to the restart log.
 
         Returns:
             BasePart: Registered geometry interface restored at the requested iteration.
@@ -132,50 +139,40 @@ class OptimizationArchive:
         params = self.initialize_params()
         if params is None:
             raise ValueError("The archived geometry definition is unavailable.")
-        part = params.geometry.interfaces[name]
-        folder = self.log_folder if folder is None else folder
-        if folder == self.log_folder and self._parameters_iteration == iteration:
-            return part
-        key = (folder, iteration)
-        if self._geometry_iterations.get(name) != key:
+        return self._load_component(params.geometry.interfaces[name], iteration)
+
+    def _load_component(self, component: Any, iteration: int) -> Any:
+        """Restore one interface without loading unrelated checkpoints."""
+        key = id(component)
+        if (
+            self._parameters_iteration != iteration
+            and self._component_iterations.get(key) != iteration
+        ):
             self._parameters_iteration = None
-            self._geometry_iterations.pop(name, None)
+            self._component_iterations.pop(key, None)
             with cpu_torch_defaults():
-                part.load(foldpath=str(folder), iteration=iteration)
-            self._geometry_iterations[name] = key
-        return part
+                component.load(foldpath=str(self.log_folder), iteration=iteration)
+            self._component_iterations[key] = iteration
+        return component
 
     def load_design_component(self, component: Any, iteration: int) -> Any:
-        """Return the component to draw for a completed finite-element solve.
+        """Restore the native design for component export at a completed solve.
 
-        Surface checkpoints are written after the update. New runs also store the
-        evaluated geometry after refinement. Older runs supply the preceding
-        checkpoint, or the archived initial geometry for the first solve.
+        Row k displays geometry checkpoint k - 1, starting with the initial surface.
         """
         if getattr(component, "surfaceinterfaces", None) is None:
-            self.load_parameters(iteration)
-            return component
+            return self._load_component(component, iteration)
 
-        folder = self.log_folder / "evaluated" / str(iteration)
-        step = iteration
-        if not folder.is_dir():
-            if iteration == 1:
-                if self._initial_geometry is None:
-                    with cpu_torch_defaults():
-                        geometry = self.controller_class.Params().geometry
-                        geometry.initialize()
-                        geometry.reinitialize(iteration=0)
-                    self._initial_geometry = geometry
-                return self._initial_geometry.interfaces[component.name]
-            folder, step = self.log_folder, iteration - 1
-
-        directory = folder / component.pathlog_required()[0] / component.name
+        step = iteration - 1
+        directory = self.log_folder / component.pathlog_required()[0] / component.name
         for index, surface in enumerate(component.surfaceinterfaces):
             if surface.num_variables:
                 stem = directory / f"Surface-{index}_iter-{step}"
                 if not stem.is_file() and not stem.with_suffix(".npz").is_file():
-                    raise FileNotFoundError(f"Missing evaluated surface for iteration {iteration}: {stem}")
-        return self.load_geometry_part(component.name, step, folder=folder)
+                    raise FileNotFoundError(
+                        f"Missing surface for iteration {iteration}: {stem}"
+                    )
+        return self.load_geometry_part(component.name, step)
 
     def load_history(self, iteration: int | None = None) -> Any:
         """Load optimization history, optionally at a specific iteration.
@@ -250,63 +247,62 @@ class OptimizationArchive:
         Returns:
             tuple[int, ...]: List iterations with an archived finite-element model.
         """
-        return tuple(sorted(
-            int(match[1])
-            for path in self.fea_folder.glob("femodel_*.npz")
-            if (match := re.fullmatch(r"femodel_(\d+)\.npz", path.name))
-        ))
+        return tuple(
+            sorted(
+                int(match[1])
+                for path in self.fea_folder.glob("femodel_*.npz")
+                if (match := re.fullmatch(r"femodel_(\d+)\.npz", path.name))
+            )
+        )
 
-    def deformation_cases(self) -> tuple[str, ...]:
+    def deformation_cases(self, iteration: int | None = None) -> tuple[str, ...]:
         """Return archived load-case names in their recorded order.
 
         Returns:
             tuple[str, ...]: Archived load-case names in their recorded order.
         """
-        path = self.fea_folder / "load_cases.json"
-        if not path.is_file():
-            return ()
-        return tuple(json.loads(path.read_text(encoding="utf-8")))
+        scene = self.snapshot(self.completed_iteration if iteration is None else iteration)
+        return scene.cases if scene else ()
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
-        """Read one saved load-case mesh, returning ``None`` if it is absent.
+        """Reconstruct the assembly surface for a completed load case.
 
         Args:
-            case (str): Registered load-case name selecting the saved or current finite-element
-                result.
-            iteration (int): Iteration index associated with the saved or current model state.
+            case (str): Registered load-case name.
+            iteration (int): One-based history row identifying the solved mesh.
 
         Returns:
-            pv.DataSet | None: Saved deformed mesh for case and iteration, or None when the file is
-                absent.
+            pv.PolyData | None: Deformed exterior of all instances, or None if unavailable.
         """
-        import pyvista as pv
+        scene = self.snapshot(iteration)
+        return scene.deformation_mesh(case) if scene else None
 
-        path = self.log_folder / "deformation" / f"task_{case}_iter_{iteration}.stl"
-        return pv.read(path) if path.is_file() else None
+    def snapshot(self, iteration: int) -> Snapshot | None:
+        """Read the VTM index once per selected iteration."""
+        if self._snapshot_iteration != iteration:
+            path = snapshot_path(self.log_folder, iteration)
+            if not path.is_file():
+                return None
+            self._snapshot = Snapshot(path)
+            self._snapshot_iteration = iteration
+        return self._snapshot
 
-    def visualizable_components(self) -> tuple[tuple[str, Any], ...]:
-        """Return updateable model interfaces that implement visualization.
+    def design_components(self) -> tuple[tuple[str, Any], ...]:
+        """Restore native interfaces for component-specific exports."""
+        params = self.initialize_params()
+        return tuple(design_components(params)) if params is not None else ()
 
-        Returns:
-            tuple[tuple[str, Any], ...]: Updateable model interfaces that implement visualization.
-        """
-        from ..optcore.protocal import ProtocalUpdatable, ProtocalVisualizable
+    def visualizable_components(self, iteration: int | None = None) -> tuple[tuple[str, SavedComponent], ...]:
+        """List design views recorded in the selected snapshot."""
+        scene = self.snapshot(self.completed_iteration if iteration is None else iteration)
+        return tuple((item.category, item) for item in scene.components.values()) if scene else ()
 
-        params = self._params
-        if params is None:
-            return ()
-        collections = (
-            ("Part", params.geometry),
-            ("FEA", params.feamodel),
-            ("Material", params.materials),
-        )
-        return tuple(
-            (category, component)
-            for category, collection in collections
-            for component in collection.interfaces.values()
-            if isinstance(component, ProtocalUpdatable)
-            and isinstance(component, ProtocalVisualizable)
-        )
+    def design_view_component(self, category: str, name: str, iteration: int) -> SavedComponent:
+        """Select a component's saved meshes for one completed iteration."""
+        scene = self.snapshot(iteration)
+        if scene is None:
+            raise FileNotFoundError(snapshot_path(self.log_folder, iteration))
+        return scene.components[category, name]
 
 
 @dataclass(frozen=True)
@@ -335,7 +331,9 @@ class IterationModel:
         """
         if self.case is None:
             return None
-        return OptimizationArchive(self.folder).fea_result_path(self.case, self.iteration)
+        return OptimizationArchive(self.folder).fea_result_path(
+            self.case, self.iteration
+        )
 
     @staticmethod
     def iterations(folder: str) -> tuple[int, ...]:
@@ -356,10 +354,27 @@ class IterationModel:
             tuple[str, ...]: Available solution case names in archive registration order.
         """
         archive = OptimizationArchive(self.folder)
+        index = archive.fea_folder / "load_cases.json"
+        if not index.is_file():
+            return ()
         return tuple(
-            case for case in archive.deformation_cases()
+            case
+            for case in json.loads(index.read_text(encoding="utf-8"))
             if archive.fea_result_path(case, self.iteration).is_file()
         )
+
+
+def load_solved_model(
+    model_path: str | Path,
+    result_path: str | Path,
+) -> tuple[FEAController, StaticResult]:
+    """Load a TorchFEA model and restore the load case used to compute its solution."""
+    import torchfea
+
+    controller = torchfea.load_model(str(model_path))
+    result = torchfea.solver.StaticResult.load(str(result_path))
+    controller.assembly.set_work_conditions(result.work_conditions)
+    return controller, result
 
 
 def last_completed_iteration(folder: str | Path) -> int:

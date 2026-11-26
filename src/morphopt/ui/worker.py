@@ -76,12 +76,16 @@ def execute(request_path: str | Path) -> dict[str, Any]:
             NativeResultSnapshot(**entry) for entry in request["results"]
         )
         response = {"path": str(export_native_results(**request))}
-    elif action == "export_surfaces":
-        from ..postprocess import export_boundary_surfaces
+    elif action == "export_components":
+        from ..postprocess import export_design_components
 
         response = {
-            "paths": [str(output) for output in export_boundary_surfaces(**request)]
+            "paths": [str(output) for output in export_design_components(**request)]
         }
+    elif action == "export_inp":
+        from ..postprocess import export_history_inp
+
+        response = {"path": str(export_history_inp(**request))}
     elif action == "export_gif":
         from ..postprocess import export_history_gif
 

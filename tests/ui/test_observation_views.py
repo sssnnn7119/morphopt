@@ -118,37 +118,20 @@ def test_log_trimming_preserves_the_visible_text_and_horizontal_position(log_vie
     assert horizontal.value() == horizontal_position
 
 
-class BspSurface:
-    def __init__(self):
-        self.control_points = np.array(
-            [[x, y, 0.0] for y in range(2) for x in range(3)], dtype=float
-        )
-        self.model = type("BspModel", (), {"size": (2, 3)})()
+@pytest.fixture
+def saved_boundary(tmp_path):
+    from morphopt.postprocess.snapshots import SavedComponent
 
-    def get_mesh(self):
-        return pv.Plane(i_resolution=4, j_resolution=2)
-
-
-class BoundaryPart:
-    def __init__(self):
-        self.surfaceinterfaces = [BspSurface(), BspSurface()]
-        self.name = "boundary"
-
-    @property
-    def num_surface_interfaces(self):
-        return len(self.surfaceinterfaces)
-
-    def plot(self, plotter):
-        for index, surface in enumerate(self.surfaceinterfaces):
-            plotter.add_mesh(
-                surface.get_mesh(),
-                name=f"boundary:{id(self)}:surface-{index}",
-                color="#3f9fd6",
-            )
+    files = {}
+    for index in range(2):
+        for name, mesh in ((f"surface_{index}", pv.Plane()), (f"net_{index}", pv.Line())):
+            files[name] = tmp_path / f"{name}.vtp"
+            mesh.save(files[name])
+    return SavedComponent("Part", "boundary", "BoundaryPart", files)
 
 
-def test_boundary_view_options_include_each_surface_and_control_net():
-    keys = [view.key for view in design_view_options(BoundaryPart())]
+def test_boundary_view_options_include_each_surface_and_control_net(saved_boundary):
+    keys = [view.key for view in design_view_options(saved_boundary)]
     assert keys == [
         "all",
         "surface:0",
@@ -158,8 +141,8 @@ def test_boundary_view_options_include_each_surface_and_control_net():
     ]
 
 
-def test_control_net_is_rendered_as_overlay_actors():
-    component = BoundaryPart()
+def test_control_net_is_rendered_as_overlay_actors(saved_boundary):
+    component = saved_boundary
     view = next(view for view in design_view_options(component) if view.control_net)
     plotter = pv.Plotter(off_screen=True, window_size=(300, 300))
     try:
@@ -178,6 +161,95 @@ def test_control_net_is_rendered_as_overlay_actors():
         prefix = f"boundary:{id(component)}:surface-0"
         assert f"{prefix}:control-net" in names
         assert f"{prefix}:control-points" in names
-        assert f"{prefix}" in names
+        assert "surface-0" in names
     finally:
         plotter.close()
+
+
+def test_history_cache_revisits_frames_and_evicts_by_mesh_size(monkeypatch):
+    from morphopt.constants import CONSTANT
+    from morphopt.ui.widgets.observation_pages import HistorySceneCache
+
+    points = pv.Sphere().points.copy()
+    class Viewport:
+        def __init__(self):
+            self.plotter = pv.Plotter(off_screen=True)
+
+        def rebuild(self, draw):
+            self.plotter.clear()
+            draw(self.plotter)
+
+    first, second = Viewport(), Viewport()
+    loads = []
+
+    def show(viewport, i):
+        def draw(scene):
+            loads.append(i)
+            mesh = pv.Sphere()
+            mesh.points = points + i
+            mesh.point_data["value"] = mesh.points[:, 0].copy()
+            scene.add_mesh(mesh, name="shape", scalars="value")
+            return True
+
+        cache.show(viewport, (i,), draw)
+        plotter = viewport.plotter
+        actor = plotter.actors["shape"]
+        assert np.allclose(actor.mapper.dataset.points, points + i)
+        assert np.allclose(actor.mapper.dataset["value"], points[:, 0] + i)
+        assert actor.mapper.scalar_visibility
+        assert any(a.IsA("vtkScalarBarActor") for a in plotter.actors.values())
+
+    try:
+        cache = HistorySceneCache()
+        show(first, 1)
+        monkeypatch.setattr(CONSTANT.UI.OBSERVER, "PREVIEW_CACHE_BYTES", 2 * cache._mesh_bytes)
+        show(second, 2)
+        show(first, 1)
+        show(first, 3)
+        show(first, 1)
+        show(second, 4)
+        show(second, 2)
+        assert loads == [1, 2, 3, 4, 2]
+        cache.clear(second)
+        show(second, 2)
+        assert loads[-2:] == [2, 2]
+    finally:
+        first.plotter.close()
+        second.plotter.close()
+
+
+def test_deformation_history_retries_missing_cases_and_reuses_available_meshes(monkeypatch):
+    from types import SimpleNamespace
+    from PySide6.QtWidgets import QWidget
+    from morphopt.ui.widgets import observation_pages as pages
+
+    app = QApplication.instance() or QApplication([])
+    loaded = []
+
+    class Viewport(QWidget):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.plotter = pv.Plotter(off_screen=True)
+
+        def rebuild(self, draw):
+            self.plotter.clear()
+            draw(self.plotter)
+
+    def mesh(case, step):
+        loaded.append((case, step))
+        return pv.Cube(center=(step, 0, 0)) if len(loaded) > 1 else None
+
+    monkeypatch.setattr(pages, "PlotViewport", Viewport)
+    results = SimpleNamespace(folder="archive", deformation_mesh=mesh)
+    page = pages.DeformationCasePage()
+    try:
+        for step, case in [(1, "a"), (1, "a"), (1, "b"), (2, "a"), (1, "a")]:
+            page.build(results, step, case)
+        assert loaded == [("a", 1), ("a", 1), ("b", 1), ("a", 2)]
+        assert page.viewport.plotter.actors["deformation-mesh"].mapper.dataset.center[0] == 1
+        page.clear_view()
+        page.build(results, 1, "a")
+        assert len(loaded) == 5
+    finally:
+        page.viewport.plotter.close()
+        page.close()

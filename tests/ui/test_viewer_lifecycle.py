@@ -70,7 +70,9 @@ def test_viewer_defers_vtk_scene_render_until_the_widget_is_shown(monkeypatch):
     app.processEvents()
 
     assert not widget._render_pending
-    assert rendered == ["build", "scene", "loads", "loads"]
+    assert rendered == ["build", "scene", "loads"]
+    widget.host.viewChanged.emit()
+    assert rendered[-2:] == ["loads", "loads"]
     widget.close()
 
 
@@ -129,7 +131,7 @@ def test_result_viewport_keeps_latest_scene_until_visible_and_redraws_on_return(
     widget.close()
 
 
-def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, monkeypatch):
+def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, monkeypatch, iteration_model):
     from pathlib import Path
     import runpy
     from types import SimpleNamespace
@@ -143,13 +145,26 @@ def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, m
     script = ProblemLibrary.export_python_bundle(definition, tmp_path / "case")
     namespace = runpy.run_path(str(script), run_name="result_surface_regression")
 
-    def result(folder):
-        geometry = namespace["ThisController"].Params.GeometryParams()
-        geometry.initialize()
-        part = next(iter(geometry.interfaces.values()))
-        return SimpleNamespace(folder=folder, params=object(),
-                               fea_components=lambda: (("Part", part),),
-                               load_design_component=lambda component, iteration: component)
+    from morphopt.optcore.history import History
+    from morphopt.postprocess import cpu_torch_defaults
+    from morphopt.postprocess.snapshots import capture_design, save_snapshot
+    from morphopt.ui.application.results import ResultSession
+
+    _, controller, _ = iteration_model
+    results = []
+    for folder in (tmp_path / "first", tmp_path / "edited"):
+        log = folder / "log"
+        with cpu_torch_defaults():
+            params = namespace["ThisController"].Params()
+            params.geometry.initialize()
+            save_snapshot(log, 1, capture_design(params),
+                          SimpleNamespace(fe=controller, fe_results={}))
+        history = History()
+        history.append(objective=1)
+        history.save(str(log))
+        session = ResultSession()
+        session.load_iteration(str(folder), 1)
+        results.append(session)
 
     class Viewport(QWidget):
         def __init__(self, parent):
@@ -164,10 +179,10 @@ def test_test_morph_keeps_both_surface_actors_across_result_switches(tmp_path, m
     monkeypatch.setattr(pages, "PlotViewport", Viewport)
     page = pages.UpdatableStructurePage()
     try:
-        for folder in ("first", "edited", "first", "edited"):
-            page.build(result(folder), 1)
+        for result in results * 2:
+            page.build(result, 1)
             actors = {name: actor for name, actor in page.viewport.plotter.actors.items()
-                      if str(name).startswith("boundary:")}
+                      if str(name).startswith("surface-")}
             assert len(actors) == 2
             assert {str(name).rsplit("surface-", 1)[1] for name in actors} == {"0", "1"}
             assert all(actor.visibility and actor.mapper.dataset.n_points > 0 for actor in actors.values())

@@ -7,7 +7,7 @@ QTabBar::tab {
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
 }
-QTabBar::tab:selected { background: @accent@; color: @selection_text@; }
+QTabBar::tab:selected { background: @accent@; color: @on_accent@; }
 QTabBar[workspaceNavigation="true"]::tab {
     padding: 10px 24px;
     font-weight: 700;
@@ -111,7 +111,7 @@ QGroupBox::title {
 QGroupBox[collectionSelected="true"] { border-color: @accent@; }
 QWidget[tableGroupCell="true"] {
     border: 0;
-    border-bottom: 2px solid @muted_text@;
+    border-bottom: 2px solid @neutral@;
 }
 QWidget[tableGroupHeader="true"] { border-right: 1px solid @border@; }
 QMenu::item { padding: 6px 20px; }

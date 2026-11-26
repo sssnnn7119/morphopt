@@ -145,11 +145,12 @@ def test_staging_another_definition_does_not_stop_or_mutate_active_run(
     session = OptimizationRunSession()
     session.set_definition(original)
     session.start_definition(session.definition)
+    submitted = session.definition
     original.label = "edited outside observer"
     session.set_definition(ProblemLibrary.create_blank("next run"))
     assert session.process is process
     assert session.definition.label == "next run"
-    assert session._running_definition.label == "original"
+    assert submitted.label == "original"
 
 
 def test_fea_widget_solves_and_exports_after_being_hidden(
@@ -681,7 +682,8 @@ def test_native_export_keeps_sparse_cases_and_filters_other_iterations(iteration
 def test_native_export_failure_cleans_new_directory_and_preserves_existing(
     iteration_model, tmp_path, monkeypatch
 ):
-    from morphopt.postprocess import exports
+    import shutil
+    from morphopt.postprocess import NativeResultSnapshot, export_native_results
 
     source, _, _ = iteration_model
     session = FiniteElementSession()
@@ -690,19 +692,19 @@ def test_native_export_failure_cleans_new_directory_and_preserves_existing(
         request = json.loads(session.native_export_request(str(tmp_path / 'native'), 'actuator').read_text())
         arguments = dict(name=request['name'], iteration=request['iteration'], model_path=request['model_path'],
                          source=request['source'], results=tuple(
-                             exports.NativeResultSnapshot(**entry) for entry in request['results']))
-        first = exports.export_native_results(request['destination'], **arguments)
+                             NativeResultSnapshot(**entry) for entry in request['results']))
+        first = export_native_results(request['destination'], **arguments)
         before = {path.name: path.read_bytes() for path in first.iterdir()}
-        copyfile = exports.shutil.copyfile
+        copyfile = shutil.copyfile
 
         def fail_after_model(source, target):
             if Path(target).name == 'actuator_case0.npz':
                 raise OSError('disk full')
             return copyfile(source, target)
 
-        monkeypatch.setattr(exports.shutil, 'copyfile', fail_after_model)
+        monkeypatch.setattr(shutil, 'copyfile', fail_after_model)
         with pytest.raises(OSError, match='disk full'):
-            exports.export_native_results(request['destination'], **arguments)
+            export_native_results(request['destination'], **arguments)
         assert {path.name: path.read_bytes() for path in first.iterdir()} == before
         assert sorted(path.name for path in first.parent.iterdir()) == [first.name]
     finally:

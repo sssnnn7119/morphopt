@@ -80,12 +80,3 @@ class GeometryParams(BaseParams):
         for interface in self.interfaces.values():
             interface.add_to_assembly(assembly, path_result=path_result, pools=pools)
         return assembly
-
-    def export_data(self, foldpath: str) -> None:
-        """Export the geometry description of every interface.
-
-        Args:
-            foldpath (str): Root log directory containing this component's namespaced state files.
-        """
-        for interface in self.interfaces.values():
-            interface.export_data(interface.workdir(foldpath))

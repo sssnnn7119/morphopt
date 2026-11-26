@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+from argparse import ArgumentParser
+from pathlib import Path
 
 
 def configure_environment() -> None:
@@ -104,17 +106,31 @@ def create_application(argv: list[str] | None = None):
 
 
 def main() -> int:
-    """Launch the definition page in the main application window.
+    """Launch the definition workspace or open the result specified by ``--result``.
 
     Returns:
-        int: Launch the definition page in the main application window.
+        int: Qt event loop exit status.
     """
     app = create_application()
+    parser = ArgumentParser(prog="morphopt-ui")
+    parser.add_argument("--result", help="Open an optimization result directory.")
+    options = parser.parse_args(app.arguments()[1:])
 
     from .mainwindow import MainWindow
 
     win = MainWindow()
     win.show()
+    if options.result:
+        from PySide6.QtCore import QUrl
+
+        # A desktop launcher receives its current location through the %k field code.
+        location = options.result
+        if location.startswith("file:"):
+            location = QUrl(location).toLocalFile()
+        path = Path(location)
+        if path.is_file() and path.suffix == ".desktop":
+            path = path.parent
+        win.open_result_folder(path)
     return app.exec()
 
 

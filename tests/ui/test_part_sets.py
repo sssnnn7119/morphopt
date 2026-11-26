@@ -131,7 +131,7 @@ def test_selecting_another_parts_set_switches_to_its_local_view(window):
 
 def test_inp_highlight_uses_actual_node_sets():
     problem = ProblemLibrary.create_blank()
-    part = INPPartNode(name="imported", mesh_file=str(Path(__file__).resolve().parents[2] / "docs/assets/ui_reference/reference-box.inp"))
+    part = INPPartNode(name="imported", mesh_file=str(Path(__file__).resolve().parents[2] / "scripts/docs/assets/reference-box.inp"))
     problem.add_part(part)
     geometry = PreviewGeometry()
     geometry.build(problem, "part", part)
@@ -167,7 +167,8 @@ def test_brep_selection_mesh_preserves_exact_named_sets(step_factory):
     assert np.count_nonzero(np.ptp(selected.points, axis=0) < 1e-8) == 1
 
 
-def test_custom_part_lists_and_highlights_its_kernel_sets():
+def test_custom_part_lists_and_highlights_its_kernel_sets(monkeypatch):
+    from morphopt.ui.application import part_mesh
     from morphopt.ui.application.part_sets import PartSetCatalog
 
     problem = ProblemLibrary.create_blank()
@@ -181,12 +182,29 @@ def test_custom_part_lists_and_highlights_its_kernel_sets():
     part = PartNode.create("BasePart", name="custom_body")
     part.custom_class = "NamedPart"
     problem.add_part(part)
-    assert "custom_tip" in PartSetCatalog(problem).for_part(part).nodes
+    builds = []
+    def build(node, definition):
+        builds.append(node)
+        return build_part_mesh(node, definition)
+
+    monkeypatch.setattr(part_mesh, "build_part_mesh", build)
+    catalog = PartSetCatalog(problem)
+    assert "custom_tip" in catalog.for_part(part).nodes
     geometry = PreviewGeometry()
+    geometry.part_sets = catalog
     scene = geometry.build(problem, "part", part)
     assert len(scene.base_meshes) == 1
     selected = geometry.mesh_for_set(part, "nodes", "custom_tip")
     assert selected.n_points == 1
+    assert builds == [part]
+
+    method = custom.members[0]
+    method.body = method.body.replace("custom_tip", "new_tip")
+    catalog.invalidate()
+    assert "new_tip" in catalog.for_part(part).nodes
+    geometry.build(problem, "part", part)
+    assert geometry.mesh_for_set(part, "nodes", "new_tip").n_points == 1
+    assert builds == [part, part]
 
 
 def test_cad_preview_with_serializable_helper_class_and_custom_boundary_set():

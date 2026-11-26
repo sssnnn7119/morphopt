@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .archive import OptimizationArchive
+from .snapshots import SavedComponent
 
 if TYPE_CHECKING:
     import numpy as np
@@ -23,7 +24,7 @@ class DesignView:
     control_net: bool = False
 
 
-def design_view_options(component: Any | None) -> tuple[DesignView, ...]:
+def design_view_options(component: SavedComponent | None) -> tuple[DesignView, ...]:
     """Return the views supported by one design component.
 
     Boundary parts expose the complete assembly and one focused view per surface.  B-spline and
@@ -32,19 +33,20 @@ def design_view_options(component: Any | None) -> tuple[DesignView, ...]:
     representation.
 
     Args:
-        component (Any | None): Model, result, or interface component processed by the
-            operation.
+        component (SavedComponent | None): Design component indexed in the iteration snapshot.
 
     Returns:
         tuple[DesignView, ...]: The views supported by one design component.
     """
-    surfaces = getattr(component, "surfaceinterfaces", None)
-    if not surfaces:
-        return (DesignView("default"),) if component is not None else ()
+    if component is None:
+        return ()
+    surface_count = sum(key.startswith("surface_") for key in component.files)
+    if not surface_count:
+        return (DesignView("default"),)
     views = [DesignView("all")]
-    for index, surface in enumerate(surfaces):
+    for index in range(surface_count):
         views.append(DesignView(f"surface:{index}", index))
-        if surface.__class__.__name__ in {"BspSurface", "CPGEOSurface"}:
+        if f"net_{index}" in component.files:
             views.append(DesignView(f"surface:{index}:control-net", index, True))
     return tuple(views)
 
@@ -71,8 +73,13 @@ def configure_plotter(
 
 
 def apply_mesh_style(
-    plotter: BasePlotter, *, ambient: float, diffuse: float, specular: float,
-    specular_power: float, smooth_shading: bool = True,
+    plotter: BasePlotter,
+    *,
+    ambient: float,
+    diffuse: float,
+    specular: float,
+    specular_power: float,
+    smooth_shading: bool = True,
 ) -> None:
     """Update lit mesh actors, preserving scalar maps, colors, and overlays.
 
@@ -98,7 +105,7 @@ def apply_mesh_style(
 
 def add_design_component(
     plotter: BasePlotter,
-    component: Any | None,
+    component: SavedComponent | None,
     *,
     geometry_color: str,
     ambient: float,
@@ -110,13 +117,11 @@ def add_design_component(
 ) -> None:
     """Draw one design component with explicit visual properties.
 
-    ``view`` is intentionally optional so history exports and existing callers retain the
-    complete-component rendering by default.
+    The default view displays the complete component.
 
     Args:
         plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
-        component (Any | None): Model, result, or interface component processed by the
-            operation.
+        component (SavedComponent | None): Design component indexed in the iteration snapshot.
         geometry_color (str): Base color of geometry actors that do not display a scalar field.
         ambient (float): Ambient surface-lighting coefficient.
         diffuse (float): Diffuse surface-lighting coefficient.
@@ -131,30 +136,29 @@ def add_design_component(
 
     if component is not None:
         existing = set(plotter.actors)
-        surfaces = getattr(component, "surfaceinterfaces", None)
-        if view is not None and view.surface_index is not None and surfaces:
-            index = int(view.surface_index)
-            if index < 0 or index >= len(surfaces):
-                raise IndexError(f"Surface index out of range: {index}")
-            surface = surfaces[index]
-            mesh = surface.get_mesh()
-            plotter.add_mesh(
-                mesh,
-                name=f"boundary:{id(component)}:surface-{index}",
-                color=geometry_color,
-                opacity=1.0,
-                diffuse=diffuse,
-                specular=specular,
-                ambient=ambient,
-                specular_power=specular_power,
-                smooth_shading=True,
-                show_edges=False,
+        surface_count = sum(key.startswith("surface_") for key in component.files)
+        index = view.surface_index if view else None
+        for key in component.files:
+            if key.startswith("net_") or (
+                index is not None and key != f"surface_{index}"
+            ):
+                continue
+            mesh = component.mesh(key)
+            if "density_max" in mesh.field_data and "density" in mesh.point_data:
+                from ..simp.simpmaterial import plot_density
+
+                plot_density(plotter, mesh, float(mesh.field_data["density_max"][0]))
+            elif mesh.n_points:
+                plotter.add_mesh(
+                    mesh,
+                    name=key.replace("surface_", "surface-"),
+                    color=geometry_color if surface_count else None,
+                    smooth_shading=bool(surface_count),
+                )
+        if view and view.control_net:
+            _draw_control_net(
+                plotter, component.mesh(f"net_{index}"), id(component), index
             )
-            if view.control_net:
-                _add_control_net(plotter, surface, id(component), index)
-        else:
-            component.plot(plotter=plotter)
-        surface_count = int(getattr(component, "num_surface_interfaces", 0) or 0)
         for name, actor in plotter.actors.items():
             if name in existing or not isinstance(actor, Actor):
                 continue
@@ -169,60 +173,15 @@ def add_design_component(
             actor.prop.specular = specular
             actor.prop.specular_power = specular_power
             if (
-                view is None or view.surface_index is None
-            ) and surface_count > 1 and str(name).endswith("surface-0"):
+                (view is None or view.surface_index is None)
+                and surface_count > 1
+                and str(name).endswith("surface-0")
+            ):
                 actor.prop.opacity = boundary_shell_opacity
-    plotter.show_axes()
 
 
-def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, index: int) -> None:
-    """Overlay one compact control-point net without creating per-edge actors.
-
-    Args:
-        plotter (BasePlotter): PyVista plotter receiving the scene; None creates a new plotter.
-        surface (Any): Surface interface to register, evaluate, or constrain.
-        component_id (int): Stable scene identifier of the design component.
-        index (int): Zero-based position within the relevant collection.
-    """
-    import numpy as np
-    import pyvista as pv
-
-    try:
-        points = np.asarray(surface.control_points.detach().cpu(), dtype=float)
-    except Exception:
-        points = np.asarray(surface.control_points, dtype=float)
-    if points.ndim != 2 or points.shape[1] != 3 or not len(points):
-        return
-
-    faces = None
-    model = getattr(surface, "model", None)
-    if model is not None and hasattr(model, "_cp_faces"):
-        faces = np.asarray(model._cp_faces, dtype=int)
-    if faces is not None and faces.ndim == 2 and faces.shape[1] == 3:
-        edges = np.concatenate(
-            (faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0
-        )
-        edges = np.unique(np.sort(edges, axis=1), axis=0)
-    else:
-        size = getattr(model, "size", None)
-        if size is None or len(size) != 2 or int(np.prod(size)) != len(points):
-            return
-        rows, columns = (int(size[0]), int(size[1]))
-        edges_list: list[tuple[int, int]] = []
-        for row in range(rows):
-            for column in range(columns - 1):
-                edges_list.append((row * columns + column, row * columns + column + 1))
-            # BSP cylinders are periodic in the circumferential direction.
-            if columns > 2:
-                edges_list.append((row * columns + columns - 1, row * columns))
-        for row in range(rows - 1):
-            for column in range(columns):
-                edges_list.append((row * columns + column, (row + 1) * columns + column))
-        edges = np.asarray(edges_list, dtype=int)
-
-    if len(edges):
-        lines = np.column_stack((np.full(len(edges), 2, dtype=np.int64), edges)).ravel()
-        net = pv.PolyData(points, lines=lines)
+def _draw_control_net(plotter, net, component_id: int, index: int) -> None:
+    if net.n_lines:
         plotter.add_mesh(
             net,
             name=f"boundary:{component_id}:surface-{index}:control-net",
@@ -231,7 +190,7 @@ def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, inde
             render_lines_as_tubes=True,
         )
     plotter.add_points(
-        points,
+        net.points,
         name=f"boundary:{component_id}:surface-{index}:control-points",
         color="#FFF1B8",
         point_size=4.5,
@@ -239,9 +198,7 @@ def _add_control_net(plotter: BasePlotter, surface: Any, component_id: int, inde
     )
 
 
-def add_deformation_mesh(
-    plotter: BasePlotter, mesh: pv.DataSet, color: str
-) -> None:
+def add_deformation_mesh(plotter: BasePlotter, mesh: pv.DataSet, color: str) -> None:
     """Draw one archived deformation mesh.
 
     Args:
@@ -256,7 +213,65 @@ def add_deformation_mesh(
         show_edges=True,
         name="deformation-mesh",
     )
-    plotter.show_axes()
+
+
+def camera_state(plotter: pv.Plotter) -> dict[str, Any]:
+    """Capture the pose and zoom used to frame all iterations of an export."""
+    camera = plotter.camera
+    return {
+        "position": [list(point) for point in plotter.camera_position],
+        "parallel_projection": bool(camera.parallel_projection),
+        "parallel_scale": camera.parallel_scale,
+        "view_angle": camera.view_angle,
+    }
+
+
+def draw_history_scene(
+    plotter: pv.Plotter,
+    archive: OptimizationArchive,
+    iteration: int,
+    mode: str,
+    target: dict[str, str],
+    style: dict[str, Any],
+) -> bool:
+    """Draw the selected archive meshes. Return False for a missing deformation."""
+    plotter.clear()
+    configure_plotter(
+        plotter,
+        background=style["background"],
+        light_intensity=style.get("light_intensity", 1.0),
+    )
+    if mode == "design":
+        component = archive.design_view_component(
+            target["category"], target["name"], iteration
+        )
+        views = {v.key: v for v in design_view_options(component)}
+        view = views[target["view"]] if "view" in target else None
+        add_design_component(
+            plotter,
+            component,
+            view=view,
+            geometry_color=style["geometry_color"],
+            ambient=style["mesh_ambient"],
+            diffuse=style["mesh_diffuse"],
+            specular=style["mesh_specular"],
+            specular_power=style["mesh_specular_power"],
+            boundary_shell_opacity=style["boundary_shell_opacity"],
+        )
+    else:
+        mesh = archive.deformation_mesh(target["case"], iteration)
+        if mesh is None:
+            return False
+        add_deformation_mesh(plotter, mesh, style["deformation_color"])
+    apply_mesh_style(
+        plotter,
+        ambient=style["mesh_ambient"],
+        diffuse=style["mesh_diffuse"],
+        specular=style["mesh_specular"],
+        specular_power=style["mesh_specular_power"],
+        smooth_shading=style.get("smooth_shading", True),
+    )
+    return True
 
 
 def set_camera(plotter: pv.Plotter, camera: dict[str, Any]) -> None:
@@ -310,61 +325,40 @@ def history_frames(
 
     if mode not in {"design", "deformation"}:
         raise ValueError(f"Unsupported history GIF mode: {mode}")
-    if mode == "design":
-        if archive.initialize_params() is None:
-            raise ValueError("The archived optimization model is unavailable.")
-    elif not target.get("case"):
+    if mode == "deformation" and not target.get("case"):
         raise ValueError("Select a load case before exporting deformation history.")
 
     size = tuple(max(1, int(value)) for value in window_size)
     plotter = pv.Plotter(off_screen=True, window_size=size)
+    plotter.hide_axes()
+
+    def render_frame(iteration: int) -> np.ndarray | None:
+        nonlocal camera
+        if not draw_history_scene(plotter, archive, iteration, mode, target, style):
+            return None
+        if "direction" in camera:
+            plotter.view_vector(camera["direction"], viewup=camera["up"], render=False)
+            camera = {
+                "position": plotter.camera_position,
+                "parallel_scale": plotter.camera.parallel_scale,
+                "parallel_projection": camera.get("parallel_projection", False),
+            }
+        set_camera(plotter, camera)
+        plotter.render()
+        return plotter.screenshot(return_img=True)
+
     try:
+        if iterations and "direction" in camera:
+            # Frame the preset on the preview iteration and keep that camera for the animation.
+            last_frame = render_frame(iterations[-1])
+            iterations = iterations[:-1]
+        else:
+            last_frame = None
         for iteration in iterations:
-            plotter.clear()
-            configure_plotter(
-                plotter, background=style["background"],
-                light_intensity=style.get("light_intensity", 1.0),
-            )
-            if mode == "design":
-                component = next(
-                    (
-                        component
-                        for category, component in archive.visualizable_components()
-                        if category == target.get("category")
-                        and component.name == target.get("name")
-                    ),
-                    None,
-                )
-                if component is None:
-                    raise ValueError("The selected design component is unavailable.")
-                add_design_component(
-                    plotter,
-                    archive.load_design_component(component, iteration),
-                    geometry_color=style["geometry_color"],
-                    ambient=style["mesh_ambient"],
-                    diffuse=style["mesh_diffuse"],
-                    specular=style["mesh_specular"],
-                    specular_power=style["mesh_specular_power"],
-                    boundary_shell_opacity=style["boundary_shell_opacity"],
-                )
-            else:
-                mesh = archive.deformation_mesh(target["case"], iteration)
-                if mesh is None:
-                    continue
-                add_deformation_mesh(plotter, mesh, style["deformation_color"])
-            apply_mesh_style(
-                plotter, ambient=style["mesh_ambient"], diffuse=style["mesh_diffuse"],
-                specular=style["mesh_specular"], specular_power=style["mesh_specular_power"],
-                smooth_shading=style.get("smooth_shading", True),
-            )
-            set_camera(plotter, camera)
-            plotter.add_text(
-                f"Iteration {iteration}",
-                position="upper_left",
-                font_size=12,
-                color=style["text_color"],
-            )
-            plotter.render()
-            yield plotter.screenshot(return_img=True)
+            frame = render_frame(iteration)
+            if frame is not None:
+                yield frame
+        if last_frame is not None:
+            yield last_frame
     finally:
         plotter.close()

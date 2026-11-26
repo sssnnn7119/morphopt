@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import pyvista as pv
 import torch
@@ -141,6 +142,17 @@ class ProtocalVisualizable(ABC):
 
 class ProtocalUpdatable(ABC):
     """Protocol shared by updateable geometry and material interfaces."""
+
+    export_modes: tuple[str, ...] = ()
+
+    def export(self, directory: Path, *, mode: str) -> None:
+        """Write the files defined by a component export mode into a directory.
+
+        Components declare their modes and may accept additional keyword arguments.
+        """
+        raise ValueError(
+            f"{type(self).__name__} does not support export mode {mode!r}."
+        )
 
     @property
     @abstractmethod

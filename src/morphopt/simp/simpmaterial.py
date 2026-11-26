@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import bspmap
 import numpy as np
@@ -118,6 +119,8 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     """
     Class to handle the materials of the morphable model.
     """
+
+    export_modes = ("density_field", "voxel_obj")
 
     def __init__(
         self,
@@ -413,7 +416,6 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
     def _get_indices_weight_for_nodes(
         self, nodes: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-
         """Get indices weight for nodes.
 
         Args:
@@ -866,6 +868,64 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         # BSP object.  Restore that backing object directly during restart.
         self._field_bsp = bsp
 
+    def export(
+        self,
+        directory: Path,
+        *,
+        mode: str = "density_field",
+        voxel_size: float = CONSTANT.KERNEL.SIMP.EXPORT_VOXEL_SIZE,
+        threshold: float = CONSTANT.KERNEL.SIMP.EXPORT_DENSITY_THRESHOLD,
+    ) -> None:
+        """Write a sampled material field or the exposed faces of retained voxels.
+
+        Args:
+            directory: Output directory for density.vti or voxels.obj.
+            mode: "density_field" for the design view or "voxel_obj" for a surface mesh.
+            voxel_size: Target voxel edge length in model units. Each axis is subdivided evenly to fit the bounds (OBJ only).
+            threshold: Retain cells whose center has relative density strictly above
+                this value in [0, 1], before stiffness interpolation (OBJ only).
+        """
+        if mode == "voxel_obj":
+            mesh = self._voxel_surface(voxel_size, threshold)
+            path = directory / "voxels.obj"
+        elif mode == "density_field":
+            (mesh,) = self.get_meshes()
+            path = directory / "density.vti"
+        else:
+            return super().export(directory, mode=mode)
+        directory.mkdir(parents=True, exist_ok=True)
+        mesh.save(path)
+
+    @torch.no_grad()
+    def _voxel_surface(self, voxel_size: float, threshold: float) -> pv.PolyData:
+        """Sample relative density at voxel centers and extract exposed faces, including cavities."""
+        if not np.isfinite(voxel_size) or voxel_size <= 0:
+            raise ValueError("voxel_size must be finite and positive.")
+        if not 0 <= threshold <= 1:
+            raise ValueError("threshold must be between 0 and 1.")
+
+        lower, upper = np.asarray(self._bounding_box).reshape(3, 2).T
+        counts = np.ceil((upper - lower) / voxel_size).astype(int)
+        spacing = (upper - lower) / counts
+        grid = pv.ImageData(dimensions=counts + 1, origin=lower, spacing=spacing)
+        keep = np.empty(grid.n_cells, dtype=bool)
+        batch_size = CONSTANT.KERNEL.SIMP.EXPORT_SAMPLE_BATCH_SIZE
+        for start in range(0, grid.n_cells, batch_size):
+            stop = min(start + batch_size, grid.n_cells)
+            # VTK image cell IDs run fastest along X, then Y, then Z.
+            ijk = np.column_stack(
+                np.unravel_index(np.arange(start, stop), counts, order="F")
+            )
+            centers = self._cps.new_tensor(lower + (ijk + 0.5) * spacing)
+            rho = torch.sigmoid(self._map_bsp_designfield(centers))
+            keep[start:stop] = (rho > threshold).flatten().cpu().numpy()
+
+        if not keep.any():
+            raise ValueError(
+                "No voxel has a relative density above the selected threshold."
+            )
+        return grid.extract_cells(keep).extract_surface(algorithm="dataset_surface")
+
     def get_meshes(self) -> list[pv.DataSet]:
         """Get the visualization meshes contributed by this component.
 
@@ -910,6 +970,7 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
             ratio_grid.flatten(order="F") * self._mumax
         )  # Scale by mumax for better visualization of the material distribution
 
+        grid.field_data["density_max"] = [self._mumax]
         return [grid]
 
     def plot(
@@ -939,25 +1000,29 @@ class SIMP_BSPFieldMaterials(BaseMaterial, ProtocalUpdatable):
         if meshes is None:
             meshes = self.get_meshes()[0]
 
-        # Threshold to convert ImageData → UnstructuredGrid with all cells
-        # preserved, so per-element opacity works (add_mesh on raw ImageData
-        # only renders the outer surface).
-        thresh = meshes.threshold(
-            value=(
-                CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_THRESHOLD_RATIO * self._mumax
-            ),
-            scalars="density",
-        )
-
-        if thresh.n_cells > 0:
-            plotter.add_mesh(
-                thresh,
-                scalars="density",
-                cmap="viridis",
-                show_edges=False,
-                lighting=True,
-                clim=[0, self._mumax],
-                smooth_shading=True,
-            )
-
+        plot_density(plotter, meshes, self._mumax)
         return plotter
+
+
+def plot_density(plotter: pv.Plotter, grid: pv.DataSet, maximum: float) -> None:
+    """Render the same material threshold and color scale for live and archived grids."""
+    # Threshold to convert ImageData → UnstructuredGrid with all cells
+    # preserved, so per-element opacity works (add_mesh on raw ImageData
+    # only renders the outer surface).
+    thresh = grid.threshold(
+        value=(
+            CONSTANT.KERNEL.VISUALIZATION.SIMP_DENSITY_THRESHOLD_RATIO * maximum
+        ),
+        scalars="density",
+    )
+
+    if thresh.n_cells > 0:
+        plotter.add_mesh(
+            thresh,
+            scalars="density",
+            cmap="viridis",
+            show_edges=False,
+            lighting=True,
+            clim=[0, maximum],
+            smooth_shading=True,
+        )

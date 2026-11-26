@@ -9,7 +9,7 @@ from typing import Any
 
 from ...constants import CONSTANT
 from ...postprocess import OptimizationArchive
-from ..i18n import localized_message
+from ...postprocess.snapshots import SavedComponent
 
 
 @dataclass(frozen=True)
@@ -67,19 +67,13 @@ class ResultSession:
             bool: Bind the ResultSession state.
         """
         normalized = str(Path(folder).resolve())
-        if self.folder == normalized and self.controller is not None:
-            return True
-        self.reset()
-        self.folder = normalized
-        archive = OptimizationArchive(normalized)
-        self._archive = archive
-        if archive.controller_class is None:
-            return False
-        try:
-            archive.initialize_params()
-        except Exception as exc:
-            print(localized_message("ui.messages.parameters_init_failed", error=exc))
-        return True
+        if self.folder != normalized:
+            self.reset()
+            self.folder = normalized
+            self._archive = OptimizationArchive(normalized)
+        from .runs import OptimizationRunSession
+
+        return OptimizationRunSession.is_result_folder(normalized)
 
     def load_iteration(self, folder: str, iteration: int) -> Any:
         """Load iteration.
@@ -102,9 +96,13 @@ class ResultSession:
         self.history = history
         return history
 
-    def load_design_component(self, component: Any, iteration: int) -> Any:
-        """Restore the selected component for the displayed iteration."""
-        return self._archive.load_design_component(component, iteration)
+    def load_design_component(self, component: SavedComponent, iteration: int) -> SavedComponent:
+        """Select the component in the displayed iteration's snapshot."""
+        return self._archive.design_view_component(component.category, component.name, iteration)
+
+    def design_components(self) -> tuple[tuple[str, Any], ...]:
+        """Return all components available for history export."""
+        return self._archive.design_components() if self._archive else ()
 
     def fea_components(self) -> tuple[tuple[str, Any], ...]:
         """Return fea components.
@@ -112,7 +110,7 @@ class ResultSession:
         Returns:
             tuple[tuple[str, Any], ...]: Fea components.
         """
-        return self._archive.visualizable_components() if self._archive else ()
+        return self._archive.visualizable_components(self.iteration) if self._archive and self.iteration else ()
 
     def deformation_mesh(self, case: str, iteration: int) -> Any | None:
         """Return deformation mesh.
@@ -135,7 +133,7 @@ class ResultSession:
         Returns:
             tuple[str, ...]: Deformation cases.
         """
-        return self._archive.deformation_cases() if self._archive else ()
+        return self._archive.deformation_cases(self.iteration) if self._archive else ()
 
     @property
     def log_files(self) -> tuple[Path, ...]:

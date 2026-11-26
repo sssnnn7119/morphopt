@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img"><title>SIMP design field, material fraction and stiffness</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426484"/></marker></defs>
+<rect width="1200" height="480" rx="16" fill="#f5f8fc"/>
+<text x="32" y="42" font-family="Arial, sans-serif" font-size="24" fill="#15324d" font-weight="600">SIMP design field, material fraction and stiffness</text>
+<rect x="35" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">f: design field</text>
+<text x="53" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Interpolated B-spline controls</text>
+<text x="53" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Initial value: initial_ratio</text>
+<text x="53" y="214" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">MinValue / MaxValue bounds</text>
+<rect x="350" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="368" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">ρ: sigmoid(f)</text>
+<text x="368" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Range from 0 to 1</text>
+<text x="368" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Volume-weighted mean of ρ</text>
+<text x="368" y="214" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">VolFrac: material fraction bound</text>
+<rect x="665" y="100" width="240" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="683" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">r: stiffness ratio</text>
+<text x="683" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">RAMP with a stiffness floor</text>
+<text x="683" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">r_min + (1-r_min) RAMP(ρ)</text>
+<text x="683" y="214" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Scales material stiffness</text>
+<rect x="980" y="100" width="185" height="135" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="998" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">FE model</text>
+<text x="998" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Update stiffness</text>
+<text x="998" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Solve again</text>
+<polyline points="275,165 350,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="280" y="148" font-family="Arial, sans-serif" font-size="16" fill="#426484" font-weight="400">sigmoid</text>
+<polyline points="590,165 665,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="601" y="148" font-family="Arial, sans-serif" font-size="16" fill="#426484" font-weight="400">RAMP</text>
+<polyline points="905,165 980,165" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="35" y="310" width="1130" height="100" rx="12" fill="#fff5df" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="340" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">Example: initial design variable and material fraction</text>
+<text x="53" y="370" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">f = 0.5 → ρ ≈ 0.6225 → r ≈ 0.1548 for p = 8 and small r_min</text>
+</svg>

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 
 import pytest
@@ -277,18 +276,22 @@ def test_editor_routes_are_independent_from_widgets() -> None:
     assert route_editor(None).kind is EditorKind.PROPERTIES
 
 
-def test_result_session_reads_named_cases_in_recorded_order(tmp_path: Path) -> None:
-    scripts = tmp_path / "scripts"
-    scripts.mkdir()
-    ProblemLibrary.export_python(
-        ProblemLibrary.create_blank(), scripts / "MAIN_SCRIPT_FOR_RESTART.py"
-    )
-    folder = tmp_path / "log" / "femodel&results"
-    folder.mkdir(parents=True)
-    (folder / "load_cases.json").write_text(json.dumps(["actuation", "baseline"]))
+def test_result_session_reads_named_cases_in_recorded_order(deformation_archive, iteration_model) -> None:
+    import pyvista as pv
+    from types import SimpleNamespace
+    from morphopt.postprocess import cpu_torch_defaults
+    from morphopt.postprocess.snapshots import save_snapshot
+
+    _, controller, result = iteration_model
+    cases = {"actuation": result, "baseline": result}
+    with cpu_torch_defaults():
+        save_snapshot(deformation_archive.log_folder, 1, pv.MultiBlock(),
+                      SimpleNamespace(fe=controller, fe_results=cases))
     session = ResultSession()
-    assert session.bind(str(tmp_path))
+    session.load_iteration(str(deformation_archive.folder), 1)
     assert session.deformation_cases() == ("actuation", "baseline")
+    session.load_iteration(str(deformation_archive.folder), 2)
+    assert session.deformation_cases() == ("case",)
 
 
 def test_run_session_owns_fresh_process_state(

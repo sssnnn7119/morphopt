@@ -85,8 +85,6 @@ class ControllerSettingsEditor(QWidget):
         self.device.setFixedWidth(
             theme_manager.palette.layout.workbench.device_selector_width
         )
-        self.device.addItem("cpu")
-        self.device.addItems([device for device in detect_devices() if device != "cpu"])
         self.device.currentTextChanged.connect(self._emit_device)
         form.addRow(self.device_label, self.device)
 
@@ -130,6 +128,8 @@ class ControllerSettingsEditor(QWidget):
 
         self._device_block = True
         try:
+            if not self.device.count():
+                self.device.addItems(detect_devices())
             device = problem.device or "cpu"
             if self.device.findText(device) < 0:
                 self.device.addItem(device)

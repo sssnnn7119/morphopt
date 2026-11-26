@@ -4,12 +4,13 @@ from pathlib import Path
 import sys
 import time
 
-import pyvista as pv
+import numpy as np
+from PIL import Image
 import pytest
+from PySide6.QtGui import QColor
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
-from morphopt.postprocess import boundary_surface_options
 from morphopt.ui.i18n import tr
 from morphopt.ui.widgets import history_export
 from morphopt.ui.widgets.file_dialogs import SaveFileSelection
@@ -36,15 +37,109 @@ def wait_for_export(app, dialog):
     assert dialog._process.state() == QProcess.ProcessState.NotRunning
 
 
-def surface_dialog(archive):
-    surfaces = boundary_surface_options(archive.params)
-    selections = [
-        {"part": surface.part, "index": surface.index, "format": "stp"}
-        for surface in surfaces
-    ]
-    return history_export.SurfaceExportDialog(
-        str(archive.folder), 2, selections, "boundary / all surfaces",
+def export_dialog(archive, target=None):
+    from morphopt.ui.application.results import ResultSession
+
+    session = ResultSession()
+    session.load_iteration(str(archive.folder), 2)
+    return history_export.HistoryExportDialog(
+        session, 2, {}, (150, 150),
+        {"background": "white", "deformation_color": "blue",
+         "geometry_color": "blue", "boundary_shell_opacity": 0.4,
+         "mesh_ambient": 0.2, "mesh_diffuse": 0.7, "mesh_specular": 0.2, "mesh_specular_power": 30},
+        initial_target=target,
     )
+
+
+def test_component_owned_format_reaches_ui_and_archive(export_ui, design_archive, tmp_path, monkeypatch):
+    geometry = design_archive.controller_class.Params.GeometryParams
+
+    class ReportPart(geometry.BoundaryPart):
+        export_modes = (*geometry.BoundaryPart.export_modes, "report")
+
+        def export(self, directory, *, mode="all_surfaces"):
+            if mode == "report":
+                (directory / "summary.txt").write_text(self.name, encoding="utf-8")
+            else:
+                super().export(directory, mode=mode)
+
+    monkeypatch.setattr(geometry, "BoundaryPart", ReportPart)
+    dialog = export_dialog(design_archive)
+    dialog.tabs.setCurrentIndex(1)
+    dialog.component_mode.setCurrentIndex(dialog.component_mode.findData("report"))
+    monkeypatch.setattr(history_export, "choose_save_directory", lambda *args: str(tmp_path / "report"))
+    captured = {}
+    monkeypatch.setattr(dialog, "_start", lambda request, destination: captured.update(request))
+    dialog.export.click()
+    from morphopt.postprocess import export_design_components
+    paths = export_design_components(str(design_archive.folder), 2, str(tmp_path), captured["selections"])
+    assert paths == [tmp_path / "body" / "summary.txt"]
+    assert paths[0].read_text(encoding="utf-8") == "body"
+    dialog.reject()
+
+
+def test_simp_voxel_settings_reach_archived_obj(export_ui, tmp_path, monkeypatch):
+    import shutil
+    import pyvista as pv
+    import torch
+    from morphopt.optcore.history import History
+    from morphopt.postprocess import OptimizationArchive, cpu_torch_defaults
+
+    app, _, errors = export_ui
+    archive = OptimizationArchive(tmp_path / "run")
+    scripts = archive.folder / "scripts"
+    scripts.mkdir(parents=True)
+    example = Path(__file__).resolve().parents[2] / "examples/simp_gripper/simp_gripper.py"
+    shutil.copyfile(example, scripts / "MAIN_SCRIPT_FOR_RESTART.py")
+    with cpu_torch_defaults():
+        material = archive.initialize_params().materials.interface("body")
+        controls = material.get_parameters()[0].reshape(material.simp_field.size)
+        controls.fill_(0.4)
+        controls[:controls.shape[0] // 2] = 2.0
+        material.set_parameters([controls])
+        material.save(str(archive.log_folder), 2)
+    history = History()
+    history.append(objective=1.0)
+    history.append(objective=0.9)
+    history.save(foldpath=str(archive.log_folder))
+
+    destination = tmp_path / "export"
+    monkeypatch.setattr(history_export, "choose_save_directory", lambda *args: str(destination))
+    dialog = export_dialog(archive)
+    dialog.tabs.setCurrentIndex(1)
+    assert not dialog.component_form.isRowVisible(dialog.voxel_size)
+    dialog.component_mode.setCurrentIndex(dialog.component_mode.findData("voxel_obj"))
+    assert dialog.component_form.isRowVisible(dialog.voxel_threshold)
+    dialog.voxel_size.setValue(2.0)
+    dialog.voxel_threshold.setValue(0.7)
+    dialog.export.click()
+    wait_for_export(app, dialog)
+    assert not errors, errors
+    mesh = pv.read(destination / "body" / "voxels.obj")
+    # Only the high-density half of the 80-unit gripper remains, on a 2-unit X grid.
+    x = np.unique(mesh.points[:, 0])
+    assert 38 <= x[-1] <= 42
+    np.testing.assert_array_equal(np.diff(x), 2)
+
+
+def test_mixed_boundary_writes_step_and_stl_together(design_archive, tmp_path, monkeypatch):
+    import pyvista as pv
+    from morphopt.postprocess import export_design_components
+
+    geometry = design_archive.controller_class.Params.GeometryParams
+
+    class MixedPart(geometry.BoundaryPart):
+        def define_surfaces(self):
+            super().define_surfaces()
+            mesh = pv.Tetrahedron()
+            self.add_surface_interface(self.MeshSurface(mesh.points, mesh.regular_faces))
+
+    monkeypatch.setattr(geometry, "BoundaryPart", MixedPart)
+    paths = export_design_components(str(design_archive.folder), 2, str(tmp_path), [
+        dict(category="Part", name="body", mode="all_surfaces"),
+    ])
+    assert {path.name for path in paths} == {"surface_0.stp", "surface_0.brep.json", "surface_1.stp", "surface_2.stl"}
+    assert pv.read(tmp_path / "body" / "surface_2.stl").n_cells == 4
 
 
 def test_surface_export_retries_after_worker_failure_and_cleans_requests(
@@ -59,18 +154,19 @@ def test_surface_export_retries_after_worker_failure_and_cleans_requests(
         process.start(sys.executable, ["-c", "import sys; print('export failure'); sys.exit(2)"])
 
     monkeypatch.setattr(history_export, "start_worker", fail)
-    dialog = surface_dialog(design_archive)
+    dialog = export_dialog(design_archive)
+    dialog.tabs.setCurrentIndex(1)
     dialog.export.click()
-    first_directory = Path(dialog._directory.name)
+    first_directory = dialog._directory
     wait_for_export(app, dialog)
     assert errors and "export failure" in errors[0]
-    assert not first_directory.exists()
-    assert dialog.controls.isEnabled() and dialog.export.isEnabled()
+    assert first_directory.exists()
+    assert dialog.tabs.isEnabled() and dialog.export.isEnabled()
     assert not destination.exists()
     monkeypatch.setattr(history_export, "start_worker", start_worker)
     dialog.export.click()
-    directory = Path(dialog._directory.name)
-    assert directory != first_directory
+    directory = dialog._directory
+    assert directory == first_directory
     wait_for_export(app, dialog)
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert len(messages) == 1 and len(errors) == 1
@@ -78,33 +174,129 @@ def test_surface_export_retries_after_worker_failure_and_cleans_requests(
     assert {path.name for path in destination.rglob("*.stp")} == {"surface_0.stp", "surface_1.stp"}
 
 
-def test_gif_export_uses_structured_frame_count(export_ui, design_archive, tmp_path, monkeypatch):
+@pytest.mark.parametrize("pitch", [30, 90, -90])
+def test_gif_pose_editor(export_ui, deformation_archive, pitch):
+    app, _, _ = export_ui
+    dialog = export_dialog(deformation_archive, {"case": "case"})
+    dialog.show()
+    app.processEvents()
+    gif = dialog.gif
+    try:
+        camera = gif.viewport.plotter.camera
+        distance = camera.distance
+        for field, value in zip(gif.position, (12, -5, 7)):
+            assert field.isVisible() and not field.prefix() and not field.suffix()
+            field.setValue(value)
+        for field, value in zip(gif.angles, (90, pitch, 90)):
+            assert field.isVisible() and not field.prefix() and not field.suffix()
+            field.setValue(value)
+        app.processEvents()
+        np.testing.assert_allclose(camera.position, (12, -5, 7))
+        np.testing.assert_allclose(camera.direction, (0, np.cos(np.radians(pitch)), np.sin(np.radians(pitch))), atol=1e-12)
+        np.testing.assert_allclose(camera.up, (1, 0, 0), atol=1e-12)
+        np.testing.assert_allclose([field.value() for field in gif.angles], (90, pitch, 90))
+        assert camera.distance == pytest.approx(distance)
+        for parallel in (True, False):
+            gif.projection.setCurrentIndex(gif.projection.findData(parallel))
+            options = gif.options()["camera"]
+            assert options["parallel_projection"] is parallel
+            np.testing.assert_allclose(options["position"][0], (12, -5, 7))
+    finally:
+        dialog.reject()
+
+
+def test_gif_preview_matches_export(export_ui, deformation_archive, tmp_path, monkeypatch):
     app, messages, errors = export_ui
-    folder = design_archive.log_folder / "deformation"
-    folder.mkdir()
-    for iteration, radius in ((1, 1), (2, 2)):
-        pv.Sphere(radius=radius).triangulate().save(folder / f"task_case_iter_{iteration}.stl")
     output = tmp_path / "history.gif"
     monkeypatch.setattr(
         history_export, "choose_save_file", lambda *args: SaveFileSelection(output, "gif")
     )
-    dialog = history_export.HistoryGifExportDialog(
-        str(design_archive.folder), 2, "deformation", ("case",), (),
-        {"position": [[5, 5, 5], [0, 0, 0], [0, 0, 1]]}, (150, 150),
-        {"background": "white", "text_color": "black", "deformation_color": "blue",
-         "mesh_ambient": 0.2, "mesh_diffuse": 0.7, "mesh_specular": 0.2, "mesh_specular_power": 30},
-    )
+    dialog = export_dialog(deformation_archive, {"case": "case"})
+    dialog.show()
+
+    app.processEvents()
+    gif = dialog.gif
+    plotter = gif.viewport.plotter
+    assert gif.error.isHidden(), gif.error.text()
+    assert plotter.renderer.axes_widget is not None
+    if plotter.iren is not None:
+        assert plotter.renderer.axes_enabled
+    assert not any(actor.IsA("vtkCornerAnnotation") or actor.IsA("vtkTextActor")
+                   for actor in plotter.renderer.GetActors2D())
+    gif.resolution_preset.setCurrentIndex(gif.resolution_preset.count() - 1)
+    assert gif.pixel_width.isVisible() and gif.pixel_height.isVisible()
+    gif.pixel_width.setValue(120)
+    gif.pixel_height.setValue(180)
+    assert gif.options()["window_size"] == (120, 180)
+    app.processEvents()
+    assert abs(gif.viewport.width() - gif.viewport.height() * 2 / 3) <= 1
+
+    assert not gif.view_height.isVisible()
+    gif.projection.setCurrentIndex(gif.projection.findData(True))
+    app.processEvents()
+    assert gif.view_height.isVisible()
+    gif.view_height.setValue(30)
+    assert gif.options()["camera"]["parallel_scale"] == 15
+    direction = plotter.camera.direction
+    gif.fit_button.click()
+    app.processEvents()
+    assert 0 < gif.view_height.value() < 30
+    assert gif.view_height.value() == pytest.approx(2 * plotter.camera.parallel_scale)
+    np.testing.assert_allclose(plotter.camera.direction, direction)
+    last_points = plotter.actors["deformation-mesh"].mapper.dataset.points.copy()
+    initial_pose = gif.options()["camera"]["position"]
+    initial_angles = [field.value() for field in gif.angles]
+    if plotter.iren is None:  # Offscreen VTK has no mouse interactor.
+        plotter.camera.azimuth = 43
+    else:
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        center = plotter.rect().center()
+        end = center + QPoint(49, 22)
+        QTest.mousePress(plotter, Qt.MouseButton.LeftButton, pos=center)
+        QTest.mouseMove(plotter, end, delay=20)
+        app.processEvents()
+        assert [field.value() for field in gif.angles] != initial_angles
+        np.testing.assert_allclose([field.value() for field in gif.position], plotter.camera.position, atol=1e-6)
+        QTest.mouseRelease(plotter, Qt.MouseButton.LeftButton, pos=end)
+    assert gif.options()["camera"]["position"] != initial_pose
+    plotter.camera.zoom(1.2)
+    camera = gif.options()["camera"]
+    gif.last.setValue(1)
+    app.processEvents()
+    assert not np.array_equal(plotter.actors["deformation-mesh"].mapper.dataset.points, last_points)
+    for key, value in gif.options()["camera"].items():
+        np.testing.assert_allclose(value, camera[key])
+    gif.last.setValue(2)
+    monkeypatch.setattr(history_export.QColorDialog, "getColor", lambda *args: QColor("#e6c888"))
+    gif.background.click()
+    app.processEvents()
+    for key, value in gif.options()["camera"].items():
+        np.testing.assert_allclose(value, camera[key])
+    from morphopt.postprocess.visualization import history_frames
+    frames = history_frames(gif.archive, range(2, 3), mode="deformation", target={"case": "case"},
+                            camera=camera, window_size=(120, 180), style=gif.style)
+    last_preview, = frames
+    np.testing.assert_array_equal(last_preview[-1, 0], [230, 200, 136])
     dialog.export.click()
-    directory = Path(dialog._directory.name)
+    directory = dialog._directory
     wait_for_export(app, dialog)
     assert not errors, errors
-    assert messages == [tr("ui.history_gif.completed", count=2, path=str(output))]
-    assert output.read_bytes().startswith(b"GIF")
+    assert messages == [tr("ui.history_export.completed", path=str(output))]
+    with Image.open(output) as animation:
+        assert animation.size == (120, 180)
+        assert animation.n_frames == 2
+        for index in range(animation.n_frames):
+            animation.seek(index)
+            frame = np.asarray(animation.convert("RGB"), dtype=float)
+            np.testing.assert_allclose(frame[-1, 0], last_preview[-1, 0], atol=2)
+        assert np.abs(frame - last_preview).mean() < 2
     assert not directory.exists()
 
 
 def test_cancelling_gif_removes_partial_file_and_preserves_existing_output(
-    export_ui, design_archive, tmp_path, monkeypatch
+    export_ui, deformation_archive, tmp_path, monkeypatch
 ):
     app, messages, errors = export_ui
     output = tmp_path / "history.gif"
@@ -117,11 +309,9 @@ def test_cancelling_gif_removes_partial_file_and_preserves_existing_output(
         history_export, "start_worker",
         lambda process, request: process.start(sys.executable, ["-c", "import time; time.sleep(30)"]),
     )
-    dialog = history_export.HistoryGifExportDialog(
-        str(design_archive.folder), 2, "deformation", ("case",), (), {}, (150, 150), {},
-    )
+    dialog = export_dialog(deformation_archive)
     dialog.export.click()
-    directory = Path(dialog._directory.name)
+    directory = dialog._directory
     assert dialog._process.waitForStarted(1000)
     partial.write_bytes(b"incomplete animation")
     dialog.reject()
@@ -131,3 +321,39 @@ def test_cancelling_gif_removes_partial_file_and_preserves_existing_output(
     assert not directory.exists() and not partial.exists()
     assert output.read_bytes() == b"existing animation"
     assert not messages and not errors
+
+
+def test_abaqus_export_uses_selected_iteration_and_case(export_ui, deformation_archive, tmp_path, monkeypatch):
+    app, messages, errors = export_ui
+    output = tmp_path / "case.inp"
+    monkeypatch.setattr(history_export, "choose_save_file", lambda *args: SaveFileSelection(output, "inp"))
+    dialog = export_dialog(deformation_archive)
+    dialog.tabs.setCurrentIndex(2)
+    assert dialog.inp_case.currentText() == "case"
+    dialog.inp_step.setCurrentIndex(0)
+    dialog.nlgeom.setChecked(False)
+    dialog.export.click()
+    wait_for_export(app, dialog)
+    assert not errors, errors
+    deck = output.read_text().lower()
+    assert "*node" in deck and "*element" in deck and "*static" in deck
+    assert "*end step" in deck and "nlgeom=yes" not in deck
+
+
+def test_mesh_export_without_case_result(export_ui, deformation_archive, tmp_path, monkeypatch):
+    app, _, errors = export_ui
+    deformation_archive.fea_result_path("case", 2).unlink()
+    output = tmp_path / "mesh.inp"
+    monkeypatch.setattr(history_export, "choose_save_file", lambda *args: SaveFileSelection(output, "inp"))
+    dialog = export_dialog(deformation_archive)
+    dialog.tabs.setCurrentIndex(2)
+    assert not dialog.export.isEnabled()
+    dialog.inp_kind.setCurrentIndex(dialog.inp_kind.findData("parts"))
+    assert dialog.export.isEnabled()
+    assert not dialog.inp_form.isRowVisible(dialog.inp_case)
+    dialog.export.click()
+    wait_for_export(app, dialog)
+    assert not errors, errors
+    deck = output.read_text().lower()
+    assert "*part" in deck and "*node" in deck and "*element" in deck and "*end part" in deck
+    assert "*step" not in deck

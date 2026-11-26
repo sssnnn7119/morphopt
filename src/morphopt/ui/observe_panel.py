@@ -10,27 +10,25 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSlider,
     QSplitter,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ..constants import CONSTANT
-from ..postprocess import boundary_surface_options, last_completed_iteration
+from ..postprocess import last_completed_iteration
+from ..postprocess.visualization import camera_state
 from .application import (
     OptimizationRunSession,
     ResultSession,
@@ -44,6 +42,7 @@ from .theme import theme_manager
 from .widgets.labels import ElidedLabel
 from .widgets.observation_pages import (
     DeformationCasePage,
+    HistorySceneCache,
     LogsPage,
     MetricsPage,
     UpdatableStructurePage,
@@ -102,41 +101,6 @@ class ObserverPanel(QWidget):
         top.addWidget(self.btn_next)
         top.addWidget(self.iter_label)
         top.addWidget(self.chk_follow)
-        self.export_menu = QMenu(self)
-        self.action_export_surfaces = QAction(
-            tr("ui.surface_export.current.title"), self.export_menu
-        )
-        self.export_menu.addAction(self.action_export_surfaces)
-        self.action_export_surfaces.triggered.connect(self._export_surfaces)
-        self.action_export_surfaces.setToolTip(
-            tr("ui.surface_export.current.tooltip")
-        )
-        self.action_export_surfaces.setEnabled(False)
-        self.action_export_design_gif = QAction(
-            tr("ui.history_gif.design_title"), self.export_menu
-        )
-        self.export_menu.addAction(self.action_export_design_gif)
-        self.action_export_design_gif.triggered.connect(
-            lambda _checked=False: self._export_history_gif("design")
-        )
-        self.action_export_design_gif.setEnabled(False)
-        self.action_export_deformation_gif = QAction(
-            tr("ui.history_gif.deformation_title"), self.export_menu
-        )
-        self.export_menu.addAction(self.action_export_deformation_gif)
-        self.action_export_deformation_gif.triggered.connect(
-            lambda _checked=False: self._export_history_gif("deformation")
-        )
-        self.action_export_deformation_gif.setEnabled(False)
-        self.btn_export_history = QToolButton()
-        self.btn_export_history.setText(tr("ui.observe_panel.export_history"))
-        self.btn_export_history.setToolTip(tr("ui.observe_panel.export_history_hint"))
-        self.btn_export_history.setMenu(self.export_menu)
-        self.btn_export_history.setEnabled(False)
-        self.btn_export_history.setPopupMode(
-            QToolButton.ToolButtonPopupMode.InstantPopup
-        )
-        top.addWidget(self.btn_export_history)
         self.history_controls.hide()
 
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -145,16 +109,22 @@ class ObserverPanel(QWidget):
             theme_manager.palette.layout.observer.option_panel_width
         )
         self.options.currentRowChanged.connect(self._on_option)
-        split.addWidget(self.options)
+        sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.addWidget(self.options, 1)
+        self.btn_export_history = QPushButton(tr("ui.observe_panel.export_history"))
+        self.btn_export_history.clicked.connect(self._open_history_export)
+        self.btn_export_history.setEnabled(False)
+        sidebar_layout.addWidget(self.btn_export_history)
+        split.addWidget(sidebar)
 
         self.stack = QStackedWidget()
         self._metrics_page = MetricsPage()
         self._logs_page = LogsPage()
-        self._updatable_structure_page = UpdatableStructurePage()
-        self._updatable_structure_page.viewChanged.connect(
-            self._update_surface_export_action
-        )
-        self._deformation_page = DeformationCasePage()
+        scene_cache = HistorySceneCache()
+        self._updatable_structure_page = UpdatableStructurePage(cache=scene_cache)
+        self._deformation_page = DeformationCasePage(cache=scene_cache)
         self._last_3d_page: str | None = None
         self.stack.addWidget(self._metrics_page)
         self.stack.addWidget(self._logs_page)
@@ -217,12 +187,16 @@ class ObserverPanel(QWidget):
             self._logs_page.refresh(self._results)
 
     def show_iteration(self, folder: str, iteration: int) -> None:
-        """Render one finished iteration (history + current option page).
+        """Render one finished iteration and invalidate snapshots after a rewind.
 
         Args:
             folder (str): Directory containing the optimization run or archive.
             iteration (int): Iteration index associated with the saved or current model state.
         """
+        if iteration < self.iteration:
+            self._updatable_structure_page.clear_view()
+            self._deformation_page.clear_view()
+            self._results.reset()
         try:
             history = self._results.load_iteration(folder, iteration)
         except Exception as exc:
@@ -231,12 +205,7 @@ class ObserverPanel(QWidget):
         self._metrics_page.update_from_history(history, iteration)
         self._sync_design_options()
         has_iterations = int(history.iteration or iteration) > 0
-        self.action_export_design_gif.setEnabled(
-            has_iterations and bool(self._results.fea_components())
-        )
-        self.action_export_deformation_gif.setEnabled(
-            has_iterations and bool(self._results.deformation_cases())
-        )
+        self.btn_export_history.setEnabled(has_iterations)
 
         max_iter = max(1, int(history.iteration or iteration))
         self.slider.blockSignals(True)
@@ -269,42 +238,33 @@ class ObserverPanel(QWidget):
         for control in (self.slider, self.btn_prev, self.btn_next, self.chk_follow):
             control.setEnabled(not locked)
 
-    def _export_surfaces(self) -> None:
-        from .widgets.history_export import SurfaceExportDialog
-
-        request = self._current_surface_export()
-        if not request or not self.path_result:
+    def _open_history_export(self) -> None:
+        if not self.path_result or self.iteration < 1:
             return
-        selections, view_title = request
-        dialog = SurfaceExportDialog(
-            self.path_result,
+        dialog = self.history_export_dialog()
+        dialog.exec()
+        dialog.deleteLater()
+
+    def history_export_dialog(self) -> QDialog:
+        """Create the export window with the active history selection as its starting point."""
+        from .widgets.history_export import HistoryExportDialog
+
+        data = self.options.currentItem().data(Qt.ItemDataRole.UserRole)
+        target = {}
+        if data[0] == "component":
+            view = self._updatable_structure_page.current_view
+            target = {"category": data[1], "name": data[2].name}
+            if view is not None:
+                target["view"] = view.key
+        elif data[0] == "case":
+            target = {"case": data[1]}
+        return HistoryExportDialog(
+            self._results,
             self.slider.value(),
-            selections,
-            view_title,
-            self,
-        )
-        dialog.exec()
-        dialog.deleteLater()
-
-    def _export_history_gif(self, mode: str) -> None:
-        from .widgets.history_export import HistoryGifExportDialog
-
-        if not self.path_result:
-            return
-        latest = last_completed_iteration(self.path_result)
-        if latest < 1:
-            return
-        dialog = HistoryGifExportDialog(
-            self.path_result,
-            latest,
-            mode,
-            self._results.deformation_cases() if mode == "deformation" else (),
-            self._results.fea_components() if mode == "design" else (),
             *self._history_gif_view(),
-            self,
+            initial_target=target,
+            parent=self,
         )
-        dialog.exec()
-        dialog.deleteLater()
 
     def _history_gif_view(
         self,
@@ -321,23 +281,12 @@ class ObserverPanel(QWidget):
             else self._updatable_structure_page
         )
         viewport = page.viewport
-        plotter = viewport.plotter
-        camera = plotter.camera
-        position = plotter.camera_position
-        camera_state = {
-            "position": [[float(value) for value in point] for point in position],
-            "parallel_projection": bool(camera.GetParallelProjection()),
-            "parallel_scale": float(camera.GetParallelScale()),
-            "view_angle": float(camera.GetViewAngle()),
-        }
-        size = plotter.window_size
         palette = theme_manager.palette
         viewer = palette.viewer
         geometry = viewer.geometry
         settings = viewport.settings
         style = {
             "background": palette.viewer.render.background,
-            "text_color": palette.text,
             "geometry_color": (
                 geometry.instance_colors[0]
                 if geometry.instance_colors
@@ -352,7 +301,11 @@ class ObserverPanel(QWidget):
             "smooth_shading": settings.smooth_shading,
             "boundary_shell_opacity": geometry.boundary_shell_opacity,
         }
-        return camera_state, (max(1, size[0]), max(1, size[1])), style
+        if not self._last_3d_page:
+            return {}, (640, 480), style
+        plotter = viewport.plotter
+        size = tuple(plotter.window_size)
+        return camera_state(plotter), size if min(size) >= 2 else (640, 480), style
 
     def reset(self) -> None:
         """Drop every result-dependent piece of content.
@@ -361,9 +314,6 @@ class ObserverPanel(QWidget):
         showing the previously browsed result.
         """
         self._results.reset()
-        self.action_export_surfaces.setEnabled(False)
-        self.action_export_design_gif.setEnabled(False)
-        self.action_export_deformation_gif.setEnabled(False)
         self.btn_export_history.setEnabled(False)
         self._last_3d_page = None
         # Keep native GL windows alive across tasks; only their scenes change.
@@ -385,14 +335,6 @@ class ObserverPanel(QWidget):
     def apply_language(self) -> None:
         """Re-apply the current language to the panel's static texts."""
         self.chk_follow.setText(tr("ui.observe_panel.follow_latest"))
-        self.action_export_surfaces.setText(tr("ui.surface_export.current.title"))
-        self.action_export_surfaces.setToolTip(
-            tr("ui.surface_export.current.tooltip")
-        )
-        self.action_export_design_gif.setText(tr("ui.history_gif.design_title"))
-        self.action_export_deformation_gif.setText(
-            tr("ui.history_gif.deformation_title")
-        )
         self.btn_export_history.setText(tr("ui.observe_panel.export_history"))
         self.btn_export_history.setToolTip(tr("ui.observe_panel.export_history_hint"))
         self._sync_design_options()
@@ -423,7 +365,6 @@ class ObserverPanel(QWidget):
         elif data[0] == "case":
             self.stack.setCurrentWidget(self._deformation_page)
             self._refresh_case(data[1])
-        self._update_surface_export_action()
 
     def showEvent(self, event) -> None:
         """Refresh deferred content when the widget becomes visible.
@@ -440,7 +381,7 @@ class ObserverPanel(QWidget):
             self._on_option(row)
 
     def _refresh_updatable_structure(self, component=None) -> None:
-        if self.isVisible() and self.path_result and self._results.params is not None:
+        if self.isVisible() and self.path_result:
             self._last_3d_page = "design"
             self._updatable_structure_page.build(
                 self._results, self.slider.value(), component
@@ -470,7 +411,7 @@ class ObserverPanel(QWidget):
         if not data:
             return None
         if data[0] == "component":
-            return ("component", id(data[2]))
+            return ("component", data[1], data[2].name)
         if data[0] == "case":
             return ("case", data[1])
         return (data[0],)
@@ -507,68 +448,6 @@ class ObserverPanel(QWidget):
             self.options.setCurrentRow(row)
         finally:
             self.options.blockSignals(False)
-
-    def _current_surface_export(self) -> tuple[list[dict[str, Any]], str] | None:
-        """Build the export request from the selected component and view.
-
-        Returns:
-            tuple[list[dict[str, Any]], str] | None: Build the export request from the selected
-                component and view.
-        """
-        item = self.options.currentItem()
-        data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
-        if not data or data[0] != "component" or self._results.params is None:
-            return None
-        component = data[2]
-        surfaces = getattr(component, "surfaceinterfaces", None)
-        view = self._updatable_structure_page.current_view
-        if not surfaces or view is None:
-            return None
-        geometry = getattr(self._results.params, "geometry", None)
-        interfaces = getattr(geometry, "interfaces", {})
-        if not interfaces:
-            return None
-        part_name = next(
-            (
-                name
-                for name, part in interfaces.items()
-                if part is component
-            ),
-            getattr(component, "name", None),
-        )
-        if not part_name:
-            return None
-        options = {
-            (option.part, option.index): option
-            for option in boundary_surface_options(self._results.params)
-        }
-        indices = (
-            range(len(surfaces))
-            if view.surface_index is None
-            else (int(view.surface_index),)
-        )
-        selections: list[dict[str, Any]] = []
-        labels: list[str] = []
-        for index in indices:
-            option = options.get((part_name, index))
-            if option is None:
-                return None
-            file_format = "stp" if "stp" in option.formats else option.formats[0]
-            selections.append(
-                {"part": option.part, "index": option.index, "format": file_format}
-            )
-            labels.append(f"{option.part}/surface_{option.index}.{file_format}")
-        return selections, ", ".join(labels)
-
-    def _update_surface_export_action(self) -> None:
-        """Enable surface export only when the current result view is exportable."""
-        enabled = self._current_surface_export() is not None
-        self.action_export_surfaces.setEnabled(enabled)
-        self.btn_export_history.setEnabled(
-            enabled
-            or self.action_export_design_gif.isEnabled()
-            or self.action_export_deformation_gif.isEnabled()
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +667,8 @@ class ObserverControls(QWidget):
         self.output_view.clear()
         self._run.stream_output(self.outputReceived.emit)
         if source.kind is RunSourceKind.CONTINUE:
+            if target is not None and target < self.panel.iteration:
+                self.panel.show_iteration(source.path, target)
             self.status.setText(
                 tr(
                     "ui.observe_panel.continuing_optimization_from_step_value",
@@ -863,7 +744,7 @@ class ObserverControls(QWidget):
             if (
                 progress.iteration > 0
                 and self._run.folder
-                and self._run.is_result_folder(self._run.folder)
+                and self._run.can_resume(self._run.folder)
             ):
                 self._run.source = RunSource(
                     RunSourceKind.CONTINUE,
@@ -906,12 +787,15 @@ class ObserverControls(QWidget):
             self.btn_start.setText(tr("ui.observe_panel.continue"))
         else:
             self.btn_start.setText(tr("ui.observe_panel.start"))
-        self.btn_start.setEnabled(not running and src is not None)
+        can_start = src is not None and (
+            src.kind is not RunSourceKind.CONTINUE or self._run.can_resume(src.path)
+        )
+        self.btn_start.setEnabled(not running and can_start)
         self.btn_start.setVisible(not running)
         self.btn_start.setToolTip(
             tr(
                 "ui.observe_panel.continue_unavailable_hint"
-                if src is None
+                if not can_start
                 else "ui.observe_panel.start_hint"
             )
         )

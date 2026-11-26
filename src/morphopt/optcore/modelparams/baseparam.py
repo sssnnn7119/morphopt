@@ -200,14 +200,6 @@ class BaseParams(
                 f"{list(self.interfaces)}."
             ) from None
 
-    def export_data(self, foldpath: str):
-        """
-        Export the data of parameters to file(s).
-
-        Args:
-            foldpath (str): The path to export the data.
-        """
-
     def save(self, foldpath: str, iteration: int) -> None:
         """Save the state of every registered interface.
 

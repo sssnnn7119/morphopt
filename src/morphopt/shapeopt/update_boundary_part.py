@@ -11,6 +11,7 @@ from ..optcore.strategies import UpdateStrategy
 from .boundary_part import BoundaryPart
 from .surfaces import BaseSurface
 
+
 class UpdaterBoundaryPart(BaseUpdater):
     """
     One boundary part interface, updated on its own.
@@ -80,7 +81,8 @@ class UpdaterBoundaryPart(BaseUpdater):
             interface_name,
             update_strategy=(
                 self.strategies.AdaptiveShapeUpdate()
-                if update_strategy is None else update_strategy
+                if update_strategy is None
+                else update_strategy
             ),
         )
 
@@ -232,7 +234,9 @@ class UpdaterBoundaryPart(BaseUpdater):
         x0 = self.part.get_parameters()
 
         try:
-            self.part.update_variables(x_change=x, max_step_length=self._max_step_length)
+            self.part.update_variables(
+                x_change=x, max_step_length=self._max_step_length
+            )
             r, rdu, rdu2 = self.part.get_geometry_values()
             constraints_value = [
                 constraint(r=r, rdu=rdu, rdu2=rdu2)

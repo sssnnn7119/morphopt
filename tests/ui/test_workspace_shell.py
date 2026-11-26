@@ -188,7 +188,10 @@ def test_history_controls_belong_only_to_visualization_pages(monkeypatch):
         panel = window._observer.panel
         assert panel.history_controls.parentWidget() is panel.stack.parentWidget()
         assert panel.history_controls.isHidden()
-        for data in (("component", "geometry", object()), ("case", "load_case_1")):
+        from morphopt.postprocess.snapshots import SavedComponent
+
+        component = SavedComponent("Part", "part1", "BoundaryPart", {})
+        for data in (("component", "Part", component), ("case", "load_case_1")):
             panel.options.addItem(data[0])
             panel.options.item(panel.options.count() - 1).setData(
                 Qt.ItemDataRole.UserRole, data,
@@ -214,46 +217,21 @@ def test_history_controls_belong_only_to_visualization_pages(monkeypatch):
         app.processEvents()
 
 
-def test_history_export_actions_are_owned_and_do_not_depend_on_add_action_return(monkeypatch):
-    import gc
-
-    from PySide6.QtGui import QAction
-    from PySide6.QtWidgets import QMenu
-
+def test_history_export_button_opens_one_dialog(monkeypatch):
     from morphopt.ui.observe_panel import ObserverPanel
 
     app = QApplication.instance() or QApplication([])
-    add_action = QMenu.addAction
     calls = []
-
-    def insert_action(menu, action):
-        assert isinstance(action, QAction)
-        add_action(menu, action)
-        # The QAction overload need not return the inserted action.
-        return None
-
-    monkeypatch.setattr(QMenu, "addAction", insert_action)
-    monkeypatch.setattr(ObserverPanel, "_export_surfaces", lambda self: calls.append("surfaces"))
-    monkeypatch.setattr(
-        ObserverPanel, "_export_history_gif", lambda self, mode: calls.append(mode)
-    )
+    monkeypatch.setattr(ObserverPanel, "_open_history_export", lambda self: calls.append(self))
     window = shell(monkeypatch)
     try:
         window._ensure_observer()
         panel = window._observer.panel
-        gc.collect()
         panel.apply_language()
-        actions = (
-            panel.action_export_surfaces, panel.action_export_design_gif,
-            panel.action_export_deformation_gif,
-        )
-        assert panel.export_menu.actions() == list(actions)
-        for action in actions:
-            assert isinstance(action, QAction)
-            assert action.parent() is panel.export_menu
-            action.setEnabled(True)
-            action.trigger()
-        assert calls == ["surfaces", "design", "deformation"]
+        assert not panel.btn_export_history.isEnabled()
+        panel.btn_export_history.setEnabled(True)
+        panel.btn_export_history.click()
+        assert calls == [panel]
     finally:
         window.deleteLater()
         app.processEvents()
@@ -364,6 +342,12 @@ def test_result_menu_shares_folder_and_iteration_with_fea_without_launching(monk
     assert window.result_context.folder == folder
     assert window.result_context.toolTip() == folder
     assert not hasattr(window, 'result_path')
+    window.show_definition()
+    assert window.current_problem() is None
+    assert window._definitions.currentWidget() is window._archived_source
+    assert window._archived_source.isReadOnly()
+    assert not window._menu_actions["save"].isEnabled()
+    window.navigation.setCurrentIndex(1)
     clipboard = app.clipboard()
     previous_clipboard = clipboard.text()
     try:
@@ -405,6 +389,34 @@ def test_result_menu_shares_folder_and_iteration_with_fea_without_launching(monk
     page.close_cleanup()
     window.deleteLater()
     app.processEvents()
+
+
+def test_open_result_restores_its_definition_and_respects_cancel(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    app = QApplication.instance() or QApplication([])
+    window = shell(monkeypatch)
+    folder = Path(saved_result(tmp_path))
+    problem = ProblemLibrary.create("shapeopt", label="Archived bending task")
+    snapshot = folder / "scripts" / "MAIN_SCRIPT_FOR_RESTART.morph"
+    ProblemLibrary.save(problem, snapshot)
+    original = window.current_problem()
+    try:
+        monkeypatch.setattr(window, "_confirm_discard", lambda: False)
+        window.open_result_folder(folder)
+        assert window.current_problem() is original and window._observer is None
+        monkeypatch.setattr(window, "_confirm_discard", lambda: True)
+        window.open_result_folder(folder)
+        assert window._result_selection == ResultSelection(str(folder), 2)
+        assert window.stack.currentWidget() is window._observer
+        window.show_definition()
+        assert window._definitions.currentWidget() is window._workbench
+        assert window.current_problem().to_dict() == problem.to_dict()
+        assert window._document_path is None
+        assert window._menu_actions["save_as"].isEnabled()
+    finally:
+        window.deleteLater()
+        app.processEvents()
 
 
 @pytest.mark.parametrize('existing_result', [False, True])

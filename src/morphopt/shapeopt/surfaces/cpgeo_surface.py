@@ -5,15 +5,17 @@ from typing import TYPE_CHECKING
 
 import cpgeo
 import numpy as np
+import pyvista as pv
 import torch
 
 from ...constants import CONSTANT
-from .base_surface import ControlPointSurface
+from .base_surface import ControlPointSurface, SurfaceExportFormat
 from .cpgeo_constraints import (
     CPGEOMirrorConstraint,
     CPGEORotationalSymmetryConstraint,
     CPGEOSurfaceRelationConstraint,
 )
+from .mesh_surface import _save_triangle_stl
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -30,6 +32,8 @@ class CPGEOSurface(ControlPointSurface):
     supplies basis coefficients, reconstruction, and STL export. Call synchronize() before
     operations that read backend geometry after changing live control points.
     """
+
+    export_format = SurfaceExportFormat.STL
 
     is_discrete = True
     mirror: type[CPGEOMirrorConstraint] = CPGEOMirrorConstraint
@@ -236,7 +240,6 @@ class CPGEOSurface(ControlPointSurface):
     def get_preloaddata(
         self, pre_points: torch.Tensor = None, faces: torch.Tensor = None
     ):
-
         """Precompute sparse CPGEO basis stencils for surface integration and differentiation.
 
         Args:
@@ -326,50 +329,23 @@ class CPGEOSurface(ControlPointSurface):
         r = self.get_r().detach()
         return self.preload_data.compute_point_weights(r)
 
-    @staticmethod
-    def output_stl_file(vertices, faces, path_output, name_output):
-        """Output CPGEO mesh as STL file.
-
-        Args:
-            vertices: Vertex coordinates, shape (N, 3)
-            faces: Face connectivity, shape (F, 3)
-            path_output: Output directory path
-            name_output: Output file name (without extension)
-
-        Returns:
-            str: Written STL file path, including the output directory and .stl suffix.
-        """
-        import pyvista as pv
-
-        # Create PyVista mesh
-        faces_with_count = np.hstack([np.full((faces.shape[0], 1), 3), faces])
-        mesh = pv.PolyData(vertices, faces_with_count)
-
-        # Output STL file
-        output_file = path_output + "/" + name_output + ".stl"
-        mesh.save(output_file)
-
-        return output_file
-
-    def output_data(
+    def write_surface(
         self,
-        path_output: str | Path,
-        name_output: str,
-        seed_size: float = -1,
+        stem: str | Path,
+        fmt: str,
         pools: Pool | None = None,
-    ) -> str:
-        """Output CPGEO mesh data to STL file.
-
-        Args:
-            path_output (str | Path): Output directory path
-            name_output (str): Output file name
-            seed_size (float): Optional seed size (unused for CPGEO)
-            pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
-
-        Returns:
-            str: Output filename with extension
-        """
-
+    ) -> Path:
+        """Reconstruct the current CPGEO surface at its sampling spacing and write STL."""
+        path = self._surface_path(stem, fmt)
+        self.synchronize()
+        # The native spherical remesher requires a closed control mesh.
+        control_mesh = pv.PolyData.from_regular_faces(
+            self.model.control_points, self.model._cp_faces
+        )
+        if control_mesh.n_open_edges:
+            raise ValueError(
+                "CPGEO STL export requires a closed control mesh. Check the end caps and shared edges."
+            )
         r_sphere, cpfaces = self.model.uniformly_mesh(
             seed_size=self.init_size,
             max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_OUTPUT_REFINEMENT_ITERATIONS,
@@ -379,13 +355,11 @@ class CPGEOSurface(ControlPointSurface):
         self._output_rsphere = r_sphere
         self._output_cpfaces = cpfaces
 
-        arguments = (r, cpfaces, path_output, name_output)
         if pools is None:
-            self.output_stl_file(*arguments)
+            _save_triangle_stl(r, cpfaces, path)
         else:
-            pools.apply_async(self.output_stl_file, args=arguments).get()
-
-        return name_output + ".stl"
+            pools.apply(_save_triangle_stl, (r, cpfaces, path))
+        return path
 
     def load_geometry(
         self,
@@ -437,8 +411,6 @@ class CPGEOSurface(ControlPointSurface):
             The backend model supplies the coordinates. Call synchronize() first if the live PyTorch
             control points have changed since the last synchronization.
         """
-        import pyvista as pv
-
         # Get current control point positions
         vertices = self.model.map3(self.model._knots)
         faces = self.model._cp_faces
@@ -495,7 +467,8 @@ class CPGEOSurface(ControlPointSurface):
         for i in range(num_segments_axial + 1):
             z = length * i / num_segments_axial
             for j in range(num_segments_circ):
-                theta = 2 * np.pi * j / num_segments_circ
+                # Clockwise rings give the CPGEO chart outward normals for flip=False.
+                theta = -2 * np.pi * j / num_segments_circ
 
                 # Base radius
                 r_val = r0
@@ -514,8 +487,6 @@ class CPGEOSurface(ControlPointSurface):
 
                 vertices.append([x, y, z_final])
 
-        vertices = np.array(vertices)
-
         # Generate faces (triangulate the cylinder surface)
         faces = []
         for i in range(num_segments_axial):
@@ -531,11 +502,20 @@ class CPGEOSurface(ControlPointSurface):
                 faces.append([v00, v01, v10])
                 faces.append([v01, v11, v10])
 
-        faces = np.array(faces)
+        # The spherical parameterization needs a closed, consistently wound
+        # control mesh. Share the end rings with the cap triangles.
+        for ring, z in ((0, 0.0), (num_segments_axial, length)):
+            center = len(vertices)
+            vertices.append([init_location[0], init_location[1], init_location[2] + z])
+            start = ring * num_segments_circ
+            for j in range(num_segments_circ):
+                a = start + j
+                b = start + (j + 1) % num_segments_circ
+                faces.append([center, b, a] if ring == 0 else [center, a, b])
 
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
-            control_points=vertices, cp_faces=faces, knot_influence_num=20
+            control_points=np.array(vertices), cp_faces=np.array(faces), knot_influence_num=20
         )
 
         # Create interface

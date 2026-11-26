@@ -1,7 +1,7 @@
 {
   "version": 4,
   "label": "BendingActuator",
-  "result_folder": ".results/",
+  "result_folder": "results/",
   "device": "cuda:0",
   "updater_device": null,
   "restart_per_iteration": 20,
@@ -67,20 +67,19 @@
                 "kind": "surface",
                 "name": "",
                 "params": {
-                  "type": "bsp_cylinder",
+                  "type": "cpgeo_cylinder",
                   "is_updatable": true,
                   "r0": 4.0,
                   "length": 74.0,
                   "seed_size": 1.0,
                   "num_U_ratio": 1,
                   "num_V_ratio": 1,
-                  "degree": 3,
                   "init_location": [
                     0.0,
                     0.0,
                     3.0
                   ],
-                  "perturbation_L": 10.0
+                  "perturbation_L": -1.0
                 },
                 "children": []
               }
@@ -242,11 +241,11 @@
               "update_strategy": {
                 "type": "AdaptiveShapeUpdate",
                 "params": {
+                  "max_solves": 3,
                   "initial_tolerance": 0.05,
                   "final_tolerance": 0.0,
                   "tightening_increment": 0.0002,
                   "violation_tolerance": 0.1,
-                  "max_solves": 3,
                   "weight_change_limit": 10.0
                 }
               },
@@ -262,7 +261,7 @@
                 {
                   "type": "Fairness",
                   "params": {
-                    "max_curvature": 2.0
+                    "max_curvature": 1.0
                   }
                 },
                 {
@@ -299,7 +298,7 @@
                   "surface_index": 0
                 },
                 {
-                  "type": "BspMirror",
+                  "type": "CPGEOMirror",
                   "params": {
                     "plane": "xz",
                     "offset": 0.0

@@ -12,17 +12,18 @@ from ...postprocess import last_completed_iteration
 from .. import launcher
 from ..i18n import localized_message
 from ..model.problem import ProblemDefinition
-from .definitions import ProblemLibrary
 
 
 class RunMode(str, Enum):
     """Distinguish a new optimization process from continuation of an archived run."""
+
     FRESH = "fresh"
     CONTINUE = "continue"
 
 
 class RunSourceKind(str, Enum):
     """Identify whether a run starts from a UI definition, Python script, or archived checkpoint."""
+
     DEFINITION = "definition"
     PYTHON = "py"
     CONTINUE = "continue"
@@ -49,11 +50,8 @@ class OptimizationRunSession:
         self.fresh_label = ""
         self.started_at = 0.0
         self.definition: ProblemDefinition | None = None
-        self._running_definition: ProblemDefinition | None = None
         self.source: RunSource | None = None
         self.last_iteration = 0
-        self._save_definition = True
-        self._saved_folders: set[str] = set()
         self.output_id = 0
         self.log = RunLog()
 
@@ -87,15 +85,10 @@ class OptimizationRunSession:
         self._ensure_idle()
         if source.kind is RunSourceKind.CONTINUE:
             if not self.is_result_folder(source.path):
-                raise ValueError(
-                    localized_message(
-                        "ui.errors.runs.missing_scripts_main_script_for_restart_py_in_the_selected"
-                    )
-                )
+                raise ValueError(localized_message("ui.errors.runs.missing_archive"))
             self.adopt(source.path)
         else:
             self.clear_result()
-            self._save_definition = source.kind is RunSourceKind.DEFINITION
         self.source = source
 
     def start_selected(self, target_iteration: int | None = None) -> subprocess.Popen:
@@ -140,23 +133,6 @@ class OptimizationRunSession:
         previous = self.folder
         if self.mode is RunMode.FRESH:
             self.discover_folder()
-        if (
-            self.active
-            and self.folder
-            and self._save_definition
-            and self._running_definition is not None
-            and self.folder not in self._saved_folders
-        ):
-            try:
-                ProblemLibrary.save_result_copy(self._running_definition, self.folder)
-            except (OSError, ValueError, TypeError) as exc:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "Cannot save the result definition: %s", exc
-                )
-            else:
-                self._saved_folders.add(self.folder)
         iteration = last_completed_iteration(self.folder) if self.folder else 0
         changed = previous != self.folder or iteration != self.last_iteration
         self.last_iteration = iteration
@@ -240,10 +216,7 @@ class OptimizationRunSession:
         definition = ProblemDefinition.from_dict(problem.to_dict())
         started_at = time.time()
         _job, process = launcher.run_job(definition)
-        self._save_definition = True
         self.definition = definition
-        self._running_definition = definition
-        self._saved_folders.clear()
         self.source = None
         self.last_iteration = 0
         self.process = process
@@ -266,8 +239,6 @@ class OptimizationRunSession:
         self._ensure_idle()
         started_at = time.time()
         root, label, process = launcher.run_py_definition(path)
-        self._save_definition = False
-        self._running_definition = None
         self.source = None
         self.last_iteration = 0
         self.process = process
@@ -302,8 +273,6 @@ class OptimizationRunSession:
             device=device,
             restart_per_iteration=restart_per_iteration,
         )
-        self._save_definition = False
-        self._running_definition = None
         self.process = process
         self.mode = RunMode.CONTINUE
         self.folder = str(Path(folder).resolve())
@@ -320,6 +289,15 @@ class OptimizationRunSession:
         Returns:
             bool: Is result folder.
         """
+        root = Path(folder)
+        return OptimizationRunSession.can_resume(folder) or (
+            (root / "log" / "history_record.csv").is_file()
+            and (root / "log" / "views").is_dir()
+        )
+
+    @staticmethod
+    def can_resume(folder: str) -> bool:
+        """Continuation requires the archived task script."""
         return (Path(folder) / "scripts" / "MAIN_SCRIPT_FOR_RESTART.py").is_file()
 
     def discover_folder(self) -> str | None:
@@ -367,11 +345,7 @@ class OptimizationRunSession:
         self.last_iteration = (
             last_completed_iteration(self.folder) if self.folder else 0
         )
-        if (
-            self.folder
-            and self.is_result_folder(self.folder)
-            and self.last_iteration > 0
-        ):
+        if self.folder and self.can_resume(self.folder) and self.last_iteration > 0:
             # Selecting via adopt() would reset progress for the displayed result.
             self.source = RunSource(
                 RunSourceKind.CONTINUE,
@@ -393,6 +367,7 @@ class OptimizationRunSession:
 @dataclass(frozen=True)
 class RunProgress:
     """Report result-directory discovery, completed iterations, and process termination to the UI."""
+
     folder: str | None
     iteration: int
     changed: bool

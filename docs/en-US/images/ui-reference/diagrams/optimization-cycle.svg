@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="590" viewBox="0 0 1200 590" role="img"><title>Outer optimization loop and inner iterations</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426484"/></marker></defs>
+<rect width="1200" height="590" rx="16" fill="#f5f8fc"/>
+<text x="32" y="42" font-family="Arial, sans-serif" font-size="24" fill="#15324d" font-weight="600">Outer optimization loop and inner iterations</text>
+<rect x="35" y="100" width="250" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">1. Current design</text>
+<text x="53" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Geometry, materials and load cases</text>
+<text x="53" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Initial or previous design</text>
+<rect x="355" y="100" width="250" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="373" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">2. Finite-element solution</text>
+<text x="373" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Equilibrium for each load case</text>
+<text x="373" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Displacements, stresses and energy</text>
+<rect x="675" y="100" width="245" height="120" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="693" y="130" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">3. Objective and metrics</text>
+<text x="693" y="160" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Evaluate design performance</text>
+<text x="693" y="187" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Record metrics separately</text>
+<polyline points="285,160 355,160" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="605,160 675,160" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="675" y="330" width="245" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="693" y="360" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">4. Design gradient</text>
+<text x="693" y="390" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Shape or material sensitivity</text>
+<text x="693" y="417" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">For the selected objective</text>
+<rect x="355" y="330" width="250" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="373" y="360" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">5. Update subproblem</text>
+<text x="373" y="390" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Gradient, symmetry and constraints</text>
+<text x="373" y="417" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">max_step_iter: inner iteration limit</text>
+<rect x="35" y="330" width="250" height="125" rx="12" fill="#e5f0fc" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="53" y="360" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">6. Save design</text>
+<text x="53" y="390" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Store state, iteration and metrics</text>
+<text x="53" y="417" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Next iteration starts a new FE solve</text>
+<polyline points="797,220 797,330" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="675,390 605,390" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="355,390 285,390" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<polyline points="160,330 160,220" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<rect x="970" y="255" width="195" height="155" rx="12" fill="#eef5e8" stroke="#b0c6db" stroke-width="1.5"/>
+<text x="988" y="285" font-family="Arial, sans-serif" font-size="17" fill="#154575" font-weight="600">Post-run FE analysis</text>
+<text x="988" y="315" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Load a saved design</text>
+<text x="988" y="342" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Fix geometry and materials</text>
+<text x="988" y="369" font-family="Arial, sans-serif" font-size="15" fill="#263b50" font-weight="400">Change loads and solve again</text>
+<polyline points="920,160 1067,160 1067,255" fill="none" stroke="#426484" stroke-width="2.2" marker-end="url(#arrow)"/>
+<text x="35" y="535" font-family="Arial, sans-serif" font-size="17" fill="#263b50" font-weight="400">The outer design loop, the inner update and the nonlinear FE solver each have their own iteration count.</text>
+</svg>

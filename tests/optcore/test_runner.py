@@ -125,7 +125,7 @@ class ThisController(morphopt.Controller):
     def step(self):
         if PHASE == "step":
             raise ValueError("intentional optimization-step failure")
-        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "test snapshot"
 
     def record_history(self, *args):
         pass
@@ -133,7 +133,8 @@ class ThisController(morphopt.Controller):
     def print_info(self, *args):
         pass
 
-    def save(self):
+    def save(self, design_snapshot):
+        assert design_snapshot == "test snapshot"
         try:
             (Path(self.path_result) / "missing" / "1.jpg").write_bytes(b"image")
         except FileNotFoundError as exc:

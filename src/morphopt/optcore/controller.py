@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pyvista import MultiBlock
+
     from .. import ObjectiveFunction, Params, Solver, Updaters
 import datetime
 import gc
@@ -13,13 +15,14 @@ import os
 import shutil
 import time
 from multiprocessing import get_context
+from pathlib import Path
 
 import torch
 
 import morphopt
 
 from ..constants import CONSTANT
-from ..utils.paths import sanitize_name
+from ..utils.paths import sanitize_name, write_result_launcher
 from .history import History
 
 logger = logging.getLogger(__name__)
@@ -33,21 +36,18 @@ class Controller:
     task. The controller owns the outer iteration, result directory, persistence, and history
     collection; numerical responsibilities remain in the composed components.
     """
+
     class Params:
         """Declare the model-parameter implementation used by the task controller."""
-        pass
 
     class Solver:
         """Declare the finite-element solver implementation used by the task controller."""
-        pass
 
     class Updater:
         """Declare the updater collection used by the task controller."""
-        pass
 
     class ObjectiveFunction:
         """Declare the physical objective and named metrics used by the task controller."""
-        pass
 
     def __init__(
         self, path_result_folder: str, opt_label: str = "DefaultLabel"
@@ -104,7 +104,9 @@ class Controller:
         History: An instance of the History class from the History module to record the optimization history.
         """
 
-        self.restart_per_iteration: int = CONSTANT.KERNEL.CONTROLLER.RESTART_PER_ITERATION
+        self.restart_per_iteration: int = (
+            CONSTANT.KERNEL.CONTROLLER.RESTART_PER_ITERATION
+        )
         """
         The frequency of restarting the optimization process.
         """
@@ -209,9 +211,10 @@ class Controller:
 
             main_filepath = __main__.__file__
         scripts_directory = self.path_result + "/scripts/"
-        shutil.copy(
-            main_filepath, scripts_directory + "MAIN_SCRIPT_FOR_RESTART.py"
-        )
+        shutil.copy(main_filepath, scripts_directory + "MAIN_SCRIPT_FOR_RESTART.py")
+        definition = Path(main_filepath).with_suffix(".morph")
+        if definition.is_file():
+            shutil.copyfile(definition, Path(scripts_directory) / "MAIN_SCRIPT_FOR_RESTART.morph")
         asset_directory = os.path.join(
             os.path.dirname(os.path.abspath(main_filepath)), "morphopt_assets"
         )
@@ -224,6 +227,7 @@ class Controller:
         vendor_package("torchfea", target_dir=self.path_result + "/scripts/")
         vendor_package("cpgeo", target_dir=self.path_result + "/scripts/")
         vendor_package("morphopt", target_dir=self.path_result + "/scripts/")
+        write_result_launcher(Path(self.path_result))
 
     def initialize(self) -> None:
         """
@@ -247,7 +251,6 @@ class Controller:
         self.pools = get_context("spawn").Pool(processes=self.solver.num_process)
 
     def start_optimization(self, main_filepath: str = None) -> None:
-
         """Initialize a new task and run the outer optimization loop.
 
         Create the result directory and log layout, initialize the composed model and numerical
@@ -292,7 +295,6 @@ class Controller:
     def restart_optimization(
         self, path_result: str, target_iteration: int = None
     ) -> None:
-
         """Restore an archived task at a completed checkpoint and continue optimization.
 
         Args:
@@ -323,7 +325,7 @@ class Controller:
             # Explicitly release large objects to ensure they are collected
             self.clear_cache()
 
-            _, t0, t1, t2, t3, t4 = self.step()
+            _, t0, t1, t2, t3, t4, design_snapshot = self.step()
 
             # Record the history of the optimization process
             self.record_history(t0, t1, t2, t3, t4)
@@ -332,7 +334,8 @@ class Controller:
             self.print_info(t0, t1, t2, t3, t4)
 
             # Save the current parameters and plot the figures
-            self.save()
+            self.save(design_snapshot)
+            del design_snapshot  # Release the meshes before building the next FE model.
 
             # if dataqueue is not None, send the data to the queue
             if self.dataqueue is not None:
@@ -356,13 +359,12 @@ class Controller:
                 self.pools.join()
                 return
 
-    def step(self):
+    def step(self) -> tuple[torch.Tensor, float, float, float, float, float, MultiBlock]:
         """Execute one complete outer iteration: build, solve, differentiate, and update.
 
         Returns:
-            tuple[torch.Tensor, float, float, float, float, float]: Physical objective and
-                timestamps t0 through t4 delimiting model construction, FEA, sensitivity analysis,
-                and design update.
+            The physical objective, timestamps t0 through t4, and the design meshes
+            used for this solve, captured before the design update.
         """
         t0 = time.time()
 
@@ -379,12 +381,10 @@ class Controller:
         self.updater.reinitialize(iteration=self.history.iteration)
         self.objfun.reinitialize(iteration=self.history.iteration)
 
-        # The checkpoint saved after the update belongs to the next design.
-        # Capture the geometry after refinement, as used by this iteration's FEA.
-        self.params.geometry.save(
-            foldpath=os.path.join(self.path_result, "log", "evaluated", str(self.history.iteration + 1)),
-            iteration=self.history.iteration + 1,
-        )
+        if self.history.iteration == 0:
+            self.params.geometry.save(
+                foldpath=os.path.join(self.path_result, "log"), iteration=0
+            )
 
         # Perform the optimization step
         logger.info(f"Creating FEA model for iteration {self.history.iteration}...")
@@ -392,6 +392,10 @@ class Controller:
             path_result=self.path_result + "/cache/", pools=self.pools
         )
 
+        from ..postprocess.snapshots import capture_design
+
+        with torch.no_grad():
+            design_snapshot = capture_design(self.params)
         t1 = time.time()
 
         # Perform finite element analysis (FEA)
@@ -416,7 +420,7 @@ class Controller:
 
         t4 = time.time()
 
-        return loss, t0, t1, t2, t3, t4
+        return loss, t0, t1, t2, t3, t4, design_snapshot
 
     def record_history(
         self, t0: float, t1: float, t2: float, t3: float, t4: float
@@ -464,26 +468,24 @@ class Controller:
         logger.info(f"  Total Time: {t4 - t0:.2f} seconds")
         logger.info("-" * 50)
 
-    def save(self) -> None:
+    def save(self, design_snapshot: MultiBlock) -> None:
+        """Archive the completed solve and its updated design parameters.
+
+        Args:
+            design_snapshot: Design meshes captured for the finite-element solve.
         """
-        Save the current state of the optimization process.
-        """
-        self.params.save(
-            foldpath=self.path_result + "/log/", iteration=self.history.iteration
-        )
-        self.solver.save(
-            foldpath=self.path_result + "/log/", iteration=self.history.iteration
-        )
-        self.updater.save(
-            foldpath=self.path_result + "/log/", iteration=self.history.iteration
-        )
-        self.objfun.save(
-            foldpath=self.path_result + "/log/", iteration=self.history.iteration
-        )
+        from ..postprocess.snapshots import save_snapshot
+
+        log_folder = self.path_result + "/log/"
+        iteration = self.history.iteration
+        self.params.save(foldpath=log_folder, iteration=iteration)
+        self.solver.save(foldpath=log_folder, iteration=iteration)
+        self.updater.save(foldpath=log_folder, iteration=iteration)
+        self.objfun.save(foldpath=log_folder, iteration=iteration)
+        with torch.no_grad():
+            save_snapshot(log_folder, iteration, design_snapshot, self.objfun)
         # Publish a completed iteration only after its model and results exist.
-        self.history.save(
-            foldpath=self.path_result + "/log/", iteration=self.history.iteration
-        )
+        self.history.save(foldpath=log_folder, iteration=iteration)
 
     def clear_cache(self) -> None:
         """

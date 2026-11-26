@@ -92,6 +92,7 @@ def design_archive(tmp_path):
     part = params.geometry.interfaces["body"]
     archive.log_folder.mkdir()
     with cpu_torch_defaults():
+        part.save(foldpath=str(archive.log_folder), iteration=0)
         inner = part.surface_interfaces()[1]
         inner.update_variables(torch.full_like(inner.control_points, 0.2))
         part.save(foldpath=str(archive.log_folder), iteration=1)
@@ -102,3 +103,25 @@ def design_archive(tmp_path):
     history.append(objective=0.9)
     history.save(foldpath=str(archive.log_folder))
     return archive
+
+
+@pytest.fixture
+def deformation_archive(design_archive, iteration_model):
+    """Archive two FE solutions with visibly different deformations for GIF tests."""
+    from types import SimpleNamespace
+    from morphopt.postprocess import cpu_torch_defaults
+    from morphopt.postprocess.snapshots import capture_design, save_snapshot
+
+    model, controller, result = iteration_model
+    design_archive.fea_folder.mkdir()
+    for step in (1, 2):
+        shutil.copyfile(model.model_path, design_archive.fea_model_path(step))
+        result.GC = result.GC * 20
+        result.save(str(design_archive.fea_result_path("case", step)))
+        with cpu_torch_defaults():
+            design_archive.load_geometry_part("body", step - 1)
+            save_snapshot(design_archive.log_folder, step,
+                          capture_design(design_archive.params),
+                          SimpleNamespace(fe=controller, fe_results={"case": result}))
+    (design_archive.fea_folder / "load_cases.json").write_text('["case"]', encoding="utf-8")
+    return design_archive

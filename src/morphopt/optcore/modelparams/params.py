@@ -202,16 +202,8 @@ class Params(
             iteration (int): Iteration index associated with the saved or current model state.
         """
         self.geometry.load(foldpath=foldpath, iteration=iteration)
+        self.feamodel.load(foldpath=foldpath, iteration=iteration)
         self.materials.load(foldpath=foldpath, iteration=iteration)
-
-    def export_data(self, filepath: str) -> None:
-        """
-        Export the data of parameters to file(s).
-
-        Args:
-            filepath (str): The path to export the data.
-        """
-        self.geometry.export_data(foldpath=filepath)
 
     def plot(
         self, plotter: pv.Plotter | None = None, meshes: list[pv.DataSet] | None = None

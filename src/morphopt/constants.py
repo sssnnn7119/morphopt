@@ -21,10 +21,14 @@ class _Constants:
 
         class OBSERVER:
             OUTPUT_MAXIMUM_BLOCKS = 10000
+            PREVIEW_CACHE_BYTES = (
+                5 * 1024**3
+            )  # Shared mesh-data budget for history previews.
             LOG_READ_MAXIMUM_BYTES = 1024 * 1024
             POLL_INTERVAL_MS = 1000
 
         class CAMERA:
+            FIT_VIEW_FRACTION = 0.96
             FRAME_INTERVAL_MS = 16
             MOVEMENT_SPEED_RATIO = 0.3
             FAST_MULTIPLIER = 4.0
@@ -1007,6 +1011,8 @@ class _Constants:
 
         class VISUALIZATION:
             WINDOW_SIZE = (1200, 1200)
+            SNAPSHOT_LZMA_LEVEL = 1
+            SNAPSHOT_BLOCK_BYTES = 256 * 1024
             CAMERA_AZIMUTH_DEGREES = 210
             CAMERA_ELEVATION_DEGREES = 20
             INSTANCE_COLORS = ("#2878b5", "#edb120", "#af52cd", "#f15854", "#779548")
@@ -1045,7 +1051,15 @@ class _Constants:
 
         class FEA:
             SPHERICAL_JOINT_VALUES = (1.0, 0.0, 0.0, 0.0)
-            SINGLE_DOF_JOINT_VALUES = (*SPHERICAL_JOINT_VALUES, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+            SINGLE_DOF_JOINT_VALUES = (
+                *SPHERICAL_JOINT_VALUES,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            )
             DEFAULT_TRANSLATION_DOFS = (0, 1, 2)
             CONTACT_PENALTY_THRESHOLD = 3.0
 
@@ -1061,12 +1075,13 @@ class _Constants:
 
         class SHAPE_CONSTRAINTS:
             class FAIRNESS:
-                CURVATURE_LIMIT = 1.5
+                CURVATURE_LIMIT = 1.0
                 METRIC_VARIATION_LIMIT = 1.0
                 NONORTHOGONALITY_LIMIT = 0.2
                 ACTIVATION_RATIO = 0.8
                 BSP_EXPONENT = 3
                 CPGEO_EXPONENT = 3
+                CPGEO_STRETCH_RATIO_LIMIT = 2.5
 
             BARRIER_THRESHOLD = 0.05
             BARRIER_RATIO = 0.0
@@ -1169,6 +1184,9 @@ class _Constants:
             PROJECTION_PARAMETER_MAX = 1.0
 
         class SIMP:
+            EXPORT_VOXEL_SIZE = 1.0
+            EXPORT_DENSITY_THRESHOLD = 0.5
+            EXPORT_SAMPLE_BATCH_SIZE = 8192
             DEFAULT_INITIAL_RATIO = 0.5
             DEFAULT_VOID_PENALTY_FACTOR = 0.01
             DEFAULT_MATERIAL_PENALTY = 8

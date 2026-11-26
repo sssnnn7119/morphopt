@@ -11,7 +11,7 @@ MorphOpt is a differentiable structural optimization framework that combines the
 - First-order and history-based quadratic FEA surrogates with L-BFGS subproblem solves and explicit step limits
 - Surface-integrated geometric penalties with fixed, sensitivity-based, or adaptive weights; native FEA sensitivities remain unscaled
 - Named load cases, ordered solve groups, and per-worker CPU/GPU assignment (one CPU worker by default)
-- UI definition, asset preview, saved-log browsing, per-surface/control-net views, and current-view geometry export and history GIF export
+- UI definition, asset preview, saved-log browsing, per-surface/control-net views, and component-specific history export (STEP/STL for boundary surfaces), previewable GIF animations, and Abaqus INP files
 - Component customization through framework class inheritance
 
 ## Quick Start
@@ -53,7 +53,7 @@ Requirements: Python ≥ 3.12; a PyTorch **float64** build is recommended.
 
 The GUI opens directly into the full definition workbench with its standard sections present and no problem setup prefilled. Definitions can be created directly in the workbench or generated through **Quickstart**. Quickstart provides shape and topology optimization settings, geometry definitions, and weighted objective terms with associated load conditions. Workspace terms select their driving pressure channels and use boundary integration. Generated problems stay editable and can be saved or exported as runnable folders. Load cases use named interface cards with individually labelled scalar parameters. Workspace objectives automatically register their boundary Gauss-point cases.
 
-The [UI quick start](docs/UIguide.md) covers the complete example from model definition to optimization and result inspection. The [script quick start](docs/scriptguide.md) provides the equivalent runnable Python task.
+The [UI quick start](docs/en-US/ui-quickstart.md) covers the complete example from model definition to optimization and result inspection. The [script quick start](docs/en-US/script-quickstart.md) provides the equivalent runnable Python task.
 
 ### Run the UI in a virtual environment
 
@@ -87,12 +87,14 @@ Shared UI defaults and tunable kernel parameters live in [`src/morphopt/constant
 
 ### Documentation
 
+[English documentation](docs/en-US/README.md) · [简体中文文档](docs/zh-CN/README.md)
+
 | Workflow | Quick start | Module and interface reference |
 |---|---|---|
-| Python script | [Start an optimization](docs/scriptguide.md) | [Define and extend each module](docs/scriptreference.md) |
-| Graphical UI | [Create and run the example](docs/UIguide.md) | [Modules, parameters and interface definitions](docs/UIreference.md) |
+| Python script | [Start an optimization](docs/en-US/script-quickstart.md) | [Define and extend each module](docs/en-US/script-reference.md) |
+| Graphical UI | [Create and run the example](docs/en-US/ui-quickstart.md) | [Modules, parameters and interface definitions](docs/en-US/ui-reference.md) |
 
-The [documentation index](docs/README.md) includes the reading order and automatic section numbering commands. Theory and code architecture are documented separately under `docs/theory/` and `docs/codestructure/`.
+The [documentation index](docs/en-US/README.md) includes the reading order and automatic section numbering commands. Theory and code architecture are documented separately under `docs/en-US/theory/` and `docs/en-US/codestructure/`.
 
 ## Directory Overview
 

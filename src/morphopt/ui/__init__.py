@@ -28,7 +28,7 @@ ui/widgets/          modeltree / editor / load_cases / codeeditor / viewer
 ui/launcher.py       headless job launch / continue / result helpers
 
 The maintainability contract lives in
-``docs/codestructure/README.md`` and its UI model, application, presentation,
+``docs/en-US/codestructure/README.md`` and its UI model, application, presentation,
 and results chapters.
 """
 

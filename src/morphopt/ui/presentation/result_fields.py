@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...postprocess import ContourField
-from ..i18n import localization, tr
+from ..i18n import translated_or
 
 
 def contour_label_key(field: ContourField) -> str:
@@ -40,7 +40,7 @@ def field_label(key: str, description: str) -> str:
     Returns:
         str: Translate built-in fields and use the provider description for extensions.
     """
-    return _translated_or(f"ui.fea.field_{key}", description)
+    return translated_or(f"ui.fea.field_{key}", description)
 
 
 def export_format_label(key: str) -> str:
@@ -52,13 +52,4 @@ def export_format_label(key: str) -> str:
     Returns:
         str: Produce a file dialog filter for a registered result format.
     """
-    return _translated_or(f"ui.files.{key}", f"{key.upper()} (*.{key})")
-
-
-def _translated_or(key: str, fallback: str) -> str:
-    if (
-        key in localization.load_locale(localization.locale)
-        or key in localization.load_locale(localization.fallback_locale)
-    ):
-        return tr(key)
-    return fallback
+    return translated_or(f"ui.files.{key}", f"{key.upper()} (*.{key})")
