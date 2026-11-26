@@ -71,7 +71,7 @@
                   "is_updatable": true,
                   "r0": 4.0,
                   "length": 74.0,
-                  "seed_size": 1.4,
+                  "seed_size": 1.0,
                   "num_U_ratio": 1,
                   "num_V_ratio": 1,
                   "init_location": [
