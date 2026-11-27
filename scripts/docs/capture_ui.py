@@ -411,12 +411,12 @@ def capture(locale, archive, output):
         # Replace the obsolete geometry/fairness fields in earlier illustrations.
         problem, wb = load("examples/bending_actuator/bending_actuator.morph")
         part = problem.parts()[0]
-        for kind, filename in [
-            ("cpgeo_cylinder", "cpgeo-cylinder"),
-            ("cpgeo_sphere", "cpgeo-sphere"),
+        for kind, filename, options in [
+            ("cpgeo_cylinder", "cpgeo-cylinder", {"fix_end_caps": False}),
+            ("cpgeo_sphere", "cpgeo-sphere", {}),
         ]:
             problem.remove_surface(part.surfaces[-1])
-            surface = SurfaceNode.create(kind, r0=4.0, seed_size=2.0)
+            surface = SurfaceNode.create(kind, r0=4.0, seed_size=2.0, **options)
             problem.add_surface(surface, part=part)
             wb.set_problem(problem)
             select(wb, surface)

@@ -242,10 +242,10 @@ class PartSetCatalog:
         names = [f"surface_{index}_All" for index in range(surface_count)]
         if isinstance(part, OffsetBoundaryPartNode):
             names.extend(f"surface_{index}_offset" for index in range(1, surface_count))
-        end_nodes = (
-            tuple(f"surface_0_{name}" for name in part.surfaces[0].end_node_set_names)
-            if surface_count
-            else ()
+        end_nodes = tuple(
+            f"surface_{index}_{end}"
+            for index, surface in enumerate(part.surfaces)
+            for end in surface.end_node_set_names
         )
         faces = [
             name

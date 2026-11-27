@@ -108,8 +108,7 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
     r0: float | str
     length: float | str
     seed_size: float | str
-    num_U_ratio: int | str
-    num_V_ratio: int | str
+    fix_end_caps: bool
     init_location: list[float] | str
     perturbation_L: float | str
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -138,20 +137,11 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
             minimum=Defaults.SEED_SIZE.MIN,
         ),
         FieldSpec(
-            "num_U_ratio",
-            "ui.schema.fields.num_u_ratio.label.num_u_ratio",
-            "int",
-            Defaults.NUM_U_RATIO.DEFAULT,
-            doc_key="ui.schema.fields.num_u_ratio.help.control_grid_u_ratio",
-            minimum=Defaults.NUM_U_RATIO.MIN,
-        ),
-        FieldSpec(
-            "num_V_ratio",
-            "ui.schema.fields.num_v_ratio.label.num_v_ratio",
-            "int",
-            Defaults.NUM_V_RATIO.DEFAULT,
-            doc_key="ui.schema.fields.num_v_ratio.help.control_grid_v_ratio",
-            minimum=Defaults.NUM_V_RATIO.MIN,
+            "fix_end_caps",
+            "ui.schema.fields.fix_end_caps.label",
+            "bool",
+            Defaults.FIX_END_CAPS.DEFAULT,
+            doc_key="ui.schema.fields.fix_end_caps.help",
         ),
         FieldSpec(
             "init_location",
@@ -169,6 +159,11 @@ class CPGEOCylinderSurfaceNode(SurfaceNode):
             doc_key="ui.schema.fields.perturbation_l.help.wavelength_of_initial_imperfection_0_none",
         ),
     )
+
+    @property
+    def end_node_set_names(self) -> tuple[str, ...]:
+        """End sets available for selection in the model editor."""
+        return ("Bottom", "Head") if self.fix_end_caps else ()
 
 
 class CPGEOSphereSurfaceNode(SurfaceNode):

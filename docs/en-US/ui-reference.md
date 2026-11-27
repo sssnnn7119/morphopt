@@ -355,9 +355,8 @@ This interface does not have a BSP iteration parameter; the curvature threshold 
 |---|---|---|
 | Radius r0 / `r0` | `4.0` | Initial radius. |
 | Length / `length` | `74.0` | Cylinder length along z. |
-| Surface sampling spacing / `seed_size` | `1.0` | Spacing for the initial control mesh and surface presampling (seed_size / init_size). The Part fea_seed_size separately controls the volume FE mesh. |
-| Circumferential count alignment factor / `num_U_ratio` | `1` | num_U_ratio: align the circumferential control-mesh count to multiples of lcm(12, num_U_ratio). |
-| Axial count rounding factor / `num_V_ratio` | `1` | num_V_ratio: round the axial control-mesh count by this factor, then adjust parity for symmetry. BSP uses an odd number of control-point rows; CPGEO uses an even number of axial segments. |
+| Surface sampling spacing / `seed_size` | `1.4` | Spacing for the initial control mesh and surface presampling (seed_size / init_size). The Part fea_seed_size separately controls the volume FE mesh. |
+| Fix both end caps / `fix_end_caps` | `True` | Hold the end-cap control points fixed and create Bottom and Head node sets. Clear to optimize the entire closed surface, including both ends. |
 | init_location / `init_location` | `[0.0, 0.0, 0.0]` | Offset of the surface. |
 | perturbation_L / `perturbation_L` | `-1.0` | Wavelength of initial imperfection (<=0 none). |
 
@@ -445,7 +444,7 @@ The three rotational components are represented using rotation vectors, rather t
 
 | part | node set | Surface set | Usage instructions |
 |---|---|---|---|
-| BoundaryPart | `surface_i_All`; The outer boundary of BSP has `surface_0_Bottom` / `surface_0_Head` additional elements; BREP has `face_N_nodes` additional elements | `surface_i_All`; BREP also includes `face_N` | CPGEO does not define Head/Bottom; the set of nodes corresponds to different interface parameters, while the set of surfaces corresponds to different interface parameters. |
+| BoundaryPart | `surface_i_All`. BSP surfaces and CPGEO cylinders with fixed ends also provide `surface_i_Bottom` and `surface_i_Head`. BREP provides `face_N_nodes` | `surface_i_All`. BREP also provides `face_N` | End sets support displacement constraints and reference-point coupling. The index `i` matches the surface index in the model tree |
 | OffsetBoundaryPart | There are also additional sets related to the bias, outside of the boundary set. | Including `surface_i_offset` (related to internal cavities). | Subject to the actual candidate list available. |
 | BoxPart | `all`、`nodes_xmin/xmax/ymin/ymax/zmin/zmax` | `extern`、`surface_xmin/xmax/ymin/ymax/zmin/zmax` | Unit block `C3D8` |
 | CADPart | `all`、`surface_all`、`face_N_nodes` | `extern`、`face_N` | After modifying the CAD history, it's necessary to re-check the surface numbers. |

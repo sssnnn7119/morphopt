@@ -355,9 +355,8 @@ U、V 方向的控制网格计数因子不在 UI 表单中显示。登记 `BspRo
 |---|---|---|
 | 半径 r0 / `r0` | `4.0` | 初始构型的内/外半径。 |
 | 长度 / `length` | `74.0` | 圆柱沿 Z 轴的长度。 |
-| 曲面采样间距 / `seed_size` | `1.0` | 用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。 |
-| 周向控制网格计数因子 / `num_U_ratio` | `1` | 对应 num_U_ratio：周向控制网格数量按 lcm(12, num_U_ratio) 的倍数取整。 |
-| 轴向控制网格计数因子 / `num_V_ratio` | `1` | 对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。 |
+| 曲面采样间距 / `seed_size` | `1.4` | 用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。 |
+| 固定两个端面 / `fix_end_caps` | `True` | 固定两个端面的控制点并生成 Bottom 和 Head 节点集。取消勾选后，整个闭合曲面均可参与形状更新，包括两个端面。 |
 | 初始位置 / `init_location` | `[0.0, 0.0, 0.0]` | 表面的初始偏移位置。 |
 | 初始扰动波长 / `perturbation_L` | `-1.0` | 初始缺陷波长；小于等于 0 表示不添加缺陷。 |
 
@@ -445,7 +444,7 @@ STEP 内容以 Base64 保存在 `.morph` 中，面映射随定义保存。生成
 
 | 部件 | 节点集 | 表面集 | 使用提示 |
 |---|---|---|---|
-| BoundaryPart | `surface_i_All`；BSP 外边界另有 `surface_0_Bottom` / `surface_0_Head`；BREP 另有 `face_N_nodes` | `surface_i_All`；BREP 另有 `face_N` | CPGEO 不定义 Head/Bottom；节点集与表面集分别对应不同的接口参数 |
+| BoundaryPart | `surface_i_All`。BSP 曲面和固定端面的 CPGEO 圆柱另有 `surface_i_Bottom`、`surface_i_Head`。BREP 另有 `face_N_nodes` | `surface_i_All`。BREP 另有 `face_N` | 端部节点集可用于固定位移或与参考点耦合。编号 `i` 与模型树中的曲面序号一致 |
 | OffsetBoundaryPart | 在边界集合外还有偏置相关集合 | 包括 `surface_i_offset`（内腔相关） | 以实际候选列表为准 |
 | BoxPart | `all`、`nodes_xmin/xmax/ymin/ymax/zmin/zmax` | `extern`、`surface_xmin/xmax/ymin/ymax/zmin/zmax` | 单元块 `C3D8` |
 | CADPart | `all`、`surface_all`、`face_N_nodes` | `extern`、`face_N` | 改 CAD 历史后重查面编号 |

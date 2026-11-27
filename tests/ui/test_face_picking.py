@@ -44,9 +44,10 @@ def test_box_faces_keep_local_names_after_instance_rotation():
 
 
 @pytest.mark.parametrize("part_type", [BoundaryPartNode, OffsetBoundaryPartNode])
-def test_bsp_boundary_faces_distinguish_wall_and_caps(part_type):
+@pytest.mark.parametrize("surface_type", [BspCylinderSurfaceNode, CPGEOCylinderSurfaceNode])
+def test_cylinder_faces_distinguish_wall_and_caps(part_type, surface_type):
     part = part_type(name="tube")
-    part.add_surface(BspCylinderSurfaceNode(name="outer", r0=2, length=10))
+    part.add_surface(surface_type(name="outer", r0=2, length=10))
     scene = scene_for(part)
     _, mesh, item = scene.base_meshes[0]
     groups = [item.faces.group_names[group] for group in item.faces.cell_groups]
@@ -61,9 +62,14 @@ def test_bsp_boundary_faces_distinguish_wall_and_caps(part_type):
 
 
 @pytest.mark.parametrize("part_type", [BoundaryPartNode, OffsetBoundaryPartNode])
-def test_cpgeo_boundary_has_no_bsp_end_sets(part_type):
+@pytest.mark.parametrize("kind", ["sphere", "free_cylinder"])
+def test_cpgeo_surface_without_fixed_caps_has_no_end_sets(part_type, kind):
+    from morphopt.ui.model.node_types.surfaces import CPGEOSphereSurfaceNode
+
     part = part_type(name="tube")
-    part.add_surface(CPGEOCylinderSurfaceNode(name="outer", r0=2, length=10))
+    surface = (CPGEOSphereSurfaceNode(r0=2) if kind == "sphere"
+               else CPGEOCylinderSurfaceNode(r0=2, fix_end_caps=False))
+    part.add_surface(surface)
     _, mesh, item = scene_for(part).base_meshes[0]
     names = {name for group in item.faces.group_names for name in group}
     assert names == {"surface_0_All"}

@@ -46,14 +46,12 @@
                 "kind": "surface",
                 "name": "",
                 "params": {
-                  "type": "bsp_cylinder",
+                  "type": "cpgeo_cylinder",
                   "is_updatable": true,
                   "r0": 8.0,
                   "length": 80.0,
                   "seed_size": 1.0,
-                  "num_U_ratio": 1,
-                  "num_V_ratio": 1,
-                  "degree": 3,
+                  "fix_end_caps": true,
                   "init_location": [
                     0.0,
                     0.0,
@@ -72,14 +70,13 @@
                   "r0": 4.0,
                   "length": 74.0,
                   "seed_size": 1.0,
-                  "num_U_ratio": 1,
-                  "num_V_ratio": 1,
+                  "fix_end_caps": false,
                   "init_location": [
                     0.0,
                     0.0,
                     3.0
                   ],
-                  "perturbation_L": -1.0
+                  "perturbation_L": 10.0
                 },
                 "children": []
               }
@@ -290,12 +287,12 @@
               ],
               "symmetry_constraints": [
                 {
-                  "type": "BspMirror",
+                  "type": "CPGEOMirror",
                   "params": {
                     "plane": "xz",
                     "offset": 0.0
                   },
-                  "surface_index": 0
+                  "surface_index": 1
                 },
                 {
                   "type": "CPGEOMirror",
@@ -303,7 +300,7 @@
                     "plane": "xz",
                     "offset": 0.0
                   },
-                  "surface_index": 1
+                  "surface_index": 0
                 }
               ],
               "part_name": "part1"

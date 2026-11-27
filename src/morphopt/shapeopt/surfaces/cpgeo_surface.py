@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import cpgeo
 import numpy as np
 import pyvista as pv
 import torch
+from scipy.spatial import cKDTree
 
 from ...constants import CONSTANT
 from .base_surface import ControlPointSurface, SurfaceExportFormat
@@ -62,6 +65,9 @@ class CPGEOSurface(ControlPointSurface):
         )
 
         self.init_size = init_size
+        self._cap_disks: np.ndarray | None = None  # Bottom and head rows: center XYZ, radius.
+        self._fixed_indices: torch.Tensor | None = None  # Rows in the current control mesh.
+        self._fixed_points: torch.Tensor | None = None  # Reference coordinates, in the same order.
 
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
@@ -74,6 +80,90 @@ class CPGEOSurface(ControlPointSurface):
 
         self._output_cpfaces: np.ndarray
         """The output control point faces for visualization or debugging."""
+
+    def _capture_fixed_controls(self, indices: np.ndarray | None) -> None:
+        """Capture end-cap coordinates at first selection or checkpoint load."""
+        if indices is None:
+            self._fixed_indices = self._fixed_points = None
+        else:
+            self._fixed_indices = torch.as_tensor(indices, dtype=torch.long, device=self._cps.device)
+            self._fixed_points = self._cps.detach().index_select(0, self._fixed_indices)
+
+    def set_surface_parameters(self, x: torch.Tensor) -> None:
+        """Project the design tensor onto the initial end-cap coordinates."""
+        points = x.reshape_as(self._cps)
+        if self._fixed_indices is not None:
+            points = points.index_copy(
+                0, self._fixed_indices.to(points.device), self._fixed_points.to(points)
+            )
+        self._cps = points
+
+    @property
+    def end_node_set_names(self) -> tuple[str, ...]:
+        """Node sets supported by the fixed end disks of this surface."""
+        return ("Bottom", "Head") if self._cap_disks is not None else ()
+
+    def _disk_candidates(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
+        """Select points within the axial band and radius of each end disk.
+
+        The height band scales with the surface seed size. For short cylinders it
+        ends at the midplane, so the two sets always remain disjoint.
+        """
+        if self._cap_disks is None:
+            return {}
+        axis = self._cap_disks[1, :3] - self._cap_disks[0, :3]
+        length = np.linalg.norm(axis)
+        axis = axis / length
+        band = min(self.init_size * CONSTANT.KERNEL.SURFACE.CPGEO_CAP_HEIGHT_RATIO, length / 2)
+        result = {}
+        for name, disk in zip(self.end_node_set_names, self._cap_disks):
+            offsets = nodes - disk[:3]
+            axial = offsets @ axis
+            radial = np.linalg.norm(offsets - axial[:, None] * axis, axis=1)
+            in_disk = radial <= disk[3] + CONSTANT.KERNEL.BOUNDARY_PART.NODE_SET_TOLERANCE
+            result[name] = np.flatnonzero((np.abs(axial) < band) & in_disk)
+        return result
+
+    def get_node_sets(
+        self, nodes: np.ndarray, *, node_uv: np.ndarray | None = None
+    ) -> dict[str, np.ndarray]:
+        """Select FE nodes inside each disk that also belong to its control patch.
+
+        Each query inherits the label of the closest control knot on the reference
+        sphere. A folded side wall can enter an end disk in physical space while
+        its knots still belong to the side wall.
+
+        Args:
+            nodes: Cartesian coordinates of the FE surface nodes.
+            node_uv: Matched CPGEO parameters in the same node order, required
+                for a cylinder with fixed ends.
+
+        Returns:
+            Local node indices for Bottom and Head, or no sets for free ends.
+        """
+        if self._cap_disks is None:
+            return {}
+        if node_uv is None or len(node_uv) != len(nodes):
+            raise ValueError("CPGEO end sets require one matched UV coordinate per node.")
+
+        # Before the first refinement the control mesh is the initial cylinder.
+        # Afterwards only the originally fixed controls can own an end patch.
+        if self._fixed_indices is None:
+            cap_controls = self._disk_candidates(self.model.control_points)
+        else:
+            fixed = self._fixed_indices.cpu().numpy()
+            cap_controls = {
+                name: fixed[local]
+                for name, local in self._disk_candidates(self._fixed_points.cpu().numpy()).items()
+            }
+
+        knots = cKDTree(self.model._knots)
+        sets = self._disk_candidates(nodes)
+        for name, local in sets.items():
+            reference, = self.model.curvilinear_to_reference(node_uv[local])
+            _, nearest = knots.query(reference)
+            sets[name] = local[np.isin(nearest, cap_controls[name])]
+        return sets
 
     def synchronize(self):
         """Copy live geometric parameters to the external geometry representation."""
@@ -219,17 +309,28 @@ class CPGEOSurface(ControlPointSurface):
             self._reinitialize()
             self._is_first_initialize = False
 
+    def reinitialize_constraints(self) -> None:
+        """Lock the end disks on the first uniformly reconstructed, symmetry-aligned mesh."""
+        super().reinitialize_constraints()
+        if self._cap_disks is not None and self._fixed_indices is None and not self._is_first_initialize:
+            points = self.model.control_points
+            ends = self._disk_candidates(points)
+            self._capture_fixed_controls(np.concatenate(list(ends.values())))
+
     def _reinitialize(self):
         """Internal method to reinitialize the CPGEO model without checking."""
-        self.model.refine_surface(
+        indices = self.model.refine_surface(
             seed_size=self.init_size,
             max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_INITIAL_REFINEMENT_ITERATIONS,
+            fixed_control_indices=self._fixed_indices.cpu().numpy() if self._fixed_indices is not None else None,
         )
 
         # Load control points into torch tensor
         self._cps = torch.from_numpy(self.model.control_points).to(
             torch.get_default_device()
         )
+        if indices is not None:
+            self._fixed_indices = torch.as_tensor(indices, dtype=torch.long, device=self._cps.device)
 
         # Get knot points from the CPGEO model
         # For CPGEO, we use knot points as evaluation points (analogous to UV grid for BSP)
@@ -335,7 +436,7 @@ class CPGEOSurface(ControlPointSurface):
         fmt: str,
         pools: Pool | None = None,
     ) -> Path:
-        """Reconstruct the current CPGEO surface at its sampling spacing and write STL."""
+        """Sample the current CPGEO surface at its target spacing and write STL."""
         path = self._surface_path(stem, fmt)
         self.synchronize()
         # The native spherical remesher requires a closed control mesh.
@@ -346,6 +447,8 @@ class CPGEOSurface(ControlPointSurface):
             raise ValueError(
                 "CPGEO STL export requires a closed control mesh. Check the end caps and shared edges."
             )
+        # STL sampling redistributes vertices over the whole surface. Only control
+        # mesh reconstruction needs to preserve the initial cap control points.
         r_sphere, cpfaces = self.model.uniformly_mesh(
             seed_size=self.init_size,
             max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_OUTPUT_REFINEMENT_ITERATIONS,
@@ -378,28 +481,49 @@ class CPGEOSurface(ControlPointSurface):
         """
         return part.load_mesh_boundary(self._geometry_path)
 
-    def save(self, filename):
-        """Save CPGEO model to file.
+    @staticmethod
+    def _archive_path(filename: str | Path) -> Path:
+        """Accept either the checkpoint stem or the full NPZ filename."""
+        path = Path(filename)
+        return path if path.suffix == ".npz" else Path(f"{path}.npz")
+
+    def save(self, filename: str | Path) -> None:
+        """Save a native CPGEO archive with optional MorphOpt end-cap indices.
 
         Args:
-            filename: State-file path or filename prefix accepted by this component's save/load
-                pair.
+            filename: Checkpoint stem or NPZ path.
         """
-        self.model.control_points = self._cps.detach().cpu().numpy()
-        self.model.save(filename)
+        path = self._archive_path(filename)
+        self.synchronize()
+        with TemporaryDirectory(dir=path.parent) as directory:
+            archive = Path(directory) / path.name
+            self.model.save(archive)
+            if self._cap_disks is not None:
+                with ZipFile(archive, "a", compression=ZIP_DEFLATED) as npz:
+                    with npz.open("cap_disks.npy", "w") as entry:
+                        np.save(entry, self._cap_disks, allow_pickle=False)
+                    if self._fixed_indices is not None:
+                        with npz.open("cap_indices.npy", "w") as entry:
+                            np.save(entry, self._fixed_indices.cpu().numpy(), allow_pickle=False)
+            archive.replace(path)
 
-    def load(self, filename):
-        """Load CPGEO model from file.
-
-        Args:
-            filename: State-file path or filename prefix accepted by this component's save/load
-                pair.
-        """
-        self.model = cpgeo.CPGEO.load(filename + ".npz")
-        self._cps = torch.from_numpy(self.model.control_points).to(
-            torch.get_default_device()
-        )
-        self.initialize()
+    def load(self, filename: str | Path) -> None:
+        """Load native CPGEO geometry and restore end controls when the archive declares them."""
+        with self._archive_path(filename).open("rb") as archive:
+            self.model = cpgeo.CPGEO.load(archive)
+            archive.seek(0)
+            with np.load(archive, allow_pickle=False) as state:
+                self._cap_disks = state.get("cap_disks")
+                indices = state.get("cap_indices")
+        self._cps = torch.as_tensor(self.model.control_points, device=self._cps.device)
+        self._capture_fixed_controls(indices)
+        if self._cap_disks is None and indices is not None:
+            # Earlier archives stored a rim followed by its center for each end.
+            self._cap_disks = np.array([
+                [*cap[-1], np.linalg.norm(cap[0] - cap[-1])]
+                for cap in np.split(self.model.control_points[indices], 2)
+            ])
+        self._is_first_initialize = True
 
     def get_mesh(self):
         """Get the PyVista mesh from the synchronized CPGEO model.
@@ -428,39 +552,28 @@ class CPGEOSurface(ControlPointSurface):
         r0: float,
         length: float,
         seed_size: float,
-        num_U_ratio: int = 1,
-        num_V_ratio: int = 1,
+        *,
         init_location=[0.0, 0.0, 0.0],
-        perturbation_L=-1.0,
-    ):
+        perturbation_L: float = -1.0,
+        fix_end_caps: bool = True,
+    ) -> CPGEOSurface:
         """Initialize the CPGEO surface for cylinder shape optimization.
 
         Args:
             r0 (float): The radius of the cylinder.
             length (float): The length of the cylinder.
             seed_size (float): Initial control-mesh and surface sampling spacing.
-            num_U_ratio (int): Circumferential segment-count alignment factor, combined with 12 by
-                LCM.
-            num_V_ratio (int): Axial segment-count rounding factor; the final count is even.
             init_location: The initial location of the surface. Default is [0., 0., 0.].
             perturbation_L: The perturbation length for initial shape. Default is -1. If < 0, no
                 perturbation is applied.
+            fix_end_caps: Hold both end disks fixed during shape updates and expose their
+                Bottom and Head node sets. A free-ended cylinder still forms a closed shell.
 
         Returns:
             CPGEOSurface: The initialized CPGEO surface object.
         """
-        # Estimate number of segments based on seed size
-        base_segments = CONSTANT.KERNEL.SURFACE.CYLINDER_CIRCUMFERENTIAL_BASE_SEGMENTS
-        num_segments_circ = max(base_segments, round(r0 * 2 * np.pi / seed_size))
-        circ_ratio = int(np.lcm(base_segments, num_U_ratio))
-        num_segments_circ = max(
-            circ_ratio, round(num_segments_circ / circ_ratio) * circ_ratio
-        )
-
-        num_segments_axial = max(2, round(length / seed_size))
-        num_segments_axial = round(num_segments_axial / num_V_ratio) * num_V_ratio
-        if num_segments_axial % 2:
-            num_segments_axial += 1
+        num_segments_circ = max(3, round(2 * np.pi * r0 / seed_size))
+        num_segments_axial = max(1, round(length / seed_size))
 
         # Generate cylinder vertices
         vertices = []
@@ -515,11 +628,17 @@ class CPGEOSurface(ControlPointSurface):
 
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
-            control_points=np.array(vertices), cp_faces=np.array(faces), knot_influence_num=20
+            control_points=np.array(vertices),
+            cp_faces=np.array(faces),
+            knot_influence_num=min(CONSTANT.KERNEL.SURFACE.CPGEO_KNOT_INFLUENCE_COUNT, len(vertices) - 1),
         )
 
-        # Create interface
-        return cls(cpgeo_model, init_size=seed_size)
+        surface = cls(cpgeo_model, init_size=seed_size)
+        if fix_end_caps:
+            centers = cpgeo_model.control_points[-2:]
+            rims = cpgeo_model.control_points[[0, num_segments_axial * num_segments_circ]]
+            surface._cap_disks = np.column_stack((centers, np.linalg.norm(rims - centers, axis=1)))
+        return surface
 
     @classmethod
     def initialize_Sphere(
@@ -605,23 +724,8 @@ class CPGEOSurface(ControlPointSurface):
 
         r0 = self.model.map2(preuv)  # (M, 3)
 
-        # --- find nearest seed for each node (memory-efficient) ---
-        try:
-            # fast & memory-friendly when scipy is available
-            import scipy.spatial as sp
-
-            tree = sp.KDTree(r0)
-            _, min_dist_uv_idx = tree.query(nodes, k=1)
-        except ImportError:
-            # fallback: chunked search over nodes to avoid creating an MxN matrix
-            min_dist_uv_idx = np.empty(N, dtype=int)
-            node_chunk = CONSTANT.KERNEL.SURFACE.PROJECTION_NODE_CHUNK_SIZE
-            for i in range(0, N, node_chunk):
-                j = min(N, i + node_chunk)
-                nb = nodes[i:j]  # (B, 3)
-                # compute squared distances in a chunk (M, B)
-                d2 = np.sum((r0[:, None, :] - nb[None, :, :]) ** 2, axis=2)
-                min_dist_uv_idx[i:j] = np.argmin(d2, axis=0)
+        # Start each projection at the nearest sampled surface point.
+        _, min_dist_uv_idx = cKDTree(r0).query(nodes)
 
         min_dist_uv = preuv[min_dist_uv_idx]  # (N, 2)
 

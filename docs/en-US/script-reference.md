@@ -273,6 +273,8 @@ The surface only stores geometry; the curvature threshold is defined by the `Fai
 
 The name of the spherical factory is `initialize_Sphere`, and this case is retained in uppercase. The script name differs from the `cpgeo_sphere` type label in the UI. The parameter descriptions and examples for each surface can be found in [UI Surface Reference](ui-reference.md#surface_types-bsp-cylinder).
 
+`surface.save("surface.npz")` saves the current CPGEO geometry. With `fix_end_caps=True` (the default), cylinder archives store each end disk’s center and radius in `cap_disks`. After the first uniform reconstruction and symmetry projection, MorphOpt selects the controls in each end disk and saves their indices in `cap_indices`. Subsequent updates hold these controls fixed. Use `cpgeo.CPGEO.load("surface.npz")` to read the geometry directly, or `surface.load("surface.npz")` in MorphOpt to restore the end-cap constraints as well. For a free-ended cavity, pass `fix_end_caps=False` to `initialize_cylinder`. The closed surface retains its `surface_i_All` set.
+
 <a id="brep-topology"></a>
 
 ##### 4.2.1.1 BREP Topology, Set, and NURBS Conversion
@@ -383,7 +385,7 @@ class Frame(morphopt.INPPart):
 | Referenced objects | Common Names | Use Interface |
 |---|---|---|
 | Complete surface of boundary surface | `surface_0_All`、`surface_1_All` | Pressure, Contact |
-| BSP outer boundary bottom and top node sets | `surface_0_Bottom`、`surface_0_Head` | Fixed, coupled; CPGEO and BREP do not generate these node sets. |
+| Bottom and top node sets of BSP surfaces and CPGEO cylinders with fixed ends | `surface_i_Bottom`, `surface_i_Head` | Displacement constraints and reference-point coupling. CPGEO cylinders retain their initial end-cap controls during reconstruction and shape updates |
 | Box surface node set and surface set | `nodes_xmin`, `surface_xmax`, etc. | Fixed, Loads |
 | CAD Final Surface Collection | `face_N`, etc. | Refer to after checking the actual geometry. |
 | INP Collection | Collection names in the source file | Refer to the imported file by its effective name. |

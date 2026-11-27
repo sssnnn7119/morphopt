@@ -42,6 +42,7 @@ class BaseSurface(BaseModelComponent):
 
     # Native format used by meshing and whole-component export.
     export_format: ClassVar[SurfaceExportFormat | None] = None
+    end_node_set_names: tuple[str, ...] = ()
     is_discrete: ClassVar[bool] = False
 
     def __init__(self) -> None:
@@ -201,12 +202,15 @@ class BaseSurface(BaseModelComponent):
         """
         return torch.zeros([0], dtype=torch.float32)
 
-    def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
+    def get_node_sets(
+        self, nodes: np.ndarray, *, node_uv: np.ndarray | None = None
+    ) -> dict[str, np.ndarray]:
         """Return surface-specific node sets as indices into ``nodes``.
 
         Args:
             nodes (np.ndarray): Cartesian node coordinates with shape (num_nodes, 3), in model
                 length units.
+            node_uv: Matched surface parameters when needed for node classification.
 
         Returns:
             dict[str, np.ndarray]: Surface-specific node sets as indices into ``nodes``.
@@ -1310,21 +1314,25 @@ class ControlPointSurface(BaseSurface):
         return self._cps.flatten()
 
     def set_surface_parameters(self, x: torch.Tensor) -> None:
-        """Set the design variables of the surface.
+        """Assign absolute control-point coordinates.
+
+        Subclasses can override this method to enforce fixed coordinates on both
+        direct assignments and incremental updates.
 
         Args:
-            x (torch.Tensor): The new design variables to be set.
+            x (torch.Tensor): New coordinates in control-point order, optionally flattened.
         """
         self._cps = x.reshape(self._cps.shape)
 
     def update_variables(self, x_change: torch.Tensor) -> None:
-        """Update the surface with the new design variables.
+        """Add a displacement to the current coordinates of an updatable surface.
 
         Args:
-            x_change (torch.Tensor): The change of design variables to be applied.
+            x_change (torch.Tensor): Cartesian displacements in the same order as
+                the control points, optionally flattened.
         """
         if self.is_updatable:
-            self._cps = self._cps + x_change.reshape(self._cps.shape)
+            self.set_surface_parameters(self._cps + x_change.reshape_as(self._cps))
 
     def get_geometry_values(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Evaluate the current surface position and first and second parameter derivatives.

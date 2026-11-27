@@ -143,7 +143,7 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 | 曲面约束 | BSP/CPGEO 镜面、旋转或跨曲面关联 |
 | `UpdaterBoundaryPart` | 绑定单个 BoundaryPart 的形状子问题 |
 
-曲面专有节点集通过 `BaseSurface.get_node_sets(nodes)` 声明，默认返回空集合。`BspSurface` 定义 `Bottom` 与 `Head`，作为外边界时生成 `surface_0_Bottom` 和 `surface_0_Head`；CPGEO、BREP 和网格曲面不定义这些端部节点集。UI 的集合列表与拾取提示采用对应曲面类型的声明。
+每个边界曲面分别声明节点集。BSP 曲面和由 `CPGEOSurface.initialize_cylinder(..., fix_end_caps=True)` 创建的圆柱均提供 `surface_i_Bottom` 与 `surface_i_Head`，其中 `i` 为曲面注册序号。CPGEO 圆柱的初始控制网格由扇形三角片封闭两端。首次均匀重建后，程序提取两个端面上的控制点，在形状更新和控制网格重建时固定其坐标。导出 STL 时，整张曲面按目标间距均匀采样。有限元端部节点从该曲面自身的节点中选取。节点在端面上的投影须位于圆盘内，到端面的高度差须小于 CPGEO 曲面采样间距的一半。对于短圆柱，两端的选取范围最多延伸至中面，中面节点不计入任一端。
 
 曲面约束在曲面更新与重初始化时按登记顺序执行。局部曲面约束保存在曲面内，Part 级 `apply_surface_constraints()` 提供跨曲面扩展位置。
 

@@ -247,13 +247,12 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
                 for face_id in np.unique(ids):
                     face_groups[ids == face_id] = len(face_names)
                     face_names.append((f"face_{face_id}", f"surface_{index}_All"))
-            if index == 0:
-                for end in surface.end_node_set_names:
-                    cap = _boundary_end_cells(mesh, end)
-                    for group in np.unique(face_groups[cap]):
-                        mask = cap & (face_groups == group)
-                        face_groups[mask] = len(face_names)
-                        face_names.append((*face_names[int(group)], f"surface_0_{end}"))
+            for end in surface.end_node_set_names:
+                cap = _boundary_end_cells(mesh, end)
+                for group in np.unique(face_groups[cap]):
+                    mask = cap & (face_groups == group)
+                    face_groups[mask] = len(face_names)
+                    face_names.append((*face_names[int(group)], f"surface_{index}_{end}"))
             if instance is not None:
                 mesh = apply_instance_pose(mesh, instance, context.values)
             name = instance.name if instance is not None else part.name
@@ -333,7 +332,7 @@ class BoundaryPreviewAdapter(PartPreviewAdapter[BoundaryPartNode]):
             return None
         end = name.rsplit("_", 1)[-1]
         if end in {"Head", "Bottom"}:
-            if index != 0 or end not in surfaces[index].end_node_set_names:
+            if end not in surfaces[index].end_node_set_names:
                 return None
             return _boundary_end_surface(mesh, end)
         return mesh

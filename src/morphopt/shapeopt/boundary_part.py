@@ -215,8 +215,7 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
                         *metadata["node_sets"],
                     )
                 )
-            elif index == 0 and isinstance(surface, self.BSP):
-                names.extend((f"{prefix}_Bottom", f"{prefix}_Head"))
+            names.extend(f"{prefix}_{name}" for name in surface.end_node_set_names)
         return tuple(dict.fromkeys(names))
 
     @property
@@ -425,22 +424,22 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             torchfea.Part: Map designable boundary nodes before element and order processing.
         """
         nodes = part.nodes.detach().cpu().numpy()
-        outer_nodes = part.set_nodes["surface_0_All"]
-        for name, indices in (
-            self.surfaceinterfaces[0].get_node_sets(nodes[outer_nodes]).items()
-        ):
-            part.add_node_set(f"surface_0_{name}", outer_nodes[indices])
         for index, surface in enumerate(self.surfaceinterfaces):
-            if not surface.num_variables or surface.uses_facewise_binding:
-                continue
-            indices = np.sort(part.set_nodes[f"surface_{index}_All"])
-            surface.match_coordinates(indices, nodes[indices])
-            uv = torch.as_tensor(
-                surface.surf_node_uv,
-                device=part.nodes.device,
-                dtype=part.nodes.dtype,
-            )
-            part.nodes[surface.surf_node_idx] = surface.map(uv)
+            prefix = f"surface_{index}"
+            indices = np.sort(part.set_nodes[f"{prefix}_All"])
+            positions = nodes[indices]
+            node_uv = None
+            if surface.num_variables and not surface.uses_facewise_binding:
+                surface.match_coordinates(indices, positions)
+                if np.array_equal(surface.surf_node_idx, indices):
+                    node_uv = surface.surf_node_uv
+                parameters = torch.as_tensor(
+                    surface.surf_node_uv, device=part.nodes.device, dtype=part.nodes.dtype
+                )
+                part.nodes[surface.surf_node_idx] = surface.map(parameters)
+                positions = part.nodes[indices].detach().cpu().numpy()
+            for name, local in surface.get_node_sets(positions, node_uv=node_uv).items():
+                part.add_node_set(f"{prefix}_{name}", indices[local])
         part = super().postprocess_mesh(part)
         for surface in self.surfaceinterfaces:
             surface.bind_mesh(part)

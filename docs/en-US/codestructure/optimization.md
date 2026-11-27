@@ -143,7 +143,7 @@ For CAD/STEP load cases, OCC surface loops are used as boundaries; for boundarie
 | Curved constraints | BSP/CPGEO: Mirrors, rotations, or transitions across surfaces. |
 | `UpdaterBoundaryPart` | Binding the shape sub-problem for a single BoundaryPart |
 
-The surface-specific node set is declared through `BaseSurface.get_node_sets(nodes)`. By default, an empty set is returned. `BspSurface` defines `Bottom` and `Head`, which generate `surface_0_Bottom` and `surface_0_Head` when used as outer boundaries. CPGEO, BREP, and grid surfaces do not define these end node sets. The UI’s list of sets and pick-up prompts use declarations corresponding to the types of surfaces.
+Each boundary declares its own node sets. BSP surfaces and cylinders created with `CPGEOSurface.initialize_cylinder(..., fix_end_caps=True)` provide `surface_i_Bottom` and `surface_i_Head`, where `i` is the surface registration index. The initial CPGEO cylinder closes each end ring with a fan of triangles. After the first uniform reconstruction, controls on the two end disks are recorded as fixed controls for design updates and reconstruction. STL sampling uses the target spacing across the entire surface. Each finite-element end set includes nodes of that surface within the end disk footprint and less than half the CPGEO seed spacing from the end plane. For a short cylinder the band extends at most to the midplane, which belongs to neither set.
 
 Surface constraints are executed in the order they are registered during surface updates and re-initializations. Local surface constraints are stored within the surface itself, and the Part level `apply_surface_constraints()` provides extended positions across surfaces.
 

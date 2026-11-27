@@ -442,13 +442,8 @@ class _Constants:
                         DEFAULT = 1.4
                         MIN = 0.0001
 
-                    class NUM_U_RATIO:
-                        DEFAULT = 1
-                        MIN = 1
-
-                    class NUM_V_RATIO:
-                        DEFAULT = 1
-                        MIN = 1
+                    class FIX_END_CAPS:
+                        DEFAULT = True
 
                     class INIT_LOCATION:
                         DEFAULT = (0.0, 0.0, 0.0)
@@ -1165,6 +1160,7 @@ class _Constants:
             CYLINDER_INITIAL_PERTURBATION_RATIO = 0.04
             FIXED_END_CONTROL_POINT_ROWS = 5
             BSP_BOUNDARY_SUBDIVISION_RATIO = 2
+            CPGEO_CAP_HEIGHT_RATIO = 0.5
             CPGEO_INITIAL_REFINEMENT_ITERATIONS = 4
             CPGEO_OUTPUT_REFINEMENT_ITERATIONS = 2
             CPGEO_KNOT_INFLUENCE_COUNT = 20

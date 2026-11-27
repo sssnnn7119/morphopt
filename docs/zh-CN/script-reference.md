@@ -273,6 +273,8 @@ class Actuator(morphopt.BoundaryPart):
 
 球面工厂名称为 `initialize_Sphere`，保留该大小写。脚本名称与 UI 中的 `cpgeo_sphere` 类型标签不同。各曲面的参数说明与示意见 [UI 曲面参考](ui-reference.md#surface_types-bsp-cylinder)。
 
+`surface.save("surface.npz")` 保存当前 CPGEO 几何。圆柱默认启用 `fix_end_caps=True`，此时存档以 `cap_disks` 记录两个端盖的中心和半径。首次均匀重建及对称处理完成后，MorphOpt 根据端盖范围选定控制点，以 `cap_indices` 保存其编号。后续设计更新固定这些控制点。原生 `cpgeo.CPGEO.load("surface.npz")` 可直接读取几何，MorphOpt 的 `surface.load("surface.npz")` 同时恢复端盖约束。 内腔可在 `initialize_cylinder` 中指定 `fix_end_caps=False`，两端随曲面更新，载荷仍可引用闭合曲面的 `surface_i_All`。
+
 <a id="brep-topology"></a>
 
 ##### 4.2.1.1 BREP 拓扑、集合与 NURBS 转换
@@ -383,7 +385,7 @@ class Frame(morphopt.INPPart):
 | 引用对象 | 常见名称 | 使用接口 |
 |---|---|---|
 | 边界曲面完整表面 | `surface_0_All`、`surface_1_All` | 压力、接触 |
-| BSP 外边界底端与顶端节点集 | `surface_0_Bottom`、`surface_0_Head` | 固定、耦合；CPGEO 和 BREP 不生成这些节点集 |
+| BSP 曲面和固定端面的 CPGEO 圆柱的底端与顶端节点集 | `surface_i_Bottom`、`surface_i_Head` | 固定位移、参考点耦合。CPGEO 圆柱在重建与形状更新时保留初始端面控制点 |
 | Box 面节点集与表面集 | `nodes_xmin`、`surface_xmax` 等 | 固定、载荷 |
 | CAD 最终面集合 | `face_N` 等 | 按实际几何检查后引用 |
 | INP 集合 | 源文件中的集合名 | 按导入后有效名称引用 |

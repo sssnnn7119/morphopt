@@ -2,6 +2,7 @@
 
 import math
 
+import cpgeo
 import numpy as np
 import pytest
 import torch
@@ -56,6 +57,157 @@ def test_cpgeo_cylinder_side_normals_follow_boundary_role(cavity):
     assert ((normal[:, :2] * expected).sum(dim=1) > 0.95).all()
     du, dv = surface.get_rdu()[side].unbind(dim=2)
     torch.testing.assert_close(torch.nn.functional.normalize(torch.cross(dv, du, dim=1)), normal)
+
+
+def test_cpgeo_cylinder_selects_end_controls_after_uniform_reconstruction():
+    radius, length, spacing = 4.0, 10.0, 1.4
+    surface = CPGEOSurface.initialize_cylinder(radius, length, spacing)
+    vertices, faces = surface.model.control_points, surface.model._cp_faces
+    # The spacing gives 18 circumferential and 7 axial segments.
+    assert vertices[:-2].shape == (8 * 18, 3)
+    np.testing.assert_allclose(np.unique(vertices[:, 2]), np.linspace(0, length, 8))
+    for height in (0, length):
+        disk = faces[(vertices[faces, 2] == height).all(axis=1)]
+        indices = np.unique(disk)
+        rim, center = indices[:-1], indices[-1]
+        np.testing.assert_allclose(np.linalg.norm(vertices[rim, :2], axis=1), radius)
+        np.testing.assert_array_equal(vertices[center], [0, 0, height])
+        assert len(disk) == len(rim)
+        assert (disk == center).any(axis=1).all()
+
+    surface.add_constraint(surface.mirror("xz"))
+    surface.initialize()
+    surface.reinitialize_constraints()
+    assert surface._fixed_indices is None
+    surface.reinitialize(0)
+    surface.reinitialize_constraints()
+    uv = surface.model.reference_to_curvilinear(surface.model._knots)
+    for end in surface.get_node_sets(surface.model.control_points, node_uv=uv).values():
+        assert len(end) >= 3
+        assert np.isin(end, surface._fixed_indices).all()
+        assert (np.linalg.norm(surface.model.control_points[end, :2], axis=1) < 0.8 * radius).any()
+
+
+def test_cpgeo_end_controls_survive_design_updates_reconstruction_and_restart(tmp_path):
+    surface = CPGEOSurface.initialize_cylinder(3, 9, 1, init_location=[1, -2, 5])
+    surface.initialize()
+    surface.reinitialize(0)
+    surface.reinitialize_constraints()
+    anchors = surface.control_points.detach()[surface._fixed_indices].clone()
+    for _ in range(2):
+        surface.synchronize()
+        surface._reinitialize()
+        before = surface.control_points.clone()
+        delta = torch.full_like(before, 0.01, requires_grad=True)
+        surface.update_variables(delta)
+        grad, = torch.autograd.grad(surface.control_points.sum(), delta)
+        locked = surface._fixed_indices
+        free = torch.ones(len(before), dtype=torch.bool)
+        free[locked] = False
+        torch.testing.assert_close(grad[locked], torch.zeros_like(grad[locked]))
+        torch.testing.assert_close(grad[free], torch.ones_like(grad[free]))
+        np.testing.assert_array_equal(surface.control_points.detach()[surface._fixed_indices], anchors)
+    surface.save(tmp_path / "surface")
+    native = cpgeo.CPGEO.load(tmp_path / "surface.npz")
+    np.testing.assert_array_equal(native.control_points, surface.control_points.detach().numpy())
+    np.testing.assert_array_equal(native._cp_faces, surface.model._cp_faces)
+    np.testing.assert_allclose(native.map3(native._knots), surface.model.map3(surface.model._knots))
+
+    restored = cylinder(CPGEOSurface)
+    restored.load(tmp_path / "surface")
+    np.testing.assert_array_equal(restored._cap_disks, surface._cap_disks)
+    restored._reinitialize()
+    np.testing.assert_array_equal(restored.control_points[restored._fixed_indices], anchors)
+
+
+def test_cpgeo_cylinder_with_free_ends_remains_closed_and_updates_after_restart(tmp_path):
+    surface = CPGEOSurface.initialize_cylinder(2, 4, 1, fix_end_caps=False)
+    fixed = cylinder(CPGEOSurface)
+    np.testing.assert_array_equal(surface.model.control_points, fixed.model.control_points)
+    np.testing.assert_array_equal(surface.model._cp_faces, fixed.model._cp_faces)
+    surface.initialize()
+    surface.reinitialize(0)
+    surface.reinitialize_constraints()
+    assert surface.get_node_sets(surface.model.control_points) == {}
+    assert surface._fixed_indices is None
+    surface.save(tmp_path / "cavity")
+    fixed.load(tmp_path / "cavity")
+    assert fixed.end_node_set_names == ()
+    before = fixed.control_points.clone()
+    delta = torch.full_like(before, 0.1)
+    fixed.update_variables(delta)
+    torch.testing.assert_close(fixed.control_points, before + delta)
+
+
+def test_cpgeo_native_archive_loads_without_end_constraints(tmp_path):
+    surface = cylinder(CPGEOSurface)
+    path = tmp_path / "native.surface.npz"
+    surface.model.save(path)
+    surface.load(path)
+    assert surface.end_node_set_names == ()
+    assert surface._fixed_indices is None
+    surface.update_variables(torch.ones_like(surface.control_points))
+    surface.save(path)
+    native = cpgeo.CPGEO.load(path)
+    np.testing.assert_array_equal(native.control_points, surface.control_points.numpy())
+    with np.load(path) as state:
+        assert "cap_indices" not in state
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_cpgeo_cap_node_sets_on_volume_mesh(order):
+    part = BoundaryPart(fea_seed_size=0.8, mesh_order=order, part_name="cylinder")
+    surface = CPGEOSurface.initialize_cylinder(3, 9, 1, init_location=[0, 0, 2])
+    surface.add_constraint(surface.mirror("xz"))
+    part.add_surface_interface(surface)
+    part.initialize()
+    part.reinitialize(0)
+    mesh = part.get_part()
+    coords = mesh.nodes.detach().numpy()
+    ends = []
+    for name, height in (("Bottom", 2), ("Head", 11)):
+        indices = mesh.set_nodes[f"surface_0_{name}"]
+        points = coords[indices]
+        assert len(points) >= 3
+        assert np.all(np.abs(points[:, 2] - height) < surface.init_size / 2)
+        assert np.linalg.matrix_rank(points[:, :2] - points[:, :2].mean(0)) == 2
+        ends.append(indices)
+    assert not np.intersect1d(*ends).size
+
+
+def test_cpgeo_short_cylinder_end_bands_exclude_midplane_and_outside_disk():
+    surface = CPGEOSurface.initialize_cylinder(2, 0.5, 1, init_location=[1, -2, 3])
+    surface.initialize()
+    nodes = np.array([[1, -2, 3.1], [1, -2, 3.4], [1, -2, 3.25], [4, -2, 3.1]])
+    uv = surface.model.reference_to_curvilinear(surface.model._knots[[-2, -1, -2, -2]])
+    sets = surface.get_node_sets(nodes, node_uv=uv)
+    np.testing.assert_array_equal(sets["Bottom"], [0])
+    np.testing.assert_array_equal(sets["Head"], [1])
+
+
+def test_cpgeo_folded_side_wall_stays_out_of_both_cap_sets():
+    surface = CPGEOSurface.initialize_cylinder(3, 9, 1)
+    surface.initialize()
+    surface.reinitialize(0)
+    surface.reinitialize_constraints()
+    model = surface.model
+    points = model.control_points.copy()
+    height = points[:, 2]
+    side = np.flatnonzero((height > 3) & (height < 6))[:2]
+    fixed = surface._fixed_indices.cpu().numpy()
+    caps = [fixed[np.argmin(np.linalg.norm(points[fixed] - center, axis=1))]
+            for center in surface._cap_disks[:, :3]]
+
+    # Both wall controls enter the exact same positions as real cap controls.
+    # Their reference knots still identify them as part of the side wall.
+    points[side] = points[caps]
+    surface.set_surface_parameters(torch.from_numpy(points))
+    surface.synchronize()
+    query = [side[0], caps[1], caps[0], side[1]]
+    uv = model.reference_to_curvilinear(model._knots[query])
+    sets = surface.get_node_sets(model.control_points[query], node_uv=uv)
+    np.testing.assert_array_equal(sets["Bottom"], [2])
+    np.testing.assert_array_equal(sets["Head"], [1])
 
 
 def test_bsp_rejects_stl_export(tmp_path):
@@ -192,6 +344,9 @@ def test_related_surface_gradient_reaches_source(factory):
 def test_mirror_can_run_inside_torch_func(factory):
     surface = cylinder(factory)
     mirror = surface.mirror("xz")
+    surface.add_constraint(mirror)
+    surface.initialize()
+    surface.reinitialize_constraints()
     points = surface.control_points.clone()
 
     def loss(values):
@@ -237,8 +392,10 @@ def test_cpgeo_mirror_reinitializes_coordinates_and_topology(plane, axis, offset
 def test_cpgeo_rotation_can_run_inside_torch_func():
     surface = CPGEOSurface.initialize_cylinder(2.0, 4.0, seed_size=0.5)
     rotation = surface.rotate(axis="z", order=3)
+    surface.add_constraint(rotation)
     surface.initialize()
-    rotation.reinitialize(surface)
+    surface.reinitialize(0)
+    surface.reinitialize_constraints()
     points = surface.control_points.clone()
 
     def loss(values):
@@ -247,9 +404,12 @@ def test_cpgeo_rotation_can_run_inside_torch_func():
         return surface.control_points[:, 2].sum()
 
     gradient = torch.func.grad(loss)(points)
-    count = len(points) // 3
-    torch.testing.assert_close(gradient[:count, 2], torch.full((count,), 3.0))
-    torch.testing.assert_close(gradient[count:], torch.zeros_like(gradient[count:]))
+    count = rotation._replicated_count // rotation.order
+    expected = torch.zeros_like(points)
+    expected[:count, 2] = rotation.order
+    expected[surface._fixed_indices] = 0.0
+    torch.testing.assert_close(gradient, expected)
+    np.testing.assert_array_equal(surface.control_points[surface._fixed_indices], surface._fixed_points)
 
 
 @pytest.mark.parametrize("order", [2, 3, 4, 5])

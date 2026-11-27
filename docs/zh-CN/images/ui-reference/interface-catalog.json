@@ -601,7 +601,7 @@
           "components": [],
           "item_type": "float",
           "label": "轴向控制网格计数因子",
-          "help": "对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。"
+          "help": "对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数。"
         },
         {
           "key": "degree",
@@ -740,14 +740,14 @@
           "help": "用于初始控制网格和曲面预采样的间距，对应 seed_size / init_size。体有限元网格由 Part 的 fea_seed_size 单独控制。"
         },
         {
-          "key": "num_U_ratio",
-          "label_key": "ui.schema.fields.num_u_ratio.label.num_u_ratio",
-          "type": "int",
-          "default": 1,
-          "doc_key": "ui.schema.fields.num_u_ratio.help.control_grid_u_ratio",
+          "key": "fix_end_caps",
+          "label_key": "ui.schema.fields.fix_end_caps.label",
+          "type": "bool",
+          "default": true,
+          "doc_key": "ui.schema.fields.fix_end_caps.help",
           "choices": [],
           "size": 6,
-          "minimum": 1,
+          "minimum": null,
           "maximum": null,
           "ints": false,
           "read_only": false,
@@ -755,27 +755,8 @@
           "editable": true,
           "components": [],
           "item_type": "float",
-          "label": "周向控制网格计数因子",
-          "help": "对应 num_U_ratio：周向控制网格数量按 lcm(12, num_U_ratio) 的倍数取整。"
-        },
-        {
-          "key": "num_V_ratio",
-          "label_key": "ui.schema.fields.num_v_ratio.label.num_v_ratio",
-          "type": "int",
-          "default": 1,
-          "doc_key": "ui.schema.fields.num_v_ratio.help.control_grid_v_ratio",
-          "choices": [],
-          "size": 6,
-          "minimum": 1,
-          "maximum": null,
-          "ints": false,
-          "read_only": false,
-          "hidden": false,
-          "editable": true,
-          "components": [],
-          "item_type": "float",
-          "label": "轴向控制网格计数因子",
-          "help": "对应 num_V_ratio：轴向控制网格数量按此因子取整，然后进行对称布局的奇偶调整；BSP 控制点行数为奇数，CPGEO 轴向分段数为偶数。"
+          "label": "固定两个端面",
+          "help": "固定两端的几何控制点，并生成 Bottom 和 Head 节点集。取消勾选后，两端均可参与形状更新。"
         },
         {
           "key": "init_location",

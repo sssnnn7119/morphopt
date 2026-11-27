@@ -46,12 +46,17 @@ class BspSurface(ControlPointSurface):
     antisymmetry_z: type[BspZAntisymmetryConstraint] = BspZAntisymmetryConstraint
     periodic_z: type[BspZPeriodicityConstraint] = BspZPeriodicityConstraint
 
-    def get_node_sets(self, nodes: np.ndarray) -> dict[str, np.ndarray]:
+    end_node_set_names = ("Bottom", "Head")
+
+    def get_node_sets(
+        self, nodes: np.ndarray, *, node_uv: np.ndarray | None = None
+    ) -> dict[str, np.ndarray]:
         """Identify the bottom and head nodes of this BSP boundary.
 
         Args:
             nodes (np.ndarray): Cartesian node coordinates with shape (num_nodes, 3), in model
                 length units.
+            node_uv: Matched surface parameters when needed for node classification.
 
         Returns:
             dict[str, np.ndarray]: Bottom and Head selections containing zero-based indices into
@@ -671,10 +676,10 @@ class BspSurface(ControlPointSurface):
         """Apply the same fixed-end mask to updates and symmetry projections.
 
         Args:
-            change (torch.Tensor): Difference between the current and previous physical gradients.
+            change (torch.Tensor): Proposed displacements in control-point order.
 
         Returns:
-            torch.Tensor: Apply the same fixed-end mask to updates and symmetry projections.
+            torch.Tensor: Displacements with fixed components zeroed, in the input shape.
         """
         constrained = change.reshape(*self.model.size, 3).clone()
         fixed_rows = CONSTANT.KERNEL.SURFACE.FIXED_END_CONTROL_POINT_ROWS
@@ -685,15 +690,13 @@ class BspSurface(ControlPointSurface):
         return constrained.reshape_as(change)
 
     def update_variables(self, x_change: torch.Tensor) -> None:
-        """Update variables.
+        """Apply a control-point increment subject to the BSP end constraints.
 
         Args:
             x_change (torch.Tensor): Design-variable increment in this interface's flattened
                 parameter order.
         """
-        ControlPointSurface.update_variables(
-            self, self.constrain_displacements(x_change)
-        )
+        super().update_variables(self.constrain_displacements(x_change))
 
     def get_points_weight(self):
         """Get vertex-based integration weights for the preload mesh.
