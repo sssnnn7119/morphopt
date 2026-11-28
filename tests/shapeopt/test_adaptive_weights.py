@@ -38,7 +38,7 @@ class AnalyticUpdater(BaseUpdater):
 
 @pytest.mark.parametrize("scale", [1e-6, 1.0, 1e6])
 @pytest.mark.parametrize("area", [0.1, 1.0, 1000.0])
-def test_initial_weight_balances_native_physical_and_penalty_gradients(scale, area):
+def test_initial_weight_balances_design_physical_and_penalty_gradients(scale, area):
     updater = AnalyticUpdater(scale, area)
     strategy = AdaptiveShapeUpdate()
     gradient = updater.gradient()
@@ -58,14 +58,13 @@ def test_later_physical_gradient_changes_scale_weights_without_recalibration(mon
     def forbidden(*args, **kwargs):
         raise AssertionError("A calibrated term must not request new derivatives")
 
-    monkeypatch.setattr(torch.func, "grad", forbidden)
     monkeypatch.setattr(torch.func, "jacrev", forbidden)
     updater.z = 1.1  # Inside the violation dead band.
     for scale, weight_factor in ((1e-6, 1e-6), (1e6, 1e6), (0.0, 1e6), (1000.0, 1000.0)):
         updater.scale = scale
         assert strategy.constraint_weights(updater, updater.gradient())["limit"] == pytest.approx(initial * weight_factor)
     assert strategy.state["limit"]["initial_weight"] == initial
-    assert strategy.state["limit"]["reference_gradient_norm"] == 1.0
+    assert strategy.state["limit"]["reference_design_gradient_norm"] == 1.0
 
 
 @pytest.mark.parametrize("area", [1e-9, 1.0, 1e9])
@@ -203,6 +202,39 @@ def test_pending_term_calibrates_on_its_first_nonzero_response():
     assert strategy.state["limit"]["initial_weight"] == initial
 
 
+def test_fixed_control_sensitivity_and_cap_roundoff_do_not_set_the_weight():
+    class CappedCylinder(AnalyticUpdater):
+        def closure(self, x, return_list=False):
+            barrier = self.constraints_funcs["limit"].barrier_function
+            physical = -self.scale * x[0]  # The axial control is fixed by the update map.
+            radial = self.z + x[0]
+            cap = 8e-13 + 1e-14 * x[0]  # Numerical leakage at the cap of the sampled surface.
+            samples = 0.8 + (0.2 + barrier.tolerance) * torch.stack((radial, cap))
+            return [physical], [barrier(samples, 1.0, 0.8, 3)[1].sum()]
+
+    updater = CappedCylinder()
+    strategy = AdaptiveShapeUpdate()
+    gradient = updater.gradient()
+    gradient[2] = 1e12
+    updater.scale = 0.0
+    assert strategy.constraint_weights(updater, gradient) == {"limit": 1.0}
+    assert not strategy.state
+
+    updater.scale = 1.0
+    updater.z = -2.0
+    assert strategy.constraint_weights(updater, gradient) == {"limit": 1.0}
+    assert not strategy.state
+    assert 0 < strategy._origin_trial.penalties["limit"] < 1e-30
+
+    updater.z = 0.0
+    weight = strategy.constraint_weights(updater, gradient)["limit"]
+    assert weight == pytest.approx(2 / 3)
+    gradient[2] = 1e-12
+    updater.scale = 2.0
+    gradient[0] = -2.0
+    assert strategy.constraint_weights(updater, gradient)["limit"] == pytest.approx(2 * weight)
+
+
 def test_history_records_violations_even_when_calibration_has_no_physical_gradient():
     updater = AnalyticUpdater(scale=0.0)
     updater.z = 2.0
@@ -243,10 +275,10 @@ def test_restart_restores_initial_weights_violation_and_next_feedback(tmp_path: 
     assert restored.tolerance == original.tolerance
 
 
-def test_legacy_checkpoint_recalibrates_when_no_reference_norm_was_saved(tmp_path: Path):
+def test_checkpoint_with_raw_gradient_norm_recalibrates_in_design_coordinates(tmp_path: Path):
     (tmp_path / "adaptive_weights_2.json").write_text(
         '{"tolerance": 0.05, "started": true, "penalties": '
-        '{"limit": {"weight": 0.001, "initial_weight": 0.001, "violation": 0.0}}}'
+        '{"limit": {"reference_gradient_norm": 1e12, "initial_weight": 1e35, "violation": 0.0}}}'
     )
     updater = AnalyticUpdater(scale=10.0)
     strategy = AdaptiveShapeUpdate()
@@ -294,3 +326,47 @@ def test_per_solve_step_budget_and_total_solve_limit(budget, limit, count):
     assert stages == [budget] * count
     torch.testing.assert_close(chosen, -3 * gradient if budget else torch.zeros_like(gradient))
     assert updater.constraints_funcs["limit"].barrier_function.excess_weight == 0
+
+
+@pytest.mark.parametrize("rebuilt,peak,repair", [(True, 100, True), (False, 100, False), (True, 0, False)])
+def test_reconstruction_conditioning_applies_only_to_the_first_solve(rebuilt, peak, repair):
+    from morphopt.shapeopt.objectivefuncs.surfacefairness import Fairness
+    from morphopt.shapeopt.surfaces.cpgeo_surface import CPGEOSurface
+
+    updater = AnalyticUpdater()
+    surface = object.__new__(CPGEOSurface)
+    surface.is_updatable = True
+    surface.reconstructed = rebuilt
+    term = Fairness()
+    term.surfaces = [surface]
+    updater.constraints_funcs = {"limit": term}
+    strategy = AdaptiveShapeUpdate()
+    gradient = updater.gradient()
+    origin = torch.zeros_like(gradient)
+    updater.constraint_weights = strategy.constraint_weights(updater, gradient)
+    updater.z = peak
+    updater.constraint_weights = strategy.constraint_weights(updater, gradient)
+
+    starts, losses = [], []
+
+    def solve(start, *, loss=None):
+        starts.append(start.clone())
+        losses.append(loss)
+        if loss is not None:
+            raw = updater.closure(start)
+            torch.testing.assert_close(loss(start), torch.asinh(raw))  # unit physical work
+        end = start.clone()
+        end[0] = -peak if len(starts) == 1 else start[0] + 3
+        return end
+
+    updater.solve_subproblem = solve
+    end = strategy.solve_update(updater, origin)
+    assert (losses[0] is not None) == repair
+    assert all(loss is None for loss in losses[1:])
+    assert starts[1][0] == -peak
+    if repair:
+        # The repaired peak is zero. A new violation in stage two triggers
+        # stage three even though it is smaller than the reconstruction spike.
+        assert len(starts) == 3
+        assert starts[2][0] == -peak + 3
+        assert end[0] == -peak + 6

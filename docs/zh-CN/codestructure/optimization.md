@@ -101,7 +101,7 @@ Params.obtain_design_sensitivity_vars(assembly)
 
 更新器通过类属性 `strategies` 暴露策略命名空间，与 `objectivefuncs` 的用法一致。基类提供通用策略；形状更新器重写该命名空间，引用同一批通用策略类并增加形状专用实现，不复制算法。脚本在构造方法中使用 `self.strategies.AdaptiveShapeUpdate()` 等表达式创建独立策略对象，偏置形状更新器继承相同入口。
 
-形状专用策略共用相同的更新接口。`SensitivityShapeUpdate` 将控制点梯度的模长插值到各曲面的采样点。`AdaptiveShapeUpdate` 随原始灵敏度缩放基础系数，对超出放宽边界的采样点或点对施加局部罚值，第二阶段从第一阶段末点继续求解。
+形状专用策略共用相同的更新接口。`SensitivityShapeUpdate` 将控制点梯度的模长插值到各曲面的采样点。`AdaptiveShapeUpdate` 按物理目标对可优化变量的梯度范数缩放基础系数，对超出放宽边界的采样点或点对施加局部罚值，第二阶段从第一阶段末点继续求解。
 
 `BaseConstraints` 分别持有参考面积 `area_weights` 与可选 `sample_weights`，通过 `integration_weights` 组合。面积在一轮外层基准上冻结，逐点策略在该轮初始化后设置；物理梯度和一阶/二阶代理始终保留原始尺度。距离项使用两侧组合权重的乘积，构成点对双重积分。
 
@@ -143,7 +143,7 @@ CAD/STEP 边界使用 OCC 表面环；包含 CPGEO/STL 的边界使用离散几�
 | 曲面约束 | BSP/CPGEO 镜面、旋转或跨曲面关联 |
 | `UpdaterBoundaryPart` | 绑定单个 BoundaryPart 的形状子问题 |
 
-每个边界曲面分别声明节点集。BSP 曲面和由 `CPGEOSurface.initialize_cylinder(..., fix_end_caps=True)` 创建的圆柱均提供 `surface_i_Bottom` 与 `surface_i_Head`，其中 `i` 为曲面注册序号。CPGEO 圆柱的初始控制网格由扇形三角片封闭两端。首次均匀重建后，程序提取两个端面上的控制点，在形状更新和控制网格重建时固定其坐标。导出 STL 时，整张曲面按目标间距均匀采样。有限元端部节点从该曲面自身的节点中选取。节点在端面上的投影须位于圆盘内，到端面的高度差须小于 CPGEO 曲面采样间距的一半。对于短圆柱，两端的选取范围最多延伸至中面，中面节点不计入任一端。
+每个边界曲面分别声明节点集。BSP 曲面和由 `CPGEOSurface.initialize_cylinder(..., fix_end_caps=True)` 创建的圆柱均提供 `surface_i_Bottom` 与 `surface_i_Head`，其中 `i` 为曲面注册序号。CPGEO 圆柱的两个端面按采样间距建立平面三角网格，与侧壁共用边缘控制点。创建固定端面时，程序记录两个圆盘的控制点坐标，作为首次重建、后续重建和形状更新的约束。导出 STL 时，整张曲面按目标间距均匀采样。有限元端部节点从该曲面自身的节点中选取。节点在端面上的投影须位于圆盘内，到端面的高度差须小于 CPGEO 曲面采样间距的一半。对于短圆柱，两端的选取范围最多延伸至中面，中面节点不计入任一端。
 
 曲面约束在曲面更新与重初始化时按登记顺序执行。局部曲面约束保存在曲面内，Part 级 `apply_surface_constraints()` 提供跨曲面扩展位置。
 

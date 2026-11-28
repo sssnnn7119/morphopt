@@ -139,8 +139,8 @@ class QuadraticHistory(ProtocalSavable):
                 self._changes.append(change)
                 self._steps = self._steps[-self.memory_size :]
                 self._changes = self._changes[-self.memory_size :]
+                self._build_hessian()
         self.point, self.gradient, self._layout = point, gradient, layout
-        self._build_hessian()
 
     def _sr1_factors(
         self, step: torch.Tensor, change: torch.Tensor,
@@ -521,15 +521,15 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 if obj0 is None:
                     obj0 = self.closure(x0)
 
+                slope = dx.dot(direction)
                 alpha = alpha0
                 while True:
                     x_new = x0 + alpha * direction
                     with torch.no_grad():
                         obj_new = self.closure(x_new)
                     if (
-                        ~torch.isnan(obj_new)
-                        and ~torch.isinf(obj_new)
-                        and obj_new < obj0 + self._c1 * alpha * dx.dot(direction)
+                        torch.isfinite(obj_new)
+                        & (obj_new < obj0 + self._c1 * alpha * slope)
                     ):
                         return alpha, obj_new
                     alpha *= self._rou1
@@ -561,6 +561,7 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 """
                 super().__init__(closure=closure)
                 self.history = QuadraticHistory(memory_size=num_limit)
+                self.accepted_value: torch.Tensor | None = None
 
                 self.tol_error = tol_error
                 """
@@ -568,7 +569,8 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                 """
 
             def step(
-                self, x_now: torch.Tensor, gk_now: torch.Tensor | None = None
+                self, x_now: torch.Tensor, gk_now: torch.Tensor | None = None,
+                *, obj_now: torch.Tensor | None = None,
             ) -> tuple[float, torch.Tensor, torch.Tensor]:
 
                 """Perform one limited-memory BFGS step with backtracking line search.
@@ -577,14 +579,19 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                     x_now (torch.Tensor): Current flattened inner-optimization iterate.
                     gk_now (torch.Tensor | None): Gradient at x_now; None evaluates it using the objective
                         closure.
+                    obj_now: Optional known objective value for these coordinates and weights.
 
                 Returns:
                     tuple[float, torch.Tensor, torch.Tensor]: Accepted line-search factor, design increment,
                         and gradient at the new inner iterate.
                 """
-                obj_now = self.closure(x_now)
                 if gk_now is None:
-                    gk_now: torch.Tensor = self.grad(x_now).flatten()
+                    gk_now, obj_now = torch.func.grad_and_value(
+                        lambda point: self.closure(point).reshape(())
+                    )(x_now)
+                    gk_now = gk_now.flatten()
+                elif obj_now is None:
+                    obj_now = self.closure(x_now)
 
                 gk_now.view(-1)[gk_now.view(-1).isnan()] = 0
 
@@ -613,8 +620,10 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
 
                 if alpha == 0 or obj_new > obj_now:
                     self.history.clear()
+                    self.accepted_value = obj_now.detach()
                     return 0.0, torch.zeros_like(x_now), gk_now
 
+                self.accepted_value = obj_new.detach()
                 x_new = x_now + alpha * dk
                 gk_new: torch.Tensor = self.grad(x_new).flatten()
                 if (alpha * dk).abs().max() <= self.tol_error:
@@ -714,18 +723,22 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
             for name, value in zip(self.constraints_funcs, values, strict=True)
         ]
 
-    def solve_subproblem(self, origin: torch.Tensor, *, iterations: int | None = None) -> torch.Tensor:
+    def solve_subproblem(
+        self, origin: torch.Tensor, *, iterations: int | None = None,
+        loss: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    ) -> torch.Tensor:
         """Solve one trial with fresh L-BFGS history and a copy of the starting coordinates.
 
         Args:
             origin (torch.Tensor): Coordinates at the start of this solve.
             iterations (int | None): Inner iterations available to this stage. Defaults to the full budget.
+            loss: Optional scalar objective for this stage. The table reports the original terms.
 
         Returns:
             torch.Tensor: Candidate computed with the current penalty weights.
         """
         self.optimizer = self.Optimizer.LBFGS(
-            closure=self.closure,
+            closure=self.closure if loss is None else loss,
             num_limit=self._lbfgs_memory_pairs,
             tol_error=CONSTANT.KERNEL.OPTIMIZER.LBFGS_CONVERGENCE_TOLERANCE,
         )
@@ -738,7 +751,9 @@ class BaseUpdater(ProtocalInitializable, ProtocalSavable, ProtocalHistory):
                     self.interface_name or self.update_kind, self.solve_count, budget)
         for iteration in range(1, budget + 1):
             self.iteration_total += 1
-            alpha, direction, gradient = self.optimizer.step(x_now=variables, gk_now=gradient)
+            alpha, direction, gradient = self.optimizer.step(
+                x_now=variables, gk_now=gradient, obj_now=self.optimizer.accepted_value
+            )
             displacement = direction * alpha
             with torch.no_grad():
                 variables.add_(displacement)

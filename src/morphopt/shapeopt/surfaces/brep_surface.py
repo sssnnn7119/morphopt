@@ -36,7 +36,7 @@ class BREPSurface(BaseSurface):
     Topology inspection does not generate a display or finite-element mesh.
     """
 
-    export_format = SurfaceExportFormat.STEP
+    export_formats = (SurfaceExportFormat.STEP, SurfaceExportFormat.STL)
 
     def __init__(
         self,
@@ -721,11 +721,11 @@ class BREPSurface(BaseSurface):
         pools: Pool | None = None,
     ) -> Path:
         """Write the current solid and topology as STEP, or its trimmed face triangles as STL."""
+        path = self._surface_path(stem, fmt)
         if fmt == SurfaceExportFormat.STL:
-            path = Path(f"{stem}.{fmt}")
             self.get_mesh().save(path, binary=True)
             return path
-        return self.export_step(self._surface_path(stem, fmt))
+        return self.export_step(path)
 
     def prepare_geometry(
         self,

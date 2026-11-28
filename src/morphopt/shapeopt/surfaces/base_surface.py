@@ -40,8 +40,8 @@ class BaseSurface(BaseModelComponent):
     quadrature.
     """
 
-    # Native format used by meshing and whole-component export.
-    export_format: ClassVar[SurfaceExportFormat | None] = None
+    # The first format is used for meshing and default component export.
+    export_formats: ClassVar[tuple[SurfaceExportFormat, ...]] = ()
     end_node_set_names: tuple[str, ...] = ()
     is_discrete: ClassVar[bool] = False
 
@@ -132,7 +132,7 @@ class BaseSurface(BaseModelComponent):
 
     def _surface_path(self, stem: str | Path, fmt: str) -> Path:
         """Append the selected extension to the file stem after checking surface support."""
-        if fmt != self.export_format:
+        if fmt not in self.export_formats:
             raise ValueError(f"{type(self).__name__} does not support {fmt!r}.")
         return Path(f"{stem}.{fmt}")
 
@@ -167,11 +167,11 @@ class BaseSurface(BaseModelComponent):
             name_output (str): Output geometry filename stem, without the generated format suffix.
             pools (Pool | None): Optional multiprocessing pool for geometry preparation or export.
         """
-        if self.export_format is None:
+        if not self.export_formats:
             raise NotImplementedError(f"{type(self).__name__} has no meshing format.")
         self._geometry_path = self.write_surface(
             Path(path_output) / name_output,
-            self.export_format,
+            self.export_formats[0],
             pools=pools,
         )
 
@@ -1158,10 +1158,8 @@ class ControlPointSurface(BaseSurface):
         if num_pts is None:
             num_pts = indices[0].max().item() + 1
 
-        result = torch.zeros([num_pts, 3], dtype=self._cps.dtype)
-        for i in range(3):
-            result[:, i].scatter_add_(0, indices[0], weights * self._cps[indices[1], i])
-        return result
+        contributions = self._cps[indices[1]] * weights[:, None]
+        return self._cps.new_zeros((num_pts, 3)).index_add_(0, indices[0], contributions)
 
     def apply_preload_data(self, preload: ControlPointSurface.PreLoadData) -> None:
         """Apply a standardized preload container to the interface.

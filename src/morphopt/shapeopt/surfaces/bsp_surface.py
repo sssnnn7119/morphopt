@@ -37,7 +37,7 @@ class BspSurface(ControlPointSurface):
     CAD meshing pipeline.
     """
 
-    export_format = SurfaceExportFormat.STEP
+    export_formats = (SurfaceExportFormat.STEP,)
 
     mirror: type[BspMirrorConstraint] = BspMirrorConstraint
     rotate: type[BspRotationalSymmetryConstraint] = BspRotationalSymmetryConstraint
@@ -641,7 +641,7 @@ class BspSurface(ControlPointSurface):
     def write_surface(
         self,
         stem: str | Path,
-        fmt: str = export_format,
+        fmt: str = export_formats[0],
         pools: Pool | None = None,
     ) -> Path:
         """Write the current capped B-spline solid as STEP."""

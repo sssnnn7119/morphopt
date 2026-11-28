@@ -209,7 +209,7 @@ The composite parameters in the above-mentioned shell interfaces have the follow
 |---|---|---|
 | `prepare_geometry(path_output, name_output, pools)` | Output directory, file name format, and optional process pool | Prepare the input file for division. Using a fixed BREP file allows direct utilization of existing STEP assets. |
 | `load_geometry(part, context)` | `part: CADMeshingMixin`；`context: OCCBuilder` | `list[int]`; Returns the Gmsh surface number of the current surface through the component loading method; BSP, CPGEO, fixed STL, and fixed STEP each override this method |
-| `write_surface(stem, fmt, pools=None)` | Target path without an extension, formats supported by surfaces (`"stp"` or `"stl"`), and optional process pool | `Path`, point to the output file with the extension. The surface is represented in its current geometric state. BSP only supports STEP format. Both component export and mesh generation use the native format of the surface `export_format`. |
+| `write_surface(stem, fmt, pools=None)` | Target path without an extension, formats supported by surfaces (`"stp"` or `"stl"`), and optional process pool | `Path`, point to the output file with the extension. The surface is represented in its current geometric state. BSP only supports STEP format. The `export_formats` tuple lists the supported formats. Its first entry is used for meshing and default export. |
 | `BREPSurface.get_mesh()` | No parameters | `pyvista.PolyData`; Generating a display of triangular meshes from STEP format. The cell data `face_index` retains the surface indices. |
 | `BREPSurface.face_names` | Read-Only Properties | `tuple[str, ...]`; Returns the original CAD surface names stored in the asset; Empty when there is no mapping in the ordinary STEP format |
 

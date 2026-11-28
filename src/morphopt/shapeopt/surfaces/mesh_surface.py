@@ -26,7 +26,7 @@ def _save_triangle_stl(vertices: np.ndarray, faces: np.ndarray, path: Path) -> N
 class MeshSurface(BaseSurface):
     """A boundary represented by a fixed triangular surface mesh."""
 
-    export_format = SurfaceExportFormat.STL
+    export_formats = (SurfaceExportFormat.STL,)
 
     is_discrete = True
 

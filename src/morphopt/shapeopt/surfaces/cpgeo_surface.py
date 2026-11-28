@@ -9,7 +9,7 @@ import cpgeo
 import numpy as np
 import pyvista as pv
 import torch
-from scipy.spatial import cKDTree
+from scipy.spatial import Delaunay, cKDTree
 
 from ...constants import CONSTANT
 from .base_surface import ControlPointSurface, SurfaceExportFormat
@@ -32,11 +32,11 @@ class CPGEOSurface(ControlPointSurface):
     """Represent a closed CPGEO surface with a triangular control mesh.
 
     The PyTorch control-point tensor carries design-variable gradients. The CPGEO backend
-    supplies basis coefficients, reconstruction, and STL export. Call synchronize() before
-    operations that read backend geometry after changing live control points.
+    supplies basis coefficients, reconstruction, STL sampling, and STEP patch fitting.
+    Call synchronize() before reading backend geometry after changing live control points.
     """
 
-    export_format = SurfaceExportFormat.STL
+    export_formats = (SurfaceExportFormat.STL, SurfaceExportFormat.STEP)
 
     is_discrete = True
     mirror: type[CPGEOMirrorConstraint] = CPGEOMirrorConstraint
@@ -72,6 +72,7 @@ class CPGEOSurface(ControlPointSurface):
         self._num_knots: int
         """The number of knot points for the CPGEO model."""
 
+        self.reconstructed = False
         self._is_first_initialize = True
         """Flag to indicate whether it is the first initialization, used for controlling the initial volume calculation."""
 
@@ -146,8 +147,7 @@ class CPGEOSurface(ControlPointSurface):
         if node_uv is None or len(node_uv) != len(nodes):
             raise ValueError("CPGEO end sets require one matched UV coordinate per node.")
 
-        # Before the first refinement the control mesh is the initial cylinder.
-        # Afterwards only the originally fixed controls can own an end patch.
+        # Older cap archives may contain the disks without their control indices.
         if self._fixed_indices is None:
             cap_controls = self._disk_candidates(self.model.control_points)
         else:
@@ -305,23 +305,17 @@ class CPGEOSurface(ControlPointSurface):
 
         if_reconstruct = self._reconstruction_check()
 
-        if if_reconstruct or self._is_first_initialize:
+        self.reconstructed = bool(if_reconstruct or self._is_first_initialize)
+        if self.reconstructed:
             self._reinitialize()
             self._is_first_initialize = False
-
-    def reinitialize_constraints(self) -> None:
-        """Lock the end disks on the first uniformly reconstructed, symmetry-aligned mesh."""
-        super().reinitialize_constraints()
-        if self._cap_disks is not None and self._fixed_indices is None and not self._is_first_initialize:
-            points = self.model.control_points
-            ends = self._disk_candidates(points)
-            self._capture_fixed_controls(np.concatenate(list(ends.values())))
 
     def _reinitialize(self):
         """Internal method to reinitialize the CPGEO model without checking."""
         indices = self.model.refine_surface(
             seed_size=self.init_size,
             max_iterations=CONSTANT.KERNEL.SURFACE.CPGEO_INITIAL_REFINEMENT_ITERATIONS,
+            matching_alpha=CONSTANT.KERNEL.SURFACE.CPGEO_RECONSTRUCTION_MATCHING_ALPHA,
             fixed_control_indices=self._fixed_indices.cpu().numpy() if self._fixed_indices is not None else None,
         )
 
@@ -362,7 +356,16 @@ class CPGEOSurface(ControlPointSurface):
             # Use mesh vertices directly as preload points for CPGEO.
             uv3_0 = self.model._knots
             faces_0 = self.model._cp_faces
-            edges = cpgeo.capi.get_mesh_edges(faces_0)
+            # Split each existing reference triangle into four. A fresh global
+            # triangulation is unnecessary and can stall on tightly clustered knots.
+            edge_pairs = faces_0[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+            edges, inverse = np.unique(np.sort(edge_pairs, axis=1), axis=0, return_inverse=True)
+            ab, bc, ca = (inverse.reshape(-1, 3) + len(uv3_0)).T
+            a, b, c = faces_0.T
+            # Preload triangles use inward winding for signed-volume integration.
+            faces_np = np.vstack([np.column_stack(corners) for corners in (
+                (a, ca, ab), (b, ab, bc), (c, bc, ca), (ab, ca, bc),
+            )])
 
             uv3_extra = (uv3_0[edges[:, 0]] + uv3_0[edges[:, 1]]) / 2
             uv3_extra = uv3_extra / np.linalg.norm(uv3_extra, axis=1, keepdims=True)
@@ -373,8 +376,6 @@ class CPGEOSurface(ControlPointSurface):
                 self.model.reference_to_curvilinear(preload_uv3)
             ).to(torch.get_default_device())
             input_points = preload_uv.cpu().numpy()
-
-            faces_np = cpgeo.capi.get_sphere_triangulation(preload_uv3)
 
         # Precompute weights for vertex evaluation points (derivative 0, 1, 2)
         result = self.model.get_weights2(input_points, derivative=2)
@@ -436,17 +437,19 @@ class CPGEOSurface(ControlPointSurface):
         fmt: str,
         pools: Pool | None = None,
     ) -> Path:
-        """Sample the current CPGEO surface at its target spacing and write STL."""
+        """Write the current surface as a sampled STL or a fitted B-spline STEP solid."""
         path = self._surface_path(stem, fmt)
         self.synchronize()
-        # The native spherical remesher requires a closed control mesh.
         control_mesh = pv.PolyData.from_regular_faces(
             self.model.control_points, self.model._cp_faces
         )
         if control_mesh.n_open_edges:
             raise ValueError(
-                "CPGEO STL export requires a closed control mesh. Check the end caps and shared edges."
+                "CPGEO export requires a closed control mesh. Check the end caps and shared edges."
             )
+        if fmt == SurfaceExportFormat.STEP:
+            self.model.fit_bspline_patches().write_step(path)
+            return path
         # STL sampling redistributes vertices over the whole surface. Only control
         # mesh reconstruction needs to preserve the initial cap control points.
         r_sphere, cpfaces = self.model.uniformly_mesh(
@@ -615,16 +618,31 @@ class CPGEOSurface(ControlPointSurface):
                 faces.append([v00, v01, v10])
                 faces.append([v01, v11, v10])
 
-        # The spherical parameterization needs a closed, consistently wound
-        # control mesh. Share the end rings with the cap triangles.
+        # Triangulate the planar disks before fitting any CPGEO surface. The outermost
+        # vertices are shared with the wall, so the pinned region includes the rim.
+        cap_indices = []
+        disks = []
         for ring, z in ((0, 0.0), (num_segments_axial, length)):
-            center = len(vertices)
-            vertices.append([init_location[0], init_location[1], init_location[2] + z])
             start = ring * num_segments_circ
-            for j in range(num_segments_circ):
-                a = start + j
-                b = start + (j + 1) % num_segments_circ
-                faces.append([center, b, a] if ring == 0 else [center, a, b])
+            rim = list(range(start, start + num_segments_circ))
+            center = np.asarray(init_location, dtype=float) + [0, 0, z]
+            radius = np.linalg.norm(np.asarray(vertices[start]) - center)
+            disks.append([*center, radius])
+            interior = len(vertices)
+            vertices.append(center.tolist())
+            layers = max(1, round(radius / seed_size))
+            for layer in range(1, layers):
+                r = radius * layer / layers
+                count = max(3, round(2 * np.pi * r / seed_size))
+                angles = -2 * np.pi * np.arange(count) / count
+                offsets = np.column_stack((r * np.cos(angles), r * np.sin(angles), np.zeros(count)))
+                vertices.extend((center + offsets).tolist())
+            ids = np.array(rim + list(range(interior, len(vertices))))
+            cap_indices.extend(ids)
+            # Qhull orders 2D simplices counterclockwise; the cylinder wall
+            # uses clockwise winding as viewed from above.
+            triangles = ids[Delaunay(np.asarray(vertices)[ids, :2]).simplices]
+            faces.extend(triangles if ring == 0 else triangles[:, ::-1])
 
         # Create CPGEO model
         cpgeo_model = cpgeo.CPGEO(
@@ -635,9 +653,8 @@ class CPGEOSurface(ControlPointSurface):
 
         surface = cls(cpgeo_model, init_size=seed_size)
         if fix_end_caps:
-            centers = cpgeo_model.control_points[-2:]
-            rims = cpgeo_model.control_points[[0, num_segments_axial * num_segments_circ]]
-            surface._cap_disks = np.column_stack((centers, np.linalg.norm(rims - centers, axis=1)))
+            surface._cap_disks = np.asarray(disks)
+            surface._capture_fixed_controls(np.asarray(cap_indices))
         return surface
 
     @classmethod

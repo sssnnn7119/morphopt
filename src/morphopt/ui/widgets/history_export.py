@@ -18,11 +18,13 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTabWidget,
@@ -33,6 +35,7 @@ from PySide6.QtWidgets import (
 from ...constants import CONSTANT
 from ...postprocess import IterationModel, OptimizationArchive, design_view_options
 from ...postprocess.visualization import camera_state, draw_history_scene, set_camera
+from ...shapeopt.boundary_part import BoundaryPart
 from ...utils.paths import sanitize_name
 from ..application.results import ResultSession
 from ..i18n import tr, translated_or
@@ -484,6 +487,10 @@ class HistoryExportDialog(QDialog):
         form.addRow(label("component"), self.component)
         self.component_mode = QComboBox()
         form.addRow(label("output"), self.component_mode)
+        self.surface_group = QGroupBox(label("surface_formats"))
+        self.surface_form = QFormLayout(self.surface_group)
+        self.surface_choices: list[QComboBox] = []
+        form.addRow(self.surface_group)
         self.voxel_size = QDoubleSpinBox()
         self.voxel_size.setDecimals(6)
         self.voxel_size.setRange(0.000001, 1e6)
@@ -495,13 +502,15 @@ class HistoryExportDialog(QDialog):
         self.voxel_threshold.setSingleStep(0.05)
         self.voxel_threshold.setValue(CONSTANT.KERNEL.SIMP.EXPORT_DENSITY_THRESHOLD)
         form.addRow(label("voxel_threshold"), self.voxel_threshold)
-        self.component_mode.currentIndexChanged.connect(self._voxel_options)
-        self._voxel_options()
+        self.component_mode.currentIndexChanged.connect(self._component_options)
         layout_components.addLayout(form)
         self.empty_components = QLabel(label("no_components"))
         layout_components.addWidget(self.empty_components)
         layout_components.addStretch()
-        self.tabs.addTab(component_page, label("components"))
+        component_scroll = QScrollArea()
+        component_scroll.setWidgetResizable(True)
+        component_scroll.setWidget(component_page)
+        self.tabs.addTab(component_scroll, label("components"))
 
         inp_page = QWidget()
         inp = self.inp_form = QFormLayout(inp_page)
@@ -559,12 +568,12 @@ class HistoryExportDialog(QDialog):
                 if component.export_modes:
                     self.component.addItem(
                         component_selection_title(category, component),
-                        (category, component.name, component.export_modes),
+                        (category, component),
                     )
             if initial_target:
                 for index in range(self.component.count()):
-                    category, name, _ = self.component.itemData(index)
-                    if (category, name) == (
+                    category, component = self.component.itemData(index)
+                    if (category, component.name) == (
                         initial_target.get("category"),
                         initial_target.get("name"),
                     ):
@@ -593,23 +602,40 @@ class HistoryExportDialog(QDialog):
         )
 
     def _component_modes(self):
-        self.component_mode.clear()
-        if self.component.count():
-            _, _, modes = self.component.currentData()
-            for mode in modes:
-                title = translated_or(f"ui.history_export.{mode}", mode)
-                self.component_mode.addItem(title, mode)
-        self._availability()
+        with QSignalBlocker(self.component_mode):
+            self.component_mode.clear()
+            if self.component.currentData():
+                _, component = self.component.currentData()
+                for mode in component.export_modes:
+                    title = translated_or(f"ui.history_export.{mode}", mode)
+                    self.component_mode.addItem(title, mode)
+        self.component_form.setRowVisible(self.component_mode, self.component_mode.count() > 1)
+        self._component_options()
 
-    def _voxel_options(self):
-        visible = self.component_mode.currentData() == "voxel_obj"
-        self.component_form.setRowVisible(self.voxel_size, visible)
-        self.component_form.setRowVisible(self.voxel_threshold, visible)
+    def _component_options(self):
+        mode = self.component_mode.currentData()
+        self.component_form.setRowVisible(self.voxel_size, mode == "voxel_obj")
+        self.component_form.setRowVisible(self.voxel_threshold, mode == "voxel_obj")
+        self.surface_choices.clear()
+        while self.surface_form.rowCount():
+            self.surface_form.removeRow(0)
+        if mode == "all_surfaces":
+            _, component = self.component.currentData()
+            if isinstance(component, BoundaryPart):
+                for index, surface in enumerate(component.surface_interfaces()):
+                    choice = QComboBox()
+                    for fmt in surface.export_formats:
+                        choice.addItem(fmt.name, fmt.value)
+                    choice.setEnabled(choice.count() > 1)
+                    self.surface_form.addRow(f"surface_{index} [{type(surface).__name__}]", choice)
+                    self.surface_choices.append(choice)
+        self.surface_group.setVisible(bool(self.surface_choices))
+        self._availability()
 
     def _availability(self):
         enabled = (
             self.gif.target.count(),
-            self.component_mode.count(),
+            self.component_mode.count() and all(choice.count() for choice in self.surface_choices),
             self._inp_available(),
         )
         self.export.setEnabled(
@@ -627,8 +653,8 @@ class HistoryExportDialog(QDialog):
         tab = self.tabs.currentIndex()
         if tab == 1:
             step = self.component_step.value()
-            category, component_name, _ = self.component.currentData()
-            name = sanitize_name(component_name)
+            category, component = self.component.currentData()
+            name = sanitize_name(component.name)
             destination = choose_save_directory(
                 self, self.windowTitle(), self.folder, f"{name}_{step}"
             )
@@ -643,10 +669,14 @@ class HistoryExportDialog(QDialog):
                 return
             selection = dict(
                 category=category,
-                name=component_name,
+                name=component.name,
                 mode=self.component_mode.currentData(),
             )
-            if selection["mode"] == "voxel_obj":
+            if any(choice.currentIndex() > 0 for choice in self.surface_choices):
+                selection["options"] = {
+                    "surface_formats": [choice.currentData() for choice in self.surface_choices]
+                }
+            elif selection["mode"] == "voxel_obj":
                 selection["options"] = dict(
                     voxel_size=self.voxel_size.value(),
                     threshold=self.voxel_threshold.value(),

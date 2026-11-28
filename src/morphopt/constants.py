@@ -1084,6 +1084,7 @@ class _Constants:
             CYLINDER_EXPONENT = 3
             DISTANCE_SEARCH_RATIO = 1.5
             DISTANCE_PAIR_PRUNE_RATIO = 0.3
+            DISTANCE_PAIR_BATCH_SIZE = 262_144
             DISTANCE_BARRIER_THRESHOLD = 0.01
             DISTANCE_BARRIER_EXPONENT = 3
             NORMAL_TRANSITION_MIN = -0.7
@@ -1162,6 +1163,8 @@ class _Constants:
             BSP_BOUNDARY_SUBDIVISION_RATIO = 2
             CPGEO_CAP_HEIGHT_RATIO = 0.5
             CPGEO_INITIAL_REFINEMENT_ITERATIONS = 4
+            # Balance surface fit and control displacement during reconstruction.
+            CPGEO_RECONSTRUCTION_MATCHING_ALPHA = 1.0
             CPGEO_OUTPUT_REFINEMENT_ITERATIONS = 2
             CPGEO_KNOT_INFLUENCE_COUNT = 20
             CPGEO_AREA_IMBALANCE_THRESHOLD = 5.0

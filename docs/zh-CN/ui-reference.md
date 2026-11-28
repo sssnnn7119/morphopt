@@ -1913,7 +1913,7 @@ Updater → 按目标注册更新项、约束与曲面关系
 
 | 组件 | 导出内容 |
 | --- | --- |
-| BoundaryPart | 以部件局部坐标导出全部曲面。BSP 和 BREP 写为 STEP，CPGEO 和 MeshSurface 写为 STL。 |
+| BoundaryPart | 以部件局部坐标导出所选迭代的全部曲面。「曲面导出格式」按注册顺序列出各曲面。每个 CPGEO 和 BREP 曲面均可单独选择 STL 或 STEP，默认分别为 STL 和 STEP。BSP 固定为 STEP，MeshSurface 固定为 STL。 |
 | SIMP 材料 | **材料密度场（VTI）**导出设计视图的完整采样场。**体素表面（OBJ）**导出阈值筛选后的四边形面网格。 |
 | 自定义可更新组件 | 通过 `export_modes` 声明可选方案，由组件实现 `export()`。 |
 

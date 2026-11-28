@@ -209,7 +209,7 @@ flowchart TB
 |---|---|---|
 | `prepare_geometry(path_output, name_output, pools)` | 输出目录、文件名主干和可选进程池 | 准备剖分输入文件。固定 BREP 可直接使用已有 STEP 资产。 |
 | `load_geometry(part, context)` | `part: CADMeshingMixin`；`context: OCCBuilder` | `list[int]`；通过部件载入方法返回当前曲面的 Gmsh 面编号；BSP、CPGEO、固定 STL 和固定 STEP 分别重写该方法 |
-| `write_surface(stem, fmt, pools=None)` | 无扩展名的目标路径、曲面支持的格式（`"stp"` 或 `"stl"`）和可选进程池 | `Path`，指向带扩展名的输出文件。曲面按当前几何状态写出。BSP 仅支持 STEP。组件导出与网格生成均使用曲面的原生格式 `export_format`。 |
+| `write_surface(stem, fmt, pools=None)` | 无扩展名的目标路径、曲面支持的格式（`"stp"` 或 `"stl"`）和可选进程池 | `Path`，指向带扩展名的输出文件。曲面按当前几何状态写出。BSP 仅支持 STEP。`export_formats` 元组列出支持的格式，首项用于网格生成和默认导出。 |
 | `BREPSurface.get_mesh()` | 无参数 | `pyvista.PolyData`；从 STEP 生成显示三角网格，单元数据 `face_index` 保留面索引 |
 | `BREPSurface.face_names` | 只读属性 | `tuple[str, ...]`；返回资产中保存的原始 CAD 面名称；普通 STEP 无映射时为空 |
 

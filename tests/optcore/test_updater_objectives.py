@@ -833,6 +833,31 @@ def test_lbfgs_shared_history_converges_on_rosenbrock():
     torch.testing.assert_close(point, torch.ones(2), atol=1e-6, rtol=0)
 
 
+def test_inner_steps_reuse_values_only_within_the_current_solve():
+    class CountingUpdater(BaseUpdater):
+        max_step_iter = 3
+        _lbfgs_memory_pairs = 3
+        _status_log_interval = 10
+        _low_step_length_tolerance = 1e-12
+        _low_step_length_iteration_limit = 5
+        update_kind = "test"
+
+        def closure(self, point, return_list=False):
+            self.calls += 1
+            return (self.scale * (point - 3).square().sum()).reshape(1)
+
+    updater = CountingUpdater()
+    origin = torch.tensor([0.0])
+    for scale in (1., 4.):
+        updater.scale = scale
+        updater.calls = 0
+        # Both solves start at the same point with different objective weights.
+        actual = updater.solve_subproblem(origin, iterations=2)
+        assert updater.calls == 5  # initial value/gradient, two trials and two gradients
+        torch.testing.assert_close(actual, torch.tensor([3.]))
+        torch.testing.assert_close(updater.optimizer.accepted_value.reshape(()), torch.tensor(0.))
+
+
 def test_lbfgs_discards_negative_pairs_and_failed_search(monkeypatch):
     optimizer = BaseUpdater.Optimizer.LBFGS(lambda point: -point.square().sum())
     point = torch.tensor([1.0, 2.0])
@@ -937,7 +962,7 @@ def test_shape_update_checks_displacement_instead_of_the_line_search_multiplier(
     updater.max_step_iter = 15
     updater.reinitialize(gradient=torch.ones(updater.part.num_variables))
 
-    def step(x_now, gk_now):
+    def step(x_now, gk_now, *, obj_now):
         return 1e-12, torch.full_like(x_now, 1e12), torch.ones_like(x_now)
 
     monkeypatch.setattr(updater.Optimizer.LBFGS, "step", staticmethod(step))
@@ -955,7 +980,7 @@ def test_material_update_checks_displacement_instead_of_the_line_search_multipli
     updater.reinitialize(gradient=3 * material.get_design_values())
     initial = material.get_variables().clone()
 
-    def step(x_now, gk_now):
+    def step(x_now, gk_now, *, obj_now):
         return 1e-12, torch.full_like(x_now, 1e12), torch.ones_like(x_now)
 
     monkeypatch.setattr(updater.Optimizer.LBFGS, "step", staticmethod(step))

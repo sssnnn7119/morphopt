@@ -122,9 +122,11 @@ def test_simp_voxel_settings_reach_archived_obj(export_ui, tmp_path, monkeypatch
     np.testing.assert_array_equal(np.diff(x), 2)
 
 
-def test_mixed_boundary_writes_step_and_stl_together(design_archive, tmp_path, monkeypatch):
+def test_mixed_boundary_writes_step_and_stl_together(export_ui, design_archive, tmp_path, monkeypatch):
+    import gmsh
     import pyvista as pv
-    from morphopt.postprocess import export_design_components
+    from torchfea import cad
+    from morphopt.postprocess import OptimizationArchive, cpu_torch_defaults, export_design_components
 
     geometry = design_archive.controller_class.Params.GeometryParams
 
@@ -133,13 +135,47 @@ def test_mixed_boundary_writes_step_and_stl_together(design_archive, tmp_path, m
             super().define_surfaces()
             mesh = pv.Tetrahedron()
             self.add_surface_interface(self.MeshSurface(mesh.points, mesh.regular_faces))
+            for _ in range(2):
+                self.add_surface_interface(self.CPGEO.initialize_cylinder(2, 4, 1))
 
     monkeypatch.setattr(geometry, "BoundaryPart", MixedPart)
-    paths = export_design_components(str(design_archive.folder), 2, str(tmp_path), [
-        dict(category="Part", name="body", mode="all_surfaces"),
-    ])
-    assert {path.name for path in paths} == {"surface_0.stp", "surface_0.brep.json", "surface_1.stp", "surface_2.stl"}
-    assert pv.read(tmp_path / "body" / "surface_2.stl").n_cells == 4
+    with cpu_torch_defaults():
+        part = OptimizationArchive(design_archive.folder).initialize_params().geometry.interface("body")
+        for index in (3, 4):
+            cpgeo = part.surface_interface(index)
+            offset = cpgeo.control_points.new_tensor([index, 0, 0])
+            cpgeo.set_surface_parameters(cpgeo.control_points + offset)
+            cpgeo.save(design_archive.log_folder / part.pathlog_required()[0] / "body" / f"Surface-{index}_iter-1")
+
+    dialog = export_dialog(design_archive)
+    dialog.tabs.setCurrentIndex(1)
+    choices = dialog.surface_choices
+    assert [c.currentData() for c in choices] == ["stp", "stp", "stl", "stl", "stl"]
+    assert [c.count() for c in choices] == [2, 1, 1, 2, 2]
+    choices[0].setCurrentIndex(choices[0].findData("stl"))
+    choices[4].setCurrentIndex(choices[4].findData("stp"))
+    request = {}
+    destination = tmp_path / "mixed"
+    monkeypatch.setattr(dialog, "_start", lambda data, destination: request.update(data))
+    monkeypatch.setattr(history_export, "choose_save_directory", lambda *args: str(destination))
+    dialog.export.click()
+    paths = export_design_components(
+        str(design_archive.folder), request["iteration"], str(destination), request["selections"]
+    )
+    assert {path.name for path in paths} == {
+        "surface_0.stl", "surface_1.stp", "surface_2.stl", "surface_3.stl", "surface_4.stp",
+    }
+    assert pv.read(destination / "body" / "surface_0.stl").n_cells > 0
+    assert pv.read(destination / "body" / "surface_2.stl").n_cells == 4
+    mesh = pv.read(destination / "body" / "surface_3.stl")
+    assert mesh.n_open_edges == 0 and mesh.n_cells > 0
+    assert mesh.center[0] == pytest.approx(3, abs=0.2)
+    with cad.occ_session("import_cpgeo_step") as context:
+        (volume,) = context.occ.importShapes(str(destination / "body" / "surface_4.stp"))
+        context.occ.synchronize()
+        assert volume[0] == 3 and len(gmsh.model.getBoundary([volume])) == 6
+        assert context.occ.getCenterOfMass(*volume)[0] == pytest.approx(4, abs=0.2)
+    dialog.reject()
 
 
 def test_surface_export_retries_after_worker_failure_and_cleans_requests(

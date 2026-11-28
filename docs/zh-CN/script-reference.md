@@ -273,7 +273,7 @@ class Actuator(morphopt.BoundaryPart):
 
 球面工厂名称为 `initialize_Sphere`，保留该大小写。脚本名称与 UI 中的 `cpgeo_sphere` 类型标签不同。各曲面的参数说明与示意见 [UI 曲面参考](ui-reference.md#surface_types-bsp-cylinder)。
 
-`surface.save("surface.npz")` 保存当前 CPGEO 几何。圆柱默认启用 `fix_end_caps=True`，此时存档以 `cap_disks` 记录两个端盖的中心和半径。首次均匀重建及对称处理完成后，MorphOpt 根据端盖范围选定控制点，以 `cap_indices` 保存其编号。后续设计更新固定这些控制点。原生 `cpgeo.CPGEO.load("surface.npz")` 可直接读取几何，MorphOpt 的 `surface.load("surface.npz")` 同时恢复端盖约束。 内腔可在 `initialize_cylinder` 中指定 `fix_end_caps=False`，两端随曲面更新，载荷仍可引用闭合曲面的 `surface_i_All`。
+`surface.save("surface.npz")` 保存当前 CPGEO 几何。圆柱默认启用 `fix_end_caps=True`，此时存档以 `cap_disks` 记录两个端盖的中心和半径。创建圆柱时，MorphOpt 在两个端面上按采样间距布点，并在首次重建前固定端面的内部控制点和边缘控制点。重建与设计更新保持这些点的初始坐标，`cap_indices` 记录它们在当前网格中的编号。原生 `cpgeo.CPGEO.load("surface.npz")` 可直接读取几何，MorphOpt 的 `surface.load("surface.npz")` 同时恢复端盖约束。 内腔可在 `initialize_cylinder` 中指定 `fix_end_caps=False`，两端随曲面更新，载荷仍可引用闭合曲面的 `surface_i_All`。
 
 <a id="brep-topology"></a>
 
@@ -969,7 +969,7 @@ class Shape(morphopt.UpdaterBoundaryPart):
 | `violation_tolerance` | `0.1` | 以障碍函数过渡宽度计量的参考违反程度 |
 | `weight_change_limit` | `10.0` | 重算时预测收益安全系数的上限 |
 
-每个具名罚项独立标定基础系数，再乘以当前原始梯度范数与标定时梯度范数之比。梯度为零时沿用最近的正范数，以保留几何修复能力。
+策略对施加固定和对称条件后的子问题变量求导。每个罚项沿物理目标下降方向及其反方向分别探测，采用罚项梯度范数较大的一侧标定基础系数。若两侧仅有舍入误差或梯度均为零，该项保留默认系数，直至出现有效响应。后续系数按当前物理目标梯度范数与标定时范数之比缩放。目标梯度为零时沿用最近一次非零范数。
 
 各采样点按 $z=[(f-f_{\mathrm{start}})/w]_+$ 衡量违反程度。$w$ 为惩罚宽度，$z=0$ 表示罚项尚未激活，$z=1$ 表示局部罚值 $z^p$ 达到 1。幂次 $p$ 决定罚值的增长速度。曲面罚值按面积积分，壁厚罚值按候选点对积分。
 
@@ -1256,7 +1256,7 @@ export_design_components(
 | `export_history_inp(folder, iteration, case, destination, nlgeom=True)` | 按迭代和工况导出 Abaqus 静力分析输入文件。`case=None` 时仅导出部件局部坐标下的网格、集合和表面 |
 | `export_history_gif(...)` | 按设计组件或变形工况、迭代范围及显式相机与样式设置导出动画 |
 
-`part.export(Path("boundaries"))` 将 BoundaryPart 的全部曲面按注册顺序写入目录。第 0 张为外边界，其余为内腔。支持 STEP 的曲面写为 `surface_N.stp`，其余可导出曲面写为 `surface_N.stl`。SIMP 材料使用相同的目录接口，`material.export(Path("field"))` 写出 `density.vti`。其中的点数据 `density` 与设计视图一致，数值为插值后的材料刚度比乘以 `mumax`。
+`part.export(Path("boundaries"))` 将 BoundaryPart 的全部曲面按注册顺序写入目录。第 0 张为外边界，其余为内腔。默认模式 `all_surfaces` 使用各曲面的原生格式。若部件依次包含两个 CPGEO 曲面，`part.export(Path("boundaries"), surface_formats=["stp", "stl"])` 将外边界写为 STEP，内腔写为 STL。归档导出时在该组件的 `options` 中传入同一份 `surface_formats`。 SIMP 材料使用相同的目录接口，`material.export(Path("field"))` 写出 `density.vti`。其中的点数据 `density` 与设计视图一致，数值为插值后的材料刚度比乘以 `mumax`。
 
 SIMP 的体素导出使用刚度插值前的材料相对密度。设设计场包围盒在某轴的长度为 $L$，该轴划分为 $\lceil L / h\rceil$ 个等宽体素，其中 $h$ 为目标体素边长 `voxel_size`。仅保留中心相对密度严格大于 `threshold` 的体素。`voxels.obj` 收录保留区域与空域相邻的四边形面，包括内腔壁。
 
@@ -1266,7 +1266,7 @@ material.export(Path("shape"), mode="voxel_obj", voxel_size=0.5, threshold=0.7)
 
 自定义组件通过类属性 `export_modes` 声明方案名称，在 `export()` 中接收该组件所需的关键字参数。通过归档导出时，每项选择的 `options` 字典传递这些参数，例如 `{"category": "Material", "name": "body", "mode": "voxel_obj", "options": {"voxel_size": 0.5, "threshold": 0.7}}`。
 
-BSP 仅导出 STEP。当前控制点构造的侧面和两个端盖组成一个闭合实体。BREP 可导出 STEP 或当前各面的三角网格 STL。MeshSurface 和 CPGEO 仅支持 STL。CPGEO 的球面重剖分要求控制网格闭合，开放边或非流形边会触发导出错误。
+BSP 仅导出 STEP，侧面与两个端盖组成一个闭合实体。CPGEO 支持 STL 和 STEP。STL 按曲面采样间距生成三角网格，STEP 按当前控制点拟合六片双三次 B 样条曲面并缝合为闭合实体。拟合采用 CPGEO 默认采样误差容限 0.01（模型长度单位）。BREP 支持 STEP 和 STL，MeshSurface 仅支持 STL。
 
 已载入模型与解的场量计算由同一个 `FiniteElementResults` 对象管理。下例中的 `controller` 和 `result` 应来自配对且已恢复工况的有限元模型与解。
 

@@ -37,6 +37,36 @@ def test_cpgeo_stl_rejects_open_control_mesh(tmp_path):
     assert not (tmp_path / "open.stl").exists()
 
 
+def test_cpgeo_preload_uses_all_samples_in_a_closed_inward_mesh():
+    surface = cylinder(CPGEOSurface)
+    surface.initialize()
+    surface.pre_load()
+    sample = surface.preload_data
+    faces = sample.faces.cpu().numpy()
+    points = surface.model.curvilinear_to_reference(sample.uv.cpu().numpy())[0]
+    np.testing.assert_array_equal(np.unique(faces), np.arange(len(points)))
+    edges = np.sort(faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2), axis=1)
+    assert (np.unique(edges, axis=0, return_counts=True)[1] == 2).all()
+    a, b, c = points[faces].transpose(1, 0, 2)
+    assert (np.einsum("ij,ij->i", a, np.cross(b - a, c - a)) < 0).all()
+
+
+def test_cpgeo_stl_retains_uniform_samples_for_fe_matching(tmp_path, monkeypatch):
+    import pyvista as pv
+
+    surface = cylinder(CPGEOSurface)
+    surface.initialize()
+    knots, faces = surface.model._knots, surface.model._cp_faces
+    order = np.arange(len(knots))[::-1]
+    samples, triangles = knots[order], order[faces].copy()
+    monkeypatch.setattr(surface.model, "uniformly_mesh", lambda **kwargs: (samples, triangles))
+
+    mesh = pv.read(surface.write_surface(tmp_path / "surface", "stl"))
+    np.testing.assert_array_equal(surface._output_rsphere, samples)
+    np.testing.assert_array_equal(surface._output_cpfaces, triangles)
+    assert mesh.n_open_edges == 0
+
+
 @pytest.mark.parametrize("cavity", [False, True])
 def test_cpgeo_cylinder_side_normals_follow_boundary_role(cavity):
     center = torch.tensor([2.0, -3.0, 5.0])
@@ -59,33 +89,99 @@ def test_cpgeo_cylinder_side_normals_follow_boundary_role(cavity):
     torch.testing.assert_close(torch.nn.functional.normalize(torch.cross(dv, du, dim=1)), normal)
 
 
-def test_cpgeo_cylinder_selects_end_controls_after_uniform_reconstruction():
+def test_cpgeo_cylinder_locks_planar_disks_before_first_reconstruction():
     radius, length, spacing = 4.0, 10.0, 1.4
     surface = CPGEOSurface.initialize_cylinder(radius, length, spacing)
-    vertices, faces = surface.model.control_points, surface.model._cp_faces
-    # The spacing gives 18 circumferential and 7 axial segments.
-    assert vertices[:-2].shape == (8 * 18, 3)
-    np.testing.assert_allclose(np.unique(vertices[:, 2]), np.linspace(0, length, 8))
+    points = surface.model.control_points
+    anchors = points[surface._fixed_indices.numpy()].copy()
     for height in (0, length):
-        disk = faces[(vertices[faces, 2] == height).all(axis=1)]
-        indices = np.unique(disk)
-        rim, center = indices[:-1], indices[-1]
-        np.testing.assert_allclose(np.linalg.norm(vertices[rim, :2], axis=1), radius)
-        np.testing.assert_array_equal(vertices[center], [0, 0, height])
-        assert len(disk) == len(rim)
-        assert (disk == center).any(axis=1).all()
+        disk = anchors[anchors[:, 2] == height]
+        np.testing.assert_array_equal(disk, points[points[:, 2] == height])
+        radii = np.linalg.norm(disk[:, :2], axis=1)
+        assert np.any((radii > 0) & (radii < 0.8 * radius))
+        assert np.isclose(radii, radius).any()
+    assert np.isin(anchors[:, 2], [0, length]).all()
 
     surface.add_constraint(surface.mirror("xz"))
     surface.initialize()
     surface.reinitialize_constraints()
-    assert surface._fixed_indices is None
+    for _ in range(2):
+        surface._reinitialize()
+        surface.reinitialize_constraints()
+        surface.apply_constraints()
+        np.testing.assert_array_equal(surface.control_points[surface._fixed_indices], anchors)
+        assert len(surface._fixed_indices.unique()) == len(anchors)
+        faces = surface.model._cp_faces
+        for z in (0, length):
+            disk = np.isclose(surface.model.control_points[:, 2], z, rtol=0, atol=1e-10)
+            assert np.isin(np.flatnonzero(disk), surface._fixed_indices).all()
+            # The cap is a triangulated disk, including its shared wall rim.
+            disk_faces = faces[disk[faces].all(axis=1)]
+            radii = np.linalg.norm(surface.model.control_points[:, :2], axis=1)
+            interior = disk & (radii < radius - 1e-8)
+            assert disk[faces[interior[faces].any(axis=1)]].all()
+            edges = np.sort(disk_faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2), axis=1)
+            assert len(np.unique(disk_faces)) - len(np.unique(edges, axis=0)) + len(disk_faces) == 1
+        uv = surface.model.reference_to_curvilinear(surface.model._knots)
+        for end in surface.get_node_sets(surface.model.control_points, node_uv=uv).values():
+            assert len(end) >= 3
+            assert np.isin(end, surface._fixed_indices).all()
+
+
+def test_cpgeo_reconstructed_actuator_cavity_has_no_crossing_control_faces():
+    import pyvista as pv
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from vtkmodules.vtkCommonTransforms import vtkTransform
+    from vtkmodules.vtkFiltersModeling import vtkCollisionDetectionFilter
+
+    surface = CPGEOSurface.initialize_cylinder(
+        4, 74, 1, init_location=[0, 0, 3], perturbation_L=10, fix_end_caps=False,
+    )
+    surface.add_constraint(surface.mirror("xz"))
+    surface.initialize()
+    surface.reinitialize_constraints()
+    surface.apply_constraints()
     surface.reinitialize(0)
     surface.reinitialize_constraints()
-    uv = surface.model.reference_to_curvilinear(surface.model._knots)
-    for end in surface.get_node_sets(surface.model.control_points, node_uv=uv).values():
-        assert len(end) >= 3
-        assert np.isin(end, surface._fixed_indices).all()
-        assert (np.linalg.norm(surface.model.control_points[end, :2], axis=1) < 0.8 * radius).any()
+    surface.apply_constraints()
+
+    faces = surface.model._cp_faces
+    mesh = pv.PolyData.from_regular_faces(surface.model.control_points, faces)
+    contacts = vtkCollisionDetectionFilter()
+    contacts.SetCollisionModeToHalfContacts()
+    for side in (0, 1):
+        contacts.SetInputData(side, mesh)
+        contacts.SetTransform(side, vtkTransform())
+    contacts.Update()
+    left, right = (vtk_to_numpy(contacts.GetContactCells(side)) for side in (0, 1))
+    # Contact between cells sharing a control vertex is expected on a closed shell.
+    assert (faces[left, :, None] == faces[right, None, :]).any(axis=(1, 2)).all()
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_cpgeo_mirror_reinserts_cap_centers_without_reversing_winding(reverse):
+    surface = CPGEOSurface.initialize_cylinder(3, 9, 1)
+    if reverse:
+        surface.model._cp_faces = surface.model._cp_faces[:, [0, 2, 1]].copy()
+    surface.initialize()
+    # Both cap centers lie on the mirror plane and are removed by the cut.
+    centers = np.flatnonzero(np.all(surface.model.control_points[:, :2] == 0, axis=1))
+    surface._capture_fixed_controls(centers)
+    anchors = surface._fixed_points.clone()
+
+    def signed_volume():
+        points = surface.model.control_points
+        a, b, c = (points - points.mean(axis=0))[surface.model._cp_faces].transpose(1, 0, 2)
+        return np.einsum("ij,ij->", a, np.cross(b, c)) / 6
+
+    before = signed_volume()
+    mirror = surface.mirror("xz")
+    surface.add_constraint(mirror)
+    surface.reinitialize_constraints()
+
+    assert len(surface.control_points) == mirror._replicated_count + 2
+    torch.testing.assert_close(surface.control_points[surface._fixed_indices], anchors, rtol=0, atol=0)
+    assert signed_volume() * before > 0
 
 
 def test_cpgeo_end_controls_survive_design_updates_reconstruction_and_restart(tmp_path):
@@ -179,7 +275,8 @@ def test_cpgeo_short_cylinder_end_bands_exclude_midplane_and_outside_disk():
     surface = CPGEOSurface.initialize_cylinder(2, 0.5, 1, init_location=[1, -2, 3])
     surface.initialize()
     nodes = np.array([[1, -2, 3.1], [1, -2, 3.4], [1, -2, 3.25], [4, -2, 3.1]])
-    uv = surface.model.reference_to_curvilinear(surface.model._knots[[-2, -1, -2, -2]])
+    centers = np.flatnonzero(np.all(surface.model.control_points[:, :2] == [1, -2], axis=1))
+    uv = surface.model.reference_to_curvilinear(surface.model._knots[centers[[0, 1, 0, 0]]])
     sets = surface.get_node_sets(nodes, node_uv=uv)
     np.testing.assert_array_equal(sets["Bottom"], [0])
     np.testing.assert_array_equal(sets["Head"], [1])

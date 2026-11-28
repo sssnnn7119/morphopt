@@ -1913,7 +1913,7 @@ The historical surface displays the geometry during the finite element calculati
 
 | Component | Output |
 | --- | --- |
-| BoundaryPart | Derive all surfaces using the local coordinates of the components. BSP and BREP are written in STEP format, while CPGEO and MeshSurface are written in STL format. |
+| BoundaryPart | Exports all surfaces from the selected iteration in part-local coordinates. **Surface export formats** lists surfaces in registration order. Each CPGEO or BREP surface can be exported independently as STL or STEP. CPGEO defaults to STL and BREP to STEP. BSP uses STEP and MeshSurface uses STL. |
 | SIMP materials | Export a complete sample field for the design view of **Material density field (VTI)**. Export quadrilateral mesh with threshold filtering for **Voxel surface (OBJ)**. |
 | Customizable updateable components | The optional scheme is specified through `export_modes`, and will be implemented by component `export()`. |
 

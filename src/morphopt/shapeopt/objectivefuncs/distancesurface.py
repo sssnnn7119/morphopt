@@ -27,11 +27,6 @@ class Distance(BaseConstraints):
         The neighbor points of the surfaces that need to be checked for distance.
         """
 
-        self.points_surface_index: torch.Tensor
-        """
-        The index of the surfaces for each point.
-        """
-
         self.neighbor_mindist: torch.Tensor
         """
         The allowable minimum distance between the points.
@@ -66,7 +61,7 @@ class Distance(BaseConstraints):
         r0_combined = torch.cat(r0, dim=0)
         if self.min_distance.shape != (len(r0), len(r0)):
             raise ValueError("min_distance must have one row and column per surface.")
-        self.points_surface_index = torch.cat([
+        point_surfaces = torch.cat([
             torch.full((len(points),), index, dtype=torch.int64, device=points.device)
             for index, points in enumerate(r0)
         ])
@@ -75,25 +70,21 @@ class Distance(BaseConstraints):
         import scipy.spatial
 
         kdtree = scipy.spatial.KDTree(r0_combined.detach().cpu().numpy())
-        self.neighbor_points = kdtree.query_pairs(
-            r=self.distance_threshold, output_type="ndarray"
-        ).T
-
-        self.neighbor_points = (
-            torch.from_numpy(self.neighbor_points).type(torch.int64).to(r0[0].device)
+        pairs = torch.as_tensor(
+            kdtree.query_pairs(r=self.distance_threshold, output_type="ndarray").T,
+            device=r0_combined.device, dtype=torch.long,
         )
-
-        surface_ids = self.points_surface_index[self.neighbor_points]
-        self.neighbor_mindist = self.min_distance.to(r0_combined)[surface_ids[0], surface_ids[1]]
-        distance0 = (
-            r0_combined[self.neighbor_points[0]] - r0_combined[self.neighbor_points[1]]
-        ).norm(dim=1)
-        index_remain = (surface_ids[0] != surface_ids[1]) | (
-            distance0 > self.distance_threshold * CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_PAIR_PRUNE_RATIO
-        )
-
-        self.neighbor_points = self.neighbor_points[:, index_remain]
-        self.neighbor_mindist = self.neighbor_mindist[index_remain]
+        settings = CONSTANT.KERNEL.SHAPE_CONSTRAINTS
+        prune_radius = self.distance_threshold * settings.DISTANCE_PAIR_PRUNE_RATIO
+        keep = []
+        for first, second in pairs.split(settings.DISTANCE_PAIR_BATCH_SIZE, dim=1):
+            separation = (r0_combined[first] - r0_combined[second]).norm(dim=1)
+            keep.append((point_surfaces[first] != point_surfaces[second]) | (separation > prune_radius))
+        self.neighbor_points = pairs[:, torch.cat(keep)]
+        first, second = self.neighbor_points
+        self.neighbor_mindist = self.min_distance.to(r0_combined)[
+            point_surfaces[first], point_surfaces[second]
+        ]
 
         logger.debug(
             f"Distance Objective Function: {self.neighbor_points.shape[1]} point pairs within threshold {self.distance_threshold}"
@@ -116,57 +107,32 @@ class Distance(BaseConstraints):
         """
         R = torch.cat(r, dim=0)
         RDU = torch.cat(rdu, dim=0)
-        normal_vector = torch.cross(RDU[:, :, 1], RDU[:, :, 0], dim=1)
+        settings = CONSTANT.KERNEL.SHAPE_CONSTRAINTS
+        normals = torch.cross(RDU[:, :, 1], RDU[:, :, 0], dim=1)
+        normals = normals / (normals.norm(dim=1, keepdim=True) + settings.NORMALIZATION_TOLERANCE)
 
-        thre = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_THRESHOLD
-        degree = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.DISTANCE_BARRIER_EXPONENT
-        loss_distance = R.new_zeros(())
-        weight_flatten = torch.cat(self.integration_weights, dim=0)
+        # Orientation changes during the inner solve. Screen the current normals
+        # in bounded batches and retain derivatives of the angular weight below.
+        with torch.no_grad():
+            facing = []
+            for first, second in self.neighbor_points.split(settings.DISTANCE_PAIR_BATCH_SIZE, dim=1):
+                dot = (normals[first] * normals[second]).sum(dim=1)
+                facing.append(dot < settings.NORMAL_TRANSITION_MAX)
+            indices = torch.cat(facing).nonzero(as_tuple=True)[0]
 
-        normal_min = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MIN
-        normal_max = CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMAL_TRANSITION_MAX
-
-        normal_remain = normal_vector[self.neighbor_points, :]
-        normal_remain = normal_remain / (
-            normal_remain.norm(dim=2, keepdim=True)
-            + CONSTANT.KERNEL.SHAPE_CONSTRAINTS.NORMALIZATION_TOLERANCE
+        first, second = self.neighbor_points[:, indices]
+        required = self.neighbor_mindist[indices]
+        threshold = settings.DISTANCE_BARRIER_THRESHOLD
+        distance = torch.linalg.vector_norm(R[first] - R[second], dim=1)
+        active, penalty = self.barrier_function(
+            required - distance + threshold, threshold, settings.BARRIER_RATIO,
+            settings.DISTANCE_BARRIER_EXPONENT,
+            transition_scale=torch.where(required > 0, required, threshold),
         )
-
-        normal_penalty = (normal_remain[0] * normal_remain[1]).sum(dim=1)
-
-        index_remain = normal_penalty < normal_max
-
-        normal_penalty = normal_penalty[index_remain]
-        neighbor_points = self.neighbor_points[:, index_remain]
-        neighbor_mindist = self.neighbor_mindist[index_remain]
-
-        if torch.numel(neighbor_points) != 0:
-            deltaR = R[neighbor_points[0], :] - R[neighbor_points[1], :]
-            distance = torch.sqrt(((deltaR) ** 2).sum(dim=1))
-
-            dist = neighbor_mindist - distance + thre
-            reference_distance = torch.where(neighbor_mindist > 0, neighbor_mindist, thre)
-
-            indexl, l = self.barrier_function(
-                dist,
-                thre,
-                CONSTANT.KERNEL.SHAPE_CONSTRAINTS.BARRIER_RATIO,
-                degree,
-                transition_scale=reference_distance,
-            )
-
-            if len(indexl) > 0:
-                normal_penalty = (
-                    normal_max
-                    - torch.clamp(normal_penalty[indexl], normal_min, normal_max)
-                ) / (normal_max - normal_min)
-
-                loss_distance += (
-                    l
-                    * (6 * normal_penalty**2 - 15 * normal_penalty + 10)
-                    * normal_penalty**3
-                    * weight_flatten[neighbor_points[0, indexl]]
-                    * weight_flatten[neighbor_points[1, indexl]]
-                ).sum()
-
-        return loss_distance
+        first, second = first[active], second[active]
+        dot = (normals[first] * normals[second]).sum(dim=1)
+        low, high = settings.NORMAL_TRANSITION_MIN, settings.NORMAL_TRANSITION_MAX
+        t = (high - dot.clamp(low, high)) / (high - low)
+        angular_weight = (6 * t.square() - 15 * t + 10) * t.pow(3)
+        weights = torch.cat(self.integration_weights)
+        return (penalty * angular_weight * weights[first] * weights[second]).sum()

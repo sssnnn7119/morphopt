@@ -102,6 +102,32 @@ class DistanceUpdater(BaseUpdater):
         return physical + self.constraint_weights["distance"] * penalty
 
 
+def test_distance_rescreens_trial_normals_and_preserves_angular_gradient(monkeypatch):
+    from morphopt.constants import CONSTANT
+
+    monkeypatch.setattr(CONSTANT.KERNEL.SHAPE_CONSTRAINTS, "DISTANCE_PAIR_BATCH_SIZE", 1)
+    left = torch.tensor([[0., 0., 0.], [0., 8., 0.]], dtype=torch.float64)
+    right = left + left.new_tensor([0.9, 0., 0.])
+    tangent = left.new_tensor([[0., 0.], [1., 0.], [0., 1.]]).expand(2, -1, -1)
+    term = Distance([[0., 1.], [1., 0.]])
+    term.initialize(r0=[left, right], rdu0=[tangent, tangent], rdu20=[],
+                    weights=[left.new_ones(2)] * 2, surfaces=[])
+    term.barrier_function.tolerance = 0.05
+    assert term([left, right], [tangent, tangent]) == 0
+
+    # Tilt only the second patch into the smooth angular transition.
+    trial = tangent.clone()
+    trial[1, :, 1] = left.new_tensor([1., 0., -0.4])
+
+    def evaluate(points, tangents):
+        return term([left, points], [tangent, tangents])
+
+    grad_r, grad_du = torch.func.grad(evaluate, argnums=(0, 1))(right, trial)
+    assert grad_r[0].count_nonzero() == grad_du[0].count_nonzero() == 0
+    assert grad_r[1].norm() > 0 and grad_du[1].norm() > 0
+    assert torch.autograd.gradcheck(evaluate, (right.requires_grad_(), trial.requires_grad_()))
+
+
 def test_thin_wall_retry_only_changes_forces_at_the_thin_pair():
     updater = DistanceUpdater()
     term = updater.constraints_funcs["distance"]

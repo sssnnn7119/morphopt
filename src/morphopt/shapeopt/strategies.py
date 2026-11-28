@@ -18,6 +18,8 @@ from ..optcore.strategies import (
     FixedUpdate,
     UpdateStrategy,
 )
+from .objectivefuncs.surfacefairness import Fairness
+from .surfaces.cpgeo_surface import CPGEOSurface
 
 if TYPE_CHECKING:
     from ..optcore.updaters import BaseUpdater
@@ -121,6 +123,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         self._gradient_norm = 0.0
         self.state: dict[str, dict[str, float]] = {}
         self._origin_trial: _ShapeTrial | None = None
+        self._repair_scale: float | None = None
 
     @property
     def _excess_threshold(self) -> float:
@@ -132,7 +135,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
     def constraint_weights(
         self, updater: BaseUpdater, gradient: torch.Tensor
     ) -> dict[str, float]:
-        """Calibrate newly active terms and scale their weights with the native gradient norm.
+        """Calibrate newly active terms and scale their weights in the subproblem design coordinates.
 
         Args:
             updater: Geometry updater with initialized objective and penalty terms.
@@ -145,6 +148,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
             raise TypeError("AdaptiveShapeUpdate requires a geometry updater.")
         terms = updater.constraints_funcs
         self.state = {name: self.state[name] for name in terms if name in self.state}
+        self._repair_scale = None
         if not terms:
             self._origin_trial = None
             return {}
@@ -169,7 +173,13 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         self._started = True
         self._origin_trial = trial
 
-        norm = gradient.detach().norm().item()
+        # Differentiate through the same fixed controls, symmetry and step map as the solver.
+        def objective(x: torch.Tensor) -> torch.Tensor:
+            objectives, _ = updater.closure(x, return_list=True)
+            return sum(objectives).reshape(())
+
+        physical = torch.func.grad(objective)(origin).detach()
+        norm = physical.norm().item()
         if not math.isfinite(norm):
             raise ValueError("Physical gradient norm must be finite.")
         if norm > 0:
@@ -180,11 +190,11 @@ class AdaptiveShapeUpdate(UpdateStrategy):
             }
             if pending:
                 for name, weight in self._calibrate(
-                    updater, origin, pending, gradient
+                    updater, pending, physical, norm
                 ).items():
                     self.state[name] = {
                         "initial_weight": weight,
-                        "reference_gradient_norm": norm,
+                        "reference_design_gradient_norm": norm,
                     }
 
         weights = dict.fromkeys(
@@ -193,8 +203,22 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         for name, record in self.state.items():
             record["violation"] = trial.violations[name]
             weights[name] = record["initial_weight"] * (
-                self._gradient_norm / record["reference_gradient_norm"]
+                self._gradient_norm / record["reference_design_gradient_norm"]
             )
+        # A unit move in each normalized design coordinate gives a first-order
+        # work scale. A reconstruction spike can exceed it by many orders.
+        rebuilt_fairness = [
+            weights[name] * trial.penalties[name]
+            for name, term in terms.items()
+            if isinstance(term, Fairness) and any(
+                isinstance(s, CPGEOSurface) and s.is_updatable and s.reconstructed
+                for s in term.surfaces
+            )
+        ]
+        if rebuilt_fairness:
+            work = physical.abs().sum().item()
+            if max(rebuilt_fairness) > work:
+                self._repair_scale = work if work > 0 else 1.0
         logger.info(
             "Shape update: tolerance=%.6g base_weights=%s peak_z=%s base_penalties=%s",
             self.tolerance,
@@ -213,6 +237,8 @@ class AdaptiveShapeUpdate(UpdateStrategy):
 
         Each solve has its own full step budget. With constraints, run the first
         two solves if allowed, then continue only while a local limit is exceeded.
+        If Fairness dominates after CPGEO reconstruction, condition the first
+        solve and use its endpoint as the reference for subsequent retries.
 
         Args:
             updater: Geometry updater supplying the subproblem solver and base weights.
@@ -221,14 +247,35 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         Returns:
             The perturbation at the end of the last solve.
         """
-        baseline = self._origin_trial
+        initial = self._origin_trial
         if updater.max_step_iter <= 0:
             return origin
-        if baseline is None:
+        if initial is None:
             return updater.solve_subproblem(origin)
 
+        baseline = initial
+        candidate = origin
+        first_regular_stage = 1
+        if self._repair_scale is not None:
+            # asinh is increasing for signed objectives. It preserves descent
+            # directions and stationary points while damping the initial spike.
+            scale = self._repair_scale
+            candidate = updater.solve_subproblem(
+                origin, loss=lambda x: torch.asinh(updater.closure(x) / scale)
+            )
+            repaired = self._measure(updater, candidate)
+            logger.info(
+                "Shape reconstruction solve 1/%d: physical_change=%.6g peak_z=%s -> %s",
+                self.max_solves, repaired.objective - baseline.objective,
+                baseline.violations, repaired.violations,
+            )
+            baseline = repaired
+            first_regular_stage = 2
+
         limits = {
-            name: max(self._excess_threshold, value)
+            # A repair may improve fairness while temporarily thinning the wall.
+            # Carry improvements forward without relaxing any other peak limit.
+            name: max(self._excess_threshold, min(value, initial.violations[name]))
             for name, value in baseline.violations.items()
         }
         barriers = {
@@ -237,8 +284,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         }
         # Only these terms receive an extra local penalty during the next solve.
         surcharges: dict[str, float] = {}
-        candidate = origin
-        for stage in range(1, self.max_solves + 1):
+        for stage in range(first_regular_stage, self.max_solves + 1):
             with _local_surcharges(barriers, surcharges):
                 candidate = updater.solve_subproblem(candidate)
 
@@ -247,7 +293,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
                 "Shape solve %d/%d: physical_change=%.6g peak_z=%s",
                 stage,
                 self.max_solves,
-                trial.objective - baseline.objective,
+                trial.objective - initial.objective,
                 trial.violations,
             )
             overloaded = [
@@ -305,49 +351,42 @@ class AdaptiveShapeUpdate(UpdateStrategy):
     def _calibrate(
         self,
         updater: BaseUpdater,
-        origin: torch.Tensor,
         selected: dict[str, int],
-        gradient: torch.Tensor,
+        physical: torch.Tensor,
+        physical_norm: float,
     ) -> dict[str, float]:
-        """Balance each pending penalty against the physical gradient using two opposite probes."""
-
-        def objective(x: torch.Tensor) -> torch.Tensor:
-            objectives, _ = updater.closure(x, return_list=True)
-            return sum(objectives).reshape(())
+        """Balance each pending penalty against its strongest resolvable probe response."""
 
         def pending_penalties(x: torch.Tensor) -> torch.Tensor:
             _, penalties = updater.closure(x, return_list=True)
             return torch.stack([penalties[i].reshape(()) for i in selected.values()])
 
-        physical = torch.func.grad(objective)(origin)
-        if not torch.isfinite(physical).all():
-            raise ValueError("Physical gradient must be finite.")
-        physical_norm = physical.norm().item()
-        if physical_norm == 0:
-            return {}
-
-        probe = self._descent_probe(gradient)
+        probe = self._descent_probe(physical)
         derivatives = torch.func.jacrev(pending_penalties)
+        with ExitStack() as stack:
+            for name in selected:
+                stack.enter_context(updater.constraints_funcs[name].barrier_function.calibration_probe())
+            forward = derivatives(probe)
+            backward = derivatives(-probe)
+
         weights = {}
-        for sign in (1, -1):
-            jacobian = derivatives(sign * probe)
-            if not torch.isfinite(jacobian).all():
+        for name, plus, minus in zip(selected, forward, backward, strict=True):
+            # A barely active endpoint must not outweigh a well-resolved opposite probe.
+            plus_norm, minus_norm = plus.norm().item(), minus.norm().item()
+            if not (math.isfinite(plus_norm) and math.isfinite(minus_norm)):
                 raise ValueError("Penalty probe gradients must be finite.")
-            for name, penalty in zip(selected, jacobian, strict=True):
-                norm = penalty.norm().item()
-                if norm == 0:
-                    continue
+            penalty, norm = (plus, plus_norm) if plus_norm >= minus_norm else (minus, minus_norm)
+            if norm > 0:
                 conflict = max(0.0, -(physical / norm @ (penalty / norm)).item())
-                weight = max(
+                weights[name] = max(
                     _SETTINGS.SAFETY_FACTOR * conflict,
                     _SETTINGS.BALANCE_RATIO * physical_norm / norm,
                 )
-                weights[name] = max(weights.get(name, 0.0), weight)
         return weights
 
     @staticmethod
     def _descent_probe(gradient: torch.Tensor) -> torch.Tensor:
-        """Probe a fraction of the per-point step along the native descent direction."""
+        """Probe a fraction of the per-point step along the feasible design descent direction."""
         vectors = gradient.detach().reshape(-1, 3)
         norms = vectors.norm(dim=1, keepdim=True)
         # Invert the updater's atan map at the desired fraction of the step limit.
@@ -369,7 +408,7 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         data = {
             "tolerance": self.tolerance,
             "started": self._started,
-            "gradient_norm": self._gradient_norm,
+            "design_gradient_norm": self._gradient_norm,
             "penalties": self.state,
         }
         path.write_text(json.dumps(data, allow_nan=False), encoding="utf-8")
@@ -380,11 +419,11 @@ class AdaptiveShapeUpdate(UpdateStrategy):
         data = json.loads(path.read_text(encoding="utf-8"))
         self.tolerance = data["tolerance"]
         self._started = data["started"]
-        self._gradient_norm = data.get("gradient_norm", 0.0)
+        self._gradient_norm = data.get("design_gradient_norm", 0.0)
         self.state = {
             name: record
             for name, record in data["penalties"].items()
-            if "reference_gradient_norm" in record
+            if "reference_design_gradient_norm" in record
         }
 
 

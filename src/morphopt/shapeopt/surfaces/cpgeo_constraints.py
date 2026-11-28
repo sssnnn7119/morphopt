@@ -9,7 +9,7 @@ import cpgeo
 import numpy as np
 import pyvista as pv
 import torch
-from scipy.spatial import cKDTree
+from scipy.spatial import ConvexHull, cKDTree
 
 from .base_constraints import (
     BaseSurfaceConstraints,
@@ -44,6 +44,7 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
         surface: CPGEOSurface,
         vertices: np.ndarray,
         faces: np.ndarray,
+        sectors: int,
     ) -> None:
         """Install the reconstructed control mesh and rebuild the backend and preload caches.
 
@@ -52,8 +53,10 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
             vertices (np.ndarray): Cartesian vertex coordinates with shape (num_vertices, 3).
             faces (np.ndarray): Face selection or mesh connectivity required by the selected surface
                 operation.
+            sectors: Number of copies of the retained control sector.
         """
         self._replicated_count = len(vertices)
+        indices = None
         if surface._fixed_points is not None:
             anchors = surface._fixed_points.cpu().numpy()
             # Sector replication drops controls on symmetry seams and poles.
@@ -64,31 +67,41 @@ class _CPGEOSymmetryConstraint(BaseSurfaceConstraints["CPGEOSurface"]):
             if missing.any():
                 knots = cpgeo.capi.initialize_knots(faces, len(vertices))
                 mesh = pv.PolyData.from_regular_faces(vertices, faces)
-                cells, closest = mesh.find_closest_cell(
-                    anchors[missing], return_closest_point=True
-                )
+                cells, hits = mesh.find_closest_cell(anchors[missing], return_closest_point=True)
                 triangles = faces[np.atleast_1d(cells)]
                 a, b, c = vertices[triangles].transpose(1, 0, 2)
-                # Interpolate the reference knots at the physical closest point.
                 normal = np.cross(b - a, c - a)
                 denom = np.einsum("ij,ij->i", normal, normal)
-                u = np.einsum("ij,ij->i", np.cross(closest - a, c - a), normal) / denom
-                v = np.einsum("ij,ij->i", np.cross(b - a, closest - a), normal) / denom
+                offsets = np.asarray(hits) - a
+                u = np.einsum("ij,ij->i", np.cross(offsets, c - a), normal) / denom
+                v = np.einsum("ij,ij->i", np.cross(b - a, offsets), normal) / denom
                 weights = np.column_stack((1 - u - v, u, v))
                 new_knots = np.einsum("ij,ijk->ik", weights, knots[triangles])
                 new_knots /= np.linalg.norm(new_knots, axis=1, keepdims=True)
-                faces = cpgeo.capi.get_sphere_triangulation(
-                    np.vstack((knots, new_knots))
-                )
+                knots = np.vstack((knots, new_knots))
+                faces = ConvexHull(knots).simplices.copy()
+                # initialize_knots oriented the old faces outward on this sphere.
+                # Carry that winding into the physical mesh after adding anchors.
+                ka, kb, kc = knots[faces].transpose(1, 0, 2)
+                inward = np.einsum("ij,ij->i", ka, np.cross(kb, kc)) < 0
+                faces[inward] = faces[inward][:, [0, 2, 1]]
                 indices[missing] = len(vertices) + np.arange(missing.sum())
                 vertices = np.vstack((vertices, anchors[missing]))
-            surface._fixed_indices = torch.as_tensor(indices, dtype=torch.long, device=surface.control_points.device)
+            # A replicated cap control and its symmetry copies belong to the
+            # same fixed region, including when ring counts and sector counts differ.
+            fixed = np.zeros(self._replicated_count, dtype=bool)
+            fixed[indices[~missing]] = True
+            copies = np.flatnonzero(np.tile(fixed.reshape(sectors, -1).any(axis=0), sectors))
+            extra = np.setdiff1d(copies, indices)
+            indices = np.concatenate((indices, extra))
         surface.control_points = vertices
+        surface._capture_fixed_controls(indices)
         surface.model._control_points = vertices
         surface.model._cp_faces = faces
         surface.model.initialize()
         surface._num_knots = surface.model._knots.shape[0]
         surface.pre_load()
+        surface.reconstructed = True
 
     def _set_control_points(self, surface: CPGEOSurface, points: torch.Tensor) -> None:
         """Set control points.
@@ -146,7 +159,7 @@ class CPGEOMirrorConstraint(_CPGEOSymmetryConstraint):
             plane=self.plane,
         )
         vertices[:, axis] += self.offset
-        self._finish_reinitialize(surface, vertices, faces)
+        self._finish_reinitialize(surface, vertices, faces, 2)
 
 
 class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
@@ -224,7 +237,7 @@ class CPGEORotationalSymmetryConstraint(_CPGEOSymmetryConstraint):
             periods=self.order,
         )
         vertices = vertices @ align + self.center
-        self._finish_reinitialize(surface, vertices, faces)
+        self._finish_reinitialize(surface, vertices, faces, self.order)
 
     @staticmethod
     def _align_axis_to_z(axis: np.ndarray) -> np.ndarray:
@@ -299,3 +312,4 @@ class CPGEOSurfaceRelationConstraint(SurfaceRelationConstraint["CPGEOSurface"]):
         self.related.initialize()
         self.related._num_knots = self.related.model._knots.shape[0]
         self.related.pre_load()
+        self.related.reconstructed = True

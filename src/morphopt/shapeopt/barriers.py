@@ -18,6 +18,16 @@ class PolynomialBarrier:
         self.excess_weight = 0.0
         self.excess_start = 1.0
         self._monitoring = False
+        self._calibrating = False
+
+    @contextmanager
+    def calibration_probe(self) -> Iterator[None]:
+        """Omit roundoff-sized activations when estimating a gradient ratio."""
+        self._calibrating = True
+        try:
+            yield
+        finally:
+            self._calibrating = False
 
     @contextmanager
     def measure_violation(self) -> Iterator[None]:
@@ -72,7 +82,9 @@ class PolynomialBarrier:
             self.maximum_violation = max(
                 self.maximum_violation, z.max().item(),
             )
-        index = torch.where(z > 0)[0]
+        # z is dimensionless, so this threshold is independent of the model units.
+        floor = torch.finfo(z.dtype).eps ** 0.5 if self._calibrating else 0.0
+        index = torch.where(z > floor)[0]
         active = z[index]
         penalty = active.pow(p)
         if self.excess_weight:

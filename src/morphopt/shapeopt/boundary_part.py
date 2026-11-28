@@ -45,6 +45,7 @@ from ..optcore.modelparams.parts import BasePart
 from ..optcore.modelparams.parts.cad_part import CADMeshingMixin
 from ..optcore.protocal import ProtocalUpdatable
 from .surfaces import BaseSurface
+from .surfaces.base_surface import SurfaceExportFormat
 
 if TYPE_CHECKING:
     from multiprocessing.pool import Pool
@@ -445,22 +446,36 @@ class BoundaryPart(CADMeshingMixin, BasePart, ProtocalUpdatable):
             surface.bind_mesh(part)
         return part
 
-    def export(self, directory: Path, *, mode: str = "all_surfaces") -> None:
-        """Write every boundary in registration order, preferring STEP over STL.
+    def export(
+        self, directory: Path, *, mode: str = "all_surfaces",
+        surface_formats: Sequence[str] | None = None,
+    ) -> None:
+        """Write every boundary in registration order.
 
         Args:
             directory: Destination for surface_0, surface_1, and subsequent files.
-            mode: Component export mode. The default writes the complete boundary.
+            mode: `all_surfaces` uses native defaults. `all_surfaces_step` prefers STEP.
+            surface_formats: One file extension per surface, in registration order.
+                Explicit selections take precedence over the mode's defaults.
         """
-        if mode != "all_surfaces":
+        if mode not in ("all_surfaces", "all_surfaces_step"):
             return super().export(directory, mode=mode)
+        if surface_formats is not None and len(surface_formats) != len(self.surfaceinterfaces):
+            raise ValueError("Select one format for each boundary surface.")
         directory.mkdir(parents=True, exist_ok=True)
         for index, surface in enumerate(self.surfaceinterfaces):
-            if surface.export_format is None:
+            formats = surface.export_formats
+            if not formats:
                 raise ValueError(
                     f"surface_{index} ({type(surface).__name__}) has no export format."
                 )
-            surface.write_surface(directory / f"surface_{index}", surface.export_format)
+            if surface_formats is not None:
+                fmt = surface_formats[index]
+            elif mode == "all_surfaces_step" and SurfaceExportFormat.STEP in formats:
+                fmt = SurfaceExportFormat.STEP
+            else:
+                fmt = formats[0]
+            surface.write_surface(directory / f"surface_{index}", fmt)
 
     # -------------------------------------------------------- design variables
     def get_parameters(self) -> list[torch.Tensor]:
